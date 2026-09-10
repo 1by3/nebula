@@ -5,7 +5,7 @@ description: How to declare and call ClientRpc, ServerRpc, AuthorityRpc and Owne
 
 An RPC is a method on a `NetworkBehaviour` marked with an attribute and invoked through a sender method of the same name. Three attributes exist. Two of them are the ones every Unity networking library has; the third, `[AuthorityRpc]`, is the one meshing needs: it runs on whichever worker currently owns the entity, whether that is the caller or a neighbour across the lateral link.
 
-Binding is reflection-based today (`RpcRegistry`); a source generator could replace it without changing gameplay code.
+Binding is reflection-based (`RpcRegistry`).
 
 ## The four kinds
 
@@ -163,7 +163,7 @@ Three things about this example are worth copying:
 2. `TakeDamage` chains another `AuthorityRpc` back to the attacker (`CreditKill`), which again runs wherever the attacker lives. Each hop is one reliable message.
 3. The handler still checks `HasAuthority`. The message is reliable and forwarded, but the receiving side dispatches it whenever it arrives, and the target may be mid-handover.
 
-The victim's worker applies the claim as-is: there is no rewind or validation of the claim on the receiving side today. The shooter's worker is trusted, which is fine because every worker is in the same trusted datacenter network.
+The victim's worker applies the claim as-is: there is no rewind or validation of the claim on the receiving side. The shooter's worker is trusted, which is fine because every worker is in the same trusted datacenter network.
 
 ## Constraints
 

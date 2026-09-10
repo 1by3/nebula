@@ -82,6 +82,6 @@ Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
 | `ForwardInput` | Reliable | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 
-## What is not there
+## Trust model
 
-No encryption or authentication on any link, no interest management, no delta compression or quantisation (every var change ships the whole blob; positions are full floats), and no NAT traversal. The lateral link is meant for a private datacenter network; the client link works on the open internet but is not hardened for it.
+The lateral link carries no encryption or authentication: it is designed for a private datacenter network where every worker is trusted. The client link is plain UDP as well; put it behind your own edge (a relay or a DDoS-protected ingress) when you need hardening. Messages are written whole (every variable change ships the entity's full variable blob; positions are full floats); see [Serialization](/docs/guides/serialization).

@@ -194,11 +194,11 @@ The properties that make this safe:
 
 Indices are labels for the shrink rule and the pawn's name; after a refill two NPCs can share one, which is harmless.
 
-## What does not exist
+## Rules
 
-- **No mesh singleton.** There is no way to elect one worker to run a piece of logic (one boss, load-based placement). Anything that needs a single decision-maker has to be expressed as a reconcile against a shared value, or wait for that feature.
-- **No persistence.** Entities live only on workers. A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`. Settings persist only as long as the control plane's database does.
-- **No client-side spawning.** Only workers spawn. A client that wants something created sends a `ServerRpc` and the owning worker spawns it (see [RPCs](/docs/guides/rpcs)).
+- **Workers spawn; clients ask.** A client that wants something created sends a `ServerRpc` and the owning worker spawns it (see [RPCs](/docs/guides/rpcs)).
+- **Mesh-wide logic is a reconcile, not an election.** There is no singleton worker. Anything every worker must agree on (how many NPCs exist, where a boss is) is expressed as a shared mesh setting that each worker reconciles against, as `NpcDirector` does above.
+- **Entities live on workers.** A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`. Durable state belongs in your own persistence layer, written from `OnLostAuthority` or on your own schedule.
 
 <Cards>
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What happens on the tick after you spawn into a foreign container." />

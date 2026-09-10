@@ -1,11 +1,11 @@
 ---
 title: Introduction
-description: What Nebula is, what it is not yet, and where to go next.
+description: What Nebula is, how the pieces fit, and where to go next.
 ---
 
 Nebula is middleware for dynamically meshed multiplayer game servers, Unity-first. One world is served by many dedicated server processes. Each one is leased authority over a set of *containers*, the designer-authored volumes your level is divided into, and entities cross between them without the player noticing. The reference point is Star Citizen's server meshing; the hard part Nebula targets is the dynamic case, where which server owns which part of the world changes at runtime.
 
-This site documents the prototype in the `nebula` repository. It is a complete, working end-to-end mesh, deliberately small: four containers, N workers, one gateway, one orchestrator, one control plane, and a first-person shooter that exists to make crossing a boundary mid-firefight visible.
+A Nebula mesh is a small set of roles, all built from one Unity player: N workers, one gateway, one orchestrator and one control plane. The design is validated on the strictest case, a first-person shooter where players cross container boundaries mid-firefight.
 
 ## How the pieces fit
 
@@ -60,6 +60,3 @@ public sealed class PlayerController : PredictedBehaviour<ShooterInput>
   <Card title="API reference" href="/docs/reference" description="Every public type, generated from the C# sources." />
 </Cards>
 
-## What it is not yet
-
-Nebula is a prototype, and the docs say so wherever it matters. There is no persistence, no rewind on hit validation, no delta compression, no authored seam volumes, no warm pool of workers, and the control-plane reducers accept any caller. What has been verified on one machine and on Hetzner Cloud VMs is listed on the [architecture](/docs/concepts/architecture#what-the-prototype-proves) page, and every guide has a section on what is deliberately not there.

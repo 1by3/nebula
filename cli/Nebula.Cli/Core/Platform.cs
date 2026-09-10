@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace Nebula.Cli.Core;
@@ -39,8 +40,16 @@ public static class Platform
     public static string ScratchDir => Path.Combine(CliHome, "scratch");
     public static string ExeSuffix => IsWindows ? ".exe" : "";
 
-    public static string CliVersion =>
-        typeof(Platform).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+    /// <summary>The semver in Nebula.Cli.csproj's &lt;Version&gt;, prerelease suffix included (0.1.0-alpha.0); release tags are v + this.</summary>
+    public static string CliVersion
+    {
+        get
+        {
+            var info = typeof(Platform).Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (!string.IsNullOrEmpty(info)) return info.Split('+')[0]; // drop the source-revision build metadata
+            return typeof(Platform).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+        }
+    }
 
     /// <summary>The repository the SDK is cloned from when no local source is configured (NEBULA_REPO_URL overrides it).</summary>
     public static string RepoUrl =>

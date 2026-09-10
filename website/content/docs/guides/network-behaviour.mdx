@@ -150,7 +150,7 @@ Health.OnValueChanged += (previous, current) => _bar.fillAmount = current / MaxH
 
 ### Discovery
 
-Binding is reflection-based today. When an identity initialises, every `NetworkBehaviour` on the object is scanned for fields (public or private) whose type derives from `NetworkVariableBase`, walking from the concrete class up to `NetworkBehaviour`. Fields are ordered by metadata token, which is declaration order within a class. A null field is instantiated for you. The resulting index is the variable's identity on the wire, so:
+Binding is reflection-based. When an identity initialises, every `NetworkBehaviour` on the object is scanned for fields (public or private) whose type derives from `NetworkVariableBase`, walking from the concrete class up to `NetworkBehaviour`. Fields are ordered by metadata token, which is declaration order within a class. A null field is instantiated for you. The resulting index is the variable's identity on the wire, so:
 
 - Declare variables as fields, not properties.
 - Keep the same class and the same field order on every process (the same assembly on client and worker guarantees this).
@@ -167,7 +167,7 @@ Equality uses `EqualityComparer<T>.Default`, so a struct `T` needs a sensible `E
 There is no delta compression and no per-variable dirty tracking on the wire. When any variable on an entity changes, the entity's whole variable blob (every `NetworkVariable` on every behaviour, in discovery order) is written and sent. Receivers read the whole blob and raise `OnValueChanged` only for the variables whose value differs. Keep variables to state that changes on events (health, names, goals); anything that changes every tick belongs in the identity's pose stream, a `PredictedBehaviour` state, or the sync channel.
 
 <Callout type="info" title="Sending a string every tick">
-A `NetworkVariable<string>` that changes often re-sends every other variable on the entity with it. This is fine for a prototype and is the kind of thing a source generator with per-field dirty bits would fix; it is not implemented yet.
+A `NetworkVariable<string>` that changes often re-sends every other variable on the entity with it. Keep text that changes every tick out of `NetworkVariable`s; send it through the sync channel or an RPC instead.
 </Callout>
 
 ## Related

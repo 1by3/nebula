@@ -3,13 +3,13 @@ title: Architecture
 description: "The design behind Nebula: the container model, the tier stack, seams, the two kinds of handover, cross-boundary interaction and failure behaviour."
 ---
 
-This page summarizes the Nebula architecture as designed in August 2026, written for developers who did not take part in that design. The [prototype](/docs/concepts/roles-and-wire-protocol) implements a deliberately small subset of it; where this page and the running code differ, the guides describe the code.
+This page describes the Nebula architecture: the model the runtime is built on and the direction it grows in. The [roles and wire protocol](/docs/concepts/roles-and-wire-protocol) page and the guides describe the running code in detail.
 
 ## Goal and product posture
 
 Nebula is middleware for dynamically meshed multiplayer game servers, Unity-first: an MMO-scale world is served by many dedicated game servers, each dynamically responsible for a portion of the world (a city down to an individual room), with entities crossing between servers' areas of influence seamlessly. The reference point is Star Citizen: CIG shipped static meshing in 4.0 (December 2024); dynamic meshing remains their in-progress next step. The static-to-dynamic gap is where the hard problems live.
 
-The product posture is narrow and honest: market to specific types of games, publish the system's limitations explicitly, and treat that honesty as a trust advantage. The prototype targets FPS combat at 60 Hz hitscan because it is the strictest case. If seam crossings are invisible there, they are invisible in a survival game or a social world; the reverse does not hold.
+Nebula is built for specific types of games rather than every game, and it targets FPS combat at 60 Hz hitscan first because it is the strictest case. If seam crossings are invisible there, they are invisible in a survival game or a social world; the reverse does not hold.
 
 The most product-relevant lesson comes from SpatialOS. Improbable built almost exactly this system, worker-based authority with handover as a first-class concept, and the technology largely worked. What killed it was developer experience: authority semantics leaked into every component, the workflow fought the engine, and studios spent their time fighting the platform. The failure mode for this product category is not "the tech doesn't work" but "developers hate using it". Everything that sounds like polish (the debug overlay, validator error messages, gameplay API ergonomics) is the core product surface.
 
@@ -24,13 +24,13 @@ Never flat-spatial is a hard requirement. The hierarchy pays off four ways:
 - **Semantic boundaries.** A doorway is a natural authority seam in a way that x = 1024 never is.
 - **Passengers never cross seams.** When a ship crosses a seam, the ship is one entity changing containers; everyone aboard is in the ship's local space and their transforms never change. Forty players in a capital ship experience nothing. The real cost of a large ship crossing is handover payload, a container subtree of hull, cargo and passengers, mitigated by prioritized incremental hydration, keeping durable data like inventories in the persistence layer read lazily, and a provisional flip with not-yet-resident state frozen rather than wrong.
 
-In Unity, containers are the transform hierarchy: a `Container` component declares bounds, a stable id and a streamed-content reference; a `Seam` component adds neighbour references and an approach-time budget. A bake-time validator enforces the seam contract and exports a container-graph manifest, so the level file is the deployment topology. The prototype implements `Container`; seams and the validator are not built yet, see [Containers and handover](/docs/concepts/containers-and-handover).
+In Unity, containers are the transform hierarchy: a `Container` component declares bounds, a stable id and a streamed-content reference; a `Seam` component adds neighbour references and an approach-time budget. A bake-time validator enforces the seam contract and exports a container-graph manifest, so the level file is the deployment topology. In the current runtime seams are implicit: every container boundary carries an automatic ghost band, described in [Containers and handover](/docs/concepts/containers-and-handover).
 
 ## Tier stack
 
 Top to bottom:
 
-**Control plane and persistence.** SpacetimeDB. Two jobs: the control plane (container ownership leases, authority epochs, node registry, entity directory; low write volume, transactionally consistent, subscription push), and durable world state (inventories, placed structures, player persistence; written on checkpoint interval and container drain, read on hydration). A lease row is roughly `container_id, owner_node, epoch, state, heartbeat_at, expires_at` with state in `{assigning, active, draining, orphaned}`. What it must never be: the transport for per-tick transforms or the arbiter of hit registration. All sim code talks to an `IControlPlane` abstraction. SpacetimeDB's scaling story (a single module is roughly a single-node database) is the honest risk; region sharding with a coordinating layer above is presumed viable. Control plane and persistence probably should not even be the same module, since their consistency and durability needs diverge.
+**Control plane and persistence.** SpacetimeDB. Two jobs: the control plane (container ownership leases, authority epochs, node registry, entity directory; low write volume, transactionally consistent, subscription push), and durable world state (inventories, placed structures, player persistence; written on checkpoint interval and container drain, read on hydration). A lease row is roughly `container_id, owner_node, epoch, state, heartbeat_at, expires_at` with state in `{assigning, active, draining, orphaned}`. What it must never be: the transport for per-tick transforms or the arbiter of hit registration. All sim code talks to an `IControlPlane` abstraction. SpacetimeDB's scaling story (a single module is roughly a single-node database) is the main risk; region sharding with a coordinating layer above is presumed viable. Control plane and persistence probably should not even be the same module, since their consistency and durability needs diverge.
 
 **Stateless sim servers.** Headless Unity processes simulating at 60 Hz. A sim is not "the server for a region"; it is a disposable compute worker leased authority over a set of containers. Authoritative durable state lives above it; a sim dying does not take state with it.
 
@@ -94,7 +94,7 @@ The genuinely nasty problem is not handover; it is a player on A shooting a play
 2. **Claim and validate as the fallback.** The shooter's server sends a damage claim (ray, tick, shooter state); the victim's server rewinds against its own history and accepts or rejects. This adds a round trip to hit confirmation. Grenades and other consequential projectiles use the same path: an authoritative tick-stamped event, applied locally by each owning sim.
 3. **Seam-as-container** contains everything happening inside the seam under a single authority, so the contested zone itself never needs cross-server resolution.
 
-The prototype implements the claim path as `[AuthorityRpc]`, without the rewind on the receiving side; see [RPCs](/docs/guides/rpcs).
+The claim path is `[AuthorityRpc]`; see [RPCs](/docs/guides/rpcs).
 
 ## Failure behaviour
 
@@ -117,29 +117,8 @@ Sim-to-sim is trusted, datacenter-local, symmetric, low peer count, no NAT, no c
 | Prediction and reconciliation across authority change | Build, referencing prior art heavily |
 | Gameplay API: MeshedBehaviour, EntityRef, commands | Build. This is the product |
 
-Transport sits behind an `ITransport` seam: LiteNetLib for the prototype, `System.Net.Quic` for sim-to-sim when Unity's CoreCLR runtime lands. Existing frameworks (NGO, Mirror, FishNet) encode a single authoritative server structurally and cannot be massaged into multi-authority; Netcode for Entities has the right ghost and snapshot shape but assumes one server and drags in DOTS. Study SpatialOS and Netcode for Entities; build on neither.
+Transport sits behind an `ITransport` seam: LiteNetLib, with `System.Net.Quic` for sim-to-sim once Unity's CoreCLR runtime lands. Existing frameworks (NGO, Mirror, FishNet) encode a single authoritative server structurally and cannot be massaged into multi-authority; Netcode for Entities has the right ghost and snapshot shape but assumes one server and drags in DOTS. Study SpatialOS and Netcode for Entities; build on neither.
 
-## What the prototype proves
+## Validation
 
 The riskiest assumption: a player crossing a seam mid-firefight cannot tell. The success criterion is that the handover correction distribution is statistically indistinguishable from the baseline correction distribution of normal play, validated by telemetry (divergence at flip, correction magnitude, authority-gap and input-continuity counters that must read zero, handover latency, ghost staleness) and a blind A/B test where testers cannot locate the seam by feel at 40 ms sim-to-sim RTT. A clean result proves seamlessness at N = 2; scale is a separate hypothesis requiring a separate experiment.
-
-What has been verified so far, all on one machine with the repository's smoke test:
-
-| Scenario | Result |
-| --- | --- |
-| 4 workers, 3 bots, 75 s | 47 authority handovers (out = in), 39 cross-worker hits, 15 kills, 0 errors or warnings |
-| 4 workers, 2 bots, kill `w3` at 25 s | SE reassigned to `w1` within a second, `w3` relaunched after 8 s and got SE back; the sim never stopped |
-| 2 workers, 4 bots, kill `w1` at 20 s | `w2` took all four containers; the two players whose pawns died were respawned on `w2` |
-| 4 workers, 3 bots, dashboard scale 4 to 2 at 25 s | `w3` and `w4` drained in one pass (each handed its container and bots over), 0 drain timeouts, 34 handovers out = 34 in, 0 errors |
-| Same run, dashboard buttons | Add relaunched `w3` (index reused) and moved one container to it; Remove `w1` drained exactly its two containers; Kill `w3` moved its containers to `w2` within a second and they flowed back after the 8 s relaunch |
-| 4 workers, 128 NPCs, 7 min | All 128 alive throughout; ~30 handovers/s sustained (out = in), 0 errors, 0 dropped packets; worker tick 0.25 to 0.35 ms, each worker about 15% of one core |
-
-Deliberately not there yet:
-
-- No lag compensation or rewind on hit validation: the victim's worker applies the claim as-is. (The shooter's worker does rewind its own view to the shooter's aim tick; see [Prediction](/docs/guides/prediction).)
-- No delta compression or quantisation; every var change ships the entity's full var blob.
-- Ghost interpolation on workers is one tick behind; the client interpolates three ticks behind.
-- Container reassignment reuses the per-entity handover path (drain = transfer every entity), which is correct but not staged; there is no persistence, so a dead worker loses its transient entities and players respawn.
-- No authored seam volumes, no bake validator, no warm pool, no trajectory-predicted ghosting.
-- RPCs and NetworkVariables are reflection-bound; a source generator would replace the registry without touching gameplay code.
-- The control-plane reducers accept any caller and the dashboard is unauthenticated.

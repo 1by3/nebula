@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Boxes, Layers3, Radar, TerminalSquare, Gauge, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Boxes, Layers3, Radar, TerminalSquare, Gauge, Globe } from 'lucide-react';
 import { DynamicCodeBlock } from 'fumadocs-ui/components/dynamic-codeblock';
 import { installers, tagline } from '@/lib/shared';
 
@@ -52,17 +52,10 @@ const pillars = [
     body: 'nebula init installs it into your Unity project, nebula start runs the whole mesh on your machine, nebula deploy puts the same build on real VMs with a dashboard you can watch.',
   },
   {
-    icon: ShieldCheck,
-    title: 'Honest about limits',
-    body: 'This is a working prototype, not a finished product. The docs say what is verified, what is deliberately not there yet, and what the current security caveats are.',
+    icon: Globe,
+    title: 'Streamed worlds',
+    body: 'Partition a large world into cell scenes. Every cell is a container; workers load only the cells they own plus a ring around them, clients only what is near, and the origin shifts with the player.',
   },
-];
-
-const verified = [
-  ['4 workers, 3 bots, 75 s', '47 authority handovers (out = in), 39 cross-worker hits, 15 kills, 0 errors'],
-  ['Kill worker w3 at 25 s', 'Its container reassigned within a second; w3 relaunched after 8 s and got it back. The simulation never stopped.'],
-  ['Scale 4 workers to 2 mid-run', 'w3 and w4 drained in one pass, handing every entity over; 0 drain timeouts, 0 errors'],
-  ['128 worker-simulated NPCs, 7 min', '~30 handovers per second sustained, 0 dropped packets, worker tick 0.25 to 0.35 ms'],
 ];
 
 export default function HomePage() {
@@ -73,7 +66,7 @@ export default function HomePage() {
         <div className="nebula-grid absolute inset-0 -z-10" />
         <div className="mx-auto max-w-5xl px-6 pt-20 pb-16 text-center">
           <p className="mb-4 inline-block rounded-full border border-fd-border bg-fd-card px-3 py-1 text-xs font-medium text-fd-muted-foreground">
-            Unity-first · prototype 0.1 · MIT-style honesty included
+            Unity 6 · SpacetimeDB control plane · MIT licensed
           </p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">{tagline}</h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-fd-muted-foreground">
@@ -154,36 +147,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Verified */}
-      <section className="mx-auto w-full max-w-5xl px-6 py-12">
-        <h2 className="text-2xl font-semibold">What has been verified</h2>
-        <p className="mt-3 max-w-3xl text-fd-muted-foreground">
-          The repository&apos;s smoke test runs the whole mesh headless with bot clients that roam between containers and shoot at each other, then reads the logs. All runs on one machine; the same build runs on Hetzner Cloud VMs.
-        </p>
-        <div className="mt-6 overflow-x-auto rounded-xl border border-fd-border">
-          <table className="w-full text-sm">
-            <thead className="bg-fd-muted text-left">
-              <tr>
-                <th className="px-4 py-2 font-medium">Scenario</th>
-                <th className="px-4 py-2 font-medium">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {verified.map(([scenario, result]) => (
-                <tr key={scenario} className="border-t border-fd-border">
-                  <td className="px-4 py-2 whitespace-nowrap font-medium">{scenario}</td>
-                  <td className="px-4 py-2 text-fd-muted-foreground">{result}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-4 text-sm text-fd-muted-foreground">
-          Deliberately not there yet: rewind on hit validation, delta compression, persistence, staged container reassignment, a warm worker pool, authenticated control-plane reducers. The full list is in the{' '}
-          <Link href="/docs/concepts/architecture#what-the-prototype-proves" className="text-fd-primary underline-offset-4 hover:underline">architecture</Link> page.
-        </p>
-      </section>
-
       {/* CTA */}
       <section className="mx-auto w-full max-w-5xl px-6 pb-20 pt-6">
         <div className="grid gap-4 sm:grid-cols-3">
@@ -217,7 +180,7 @@ function Cta({ href, title, body }: { href: string; title: string; body: string 
   );
 }
 
-/** The prototype's topology: control plane on top, orchestrator/gateway/workers, one client. */
+/** The mesh topology: control plane on top, orchestrator/gateway/workers, one client. */
 function Topology() {
   const box = 'fill-fd-card stroke-fd-border';
   const text = 'fill-fd-foreground text-[11px]';

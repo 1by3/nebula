@@ -1,5 +1,6 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { BookOpen, GitBranch, TerminalSquare, Braces } from 'lucide-react';
+import { BookOpen, TerminalSquare, Braces } from 'lucide-react';
+import { GithubInfo } from 'fumadocs-ui/components/github-info';
 import { appName, repo } from './shared';
 
 export function baseOptions(): BaseLayoutProps {
@@ -17,7 +18,7 @@ export function baseOptions(): BaseLayoutProps {
       { icon: <BookOpen />, text: 'Docs', url: '/docs', active: 'nested-url' },
       { icon: <TerminalSquare />, text: 'CLI', url: '/docs/cli', active: 'nested-url' },
       { icon: <Braces />, text: 'API', url: '/docs/reference', active: 'nested-url' },
-      { type: 'icon', icon: <GitBranch />, text: 'Source', label: 'Source repository', url: repo.url, external: true },
+      { type: 'custom', children: <GithubInfo owner={repo.owner} repo={repo.name} />, secondary: true },
     ],
   };
 }

@@ -3,17 +3,17 @@ title: Containers and handover
 description: What a container is in the running code, how the ghost band pre-warms a neighbour, and exactly what happens when an entity crosses.
 ---
 
-The [architecture](/docs/concepts/architecture) describes containers, seams and handover as designed. This page describes what the prototype actually does today, which is a smaller mechanism with the same shape: authority per container, pre-warm through a ghost band, flip with a handed state and a new epoch.
+The [architecture](/docs/concepts/architecture) describes containers, seams and handover as designed. This page describes the mechanism the runtime implements: authority per container, pre-warm through a ghost band, and a flip that hands over the exact final state with a new epoch.
 
 ## Containers
 
-A `Container` is a MonoBehaviour on a scene object: a box volume (`Size`, centred on `Center`) with a stable `ContainerId`. The object's transform defines the container's local coordinate space. Entities inside a container are parented under its transform, and every position on the wire is expressed in container-local space, so a container could move without its contents ever changing coordinates. The prototype's containers are static.
+A `Container` is a MonoBehaviour on a scene object: a box volume (`Size`, centred on `Center`) with a stable `ContainerId`. The object's transform defines the container's local coordinate space. Entities inside a container are parented under its transform, and every position on the wire is expressed in container-local space, so a container could move without its contents ever changing coordinates. Containers are static.
 
 At startup every role calls `ContainerRegistry.Rebuild()`, which collects the containers in the loaded scene, sorts them by id and assigns each a dense `Index`. The index is what travels in messages; the id is what the control plane keys leases by. Two containers are neighbours when their bounds touch or overlap; the registry fills `Neighbors` for each.
 
 A container knows who owns it: `OwnerWorkerId`, `OwnerWorkerIndex` and `LeaseEpoch` are updated from the control plane on every role, workers included. Gameplay code can ask `container.IsOwnedBy(workerId)`, `Contains(worldPosition)` and `SignedDistance(worldPosition)`, and convert with `ToLocal` and `ToWorld`.
 
-There are no seam volumes, no `Seam` component and no bake validator in the prototype. Instead every container boundary carries two automatic parameters from `NebulaConfig`:
+Seams are implicit: every container boundary carries two parameters from `NebulaConfig`:
 
 | Parameter | Default | Effect |
 | --- | --- | --- |

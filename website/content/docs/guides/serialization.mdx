@@ -3,7 +3,7 @@ title: Serialization
 description: NetworkWriter and NetworkReader, INetworkSerializable for your own structs, NetworkSerialization.Register for types you cannot modify, and where each is used.
 ---
 
-Every Nebula message is a plain little-endian byte stream written with `NetworkWriter` and read back with `NetworkReader`. There is no bit packing, no quantisation by default and no delta compression: bandwidth is not the prototype's problem, correctness is. The one rule that matters is that a reader reads exactly what the writer wrote, in the same order.
+Every Nebula message is a plain little-endian byte stream written with `NetworkWriter` and read back with `NetworkReader`. There is no bit packing, no quantisation by default and no delta compression: the format is optimised for correctness and debuggability, and bandwidth on the lateral link is not the constraint. The one rule that matters is that a reader reads exactly what the writer wrote, in the same order.
 
 Two layers sit on top of the writer and reader. `INetworkSerializable` is the interface your own structs implement; `NetworkSerialization` is the type-driven table that `NetworkVariable<T>` and RPC arguments go through.
 

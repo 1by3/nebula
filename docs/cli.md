@@ -60,7 +60,6 @@ repository on GitHub. `init` adds it to `Packages/manifest.json` pinned to the t
 `testables` so its tests show in the Test Runner, writes a default `Assets/Resources/NebulaConfig.asset` (empty
 prefab list; set `GameScene` and `NetworkPrefabs` in the Inspector) and creates `nebula.json` at the project root.
 `--force` moves an existing entry to this CLI's release; the config asset and `nebula.json` are always kept.
-`--sample` is reserved for a bundled sample, which does not ship yet.
 
 `--embed` copies the package's sources into `Packages/com.1by3.nebula` instead (an *embedded* package: Unity
 compiles it like project code, so you can read and modify the middleware in place). The sources come from

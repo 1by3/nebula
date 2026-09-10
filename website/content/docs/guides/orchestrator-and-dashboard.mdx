@@ -70,7 +70,7 @@ The page polls `/api/state` and shows:
 - **Events**: the orchestrator's last 60 log lines (it keeps 200), colour-coded by level.
 
 <Callout type="warn" title="No authentication">
-The dashboard and the API accept any request that reaches the port. Locally that is fine; on a public VM anyone who finds the port can resize your mesh. See the caveats in [Deploying to Hetzner](/docs/deploy/hetzner).
+The dashboard and the API accept any request that reaches the port. Locally that is fine; on a public VM restrict the port to your own IP, as described in [Deploying to Hetzner](/docs/deploy/hetzner#security-and-operations).
 </Callout>
 
 ## HTTP API

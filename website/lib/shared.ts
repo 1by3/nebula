@@ -6,14 +6,16 @@ export const docsContentRoute = '/llms.mdx/docs';
 
 /** Where the sources live. The site links "view source" and "edit this page" here. */
 export const repo = {
-  url: 'https://gitea.c11.li/1by3/nebula',
+  owner: '1by3',
+  name: 'nebula',
+  url: 'https://github.com/1by3/nebula',
   branch: 'main',
   /** Path of the docs site inside the repository. */
   siteDir: 'website',
 };
 
 export function sourceFileUrl(pathInRepo: string): string {
-  return `${repo.url}/src/branch/${repo.branch}/${pathInRepo}`;
+  return `${repo.url}/blob/${repo.branch}/${pathInRepo}`;
 }
 
 /** Hosted installer one-liners (the scripts are cli/install/install.ps1 and install.sh). */

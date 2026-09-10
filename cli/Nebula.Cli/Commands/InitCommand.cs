@@ -28,7 +28,6 @@ NebulaConfig.asset and nebula.json are always kept.
         new OptionSpec("embed", false, "copy the package sources into Packages/com.1by3.nebula instead of referencing the repository"),
         new OptionSpec("source", true, "with --embed: a checkout of the Nebula repository to copy the package from", "path"),
         new OptionSpec("force", false, "replace an existing Nebula package entry or embedded copy (NebulaConfig.asset and nebula.json are kept)"),
-        new OptionSpec("sample", true, "start from a sample game (not available yet)", "name"),
     };
     public override string[] Examples => new[] { "nebula init", "nebula init --ref main", "nebula init --embed --source C:\\Dev\\nebula", "nebula init --force" };
 
@@ -42,8 +41,6 @@ NebulaConfig.asset and nebula.json are always kept.
 
     public override int Run(Context ctx, ParsedArgs args)
     {
-        if (args.Has("sample"))
-            throw new CliError("samples are not bundled with the CLI yet", "run `nebula init` without --sample");
         if (args.Has("source") && !args.Has("embed"))
             throw new CliError("--source only applies with --embed", "nebula init --embed --source <path>");
 

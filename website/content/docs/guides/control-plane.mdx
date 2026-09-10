@@ -53,14 +53,14 @@ Five tables, all public. Timestamps are SpacetimeDB `Timestamp` values set from 
 | --- | --- |
 | `assigning` | Reserved for a staged transfer. Not produced by the current orchestrator; `AssignContainer` goes straight to `active`. |
 | `active` | The worker in `WorkerId` owns the container at `Epoch`. |
-| `draining` | Reserved. Not produced today; retirement reuses the per-entity handover path with the lease staying `active` until it moves. |
+| `draining` | Reserved. Not produced; retirement reuses the per-entity handover path with the lease staying `active` until it moves. |
 | `orphaned` | No owner. Set by `EnsureContainer`, `ReleaseContainer` and `UnregisterWorker`; the next assignment pass deals it out. |
 
 | Worker status | Meaning |
 | --- | --- |
 | `starting` | Registered, not yet ticking. Set by `RegisterWorker`. |
-| `ready` | Simulating. The only status the worker's heartbeat reports today. |
-| `draining` | Reserved for a worker that is handing everything over. Not reported today; the orchestrator tracks retirement on its own side. |
+| `ready` | Simulating. The status the worker's heartbeat reports. |
+| `draining` | Reserved for a worker that is handing everything over. Not reported; the orchestrator tracks retirement on its own side. |
 | `dead` | Reserved. `IsWorkerAlive` returns false for it regardless of heartbeat age, but nothing writes it: the orchestrator unregisters a dead worker instead. |
 
 Liveness is `now - LastHeartbeat <= WorkerTimeoutSeconds` (default 5 s), evaluated by the orchestrator against `IControlPlane.Now`, which `SpacetimeControlPlane` estimates from the newest timestamp it has seen plus local elapsed time.

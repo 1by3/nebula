@@ -199,13 +199,13 @@ nebula destroy --all
 The orchestrator deletes worker VMs when it stops cleanly and sweeps leftovers when it starts. If it is killed hard and never restarted, its workers keep running. `nebula status --cloud` shows them; `nebula destroy` removes them.
 </Callout>
 
-## What is not there yet
+## Security and operations
 
-- **Unauthenticated control plane.** The module's reducers accept any caller, so anyone who knows the Maincloud database name can register a fake worker or rewrite leases. A shared secret checked inside the reducers is the next step.
-- **Unauthenticated dashboard** on a public port. Anyone who finds `tcp/7080` can resize or kill your mesh. Restrict the orchestrator firewall's dashboard rule to your own IP if that matters before it is fixed.
-- **No warm pool.** A replacement worker is a fresh VM about 30 s away, not an instant failover. Its transient entities are lost; players respawn.
-- **No rolling redeploy.** Every `nebula deploy` restarts the orchestrator and recreates every worker.
-- **One mesh per Hetzner project**, named by `meshName`.
+- **The control plane trusts its callers.** The module's reducers accept any caller, so the Maincloud database name is effectively a credential: keep it out of public places and use a dedicated database per mesh.
+- **The dashboard is unauthenticated.** Anyone who can reach `tcp/7080` can resize or kill the mesh. Restrict the orchestrator firewall's dashboard rule to your own IP (the firewall is created by `nebula deploy`; edit it in the Hetzner console).
+- **Replacing a worker takes about 30 s**: a fresh VM boots, downloads the build and registers. Its transient entities are gone; players respawn through `OnSpawnPlayer`.
+- **`nebula deploy` restarts the mesh.** Every deploy restarts the orchestrator and recreates every worker.
+- **One mesh per Hetzner project**, labelled with `meshName`.
 
 <Cards>
   <Card title="CLI reference: deploy" href="/docs/cli/deploy" description="Every option of nebula deploy and destroy." />
