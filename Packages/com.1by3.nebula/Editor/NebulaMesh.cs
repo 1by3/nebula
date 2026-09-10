@@ -122,7 +122,7 @@ namespace Nebula.Editor
             Debug.Log("[nebula] local mesh stopped");
         }
 
-        [MenuItem("Nebula/Mesh/Open Dashboard (workers, containers, players)", priority = 43)]
+        [MenuItem("Nebula/Mesh/Open Nebula Dashboard (workers, containers, players)", priority = 43)]
         public static void OpenDashboard()
         {
             var cfg = NebulaConfig.Load();

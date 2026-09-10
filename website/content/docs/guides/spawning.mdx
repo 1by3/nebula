@@ -141,7 +141,7 @@ Workers do not share memory and the control plane is never on the per-tick path,
 Settings come from three places:
 
 - The orchestrator seeds them at startup from `-nebula-settings key=value,key=value`. `nebula start --npcs N` (and `nebula deploy --npcs N`) passes `npcs=N` this way.
-- The dashboard edits them (the settings fields on the page, or `POST /api/settings` with `{"key":"npcs","value":"128"}`). See [Orchestrator and dashboard](/docs/guides/orchestrator-and-dashboard).
+- The Nebula Dashboard edits them (the settings fields on the page, or `POST /api/settings` with `{"key":"npcs","value":"128"}`). See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
 - Game code on a worker writes them with `SetSetting`. The sample's in-game `npcs 200` command reaches the pawn's worker as an ordinary `ServerRpc`, and that worker writes the setting.
 
 Settings are a coordination channel, not a state store: never write them per tick, and never put anything in them that a specific entity owns.
@@ -203,5 +203,5 @@ Indices are labels for the shrink rule and the pawn's name; after a refill two N
 <Cards>
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What happens on the tick after you spawn into a foreign container." />
   <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="State that travels only with the handover, and the per-tick sync channel." />
-  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Where settings are seeded and edited." />
+  <Card title="Orchestrator and Nebula Dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Where settings are seeded and edited." />
 </Cards>

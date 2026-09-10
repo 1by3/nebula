@@ -194,7 +194,7 @@ public sealed class HetznerMesh
         };
         if (o.Verbose) args.Add("-nebula-verbose");
         string unit = $@"[Unit]
-Description=Nebula orchestrator (dashboard + gateway + Hetzner worker host)
+Description=Nebula orchestrator (Nebula Dashboard + gateway + Hetzner worker host)
 After=network-online.target
 Wants=network-online.target
 

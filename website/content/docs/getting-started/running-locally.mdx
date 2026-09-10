@@ -67,7 +67,7 @@ nebula logs gateway -n 200
 
 `status` prints the workers with the containers they own, how many players, bots and NPCs each simulates, and the orchestrator's recent events. `logs` reads a role's log: `orchestrator`, `gateway`, `w1..wN` or `bot1..`. Logs live next to the build in `Logs/`.
 
-The dashboard at `http://localhost:7080/` shows the same and more: every worker with its authoritative and ghost entity counts, tick time and heartbeat age; the container-to-worker table with lease epochs; the gateway; mesh settings; and the event log. Its buttons add a worker, remove one gracefully, kill one (a simulated crash; it is relaunched) and force a rebalance. The same operations are an HTTP API, described in [Orchestrator and dashboard](/docs/guides/orchestrator-and-dashboard).
+The Nebula Dashboard at `http://localhost:7080/` shows the same and more: the gateway address clients connect to, with a copy button; every worker with its authoritative and ghost entity counts, tick time and heartbeat age; the container-to-worker table with lease epochs; mesh settings; and the event log. Its buttons add a worker, remove one gracefully, kill one (a simulated crash; it is relaunched) and force a rebalance. The same operations are an HTTP API, described in [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
 
 In game, F3 toggles the technical overlay: tick, RTT and input lead, your container and its worker, handovers observed, and the container-to-worker table.
 

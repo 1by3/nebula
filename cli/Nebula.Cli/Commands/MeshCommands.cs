@@ -19,7 +19,7 @@ workers. Join from the Editor (Play) or with the client build. Defaults come fro
         new OptionSpec("workers", true, "worker processes (default from nebula.json, 4)", "N"),
         new OptionSpec("npcs", true, "worker-simulated NPCs spread across the mesh (default 0)", "N"),
         new OptionSpec("bots", true, "headless bot clients that roam and shoot (default 0; each is a full client process)", "N"),
-        new OptionSpec("open-ui", false, "open the mesh dashboard in the browser once it is up"),
+        new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
         new OptionSpec("skip-publish", false, "do not re-publish the control-plane module"),
     };
     public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --npcs 128" };
@@ -61,14 +61,14 @@ public sealed class StatusCommand : Command
     public override string Usage => "[--cloud]";
     public override OptionSpec[] Options => new[]
     {
-        new OptionSpec("cloud", false, "the deployed mesh (Hetzner servers + the remote dashboard) instead of the local one"),
+        new OptionSpec("cloud", false, "the deployed mesh (Hetzner servers + its Nebula Dashboard) instead of the local one"),
         new OptionSpec("json", false, "print the raw /api/state JSON"),
     };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
         var project = ctx.RequireProject();
-        string url;
+        string url, gateway;
         if (args.Has("cloud"))
         {
             var hz = ctx.Config.Hetzner;
@@ -78,11 +78,14 @@ public sealed class StatusCommand : Command
             mesh.PrintServers(servers);
             var orch = servers.FirstOrDefault(s => s["name"]?.ToString() == mesh.OrchestratorName);
             if (orch == null) { Ui.Warn("no orchestrator server; run `nebula deploy`"); return 1; }
-            url = $"http://{HetznerMesh.PublicIp(orch)}:{mesh.DashboardPort}/";
+            string ip = HetznerMesh.PublicIp(orch);
+            url = $"http://{ip}:{mesh.DashboardPort}/";
+            gateway = $"{ip}:{mesh.GatewayPort}";
         }
         else
         {
             url = $"http://localhost:{project.File.Mesh.DashboardPort}/";
+            gateway = $"127.0.0.1:{project.File.Mesh.GatewayPort}";
         }
         Ui.Blank();
         var state = LocalMesh.FetchState(url);
@@ -92,7 +95,10 @@ public sealed class StatusCommand : Command
             return 1;
         }
         if (args.Has("json")) { Console.WriteLine(state.ToJsonString(CliConfig.Json)); return 0; }
+        // Prefer the address the orchestrator actually hands its gateway; older builds do not report it.
+        if (state["gatewayAddress"]?.ToString() is { Length: > 0 } advertised) gateway = advertised;
         Ui.Info($"dashboard {url}");
+        Ui.Info($"gateway   {gateway}   (client: {project.File.Executable} -nebula-role client -nebula-gateway {gateway})");
         LocalMesh.PrintState(state);
         return 0;
     }

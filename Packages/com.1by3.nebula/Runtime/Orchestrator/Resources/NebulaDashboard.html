@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nebula orchestrator</title>
+<title>Nebula Dashboard</title>
 <style>
   :root {
     --bg: #12141a; --panel: #1a1d26; --panel-2: #21252f; --line: #2c313d;
@@ -64,15 +64,28 @@
   #banner.show { display: block; }
   #toast { position: fixed; right: 20px; bottom: 20px; background: #3a1f22; color: #ffb4b7; border: 1px solid #5a2a2e; padding: 10px 14px; border-radius: 8px; display: none; max-width: 420px; }
   #toast.show { display: block; }
+  #toast.ok { background: #1c3a2b; color: #b4f0cf; border-color: #2a5a40; }
   .muted { color: var(--ink-3); }
+  .gateway { display: inline-flex; align-items: center; gap: 8px; padding: 3px 3px 3px 11px; border: 1px solid var(--accent); border-radius: 9px; background: var(--panel-2); }
+  .gateway .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+  .gateway.ok .dot { background: var(--ok); } .gateway.bad .dot { background: var(--bad); }
+  .gateway .label { font-size: 12px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .6px; }
+  .gateway input { width: 22ch; height: 30px; padding: 0 8px; font: 600 15px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  .gateway input:disabled { opacity: 1; -webkit-text-fill-color: var(--ink); }
+  .gateway button { height: 30px; padding: 0 12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Nebula orchestrator</h1>
+  <h1>Nebula Dashboard</h1>
   <span class="sub" id="orchId">—</span>
   <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
   <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
+  <div class="gateway" id="gwBox">
+    <span class="dot"></span><span class="label">Gateway</span>
+    <input id="gwAddress" type="text" value="" disabled aria-label="Gateway address">
+    <button id="btnCopyGateway" class="primary">Copy</button>
+  </div>
   <span class="sub" id="updated" style="margin-left:auto"></span>
 </header>
 <div id="banner">Lost contact with the orchestrator. Retrying…</div>
@@ -174,6 +187,12 @@
     const cp = $('cpPill'); cp.className = 'pill ' + (s.controlPlaneConnected ? 'ok' : 'bad');
     cp.lastElementChild.textContent = s.controlPlaneConnected ? 'control plane connected' : 'control plane disconnected';
     $('updated').textContent = 'updated ' + fmtTime(s.serverTimeUtc);
+    const gwAddress = s.gatewayAddress || (s.gateways[0] && s.gateways[0].address) || '';
+    const gwLive = s.gateways.some(g => g.heartbeatAgeSeconds <= s.workerTimeoutSeconds);
+    $('gwAddress').value = gwAddress;
+    $('btnCopyGateway').disabled = !gwAddress;
+    const gb = $('gwBox'); gb.className = 'gateway ' + (gwLive ? 'ok' : 'bad');
+    gb.title = (gwLive ? 'Gateway registered. ' : 'Gateway not registered. ') + 'Clients connect here: enter it on the title screen, or pass -nebula-role client -nebula-gateway ' + (gwAddress || '<address>');
 
     $('sLive').textContent = s.totals.liveWorkers;
     $('sDesired').textContent = s.desiredWorkers;
@@ -241,8 +260,8 @@
   }
 
   let toastTimer = 0;
-  function toast(msg) {
-    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  function toast(msg, ok) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show'); t.classList.toggle('ok', !!ok);
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
   }
 
@@ -273,6 +292,23 @@
     }
   }
 
+  $('btnCopyGateway').onclick = () => {
+    const a = $('gwAddress').value;
+    if (!a) return;
+    const done = () => toast('copied ' + a, true);
+    // navigator.clipboard needs a secure context (the cloud dashboard is plain http) and can be denied: fall back to execCommand.
+    const legacy = () => {
+      const ta = document.createElement('textarea');
+      ta.value = a; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+      ok ? done() : toast('copy failed; the gateway is ' + a);
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(a).then(done, legacy);
+    else legacy();
+  };
   $('btnPlus').onclick = () => post('/api/workers/add');
   $('btnNewSetting').onclick = () => { const k = $('newKey').value.trim(); if (!k) return; post('/api/settings', { key: k, value: $('newValue').value }); $('newKey').value = ''; $('newValue').value = ''; };
   $('settings').addEventListener('click', (ev) => {

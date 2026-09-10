@@ -1,11 +1,11 @@
 ---
-title: Orchestrator, dashboard and worker hosts
-description: How the orchestrator keeps workers running and containers assigned, what the dashboard and its HTTP API expose, and how worker hosts decide where a worker runs.
+title: Orchestrator, Nebula Dashboard and worker hosts
+description: How the orchestrator keeps workers running and containers assigned, what the Nebula Dashboard and its HTTP API expose, and how worker hosts decide where a worker runs.
 ---
 
 The orchestrator is the one process that decides *how many* workers exist and *which containers* each of them owns. It never simulates anything and it is never on the per-tick path: workers and the gateway talk to each other directly, and the orchestrator only writes leases to the control plane and starts or stops worker instances. Every box in the mesh is the same player build started with a different `-nebula-role`; the orchestrator is `-nebula-role orchestrator`.
 
-This page covers [`NebulaOrchestrator`](/docs/reference/orchestrator/nebula-orchestrator), the dashboard served by [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server), and the [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) abstraction that puts workers on local processes or cloud VMs. For the leases themselves see [Control plane](/docs/guides/control-plane); for what happens on a worker when a container moves see [Containers and handover](/docs/concepts/containers-and-handover).
+This page covers [`NebulaOrchestrator`](/docs/reference/orchestrator/nebula-orchestrator), the Nebula Dashboard served by [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server), and the [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) abstraction that puts workers on local processes or cloud VMs. For the leases themselves see [Control plane](/docs/guides/control-plane); for what happens on a worker when a container moves see [Containers and handover](/docs/concepts/containers-and-handover).
 
 ## What the orchestrator does
 
@@ -48,9 +48,9 @@ Two shortcuts exist. If the host reports the instance gone (process exited, VM d
 
 The gateway holds nothing authoritative, so a dead worker's entities are dropped and its players are respawned on whichever worker now owns their container.
 
-## The dashboard
+## The Nebula Dashboard
 
-The orchestrator serves a single-page dashboard from `Resources/NebulaDashboard.html` on `DashboardPort` (default 7080, `-nebula-dashboard-port`; 0 disables it). It binds to `localhost` unless told otherwise:
+The orchestrator serves the Nebula Dashboard, a single page from `Resources/NebulaDashboard.html`, on `DashboardPort` (default 7080, `-nebula-dashboard-port`; 0 disables it). It binds to `localhost` unless told otherwise:
 
 | Switch | Effect |
 | --- | --- |

@@ -54,7 +54,7 @@ namespace Nebula
         public float DeadWorkerReplaceDelaySeconds = 8f;
         [Tooltip("Seconds a retiring worker gets to hand its entities over before it is killed regardless.")]
         public float WorkerDrainTimeoutSeconds = 10f;
-        [Tooltip("Port of the orchestrator's web dashboard (http://localhost:<port>/). 0 disables it.")]
+        [Tooltip("Port of the Nebula Dashboard the orchestrator serves (http://localhost:<port>/). 0 disables it.")]
         public ushort DashboardPort = 7080;
 
         [Header("Meshing")]

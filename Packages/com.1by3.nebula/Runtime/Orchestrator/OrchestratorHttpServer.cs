@@ -36,7 +36,7 @@ namespace Nebula
             public static Response Error(int status, string message) => Json(status, $"{{\"ok\":false,\"error\":{JsonWriter.Quote(message)}}}");
         }
 
-        private const string FallbackPage = "<!doctype html><title>Nebula</title><body style='font-family:sans-serif;padding:2em'><h1>Nebula orchestrator</h1><p>The dashboard page (Resources/NebulaDashboard.html) is missing from this build. The API still works: GET <a href='/api/state'>/api/state</a>.</p></body>";
+        private const string FallbackPage = "<!doctype html><title>Nebula</title><body style='font-family:sans-serif;padding:2em'><h1>Nebula Dashboard</h1><p>The dashboard page (Resources/NebulaDashboard.html) is missing from this build. The API still works: GET <a href='/api/state'>/api/state</a>.</p></body>";
 
         public string Url { get; }
 

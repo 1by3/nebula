@@ -21,7 +21,7 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
         new OptionSpec("target", true, "deploy target (default from nebula.json: hetzner)", "name"),
         new OptionSpec("workers", true, "worker VMs the orchestrator keeps running (default from nebula.json, 4)", "N"),
         new OptionSpec("npcs", true, "worker-simulated NPCs at start (default from nebula.json)", "N"),
-        new OptionSpec("open-ui", false, "open the mesh dashboard once it answers"),
+        new OptionSpec("open-ui", false, "open the Nebula Dashboard once it answers"),
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
         new OptionSpec("skip-publish", false, "do not publish the control-plane module"),
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),

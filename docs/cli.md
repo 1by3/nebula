@@ -41,7 +41,7 @@ nebula init                  install Nebula into the Unity project you are in (P
 nebula build [--linux]       build the executable every role runs (host player, or the Linux server + tarball)
 nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui]
 nebula stop
-nebula status [--cloud]      workers, containers, players/bots/NPCs, recent events
+nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, recent events
 nebula logs [role] [-n N] [--follow] [--cloud]
 nebula config hetzner|spacetime|unity|source|show
 nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui]

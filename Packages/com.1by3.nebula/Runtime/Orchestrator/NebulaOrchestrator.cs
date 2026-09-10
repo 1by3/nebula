@@ -660,6 +660,8 @@ namespace Nebula
             w.Prop("host", _host.Name);
             w.Prop("hostReady", _host.IsReady);
             w.Prop("hostError", _host.InitializationError ?? "");
+            // The address clients connect to (the one the spawned gateway registers).
+            w.Prop("gatewayAddress", $"{Config.GatewayAddress}:{Config.GatewayPort}");
             w.Prop("desiredWorkers", DesiredWorkers);
             w.Prop("maxWorkers", MaxWorkers);
             w.Prop("rebalances", Rebalances);

@@ -177,7 +177,7 @@ Billing stops when the VMs are deleted. The network, firewalls and ssh key cost 
 | `nebula logs --cloud w2` | On that worker's VM: the tail of `/var/log/nebula-bootstrap.log`, then `/var/log/nebula-worker.log`. Worker VMs are found by their `nebula-worker` label. |
 | `nebula logs --cloud ... -n 200` | More lines. `--follow` is local only. |
 
-The dashboard at `http://<public ip>:7080/` works exactly as it does locally: change the desired count, add, remove or kill workers, edit settings such as `npcs`. Each change creates or deletes real VMs. See [Orchestrator, dashboard and worker hosts](/docs/guides/orchestrator-and-dashboard).
+The Nebula Dashboard at `http://<public ip>:7080/` works exactly as it does locally: copy the gateway address for your client, change the desired count, add, remove or kill workers, edit settings such as `npcs`. Each change creates or deletes real VMs. See [Orchestrator, Nebula Dashboard and worker hosts](/docs/guides/orchestrator-and-dashboard).
 
 Log file paths on the VMs, for when you ssh in yourself (`ssh -i ~/.ssh/nebula_hetzner root@<ip>`):
 
