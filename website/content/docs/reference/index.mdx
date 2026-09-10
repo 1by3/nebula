@@ -1,0 +1,217 @@
+---
+title: API reference
+description: Every public type in the Nebula runtime, generated from the source.
+---
+
+This section is generated from the XML documentation comments in `Packages/com.1by3.nebula` by `website/tools/ApiGen` (run `npm run gen:api` in `website/`). It covers the runtime assembly, the Editor tooling and the SpacetimeDB control-plane module. Hand-written explanations of how the pieces fit together live in the [guides](/docs/guides/network-behaviour).
+
+## Core
+
+Gameplay API: identities, behaviours, variables, RPCs, prediction, the sync components and project configuration.
+
+| Type | Summary |
+| --- | --- |
+| [AuthorityMode](/docs/reference/core/authority-mode) | Enum. Who is the source of truth for a synced component (NGO's AuthorityModes). |
+| [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on whichever worker has authority over the entity, no matter which worker calls it. |
+| [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
+| [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
+| [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
+| [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
+| [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
+| [NebulaGameMode](/docs/reference/core/nebula-game-mode) | Abstract class. Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. |
+| [NebulaLog](/docs/reference/core/nebula-log) | Static class. Thin logging wrapper so every Nebula line is greppable by prefix in headless logs. |
+| [NebulaRuntime](/docs/reference/core/nebula-runtime) | Static class. Process-wide role context. |
+| [NetworkAnimator](/docs/reference/core/network-animator) | Class. Replicates an Animator the way NGO's NetworkAnimator does. |
+| [NetworkBehaviour](/docs/reference/core/network-behaviour) | Abstract class. Base class for meshed gameplay code. |
+| [NetworkIdentity](/docs/reference/core/network-identity) | Class. Marks a GameObject as a meshed entity. |
+| [NetworkPrefabs](/docs/reference/core/network-prefabs) | Static class. Prefab id table shared by every process. |
+| [NetworkRigidbody](/docs/reference/core/network-rigidbody) | Class. Puts a Unity Rigidbody under the mesh's authority model. |
+| [NetworkSyncBehaviour](/docs/reference/core/network-sync-behaviour) | Abstract class. Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority choice: NetworkTransform and NetworkAnimator. |
+| [NetworkTime](/docs/reference/core/network-time) | Static class. Tick model. |
+| [NetworkTransform](/docs/reference/core/network-transform) | Class. Replicates a Transform the way NGO's NetworkTransform does: per-axis position/rotation/scale selection, change thresholds, local or world space, server or owner authority, buffered tick interpolation or smooth damping on the receiving si... |
+| [NetworkVariable\<T\>](/docs/reference/core/network-variable) | Class. Replicated field, NGO-style: declare it on a NetworkBehaviour and Nebula discovers it. |
+| [NetworkVariableBase](/docs/reference/core/network-variable-base) | Abstract class.  |
+| [PredictedBehaviour\<TInput\>](/docs/reference/core/predicted-behaviour) | Abstract class. A server-authoritative, client-predicted behaviour (the player controller, typically). |
+| [PredictedBehaviourBase](/docs/reference/core/predicted-behaviour-base) | Abstract class. Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour\<TInput\>. |
+| [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
+| [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
+| [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
+
+## Containers
+
+The designer-authored authority volumes and their registry.
+
+| Type | Summary |
+| --- | --- |
+| [Container](/docs/reference/containers/container) | Class. A designer-authored unit of authority: a box volume with its own local coordinate space. |
+| [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every Container, indexed deterministically so all processes agree on indices, plus adjacency. |
+
+## World partition
+
+Cell grid, additive streaming and the floating origin (usable without Nebula), plus the baked container manifest and per-role cell streaming.
+
+| Type | Summary |
+| --- | --- |
+| [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
+| [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's side of a partitioned world (WorldDefinition + WorldContainerManifest): instantiates the manifest's container tree for the registry, owns the WorldStreamer, keeps the virtual containers and every entity's cached positions in ste... |
+| [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them (seam physics and ghosts need the neighbo... |
+| [WorldAnchor](/docs/reference/world/world-anchor) | Class. Anchor component: keeps the cells around this transform loaded. |
+| [WorldCell](/docs/reference/world/world-cell) | Class. Marks the root of a cell scene with its grid coordinate. |
+| [WorldContainerManifest](/docs/reference/world/world-container-manifest) | Class. The baked container tree of a partitioned world: one container per cell plus every hand-authored Container found inside the cell scenes, with cell-local poses. |
+| [WorldDefinition](/docs/reference/world/world-definition) | Class. A world partitioned into a 3D grid of cells, each authored as its own additive scene. |
+| [WorldGrid](/docs/reference/world/world-grid) | Static class. Grid arithmetic shared by the streamer, the editor tooling and Nebula's container integration. |
+| [WorldOrigin](/docs/reference/world/world-origin) | Static class. The floating origin: which cell currently sits at Unity's (0,0,0). |
+| [WorldStreamer](/docs/reference/world/world-streamer) | Class. Loads and unloads cell scenes additively and keeps them placed relative to the floating origin. |
+
+## Worker
+
+The simulation process: spawning, ghosting, handover, the per-tick loop.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. The sim worker: a headless Unity process leased authority over a set of containers. |
+
+## Client
+
+The game client: gateway connection, prediction driver, title screen.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
+| [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. The human client's front door: a small IMGUI panel to type the gateway address and a display name before connecting, and a way back when the connection drops. |
+
+## Gateway
+
+The one address clients connect to; routes inputs and re-emits replication.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaGateway](/docs/reference/gateway/nebula-gateway) | Class. The one address clients connect to. |
+
+## Orchestrator
+
+Worker lifecycle, container assignment, the dashboard and worker hosts.
+
+| Type | Summary |
+| --- | --- |
+| [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
+| [HetznerWorkerHost](/docs/reference/orchestrator/hetzner-worker-host) | Class. One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` |
+| [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
+| [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
+| [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
+| [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
+| [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
+| [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
+| [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs every worker as a child process of the orchestrator, from the same executable. |
+| [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum.  |
+| [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |
+
+## Control plane
+
+The IControlPlane abstraction and its SpacetimeDB and in-process implementations.
+
+| Type | Summary |
+| --- | --- |
+| [ControlPlaneExtensions](/docs/reference/control-plane/control-plane-extensions) | Static class.  |
+| [GatewayInfo](/docs/reference/control-plane/gateway-info) | Class.  |
+| [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Everything the mesh needs from the control plane: a node registry and container leases with epochs. |
+| [LeaseInfo](/docs/reference/control-plane/lease-info) | Class.  |
+| [LeaseState](/docs/reference/control-plane/lease-state) | Static class.  |
+| [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. In-process control plane with the exact semantics of the SpacetimeDB module (see Module~/Lib.cs), for single-process runs and tests. |
+| [SpacetimeControlPlane](/docs/reference/control-plane/spacetime-control-plane) | Class. IControlPlane over the SpacetimeDB module in Assets/Nebula/SpacetimeDB/Module~. |
+| [WorkerInfo](/docs/reference/control-plane/worker-info) | Class.  |
+| [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
+| [WorkerStatus](/docs/reference/control-plane/worker-status) | Static class.  |
+
+## Bootstrap
+
+Process entry point and role selection.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaBootstrap](/docs/reference/bootstrap/nebula-bootstrap) | Class. Entry point for every Nebula process. |
+| [NebulaRoles](/docs/reference/bootstrap/nebula-roles) | Enum.  |
+
+## Serialization
+
+NetworkWriter, NetworkReader and type-driven serialization.
+
+| Type | Summary |
+| --- | --- |
+| [INetworkSerializable](/docs/reference/serialization/i-network-serializable) | Interface. Implement on structs/classes you want to put in a NetworkVariable\<T\> or an RPC argument. |
+| [NetworkReader](/docs/reference/serialization/network-reader) | Class. Counterpart of NetworkWriter. |
+| [NetworkSerialization](/docs/reference/serialization/network-serialization) | Static class. Type-driven (de)serialisation used by NetworkVariables and RPC arguments. |
+| [NetworkWriter](/docs/reference/serialization/network-writer) | Class. Growable little-endian byte writer used for every Nebula message. |
+
+## Transport
+
+The ITransport seam and the LiteNetLib implementation.
+
+| Type | Summary |
+| --- | --- |
+| [Delivery](/docs/reference/transport/delivery) | Enum. Delivery classes every Nebula link needs. |
+| [ITransport](/docs/reference/transport/i-transport) | Interface. The seam between Nebula and whatever moves bytes. |
+| [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
+| [TransportEvent](/docs/reference/transport/transport-event) | Struct.  |
+
+## Protocol
+
+Wire messages exchanged between workers, gateway and clients.
+
+| Type | Summary |
+| --- | --- |
+| [AuthorityTransferMsg](/docs/reference/protocol/authority-transfer-msg) | Struct. The authority event. |
+| [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
+| [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct.  |
+| [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class.  |
+| [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct.  |
+| [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct.  |
+| [EntityFlags](/docs/reference/protocol/entity-flags) | Enum.  |
+| [EntityRpcMsg](/docs/reference/protocol/entity-rpc-msg) | Struct.  |
+| [EntitySpawnMsg](/docs/reference/protocol/entity-spawn-msg) | Struct. Full description of an entity. |
+| [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's pose inside a WorldState/GhostState batch. |
+| [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
+| [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct.  |
+| [HelloFlags](/docs/reference/protocol/hello-flags) | Enum.  |
+| [HelloMsg](/docs/reference/protocol/hello-msg) | Struct.  |
+| [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
+| [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
+| [PeerRole](/docs/reference/protocol/peer-role) | Enum.  |
+| [PingMsg](/docs/reference/protocol/ping-msg) | Struct.  |
+| [PongMsg](/docs/reference/protocol/pong-msg) | Struct.  |
+| [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct.  |
+| [WelcomeMsg](/docs/reference/protocol/welcome-msg) | Struct.  |
+| [WorldStateMsg](/docs/reference/protocol/world-state-msg) | Static class. Batched transforms for one tick from one worker. |
+
+## Debug
+
+The in-game status overlay.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaDebugOverlay](/docs/reference/debug/nebula-debug-overlay) | Class. IMGUI status overlay for every role. |
+| [NebulaProfiler](/docs/reference/debug/nebula-profiler) | Static class. Where a worker's tick goes. |
+| [ProfileSection](/docs/reference/debug/profile-section) | Class. A named stretch of code whose cost is accumulated by NebulaProfiler. |
+
+## Editor
+
+Unity Editor tooling: builds, local mesh, control-plane helpers, the World window.
+
+| Type | Summary |
+| --- | --- |
+| [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the executables every Nebula role runs from. |
+| [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client. |
+| [WorldAssets](/docs/reference/editor/world-assets) | Static class. Finds world definitions and manifests in the project and maps scenes back to cells. |
+| [WorldAuthoring](/docs/reference/editor/world-authoring) | Static class. Create, open, close, delete and populate cell scenes. |
+| [WorldBaker](/docs/reference/editor/world-baker) | Static class. Builds the WorldContainerManifest: one container per cell plus every Container authored inside the cell scenes, with cell-local poses, in wire order. |
+| [WorldEditorPlacement](/docs/reference/editor/world-editor-placement) | Static class. Keeps cell scenes usable in the editor even though they are authored cell-local. |
+| [WorldEditorWindow](/docs/reference/editor/world-editor-window) | Class. The World window (Nebula \> World): a map of the cell grid, one vertical layer at a time. |
+
+## SpacetimeDB module
+
+Tables and reducers of the control-plane module.
+
+| Type | Summary |
+| --- | --- |
+| [Module](/docs/reference/spacetime-module/module) | Static class.  |
+

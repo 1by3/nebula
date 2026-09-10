@@ -1,0 +1,16 @@
+{
+    "name": "Nebula.Spacetime",
+    "rootNamespace": "Nebula.Spacetime",
+    "references": [
+        "com.clockworklabs.spacetimedbsdk"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,33 @@
+---
+title: "IRpcSink"
+description: "Where RPCs and state changes go once a behaviour has produced them."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaRuntime.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaRuntime.cs)</div>
+
+```csharp
+public interface IRpcSink
+```
+
+Where RPCs and state changes go once a behaviour has produced them. Implemented by the worker and the client.
+
+## Methods
+
+### SendClientRpc [#sendclientrpc]
+
+```csharp
+void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId);
+```
+
+### SendServerRpc [#sendserverrpc]
+
+```csharp
+void SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
+```
+
+### SendAuthorityRpc [#sendauthorityrpc]
+
+```csharp
+void SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
+```
+

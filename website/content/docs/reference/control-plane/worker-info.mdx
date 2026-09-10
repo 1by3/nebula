@@ -1,0 +1,101 @@
+---
+title: "WorkerInfo"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs)</div>
+
+```csharp
+public sealed class WorkerInfo
+```
+
+## Fields
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+### WorkerIndex [#workerindex]
+
+```csharp
+public uint WorkerIndex;
+```
+
+### Address [#address]
+
+```csharp
+public string Address;
+```
+
+### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+### Status [#status]
+
+```csharp
+public string Status;
+```
+
+### LastHeartbeat [#lastheartbeat]
+
+```csharp
+public DateTime LastHeartbeat;
+```
+
+### TickCount [#tickcount]
+
+```csharp
+public ulong TickCount;
+```
+
+### TickMs [#tickms]
+
+```csharp
+public float TickMs;
+```
+
+### EntityCount [#entitycount]
+
+```csharp
+public uint EntityCount;
+```
+
+Every entity resident on the worker (authoritative + ghosts).
+
+### AuthoritativeCount [#authoritativecount]
+
+```csharp
+public uint AuthoritativeCount;
+```
+
+### GhostCount [#ghostcount]
+
+```csharp
+public uint GhostCount;
+```
+
+### PlayerCount [#playercount]
+
+```csharp
+public uint PlayerCount;
+```
+
+Authoritative entities owned by a human client / by a bot client / by nobody (server-driven).
+
+### BotCount [#botcount]
+
+```csharp
+public uint BotCount;
+```
+
+### ServerDrivenCount [#serverdrivencount]
+
+```csharp
+public uint ServerDrivenCount;
+```
+

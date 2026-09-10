@@ -1,0 +1,181 @@
+---
+title: "WorldDefinition"
+description: "A world partitioned into a 3D grid of cells, each authored as its own additive scene."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldDefinition.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldDefinition.cs)</div>
+
+```csharp
+[CreateAssetMenu(menuName = "Nebula/World Definition", fileName = "World")]
+public sealed class WorldDefinition : ScriptableObject
+```
+
+A world partitioned into a 3D grid of cells, each authored as its own additive scene. Cells are authored **cell-local**: everything in a cell scene sits around that scene's own origin, and at runtime the [`WorldStreamer`](/docs/reference/world/world-streamer) places the cell at its grid position relative to the current [`WorldOrigin`](/docs/reference/world/world-origin). Nothing ever needs an absolute world coordinate, so a world can be far larger than float precision allows.
+
+Cell `(x, y, z)` is centred on `(x, y, z) * CellSize`: cell (0,0,0) covers ±CellSize/2 on every axis, which is exactly how a scene authored around the origin already looks. A flat world is a single row of cells on Y; a world that shards verticality uses more.
+
+## Fields
+
+### WorldName [#worldname]
+
+```csharp
+public string WorldName = "World";
+```
+
+Used to name cell scenes: \<WorldName\>\_\<x\>\_\<y\>\_\<z\>.unity.
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize = new Vector3(256f, 256f, 256f);
+```
+
+Size of one cell in metres. Adjustable per world; every cell of a world has the same size.
+
+### SceneFolder [#scenefolder]
+
+```csharp
+public string SceneFolder = "Assets/Scenes/World";
+```
+
+Editor: folder new cell scenes are created in.
+
+### Cells [#cells]
+
+```csharp
+public List<CellEntry> Cells = new List<CellEntry>();
+```
+
+## Methods
+
+### Invalidate [#invalidate]
+
+```csharp
+public void Invalidate();
+```
+
+Drop the coordinate index (call after editing [`Cells`](#cells) in place).
+
+### HasCell [#hascell]
+
+```csharp
+public bool HasCell(Vector3Int coord);
+```
+
+### TryGetCell [#trygetcell]
+
+```csharp
+public bool TryGetCell(Vector3Int coord, out CellEntry entry);
+```
+
+### GetCell [#getcell]
+
+```csharp
+public CellEntry GetCell(Vector3Int coord);
+```
+
+### SetCell [#setcell]
+
+```csharp
+public CellEntry SetCell(Vector3Int coord, string scenePath);
+```
+
+Add or replace the entry for `coord`.
+
+### RemoveCell [#removecell]
+
+```csharp
+public bool RemoveCell(Vector3Int coord);
+```
+
+### CoordOf [#coordof]
+
+```csharp
+public Vector3Int CoordOf(Vector3 framePosition, Vector3Int origin);
+```
+
+Grid coordinate of a position expressed in the frame whose origin cell is `origin`.
+
+### FrameOrigin [#frameorigin]
+
+```csharp
+public Vector3 FrameOrigin(Vector3Int coord, Vector3Int origin);
+```
+
+Where cell `coord`'s centre sits in the frame whose origin cell is `origin`.
+
+### FrameBounds [#framebounds]
+
+```csharp
+public Bounds FrameBounds(Vector3Int coord, Vector3Int origin);
+```
+
+### TryGetExtent [#trygetextent]
+
+```csharp
+public bool TryGetExtent(out Vector3Int min, out Vector3Int max);
+```
+
+Axis-aligned extent of the defined cells in grid coordinates (min/max inclusive). False when there are none.
+
+### SceneNameFor [#scenenamefor]
+
+```csharp
+public string SceneNameFor(Vector3Int coord);
+```
+
+Scene name convention: `World_1_0_n2` for cell (1, 0, -2) of world "World".
+
+### ScenePathFor [#scenepathfor]
+
+```csharp
+public string ScenePathFor(Vector3Int coord);
+```
+
+### SceneNameOf [#scenenameof]
+
+```csharp
+public static string SceneNameOf(string scenePath);
+```
+
+### TryParseSceneName [#tryparsescenename]
+
+```csharp
+public static bool TryParseSceneName(string sceneName, out string worldName, out Vector3Int coord);
+```
+
+Parse a scene name produced by [`SceneNameFor`](#scenenamefor) back into a coordinate.
+
+## Nested types
+
+### CellEntry [#cellentry]
+
+```csharp
+[Serializable]
+public sealed class CellEntry
+```
+
+#### Fields
+
+##### Coord [#coord]
+
+```csharp
+public Vector3Int Coord;
+```
+
+##### ScenePath [#scenepath]
+
+```csharp
+public string ScenePath = "";
+```
+
+Project path of the cell's scene (Assets/.../Name.unity). The scene must be in the build settings.
+
+#### Properties
+
+##### SceneName [#scenename]
+
+```csharp
+public string SceneName { get; }
+```
+

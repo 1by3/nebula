@@ -1,0 +1,22 @@
+---
+title: "WorldEditorWindow"
+description: "The World window (Nebula > World): a map of the cell grid, one vertical layer at a time."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldEditorWindow.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldEditorWindow.cs)</div>
+
+```csharp
+public sealed class WorldEditorWindow : EditorWindow
+```
+
+The World window (Nebula \> World): a map of the cell grid, one vertical layer at a time. Click an empty cell to create its scene, a defined cell to open or close it (open cells are placed next to each other in the scene view), right-click for more. Also bakes the container manifest and moves objects from a single-scene level into cells.
+
+## Methods
+
+### Open [#open]
+
+```csharp
+[MenuItem("Nebula/World/World Window", priority = 40)]
+public static void Open();
+```
+

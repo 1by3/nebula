@@ -1,0 +1,51 @@
+---
+title: "IWorkerHandle"
+description: "One launched worker as seen by its host."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
+
+```csharp
+public interface IWorkerHandle
+```
+
+One launched worker as seen by its host. Only ever touched from the main thread.
+
+## Properties
+
+### WorkerId [#workerid]
+
+```csharp
+string WorkerId { get; }
+```
+
+### State [#state]
+
+```csharp
+WorkerHandleState State { get; }
+```
+
+### Describe [#describe]
+
+```csharp
+string Describe { get; }
+```
+
+Short human description for logs and the dashboard: "pid 1234", "hetzner srv 5551 10.0.1.4".
+
+### Address [#address]
+
+```csharp
+string Address { get; }
+```
+
+Address the worker was told to advertise, when the host knows it before the worker registers.
+
+### Reason [#reason]
+
+```csharp
+string Reason { get; }
+```
+
+Why [`State`](#state) is Exited/Failed, when known.
+

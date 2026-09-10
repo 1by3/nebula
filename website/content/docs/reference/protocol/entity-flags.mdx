@@ -1,0 +1,20 @@
+---
+title: "EntityFlags"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum EntityFlags : byte
+```
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `OwnerIsBot` | `1` | The owning client is a bot. Travels with the entity through ghosting and handover. |
+| `ServerDriven` | `2` | No owning client: the authoritative worker drives the entity itself. Travels with the entity. |
+

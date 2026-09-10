@@ -1,0 +1,207 @@
+---
+title: NetworkTransform
+description: Replicate a Transform with NGO's option set, on the entity root or any child, under server or owner authority.
+---
+
+[`NetworkTransform`](/docs/reference/core/network-transform) replicates a Transform the way NGO's does: per-axis selection, change thresholds, local or world space, server or owner authority, buffered or smooth-damped interpolation on the receiving side, teleport, half-float and quaternion compression, and reliable or unreliable delivery. It rides the sync channel described in [Physics, handover state and the sync channel](/docs/guides/physics-and-handover-state), so it works on the entity root and on any child transform (a turret, a door, a held item) alike.
+
+One thing is different from NGO, and it matters for what the component does on the root of an entity. Read that section first if you are porting a `NetworkTransform` from NGO.
+
+## The root is a special case
+
+Every entity's root position, rotation and velocity already travel in the identity's world-state stream at full tick rate to every ghost and client, and remote copies already interpolate them through `RemoteInterpolator`. A `NetworkTransform` on the entity root therefore does not send position or rotation again. On the root it adds three things:
+
+- **scale**, which the identity stream does not carry;
+- **`Teleport`**, which makes every remote copy snap instead of interpolating and clears the identity interpolator too;
+- **owner authority**, where the owning client's pose has to reach the worker somehow. In that mode the root's position and rotation do go in the chunk, but only on the owner-to-worker leg; from the worker on they travel in the identity stream as usual.
+
+On a child transform the component replicates everything you select. `IsRoot` tells you which case a given instance is in (`Identity.transform == transform`).
+
+<Callout type="info" title="You do not need a NetworkTransform on the root to move">
+An entity with only a `NetworkIdentity` already has its root pose replicated and interpolated. Add a root `NetworkTransform` when you need scale, teleports or owner authority; add child ones for articulated parts.
+</Callout>
+
+## Options
+
+The inspector groups the options as the source does. Defaults are in the third column.
+
+### Axes to synchronize
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `SyncPositionX` / `Y` / `Z` | true | Axes left off are not sent; the receiver keeps its own value for them. |
+| `SyncRotAngleX` / `Y` / `Z` | true | Euler axes. Ignored when `UseQuaternionSynchronization` is on (all three always travel). |
+| `SyncScaleX` / `Y` / `Z` | true | Scale is always local scale. |
+
+### Thresholds
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `PositionThreshold` | 0.001 | Metres the position must move since the last send. |
+| `RotAngleThreshold` | 0.01 | Degrees (`Quaternion.Angle`) since the last send. |
+| `ScaleThreshold` | 0.01 | Distance in scale space since the last send. |
+
+Thresholds compare against what was last sent, not the previous tick's value, so slow drift still accumulates into an update.
+
+### Space and delivery
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `InLocalSpace` | false | Replicate `localPosition` / `localRotation` relative to the parent instead of world values. Scale is local either way. |
+| `UseUnreliableDeltas` | false | Send on the sequenced (unreliable) channel with a keyframe every `NetworkIdentity.SyncKeyframeInterval` ticks. Off: reliable-ordered. |
+
+World-space values are container-local on the wire, like the identity stream: the authority converts with `Container.ToLocal` and the receiver resolves them with the container index carried by the same tick's message (`NetworkIdentity.SyncContainer`). You never see container space in your own code.
+
+### Precision
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `UseHalfFloatPrecision` | false | Positions, scales and uncompressed rotations as 16-bit halves. |
+| `UseQuaternionSynchronization` | false | Send the whole quaternion rather than the selected Euler angles. No gimbal issues; all three axes always. |
+| `UseQuaternionCompression` | false | With quaternion synchronization: smallest-three, 4 bytes per rotation. Takes precedence over half floats for the rotation. |
+
+### Interpolation (non-authoritative copies)
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `Interpolate` | true | Off: every received state is applied immediately. |
+| `Interpolation` | `Buffered` | `Buffered` or `SmoothDamp`, see below. |
+| `SlerpPosition` | false | Buffered only: `Vector3.Slerp` between samples for curved paths (an orbiting object). |
+| `PositionMaxInterpolationTime` | 0.1 | SmoothDamp only: seconds to reach the newest position. |
+| `RotationMaxInterpolationTime` | 0.1 | SmoothDamp only: seconds to reach the newest rotation. |
+| `ScaleMaxInterpolationTime` | 0.1 | SmoothDamp only: seconds to reach the newest scale. |
+
+### Authority
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `Authority` | `Server` | `AuthorityMode.Server` or `AuthorityMode.Owner`. Serialized on the base class `NetworkSyncBehaviour`; also settable in code. |
+
+## Server versus owner authority
+
+`AuthorityMode` lives on `NetworkSyncBehaviour`, the base `NetworkTransform` shares with `NetworkAnimator`.
+
+**Server** (default): the authoritative worker is the source of truth. Once per tick it runs `AuthorityTick`, compares against the last send, marks the behaviour dirty, and the worker packs the chunk into that tick's `EntityState` (to the gateway) and `GhostSyncState` (to workers holding ghosts). Every client, the owner included, follows.
+
+**Owner**: NGO's `ClientNetworkTransform`. The owning client drives the transform:
+
+<Steps>
+<Step>
+On the owning client, `NetworkSyncBehaviour.Update` runs `AuthorityTick` once per tick interval (accumulated from `Time.unscaledDeltaTime`, never more than one tick's worth per frame). If anything changed it writes a chunk and sends it in a `ServerRpc` (`RpcOwnerSyncState(byte[] chunk, bool full)`). Every `SyncKeyframeInterval`-th send from that client is a keyframe.
+</Step>
+<Step>
+The worker that holds the entity receives the RPC. Because it is the simulation, it snaps to the state at once (`ApplyOwnerState`, no interpolation), remembers the fields as pending and marks itself dirty, so the same deltas go out to everyone else on its next tick. For a root transform it also derives `NetworkIdentity.Velocity` from consecutive owner positions (clamped to 100 m/s) so remote copies can extrapolate.
+</Step>
+<Step>
+The owner's own echo comes back through the gateway. `ReadSyncState` consumes the chunk and returns before applying anything when `IsSyncAuthority` is true, so the owner never fights its own input.
+</Step>
+</Steps>
+
+The properties involved:
+
+| Property | Meaning |
+| --- | --- |
+| `IsOwnerAuthoritative` | `Authority == Owner` and a client owns the entity (`OwnerClientId != 0`). |
+| `IsSyncAuthority` | This copy is the source of truth right now: `IsOwner` under owner authority, otherwise `HasAuthority`. |
+| `IsRelayingWorker` | This worker holds the entity but the owner drives it (protected). |
+
+Handover is unaffected by the mode. The worker still moves the entity between containers; the owner's RPCs simply route to the new worker through the gateway. On a gained authority the send counter resets so the new worker opens with a keyframe.
+
+<Callout type="warn" title="NPCs fall back to server authority">
+`IsOwnerAuthoritative` requires an owning client. A server-driven entity (spawned with `SpawnServerDriven`) with `Authority = Owner` behaves as `Server`, and the worker ignores any owner chunk that arrives for it.
+</Callout>
+
+## Interpolation modes
+
+Non-authoritative copies (remote entities on a client, ghosts on a worker) present the state from `RemoteTick(renderTick)`. On a client that runs once per frame at `NetworkTime.RenderTick`, a few ticks behind the newest snapshot (`NebulaConfig.InterpolationDelayTicks`); on a worker it runs once per tick, one tick behind, before `Physics.SyncTransforms` so ghost colliders are in place for that tick's raycasts.
+
+**Buffered** (NGO's Lerp / Legacy Lerp): received states go into a 64-entry ring indexed by tick. `RemoteTick` finds the samples on either side of `renderTick` and lerps (or slerps the position with `SlerpPosition`). When `renderTick` is at or past the newest sample the newest is held; there is no velocity to extrapolate with, unlike the identity stream. Exact, a few ticks behind.
+
+**SmoothDamp** (NGO's Smooth Dampening): no buffer. Each `RemoteTick` moves the transform toward the newest known state with `Vector3.SmoothDamp` for position and scale (`PositionMaxInterpolationTime`, `ScaleMaxInterpolationTime`) and a slerp by `dt / RotationMaxInterpolationTime` for rotation, where `dt` is the tick interval on a worker and `Time.deltaTime` on a client. Never behind, never exact.
+
+Regardless of mode, a state is applied immediately (and the buffer cleared) when it is a teleport, when `Interpolate` is off, when it arrived with tick 0 (the spawn snapshot a late joiner or fresh ghost receives), or on the relaying worker.
+
+Deltas carry only the fields that changed, so the receiver keeps a merged "newest known" state and fills unsent fields and unsynchronised axes from it. Every buffered sample is therefore complete.
+
+## Teleport and SetState
+
+Both are authority only (`IsSyncAuthority`); calling them on a spawned copy without authority logs a warning and does nothing.
+
+```csharp
+// Move instantly; remotes snap instead of interpolating.
+void Teleport(Vector3 position, Quaternion rotation, Vector3 scale);
+
+// Set any subset (null leaves a part alone), in the configured space. teleport defaults to true.
+void SetState(Vector3? position = null, Quaternion? rotation = null, Vector3? scale = null, bool teleport = true);
+```
+
+Position and rotation are interpreted in the configured space (`InLocalSpace`, or world). A teleport forces position, rotation and scale into the next chunk with the `Teleport` flag, even on the root, and remote copies of a root `NetworkTransform` also clear `Identity.Interpolator` and re-seed it with the new pose so the identity stream does not lerp across the jump. `SetState(..., teleport: false)` moves the transform and lets ordinary change detection pick it up on the next `AuthorityTick`.
+
+## Hooks
+
+Two virtual methods, with NGO's names, take a `TransformState`:
+
+```csharp
+public struct TransformState
+{
+    public uint Tick;
+    public Vector3 Position;
+    public Quaternion Rotation;
+    public Vector3 Scale;
+    public bool HasPosition, HasRotation, HasScale;   // fields without a Has* flag were not part of the update
+    public bool Teleport;
+    public bool InLocalSpace;
+}
+
+// Authority, just before a state is written. Modify it to send something other than the transform.
+protected virtual void OnAuthorityPushTransformState(ref TransformState state) { }
+
+// Non-authoritative copies, after a received state was applied or buffered.
+protected virtual void OnNetworkTransformStateUpdated(ref TransformState state) { }
+```
+
+In `OnAuthorityPushTransformState` the position and rotation are in wire space (local, or container-local for world sync) and the `Has*` flags decide what goes on the wire, so clearing `HasScale` suppresses the scale for that send. In `OnNetworkTransformStateUpdated` the values have been converted back to stored space (world or local) and `Tick` is the tick they belong to (0 for a spawn snapshot).
+
+## Delivery and keyframes
+
+`SyncDelivery` is `Delivery.Sequenced` when `UseUnreliableDeltas` is on, otherwise `Delivery.ReliableOrdered`. The worker sends one message per delivery class per entity per tick, so a reliable animator and an unreliable transform on the same entity travel separately.
+
+Keyframes (`WriteSyncState(writer, full: true)`, every selected field) go out:
+
+- on the first send after this copy gained authority (a new epoch always opens with keyframes, which is what fresh ghosts and the gateway's late-joiner cache start from);
+- every `NetworkIdentity.SyncKeyframeInterval` ticks (30, half a second at 60 Hz): for an unreliable transform whether or not it is dirty, for a reliable one only if it is dirty that tick;
+- in the spawn snapshot (`WriteSyncSnapshot`).
+
+Between keyframes an unreliable transform sends deltas; a lost delta shows as a held pose until the next delta or keyframe. Reliable transforms never lose a delta and pay for it in head-of-line blocking.
+
+## NGO to Nebula
+
+| NGO | Nebula |
+| --- | --- |
+| `NetworkTransform` on the player root | `NetworkTransform` on the root, but position and rotation come from the identity stream; keep it for scale, `Teleport` or owner authority, drop it otherwise. |
+| `ClientNetworkTransform` | `NetworkTransform` with `Authority = AuthorityMode.Owner`. |
+| `AuthorityMode` (NGO 2.x) | `Authority` on `NetworkSyncBehaviour`, same two values. |
+| `OnIsServerAuthoritative()` override | Set `Authority` instead. |
+| `SyncPositionX/Y/Z`, `SyncRotAngleX/Y/Z`, `SyncScaleX/Y/Z` | Same names. |
+| `PositionThreshold`, `RotAngleThreshold`, `ScaleThreshold` | Same names. |
+| `InLocalSpace` | Same. World values travel container-local on the wire. |
+| `Interpolate` | Same. |
+| `PositionInterpolationType` and friends (Legacy Lerp / Lerp / Smooth Dampening) | One `Interpolation` field: `Buffered` (both lerps) or `SmoothDamp`. |
+| `PositionMaxInterpolationTime`, `RotationMaxInterpolationTime`, `ScaleMaxInterpolationTime` | Same names; used by `SmoothDamp` only. |
+| `SlerpPosition` | Same. |
+| `UseHalfFloatPrecision`, `UseQuaternionSynchronization`, `UseQuaternionCompression` | Same names. |
+| `UseUnreliableDeltas` | Same; keyframes every `NetworkIdentity.SyncKeyframeInterval` ticks. |
+| `Teleport(pos, rot, scale)`, `SetState(pos?, rot?, scale?, teleport)` | Same signatures. |
+| `OnAuthorityPushTransformState(ref NetworkTransformState)` | `OnAuthorityPushTransformState(ref TransformState)`. |
+| `OnNetworkTransformStateUpdated(ref NetworkTransformState)` | `OnNetworkTransformStateUpdated(ref TransformState)`. |
+| `TickSyncChildren` | No counterpart: every behaviour's chunk already rides the same per-entity per-tick message. |
+| `SwitchTransformSpaceWhenParented` | No counterpart: an entity's parent only changes with its container, and world values are already carried in container space and resolved with the same tick's container index. |
+| `CanCommitToTransform` | `IsSyncAuthority`. |
+
+## Related
+
+<Cards>
+  <Card title="NetworkAnimator" href="/docs/guides/network-animator" description="The other sync-channel component, always reliable." />
+  <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="Write your own component on the same channel." />
+  <Card title="Prediction" href="/docs/guides/prediction" description="For the local player's root you want PredictedBehaviour, not owner authority." />
+</Cards>

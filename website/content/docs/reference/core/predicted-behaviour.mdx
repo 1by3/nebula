@@ -1,0 +1,105 @@
+---
+title: "PredictedBehaviour<TInput>"
+description: "A server-authoritative, client-predicted behaviour (the player controller, typically)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/PredictedBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/PredictedBehaviour.cs)</div>
+
+```csharp
+public abstract class PredictedBehaviour<TInput> : PredictedBehaviourBase where TInput : struct, INetworkInput
+```
+
+A server-authoritative, client-predicted behaviour (the player controller, typically).
+
+- On the owning client, [`GatherInput`](#gatherinput) runs every tick, the input is sent and [`Simulate`](#simulate) is run immediately (prediction).
+- On the authoritative worker, [`Simulate`](#simulate) runs with the input for that tick. When the entity crosses to another worker the buffered inputs travel with it, so the input stream never breaks.
+- The worker reports its post-simulation state to the owner; if the client's prediction for that tick disagrees by more than [`CorrectionThreshold`](#correctionthreshold), the client rewinds and replays.
+
+## Properties
+
+### LastInput [#lastinput]
+
+```csharp
+public TInput LastInput { get; }
+```
+
+The input consumed by the most recent [`Simulate`](#simulate) call.
+
+### CorrectionThreshold [#correctionthreshold]
+
+```csharp
+protected virtual float CorrectionThreshold { get; }
+```
+
+Positional error above which the client snaps to the server's state and replays.
+
+### IsReplaying [#isreplaying]
+
+```csharp
+protected bool IsReplaying { get; }
+```
+
+True while [`Simulate`](#simulate) is re-running already-predicted ticks after a server correction. One-shot side effects that are not part of the simulated state (tracers, sounds) should be skipped while this is set.
+
+## Methods
+
+### GatherInput [#gatherinput]
+
+```csharp
+protected abstract TInput GatherInput();
+```
+
+Owning client only: sample the input for this tick.
+
+### GatherServerInput [#gatherserverinput]
+
+```csharp
+protected virtual TInput GatherServerInput(uint tick);
+```
+
+Authoritative worker only, for entities with no owning client (NPCs): produce the input for this tick. The same [`Simulate`](#simulate) then runs on it, so an NPC moves, shoots and hands over exactly like a player. Default: no input.
+
+### Simulate [#simulate]
+
+```csharp
+protected abstract void Simulate(uint tick, in TInput input, float deltaTime);
+```
+
+Advance the entity by one tick. Must be a pure function of (current state, input): it runs on the server, on the predicting client, and again on the client during a replay.
+
+### WriteState [#writestate]
+
+```csharp
+protected virtual void WriteState(NetworkWriter writer);
+```
+
+State the owner needs to reconcile. Default: position, rotation, velocity.
+
+### ReadState [#readstate]
+
+```csharp
+protected virtual void ReadState(NetworkReader reader);
+```
+
+### OnCorrected [#oncorrected]
+
+```csharp
+protected virtual void OnCorrected(float magnitude);
+```
+
+Called on the client after a correction was applied (for effects/telemetry).
+
+### OnOriginShifted [#onoriginshifted]
+
+```csharp
+public override void OnOriginShifted(Vector3 delta);
+```
+
+The prediction history holds frame positions; keep them valid across an origin shift. Call base when overriding.
+
+### NetworkTick [#networktick]
+
+```csharp
+public sealed override void NetworkTick(uint tick, float deltaTime);
+```
+

@@ -1,0 +1,67 @@
+---
+title: "SyncStateCodec"
+description: "Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: [count]{[behaviourIndex][flags][len:ushort][chunk]}."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SyncState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SyncState.cs)</div>
+
+```csharp
+public static class SyncStateCodec
+```
+
+Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: `[count]{[behaviourIndex][flags][len:ushort][chunk]}`. Each chunk is bounded so a behaviour that reads too much or too little cannot corrupt its neighbours. Kept free of NetworkIdentity so the gateway can cache keyframes without instantiating anything.
+
+## Methods
+
+### BeginEnvelope [#beginenvelope]
+
+```csharp
+public static int BeginEnvelope(NetworkWriter w);
+```
+
+### EndEnvelope [#endenvelope]
+
+```csharp
+public static void EndEnvelope(NetworkWriter w, int countAt, byte count);
+```
+
+### WriteChunk [#writechunk]
+
+```csharp
+public static void WriteChunk(NetworkWriter w, byte behaviourIndex, ChunkFlags flags, NetworkBehaviour b, bool full);
+```
+
+### WriteRawChunk [#writerawchunk]
+
+```csharp
+public static void WriteRawChunk(NetworkWriter w, byte behaviourIndex, ChunkFlags flags, ArraySegment<byte> chunk);
+```
+
+### ReadEnvelope [#readenvelope]
+
+```csharp
+public static void ReadEnvelope(NetworkReader r, ChunkVisitor visit);
+```
+
+## Nested types
+
+### ChunkFlags [#chunkflags]
+
+```csharp
+[Flags]
+public enum ChunkFlags : byte
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Full` | `1` | The chunk is a keyframe: everything the behaviour replicates, not just what changed. |
+
+### ChunkVisitor [#chunkvisitor]
+
+```csharp
+public delegate void ChunkVisitor(byte behaviourIndex, ChunkFlags flags, ArraySegment<byte> chunk);
+```
+

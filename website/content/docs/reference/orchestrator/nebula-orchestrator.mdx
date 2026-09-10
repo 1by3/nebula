@@ -1,0 +1,171 @@
+---
+title: "NebulaOrchestrator"
+description: "Spins worker processes up and down and authoritatively assigns containers to them through the control plane."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/NebulaOrchestrator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/NebulaOrchestrator.cs)</div>
+
+```csharp
+public sealed class NebulaOrchestrator : MonoBehaviour
+```
+
+Spins worker processes up and down and authoritatively assigns containers to them through the control plane. The number of workers is a live setting: [`SetDesiredWorkers`](#setdesiredworkers) (from the web dashboard, see [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server)) launches new processes or retires existing ones on the fly.
+
+Assignment policy (v1): containers are dealt as evenly as possible across live workers, sticky to their current owner so a rebalance moves as few containers as possible. Four workers and four containers means one each; three workers means one of them simulates two, and so on.
+
+Removing a worker is graceful: it is excluded from the assignment set, so the next pass moves its containers to the survivors and the worker hands its entities over through the normal per-entity handover path. Once it holds no leases and reports no authoritative entities (or the drain timeout passes) the process is killed. A worker whose heartbeat stops is declared dead, its containers are reassigned immediately, and a replacement is launched after a short delay.
+
+## Fields
+
+### MaxWorkers [#maxworkers]
+
+```csharp
+public const int MaxWorkers = 32;
+```
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### ControlPlane [#controlplane]
+
+```csharp
+public IControlPlane ControlPlane { get; }
+```
+
+### OrchestratorId [#orchestratorid]
+
+```csharp
+public string OrchestratorId { get; } = "orch1";
+```
+
+### DesiredWorkers [#desiredworkers]
+
+```csharp
+public int DesiredWorkers { get; }
+```
+
+### Rebalances [#rebalances]
+
+```csharp
+public int Rebalances { get; }
+```
+
+### LastAssignmentLog [#lastassignmentlog]
+
+```csharp
+public IReadOnlyList<string> LastAssignmentLog { get; }
+```
+
+### Events [#events]
+
+```csharp
+public IReadOnlyList<OrchestratorEvent> Events { get; }
+```
+
+### DashboardUrl [#dashboardurl]
+
+```csharp
+public string DashboardUrl { get; }
+```
+
+### HostName [#hostname]
+
+```csharp
+public string HostName { get; }
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(NebulaConfig config, IControlPlane controlPlane);
+```
+
+### SetDesiredWorkers [#setdesiredworkers]
+
+```csharp
+public void SetDesiredWorkers(int count);
+```
+
+Set how many workers should be running. Extra workers are launched; surplus ones are drained and killed (highest index first).
+
+### AddWorker [#addworker]
+
+```csharp
+public void AddWorker();
+```
+
+### SetSetting [#setsetting]
+
+```csharp
+public bool SetSetting(string key, string value);
+```
+
+Set one mesh-wide setting (dashboard). Game code on the workers decides what it means.
+
+### RemoveWorker [#removeworker]
+
+```csharp
+public bool RemoveWorker(string workerId = null);
+```
+
+Gracefully remove one worker: a specific one, or the highest-index one when `workerId` is empty.
+
+### KillWorker [#killworker]
+
+```csharp
+public bool KillWorker(string workerId);
+```
+
+Hard-kill a managed worker process (simulates a crash). The reaper reassigns its containers and relaunches it.
+
+### RequestRebalance [#requestrebalance]
+
+```csharp
+public void RequestRebalance();
+```
+
+Run an assignment pass now instead of waiting for the next 500 ms tick.
+
+### NextFreeIndex [#nextfreeindex]
+
+```csharp
+public static uint NextFreeIndex(IEnumerable<uint> used);
+```
+
+Smallest positive index not in `used` (indices double as ports and entity-id high bits, so they are reused).
+
+### PickWorkerToRetire [#pickworkertoretire]
+
+```csharp
+public static string PickWorkerToRetire(IEnumerable<KeyValuePair<string, uint>> candidates);
+```
+
+Which worker leaves first when scaling down: the highest index among those not already retiring.
+
+### ComputeAssignment [#computeassignment]
+
+```csharp
+public static List<KeyValuePair<string, string>> ComputeAssignment(IList<string> containerIds, IList<WorkerInfo> liveWorkers, IList<LeaseInfo> leases, bool keepOrder = false);
+```
+
+Deal containers across live workers as evenly as possible, keeping existing assignments where they fit. Pure function of (containers, live workers, current leases); returns the changes to apply.
+
+| Parameter | Description |
+| --- | --- |
+| `keepOrder` | Deal `containerIds` in the order given instead of sorting by id. A partitioned world lists its containers in Morton order, so each worker's quota is a contiguous run of spatially neighbouring cells - a compact region it can load as a block. |
+
+### BuildStateJson [#buildstatejson]
+
+```csharp
+public string BuildStateJson();
+```
+
+Everything the dashboard shows, as one JSON document.
+

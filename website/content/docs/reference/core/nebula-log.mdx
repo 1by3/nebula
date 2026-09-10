@@ -1,0 +1,53 @@
+---
+title: "NebulaLog"
+description: "Thin logging wrapper so every Nebula line is greppable by prefix in headless logs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaLog.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaLog.cs)</div>
+
+```csharp
+public static class NebulaLog
+```
+
+Thin logging wrapper so every Nebula line is greppable by prefix in headless logs.
+
+## Fields
+
+### Prefix [#prefix]
+
+```csharp
+public static string Prefix = "[nebula]";
+```
+
+### Verbose [#verbose]
+
+```csharp
+public static bool Verbose;
+```
+
+## Methods
+
+### Info [#info]
+
+```csharp
+public static void Info(string message);
+```
+
+### Warn [#warn]
+
+```csharp
+public static void Warn(string message);
+```
+
+### Error [#error]
+
+```csharp
+public static void Error(string message);
+```
+
+### Debugf [#debugf]
+
+```csharp
+public static void Debugf(string message);
+```
+

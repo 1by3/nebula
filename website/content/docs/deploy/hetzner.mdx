@@ -1,0 +1,214 @@
+---
+title: Deploying to Hetzner Cloud
+description: Run the same build on real machines with nebula deploy, with the control plane on SpacetimeDB Maincloud, one VM for the orchestrator and one VM per worker.
+---
+
+`nebula deploy` puts the mesh on Hetzner Cloud: the control plane on SpacetimeDB Maincloud, one VM running the orchestrator, dashboard and gateway, and one VM per worker that the orchestrator creates and deletes itself as the desired count changes. It is the same executable and the same orchestrator as the local mesh, started with `-nebula-host hetzner` instead of the default process host. Hetzner is the only deploy target in this version.
+
+## Prerequisites
+
+- A **Hetzner Cloud project** and a Read & Write API token for it (console.hetzner.cloud, project, Security, API tokens). The token is checked against the API when you configure it.
+- A **SpacetimeDB Maincloud** account, or another SpacetimeDB server the VMs can reach. `spacetime` must be on your PATH (`nebula setup` installs it).
+- **Unity with Linux Dedicated Server support** installed for the project's Unity version. `nebula deploy` builds `Builds/Linux64/Nebula.x86_64` with the Server subtarget; without the module the build fails.
+- `ssh` and `scp` on your PATH. The CLI creates and uses `~/.ssh/nebula_hetzner`.
+- The `nebula` CLI installed and a project with `nebula.json` (see [Install](/docs/getting-started/install)).
+
+## Configuration
+
+Two one-time steps. Both write to `~/.nebula-cli/config.json` (0600 on Unix) and to the project's `nebula.json`.
+
+```bash
+nebula config hetzner
+nebula config spacetime
+```
+
+`nebula config hetzner` asks for the token (or takes `--token`), verifies it, asks for a project label, lets you pick a region (`--location`: `ash`, `hil`, `sin`, `nbg1`, `fsn1`, `hel1`), and the worker and orchestrator VM types. It sets `deploy.target` to `hetzner` in `nebula.json`. `HCLOUD_TOKEN` in the environment always wins over the stored token, so CI can run without the file.
+
+`nebula config spacetime` picks the server (`--server`, default `maincloud`), runs `spacetime login` in the browser when needed, and records the control-plane database name (`--database`) in `deploy.database`. Database names are unique per server.
+
+### The `deploy` section of nebula.json
+
+```json
+{
+  "deploy": {
+    "target": "hetzner",
+    "meshName": "nebula",
+    "database": "nebula-shootergame",
+    "workers": 4,
+    "npcs": 0,
+    "workerType": "ccx13",
+    "orchestratorType": "cpx21",
+    "location": "ash"
+  }
+}
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `target` | `hetzner` | Deploy target. Only `hetzner` is implemented. |
+| `meshName` | `nebula` | Label every cloud resource carries (`nebula-mesh=<meshName>`) and the base for resource names: network and ssh key `<meshName>`, server `<meshName>-orchestrator`, firewalls `<meshName>-orchestrator` and `<meshName>-worker`. One mesh per Hetzner project. |
+| `database` | `<meshName>-<project folder>` | SpacetimeDB database on the configured server. Falls back to the CLI config's `spacetime.database`. |
+| `workers` | 4 | Worker VMs the orchestrator keeps running. `--workers` overrides per deploy. |
+| `npcs` | 0 | Worker-simulated NPCs at start. `--npcs` overrides. |
+| `workerType` | CLI config (`cpx21`) | Hetzner server type for worker VMs. |
+| `orchestratorType` | CLI config (`cpx21`) | Server type for the orchestrator VM. |
+| `location` | CLI config (`ash`) | Region. Changing it after the network exists needs `nebula destroy --all` first, because the subnet is bound to a network zone. |
+
+The `mesh` section (`dashboardPort` 7080, `gatewayPort` 7000) is shared with the local mesh and also sets the ports the firewall opens.
+
+## Deploying
+
+<Steps>
+<Step>
+### Build and deploy
+
+```bash
+nebula deploy --workers 4 --npcs 128 --open-ui
+```
+
+`deploy` refuses to run until both `nebula config hetzner` and `nebula config spacetime` have been completed. Then, in order:
+
+1. **Build.** Runs `Nebula.Editor.NebulaBuild.BuildLinuxServerBatch` in batchmode (from a mirrored copy under `~/.nebula-cli/scratch/<project>` if the Editor has the project open) and packs `Builds/nebula-linux.tar.gz`. `--skip-build` reuses the existing tarball.
+2. **Publish the module.** Checks the Maincloud login, then `spacetime publish` of `Packages/com.1by3.nebula/SpacetimeDB/Module~` as `deploy.database`. `--skip-publish` skips it; `--reset-control-plane` adds `--delete-data`.
+3. **Provision what is missing** (idempotent): the ssh key `~/.ssh/nebula_hetzner` (generated if absent) uploaded as `<meshName>`; the private network `<meshName>` on `10.0.0.0/16` with subnet `10.0.1.0/24` in the region's zone; the two firewalls; and the orchestrator VM, created with the key, the network and the orchestrator firewall, then waited on until ssh answers (up to 240 s).
+4. **Upload.** `scp` of the tarball to `/opt/nebula/artifacts/nebula-linux.tar.gz.uploading`, then over ssh: stop `nebula-orchestrator` (the orchestrator deletes its worker VMs on shutdown), move the tarball into place, unpack it into `/opt/nebula/bin`. `--skip-upload` skips the build and upload and only rewrites the service.
+5. **Write the service.** The token goes over stdin into `/etc/nebula/env` (`HCLOUD_TOKEN=...`, mode 0600, never on a command line), and `/etc/systemd/system/nebula-orchestrator.service` is written with the full command line (see below). `systemctl daemon-reload`, `enable`, `restart`.
+6. **Wait for the dashboard** at `http://<public ip>:7080/` for up to 80 s. On timeout it prints the last `journalctl` and log lines and fails with a pointer to `nebula logs --cloud orchestrator`.
+
+The orchestrator then creates one VM per worker. Deploy reports the dashboard URL and the gateway address as soon as the orchestrator answers; the workers take about 30 s more each to register.
+</Step>
+<Step>
+### Check it
+
+```bash
+nebula status --cloud
+nebula logs --cloud orchestrator
+nebula logs --cloud w1
+```
+
+`status --cloud` lists every Hetzner server labelled with the mesh (name, role, worker id, status, type, public and private IP, created) and then the orchestrator's own view from `/api/state`: workers with containers, players, bots, NPCs, tick time, heartbeat age, and recent events.
+</Step>
+<Step>
+### Connect a client
+
+```powershell
+Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway <orchestrator public ip>:7000 -nebula-name jesse
+```
+
+Or start the client without `-nebula-gateway` and type the address on the title screen; it remembers the last remote address you used. Bots work the same way with `-nebula-bot`.
+</Step>
+<Step>
+### Redeploy after a code change
+
+Run `nebula deploy` again. It rebuilds, re-uploads and restarts the orchestrator, which deletes its worker VMs on the way down and recreates them from the new tarball. Players are disconnected during a redeploy; there is no rolling update.
+</Step>
+</Steps>
+
+## Topology
+
+```
+            you (client / bot)                     Hetzner project nebula-shootergame, location ash
+                    │ udp/7000                     ┌─────────────────────────────────────────────────────┐
+                    ▼                              │  nebula-orchestrator VM (public IP)                  │
+  ┌───────────────────────────────┐   HCLOUD API   │   Nebula.x86_64 -nebula-role orchestrator            │
+  │ api.hetzner.cloud             │◄───────────────│     -nebula-host hetzner  (creates/deletes worker VMs)│
+  └───────────────────────────────┘                │     dashboard :7080, serves /build/nebula-linux.tar.gz│
+                                                   │   gateway process  udp/7000                          │
+  ┌───────────────────────────────┐                └───────────────▲───────────────▲─────────────────────┘
+  │ maincloud.spacetimedb.com     │  reducers/subscriptions        │ private net   │ 10.0.1.0/24
+  │ nebula-shootergame            │◄──────────────────────┬────────┴───────┬───────┴─────────┐
+  └───────────────────────────────┘                       │ orch1-w1-1 VM  │ orch1-w2-2 VM   │ ...
+                                                          │ worker udp/7101│ worker udp/7102 │
+                                                          └────────────────┴─────────────────┘
+```
+
+The orchestrator VM runs two processes: the orchestrator (dashboard, worker host) and the gateway it launches through the process host. The systemd unit's command line is:
+
+```
+Nebula.x86_64 -batchmode -nographics -nebula-role orchestrator -nebula-host hetzner
+  -nebula-workers 4 -nebula-settings npcs=128
+  -nebula-dashboard-port 7080 -nebula-dashboard-bind + -nebula-build-dir /opt/nebula/artifacts
+  -nebula-advertise <private ip> -nebula-gateway <public ip>:7000
+  -nebula-spacetime https://maincloud.spacetimedb.com -nebula-database nebula-shootergame
+  -nebula-cloud-mesh nebula -nebula-cloud-location ash -nebula-cloud-type cpx21 -nebula-cloud-image ubuntu-24.04
+  -nebula-cloud-network nebula -nebula-cloud-sshkey nebula -nebula-cloud-firewall nebula-worker
+  -logFile /var/log/nebula/orchestrator.log
+```
+
+`-nebula-advertise` is the orchestrator's private IP: workers reach the gateway and download the build over the private network. `-nebula-gateway` is the public address the gateway registers so clients can find it. `--verbose` on `nebula deploy` adds `-nebula-verbose`.
+
+### How worker VMs boot
+
+`HetznerWorkerHost` creates each worker VM (`<mesh>-<workerId>-<generation>`, labels `nebula-mesh`, `nebula-role=worker`, `nebula-worker=wN`) with an Ubuntu 24.04 image, the ssh key, the private network, the worker firewall, a public IPv4 and a cloud-init script (`HetznerWorkerHost.BuildCloudInit`) that:
+
+1. Logs to `/var/log/nebula-bootstrap.log`.
+2. Reads its private IP from the Hetzner metadata service (`169.254.169.254/hetzner/v1/metadata/private-networks`), falling back to the first `10.*` address, retrying for up to two minutes.
+3. Downloads `http://<orchestrator private ip>:7080/build/nebula-linux.tar.gz` from the orchestrator's `/build/` route, retrying up to 90 times.
+4. Unpacks it into `/opt/nebula` and writes `nebula-worker.service`, which runs `Nebula.x86_64 -batchmode -nographics -nebula-role worker -nebula-worker-id wN -nebula-worker-index N -nebula-port 710N -nebula-advertise <private ip> ...` with `-logFile /var/log/nebula-worker.log`.
+5. Starts the unit. `Restart=no`: if the worker dies, the orchestrator notices through heartbeats and replaces the VM.
+
+From the create call to a registered, container-owning worker takes about 30 s. Killing a worker (dashboard Kill, `POST /api/workers/kill`) deletes its VM; removing one drains it first and then deletes it. When the orchestrator starts it deletes every VM labelled `nebula-mesh=<mesh>,nebula-role=worker` before launching fresh ones, so a crashed or redeployed orchestrator never leaves machines billing.
+
+### Ports
+
+| Where | Port | Purpose |
+| --- | --- | --- |
+| Orchestrator VM, public | `udp/7000` | Gateway, the only address clients use. |
+| Orchestrator VM, public | `tcp/7080` | Dashboard and API. Unauthenticated. |
+| Orchestrator VM, public | `tcp/22` | ssh for `nebula logs --cloud`. |
+| Worker VMs, public | `tcp/22` | ssh for `nebula logs --cloud wN`. Nothing else is open inbound. |
+| Private network `10.0.0.0/16` | `udp/710N`, `tcp/7080` | Worker to worker, worker to gateway, build download. |
+
+The firewalls are `<meshName>-orchestrator` (22, the dashboard port, the gateway port, from anywhere) and `<meshName>-worker` (22 only). Traffic on the private network is not filtered by Hetzner firewalls.
+
+## Costs and VM types
+
+Worker VMs default to `cpx21` (3 shared vCPU, 4 GB, about EUR 0.018 per hour each). Four workers plus the orchestrator is five VMs. Shared vCPUs are fine for functional testing; when you are measuring tick time set `"workerType": "ccx13"` (2 dedicated vCPU) in the `deploy` section so a noisy neighbour does not show up as a handover cost. The orchestrator itself is light and stays on `cpx21`.
+
+Billing stops when the VMs are deleted. The network, firewalls and ssh key cost nothing to keep.
+
+## Operating it
+
+| Command | What it does |
+| --- | --- |
+| `nebula status --cloud` | Hetzner server table plus the orchestrator's `/api/state`. `--json` prints the raw state. |
+| `nebula logs --cloud orchestrator` | `journalctl -u nebula-orchestrator` (last 10 lines) then `/var/log/nebula/orchestrator.log`. |
+| `nebula logs --cloud gateway` | `/opt/nebula/bin/Logs/gateway.log` on the orchestrator VM. |
+| `nebula logs --cloud w2` | On that worker's VM: the tail of `/var/log/nebula-bootstrap.log`, then `/var/log/nebula-worker.log`. Worker VMs are found by their `nebula-worker` label. |
+| `nebula logs --cloud ... -n 200` | More lines. `--follow` is local only. |
+
+The dashboard at `http://<public ip>:7080/` works exactly as it does locally: change the desired count, add, remove or kill workers, edit settings such as `npcs`. Each change creates or deletes real VMs. See [Orchestrator, dashboard and worker hosts](/docs/guides/orchestrator-and-dashboard).
+
+Log file paths on the VMs, for when you ssh in yourself (`ssh -i ~/.ssh/nebula_hetzner root@<ip>`):
+
+| VM | Path |
+| --- | --- |
+| Orchestrator | `/var/log/nebula/orchestrator.log`, `/opt/nebula/bin/Logs/gateway.log`, `journalctl -u nebula-orchestrator` |
+| Worker | `/var/log/nebula-bootstrap.log` (cloud-init), `/var/log/nebula-worker.log`, `journalctl -u nebula-worker` |
+
+## Tearing down
+
+```bash
+nebula destroy
+nebula destroy --all
+```
+
+`destroy` lists the servers labelled with the mesh, asks for confirmation (`--yes` skips it) and deletes them all, workers and orchestrator. `--all` also deletes the firewalls, the private network and the ssh key after a short wait for the servers to detach. The ssh key file in `~/.ssh` and the Maincloud database are left alone.
+
+<Callout type="warn" title="Stray workers">
+The orchestrator deletes worker VMs when it stops cleanly and sweeps leftovers when it starts. If it is killed hard and never restarted, its workers keep running. `nebula status --cloud` shows them; `nebula destroy` removes them.
+</Callout>
+
+## What is not there yet
+
+- **Unauthenticated control plane.** The module's reducers accept any caller, so anyone who knows the Maincloud database name can register a fake worker or rewrite leases. A shared secret checked inside the reducers is the next step.
+- **Unauthenticated dashboard** on a public port. Anyone who finds `tcp/7080` can resize or kill your mesh. Restrict the orchestrator firewall's dashboard rule to your own IP if that matters before it is fixed.
+- **No warm pool.** A replacement worker is a fresh VM about 30 s away, not an instant failover. Its transient entities are lost; players respawn.
+- **No rolling redeploy.** Every `nebula deploy` restarts the orchestrator and recreates every worker.
+- **One mesh per Hetzner project**, named by `meshName`.
+
+<Cards>
+  <Card title="CLI reference: deploy" href="/docs/cli/deploy" description="Every option of nebula deploy and destroy." />
+  <Card title="Control plane" href="/docs/guides/control-plane" description="The module that runs on Maincloud." />
+  <Card title="Debugging" href="/docs/guides/debugging" description="Reading cloud logs and diagnosing a remote mesh." />
+</Cards>

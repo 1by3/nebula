@@ -1,0 +1,75 @@
+---
+title: "NetworkTime"
+description: "Tick model."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkTime.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkTime.cs)</div>
+
+```csharp
+public static class NetworkTime
+```
+
+Tick model. Every worker derives the tick it should be simulating from the wall clock and a fixed origin, so workers agree on tick numbers without a tick master (a restarted worker knows the correct tick immediately, and the control plane is never on the hot path). Gameplay code should only ever see tick numbers, never wall-clock time.
+
+## Fields
+
+### TickRate [#tickrate]
+
+```csharp
+public const int TickRate = 60;
+```
+
+### TickInterval [#tickinterval]
+
+```csharp
+public const float TickInterval = 1f / TickRate;
+```
+
+## Properties
+
+### DerivedTick [#derivedtick]
+
+```csharp
+public static uint DerivedTick { get; }
+```
+
+The tick the wall clock says it is right now.
+
+### DerivedTickExact [#derivedtickexact]
+
+```csharp
+public static double DerivedTickExact { get; }
+```
+
+### Tick [#tick]
+
+```csharp
+public static uint Tick { get; }
+```
+
+The tick currently being simulated. On a worker this is the authoritative simulation tick. On a client it is the tick the local player is predicting (ahead of the server by the input lead).
+
+### LatestServerTick [#latestservertick]
+
+```csharp
+public static uint LatestServerTick { get; }
+```
+
+Latest server tick the client has heard about (client only).
+
+### RenderTick [#rendertick]
+
+```csharp
+public static double RenderTick { get; }
+```
+
+The (fractional) tick non-authoritative copies are presenting right now: on a client a few ticks behind the newest snapshot (`InterpolationDelayTicks`), on a worker one tick behind the simulation tick for ghosts. Buffered interpolators sample at this tick.
+
+## Methods
+
+### TicksToSeconds [#tickstoseconds]
+
+```csharp
+public static float TicksToSeconds(uint ticks);
+```
+

@@ -1,0 +1,73 @@
+---
+title: World partition
+description: Build a game world as a 3D grid of cell scenes that stream in and out around players and workers, with a floating origin so the world can be far larger than float precision allows.
+---
+
+Unity has no built-in answer to a world that is too big for one scene or for 32-bit coordinates. Nebula ships one: a **world partition** made of cell scenes, an additive streamer, a floating origin, and editor tooling to author cells as if they were one level. It is optional and independent of networking. A game can use it without Nebula, and a Nebula game can ignore it and keep a single scene.
+
+## The model
+
+A `WorldDefinition` asset describes a **3D grid** of cells. Every cell is the same size (default 256 m on every axis, adjustable per world) and is its own additive scene. Cell `(x, y, z)` is centred on `(x, y, z) * CellSize`, so cell `(0,0,0)` covers ±128 m around the origin, and a flat world is one row of cells on Y. Worlds that need to shard verticality (a megastructure, a space station) add layers on Y; nothing else changes.
+
+Cells are authored **cell-local**: the content of a cell scene sits around that scene's own origin, and at runtime the `WorldStreamer` translates the whole scene to where its cell belongs. Nothing in the pipeline ever holds an absolute world coordinate, which is what makes worlds beyond float range possible.
+
+The **floating origin** (`WorldOrigin`) is the cell that currently sits at Unity's `(0,0,0)`. When it moves, the streamer translates every loaded cell and raises `WorldOrigin.Shifted(delta)` so anything else caching a position can follow.
+
+## Authoring cells
+
+Open **Nebula > World > World Window**. Pick or create a `WorldDefinition`, then use the map:
+
+- Click an empty cell to create its scene. The scene gets a `WorldCell` root at its origin and is added to the build settings.
+- Click a defined cell to open it additively, or close it. Open cells are placed next to each other in the scene view, exactly as they will be in the game, and the scene view draws every defined cell's bounds.
+- Right-click for **Open alone**, **Set as editor origin**, **Delete**.
+- The **Layer (Y)** field switches which vertical layer the map shows.
+
+Placement is handled for you: when a cell scene is opened the editor translates it into position, and when it is saved the translation is taken out so the file stays cell-local. The position of the `WorldCell` root is the record of that translation, so do not move that object. To author a region far from cell `(0,0,0)`, set the **editor origin cell** and the open cells re-place themselves around it.
+
+### Partitioning an existing level
+
+The window's **Partition an existing scene** section moves root objects from a single-scene level into cells by position. Select the roots that should stay in the hub scene (lights, cameras, the Nebula bootstrap, the game mode) and press **Everything except selection**, or select roots and move just those. The hub scene remains the game scene that every process loads; cell scenes stream in underneath it. The Corporation level in the ShooterGame sample was partitioned this way into a single cell, and a world can grow from there one cell at a time.
+
+## Streaming at runtime
+
+Put a `WorldStreamer` in the hub scene (Nebula does this for you when the world is enabled in `NebulaConfig`, see below) and give it anchors:
+
+- A `WorldAnchor` component keeps the cube of cells within `RadiusCells` of its transform loaded. Put one on the player or the camera and mark it `Primary`; the floating origin follows the primary anchor once it strays more than `ShiftThresholdCells` from the origin cell.
+- `streamer.SetRequired(cells)` pins an explicit set of cells, for code that knows what it needs.
+
+Cells that nothing wants any more linger `LingerSeconds` before unloading. `CellLoaded`, `CellUnloading`, `CellUnloaded` and `OriginShifted` are raised for game code.
+
+Two Unity caveats apply to anything that moves geometry at runtime. Static batching bakes positions into the combined mesh, so leave it off for cell content (the SRP batcher and GPU instancing are unaffected). Baked light probes are positioned in world space and do not follow a shift; lightmaps and reflection probes do.
+
+## With Nebula
+
+A partitioned world plugs into the container model: **every cell is a container**, and the `Container` volumes you author inside cell scenes (a building, a room) become nested containers of their cell, exactly as they nest inside an outdoor container today.
+
+1. In the World window press **Create** next to *Container manifest* and then **Bake**. The bake writes a `WorldContainerManifest`: one container per cell plus every authored `Container` found in the cell scenes, with cell-local poses, in wire order (cells by Morton key, each followed by its nested containers).
+2. Press **Use in NebulaConfig**. `NebulaConfig.WorldManifest` is what switches the partition on; unset, everything behaves as a single scene.
+3. Rebake after adding, moving or resizing containers or cells. The bake also adds cell scenes to the build settings.
+
+At boot every process instantiates the whole manifest as empty container transforms, so container indices are identical everywhere and never depend on which cells happen to be loaded. Cell scenes stream content into those containers; the authoring `Container` components inside them are stripped on load. Nothing on the wire changes: positions were already container-local.
+
+Each role then streams what it needs:
+
+| Role | Cells loaded | Origin |
+| --- | --- | --- |
+| Worker | The cells of every container it leases plus `WorkerLoadRingCells` rings around them, so seam physics and ghosts have the neighbours' geometry. | Follows the centroid of the leased cells. |
+| Client and bots | `ClientLoadRadiusCells` around the local pawn (the origin cell before a pawn exists). | Follows the pawn. |
+| Gateway, orchestrator | Nothing. The manifest gives them the container maths. | Never moves. |
+
+The origin shifts only once the pawn or centroid is more than `OriginShiftThresholdCells` from the origin cell, so a shift is rare and never happens while pacing on a boundary. When it does, Nebula moves the containers (entities are parented under them), and refreshes every entity's interpolation buffer, pose history and prediction history. Game code that caches a frame position overrides `NetworkBehaviour.OnOriginShifted(delta)` and adds the delta; the sample's bot brain does this for its path corners.
+
+The orchestrator deals containers in manifest order, so each worker's share is a contiguous run of spatially neighbouring cells: a compact region it loads as a block. The dashboard shows each container's cell.
+
+## Settings
+
+| `NebulaConfig` field | Default | Meaning |
+| --- | --- | --- |
+| `WorldManifest` | none | The baked manifest. Unset = single scene. |
+| `ClientLoadRadiusCells` | 1 | Cells around the local pawn a client keeps loaded (1 = the 3x3x3 block). |
+| `WorkerLoadRingCells` | 1 | Rings of cells around every leased cell a worker keeps loaded. |
+| `OriginShiftThresholdCells` | 4 | Distance in cells from the origin cell before the origin moves. |
+
+`WorldDefinition.CellSize` sets the cell size per world. Pick it against the ghost band and interest radii: a cell should be several times larger than `InterestFarRadius` so a client's 3x3x3 block covers everything it can see.

@@ -1,0 +1,99 @@
+---
+title: "ITransport"
+description: "The seam between Nebula and whatever moves bytes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs)</div>
+
+```csharp
+public interface ITransport : IDisposable
+```
+
+The seam between Nebula and whatever moves bytes. Sockets, reliability and sequencing are bought (LiteNetLib today), replication and authority are built on top. Poll-driven: nothing is raised outside [`Poll`](#poll), so nothing mutates the world behind the simulation loop's back. A single transport can both listen and dial out, which is what workers need (they accept the gateway and their peers, and dial peers themselves).
+
+## Properties
+
+### Name [#name]
+
+```csharp
+string Name { get; }
+```
+
+### IsRunning [#isrunning]
+
+```csharp
+bool IsRunning { get; }
+```
+
+### LocalPort [#localport]
+
+```csharp
+int LocalPort { get; }
+```
+
+## Methods
+
+### Listen [#listen]
+
+```csharp
+void Listen(int port);
+```
+
+Bind and accept inbound links (port 0 = any free port).
+
+### StartClient [#startclient]
+
+```csharp
+void StartClient();
+```
+
+Start listening on no particular port (dial-out only).
+
+### Connect [#connect]
+
+```csharp
+int Connect(string host, int port);
+```
+
+Dial a remote. Returns the peer id the link will use once connected.
+
+### Disconnect [#disconnect]
+
+```csharp
+void Disconnect(int peerId);
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+bool IsConnected(int peerId);
+```
+
+### RoundTripMs [#roundtripms]
+
+```csharp
+int RoundTripMs(int peerId);
+```
+
+Round trip in milliseconds as measured by the link, or -1 if unknown.
+
+### Send [#send]
+
+```csharp
+void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
+```
+
+### Poll [#poll]
+
+```csharp
+void Poll(Action<TransportEvent> handler);
+```
+
+Drain the socket and deliver every pending event to `handler`.
+
+### Stop [#stop]
+
+```csharp
+void Stop();
+```
+

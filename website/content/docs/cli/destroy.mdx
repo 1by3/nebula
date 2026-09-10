@@ -1,0 +1,26 @@
+---
+title: "nebula destroy"
+description: "Delete every cloud server of the mesh so nothing keeps billing"
+---
+
+Delete every cloud server of the mesh so nothing keeps billing.
+
+```bash
+nebula destroy [--all]
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--all` | also delete the firewalls, private network and ssh key (they cost nothing to keep) |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |

@@ -1,0 +1,368 @@
+---
+title: "Module"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in the global namespace · [Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs)</div>
+
+```csharp
+public static partial class Module
+```
+
+## Methods
+
+### RegisterWorker [#registerworker]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void RegisterWorker(ReducerContext ctx, string workerId, uint workerIndex, string address, ushort port);
+```
+
+### HeartbeatWorker [#heartbeatworker]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void HeartbeatWorker(ReducerContext ctx, string workerId, string status, ulong tickCount, float tickMs, uint entityCount, uint authoritativeCount, uint ghostCount, uint playerCount, uint botCount, uint serverDrivenCount);
+```
+
+### UnregisterWorker [#unregisterworker]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void UnregisterWorker(ReducerContext ctx, string workerId);
+```
+
+### RegisterGateway [#registergateway]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void RegisterGateway(ReducerContext ctx, string gatewayId, string address, ushort port);
+```
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void HeartbeatGateway(ReducerContext ctx, string gatewayId);
+```
+
+### UnregisterGateway [#unregistergateway]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void UnregisterGateway(ReducerContext ctx, string gatewayId);
+```
+
+### HeartbeatOrchestrator [#heartbeatorchestrator]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void HeartbeatOrchestrator(ReducerContext ctx, string orchestratorId, uint desiredWorkers);
+```
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void EnsureContainer(ReducerContext ctx, string containerId);
+```
+
+Make sure a lease row exists for a container from the manifest.
+
+### AssignContainer [#assigncontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void AssignContainer(ReducerContext ctx, string containerId, string workerId);
+```
+
+Orchestrator: authoritatively assign a container to a worker. Bumps the container epoch so stale owners can be rejected.
+
+### SetLeaseState [#setleasestate]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void SetLeaseState(ReducerContext ctx, string containerId, string state);
+```
+
+### ReleaseContainer [#releasecontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void ReleaseContainer(ReducerContext ctx, string containerId);
+```
+
+### SetGameSetting [#setgamesetting]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void SetGameSetting(ReducerContext ctx, string key, string value);
+```
+
+Set (or create) one mesh-wide setting. A no-op when the value is unchanged.
+
+### ResetControlPlane [#resetcontrolplane]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void ResetControlPlane(ReducerContext ctx);
+```
+
+Dev helper: wipe all registry state (used when restarting a local mesh).
+
+## Nested types
+
+### Worker [#worker]
+
+```csharp
+[SpacetimeDB.Table(Accessor = "worker", Public = true)]
+public partial struct Worker
+```
+
+A sim worker process. One row per running Nebula worker.
+
+#### Fields
+
+##### WorkerId [#workerid]
+
+```csharp
+[SpacetimeDB.PrimaryKey]
+public string WorkerId;
+```
+
+##### WorkerIndex [#workerindex]
+
+```csharp
+public uint WorkerIndex;
+```
+
+Small dense index handed out by the orchestrator. Used for entity id allocation (high bits) and debug colouring.
+
+##### Address [#address]
+
+```csharp
+public string Address;
+```
+
+##### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+##### Status [#status]
+
+```csharp
+public string Status;
+```
+
+starting \| ready \| draining \| dead
+
+##### LastHeartbeat [#lastheartbeat]
+
+```csharp
+public Timestamp LastHeartbeat;
+```
+
+##### TickCount [#tickcount]
+
+```csharp
+public ulong TickCount;
+```
+
+##### TickMs [#tickms]
+
+```csharp
+public float TickMs;
+```
+
+##### EntityCount [#entitycount]
+
+```csharp
+public uint EntityCount;
+```
+
+Every entity resident on the worker (authoritative + ghosts).
+
+##### AuthoritativeCount [#authoritativecount]
+
+```csharp
+public uint AuthoritativeCount;
+```
+
+##### GhostCount [#ghostcount]
+
+```csharp
+public uint GhostCount;
+```
+
+##### PlayerCount [#playercount]
+
+```csharp
+public uint PlayerCount;
+```
+
+Authoritative entities owned by a human client / by a bot client / by nobody (server-driven).
+
+##### BotCount [#botcount]
+
+```csharp
+public uint BotCount;
+```
+
+##### ServerDrivenCount [#serverdrivencount]
+
+```csharp
+public uint ServerDrivenCount;
+```
+
+### ContainerLease [#containerlease]
+
+```csharp
+[SpacetimeDB.Table(Accessor = "container_lease", Public = true)]
+public partial struct ContainerLease
+```
+
+Authority lease for one container. Exactly one row per container in the manifest. WorkerId == "" means unassigned/orphaned.
+
+#### Fields
+
+##### ContainerId [#containerid]
+
+```csharp
+[SpacetimeDB.PrimaryKey]
+public string ContainerId;
+```
+
+##### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+##### Epoch [#epoch]
+
+```csharp
+public ulong Epoch;
+```
+
+Monotonic per-container authority epoch. Bumped on every (re)assignment.
+
+##### State [#state]
+
+```csharp
+public string State;
+```
+
+assigning \| active \| draining \| orphaned
+
+##### UpdatedAt [#updatedat]
+
+```csharp
+public Timestamp UpdatedAt;
+```
+
+### Gateway [#gateway]
+
+```csharp
+[SpacetimeDB.Table(Accessor = "gateway", Public = true)]
+public partial struct Gateway
+```
+
+A client-facing gateway process.
+
+#### Fields
+
+##### GatewayId [#gatewayid]
+
+```csharp
+[SpacetimeDB.PrimaryKey]
+public string GatewayId;
+```
+
+##### Address [#address]
+
+```csharp
+public string Address;
+```
+
+##### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+##### LastHeartbeat [#lastheartbeat]
+
+```csharp
+public Timestamp LastHeartbeat;
+```
+
+### Orchestrator [#orchestrator]
+
+```csharp
+[SpacetimeDB.Table(Accessor = "orchestrator", Public = true)]
+public partial struct Orchestrator
+```
+
+The orchestrator. Single row in practice; lets workers and gateways tell whether somebody is driving the mesh.
+
+#### Fields
+
+##### OrchestratorId [#orchestratorid]
+
+```csharp
+[SpacetimeDB.PrimaryKey]
+public string OrchestratorId;
+```
+
+##### LastHeartbeat [#lastheartbeat]
+
+```csharp
+public Timestamp LastHeartbeat;
+```
+
+##### DesiredWorkers [#desiredworkers]
+
+```csharp
+public uint DesiredWorkers;
+```
+
+### GameSetting [#gamesetting]
+
+```csharp
+[SpacetimeDB.Table(Accessor = "game_setting", Public = true)]
+public partial struct GameSetting
+```
+
+A mesh-wide live setting, written by whoever is allowed to change the mesh at runtime (game code through a worker, the dashboard) and seeded by the orchestrator at start (-nebula-settings). Nebula gives them no meaning: they are the game's low-volume coordination channel (e.g. ShooterGame keeps its NPC total here).
+
+#### Fields
+
+##### Key [#key]
+
+```csharp
+[SpacetimeDB.PrimaryKey]
+public string Key;
+```
+
+##### Value [#value]
+
+```csharp
+public string Value;
+```
+
+##### Version [#version]
+
+```csharp
+public ulong Version;
+```
+
+Bumped on every change.
+
+##### UpdatedAt [#updatedat]
+
+```csharp
+public Timestamp UpdatedAt;
+```
+

@@ -1,0 +1,41 @@
+---
+title: "WorkerLaunchSpec"
+description: "What the orchestrator asks a host to run."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
+
+```csharp
+public sealed class WorkerLaunchSpec
+```
+
+What the orchestrator asks a host to run. The host turns this into a process or a machine.
+
+## Fields
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+### Index [#index]
+
+```csharp
+public uint Index;
+```
+
+### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+### CommonArgs [#commonargs]
+
+```csharp
+public string CommonArgs = "";
+```
+
+Extra `-nebula-*` switches every role gets (control plane, gateway address, verbosity).
+

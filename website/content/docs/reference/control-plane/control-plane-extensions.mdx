@@ -1,0 +1,43 @@
+---
+title: "ControlPlaneExtensions"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs)</div>
+
+```csharp
+public static class ControlPlaneExtensions
+```
+
+## Methods
+
+### FindWorker [#findworker]
+
+```csharp
+public static WorkerInfo FindWorker(this IControlPlane cp, string workerId);
+```
+
+### FindLease [#findlease]
+
+```csharp
+public static LeaseInfo FindLease(this IControlPlane cp, string containerId);
+```
+
+### GetSetting [#getsetting]
+
+```csharp
+public static string GetSetting(this IControlPlane cp, string key, string fallback = null);
+```
+
+### GetSettingInt [#getsettingint]
+
+```csharp
+public static int GetSettingInt(this IControlPlane cp, string key, int fallback);
+```
+
+### IsWorkerAlive [#isworkeralive]
+
+```csharp
+public static bool IsWorkerAlive(this IControlPlane cp, WorkerInfo w, float timeoutSeconds);
+```
+

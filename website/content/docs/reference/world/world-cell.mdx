@@ -1,0 +1,30 @@
+---
+title: "WorldCell"
+description: "Marks the root of a cell scene with its grid coordinate."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldCell.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldCell.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class WorldCell : MonoBehaviour
+```
+
+Marks the root of a cell scene with its grid coordinate. Optional at runtime (the streamer moves every root object of a cell scene, whether or not it carries this), but the editor tooling puts one on each cell it creates so the scene knows which cell it is and can draw its bounds.
+
+## Fields
+
+### Coord [#coord]
+
+```csharp
+public Vector3Int Coord;
+```
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize = new Vector3(256f, 256f, 256f);
+```
+
+Copied from the world definition when the cell was created; only used for the editor gizmo.
+

@@ -1,0 +1,111 @@
+---
+title: "LiteNetTransport"
+description: "ITransport over LiteNetLib."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs)</div>
+
+```csharp
+public sealed class LiteNetTransport : ITransport, INetEventListener
+```
+
+[`ITransport`](/docs/reference/transport/i-transport) over LiteNetLib. Sequenced maps to `DeliveryMethod.Sequenced`, everything else to `DeliveryMethod.ReliableOrdered`. Two LiteNetLib channels are used so a large reliable message cannot head-of-line block the transform stream. Events are queued by LiteNetLib and drained on the caller's thread inside [`Poll`](#poll).
+
+## Constructors
+
+### LiteNetTransport [#litenettransport]
+
+```csharp
+public LiteNetTransport(string name);
+```
+
+## Fields
+
+### ConnectionKey [#connectionkey]
+
+```csharp
+public const string ConnectionKey = "nebula-v1";
+```
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsRunning [#isrunning]
+
+```csharp
+public bool IsRunning { get; }
+```
+
+### LocalPort [#localport]
+
+```csharp
+public int LocalPort { get; }
+```
+
+## Methods
+
+### Listen [#listen]
+
+```csharp
+public void Listen(int port);
+```
+
+### StartClient [#startclient]
+
+```csharp
+public void StartClient();
+```
+
+### Connect [#connect]
+
+```csharp
+public int Connect(string host, int port);
+```
+
+### Disconnect [#disconnect]
+
+```csharp
+public void Disconnect(int peerId);
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected(int peerId);
+```
+
+### RoundTripMs [#roundtripms]
+
+```csharp
+public int RoundTripMs(int peerId);
+```
+
+### Send [#send]
+
+```csharp
+public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
+```
+
+### Poll [#poll]
+
+```csharp
+public void Poll(Action<TransportEvent> handler);
+```
+
+### Stop [#stop]
+
+```csharp
+public void Stop();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

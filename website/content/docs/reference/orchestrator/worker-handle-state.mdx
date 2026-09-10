@@ -1,0 +1,20 @@
+---
+title: "WorkerHandleState"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
+
+```csharp
+public enum WorkerHandleState
+```
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Launching` |  | Requested; the machine is booting or the process is starting. Not yet on the control plane. |
+| `Running` |  | The host believes the worker is up (heartbeats are still the source of truth for liveness). |
+| `Exited` |  | The process exited or the machine is gone. |
+| `Failed` |  | The host could not launch it at all (no executable, cloud API error, quota). |
+

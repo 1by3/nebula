@@ -1,0 +1,235 @@
+---
+title: Tutorial
+description: From an empty Unity project to a four-container mesh you can walk across, with a predicted player and a cross-worker hit.
+---
+
+This tutorial builds the smallest possible meshed game: a room split into four containers, a capsule you can walk around with, and a raycast weapon whose hits land on whichever worker owns the victim. It is a cut-down version of the ShooterGame demo (a separate project that uses Nebula through the package, with licensed art that cannot be redistributed), so when a step says "see the sample", it means that project's `Assets/ShooterGame/Scripts`.
+
+You need the [CLI installed](/docs/getting-started/install), `nebula setup` run once, and Unity 6.
+
+<Steps>
+<Step>
+
+### Install Nebula into a Unity project
+
+Create a Unity project (any 3D template), then from a terminal inside it:
+
+```bash
+nebula init
+```
+
+`init` copies `Packages/com.1by3.nebula` (runtime, editor tooling, the SpacetimeDB module and its generated bindings, vendored LiteNetLib, EditMode tests) from the Nebula sources, adds the SpacetimeDB SDK package to `Packages/manifest.json`, writes a default `Assets/Resources/NebulaConfig.asset` and creates `nebula.json` at the project root. Where the sources come from is described on the [nebula init](/docs/cli/init) page; from a checkout, `nebula init --source C:\Dev\nebula`.
+
+Open the project in Unity once so it imports the assets and resolves the package.
+
+</Step>
+<Step>
+
+### Author containers
+
+Create a scene called `Arena` and add it to Build Settings. Build a 40 × 40 m floor with a few walls, then create four empty objects under a `Containers` parent, one per quadrant, each with a `Container` component:
+
+| Object | Position | `ContainerId` | `Size` | `Center` |
+| --- | --- | --- | --- | --- |
+| quadrant-NE | (10, 0, 10) | `quadrant-NE` | (20, 10, 20) | (0, 4, 0) |
+| quadrant-NW | (-10, 0, 10) | `quadrant-NW` | (20, 10, 20) | (0, 4, 0) |
+| quadrant-SE | (10, 0, -10) | `quadrant-SE` | (20, 10, 20) | (0, 4, 0) |
+| quadrant-SW | (-10, 0, -10) | `quadrant-SW` | (20, 10, 20) | (0, 4, 0) |
+
+A container is a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space; which worker simulates it is decided at runtime. Ids must be unique in the scene and stable, because the control plane keys leases by them. The gizmo shows the volume in the Scene view.
+
+There is nothing else to author: every container boundary carries an automatic ghost band and an entry hysteresis, so pre-warm-then-flip works out of the box. See [Containers and handover](/docs/concepts/containers-and-handover).
+
+</Step>
+<Step>
+
+### Add the bootstrap
+
+Create an empty object named `Nebula` in the scene and add `NebulaBootstrap`. Drag `Packages/com.1by3.nebula/Resources/NebulaConfig` into its `Config` field and leave `EditorRole` at `Client`. Add `NebulaDebugOverlay` next to it if you want the tick, RTT, container and worker readout on screen.
+
+The bootstrap is the entry point of every process. It reads the role from `-nebula-role` (or `EditorRole` when you press Play), loads `NebulaConfig.GameScene`, and starts the matching services. A process is a worker *or* a client, never both.
+
+In `NebulaConfig`, set `GameScene` to `Arena`.
+
+</Step>
+<Step>
+
+### Write the input and the player
+
+The input struct is what the owning client sends every tick and what the worker simulates. It must serialize itself:
+
+```csharp title="ShooterInput.cs"
+using Nebula;
+using UnityEngine;
+
+public struct ShooterInput : INetworkInput
+{
+    public const byte FireButton = 1;
+
+    public Vector2 Move;
+    public float Yaw;
+    public byte Buttons;
+    public bool Fire => (Buttons & FireButton) != 0;
+
+    public void Serialize(NetworkWriter w) { w.WriteVector2(Move); w.WriteFloat(Yaw); w.WriteByte(Buttons); }
+    public void Deserialize(NetworkReader r) { Move = r.ReadVector2(); Yaw = r.ReadFloat(); Buttons = r.ReadByte(); }
+}
+```
+
+The player is a `PredictedBehaviour<ShooterInput>`. `GatherInput` runs on the owning client; `Simulate` runs on the authoritative worker with the client's input, on the client immediately as a prediction, and again on the client when a server correction forces a replay. It has to be a pure function of (current state, input).
+
+```csharp title="PlayerController.cs"
+using Nebula;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+{
+    public float Speed = 6f;
+    public float Damage = 25f;
+    public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
+
+    private float _yaw;
+    private bool _firePressed;
+    private byte _previousButtons;
+
+    private void Update()
+    {
+        if (!IsOwner) return;
+        var mouse = Mouse.current;
+        if (mouse != null) { _yaw += mouse.delta.ReadValue().x * 0.08f; if (mouse.leftButton.wasPressedThisFrame) _firePressed = true; }
+    }
+
+    protected override ShooterInput GatherInput()
+    {
+        var k = Keyboard.current;
+        var input = new ShooterInput { Yaw = _yaw };
+        if (k != null)
+        {
+            float x = (k.dKey.isPressed ? 1f : 0f) - (k.aKey.isPressed ? 1f : 0f);
+            float y = (k.wKey.isPressed ? 1f : 0f) - (k.sKey.isPressed ? 1f : 0f);
+            input.Move = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
+        }
+        if (_firePressed) input.Buttons |= ShooterInput.FireButton;
+        _firePressed = false;
+        return input;
+    }
+
+    protected override void Simulate(uint tick, in ShooterInput input, float dt)
+    {
+        transform.rotation = Quaternion.Euler(0f, input.Yaw, 0f);
+        var velocity = (transform.forward * input.Move.y + transform.right * input.Move.x) * Speed;
+        transform.position += velocity * dt;
+        Identity.Velocity = velocity;
+
+        bool firePressed = input.Fire && (_previousButtons & ShooterInput.FireButton) == 0;
+        _previousButtons = input.Buttons;
+        if (firePressed && HasAuthority) ServerFire();
+    }
+
+    private void ServerFire()
+    {
+        var origin = transform.position + Vector3.up * 1.6f;
+        if (Physics.Raycast(origin, transform.forward, out var hit, 100f) &&
+            hit.collider.GetComponentInParent<PlayerController>() is { } victim && victim != this)
+        {
+            // Runs on whichever worker owns the victim: a direct call if that is us, the lateral link if we only hold a ghost.
+            victim.AuthorityRpc(victim.TakeDamage, Damage);
+        }
+    }
+
+    [AuthorityRpc]
+    private void TakeDamage(float amount)
+    {
+        Health.Value = Mathf.Max(0f, Health.Value - amount);
+        if (Health.Value <= 0f) Health.Value = 100f; // instant respawn, for the tutorial
+    }
+}
+```
+
+Three things here are meshing-specific. `HasAuthority` is true only on the worker that owns this entity right now, so a ghost on a neighbouring worker never fires. `Identity.Velocity` is what remote copies extrapolate with and what a handover carries. And the `[AuthorityRpc]`: the raycast runs on the shooter's worker against its local world, which includes kinematic ghosts of players owned by neighbours, and the damage claim executes on whichever worker owns the victim.
+
+Everything else is what you would write against Mirror or NGO. The guides on [prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs) and [NetworkBehaviour](/docs/guides/network-behaviour) cover the details, including the sample's lag-compensated hit test.
+
+</Step>
+<Step>
+
+### Make the player prefab
+
+Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Every networked prefab must be listed in `NebulaConfig.NetworkPrefabs`; the index in that list is the prefab id on the wire, so add the player prefab there.
+
+Remote copies of the player (other clients, ghosts on other workers) get a `RemoteInterpolator` attached by the runtime and are moved from the identity's state stream; you do not have to add anything for that.
+
+</Step>
+<Step>
+
+### Add a game mode
+
+The game mode is the server hook that creates a player when the gateway asks for one, the equivalent of subclassing Mirror's `NetworkManager`. Put exactly one in the scene, on an empty `Game` object, and assign the prefab:
+
+```csharp title="TutorialGameMode.cs"
+using Nebula;
+using UnityEngine;
+
+public sealed class TutorialGameMode : NebulaGameMode
+{
+    public GameObject PlayerPrefab;
+
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+    {
+        var position = RandomPointIn(container, margin: 2f, y: 0f);
+        var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(PlayerPrefab), position, Quaternion.identity, container.transform);
+        identity.name = $"Player {playerName} ({clientId})";
+        worker.Spawn(identity, container, clientId);
+        return identity;
+    }
+}
+```
+
+The gateway picks a container whose owning worker is connected and asks that worker to spawn the player. `worker.Spawn` mints the entity id, makes the entity live on this worker and starts replicating it. See [Spawning](/docs/guides/spawning).
+
+</Step>
+<Step>
+
+### Build and run the mesh
+
+```bash
+nebula build
+nebula start --open-ui
+```
+
+`build` runs the Nebula build script in Unity batchmode (if the Editor has the project open, the CLI builds from a mirrored copy and copies the result back into `Builds/`). `start` launches a local SpacetimeDB if none is running, publishes the control-plane module, and starts the orchestrator, which starts the gateway and four workers. It prints how to join and opens the dashboard at `http://localhost:7080/`.
+
+Press Play in the Editor. The title screen asks for a gateway (Local is `127.0.0.1:7000`) and a name; you are spawned into one of the quadrants. Walk across the middle of the room and watch the overlay: the container and the worker index change, and `handovers` ticks up. On the dashboard, the container-to-worker table and each worker's authoritative and ghost counts update as you move.
+
+To get a second player without a second machine:
+
+```bash
+Builds\Win64\Nebula.exe -nebula-role client -nebula-name other
+```
+
+Or start bots, which are full client processes that roam and shoot: `nebula start --bots 2`.
+
+</Step>
+<Step>
+
+### Break something
+
+On the dashboard, press **Kill** on the worker that owns your quadrant. Its containers are reassigned to a survivor within a second and the worker is relaunched after a few seconds; your pawn dies with its worker and is respawned elsewhere, because this prototype has no persistence. Now press **Remove** instead: the worker is drained, every entity it holds is handed over through the normal path, and you notice nothing more than a handover.
+
+```bash
+nebula status
+nebula logs w1 --follow
+nebula stop
+```
+
+</Step>
+</Steps>
+
+## Where next
+
+<Cards>
+  <Card title="Running locally" href="/docs/getting-started/running-locally" description="Every way to run, watch and stop the mesh on one machine." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What actually happens when you walk across that seam." />
+  <Card title="Deploy to Hetzner" href="/docs/deploy/hetzner" description="The same build on real VMs, one per worker." />
+</Cards>

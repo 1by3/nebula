@@ -1,0 +1,184 @@
+---
+title: "Container"
+description: "A designer-authored unit of authority: a box volume with its own local coordinate space."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Container.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Container.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class Container : MonoBehaviour
+```
+
+A designer-authored unit of authority: a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space. Containers are static; which worker simulates each one is decided at runtime by the orchestrator.
+
+There are no separate seam volumes in this prototype. Instead every container boundary carries an automatic ghost band ([`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin)) and an entry hysteresis ([`NebulaConfig.HandoverHysteresis`](/docs/reference/core/nebula-config#handoverhysteresis)), which gives the same pre-warm-then-flip behaviour with nothing extra to author.
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId = "container";
+```
+
+Stable id used by the control plane. Must be unique in the scene.
+
+### Size [#size]
+
+```csharp
+public Vector3 Size = new Vector3(20f, 10f, 20f);
+```
+
+Box size in local space, centred on Center.
+
+### Center [#center]
+
+```csharp
+public Vector3 Center = new Vector3(0f, 5f, 0f);
+```
+
+## Properties
+
+### Index [#index]
+
+```csharp
+public ushort Index { get; } = ushort.MaxValue;
+```
+
+Dense index assigned by [`ContainerRegistry`](/docs/reference/containers/container-registry) (sorted by id, or manifest order in a partitioned world). Used on the wire.
+
+### Cell [#cell]
+
+```csharp
+public Vector3Int Cell { get; }
+```
+
+Partitioned worlds: the grid cell this container belongs to (see [`WorldContainerManifest`](/docs/reference/world/world-container-manifest)).
+
+### IsCell [#iscell]
+
+```csharp
+public bool IsCell { get; }
+```
+
+Partitioned worlds: this container spans its whole cell.
+
+### Neighbors [#neighbors]
+
+```csharp
+public List<Container> Neighbors { get; } = new List<Container>();
+```
+
+### OwnerWorkerId [#ownerworkerid]
+
+```csharp
+public string OwnerWorkerId { get; } = "";
+```
+
+Runtime: id of the worker currently leasing this container ("" if none). Updated from the control plane.
+
+### OwnerWorkerIndex [#ownerworkerindex]
+
+```csharp
+public ushort OwnerWorkerIndex { get; } = ushort.MaxValue;
+```
+
+### LeaseEpoch [#leaseepoch]
+
+```csharp
+public ulong LeaseEpoch { get; }
+```
+
+### WorldBounds [#worldbounds]
+
+```csharp
+public Bounds WorldBounds { get; }
+```
+
+### Volume [#volume]
+
+```csharp
+public float Volume { get; }
+```
+
+World-space volume of the box (nested containers: the smallest one holding a point wins).
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+World rotation of the container's frame (cached; see [`RefreshCache`](#refreshcache)).
+
+### InverseRotation [#inverserotation]
+
+```csharp
+public Quaternion InverseRotation { get; }
+```
+
+## Methods
+
+### RefreshCache [#refreshcache]
+
+```csharp
+public void RefreshCache();
+```
+
+Re-read the transform. [`ContainerRegistry.Rebuild`](/docs/reference/containers/container-registry#rebuild) does this for every container and the worker repeats it once per tick, so a container that moves (a ship) is never more than a tick stale.
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(Vector3 worldPosition);
+```
+
+### SignedDistance [#signeddistance]
+
+```csharp
+public float SignedDistance(Vector3 worldPosition);
+```
+
+Signed distance to the box surface: positive outside (how far, in any direction), negative inside (how deep, measured to the nearest *wall* only). The floor and ceiling do not count as depth: pawns stand on the floor, which is the bottom face of the box, and treating it as a seam would keep every entity in a room permanently "about to leave" for the ghost band and never past the handover hysteresis.
+
+### DistanceToSeam [#distancetoseam]
+
+```csharp
+public float DistanceToSeam(Vector3 worldPosition, Container neighbor);
+```
+
+How far a point inside this container is from its seam with `neighbor`. For a sibling or an inner box that is the neighbour's surface; for a neighbour that encloses this one (a building inside the outdoor area) the seam is this container's own surface, so the answer is how far the point is from getting out - not "inside the enclosing box", which would put every entity in every building in the band permanently.
+
+### Encloses [#encloses]
+
+```csharp
+public bool Encloses(Container other);
+```
+
+`other`'s box lies entirely inside this one (nested containers).
+
+### ToLocal [#tolocal]
+
+```csharp
+public Vector3 ToLocal(Vector3 world);
+```
+
+### ToWorld [#toworld]
+
+```csharp
+public Vector3 ToWorld(Vector3 local);
+```
+
+### IsOwnedBy [#isownedby]
+
+```csharp
+public bool IsOwnedBy(string workerId);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

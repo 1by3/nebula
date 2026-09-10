@@ -1,0 +1,55 @@
+---
+title: "TransportEvent"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs)</div>
+
+```csharp
+public readonly struct TransportEvent
+```
+
+## Constructors
+
+### TransportEvent [#transportevent]
+
+```csharp
+public TransportEvent(Kind type, int peerId, ArraySegment<byte> data);
+```
+
+## Fields
+
+### Type [#type]
+
+```csharp
+public readonly Kind Type;
+```
+
+### PeerId [#peerid]
+
+```csharp
+public readonly int PeerId;
+```
+
+### Data [#data]
+
+```csharp
+public readonly ArraySegment<byte> Data;
+```
+
+## Nested types
+
+### Kind [#kind]
+
+```csharp
+public enum Kind : byte
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Connected` |  |  |
+| `Disconnected` |  |  |
+| `Data` |  |  |
+

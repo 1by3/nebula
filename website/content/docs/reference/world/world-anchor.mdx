@@ -1,0 +1,39 @@
+---
+title: "WorldAnchor"
+description: "Anchor component: keeps the cells around this transform loaded."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldStreamer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldStreamer.cs)</div>
+
+```csharp
+public sealed class WorldAnchor : MonoBehaviour, IWorldAnchor
+```
+
+Anchor component: keeps the cells around this transform loaded. Put it on the player or the camera.
+
+## Fields
+
+### RadiusCells [#radiuscells]
+
+```csharp
+public int RadiusCells = 1;
+```
+
+Cells around this object to keep loaded (1 = the 3x3x3 block).
+
+### Primary [#primary]
+
+```csharp
+public bool Primary;
+```
+
+The floating origin follows this anchor.
+
+## Methods
+
+### TryGetAnchor [#trygetanchor]
+
+```csharp
+public bool TryGetAnchor(out Vector3 framePosition, out int radiusCells);
+```
+

@@ -1,0 +1,47 @@
+---
+title: "nebula build"
+description: "Build the game executable every role runs from (orchestrator, gateway, workers, client)"
+---
+
+Build the game executable every role runs from (orchestrator, gateway, workers, client).
+
+```bash
+nebula build [worker|client] [--linux] [--scratch] [--stop-mesh]
+```
+
+```text
+Every Nebula role is the same player build started with a different -nebula-role, so `worker` and `client`
+build the same thing; the words are accepted for readability. Without --linux the build is for this machine
+(Builds/Win64, Builds/MacOS or Builds/Linux64), which is what `nebula start` runs. --linux builds the Linux
+dedicated server into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`.
+
+If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch
+(the Editor holds an exclusive lock on the project). Builds/unity-build*.log has the full Unity output.
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--linux` | build the Linux dedicated server and pack the deploy tarball |
+| `--scratch` | always build from a mirrored copy of the project |
+| `--force` | build in place even if the Editor seems to hold the project |
+| `--stop-mesh` | stop a running local mesh first (it holds the previous build open) |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula build
+nebula build worker --linux
+nebula build --stop-mesh
+```

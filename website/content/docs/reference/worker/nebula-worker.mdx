@@ -1,0 +1,251 @@
+---
+title: "NebulaWorker"
+description: "The sim worker: a headless Unity process leased authority over a set of containers."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs)</div>
+
+```csharp
+public sealed class NebulaWorker : MonoBehaviour, IRpcSink
+```
+
+The sim worker: a headless Unity process leased authority over a set of containers. It simulates the entities in those containers at the tick rate, ghosts entities approaching a neighbouring container to that container's worker over the lateral link, hands authority over when they cross, and streams its authoritative entities to the gateway. One process can own any number of containers; adjacent containers on the same worker hand over locally with no network traffic at all.
+
+## Fields
+
+### StateBatchBytes [#statebatchbytes]
+
+```csharp
+public const int StateBatchBytes = 500;
+```
+
+Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. At 36 bytes per entry this is 13 entries per packet.
+
+### MaxCatchUpTicks [#maxcatchupticks]
+
+```csharp
+public const int MaxCatchUpTicks = 2;
+```
+
+Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### ControlPlane [#controlplane]
+
+```csharp
+public IControlPlane ControlPlane { get; }
+```
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId { get; }
+```
+
+### WorkerIndex [#workerindex]
+
+```csharp
+public ushort WorkerIndex { get; }
+```
+
+### Port [#port]
+
+```csharp
+public ushort Port { get; }
+```
+
+### IsListening [#islistening]
+
+```csharp
+public bool IsListening { get; }
+```
+
+### CurrentTick [#currenttick]
+
+```csharp
+public uint CurrentTick { get; }
+```
+
+### TickCount [#tickcount]
+
+```csharp
+public ulong TickCount { get; }
+```
+
+### TickMs [#tickms]
+
+```csharp
+public float TickMs { get; }
+```
+
+### HandoversOut [#handoversout]
+
+```csharp
+public int HandoversOut { get; }
+```
+
+### HandoversIn [#handoversin]
+
+```csharp
+public int HandoversIn { get; }
+```
+
+### LocalHandovers [#localhandovers]
+
+```csharp
+public int LocalHandovers { get; }
+```
+
+### GhostsSent [#ghostssent]
+
+```csharp
+public int GhostsSent { get; }
+```
+
+### GhostsHeld [#ghostsheld]
+
+```csharp
+public int GhostsHeld { get; }
+```
+
+### AuthoritativeCount [#authoritativecount]
+
+```csharp
+public int AuthoritativeCount { get; }
+```
+
+### EntityCount [#entitycount]
+
+```csharp
+public int EntityCount { get; }
+```
+
+### PlayerCount [#playercount]
+
+```csharp
+public int PlayerCount { get; }
+```
+
+Authoritative entities owned by human clients / by bot clients / by nobody (server-driven), as of the last heartbeat.
+
+### BotCount [#botcount]
+
+```csharp
+public int BotCount { get; }
+```
+
+### ServerDrivenCount [#serverdrivencount]
+
+```csharp
+public int ServerDrivenCount { get; }
+```
+
+### Entities [#entities]
+
+```csharp
+public IEnumerable<NetworkIdentity> Entities { get; }
+```
+
+### Authoritative [#authoritative]
+
+```csharp
+public IReadOnlyList<NetworkIdentity> Authoritative { get; }
+```
+
+### MeshReady [#meshready]
+
+```csharp
+public bool MeshReady { get; }
+```
+
+Every container's owner is connected to this worker (or is this worker). Game code that spawns into containers it does not own should wait for this: the immediate handover needs a target.
+
+### IsRegistered [#isregistered]
+
+```csharp
+public bool IsRegistered { get; }
+```
+
+Registered with the control plane; the mesh knows about this worker.
+
+## Events
+
+### EntitySpawned [#entityspawned]
+
+```csharp
+public event Action<NetworkIdentity> EntitySpawned;
+```
+
+### EntityDespawned [#entitydespawned]
+
+```csharp
+public event Action<NetworkIdentity> EntityDespawned;
+```
+
+### AuthorityHandedOff [#authorityhandedoff]
+
+```csharp
+public event Action<NetworkIdentity, string> AuthorityHandedOff;
+```
+
+### AuthorityReceived [#authorityreceived]
+
+```csharp
+public event Action<NetworkIdentity, string> AuthorityReceived;
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(NebulaConfig config, IControlPlane controlPlane);
+```
+
+### Spawn [#spawn]
+
+```csharp
+public void Spawn(NetworkIdentity identity, Container container, uint ownerClientId = 0);
+```
+
+Allocate an id and make `identity` live on this worker. Call after instantiating a network prefab.
+
+### SpawnServerDriven [#spawnserverdriven]
+
+```csharp
+public void SpawnServerDriven(NetworkIdentity identity, Container container);
+```
+
+Spawn a server-driven entity: one with no owning client whose [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour) (if any) gets its input from `GatherServerInput` on whichever worker holds authority. It ghosts and hands over like any other entity and costs nothing beyond the entity itself. The container need not be owned by this worker: the mesh hands the entity to its owner on the next tick (see [`MeshReady`](#meshready)).
+
+### SpawnPrefab [#spawnprefab]
+
+```csharp
+public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, uint ownerClientId = 0);
+```
+
+### Despawn [#despawn]
+
+```csharp
+public void Despawn(NetworkIdentity identity);
+```
+
+### Find [#find]
+
+```csharp
+public NetworkIdentity Find(ulong netId);
+```
+
+### FindPlayer [#findplayer]
+
+```csharp
+public NetworkIdentity FindPlayer(uint clientId);
+```
+

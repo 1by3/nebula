@@ -1,0 +1,57 @@
+---
+title: "NebulaRuntime"
+description: "Process-wide role context."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaRuntime.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaRuntime.cs)</div>
+
+```csharp
+public static class NebulaRuntime
+```
+
+Process-wide role context. A process is either a worker (server) or a client, never both.
+
+## Properties
+
+### IsServer [#isserver]
+
+```csharp
+public static bool IsServer { get; }
+```
+
+### IsClient [#isclient]
+
+```csharp
+public static bool IsClient { get; }
+```
+
+### LocalClientId [#localclientid]
+
+```csharp
+public static uint LocalClientId { get; }
+```
+
+### LocalWorkerId [#localworkerid]
+
+```csharp
+public static string LocalWorkerId { get; } = "";
+```
+
+### LocalWorkerIndex [#localworkerindex]
+
+```csharp
+public static ushort LocalWorkerIndex { get; }
+```
+
+### RpcSink [#rpcsink]
+
+```csharp
+public static IRpcSink RpcSink { get; }
+```
+
+### Config [#config]
+
+```csharp
+public static NebulaConfig Config { get; }
+```
+

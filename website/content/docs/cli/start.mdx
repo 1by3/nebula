@@ -1,0 +1,45 @@
+---
+title: "nebula start"
+description: "Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers"
+---
+
+Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers.
+
+```bash
+nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui]
+```
+
+```text
+Starts a local SpacetimeDB if none answers on the configured address, publishes the control-plane module with
+fresh data, then launches the orchestrator from the last build; the orchestrator starts the gateway and the
+workers. Join from the Editor (Play) or with the client build. Defaults come from nebula.json (mesh section).
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--build` | build first (nebula build) |
+| `--workers <N>` | worker processes (default from nebula.json, 4) |
+| `--npcs <N>` | worker-simulated NPCs spread across the mesh (default 0) |
+| `--bots <N>` | headless bot clients that roam and shoot (default 0; each is a full client process) |
+| `--open-ui` | open the mesh dashboard in the browser once it is up |
+| `--skip-publish` | do not re-publish the control-plane module |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula start --open-ui
+nebula start --build --workers 2
+nebula start --workers 4 --npcs 128
+```

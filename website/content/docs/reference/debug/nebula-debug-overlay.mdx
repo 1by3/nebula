@@ -1,0 +1,31 @@
+---
+title: "NebulaDebugOverlay"
+description: "IMGUI status overlay for every role."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Debug/NebulaDebugOverlay.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Debug/NebulaDebugOverlay.cs)</div>
+
+```csharp
+public sealed class NebulaDebugOverlay : MonoBehaviour
+```
+
+IMGUI status overlay for every role. On a client it shows the tick/RTT/lead, the local player's container and its current worker, handovers observed, and the container -\> worker table. Toggle with F3.
+
+## Fields
+
+### Visible [#visible]
+
+```csharp
+public bool Visible = true;
+```
+
+Toggle from game code (e.g. on F3); the overlay itself reads no input so it works with any input backend.
+
+## Methods
+
+### ColorForWorker [#colorforworker]
+
+```csharp
+public static Color ColorForWorker(ushort workerIndex);
+```
+

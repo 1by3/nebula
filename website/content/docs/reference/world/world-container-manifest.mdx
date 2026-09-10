@@ -1,0 +1,117 @@
+---
+title: "WorldContainerManifest"
+description: "The baked container tree of a partitioned world: one container per cell plus every hand-authored Container found inside the cell scenes, with cell-local poses."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/WorldContainerManifest.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/WorldContainerManifest.cs)</div>
+
+```csharp
+[CreateAssetMenu(menuName = "Nebula/World Container Manifest", fileName = "WorldContainers")]
+public sealed class WorldContainerManifest : ScriptableObject
+```
+
+The baked container tree of a partitioned world: one container per cell plus every hand-authored [`Container`](/docs/reference/containers/container) found inside the cell scenes, with cell-local poses. Every process instantiates the whole manifest at boot (thousands of empty transforms are cheap), so container indices are identical everywhere and never depend on which cell scenes happen to be loaded. Cell scenes stream content into those containers; the [`Container`](/docs/reference/containers/container) components authored in the scenes are stripped on load.
+
+The entry order is the wire order: cells by Morton key, each followed by its nested containers, which is also the order the orchestrator deals contiguous runs of to workers. Rebake after moving or adding containers (Nebula \> World).
+
+## Fields
+
+### World [#world]
+
+```csharp
+public WorldDefinition World;
+```
+
+### Entries [#entries]
+
+```csharp
+public List<Entry> Entries = new List<Entry>();
+```
+
+## Methods
+
+### CellContainerId [#cellcontainerid]
+
+```csharp
+public static string CellContainerId(Vector3Int coord);
+```
+
+Id of the container spanning cell `coord`.
+
+### Compare [#compare]
+
+```csharp
+public static int Compare(Entry a, Entry b);
+```
+
+Wire-order comparison: Morton key of the cell, cell container first, then larger boxes before smaller, then id.
+
+### Sort [#sort]
+
+```csharp
+public void Sort();
+```
+
+## Nested types
+
+### Entry [#entry]
+
+```csharp
+[Serializable]
+public sealed class Entry
+```
+
+#### Fields
+
+##### Id [#id]
+
+```csharp
+public string Id = "";
+```
+
+##### Cell [#cell]
+
+```csharp
+public Vector3Int Cell;
+```
+
+##### IsCell [#iscell]
+
+```csharp
+public bool IsCell;
+```
+
+The container that spans the whole cell (one per cell).
+
+##### LocalPosition [#localposition]
+
+```csharp
+public Vector3 LocalPosition;
+```
+
+Pose relative to the cell centre (cell-local).
+
+##### LocalRotation [#localrotation]
+
+```csharp
+public Quaternion LocalRotation = Quaternion.identity;
+```
+
+##### LocalScale [#localscale]
+
+```csharp
+public Vector3 LocalScale = Vector3.one;
+```
+
+##### Size [#size]
+
+```csharp
+public Vector3 Size;
+```
+
+##### Center [#center]
+
+```csharp
+public Vector3 Center;
+```
+

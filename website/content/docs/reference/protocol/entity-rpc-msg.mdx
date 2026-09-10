@@ -1,0 +1,65 @@
+---
+title: "EntityRpcMsg"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EntityRpcMsg
+```
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### BehaviourIndex [#behaviourindex]
+
+```csharp
+public byte BehaviourIndex;
+```
+
+### MethodHash [#methodhash]
+
+```csharp
+public uint MethodHash;
+```
+
+### ClientId [#clientid]
+
+```csharp
+public uint ClientId;
+```
+
+For ClientRpc: 0 = every client, otherwise only that client. For ServerRpc: the sending client (filled by the gateway).
+
+### Args [#args]
+
+```csharp
+public byte[] Args;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w, MsgId id);
+```
+
+### Read [#read]
+
+```csharp
+public static EntityRpcMsg Read(NetworkReader r);
+```
+

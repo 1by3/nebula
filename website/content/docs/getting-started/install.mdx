@@ -1,0 +1,87 @@
+---
+title: Install the CLI
+description: Get the nebula command-line tool and the prerequisites for running a mesh locally.
+---
+
+The `nebula` CLI is the front door to Nebula: it installs the middleware into a Unity project, builds the player, runs the whole mesh on your machine and deploys it to a cloud provider. It is one self-contained executable (no .NET runtime needed) built from `cli/Nebula.Cli`, and it works the same on Windows, macOS and Linux.
+
+## Prerequisites
+
+| What | Why | Notes |
+| --- | --- | --- |
+| Unity 6 (6000.x) | Nebula is a Unity project; every role is the same player build | Developed on 6000.6. Add the **Linux Dedicated Server** module to deploy to the cloud. |
+| SpacetimeDB CLI | Runs the local control plane and publishes the module | `nebula setup` installs it with the official installer. |
+| .NET 10 SDK | Compiles the control-plane module (and the CLI itself, when built from source) | `nebula setup` installs it into `~/.dotnet` if missing. |
+| git, ssh | `nebula init` fetches the SDK; `nebula deploy` reaches the VMs | Only needed for those two commands. |
+
+## Install
+
+<Tabs items={['Windows', 'macOS / Linux', 'From a checkout']}>
+<Tab value="Windows">
+
+```powershell
+iwr https://windows.nebula.1by3.co -useb | iex
+```
+
+The installer puts `nebula.exe` in `~/.nebula-cli/bin` and adds that folder to your user `PATH`. Open a new terminal afterwards.
+
+</Tab>
+<Tab value="macOS / Linux">
+
+```bash
+curl -sSf https://install.nebula.1by3.co | sh
+```
+
+The installer puts `nebula` in `~/.nebula-cli/bin` and adds that folder to `PATH` in your shell profile. Open a new terminal afterwards.
+
+</Tab>
+<Tab value="From a checkout">
+
+The same scripts can build the CLI from the repository with `dotnet publish` (needs the .NET 10 SDK). They also remember the checkout, so `nebula init` copies `Packages/com.1by3.nebula` from it instead of cloning.
+
+```powershell
+powershell -File cli\install\install.ps1 -Source .
+```
+
+```bash
+sh cli/install/install.sh --source .
+```
+
+To run the CLI without installing it at all:
+
+```bash
+dotnet run --project cli/Nebula.Cli -- --help
+```
+
+</Tab>
+</Tabs>
+
+<Callout type="info" title="Hosted installer URLs">
+The hosted URLs are not live yet. Until they are, install from a checkout, or use the installer scripts in `cli/install/` with `-Archive`/`--archive <file>` pointing at a release archive built by `cli/scripts/package.ps1` or `package.sh`. Without either, the scripts download `nebula-<version>-<rid>.zip` or `.tar.gz` from the repository's releases; `NEBULA_VERSION` picks a version and `NEBULA_RELEASE_BASE` another host.
+</Callout>
+
+## Check the install and set up prerequisites
+
+```bash
+nebula --version
+nebula setup
+```
+
+`nebula setup` installs what is missing and reports what it finds: the SpacetimeDB CLI, a .NET 10 SDK, git and ssh, and the Unity editors Unity Hub has installed (with whether they include Linux Dedicated Server support). `nebula setup --check` only reports. `nebula setup --yes` answers every prompt with yes.
+
+## Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `NEBULA_SOURCE` | A checkout of the Nebula repository for the installer to build from, and for `nebula init` to copy `Packages/com.1by3.nebula` from. |
+| `NEBULA_UNITY` | Path to the Unity editor executable (or the Hub's `Editor` folder) `nebula build` should use. `nebula config unity` stores the same thing. |
+| `NEBULA_CLI_HOME` | Where the CLI keeps its binary, config and scratch builds (default `~/.nebula-cli`). |
+| `HCLOUD_TOKEN` | Hetzner Cloud API token; always takes precedence over the one stored by `nebula config hetzner`, so CI can deploy without a config file. |
+
+## Next
+
+<Cards>
+  <Card title="Tutorial" href="/docs/getting-started/tutorial" description="Install Nebula into a Unity project and run your first mesh." />
+  <Card title="Running locally" href="/docs/getting-started/running-locally" description="build, start, stop, status, logs, and the dashboard." />
+  <Card title="CLI reference" href="/docs/cli" description="Every command and option." />
+</Cards>

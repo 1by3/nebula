@@ -1,0 +1,77 @@
+---
+title: "NebulaWorld"
+description: "Nebula's side of a partitioned world (WorldDefinition + WorldContainerManifest): instantiates the manifest's container tree for the registry, owns the WorldStreamer, keeps the virtual containers and every entity's cached positions in ste..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/NebulaWorld.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaWorld.cs)</div>
+
+```csharp
+public static class NebulaWorld
+```
+
+Nebula's side of a partitioned world ([`WorldDefinition`](/docs/reference/world/world-definition) + [`WorldContainerManifest`](/docs/reference/world/world-container-manifest)): instantiates the manifest's container tree for the registry, owns the [`WorldStreamer`](/docs/reference/world/world-streamer), keeps the virtual containers and every entity's cached positions in step with origin shifts, and strips the authoring [`Container`](/docs/reference/containers/container) components out of cell scenes as they stream in. Inactive (everything behaves as a single scene) when [`NebulaConfig.WorldManifest`](/docs/reference/core/nebula-config#worldmanifest) is unset.
+
+## Properties
+
+### Manifest [#manifest]
+
+```csharp
+public static WorldContainerManifest Manifest { get; }
+```
+
+### Definition [#definition]
+
+```csharp
+public static WorldDefinition Definition { get; }
+```
+
+### Streamer [#streamer]
+
+```csharp
+public static WorldStreamer Streamer { get; }
+```
+
+### IsActive [#isactive]
+
+```csharp
+public static bool IsActive { get; }
+```
+
+### Root [#root]
+
+```csharp
+public static GameObject Root { get; }
+```
+
+## Methods
+
+### Load [#load]
+
+```csharp
+public static void Load(WorldContainerManifest manifest);
+```
+
+Instantiate the manifest and populate [`ContainerRegistry`](/docs/reference/containers/container-registry). Call once at boot, before any role starts.
+
+### Unload [#unload]
+
+```csharp
+public static void Unload();
+```
+
+### CellContainer [#cellcontainer]
+
+```csharp
+public static Container CellContainer(Vector3Int cell);
+```
+
+The container spanning `cell`, or null.
+
+### IsContentLoaded [#iscontentloaded]
+
+```csharp
+public static bool IsContentLoaded(Container container);
+```
+
+Whether the content of the cell holding `container` is loaded in this process.
+

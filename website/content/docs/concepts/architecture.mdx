@@ -1,0 +1,145 @@
+---
+title: Architecture
+description: "The design behind Nebula: the container model, the tier stack, seams, the two kinds of handover, cross-boundary interaction and failure behaviour."
+---
+
+This page summarizes the Nebula architecture as designed in August 2026, written for developers who did not take part in that design. The [prototype](/docs/concepts/roles-and-wire-protocol) implements a deliberately small subset of it; where this page and the running code differ, the guides describe the code.
+
+## Goal and product posture
+
+Nebula is middleware for dynamically meshed multiplayer game servers, Unity-first: an MMO-scale world is served by many dedicated game servers, each dynamically responsible for a portion of the world (a city down to an individual room), with entities crossing between servers' areas of influence seamlessly. The reference point is Star Citizen: CIG shipped static meshing in 4.0 (December 2024); dynamic meshing remains their in-progress next step. The static-to-dynamic gap is where the hard problems live.
+
+The product posture is narrow and honest: market to specific types of games, publish the system's limitations explicitly, and treat that honesty as a trust advantage. The prototype targets FPS combat at 60 Hz hitscan because it is the strictest case. If seam crossings are invisible there, they are invisible in a survival game or a social world; the reverse does not hold.
+
+The most product-relevant lesson comes from SpatialOS. Improbable built almost exactly this system, worker-based authority with handover as a first-class concept, and the technology largely worked. What killed it was developer experience: authority semantics leaked into every component, the workflow fought the engine, and studios spent their time fighting the platform. The failure mode for this product category is not "the tech doesn't work" but "developers hate using it". Everything that sounds like polish (the debug overlay, validator error messages, gameplay API ergonomics) is the core product surface.
+
+## The container model
+
+The unit of authority is not a spatial grid: no octrees, BSP or uniform chunks. The world is a static, designer-authored hierarchy of nested object containers, a room inside a ship inside a system, each with its own local coordinate space. Authority is assigned per container. The container tree is static; the assignment of containers to servers is dynamic. Splitting a city across four servers means "reassign these 40 room containers to server B", never "compute a cut plane through live geometry".
+
+Never flat-spatial is a hard requirement. The hierarchy pays off four ways:
+
+- **Moving reference frames for free.** A ship flying across a system never straddles boundaries because everything inside it lives in the ship's local space. Grid-based schemes die here.
+- **Floating-point precision at planetary scale.** Nothing is ever far from its local origin.
+- **Semantic boundaries.** A doorway is a natural authority seam in a way that x = 1024 never is.
+- **Passengers never cross seams.** When a ship crosses a seam, the ship is one entity changing containers; everyone aboard is in the ship's local space and their transforms never change. Forty players in a capital ship experience nothing. The real cost of a large ship crossing is handover payload, a container subtree of hull, cargo and passengers, mitigated by prioritized incremental hydration, keeping durable data like inventories in the persistence layer read lazily, and a provisional flip with not-yet-resident state frozen rather than wrong.
+
+In Unity, containers are the transform hierarchy: a `Container` component declares bounds, a stable id and a streamed-content reference; a `Seam` component adds neighbour references and an approach-time budget. A bake-time validator enforces the seam contract and exports a container-graph manifest, so the level file is the deployment topology. The prototype implements `Container`; seams and the validator are not built yet, see [Containers and handover](/docs/concepts/containers-and-handover).
+
+## Tier stack
+
+Top to bottom:
+
+**Control plane and persistence.** SpacetimeDB. Two jobs: the control plane (container ownership leases, authority epochs, node registry, entity directory; low write volume, transactionally consistent, subscription push), and durable world state (inventories, placed structures, player persistence; written on checkpoint interval and container drain, read on hydration). A lease row is roughly `container_id, owner_node, epoch, state, heartbeat_at, expires_at` with state in `{assigning, active, draining, orphaned}`. What it must never be: the transport for per-tick transforms or the arbiter of hit registration. All sim code talks to an `IControlPlane` abstraction. SpacetimeDB's scaling story (a single module is roughly a single-node database) is the honest risk; region sharding with a coordinating layer above is presumed viable. Control plane and persistence probably should not even be the same module, since their consistency and durability needs diverge.
+
+**Stateless sim servers.** Headless Unity processes simulating at 60 Hz. A sim is not "the server for a region"; it is a disposable compute worker leased authority over a set of containers. Authoritative durable state lives above it; a sim dying does not take state with it.
+
+**The lateral link.** Sims owning adjacent containers peer directly over UDP or QUIC on a private datacenter network to carry ghost-band state, never through the database. Each sim peers only with sims owning adjacent containers, so it is bounded, not N².
+
+**Gateway.** One client connection; the gateway multiplexes to whichever sims own containers in the client's interest set, does interest filtering, packet coalescing, and ghost and authority dedupe, making handover invisible to the client. About 1 ms extra hop when colocated. Client interest is a separate subsystem from the ghost band: it is driven by visibility, not authority (you can see much farther than you can collide), and is much larger than either sim-side overlap set.
+
+**Clients.** Predicted, reconciled, never a party to the handover protocol.
+
+**An orchestrator** watches sim telemetry (p99 tick time, not entity count), decides split and merge, drives reassignment via lease intents, and owns a warm pool of pre-booted sims, since cold-starting an engine process with a loaded level takes tens of seconds.
+
+## Seams
+
+A boundary is a volume, not a plane: a 12 m airlock corridor, not an infinitely thin plane at x = 0. Better still, the seam volume is its own container with exactly one owner (usually a neighbour, or its own sim if hot). Consequences:
+
+- All interaction inside the seam is single-authority: no cross-boundary hit registration, no ghost divergence, no claim/validate for anything happening in the corridor.
+- Handover becomes two sequential single-authority transfers (A to seam, seam to B), each at a moment we control, instead of one fuzzy simultaneous one.
+- Cross-seam combat reduces to "entities at opposite ends of a corridor", which occlusion mostly eliminates.
+
+This converts the hardest correctness problem into a scheduling problem, at the cost of one extra handover per traversal.
+
+**Ghost band is not the seam volume.** The seam volume exists for interaction containment; its size is set by gameplay geometry. The ghost band exists for pre-warm timing; it is sized in seconds of approach time, not metres, and need not be geometric at all. It is trajectory-predicted: ghost an entity when its projected path crosses a seam within N milliseconds. A ship at 1000 m/s with a 500 ms budget starts ghosting 500 m out while the seam stays a thin shell. Trajectory prediction works best exactly where geometry fails (fast, high-momentum entities) and geometry covers where prediction fails (a player on foot who can reverse in 200 ms).
+
+**The seam contract**, enforced by the bake validator: no constraint island spans a seam (a hard error; no graceful degradation exists); seams should occlude or be closable; interaction volumes, triggers and NavMesh links terminate at seams (with declared seam links); bounded crossing throughput. Seam-length-versus-speed constraints are soft, since fast spaceships cannot always have long enough seams: quantified warnings ("clean crossings up to 45 m/s; above that expect up to 30 cm correction") plus a graceful degradation ladder. Full pre-warm (invisible), then late snapshot (brief visible correction), then no pre-warm (provisionally spawn from the transform stream, frozen until state backfills), and never an entity that vanishes or exists on zero servers.
+
+## Two operations both called "handover"
+
+They have completely different budgets, and conflating them is a classic failure.
+
+| | Entity handover | Container reassignment |
+| --- | --- | --- |
+| What | A player walks through a seam | The load balancer moves container C from sim A to sim B |
+| Frequency | Constant | Rare, seconds apart |
+| Budget | Sub-frame | Hundreds of milliseconds, staged |
+| Mechanism | Ghost-band pre-warm plus an epoch bump agreed sim-to-sim over the lateral link; the database write is the durable record that settles ties, and gameplay never waits on it | B prepares (loads static data, hydrates state), A drains (stops accepting entities, flushes writes), the lease flips, A releases. Both simulate during drain, B non-authoritatively |
+
+## Handover mechanism
+
+Pre-warm, never transfer-at-crossing. Each sim ghosts the containers adjacent to (or trajectory-predicted toward) its own, so the neighbour already holds full warm state before an entity can cross. Crossing costs an authority epoch increment: every grant carries a monotonic epoch, and clients and the control plane reject writes from stale epochs, preventing split-brain.
+
+On the non-owning sim a ghost is a kinematic collider driven by the received transform stream: no solve, no constraint participation. Local dynamic entities collide against it, so blocking is one-sided. At the flip, the authority event carries A's exact final state and B snaps to it; B never computes a starting state, it is handed one. Divergence at the flip therefore comes from interpolation lag alone (16 to 30 ms of staleness).
+
+Anti-thrash: asymmetric enter and exit thresholds, minimum dwell time, deferring handover during high-acceleration frames, and keeping ghosts resident a few seconds after band exit.
+
+The ghost-band wire protocol is four tiers in three reliability classes:
+
+| Tier | Rate | Delivery | Contents |
+| --- | --- | --- | --- |
+| Transform | 60 Hz | unreliable sequenced | ~20 bytes per entity, quantized |
+| Sim state | on change | reliable ordered | capsule dimensions, movement mode, AI perception fields |
+| Snapshot | once on band entry | reliable ordered | full dynamics, input cursor, ability state |
+| Authority event | on crossing | reliable ordered | the flip |
+
+QUIC provides exactly this shape natively. Bandwidth is a non-issue: about 1 Mbps per neighbour pair at 100 entities.
+
+## Cross-boundary interaction
+
+The genuinely nasty problem is not handover; it is a player on A shooting a player on B at 60 Hz with lag compensation. Strategy, in order:
+
+1. **Design seams so it cannot happen.** Boundaries at airlocks, elevators, tunnel chokepoints: occluded, no line of sight. Level designers author the seams; the balancer only chooses which authored seams to activate.
+2. **Claim and validate as the fallback.** The shooter's server sends a damage claim (ray, tick, shooter state); the victim's server rewinds against its own history and accepts or rejects. This adds a round trip to hit confirmation. Grenades and other consequential projectiles use the same path: an authoritative tick-stamped event, applied locally by each owning sim.
+3. **Seam-as-container** contains everything happening inside the seam under a single authority, so the contested zone itself never needs cross-server resolution.
+
+The prototype implements the claim path as `[AuthorityRpc]`, without the rewind on the receiving side; see [RPCs](/docs/guides/rpcs).
+
+## Failure behaviour
+
+**A sim dies.** Its lease TTL expires, its containers go orphaned, the orchestrator assigns a warm node which hydrates from the last checkpoint. Transient state since the checkpoint is lost (velocities, in-flight projectiles, a few seconds of position). Players see a rubber-band, not a disconnect; this is the main payoff of stateless sims.
+
+**The gateway dies.** The client reconnects to another gateway and re-subscribes. A visible blip, no state loss; the gateway holds nothing authoritative.
+
+**The control plane is unavailable.** Existing leases remain valid until TTL; the mesh keeps simulating with a frozen topology: no reassignment, no new containers, degraded but alive. The control plane must never be a hot-path dependency; if its outage stops the game, the design has failed its purpose. The decentralized tick derivation supports this: no sim depends on the control plane, or any tick master, to know what time it is.
+
+## The two networks, and build versus buy
+
+Sim-to-sim is trusted, datacenter-local, symmetric, low peer count, no NAT, no cheating, no DDoS surface. Most of what makes network programming hard does not apply, and it is the link the whole meshing concept depends on. Client-to-sim is untrusted WAN: asymmetric, thousands of connections, NAT traversal, mandatory encryption, adversarial. Serving both with one stack is how scope explodes; build the trusted link well and solve the client link conventionally.
+
+| Layer | Build or buy |
+| --- | --- |
+| Sockets, reliability channels, congestion control, crypto | Buy. Subtly wrong is catastrophic and undebuggable |
+| Serialization, bitpacking, quantization | Buy or thin-wrap |
+| Ghost replication, baselines, delta compression, acks | Build |
+| Authority model: leases, epochs, handover | Build. It exists nowhere |
+| Prediction and reconciliation across authority change | Build, referencing prior art heavily |
+| Gameplay API: MeshedBehaviour, EntityRef, commands | Build. This is the product |
+
+Transport sits behind an `ITransport` seam: LiteNetLib for the prototype, `System.Net.Quic` for sim-to-sim when Unity's CoreCLR runtime lands. Existing frameworks (NGO, Mirror, FishNet) encode a single authoritative server structurally and cannot be massaged into multi-authority; Netcode for Entities has the right ghost and snapshot shape but assumes one server and drags in DOTS. Study SpatialOS and Netcode for Entities; build on neither.
+
+## What the prototype proves
+
+The riskiest assumption: a player crossing a seam mid-firefight cannot tell. The success criterion is that the handover correction distribution is statistically indistinguishable from the baseline correction distribution of normal play, validated by telemetry (divergence at flip, correction magnitude, authority-gap and input-continuity counters that must read zero, handover latency, ghost staleness) and a blind A/B test where testers cannot locate the seam by feel at 40 ms sim-to-sim RTT. A clean result proves seamlessness at N = 2; scale is a separate hypothesis requiring a separate experiment.
+
+What has been verified so far, all on one machine with the repository's smoke test:
+
+| Scenario | Result |
+| --- | --- |
+| 4 workers, 3 bots, 75 s | 47 authority handovers (out = in), 39 cross-worker hits, 15 kills, 0 errors or warnings |
+| 4 workers, 2 bots, kill `w3` at 25 s | SE reassigned to `w1` within a second, `w3` relaunched after 8 s and got SE back; the sim never stopped |
+| 2 workers, 4 bots, kill `w1` at 20 s | `w2` took all four containers; the two players whose pawns died were respawned on `w2` |
+| 4 workers, 3 bots, dashboard scale 4 to 2 at 25 s | `w3` and `w4` drained in one pass (each handed its container and bots over), 0 drain timeouts, 34 handovers out = 34 in, 0 errors |
+| Same run, dashboard buttons | Add relaunched `w3` (index reused) and moved one container to it; Remove `w1` drained exactly its two containers; Kill `w3` moved its containers to `w2` within a second and they flowed back after the 8 s relaunch |
+| 4 workers, 128 NPCs, 7 min | All 128 alive throughout; ~30 handovers/s sustained (out = in), 0 errors, 0 dropped packets; worker tick 0.25 to 0.35 ms, each worker about 15% of one core |
+
+Deliberately not there yet:
+
+- No lag compensation or rewind on hit validation: the victim's worker applies the claim as-is. (The shooter's worker does rewind its own view to the shooter's aim tick; see [Prediction](/docs/guides/prediction).)
+- No delta compression or quantisation; every var change ships the entity's full var blob.
+- Ghost interpolation on workers is one tick behind; the client interpolates three ticks behind.
+- Container reassignment reuses the per-entity handover path (drain = transfer every entity), which is correct but not staged; there is no persistence, so a dead worker loses its transient entities and players respawn.
+- No authored seam volumes, no bake validator, no warm pool, no trajectory-predicted ghosting.
+- RPCs and NetworkVariables are reflection-bound; a source generator would replace the registry without touching gameplay code.
+- The control-plane reducers accept any caller and the dashboard is unauthenticated.

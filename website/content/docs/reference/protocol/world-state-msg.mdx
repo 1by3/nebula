@@ -1,0 +1,33 @@
+---
+title: "WorldStateMsg"
+description: "Batched transforms for one tick from one worker."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public static class WorldStateMsg
+```
+
+Batched transforms for one tick from one worker. Unreliable/sequenced.
+
+## Methods
+
+### Begin [#begin]
+
+```csharp
+public static int Begin(NetworkWriter w, MsgId id, uint tick, ushort workerIndex);
+```
+
+### End [#end]
+
+```csharp
+public static void End(NetworkWriter w, int countSlot, ushort count);
+```
+
+### ReadHeader [#readheader]
+
+```csharp
+public static void ReadHeader(NetworkReader r, out uint tick, out ushort workerIndex, out ushort count);
+```
+

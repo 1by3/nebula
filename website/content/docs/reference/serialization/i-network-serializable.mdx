@@ -1,0 +1,27 @@
+---
+title: "INetworkSerializable"
+description: "Implement on structs/classes you want to put in a NetworkVariable<T> or an RPC argument."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Serialization/NetworkSerialization.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Serialization/NetworkSerialization.cs)</div>
+
+```csharp
+public interface INetworkSerializable
+```
+
+Implement on structs/classes you want to put in a [`NetworkVariable<T>`](/docs/reference/core/network-variable) or an RPC argument.
+
+## Methods
+
+### Serialize [#serialize]
+
+```csharp
+void Serialize(NetworkWriter writer);
+```
+
+### Deserialize [#deserialize]
+
+```csharp
+void Deserialize(NetworkReader reader);
+```
+

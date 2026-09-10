@@ -1,0 +1,23 @@
+---
+title: "IWorldAnchor"
+description: "Something the streamer keeps cells loaded around."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldStreamer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldStreamer.cs)</div>
+
+```csharp
+public interface IWorldAnchor
+```
+
+Something the streamer keeps cells loaded around.
+
+## Methods
+
+### TryGetAnchor [#trygetanchor]
+
+```csharp
+bool TryGetAnchor(out Vector3 framePosition, out int radiusCells);
+```
+
+Current frame position and load radius in cells; false when the anchor has nothing to say (no pawn yet).
+

@@ -1,0 +1,207 @@
+---
+title: Spawning, game modes and mesh settings
+description: How entities enter and leave the mesh, what a NebulaGameMode is for, and how workers coordinate through mesh-wide settings.
+---
+
+Every entity in Nebula is spawned by a worker, into a container, from a prefab that every process knows. There is no central allocator: the worker that spawns an entity mints its id, takes authority, and hands the entity to whichever worker owns the container it landed in. This page covers the pieces involved: the game mode that the gateway calls to create players, the prefab table, the `NebulaWorker` spawning API and its events, and mesh settings, the one cross-worker coordination primitive Nebula ships.
+
+## NebulaGameMode
+
+[`NebulaGameMode`](/docs/reference/core/nebula-game-mode) is the worker-side equivalent of subclassing Mirror's `NetworkManager`. Put exactly one subclass in the game scene. The worker finds it with `FindFirstObjectByType` when it starts and warns if there is none (without one, players cannot be spawned).
+
+| Hook | When |
+| --- | --- |
+| `OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)` | The gateway asked this worker to create a player. Instantiate the prefab, spawn it and return the identity. Abstract. |
+| `OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player)` | The player's client went away. The worker despawns the entity after this returns. |
+| `OnWorkerStarted(NebulaWorker worker)` | The worker is listening on its port. Note that registration with the control plane happens later; see `IsRegistered` below. |
+
+`OnSpawnPlayer` is called on whichever worker the gateway picked, with the container the gateway chose. If the hook returns an identity that is not yet spawned, the worker spawns it for that client; if it returns null, the worker logs an error and the client gets no pawn.
+
+`NebulaGameMode.RandomPointIn(container, margin, y)` is a static helper: a uniform random point inside the container's floor footprint, `margin` metres in from the edge, at height `y`.
+
+The sample game's mode is short:
+
+```csharp title="ShooterGameMode.cs"
+public sealed class ShooterGameMode : NebulaGameMode
+{
+    public GameObject PlayerPrefab;
+    public GameObject NpcPrefab;
+    public GameObject BoxPrefab;
+
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+    {
+        FindSpawn(container, out var position, out var rotation);
+        var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(PlayerPrefab), position, rotation, container.transform);
+        identity.name = $"Player {playerName} ({clientId})";
+        var controller = identity.GetComponent<PlayerController>();
+        controller.PlayerName.Value = string.IsNullOrEmpty(playerName) ? $"player{clientId}" : playerName;
+        worker.Spawn(identity, container, clientId);
+        return identity;
+    }
+
+    public override void OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player)
+    {
+        NebulaLog.Info($"player left: {player.name}");
+    }
+}
+```
+
+Setting `NetworkVariable` values between `Instantiate` and `Spawn` is the normal way to give an entity its initial state: the spawn message carries the full variable blob, so late joiners and ghosts see the values from the first frame.
+
+`ShooterGameMode.FindSpawn` prefers an authored `SpawnPoint` inside the container (`SpawnPoint.PickIn(container)` reservoir-samples the ones whose position the container contains) and otherwise drops a `RandomPointIn` result onto the ground with a raycast. Both are game code; Nebula only provides the container geometry.
+
+## Registering prefabs
+
+Every prefab that can be spawned over the network goes in `NebulaConfig.NetworkPrefabs`, the list on the `Resources/NebulaConfig` asset that every role loads. `NebulaBootstrap` passes that list to `NetworkPrefabs.Register` at startup on every process, so the table is identical everywhere.
+
+| Rule | Detail |
+| --- | --- |
+| Index is the wire id | `NetworkPrefabs.IdOf(prefab)` returns the list index as a `ushort`; it is what travels in spawn messages. Reordering the list changes ids on every process at once, which is fine as long as every process runs the same build. |
+| `NetworkIdentity` required | `Register` logs an error for a prefab without one. |
+| Instantiate through the table | `NetworkPrefabs.Instantiate(prefabId, position, rotation, parent)` instantiates, stamps `PrefabId` on the identity and calls `Initialize()`, which discovers the behaviours, their `NetworkVariable` fields and the sync-channel behaviours in a deterministic order. |
+
+An identity spawned with `PrefabId` still at its default logs an error: instantiate through `NetworkPrefabs` (or `NebulaWorker.SpawnPrefab`, which does it for you).
+
+## The worker spawning API
+
+All spawning happens on a worker through [`NebulaWorker`](/docs/reference/worker/nebula-worker). On a worker the instance is `NebulaBootstrap.Instance.Worker`; game code on a `NetworkBehaviour` also receives it as the `worker` argument of the game mode hooks.
+
+| Member | What it does |
+| --- | --- |
+| `Spawn(NetworkIdentity identity, Container container, uint ownerClientId = 0)` | Make an already-instantiated identity live: mint the id, set epoch 1, take authority, put it in the container (or resolve one from its position when `container` is null), run `OnNetworkSpawn` then `OnGainedAuthority` on every behaviour, and announce it to the gateway. A non-zero `ownerClientId` makes it that client's player entity. |
+| `SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, uint ownerClientId = 0)` | `NetworkPrefabs.Instantiate` followed by `Spawn`, parented under the container's transform. Returns the identity. |
+| `SpawnServerDriven(NetworkIdentity identity, Container container)` | `Spawn` with no owning client and `NetworkIdentity.IsServerDriven` set. Whichever worker holds authority drives it; a `PredictedBehaviour<TInput>` on it gets its input from `GatherServerInput` instead of a client. |
+| `Despawn(NetworkIdentity identity)` | Authority only. Sends `EntityDespawn` to the gateway and `GhostDespawn` to every worker holding a ghost, runs `OnNetworkDespawn`, destroys the GameObject. Calling it on a ghost logs a warning and does nothing. |
+| `Find(ulong netId)` | Any entity resident on this worker, authoritative or ghost, or null. |
+| `FindPlayer(uint clientId)` | The entity owned by a client, or null. |
+| `Entities` | Every resident entity (authoritative and ghosts). |
+| `Authoritative` | The entities this worker simulates right now. |
+
+Spawning is synchronous: when `Spawn` returns the entity has an id, is in `Authoritative`, and its behaviours have had their spawn hooks. The box gun in the sample uses this to launch a prop in one go:
+
+```csharp title="PlayerController.cs"
+private void ServerShootBox()
+{
+    var mode = ShooterGameMode.Instance;
+    var worker = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Worker : null;
+    if (mode == null || mode.BoxPrefab == null || worker == null) return;
+    var dir = AimDirection;
+    var origin = EyePosition + dir * (Radius + 0.6f);
+    var identity = worker.SpawnPrefab(mode.BoxPrefab, origin, Quaternion.LookRotation(dir), Container);
+    identity.name = $"Box from {PlayerName.Value}";
+    var body = identity.GetComponent<NetworkRigidbody>();
+    if (body != null) body.SetVelocity(dir * BoxLaunchSpeed);
+    else identity.Velocity = dir * BoxLaunchSpeed;
+}
+```
+
+### Entity ids
+
+Ids are 64-bit, minted locally by the spawning worker: `[workerIndex:16][sequence:48]`, that is `((ulong)WorkerIndex << 48) | ++sequence`. Two workers can never collide, and the id stays with the entity through every handover. The orchestrator reuses worker indices when it relaunches a worker, so a relaunched worker's sequence restarts at zero while entities it spawned earlier may still be alive elsewhere; the prefix identifies the spawner, not the current owner. Use `NetworkIdentity.OwnerWorkerIndex` for the latter.
+
+### Spawning into a container you do not own
+
+`Spawn` takes authority unconditionally, even when the container's lease belongs to another worker. On the next tick the worker's membership pass notices the entity sits in a container owned by someone else and sends an `AuthorityTransfer` to that worker, exactly like a crossing. The `NpcDirector` relies on this: any worker can spawn NPC *i* into container `i % containers` without caring who owns it.
+
+Two properties tell you whether that handover can happen yet:
+
+| Property | Meaning |
+| --- | --- |
+| `IsRegistered` | The worker has registered with the control plane. Leases and settings are not visible before this. |
+| `MeshReady` | Every container has an owner, and every owner that is not this worker is a connected peer that has completed its hello. Spawning into a foreign container before this leaves the entity on the spawner, which keeps authority and logs a warning every five seconds until the owner connects. |
+
+<Callout type="info" title="Wait for MeshReady with a deadline">
+`NpcDirector` waits up to 10 seconds for `MeshReady` before its first spawn, then goes ahead regardless. A container whose owner is dead may never satisfy `MeshReady` until the orchestrator reassigns the lease.
+</Callout>
+
+## Worker events
+
+`NebulaWorker` raises four events, all on the main thread:
+
+| Event | Signature | Fires |
+| --- | --- | --- |
+| `EntitySpawned` | `Action<NetworkIdentity>` | After `Spawn` has announced the entity. |
+| `EntityDespawned` | `Action<NetworkIdentity>` | After `OnNetworkDespawn`, just before the GameObject is destroyed. |
+| `AuthorityHandedOff` | `Action<NetworkIdentity, string toWorkerId>` | This worker sent an `AuthorityTransfer` and is now a ghost holder. |
+| `AuthorityReceived` | `Action<NetworkIdentity, string fromWorkerId>` | This worker applied an incoming transfer and is now authoritative. |
+
+Per-behaviour code usually wants the `OnGainedAuthority` / `OnLostAuthority` hooks on [`NetworkBehaviour`](/docs/guides/network-behaviour) instead; the events are for code that watches the whole population, such as a director.
+
+## Mesh settings
+
+Workers do not share memory and the control plane is never on the per-tick path, so Nebula gives game code exactly one low-volume way to agree on something across the mesh: **mesh settings**, string key/values on [`IControlPlane`](/docs/reference/control-plane/i-control-plane) that Nebula attaches no meaning to.
+
+| Member | What it does |
+| --- | --- |
+| `IControlPlane.Settings` | `IReadOnlyDictionary<string, string>` of the current values. Can be null before the control plane has connected. |
+| `IControlPlane.SetSetting(string key, string value)` | Create or overwrite one setting. Every subscriber sees the change through the `Changed` event on its next `Tick`. |
+| `GetSetting(key, fallback)` | Extension method: the string value or `fallback`. |
+| `GetSettingInt(key, fallback)` | Extension method: the value parsed as an `int`, or `fallback` when missing or unparsable. |
+
+Settings come from three places:
+
+- The orchestrator seeds them at startup from `-nebula-settings key=value,key=value`. `nebula start --npcs N` (and `nebula deploy --npcs N`) passes `npcs=N` this way.
+- The dashboard edits them (the settings fields on the page, or `POST /api/settings` with `{"key":"npcs","value":"128"}`). See [Orchestrator and dashboard](/docs/guides/orchestrator-and-dashboard).
+- Game code on a worker writes them with `SetSetting`. The sample's in-game `npcs 200` command reaches the pawn's worker as an ordinary `ServerRpc`, and that worker writes the setting.
+
+Settings are a coordination channel, not a state store: never write them per tick, and never put anything in them that a specific entity owns.
+
+### The reconcile pattern
+
+Because there is no single decision-maker, the pattern is "every worker reconciles against a shared value". Each worker reads the setting, works out its own share deterministically, and acts only on the difference between what it has already done and what the value asks for. Written that way, it does not matter that workers see the change at different moments, that a worker restarts, or that entities have wandered.
+
+`NpcDirector` is the worked example. It runs on every worker (`ShooterGameMode.Awake` adds it on servers) and keeps the NPC count at the `npcs` setting:
+
+<Steps>
+<Step>
+**Wait until the worker can act.** Nothing happens before `IsRegistered`, and before `Settings` contains `npcs`.
+</Step>
+<Step>
+**Shrink first, on whatever this worker owns.** Every authoritative entity whose `NpcIndex` is at or above the new total is despawned. The index rides in `PlayerController.NpcIndex`, a `NetworkVariable<int>`, so it travels with the entity through ghosting and handover: whichever worker currently simulates NPC 250 is the one that removes it when the total drops to 200, wherever it has wandered.
+</Step>
+<Step>
+**Grow from the census.** Every worker's heartbeat already carries how many server-driven entities it simulates (`WorkerInfo.ServerDrivenCount`), so each worker can add up the mesh-wide NPC count (its own live, the others' from their last heartbeat). Once a second the live workers, sorted by index, each spawn their rank's share of the deficit with `SpawnServerDriven`, starting in container `i % containers`; the mesh hands each one to the container's owner on the next tick. After spawning, a worker waits a few seconds for the other heartbeats to catch up before trusting the census again.
+</Step>
+<Step>
+**Trim a sustained excess.** If the mesh stays above the target for three reconciles (a dead worker's NPCs survived elsewhere and its replacement refilled the gap), each worker despawns its share of the excess, highest index first. One stale heartbeat never culls anything.
+</Step>
+<Step>
+**Recheck on handover.** `AuthorityReceived` runs the shrink test again on the incoming entity, because the previous owner may have handed it over before it saw the new total.
+</Step>
+</Steps>
+
+```csharp title="NpcDirector.cs"
+if (!TakeCensus(cp, out int rank, out int workers, out int mine)) return;   // live workers by index, mesh-wide count
+int deficit = total - MeshCount;
+if (deficit > 0)
+{
+    int share = Share(deficit, workers, rank);          // deficit / workers, remainder to the lowest ranks
+    SpawnShare(share, total, rank, workers);            // indices in this rank's residue class first, then any free one
+    _nextReconcile = Time.unscaledTime + SettleSeconds; // let the heartbeats catch up
+}
+else if (deficit < 0 && ++_excessStrikes >= ExcessStrikes)
+{
+    DespawnHighest(Mathf.Min(Share(-deficit, workers, rank), mine));
+}
+```
+
+The properties that make this safe:
+
+- **Idempotent under lag.** Running the reconcile twice with the same census does nothing the second time. A worker that sees the change late simply catches up.
+- **The target is met with whatever is alive.** Two workers spawn 250 each; when one dies, the survivors refill after its heartbeat times out. Nothing is tied to a configured worker count.
+- **State needed for the decision travels with the entity.** Because `NpcIndex` is replicated, the shrink pass works on the current owner, not the spawner.
+- **Over-counts heal, slowly.** Two workers acting on the same stale census can overshoot; the excess rule trims it a few seconds later. The code accepts that instead of trying to reach consensus.
+
+Indices are labels for the shrink rule and the pawn's name; after a refill two NPCs can share one, which is harmless.
+
+## What does not exist
+
+- **No mesh singleton.** There is no way to elect one worker to run a piece of logic (one boss, load-based placement). Anything that needs a single decision-maker has to be expressed as a reconcile against a shared value, or wait for that feature.
+- **No persistence.** Entities live only on workers. A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`. Settings persist only as long as the control plane's database does.
+- **No client-side spawning.** Only workers spawn. A client that wants something created sends a `ServerRpc` and the owning worker spawns it (see [RPCs](/docs/guides/rpcs)).
+
+<Cards>
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What happens on the tick after you spawn into a foreign container." />
+  <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="State that travels only with the handover, and the per-tick sync channel." />
+  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Where settings are seeded and edited." />
+</Cards>

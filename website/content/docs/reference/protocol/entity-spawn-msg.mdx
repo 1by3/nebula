@@ -1,0 +1,115 @@
+---
+title: "EntitySpawnMsg"
+description: "Full description of an entity."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EntitySpawnMsg
+```
+
+Full description of an entity. Sent as EntitySpawn (to gateway/clients), GhostSpawn (to a neighbour worker) and as the payload of AuthorityTransfer. Receivers treat a spawn for a known netId as an update (owner/epoch/container/vars), never as a duplicate instantiation.
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId;
+```
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public uint OwnerClientId;
+```
+
+### ContainerIndex [#containerindex]
+
+```csharp
+public ushort ContainerIndex;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### OwnerWorkerIndex [#ownerworkerindex]
+
+```csharp
+public ushort OwnerWorkerIndex;
+```
+
+### LocalPosition [#localposition]
+
+```csharp
+public Vector3 LocalPosition;
+```
+
+### LocalRotation [#localrotation]
+
+```csharp
+public Quaternion LocalRotation;
+```
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+### Flags [#flags]
+
+```csharp
+public EntityFlags Flags;
+```
+
+### Vars [#vars]
+
+```csharp
+public byte[] Vars;
+```
+
+### State [#state]
+
+```csharp
+public byte[] State;
+```
+
+Keyframe from every sync behaviour ([`NetworkIdentity.WriteSyncSnapshot`](/docs/reference/core/network-identity#writesyncsnapshot)); empty when the prefab has none.
+
+## Methods
+
+### From [#from]
+
+```csharp
+public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch);
+```
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w, MsgId id);
+```
+
+### WriteBody [#writebody]
+
+```csharp
+public void WriteBody(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static EntitySpawnMsg Read(NetworkReader r);
+```
+

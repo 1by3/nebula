@@ -1,0 +1,79 @@
+---
+title: "IWorkerHost"
+description: "Where worker instances live."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
+
+```csharp
+public interface IWorkerHost : IDisposable
+```
+
+Where worker instances live. The orchestrator decides *how many* workers to run and which containers they own; a host decides *where* one runs and how to start and stop it. The reference host launches local child processes ([`ProcessWorkerHost`](/docs/reference/orchestrator/process-worker-host)); cloud hosts create one VM per worker ([`HetznerWorkerHost`](/docs/reference/orchestrator/hetzner-worker-host)). Liveness is judged from control-plane heartbeats regardless of host; the host's [`IWorkerHandle.State`](/docs/reference/orchestrator/i-worker-handle#state) only lets the orchestrator react sooner when a process exits or a machine disappears. Implementations must be safe to call every frame; slow work happens off the main thread and is surfaced from [`Tick`](#tick).
+
+## Properties
+
+### Name [#name]
+
+```csharp
+string Name { get; }
+```
+
+"process", "hetzner", ... shown on the dashboard.
+
+### IsReady [#isready]
+
+```csharp
+bool IsReady { get; }
+```
+
+True once [`Initialize`](#initialize) finished its asynchronous part and launches can proceed.
+
+### InitializationError [#initializationerror]
+
+```csharp
+string InitializationError { get; }
+```
+
+Set when [`Initialize`](#initialize) failed permanently (bad token, missing network); the orchestrator reports it and launches nothing.
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+void Initialize(Action<string, string> log);
+```
+
+Called once before the first launch. Hosts use it to look up cloud resources and to sweep leftovers from a previous orchestrator run (a crashed orchestrator must not leave paid machines behind).
+
+### Launch [#launch]
+
+```csharp
+IWorkerHandle Launch(WorkerLaunchSpec spec);
+```
+
+### Kill [#kill]
+
+```csharp
+void Kill(IWorkerHandle handle);
+```
+
+Stop the worker immediately (crash semantics: kill the process, delete the machine).
+
+### Tick [#tick]
+
+```csharp
+void Tick();
+```
+
+Main thread, every frame: apply results of background work to the handles and refresh their state.
+
+### WriteHandleJson [#writehandlejson]
+
+```csharp
+void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+```
+
+Extra host-specific fields for the dashboard's worker entry.
+

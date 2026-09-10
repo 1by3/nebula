@@ -1,0 +1,82 @@
+---
+title: "JsonWriter"
+description: "Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/OrchestratorHttpServer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/OrchestratorHttpServer.cs)</div>
+
+```csharp
+public sealed class JsonWriter
+```
+
+Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime.
+
+## Constructors
+
+### JsonWriter [#jsonwriter]
+
+```csharp
+public JsonWriter(StringBuilder sb);
+```
+
+## Methods
+
+### BeginObject [#beginobject]
+
+```csharp
+public void BeginObject();
+```
+
+### EndObject [#endobject]
+
+```csharp
+public void EndObject();
+```
+
+### BeginArray [#beginarray]
+
+```csharp
+public void BeginArray();
+```
+
+### EndArray [#endarray]
+
+```csharp
+public void EndArray();
+```
+
+### Key [#key]
+
+```csharp
+public void Key(string name);
+```
+
+### Value [#value]
+
+```csharp
+public void Value(string s);
+public void Value(bool b);
+public void Value(long n);
+public void Value(ulong n);
+public void Value(double d);
+```
+
+### Prop [#prop]
+
+```csharp
+public void Prop(string name, string s);
+public void Prop(string name, bool b);
+public void Prop(string name, int n);
+public void Prop(string name, uint n);
+public void Prop(string name, long n);
+public void Prop(string name, ulong n);
+public void Prop(string name, float f);
+public void Prop(string name, double d);
+```
+
+### Quote [#quote]
+
+```csharp
+public static string Quote(string s);
+```
+

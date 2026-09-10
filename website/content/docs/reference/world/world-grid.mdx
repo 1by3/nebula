@@ -1,0 +1,47 @@
+---
+title: "WorldGrid"
+description: "Grid arithmetic shared by the streamer, the editor tooling and Nebula's container integration."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldGrid.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldGrid.cs)</div>
+
+```csharp
+public static class WorldGrid
+```
+
+Grid arithmetic shared by the streamer, the editor tooling and Nebula's container integration.
+
+## Methods
+
+### Morton [#morton]
+
+```csharp
+public static ulong Morton(Vector3Int c);
+```
+
+Z-order (Morton) key of a coordinate: sorting cells by this key puts spatial neighbours next to each other in one dimension, which is what makes contiguous runs of cells compact regions.
+
+### Neighborhood [#neighborhood]
+
+```csharp
+public static void Neighborhood(Vector3Int center, int radius, ICollection<Vector3Int> result);
+```
+
+Every coordinate within `radius` cells of `center` on every axis (a cube; radius 0 = just the centre).
+
+### Rings [#rings]
+
+```csharp
+public static int Rings(Vector3Int a, Vector3Int b);
+```
+
+Chebyshev distance between two coordinates (how many rings apart).
+
+### AreAdjacent [#areadjacent]
+
+```csharp
+public static bool AreAdjacent(Vector3Int a, Vector3Int b);
+```
+
+The 26 coordinates that share a face, edge or corner with `c`.
+

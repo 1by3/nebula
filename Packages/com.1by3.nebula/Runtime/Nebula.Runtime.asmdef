@@ -1,0 +1,19 @@
+{
+    "name": "Nebula.Runtime",
+    "rootNamespace": "Nebula",
+    "references": [
+        "LiteNetLib",
+        "Nebula.Spacetime",
+        "com.clockworklabs.spacetimedbsdk",
+        "Nebula.World"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

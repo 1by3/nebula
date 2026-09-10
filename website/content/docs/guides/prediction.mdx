@@ -1,0 +1,322 @@
+---
+title: Prediction and reconciliation
+description: PredictedBehaviour, the input struct, the adaptive input lead, how inputs survive a handover, server-driven entities and lag-compensated hit tests.
+---
+
+A `PredictedBehaviour<TInput>` is a server-authoritative, client-predicted behaviour: the player controller, typically. The owning client samples an input each tick, sends it and simulates it immediately; the authoritative worker simulates the same input when its tick comes round and reports the result back; if the client's prediction for that tick disagrees with the worker by more than a threshold, the client snaps to the worker's state and replays every input since. The same class also drives entities that have no client at all (NPCs), and its input buffer travels with the entity through a handover so the stream never breaks.
+
+## The pieces
+
+| Piece | Where it runs | What it does |
+| --- | --- | --- |
+| `TInput : struct, INetworkInput` | Everywhere | One tick of intent. Serialised by hand. |
+| `GatherInput()` | Owning client, once per predicted tick | Sample the input for this tick. |
+| `GatherServerInput(uint tick)` | Authoritative worker, entities with no owning client | Produce the input for this tick (an NPC brain). |
+| `Simulate(uint tick, in TInput input, float dt)` | Worker, predicting client, and again on the client during a replay | Advance the entity by one tick. |
+| `WriteState` / `ReadState` | Worker writes every tick; owner reads | The state the owner needs to reconcile. |
+| `CorrectionThreshold` | Owner | Positional error above which the owner snaps and replays. |
+| `OnCorrected(float magnitude)` | Owner | After a correction was applied. |
+
+Reference: [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour).
+
+## The input struct
+
+`INetworkInput` is `INetworkSerializable` with no extra members; it exists so the generic constraint reads clearly. Write the fields in `Serialize` and read them back in the same order in `Deserialize`.
+
+```csharp title="ShooterInput.cs"
+public struct ShooterInput : INetworkInput
+{
+    public const byte JumpButton = 1;
+    public const byte FireButton = 2;
+    public const byte SprintButton = 4;
+
+    public Vector2 Move;
+    public float Yaw;
+    public float Pitch;
+    public byte Buttons;
+    /// The tick the shooter's screen was showing when this input was sampled.
+    public uint AimTick;
+
+    public bool Jump => (Buttons & JumpButton) != 0;
+    public bool Fire => (Buttons & FireButton) != 0;
+    public bool Sprint => (Buttons & SprintButton) != 0;
+
+    public void Serialize(NetworkWriter writer)
+    {
+        writer.WriteVector2(Move);
+        writer.WriteFloat(Yaw);
+        writer.WriteFloat(Pitch);
+        writer.WriteByte(Buttons);
+        writer.WriteUInt(AimTick);
+    }
+
+    public void Deserialize(NetworkReader reader)
+    {
+        Move = reader.ReadVector2();
+        Yaw = reader.ReadFloat();
+        Pitch = reader.ReadFloat();
+        Buttons = reader.ReadByte();
+        AimTick = reader.ReadUInt();
+    }
+}
+```
+
+Keep it small: every client input message carries the last three ticks of input as redundancy against loss, and pending inputs are copied into the `AuthorityTransfer` message on every handover.
+
+## Gathering input on the owner
+
+`GatherInput` is called on the owning client once per predicted tick, from `FixedUpdate`. Accumulate edge events (a mouse press that happened between two ticks) in `Update` and consume them here, otherwise a short press can fall between ticks.
+
+```csharp title="PlayerController.cs"
+private void Update()
+{
+    if (!IsOwner) return;
+    var mouse = Mouse.current;
+    if (mouse != null && Cursor.lockState == CursorLockMode.Locked)
+    {
+        var delta = mouse.delta.ReadValue() * 0.08f;
+        _inputYaw += delta.x;
+        _inputPitch = Mathf.Clamp(_inputPitch - delta.y, -85f, 85f);
+        if (mouse.leftButton.isPressed) _firePressedSinceTick = true;
+    }
+}
+
+protected override ShooterInput GatherInput()
+{
+    // What the screen shows right now: remote pawns are drawn at the render tick, so that is what we aim at.
+    uint aimTick = (uint)Math.Round(NetworkTime.RenderTick);
+    var input = new ShooterInput { Yaw = _inputYaw, Pitch = _inputPitch, AimTick = aimTick };
+    var keyboard = Keyboard.current;
+    if (keyboard != null)
+    {
+        float x = (keyboard.dKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed ? 1f : 0f);
+        float y = (keyboard.wKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed ? 1f : 0f);
+        input.Move = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
+        if (keyboard.leftShiftKey.isPressed) input.Buttons |= ShooterInput.SprintButton;
+    }
+    if (_firePressedSinceTick) input.Buttons |= ShooterInput.FireButton;
+    _firePressedSinceTick = false;
+    return input;
+}
+```
+
+## Simulate
+
+`Simulate` must be a pure function of (current state, input). It runs on the worker with the authoritative input, on the owning client as a prediction, and again on the client during a replay after a correction. Anything it reads that differs between those three runs is a source of corrections. The sample's controller therefore collides only against static level colliders (never against Rigidbodies or other pawns, whose state differs per process), clamps to the arena bounds and derives everything else from the input and the tick number.
+
+```csharp title="PlayerController.cs"
+protected override void Simulate(uint tick, in ShooterInput input, float dt)
+{
+    if (IsDead.Value) { Identity.Velocity = Vector3.zero; return; }
+
+    transform.rotation = Quaternion.Euler(0f, input.Yaw, 0f);
+    ViewPitch = input.Pitch;
+
+    float speed = input.Sprint ? SprintSpeed : WalkSpeed;
+    var horizontal = (transform.forward * input.Move.y + transform.right * input.Move.x) * speed;
+    var pos = transform.position;
+    if (IsGrounded && input.Jump) { _verticalVelocity = JumpSpeed; IsGrounded = false; }
+    pos = MoveHorizontal(pos, horizontal * dt);
+    _verticalVelocity -= Gravity * dt;
+    pos = MoveVertical(pos, _verticalVelocity * dt);
+    transform.position = pos;
+    Identity.Velocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
+
+    bool firePressed = input.Fire && (_previousButtons & ShooterInput.FireButton) == 0;
+    _previousButtons = input.Buttons;
+    if (firePressed && tick >= _nextFireTick)
+    {
+        _nextFireTick = tick + (uint)Mathf.CeilToInt(FireIntervalSeconds * NetworkTime.TickRate);
+        if (HasAuthority) ServerFire(tick, input.AimTick);
+        else if (IsOwner && !IsReplaying)
+        {
+            var victim = TraceShot(out var end);
+            ShotFired?.Invoke(this, MuzzlePosition, end, victim != null);   // predicted bolt
+        }
+    }
+}
+```
+
+Two things to note:
+
+- Use `tick` and `dt` for time, never `Time.time` or `Time.deltaTime`. Tick numbers are the only clock gameplay code sees ([`NetworkTime`](/docs/reference/core/network-time)).
+- `IsReplaying` is true while the client re-runs already-predicted ticks after a correction. One-shot effects that are not part of the simulated state (a tracer, a sound, a camera kick) must be skipped when it is set, or a correction replays them.
+
+`NetworkTick` is sealed on `PredictedBehaviour`; the worker's per-tick entry point is `Simulate`. `LastInput` exposes the input consumed by the most recent call.
+
+## WriteState and ReadState
+
+Every tick the worker writes the entity's state with `WriteState` into an `OwnerState` message for the owning client. The default writes position, rotation and `Identity.Velocity`; override both methods to add whatever else `Simulate` depends on, calling the base first:
+
+```csharp title="PlayerController.cs"
+protected override void WriteState(NetworkWriter writer)
+{
+    base.WriteState(writer);
+    writer.WriteFloat(_verticalVelocity);
+    writer.WriteBool(IsGrounded);
+    writer.WriteByte(_previousButtons);
+    writer.WriteUInt(_nextFireTick);
+}
+
+protected override void ReadState(NetworkReader reader)
+{
+    base.ReadState(reader);
+    _verticalVelocity = reader.ReadFloat();
+    IsGrounded = reader.ReadBool();
+    _previousButtons = reader.ReadByte();
+    _nextFireTick = reader.ReadUInt();
+}
+```
+
+Anything you leave out of the state will drift silently: the client keeps its own value, the worker keeps another, and the replay after the next correction starts from the wrong place.
+
+## Reconciliation on the owner
+
+When an `OwnerState` for tick *T* arrives, the client:
+
+1. Ignores it if *T* is not newer than the last reconciled tick, or if the message carries a stale epoch.
+2. If it has no prediction recorded for *T* (just spawned, or *T* is older than its 128-tick history), calls `ReadState` and adopts the worker's state outright.
+3. Otherwise calls `ReadState` to obtain the worker's position, compares it with the position it predicted for *T*, and if the error is at or below `CorrectionThreshold` (default 0.05 m) restores its own position, rotation and velocity and does nothing else.
+4. Above the threshold it counts a correction, keeps the worker's state as the state at *T*, sets `IsReplaying`, re-runs `Simulate` for every recorded input from *T + 1* up to the current predicted tick, clears `IsReplaying` and calls `OnCorrected(error)`.
+
+<Callout type="warn" title="ReadState runs on every owner state, not only on corrections">
+Step 3 restores only position, rotation and `Identity.Velocity` after peeking. Any extra field your `ReadState` override assigns keeps the worker's value even when no correction is applied. In practice that is what you want (it stops those fields drifting), but it means `ReadState` must never have side effects beyond assigning state.
+</Callout>
+
+Override `CorrectionThreshold` per behaviour if 5 cm is wrong for your entity; a vehicle can tolerate more, a precise platformer less.
+
+## When input is missing on the worker
+
+The worker simulates tick *T* whether or not the owner's input for *T* has arrived:
+
+- If the input for *T* is buffered, it is consumed and `ProcessedInputThisTick` is true.
+- Otherwise the last real input is repeated (a player who was holding forward keeps walking) and `InputsMissed` is incremented.
+- Before the first input ever arrives, `default(TInput)` is used.
+
+Inputs that arrive for a tick the worker has already simulated are discarded. The worker still sends an `OwnerState` every tick, including ticks where it repeated an input, so a client whose inputs are landing late sees what was actually simulated and gets the lead report it needs to fix the problem.
+
+## The adaptive input lead
+
+An input has to reach the worker before the worker simulates its tick, and the worker picks inputs up in `Update`, so it needs a lead of at least one tick at arrival. The client predicts ahead of its estimate of the server tick by
+
+```
+InputLeadTicks = ceil(RTT / 2 in ticks) + InputLeadMarginTicks + InputLeadAdjustTicks
+```
+
+Half the RTT plus a fixed margin is a guess that ignores the gateway's and the worker's frame loops, so the worker reports back how early inputs are really landing. Each `OwnerState` carries the smallest lead (input tick minus worker tick at arrival) seen since the previous report, and [`NebulaClient`](/docs/reference/client/nebula-client) adjusts:
+
+| Situation | Reaction |
+| --- | --- |
+| Reported lead below `InputLeadTargetTicks` | Raise `InputLeadAdjustTicks` by the shortfall at once (capped at 8 per step and at `InputLeadMaxAdjustTicks` in total), then ignore reports for about one RTT, since they describe inputs sent with the old lead. |
+| Reported lead more than 3 ticks above the target, adjustment above zero | Lower the adjustment, faster the further above target, at most once a second and not within 3 s of the last raise. |
+| Target tick more than 8 ahead of the predicted tick | Jump straight to it and ignore the next RTT of reports. |
+| Target tick a little ahead | Predict two ticks per `FixedUpdate` until caught up. |
+| Predicted tick more than 4 ahead of the target | Skip this `FixedUpdate`. |
+
+The fields on `NebulaConfig`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `InputLeadMarginTicks` | 2 | Fixed ticks added on top of half the RTT, before the adaptive part. |
+| `InputLeadTargetTicks` | 3 | The lead the client tries to keep its inputs arriving with. |
+| `InputLeadMaxAdjustTicks` | 30 | Ceiling on the adaptive part. |
+| `InterpolationDelayTicks` | 3 | How far behind the newest snapshot remote entities render (`NetworkTime.RenderTick`). |
+
+The debug overlay (F3 in the sample) shows `lead=N (adaptive +A, worker sees L)`. If `worker sees` sits below the target, inputs are arriving late and the worker is repeating inputs; if it is far above, you are paying latency you do not need.
+
+## Inputs through a handover
+
+When an entity crosses into a container owned by another worker, the outgoing worker builds an `AuthorityTransfer` carrying its exact final state, the new epoch, the entity's variables, the handover state from every behaviour and the predicted behaviour's pending inputs: `LastProcessedInputTick`, every buffered input after it, and the last real input (so the receiver can keep repeating it if the stream stalls). The receiver applies all of it before `OnGainedAuthority` and simulates the next tick from the same input the old owner would have.
+
+Inputs that are still in flight to the old worker are forwarded to the new one over the lateral link (`ForwardInput`) until the gateway learns the new owner and routes directly. The owning client never takes part: its input messages keep going to the gateway, `NetworkTime.Tick` keeps counting, and the only visible effect is the epoch bump on the messages it receives.
+
+## Server-driven entities
+
+An entity spawned with `NebulaWorker.SpawnServerDriven` has no owning client (`OwnerClientId == 0`, `Identity.IsServerDriven` true). Whichever worker holds authority is its brain: `NetworkTick` calls `GatherServerInput(tick)` instead of reading the input buffer, then runs the same `Simulate`. The entity ghosts, hands over, shoots and gets shot exactly like a player's pawn, and it costs one entity and nothing else.
+
+```csharp title="PlayerController.cs"
+protected override ShooterInput GatherServerInput(uint tick)
+{
+    if (!Identity.IsServerDriven) return default;
+    _bot.Target = NpcGoal.Value;
+    var input = _bot.Next(transform.position, tick, FindNearestOtherPlayer());
+    input.AimTick = tick; // the brain sees the worker's present; nothing to rewind
+    if (_bot.Target != NpcGoal.Value) NpcGoal.Value = _bot.Target;
+    return input;
+}
+
+public override void OnGainedAuthority()
+{
+    // Brain state is per worker; continue from the pawn's facing and the replicated goal after a handover.
+    if (Identity.IsServerDriven) _bot.Reset(transform.eulerAngles.y);
+}
+```
+
+Brain state lives on the worker and is lost at handover unless you replicate it. The sample keeps the roaming goal in a `NetworkVariable` so a handover continues the route instead of re-rolling it, and rebuilds the path from that goal in `OnGainedAuthority`.
+
+## Lag-compensated hit tests
+
+A shooter aims at what the screen showed, which is `InterpolationDelayTicks` plus transit plus the input lead in the past, roughly 200 ms at typical latencies. By the time the worker simulates the shot, a target moving sideways has left the capsule. The worker therefore records every entity's pose after simulation each tick, ghosts included (`NetworkIdentity.PoseHistoryTicks`, 64 ticks), and exposes it:
+
+```csharp
+bool NetworkIdentity.TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation)
+```
+
+It returns the pose recorded for `tick`, or the nearest later one within four ticks (a ghost that arrived recently has a short history). When nothing usable exists it returns false and the current pose.
+
+The input carries the tick to rewind to. The owner sets `AimTick` from `NetworkTime.RenderTick` in `GatherInput`; an NPC sets it to the current tick because its brain sees the worker's present. The worker resolves the level at present-day geometry (walls do not move) and tests every other pawn where it was at the aim tick:
+
+```csharp title="PlayerController.cs"
+public const float MaxRewindSeconds = 0.5f;
+
+private void ServerFire(uint tick, uint aimTick)
+{
+    var origin = EyePosition;
+    var dir = AimDirection;
+    float range = DistanceToLevel(origin, dir);   // present-day walls
+
+    uint maxRewind = (uint)(MaxRewindSeconds * NetworkTime.TickRate);
+    uint rewindTick = aimTick == 0 || aimTick > tick ? tick : aimTick;
+    if (tick - rewindTick > maxRewind) rewindTick = tick - maxRewind;
+
+    PlayerController victim = null;
+    float bestT = range;
+    foreach (var e in NebulaBootstrap.Instance.Worker.Entities)
+    {
+        if (e == Identity) continue;
+        var pc = e.GetComponent<PlayerController>();
+        if (pc == null || pc.IsDead.Value) continue;
+        e.TryGetPoseAt(rewindTick, out var pos, out _);   // falls back to the current pose
+        var a = pos + Vector3.up * pc.Radius;
+        var b = pos + Vector3.up * (CapsuleHeight - pc.Radius);
+        if (RayHitsCapsule(origin, dir, a, b, pc.Radius, bestT, out float t)) { bestT = t; victim = pc; }
+    }
+    if (victim != null) victim.AuthorityRpc(victim.TakeDamage, Damage, NetId, PlayerName.Value);
+    ClientRpc(RpcShotFired, MuzzlePosition, origin + dir * bestT, victim != null);
+}
+```
+
+The capsule test is pure geometry against the historical pose, so it never touches PhysX. The 0.5 s cap on the rewind is the sample's policy, not Nebula's: it bounds how far into the past a laggy or malicious client can claim to have seen. The victim's worker applies the resulting `AuthorityRpc` as-is; there is no second validation on the receiving side.
+
+## Diagnostics
+
+On the behaviour (`PredictedBehaviourBase`):
+
+| Property | Side | Meaning |
+| --- | --- | --- |
+| `Corrections` | Owner | Number of corrections applied. |
+| `LastCorrectionMagnitude` | Owner | Positional error of the last correction, in metres. |
+| `PendingInputCount` | Worker | Inputs buffered ahead of the current tick. |
+| `InputsMissed` | Worker | Ticks simulated with a repeated input. |
+| `LastProcessedInputTick` | Worker | Tick of the newest input actually simulated. |
+| `ProcessedInputThisTick` | Worker | The most recent tick consumed a real input. |
+| `InputLeadMin` | Worker | Smallest lead seen since the last report. |
+| `LastInput` | Both | The input consumed by the most recent `Simulate`. |
+
+On `NebulaClient`: `RttMs`, `InputLeadTicks`, `InputLeadAdjustTicks`, `LastReportedInputLead`, `InputLeadIncreases`, `PredictedTick`, `EstimatedServerTick`. `NetworkTime.Tick` is the tick being predicted on a client and the simulation tick on a worker; `NetworkTime.RenderTick` is what remote entities are presenting.
+
+<Cards>
+  <Card title="RPCs" href="/docs/guides/rpcs" description="The AuthorityRpc that carries the damage claim." />
+  <Card title="Serialization" href="/docs/guides/serialization" description="NetworkWriter and NetworkReader for inputs and state." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What else rides the AuthorityTransfer." />
+</Cards>

@@ -1,0 +1,51 @@
+---
+title: "NetworkSerialization"
+description: "Type-driven (de)serialisation used by NetworkVariables and RPC arguments."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Serialization/NetworkSerialization.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Serialization/NetworkSerialization.cs)</div>
+
+```csharp
+public static class NetworkSerialization
+```
+
+Type-driven (de)serialisation used by NetworkVariables and RPC arguments. Built-in support for the primitives, strings, Unity vectors/quaternions/colours, enums, byte\[\] and anything implementing [`INetworkSerializable`](/docs/reference/serialization/i-network-serializable). Register custom types with [`Register<T>`](#register).
+
+## Methods
+
+### Register [#register]
+
+```csharp
+public static void Register<T>(Action<NetworkWriter, T> write, Func<NetworkReader, T> read);
+```
+
+### CanSerialize [#canserialize]
+
+```csharp
+public static bool CanSerialize(Type type);
+```
+
+### Write [#write]
+
+```csharp
+public static void Write<T>(NetworkWriter writer, T value);
+```
+
+### Read [#read]
+
+```csharp
+public static T Read<T>(NetworkReader reader);
+```
+
+### WriteObject [#writeobject]
+
+```csharp
+public static void WriteObject(NetworkWriter writer, Type type, object value);
+```
+
+### ReadObject [#readobject]
+
+```csharp
+public static object ReadObject(NetworkReader reader, Type type);
+```
+

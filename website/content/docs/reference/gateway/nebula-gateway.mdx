@@ -1,0 +1,59 @@
+---
+title: "NebulaGateway"
+description: "The one address clients connect to."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaGateway.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaGateway.cs)</div>
+
+```csharp
+public sealed class NebulaGateway : MonoBehaviour
+```
+
+The one address clients connect to. It holds a link to every worker, forwards each client's inputs to whichever worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities.
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### ControlPlane [#controlplane]
+
+```csharp
+public IControlPlane ControlPlane { get; }
+```
+
+### GatewayId [#gatewayid]
+
+```csharp
+public string GatewayId { get; }
+```
+
+### ClientCount [#clientcount]
+
+```csharp
+public int ClientCount { get; }
+```
+
+### WorkerCount [#workercount]
+
+```csharp
+public int WorkerCount { get; }
+```
+
+### EntityCount [#entitycount]
+
+```csharp
+public int EntityCount { get; }
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(NebulaConfig config, IControlPlane controlPlane);
+```
+

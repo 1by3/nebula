@@ -1,0 +1,212 @@
+---
+title: "NetworkWriter"
+description: "Growable little-endian byte writer used for every Nebula message."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Serialization/NetworkWriter.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Serialization/NetworkWriter.cs)</div>
+
+```csharp
+public sealed class NetworkWriter
+```
+
+Growable little-endian byte writer used for every Nebula message. Deliberately plain: no bit packing or quantisation yet - bandwidth is not the prototype's problem, correctness is. Reuse instances; call [`Reset`](#reset) between messages.
+
+## Constructors
+
+### NetworkWriter [#networkwriter]
+
+```csharp
+public NetworkWriter(int capacity = 1024);
+```
+
+## Properties
+
+### Position [#position]
+
+```csharp
+public int Position { get; }
+```
+
+### Length [#length]
+
+```csharp
+public int Length { get; }
+```
+
+### Buffer [#buffer]
+
+```csharp
+public byte[] Buffer { get; }
+```
+
+## Methods
+
+### Reset [#reset]
+
+```csharp
+public void Reset();
+```
+
+### Rewind [#rewind]
+
+```csharp
+public void Rewind(int length);
+```
+
+Drop everything written after `length` (a value from [`Length`](#length)).
+
+### ToSegment [#tosegment]
+
+```csharp
+public ArraySegment<byte> ToSegment();
+```
+
+### ToArray [#toarray]
+
+```csharp
+public byte[] ToArray();
+```
+
+### WriteByte [#writebyte]
+
+```csharp
+public void WriteByte(byte value);
+```
+
+### WriteBool [#writebool]
+
+```csharp
+public void WriteBool(bool value);
+```
+
+### WriteSByte [#writesbyte]
+
+```csharp
+public void WriteSByte(sbyte value);
+```
+
+### WriteUShort [#writeushort]
+
+```csharp
+public void WriteUShort(ushort value);
+```
+
+### WriteShort [#writeshort]
+
+```csharp
+public void WriteShort(short value);
+```
+
+### WriteUInt [#writeuint]
+
+```csharp
+public void WriteUInt(uint value);
+```
+
+### WriteInt [#writeint]
+
+```csharp
+public void WriteInt(int value);
+```
+
+### WriteULong [#writeulong]
+
+```csharp
+public void WriteULong(ulong value);
+```
+
+### WriteLong [#writelong]
+
+```csharp
+public void WriteLong(long value);
+```
+
+### WriteFloat [#writefloat]
+
+```csharp
+public void WriteFloat(float value);
+```
+
+### WriteDouble [#writedouble]
+
+```csharp
+public void WriteDouble(double value);
+```
+
+### WriteString [#writestring]
+
+```csharp
+public void WriteString(string value);
+```
+
+### WriteBytes [#writebytes]
+
+```csharp
+public void WriteBytes(ArraySegment<byte> bytes);
+public void WriteBytes(byte[] bytes);
+```
+
+Length-prefixed byte blob (ushort length).
+
+### WriteRaw [#writeraw]
+
+```csharp
+public void WriteRaw(ArraySegment<byte> bytes);
+```
+
+Raw bytes with no length prefix.
+
+### WriteVector2 [#writevector2]
+
+```csharp
+public void WriteVector2(Vector2 v);
+```
+
+### WriteVector3 [#writevector3]
+
+```csharp
+public void WriteVector3(Vector3 v);
+```
+
+### WriteQuaternion [#writequaternion]
+
+```csharp
+public void WriteQuaternion(Quaternion q);
+```
+
+### WriteHalf [#writehalf]
+
+```csharp
+public void WriteHalf(float value);
+```
+
+IEEE half (2 bytes). ~3 significant digits: fine for positions within a few hundred metres and for unit-range values.
+
+### WriteCompressedQuaternion [#writecompressedquaternion]
+
+```csharp
+public void WriteCompressedQuaternion(Quaternion q);
+```
+
+Smallest-three quaternion compression: 4 bytes instead of 16. The largest component is dropped (its sign is normalised away) and the other three are quantised to 10 bits each in \[-1/sqrt2, 1/sqrt2\]; worst-case error is about 0.1 degrees.
+
+### WriteColor [#writecolor]
+
+```csharp
+public void WriteColor(Color c);
+```
+
+### ReserveUShort [#reserveushort]
+
+```csharp
+public int ReserveUShort();
+```
+
+Reserve a ushort slot to be patched later (e.g. a count written after a loop).
+
+### PatchUShort [#patchushort]
+
+```csharp
+public void PatchUShort(int at, ushort value);
+```
+

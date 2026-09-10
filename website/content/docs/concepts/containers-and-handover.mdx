@@ -1,0 +1,83 @@
+---
+title: Containers and handover
+description: What a container is in the running code, how the ghost band pre-warms a neighbour, and exactly what happens when an entity crosses.
+---
+
+The [architecture](/docs/concepts/architecture) describes containers, seams and handover as designed. This page describes what the prototype actually does today, which is a smaller mechanism with the same shape: authority per container, pre-warm through a ghost band, flip with a handed state and a new epoch.
+
+## Containers
+
+A `Container` is a MonoBehaviour on a scene object: a box volume (`Size`, centred on `Center`) with a stable `ContainerId`. The object's transform defines the container's local coordinate space. Entities inside a container are parented under its transform, and every position on the wire is expressed in container-local space, so a container could move without its contents ever changing coordinates. The prototype's containers are static.
+
+At startup every role calls `ContainerRegistry.Rebuild()`, which collects the containers in the loaded scene, sorts them by id and assigns each a dense `Index`. The index is what travels in messages; the id is what the control plane keys leases by. Two containers are neighbours when their bounds touch or overlap; the registry fills `Neighbors` for each.
+
+A container knows who owns it: `OwnerWorkerId`, `OwnerWorkerIndex` and `LeaseEpoch` are updated from the control plane on every role, workers included. Gameplay code can ask `container.IsOwnedBy(workerId)`, `Contains(worldPosition)` and `SignedDistance(worldPosition)`, and convert with `ToLocal` and `ToWorld`.
+
+There are no seam volumes, no `Seam` component and no bake validator in the prototype. Instead every container boundary carries two automatic parameters from `NebulaConfig`:
+
+| Parameter | Default | Effect |
+| --- | --- | --- |
+| `GhostBandMargin` | 4 m | An authoritative entity within this distance of a neighbouring container owned by another worker is ghosted there ahead of time. |
+| `HandoverHysteresis` | 0.35 m | An entity must be this far inside a new container before authority flips, so an entity dithering on the line does not thrash. |
+| `GhostLingerSeconds` | 2 s | A ghost stays resident this long after its entity leaves the band, so a quick return is free. |
+
+That gives the pre-warm-then-flip behaviour the design wants with nothing extra to author.
+
+## Leases and epochs
+
+The orchestrator writes one lease row per container on the control plane (`container_lease`: container id, worker id, epoch, state) and, every 500 ms, deals containers across live workers as evenly as possible, sticky to their current owners so a rebalance moves as few as it can. Assigning a container to a new worker bumps the lease epoch.
+
+Every entity carries its own authority `Epoch`, bumped on every authority change. Every entity message carries `(netId, epoch)`. The gateway drops anything carrying a stale epoch or coming from a worker that is no longer the owner, and workers do the same on the lateral link, which is what prevents split-brain when two processes briefly disagree about who owns what.
+
+## The worker's tick
+
+Each worker derives the tick it should be simulating from the wall clock and a fixed origin (`NetworkTime.DerivedTick`), so every worker agrees on tick numbers without a tick master and a restarted worker knows the correct tick immediately. On every tick it:
+
+1. Moves the ghosts it holds to the pose their owners streamed (kinematic, no physics solve of their own; `RemoteTick` on their behaviours presents the sync channel).
+2. Runs `NetworkTick` (and therefore `Simulate` on predicted behaviours) on every entity it has authority over, then lets PhysX step.
+3. Re-evaluates container membership for its authoritative entities, with hysteresis, and transfers authority for entities that crossed into a container owned by another worker.
+4. Maintains the ghost band: any authoritative entity within `GhostBandMargin` of a neighbouring container owned by another worker gets a `GhostSpawn` on that worker, then `GhostState` at 60 Hz, `GhostVars` when a NetworkVariable changes and `GhostSyncState` for the sync channel.
+5. Streams `WorldState`, `OwnerState`, `EntityVars` and `EntityState` for its authoritative entities to the gateway.
+6. Records every resident entity's pose for the lag-compensation history (`NetworkIdentity.TryGetPoseAt`).
+
+Workers discover each other through the control plane and peer directly over UDP; the lower index dials.
+
+## What a ghost is
+
+On a worker that does not own it, an entity exists as a *ghost*: the same prefab, instantiated from a `GhostSpawn` that carries the prefab id, container, pose, velocity, the NetworkVariable blob and a keyframe of the sync channel. Its behaviours see `IsGhost == true` and `HasAuthority == false`; `NetworkTick` is never called on them, NetworkVariable writes are refused with a warning, and RPC sends are ignored. A `NetworkRigidbody` makes the body kinematic. A ghost is moved to the owner's streamed pose one tick behind the simulation, so local dynamic entities collide against it and local raycasts hit it. Blocking is one-sided: the ghost pushes, it is never pushed.
+
+The neighbour thus holds full warm state before the entity can cross. If the entity leaves the band without crossing, the ghost lingers for `GhostLingerSeconds` and is then despawned.
+
+## The flip
+
+When an authoritative entity's position is more than `HandoverHysteresis` inside a container whose owner is a different worker, the owning worker sends one reliable `AuthorityTransfer` to that worker. It carries:
+
+- the entity's exact final pose and velocity, in the new container's local space,
+- the new epoch,
+- the full NetworkVariable blob,
+- the not-yet-simulated inputs buffered for a predicted behaviour, so the input stream never breaks,
+- a keyframe of the sync channel,
+- whatever each behaviour wrote in `WriteHandoverState` (angular velocity for a rigidbody, timers, RNG state),
+- the flags that say whether the entity is owned by a bot or is server-driven, so the per-worker counts stay right.
+
+On the sender, the entity becomes a ghost: `OnLostAuthority` fires, and inputs that still arrive from the gateway for it are forwarded to the new owner for a while. On the receiver, the ghost (or a fresh instance, if no ghost existed) snaps to the handed state, `ReadHandoverState` and then `OnGainedAuthority` fire, and the entity is authoritative from the next tick. The receiver never computes a starting state; it is handed one. Both workers report the handover to the gateway through `ContainerOwnership` and their entity streams, and the gateway starts accepting the new epoch and routing the owning client's inputs to the new worker.
+
+If the two containers are owned by the same worker, none of this leaves the process: the entity is reparented, `OnContainerChanged` fires and `LocalHandovers` ticks up.
+
+Clients see none of the protocol. A client's copy of an entity keeps its net id; the snapshot stream simply starts arriving with a new epoch and worker index, which the debug overlay counts as an authority change. The owning client's prediction keeps running through the flip because its inputs travelled with the entity.
+
+## Cross-container interaction
+
+Hits between entities owned by different workers use the `[AuthorityRpc]` primitive: the shooter's worker resolves the raycast against its local world, which includes kinematic ghosts of the neighbour's entities, and the damage claim executes on whichever worker owns the victim, as a direct call when that is the shooter's own worker and over the lateral link otherwise. The victim's worker applies the claim as-is. The shooter's worker does rewind the victims to the shooter's aim tick using the pose history before tracing, so a player hits what they saw; see [Prediction](/docs/guides/prediction).
+
+## Container reassignment
+
+Moving a container between workers (a rebalance, a retired worker, a dead one) reuses the entity handover path: the losing worker sees the lease change and transfers every authoritative entity in that container to the new owner, one `AuthorityTransfer` each. This is correct but not staged as the design describes (no prepare and drain phases); with four small containers it completes in one assignment pass. A retiring worker is kept alive until it holds no lease and reports no authoritative entities, or `WorkerDrainTimeoutSeconds` passes. A worker that dies takes its transient entities with it, because there is no persistence: its containers are reassigned within a second and the players whose pawns were on it are respawned elsewhere.
+
+## Tuning
+
+Widen `GhostBandMargin` if fast entities reach a boundary before their ghost exists (the symptom is a fresh spawn on the receiving worker instead of a snap onto a warm ghost). Raise `HandoverHysteresis` if an entity resting on a boundary flips back and forth. Both can be overridden per run for experiments with `-nebula-ghost-band` and `-nebula-hysteresis`.
+
+## Partitioned worlds
+
+For worlds bigger than one scene, Nebula's [world partition](/docs/guides/world-partition) turns a 3D grid of cell scenes into containers: every cell is a container and the boxes authored inside a cell nest in it. The container tree then comes from a baked manifest instead of a scene scan, so indices stay identical in every process whatever it has loaded, and each role streams only the cells it needs.

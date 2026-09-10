@@ -1,0 +1,189 @@
+---
+title: "NetworkReader"
+description: "Counterpart of NetworkWriter."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Serialization/NetworkReader.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Serialization/NetworkReader.cs)</div>
+
+```csharp
+public sealed class NetworkReader
+```
+
+Counterpart of [`NetworkWriter`](/docs/reference/serialization/network-writer). Throws on under-read so malformed packets fail loudly.
+
+## Constructors
+
+### NetworkReader [#networkreader]
+
+```csharp
+public NetworkReader();
+public NetworkReader(ArraySegment<byte> segment);
+public NetworkReader(byte[] bytes);
+```
+
+## Properties
+
+### Remaining [#remaining]
+
+```csharp
+public int Remaining { get; }
+```
+
+### Position [#position]
+
+```csharp
+public int Position { get; }
+```
+
+## Methods
+
+### Set [#set]
+
+```csharp
+public void Set(ArraySegment<byte> segment);
+```
+
+### ReadSegment [#readsegment]
+
+```csharp
+public ArraySegment<byte> ReadSegment(int length);
+```
+
+Take the next `length` bytes as a segment (no copy) and advance past them.
+
+### Skip [#skip]
+
+```csharp
+public void Skip(int bytes);
+```
+
+Advance past `bytes` bytes without reading them.
+
+### ReadByte [#readbyte]
+
+```csharp
+public byte ReadByte();
+```
+
+### ReadBool [#readbool]
+
+```csharp
+public bool ReadBool();
+```
+
+### ReadSByte [#readsbyte]
+
+```csharp
+public sbyte ReadSByte();
+```
+
+### ReadUShort [#readushort]
+
+```csharp
+public ushort ReadUShort();
+```
+
+### ReadShort [#readshort]
+
+```csharp
+public short ReadShort();
+```
+
+### ReadUInt [#readuint]
+
+```csharp
+public uint ReadUInt();
+```
+
+### ReadInt [#readint]
+
+```csharp
+public int ReadInt();
+```
+
+### ReadULong [#readulong]
+
+```csharp
+public ulong ReadULong();
+```
+
+### ReadLong [#readlong]
+
+```csharp
+public long ReadLong();
+```
+
+### ReadFloat [#readfloat]
+
+```csharp
+public float ReadFloat();
+```
+
+### ReadDouble [#readdouble]
+
+```csharp
+public double ReadDouble();
+```
+
+### ReadString [#readstring]
+
+```csharp
+public string ReadString();
+```
+
+### ReadBytesSegment [#readbytessegment]
+
+```csharp
+public ArraySegment<byte> ReadBytesSegment();
+```
+
+Length-prefixed blob. Returns a segment into the underlying buffer - copy if you keep it.
+
+### ReadBytes [#readbytes]
+
+```csharp
+public byte[] ReadBytes();
+```
+
+### ReadRemaining [#readremaining]
+
+```csharp
+public ArraySegment<byte> ReadRemaining();
+```
+
+### ReadVector2 [#readvector2]
+
+```csharp
+public Vector2 ReadVector2();
+```
+
+### ReadVector3 [#readvector3]
+
+```csharp
+public Vector3 ReadVector3();
+```
+
+### ReadQuaternion [#readquaternion]
+
+```csharp
+public Quaternion ReadQuaternion();
+```
+
+### ReadHalf [#readhalf]
+
+```csharp
+public float ReadHalf();
+```
+
+### ReadCompressedQuaternion [#readcompressedquaternion]
+
+```csharp
+public Quaternion ReadCompressedQuaternion();
+```
+
+### ReadColor [#readcolor]
+
+```csharp
+public Color ReadColor();
+```
+

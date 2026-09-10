@@ -1,0 +1,63 @@
+---
+title: "PredictedBehaviourBase"
+description: "Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour<TInput>."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/PredictedBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/PredictedBehaviour.cs)</div>
+
+```csharp
+public abstract class PredictedBehaviourBase : NetworkBehaviour
+```
+
+Non-generic surface Nebula's worker and client drive; game code derives from [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour).
+
+## Properties
+
+### LastProcessedInputTick [#lastprocessedinputtick]
+
+```csharp
+public uint LastProcessedInputTick { get; protected set; }
+```
+
+Server: tick of the newest input actually simulated. Reported to the owner for reconciliation.
+
+### ProcessedInputThisTick [#processedinputthistick]
+
+```csharp
+public bool ProcessedInputThisTick { get; protected set; }
+```
+
+Server: true when the most recent tick consumed a real (not repeated) input, i.e. the reported state is comparable to the owner's prediction.
+
+### PendingInputCount [#pendinginputcount]
+
+```csharp
+public int PendingInputCount { get; protected set; }
+```
+
+### InputsMissed [#inputsmissed]
+
+```csharp
+public int InputsMissed { get; protected set; }
+```
+
+### Corrections [#corrections]
+
+```csharp
+public int Corrections { get; protected set; }
+```
+
+### LastCorrectionMagnitude [#lastcorrectionmagnitude]
+
+```csharp
+public float LastCorrectionMagnitude { get; protected set; }
+```
+
+### InputLeadMin [#inputleadmin]
+
+```csharp
+public int InputLeadMin { get; } = int.MaxValue;
+```
+
+Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last [`TakeInputLead`](#takeinputlead). An input only gets simulated when it arrives with a lead of at least 1; the owner uses this to stretch or relax how far ahead it sends. `int.MaxValue` while nothing arrived.
+

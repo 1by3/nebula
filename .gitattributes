@@ -1,0 +1,4 @@
+# Everything in this repository is text. Unity YAML (.unity, .prefab, .asset, .mat, .meta) stays plain so it diffs and merges.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf

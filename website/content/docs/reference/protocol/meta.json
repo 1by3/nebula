@@ -1,0 +1,4 @@
+{
+  "title": "Protocol",
+  "pages": ["authority-transfer-msg", "client-input-msg", "container-ownership-entry", "container-ownership-msg", "despawn-player-msg", "entity-despawn-msg", "entity-flags", "entity-rpc-msg", "entity-spawn-msg", "entity-state-entry", "entity-sync-msg", "entity-vars-msg", "hello-flags", "hello-msg", "msg-id", "owner-state-msg", "peer-role", "ping-msg", "pong-msg", "spawn-player-msg", "welcome-msg", "world-state-msg"]
+}

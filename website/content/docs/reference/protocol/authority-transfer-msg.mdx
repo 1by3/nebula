@@ -1,0 +1,55 @@
+---
+title: "AuthorityTransferMsg"
+description: "The authority event."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct AuthorityTransferMsg
+```
+
+The authority event. Carries the sender's exact final state so the receiver snaps to it and never computes a starting state of its own, plus the not-yet-simulated inputs so the input stream continues without a gap.
+
+## Fields
+
+### Entity [#entity]
+
+```csharp
+public EntitySpawnMsg Entity;
+```
+
+### NewEpoch [#newepoch]
+
+```csharp
+public uint NewEpoch;
+```
+
+### PendingInputs [#pendinginputs]
+
+```csharp
+public byte[] PendingInputs;
+```
+
+### HandoverState [#handoverstate]
+
+```csharp
+public byte[] HandoverState;
+```
+
+Per-behaviour handover-only state ([`NetworkIdentity.WriteHandoverState`](/docs/reference/core/network-identity#writehandoverstate)).
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static AuthorityTransferMsg Read(NetworkReader r);
+```
+

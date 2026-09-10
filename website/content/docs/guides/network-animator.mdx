@@ -1,0 +1,142 @@
+---
+title: NetworkAnimator
+description: Replicate an Animator's parameters, triggers and layer states so every copy of an entity plays the same animation.
+---
+
+[`NetworkAnimator`](/docs/reference/core/network-animator) replicates a Unity `Animator` the way NGO's does. The Animator keeps running on every copy; what travels is only what would otherwise diverge: parameter changes, triggers, and per-layer state. It rides the sync channel (see [Physics, handover state and the sync channel](/docs/guides/physics-and-handover-state)) next to `NetworkTransform`, and like `NetworkTransform` it is a `NetworkSyncBehaviour`, so it supports the same server or owner authority choice.
+
+Add it to the GameObject that carries the `Animator`, or assign one in the `Animator` field. It logs an error at spawn if it finds none.
+
+## What is replicated
+
+| What | How |
+| --- | --- |
+| Parameters | `int`, `float` and `bool` parameters, by index in `Animator.parameters`. Floats are sent when they move by at least `FloatThreshold`. Trigger-typed parameters are skipped here because they travel separately. Parameters controlled by an animation curve are skipped, as in NGO. The first 255 parameters are synchronised; more logs a warning. |
+| Triggers | Only through `NetworkAnimator.SetTrigger`. Calling `Animator.SetTrigger` directly fires locally and replicates nothing, exactly like NGO. |
+| Layer state | Per layer: the current state's full path hash, its normalized time, and the layer weight. |
+| Transitions | Per layer, when in one: the next state's hash, the transition duration and its normalized time, so a state entered on the authority is entered everywhere with the same blend. |
+
+Keyframes (sent on a keyframe tick, on the first send after gaining authority, and in the spawn snapshot) carry all of the above, so a late joiner or a fresh ghost starts in the right state at the right playhead. See the keyframe section below for how playhead drift is handled.
+
+## Options
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `Animator` | the one on this GameObject | The Animator to replicate. |
+| `SyncParameters` | true | Send parameter changes. |
+| `SyncLayerStates` | true | Send state hash and normalized time per layer. |
+| `SyncLayerWeights` | true | Send layer weights (applied for layers above 0). |
+| `SyncTransitions` | true | Send in-progress transitions. |
+| `FloatThreshold` | 0.001 | A float parameter must move by at least this much to be sent. |
+| `NormalizedTimeResyncThreshold` | 0.25 | A keyframe re-seats a copy already in the same state only if its playhead drifted by more than this (in normalized time). |
+| `DisableRootMotionOnRemote` | true | Non-authoritative copies do not apply root motion. |
+| `Authority` | `Server` | `AuthorityMode.Server` or `AuthorityMode.Owner`, from `NetworkSyncBehaviour`. |
+
+Turning `SyncLayerStates`, `SyncLayerWeights` and `SyncTransitions` all off removes the layer section from the chunk entirely; turning `SyncParameters` off removes the parameter section.
+
+## Triggers and authority
+
+```csharp
+public void SetTrigger(string name);
+public void SetTrigger(int hash);
+public void ResetTrigger(string name);
+public void ResetTrigger(int hash);
+```
+
+What `SetTrigger` does depends on who calls it:
+
+| Caller | Behaviour |
+| --- | --- |
+| The sync authority (the worker under server authority, the owning client under owner authority) | Fires the trigger on the local Animator, queues the hash, marks the behaviour dirty. The trigger goes out with the next chunk and every non-authoritative copy calls `Animator.SetTrigger` with the same hash. |
+| The owning client under server authority | Sends a `ServerRpc` asking the worker to fire it. The worker fires it and replicates it, and the client sees the result one round trip later, exactly as NGO behaves. |
+| Anyone else | Logs a warning; nothing happens. |
+
+The worker-side handler ignores the request if it is not authoritative for the entity or if the component is in owner mode (the owner should have fired it locally).
+
+`ResetTrigger` is local only and is never replicated: a trigger that has already been sent has already been consumed on the remote copies. It also removes the hash from the pending list if it has not gone out yet.
+
+<Tabs items={['Server authority', 'Owner authority']}>
+<Tab value="Server authority">
+The default. The worker drives the Animator, usually from `NetworkTick` or `Simulate` (set parameters from the simulated state; call `SetTrigger` for one-shot actions). Every client, the owner included, follows. Parameter changes made on a client are overwritten by the next chunk that carries them.
+
+```csharp
+public sealed class Pawn : NetworkBehaviour
+{
+    [SerializeField] private NetworkAnimator _anim;
+
+    public override void NetworkTick(uint tick, float deltaTime)
+    {
+        _anim.Animator.SetFloat("Speed", Identity.Velocity.magnitude);
+    }
+
+    [ServerRpc]
+    private void RpcAttack()
+    {
+        if (!HasAuthority) return;
+        _anim.SetTrigger("Attack");
+    }
+}
+```
+</Tab>
+<Tab value="Owner authority">
+NGO's `OwnerNetworkAnimator`. The owning client drives the Animator and sends its changes to the worker in a `ServerRpc` once per tick interval; the worker applies them immediately, marks the same changes dirty, and re-broadcasts them on its next tick. The owner's own echo is consumed and ignored. Server-driven entities (NPCs) have no owner and fall back to server authority.
+
+Under owner authority a `SetTrigger` on the owning client fires at once and replicates from there; there is no round trip.
+</Tab>
+</Tabs>
+
+## Change detection
+
+On the sync authority, once per tick (`AuthorityTick`), the component compares every synchronised parameter and layer against the values it last recorded and collects the changed indices. Changed parameters, pending triggers and changed layers go into that tick's chunk; only the changed ones on a delta, all of them on a keyframe. After the worker has sent the tick, the pending lists are cleared.
+
+On a worker relaying an owner, the received chunk is applied and its parameter, trigger and layer entries are re-queued as dirty so they go out to everyone else.
+
+## Keyframes and late joiners
+
+A keyframe carries every synchronised parameter and every layer. When one arrives at a non-authoritative copy:
+
+- A parameter is set to the keyframe's value.
+- A layer whose current state differs from the keyframe's (and that is not already transitioning to it) plays the keyframe's state from its normalized time.
+- A layer already in the same state and not in a transition compares playheads. For a looping state the comparison is on the fractional part, wrapping around. If the drift exceeds `NormalizedTimeResyncThreshold` the copy re-seats to the keyframe's normalized time; otherwise it keeps running, so a copy that is slightly ahead or behind is not visibly snapped every half second.
+- A transition in progress on the authority is started with `CrossFadeInFixedTime` on the copy if it is not already heading there.
+
+Deltas apply the same rules without the playhead comparison (they only carry layers that changed).
+
+The gateway caches the newest keyframe per behaviour index for every entity it knows and puts them in the spawn message it sends to a late joiner, so the joiner's Animator is in the right state before its first frame. A worker receiving a ghost or an authority transfer starts from the same snapshot.
+
+## Root motion on remotes
+
+With `DisableRootMotionOnRemote` on, `applyRootMotion` is forced off on every copy that is not the sync authority or the relaying worker, and restored to its original value when the copy gains authority. The reason is that a remote copy's pose comes from the network (the identity stream or a `NetworkTransform`), so letting the clip move it too would fight that. Turn the option off if your controller does not use root motion at all and you want to keep the flag untouched.
+
+## Delivery
+
+`NetworkAnimator` is always reliable-ordered (`SyncDelivery` is `Delivery.ReliableOrdered`; there is no unreliable option). A lost trigger could never be recovered from a later keyframe because a trigger is an event, not a value. Its keyframes therefore go out only when the component is dirty on a keyframe tick, unlike an unreliable `NetworkTransform`, which sends a keyframe every interval regardless.
+
+Because the worker sends one sync message per delivery class per entity per tick, an animator and an unreliable transform on the same entity travel in separate packets; a reliable transform shares the animator's packet.
+
+## What is not replicated
+
+- Trigger parameters set through `Animator.SetTrigger` directly.
+- Parameters driven by animation curves (`Animator.IsParameterControlledByCurve`).
+- Animator speed, IK, `Animator.Play` calls made outside a synchronised layer state (the resulting state change is picked up on the next tick if `SyncLayerStates` is on).
+- Blend tree internals: only the parameters feeding them.
+
+## NGO to Nebula
+
+| NGO | Nebula |
+| --- | --- |
+| `NetworkAnimator` | `NetworkAnimator` with `Authority = Server` (default). |
+| `OwnerNetworkAnimator` | `NetworkAnimator` with `Authority = Owner`. |
+| `NetworkAnimator.SetTrigger(string / int)` | Same. |
+| `NetworkAnimator.ResetTrigger(string / int)` | Same; local only. |
+| `Animator` field | Same. |
+| Float parameter threshold (hard-coded in NGO) | `FloatThreshold`. |
+| Curve-controlled parameters skipped | Same. |
+| Root motion left to the user | `DisableRootMotionOnRemote` (on by default). |
+
+## Related
+
+<Cards>
+  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="The other sync-channel component; the same authority modes." />
+  <Card title="RPCs" href="/docs/guides/rpcs" description="How the owner-to-worker trigger request travels." />
+</Cards>

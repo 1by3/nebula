@@ -1,0 +1,66 @@
+---
+title: "WorldBaker"
+description: "Builds the WorldContainerManifest: one container per cell plus every Container authored inside the cell scenes, with cell-local poses, in wire order."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldBaker.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldBaker.cs)</div>
+
+```csharp
+public static class WorldBaker
+```
+
+Builds the [`WorldContainerManifest`](/docs/reference/world/world-container-manifest): one container per cell plus every [`Container`](/docs/reference/containers/container) authored inside the cell scenes, with cell-local poses, in wire order. Opens cell scenes that are not open (and closes them again) to read them.
+
+## Methods
+
+### Bake [#bake]
+
+```csharp
+public static Report Bake(WorldContainerManifest manifest);
+```
+
+### BakeConfigured [#bakeconfigured]
+
+```csharp
+[MenuItem("Nebula/World/Bake Container Manifest", priority = 41)]
+public static void BakeConfigured();
+```
+
+Bake the manifest of the config's world (the one [`NebulaConfig.WorldManifest`](/docs/reference/core/nebula-config#worldmanifest) points at).
+
+## Nested types
+
+### Report [#report]
+
+```csharp
+public sealed class Report
+```
+
+#### Fields
+
+##### Cells [#cells]
+
+```csharp
+public int Cells;
+```
+
+##### Containers [#containers]
+
+```csharp
+public int Containers;
+```
+
+##### Warnings [#warnings]
+
+```csharp
+public readonly List<string> Warnings = new List<string>();
+```
+
+#### Methods
+
+##### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

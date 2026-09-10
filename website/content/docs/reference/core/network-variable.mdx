@@ -1,0 +1,68 @@
+---
+title: "NetworkVariable<T>"
+description: "Replicated field, NGO-style: declare it on a NetworkBehaviour and Nebula discovers it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkVariable.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkVariable.cs)</div>
+
+```csharp
+public sealed class NetworkVariable<T> : NetworkVariableBase
+```
+
+Replicated field, NGO-style: declare it on a [`NetworkBehaviour`](/docs/reference/core/network-behaviour) and Nebula discovers it. Only the authoritative worker may assign [`Value`](#value); every other copy (ghosts on neighbouring workers, clients) receives it and raises [`OnValueChanged`](#onvaluechanged).
+
+```csharp
+public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
+```
+
+## Constructors
+
+### NetworkVariable [#networkvariable]
+
+```csharp
+public NetworkVariable();
+public NetworkVariable(T initialValue);
+```
+
+## Properties
+
+### Value [#value]
+
+```csharp
+public T Value { get; set; }
+```
+
+## Events
+
+### OnValueChanged [#onvaluechanged]
+
+```csharp
+public event Action<T, T> OnValueChanged;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public override void Write(NetworkWriter writer);
+```
+
+### Read [#read]
+
+```csharp
+public override void Read(NetworkReader reader);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+### implicit operator T [#implicit-operator-t]
+
+```csharp
+public static implicit operator T(NetworkVariable<T> v);
+```
+

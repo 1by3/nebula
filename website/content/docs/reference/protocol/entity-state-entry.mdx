@@ -1,0 +1,73 @@
+---
+title: "EntityStateEntry"
+description: "One entity's pose inside a WorldState/GhostState batch."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EntityStateEntry
+```
+
+One entity's pose inside a WorldState/GhostState batch.
+
+## Fields
+
+### WireSize [#wiresize]
+
+```csharp
+public const int WireSize = 8 + 4 + 2 + 12 + 4 + 6;
+```
+
+Serialized size of one entry, for sizing Sequenced batches: id, epoch, container, position (3 floats), rotation (smallest-three, 4 bytes) and velocity (3 halves). Rotation and velocity are the two fields that tolerate compression: a pawn's yaw to a hundredth of a degree and its speed to three decimals.
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### ContainerIndex [#containerindex]
+
+```csharp
+public ushort ContainerIndex;
+```
+
+### LocalPosition [#localposition]
+
+```csharp
+public Vector3 LocalPosition;
+```
+
+### LocalRotation [#localrotation]
+
+```csharp
+public Quaternion LocalRotation;
+```
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static EntityStateEntry Read(NetworkReader r);
+```
+

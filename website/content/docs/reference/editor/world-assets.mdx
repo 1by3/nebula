@@ -1,0 +1,106 @@
+---
+title: "WorldAssets"
+description: "Finds world definitions and manifests in the project and maps scenes back to cells."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldAssets.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldAssets.cs)</div>
+
+```csharp
+public static class WorldAssets
+```
+
+Finds world definitions and manifests in the project and maps scenes back to cells.
+
+## Methods
+
+### AllWorlds [#allworlds]
+
+```csharp
+public static WorldDefinition[] AllWorlds();
+```
+
+Every [`WorldDefinition`](/docs/reference/world/world-definition) in the project (cached for a second; call [`Invalidate`](#invalidate) after creating one).
+
+### Invalidate [#invalidate]
+
+```csharp
+public static void Invalidate();
+```
+
+### AllManifests [#allmanifests]
+
+```csharp
+public static WorldContainerManifest[] AllManifests();
+```
+
+### ManifestFor [#manifestfor]
+
+```csharp
+public static WorldContainerManifest ManifestFor(WorldDefinition world);
+```
+
+The manifest that targets `world`, or null.
+
+### TryGetCellOf [#trygetcellof]
+
+```csharp
+public static bool TryGetCellOf(Scene scene, out WorldDefinition world, out Vector3Int coord);
+public static bool TryGetCellOf(string scenePath, out WorldDefinition world, out Vector3Int coord);
+```
+
+Whether `scene` is a cell scene of some world, and which cell.
+
+### OpenSceneOf [#opensceneof]
+
+```csharp
+public static Scene OpenSceneOf(WorldDefinition.CellEntry entry);
+```
+
+### IsOpen [#isopen]
+
+```csharp
+public static bool IsOpen(WorldDefinition.CellEntry entry);
+```
+
+### CreateWorld [#createworld]
+
+```csharp
+public static WorldDefinition CreateWorld(string assetPath, string worldName, Vector3 cellSize);
+```
+
+Create a world definition asset at `assetPath`.
+
+### CreateManifest [#createmanifest]
+
+```csharp
+public static WorldContainerManifest CreateManifest(string assetPath, WorldDefinition world);
+```
+
+### EnsureFolder [#ensurefolder]
+
+```csharp
+public static void EnsureFolder(string folder);
+```
+
+Create every missing folder of an Assets/... path.
+
+### AddCellScenesToBuildSettings [#addcellscenestobuildsettings]
+
+```csharp
+public static int AddCellScenesToBuildSettings(WorldDefinition world);
+```
+
+Make sure every cell scene of `world` is in the build settings (enabled). Returns how many were added.
+
+### RemoveFromBuildSettings [#removefrombuildsettings]
+
+```csharp
+public static void RemoveFromBuildSettings(string scenePath);
+```
+
+### CellsSorted [#cellssorted]
+
+```csharp
+public static IEnumerable<WorldDefinition.CellEntry> CellsSorted(WorldDefinition world);
+```
+

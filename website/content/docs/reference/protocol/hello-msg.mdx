@@ -1,0 +1,63 @@
+---
+title: "HelloMsg"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct HelloMsg
+```
+
+## Fields
+
+### ProtocolVersion [#protocolversion]
+
+```csharp
+public const ushort ProtocolVersion = 4;
+```
+
+### Role [#role]
+
+```csharp
+public PeerRole Role;
+```
+
+### Id [#id]
+
+```csharp
+public string Id;
+```
+
+### Index [#index]
+
+```csharp
+public uint Index;
+```
+
+### Flags [#flags]
+
+```csharp
+public HelloFlags Flags;
+```
+
+### Version [#version]
+
+```csharp
+public ushort Version;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static HelloMsg Read(NetworkReader r);
+```
+

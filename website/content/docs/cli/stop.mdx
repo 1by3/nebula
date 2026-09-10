@@ -1,0 +1,26 @@
+---
+title: "nebula stop"
+description: "Stop the local mesh (every process of the build, and SpacetimeDB if `nebula start` started it)"
+---
+
+Stop the local mesh (every process of the build, and SpacetimeDB if `nebula start` started it).
+
+```bash
+nebula stop
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--spacetime` | also stop SpacetimeDB even if it was already running before `nebula start` |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |

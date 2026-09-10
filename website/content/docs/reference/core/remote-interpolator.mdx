@@ -1,0 +1,75 @@
+---
+title: "RemoteInterpolator"
+description: "Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/RemoteInterpolator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/RemoteInterpolator.cs)</div>
+
+```csharp
+public sealed class RemoteInterpolator : MonoBehaviour
+```
+
+Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. The consumer decides at which (fractional) tick to sample.
+
+## Properties
+
+### LatestTick [#latesttick]
+
+```csharp
+public uint LatestTick { get; }
+```
+
+### HasSamples [#hassamples]
+
+```csharp
+public bool HasSamples { get; }
+```
+
+### LatestVelocity [#latestvelocity]
+
+```csharp
+public Vector3 LatestVelocity { get; }
+```
+
+### LatestPosition [#latestposition]
+
+```csharp
+public Vector3 LatestPosition { get; }
+```
+
+### LatestRotation [#latestrotation]
+
+```csharp
+public Quaternion LatestRotation { get; } = Quaternion.identity;
+```
+
+## Methods
+
+### Push [#push]
+
+```csharp
+public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity);
+```
+
+### Shift [#shift]
+
+```csharp
+public void Shift(Vector3 delta);
+```
+
+The floating origin moved: every buffered position follows.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+### Sample [#sample]
+
+```csharp
+public bool Sample(double renderTick, out Vector3 position, out Quaternion rotation);
+```
+
+Interpolated pose at `renderTick`. Falls back to extrapolating from the newest sample by its velocity (capped) when asked for a time we have not received yet.
+

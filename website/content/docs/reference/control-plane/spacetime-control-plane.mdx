@@ -1,0 +1,165 @@
+---
+title: "SpacetimeControlPlane"
+description: "IControlPlane over the SpacetimeDB module in Assets/Nebula/SpacetimeDB/Module~."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/SpacetimeControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/SpacetimeControlPlane.cs)</div>
+
+```csharp
+public sealed class SpacetimeControlPlane : IControlPlane
+```
+
+[`IControlPlane`](/docs/reference/control-plane/i-control-plane) over the SpacetimeDB module in Assets/Nebula/SpacetimeDB/Module~. Subscribes to the whole (tiny) database and mirrors it into plain lists; writes go through reducers. The connection is pumped from [`Tick`](#tick) so every callback lands on the main thread.
+
+## Constructors
+
+### SpacetimeControlPlane [#spacetimecontrolplane]
+
+```csharp
+public SpacetimeControlPlane(string uri, string database);
+```
+
+## Properties
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected { get; }
+```
+
+### Now [#now]
+
+```csharp
+public DateTime Now { get; }
+```
+
+### Workers [#workers]
+
+```csharp
+public IReadOnlyList<WorkerInfo> Workers { get; }
+```
+
+### Leases [#leases]
+
+```csharp
+public IReadOnlyList<LeaseInfo> Leases { get; }
+```
+
+### Gateways [#gateways]
+
+```csharp
+public IReadOnlyList<GatewayInfo> Gateways { get; }
+```
+
+### Settings [#settings]
+
+```csharp
+public IReadOnlyDictionary<string, string> Settings { get; }
+```
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+public event Action Changed;
+```
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+public void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### RegisterWorker [#registerworker]
+
+```csharp
+public void RegisterWorker(string workerId, uint workerIndex, string address, ushort port);
+```
+
+### HeartbeatWorker [#heartbeatworker]
+
+```csharp
+public void HeartbeatWorker(string workerId, string status, in WorkerStats s);
+```
+
+### UnregisterWorker [#unregisterworker]
+
+```csharp
+public void UnregisterWorker(string workerId);
+```
+
+### RegisterGateway [#registergateway]
+
+```csharp
+public void RegisterGateway(string gatewayId, string address, ushort port);
+```
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+public void HeartbeatGateway(string gatewayId);
+```
+
+### UnregisterGateway [#unregistergateway]
+
+```csharp
+public void UnregisterGateway(string gatewayId);
+```
+
+### HeartbeatOrchestrator [#heartbeatorchestrator]
+
+```csharp
+public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
+```
+
+### SetSetting [#setsetting]
+
+```csharp
+public void SetSetting(string key, string value);
+```
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+public void EnsureContainer(string containerId);
+```
+
+### AssignContainer [#assigncontainer]
+
+```csharp
+public void AssignContainer(string containerId, string workerId);
+```
+
+### SetLeaseState [#setleasestate]
+
+```csharp
+public void SetLeaseState(string containerId, string state);
+```
+
+### ReleaseContainer [#releasecontainer]
+
+```csharp
+public void ReleaseContainer(string containerId);
+```
+
+### ResetControlPlane [#resetcontrolplane]
+
+```csharp
+public void ResetControlPlane();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

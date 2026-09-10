@@ -1,0 +1,4 @@
+{
+  "title": "Core",
+  "pages": ["authority-mode", "authority-rpc-attribute", "client-rpc-attribute", "command-line", "i-network-input", "i-rpc-sink", "nebula-config", "nebula-game-mode", "nebula-log", "nebula-runtime", "network-animator", "network-behaviour", "network-identity", "network-prefabs", "network-rigidbody", "network-sync-behaviour", "network-time", "network-transform", "network-variable", "network-variable-base", "predicted-behaviour", "predicted-behaviour-base", "remote-interpolator", "server-rpc-attribute", "sync-state-codec"]
+}

@@ -1,0 +1,220 @@
+---
+title: "NebulaClient"
+description: "The game client."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/NebulaClient.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/NebulaClient.cs)</div>
+
+```csharp
+public sealed class NebulaClient : MonoBehaviour, IRpcSink
+```
+
+The game client. Talks only to the gateway, sends inputs, receives snapshots tagged (tick, epoch, owner) and predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is metadata used for epoch filtering and the debug overlay, nothing else.
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### ConnectionState [#connectionstate]
+
+```csharp
+public State ConnectionState { get; }
+```
+
+### ClientId [#clientid]
+
+```csharp
+public uint ClientId { get; }
+```
+
+### PlayerName [#playername]
+
+```csharp
+public string PlayerName { get; } = "";
+```
+
+### LocalPlayer [#localplayer]
+
+```csharp
+public NetworkIdentity LocalPlayer { get; }
+```
+
+### RttMs [#rttms]
+
+```csharp
+public int RttMs { get; } = -1;
+```
+
+### EstimatedServerTick [#estimatedservertick]
+
+```csharp
+public double EstimatedServerTick { get; }
+```
+
+### PredictedTick [#predictedtick]
+
+```csharp
+public uint PredictedTick { get; }
+```
+
+### InputLeadTicks [#inputleadticks]
+
+```csharp
+public int InputLeadTicks { get; }
+```
+
+### InputLeadAdjustTicks [#inputleadadjustticks]
+
+```csharp
+public int InputLeadAdjustTicks { get; }
+```
+
+Adaptive part of [`InputLeadTicks`](#inputleadticks). Half the RTT plus a fixed margin is a guess that ignores the gateway's and worker's frame loops; the worker reports how early inputs really land and this closes the gap.
+
+### LastReportedInputLead [#lastreportedinputlead]
+
+```csharp
+public int LastReportedInputLead { get; }
+```
+
+Worst input lead the worker reported most recently (ticks). Diagnostics.
+
+### InputLeadIncreases [#inputleadincreases]
+
+```csharp
+public int InputLeadIncreases { get; }
+```
+
+### EntityCount [#entitycount]
+
+```csharp
+public int EntityCount { get; }
+```
+
+### Entities [#entities]
+
+```csharp
+public IEnumerable<NetworkIdentity> Entities { get; }
+```
+
+### AuthorityChangesSeen [#authoritychangesseen]
+
+```csharp
+public int AuthorityChangesSeen { get; }
+```
+
+### LastError [#lasterror]
+
+```csharp
+public string LastError { get; } = "";
+```
+
+Last connection failure or disconnect reason, for the title screen. Empty while healthy.
+
+### WantsConnection [#wantsconnection]
+
+```csharp
+public bool WantsConnection { get; }
+```
+
+Whether the client is trying to be connected (set by [`Connect`](#connect)/[`ConnectTo`](#connectto), cleared by [`Disconnect`](#disconnect)).
+
+## Events
+
+### EntitySpawned [#entityspawned]
+
+```csharp
+public event Action<NetworkIdentity> EntitySpawned;
+```
+
+### EntityDespawned [#entitydespawned]
+
+```csharp
+public event Action<NetworkIdentity> EntityDespawned;
+```
+
+### LocalPlayerSpawned [#localplayerspawned]
+
+```csharp
+public event Action<NetworkIdentity> LocalPlayerSpawned;
+```
+
+### EntityAuthorityChanged [#entityauthoritychanged]
+
+```csharp
+public event Action<NetworkIdentity, ushort, ushort> EntityAuthorityChanged;
+```
+
+### ContainerOwnershipChanged [#containerownershipchanged]
+
+```csharp
+public event Action ContainerOwnershipChanged;
+```
+
+### ConnectionStateChanged [#connectionstatechanged]
+
+```csharp
+public event Action<State> ConnectionStateChanged;
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(NebulaConfig config, bool autoConnect = true);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `autoConnect` | Connect to [`NebulaConfig.GatewayAddress`](/docs/reference/core/nebula-config#gatewayaddress) at once (bots, scripted clients); false leaves the client idle until [`ConnectTo`](#connectto) is called from the title screen. |
+
+### ConnectTo [#connectto]
+
+```csharp
+public void ConnectTo(string address, ushort port, string playerName);
+```
+
+Connect to a gateway chosen at runtime (title screen). Replaces the configured address for reconnects.
+
+### Connect [#connect]
+
+```csharp
+public void Connect();
+```
+
+### Disconnect [#disconnect]
+
+```csharp
+public void Disconnect();
+```
+
+Leave the gateway and stop reconnecting; the title screen comes back.
+
+### Find [#find]
+
+```csharp
+public NetworkIdentity Find(ulong netId);
+```
+
+## Nested types
+
+### State [#state]
+
+```csharp
+public enum State
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Disconnected` |  |  |
+| `Connecting` |  |  |
+| `Connected` |  |  |
+| `InGame` |  |  |
+

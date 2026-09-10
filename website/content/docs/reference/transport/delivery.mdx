@@ -1,0 +1,20 @@
+---
+title: "Delivery"
+description: "Delivery classes every Nebula link needs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs)</div>
+
+```csharp
+public enum Delivery : byte
+```
+
+Delivery classes every Nebula link needs. Maps 1:1 onto QUIC streams/datagrams and onto LiteNetLib delivery methods, so swapping the transport later is contained to one class.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Sequenced` | `0` | Unreliable, newest-wins (transform streams). |
+| `ReliableOrdered` | `1` | Reliable, ordered (spawns, state, authority events, RPCs). |
+

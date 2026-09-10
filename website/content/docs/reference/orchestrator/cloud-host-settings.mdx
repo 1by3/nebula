@@ -1,0 +1,103 @@
+---
+title: "CloudHostSettings"
+description: "Settings a cloud host needs to create a worker machine."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/HetznerWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/HetznerWorkerHost.cs)</div>
+
+```csharp
+public sealed class CloudHostSettings
+```
+
+Settings a cloud host needs to create a worker machine. Provider-neutral names so that a second provider reads the same switches. Read from `-nebula-cloud-*` flags with environment fallbacks.
+
+## Fields
+
+### Location [#location]
+
+```csharp
+public string Location = "ash";
+```
+
+Provider region/location code ("ash" for Hetzner Ashburn).
+
+### MachineType [#machinetype]
+
+```csharp
+public string MachineType = "cpx21";
+```
+
+Provider machine size ("cpx21").
+
+### Image [#image]
+
+```csharp
+public string Image = "ubuntu-24.04";
+```
+
+Base OS image ("ubuntu-24.04").
+
+### Network [#network]
+
+```csharp
+public string Network = "nebula";
+```
+
+Name of the private network every machine joins; worker-to-worker traffic stays on it.
+
+### SshKey [#sshkey]
+
+```csharp
+public string SshKey = "nebula";
+```
+
+Name of the SSH key installed on every machine (for log access).
+
+### Firewall [#firewall]
+
+```csharp
+public string Firewall = "nebula-worker";
+```
+
+Optional provider firewall applied to worker machines.
+
+### BuildUrl [#buildurl]
+
+```csharp
+public string BuildUrl = "";
+```
+
+URL the machine downloads the Linux server build from (served by the orchestrator over the private network).
+
+### MeshId [#meshid]
+
+```csharp
+public string MeshId = "nebula";
+```
+
+Groups every machine this orchestrator owns so a new run can sweep leftovers of the previous one.
+
+### ApiToken [#apitoken]
+
+```csharp
+public string ApiToken = "";
+```
+
+Provider API token. Never logged.
+
+## Methods
+
+### FromCommandLine [#fromcommandline]
+
+```csharp
+public static CloudHostSettings FromCommandLine(string meshId, string orchestratorPrivateAddress, ushort dashboardPort);
+```
+
+### SanitizeLabel [#sanitizelabel]
+
+```csharp
+public static string SanitizeLabel(string s);
+```
+
+Hetzner label values and server names: letters, digits, '-' '\_' '.'
+

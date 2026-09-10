@@ -1,0 +1,53 @@
+---
+title: "CommandLine"
+description: "Tiny \"-key value\" / \"-flag\" parser over Environment.GetCommandLineArgs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/CommandLine.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/CommandLine.cs)</div>
+
+```csharp
+public static class CommandLine
+```
+
+Tiny "-key value" / "-flag" parser over `Environment.GetCommandLineArgs`.
+
+## Methods
+
+### Override [#override]
+
+```csharp
+public static void Override(IDictionary<string, string> values);
+```
+
+For tests/editor: pretend these arguments were passed.
+
+### Has [#has]
+
+```csharp
+public static bool Has(string key);
+```
+
+### Get [#get]
+
+```csharp
+public static string Get(string key, string fallback = null);
+```
+
+### GetInt [#getint]
+
+```csharp
+public static int GetInt(string key, int fallback);
+```
+
+### GetFloat [#getfloat]
+
+```csharp
+public static float GetFloat(string key, float fallback);
+```
+
+### GetBool [#getbool]
+
+```csharp
+public static bool GetBool(string key, bool fallback);
+```
+

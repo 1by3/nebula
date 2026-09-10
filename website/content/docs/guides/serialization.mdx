@@ -1,0 +1,178 @@
+---
+title: Serialization
+description: NetworkWriter and NetworkReader, INetworkSerializable for your own structs, NetworkSerialization.Register for types you cannot modify, and where each is used.
+---
+
+Every Nebula message is a plain little-endian byte stream written with `NetworkWriter` and read back with `NetworkReader`. There is no bit packing, no quantisation by default and no delta compression: bandwidth is not the prototype's problem, correctness is. The one rule that matters is that a reader reads exactly what the writer wrote, in the same order.
+
+Two layers sit on top of the writer and reader. `INetworkSerializable` is the interface your own structs implement; `NetworkSerialization` is the type-driven table that `NetworkVariable<T>` and RPC arguments go through.
+
+## NetworkWriter and NetworkReader
+
+[`NetworkWriter`](/docs/reference/serialization/network-writer) is a growable buffer; reuse one instance and call `Reset()` between messages. [`NetworkReader`](/docs/reference/serialization/network-reader) wraps an `ArraySegment<byte>` and throws `InvalidOperationException` on any read past the end, so a malformed packet fails loudly instead of returning garbage.
+
+### Primitives
+
+| Write | Read | Bytes |
+| --- | --- | --- |
+| `WriteByte` / `WriteSByte` | `ReadByte` / `ReadSByte` | 1 |
+| `WriteBool` | `ReadBool` | 1 |
+| `WriteShort` / `WriteUShort` | `ReadShort` / `ReadUShort` | 2 |
+| `WriteInt` / `WriteUInt` | `ReadInt` / `ReadUInt` | 4 |
+| `WriteLong` / `WriteULong` | `ReadLong` / `ReadULong` | 8 |
+| `WriteFloat` | `ReadFloat` | 4 |
+| `WriteDouble` | `ReadDouble` | 8 |
+
+### Strings and bytes
+
+| Write | Read | Format |
+| --- | --- | --- |
+| `WriteString(string)` | `ReadString()` | `ushort` (UTF-8 byte count + 1), then the bytes. `null` is written as 0 and read back as `null`; the maximum is 65534 bytes. |
+| `WriteBytes(byte[])` / `WriteBytes(ArraySegment<byte>)` | `ReadBytes()` / `ReadBytesSegment()` | `ushort` length, then the bytes. `null` is written as 0. `ReadBytesSegment` returns a view into the underlying buffer; copy it if you keep it. |
+| `WriteRaw(ArraySegment<byte>)` | `ReadSegment(int)` / `ReadRemaining()` | No length prefix. You must know the length on the read side. |
+
+### Unity types
+
+| Write | Read | Bytes |
+| --- | --- | --- |
+| `WriteVector2` | `ReadVector2` | 8 |
+| `WriteVector3` | `ReadVector3` | 12 |
+| `WriteQuaternion` | `ReadQuaternion` | 16 |
+| `WriteColor` | `ReadColor` | 16 |
+
+### Compact forms
+
+| Write | Read | Bytes | Precision |
+| --- | --- | --- | --- |
+| `WriteHalf(float)` | `ReadHalf()` | 2 | IEEE half, about 3 significant digits. Fine for positions within a few hundred metres and for unit-range values. |
+| `WriteCompressedQuaternion(Quaternion)` | `ReadCompressedQuaternion()` | 4 | Smallest-three: the largest component is dropped, the other three are quantised to 10 bits each. Worst-case error about 0.1 degrees. |
+
+Nothing uses these unless you ask for it. `NetworkTransform` offers both as options; the identity's pose stream sends full floats.
+
+### Reserve and patch
+
+When a count or a length is only known after writing the payload, reserve the slot and patch it:
+
+```csharp
+int at = writer.ReserveUShort();      // writes a placeholder, returns its position
+ushort n = 0;
+foreach (var item in items) { item.Serialize(writer); n++; }
+writer.PatchUShort(at, n);
+```
+
+`Rewind(int length)` drops everything written after a previous `Length`, which is how a message that turned out to be empty is discarded without allocating. `ToSegment()` returns the written bytes without a copy; `ToArray()` copies.
+
+On the reader, `Remaining` and `Position` tell you where you are, `Skip(int)` advances without reading, and `Set(ArraySegment<byte>)` re-points an existing reader at a new buffer.
+
+## INetworkSerializable
+
+Implement `INetworkSerializable` on a struct (or class) to use it as a `NetworkVariable<T>` value, an RPC argument, or a predicted input (`INetworkInput` is `INetworkSerializable` with no extra members). `Deserialize` must mirror `Serialize` exactly:
+
+```csharp title="ShooterInput.cs"
+public struct ShooterInput : INetworkInput
+{
+    public Vector2 Move;
+    public float Yaw;
+    public float Pitch;
+    public byte Buttons;
+    public uint AimTick;
+
+    public void Serialize(NetworkWriter writer)
+    {
+        writer.WriteVector2(Move);
+        writer.WriteFloat(Yaw);
+        writer.WriteFloat(Pitch);
+        writer.WriteByte(Buttons);
+        writer.WriteUInt(AimTick);
+    }
+
+    public void Deserialize(NetworkReader reader)
+    {
+        Move = reader.ReadVector2();
+        Yaw = reader.ReadFloat();
+        Pitch = reader.ReadFloat();
+        Buttons = reader.ReadByte();
+        AimTick = reader.ReadUInt();
+    }
+}
+```
+
+When Nebula deserialises such a type by reflection (an RPC argument, a `NetworkVariable` value) it creates the instance with `Activator.CreateInstance`, so a class needs a public parameterless constructor; a struct always has one. Writing a `null` reference of an `INetworkSerializable` class throws; use a struct or a sentinel value instead.
+
+## NetworkSerialization
+
+[`NetworkSerialization`](/docs/reference/serialization/network-serialization) is the type-driven table behind `NetworkVariable<T>` and RPC arguments. `Write<T>` and `Read<T>` (and their `object`-typed forms) look the type up and either call a registered delegate, write an enum as its `int` value, or call `INetworkSerializable`.
+
+### Built-in types
+
+| Category | Types |
+| --- | --- |
+| Integers | `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong` |
+| Other primitives | `bool`, `float`, `double`, `string` |
+| Unity | `Vector2`, `Vector3`, `Quaternion`, `Color` |
+| Blobs | `byte[]` |
+| Any enum | Written as a 4-byte `int`, regardless of the enum's underlying type |
+| Any `INetworkSerializable` | Via its own `Serialize` / `Deserialize` |
+
+`CanSerialize(Type)` answers whether a type is in that set; the RPC table uses it to reject unserialisable parameters when a class is first bound.
+
+Not built in: `Vector4`, `Vector2Int`, `Vector3Int`, `Bounds`, `Rect`, `Matrix4x4`, `Color32`, `DateTime`, `Guid`, arrays other than `byte[]`, `List<T>`, `Dictionary<K,V>`, nullable value types. Register them or wrap them.
+
+### `Register<T>` for types you cannot modify
+
+For a type you do not own, or a built-in you want on the wire in a different format, register a writer and reader pair. Registration replaces any existing entry for that type, and registered delegates take precedence over the enum and `INetworkSerializable` paths.
+
+```csharp
+public static class ShooterSerializers
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void Register()
+    {
+        NetworkSerialization.Register<Vector2Int>(
+            (w, v) => { w.WriteInt(v.x); w.WriteInt(v.y); },
+            r => new Vector2Int(r.ReadInt(), r.ReadInt()));
+
+        NetworkSerialization.Register<Guid>(
+            (w, v) => w.WriteBytes(v.ToByteArray()),
+            r => new Guid(r.ReadBytes()));
+    }
+}
+```
+
+Register before the first entity spawns on every process, worker and client alike. The RPC table is built the first time a class is used, and it throws for an unregistered parameter type at that point.
+
+## Where serialization is used
+
+| Use | Path | Notes |
+| --- | --- | --- |
+| `NetworkVariable<T>` values | `NetworkSerialization.Write<T>` / `Read<T>` | All variables on an entity are written back to back into one blob (`EntityVars`, `GhostVars`, the spawn message, the handover). |
+| RPC arguments | `RpcRegistry.WriteArgs` / `NetworkSerialization.ReadObject` | One value per parameter, in parameter order, no length prefix. |
+| Predicted inputs | `TInput.Serialize` / `Deserialize` directly | One per tick in `ClientInput`; pending inputs also ride the `AuthorityTransfer`. |
+| Owner state | `PredictedBehaviour.WriteState` / `ReadState` | Written every tick by the worker; read by the owner in reconciliation. |
+| Handover state | `NetworkBehaviour.WriteHandoverState` / `ReadHandoverState` | Only in the `AuthorityTransfer`. Length-prefixed per behaviour. |
+| Sync state | `NetworkBehaviour.WriteSyncState` / `ReadSyncState` | `EntityState` / `GhostSyncState` every tick a behaviour is dirty, plus keyframes. Length-prefixed per behaviour. |
+| Protocol messages | `Protocol/Messages.cs` | Every message type has a static `Read` and an instance `Write`. |
+
+## Read exactly what you wrote
+
+There is no schema on the wire and no self-describing framing. If `Deserialize` reads a `float` where `Serialize` wrote a `byte`, the next 3 bytes of someone else's data are consumed and everything after is misaligned. Three habits keep this from happening:
+
+1. Write `Serialize` and `Deserialize` next to each other, one line per field, in the same order.
+2. Never make a write conditional on state the reader does not have. Write a `bool` first and branch on it in both directions if a field is optional.
+3. Keep the same build on every process. A worker and a client running different versions of a struct will desynchronise silently on the first message.
+
+`NetworkReader` catches over-reads at the end of the buffer only. A mismatch in the middle of a blob is undetectable by the reader itself, which is why the two hook-based channels bound each behaviour's chunk.
+
+### Bounded chunks for handover and sync state
+
+`NetworkIdentity.WriteHandoverState` writes the behaviour count, then for each behaviour a `ushort` length followed by what that behaviour's `WriteHandoverState` produced. `ReadHandoverState` slices each chunk out and hands the behaviour a reader that ends where its chunk ends. A behaviour that reads too much throws inside its own chunk, which is caught and logged as `ReadHandoverState on T of E threw: ...`, and the next behaviour still gets its bytes intact. A behaviour that reads too little leaves no residue, because the next chunk starts at the recorded offset regardless.
+
+The sync channel does the same per chunk (`behaviourIndex`, flags, `ushort` length, bytes): a chunk whose behaviour throws in `ReadSyncState` is logged as an error, and a chunk whose index does not exist locally is skipped silently. Either way the remaining chunks in the message are still read correctly.
+
+`NetworkVariable` blobs, RPC arguments and predicted inputs are not bounded this way: they are written back to back, and a mismatch cascades into whatever follows. For those, the "same code on every process" rule is the protection.
+
+<Cards>
+  <Card title="NetworkBehaviour and NetworkVariable" href="/docs/guides/network-behaviour" description="What a NetworkVariable can hold." />
+  <Card title="RPCs" href="/docs/guides/rpcs" description="What an RPC argument can be." />
+  <Card title="Physics and handover state" href="/docs/guides/physics-and-handover-state" description="WriteHandoverState and the sync channel in practice." />
+</Cards>

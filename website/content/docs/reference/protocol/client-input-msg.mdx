@@ -1,0 +1,63 @@
+---
+title: "ClientInputMsg"
+description: "A short run of recent inputs (redundant against loss)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ClientInputMsg
+```
+
+A short run of recent inputs (redundant against loss). The gateway stamps ClientId before forwarding.
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public uint ClientId;
+```
+
+### Frames [#frames]
+
+```csharp
+public List<Frame> Frames;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w, MsgId id);
+```
+
+### Read [#read]
+
+```csharp
+public static ClientInputMsg Read(NetworkReader r);
+```
+
+## Nested types
+
+### Frame [#frame]
+
+```csharp
+public struct Frame
+```
+
+#### Fields
+
+##### Tick [#tick]
+
+```csharp
+public uint Tick;
+```
+
+##### Payload [#payload]
+
+```csharp
+public byte[] Payload;
+```
+

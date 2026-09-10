@@ -1,0 +1,55 @@
+---
+title: "NetworkPrefabs"
+description: "Prefab id table shared by every process."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkPrefabs.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkPrefabs.cs)</div>
+
+```csharp
+public static class NetworkPrefabs
+```
+
+Prefab id table shared by every process. Ids are the index in [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs).
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public static int Count { get; }
+```
+
+## Methods
+
+### Register [#register]
+
+```csharp
+public static void Register(IList<GameObject> prefabs);
+```
+
+### Get [#get]
+
+```csharp
+public static GameObject Get(ushort prefabId);
+```
+
+### TryGetId [#trygetid]
+
+```csharp
+public static bool TryGetId(GameObject prefab, out ushort id);
+```
+
+### IdOf [#idof]
+
+```csharp
+public static ushort IdOf(GameObject prefab);
+```
+
+### Instantiate [#instantiate]
+
+```csharp
+public static NetworkIdentity Instantiate(ushort prefabId, Vector3 position, Quaternion rotation, Transform parent);
+```
+
+Instantiate a network prefab and bind its behaviours. Spawn hooks run when the caller spawns it.
+

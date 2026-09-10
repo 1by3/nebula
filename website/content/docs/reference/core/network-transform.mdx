@@ -1,0 +1,353 @@
+---
+title: "NetworkTransform"
+description: "Replicates a Transform the way NGO's NetworkTransform does: per-axis position/rotation/scale selection, change thresholds, local or world space, server or owner authority, buffered tick interpolation or smooth damping on the receiving si..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkTransform.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkTransform.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public class NetworkTransform : NetworkSyncBehaviour
+```
+
+Replicates a Transform the way NGO's NetworkTransform does: per-axis position/rotation/scale selection, change thresholds, local or world space, server or owner authority, buffered tick interpolation or smooth damping on the receiving side, teleport, half-float and smallest-three quaternion compression, and reliable deltas or unreliable deltas healed by keyframes.
+
+The entity root is a special case in Nebula: its position, rotation and velocity already ride the identity's world-state stream at full rate to every ghost and client, so a NetworkTransform on the root does not send them again. On the root it adds scale, [`Teleport`](#teleport) (which snaps the identity interpolator too) and owner authority (the owner's pose travels to the worker here, then to everyone through the identity stream). On any child transform (turret, door, held item) it replicates everything selected.
+
+NGO options with no counterpart here: `TickSyncChildren` (every behaviour's chunk already rides the same per-entity per-tick message) and `SwitchTransformSpaceWhenParented` (an entity's parent only changes when its container changes, and world-space values are carried in container space on the wire and resolved with the container index of the same tick).
+
+## Fields
+
+### SyncPositionX [#syncpositionx]
+
+```csharp
+public bool SyncPositionX = true;
+```
+
+### SyncPositionY [#syncpositiony]
+
+```csharp
+public bool SyncPositionY = true;
+```
+
+### SyncPositionZ [#syncpositionz]
+
+```csharp
+public bool SyncPositionZ = true;
+```
+
+### SyncRotAngleX [#syncrotanglex]
+
+```csharp
+public bool SyncRotAngleX = true;
+```
+
+### SyncRotAngleY [#syncrotangley]
+
+```csharp
+public bool SyncRotAngleY = true;
+```
+
+### SyncRotAngleZ [#syncrotanglez]
+
+```csharp
+public bool SyncRotAngleZ = true;
+```
+
+### SyncScaleX [#syncscalex]
+
+```csharp
+public bool SyncScaleX = true;
+```
+
+### SyncScaleY [#syncscaley]
+
+```csharp
+public bool SyncScaleY = true;
+```
+
+### SyncScaleZ [#syncscalez]
+
+```csharp
+public bool SyncScaleZ = true;
+```
+
+### PositionThreshold [#positionthreshold]
+
+```csharp
+public float PositionThreshold = 0.001f;
+```
+
+Metres the position must move before an update is sent.
+
+### RotAngleThreshold [#rotanglethreshold]
+
+```csharp
+public float RotAngleThreshold = 0.01f;
+```
+
+Degrees the rotation must change before an update is sent.
+
+### ScaleThreshold [#scalethreshold]
+
+```csharp
+public float ScaleThreshold = 0.01f;
+```
+
+### InLocalSpace [#inlocalspace]
+
+```csharp
+public bool InLocalSpace;
+```
+
+Replicate localPosition/localRotation (relative to the parent) instead of world position/rotation. Scale is always local.
+
+### UseUnreliableDeltas [#useunreliabledeltas]
+
+```csharp
+public bool UseUnreliableDeltas;
+```
+
+Send deltas unreliable-sequenced with a keyframe every NetworkIdentity.SyncKeyframeInterval ticks, instead of reliable-ordered.
+
+### UseHalfFloatPrecision [#usehalffloatprecision]
+
+```csharp
+public bool UseHalfFloatPrecision;
+```
+
+Send positions, scales and (uncompressed) rotations as 16-bit halves.
+
+### UseQuaternionSynchronization [#usequaternionsynchronization]
+
+```csharp
+public bool UseQuaternionSynchronization;
+```
+
+Send the full quaternion instead of the selected Euler angles (no gimbal issues; all three axes always).
+
+### UseQuaternionCompression [#usequaternioncompression]
+
+```csharp
+public bool UseQuaternionCompression;
+```
+
+With quaternion synchronization: smallest-three compression, 4 bytes per rotation.
+
+### Interpolate [#interpolate]
+
+```csharp
+public bool Interpolate = true;
+```
+
+### Interpolation [#interpolation]
+
+```csharp
+public InterpolationMode Interpolation = InterpolationMode.Buffered;
+```
+
+### SlerpPosition [#slerpposition]
+
+```csharp
+public bool SlerpPosition;
+```
+
+Spherically interpolate position between samples (curved paths, e.g. an orbiting object).
+
+### PositionMaxInterpolationTime [#positionmaxinterpolationtime]
+
+```csharp
+public float PositionMaxInterpolationTime = 0.1f;
+```
+
+Smooth damp only: seconds to reach the newest position.
+
+### RotationMaxInterpolationTime [#rotationmaxinterpolationtime]
+
+```csharp
+public float RotationMaxInterpolationTime = 0.1f;
+```
+
+Smooth damp only: seconds to reach the newest rotation.
+
+### ScaleMaxInterpolationTime [#scalemaxinterpolationtime]
+
+```csharp
+public float ScaleMaxInterpolationTime = 0.1f;
+```
+
+Smooth damp only: seconds to reach the newest scale.
+
+## Properties
+
+### IsRoot [#isroot]
+
+```csharp
+public bool IsRoot { get; }
+```
+
+This component sits on the entity root, whose position/rotation the identity stream already carries.
+
+### SyncDelivery [#syncdelivery]
+
+```csharp
+public override Delivery SyncDelivery { get; }
+```
+
+## Methods
+
+### OnAuthorityPushTransformState [#onauthoritypushtransformstate]
+
+```csharp
+protected virtual void OnAuthorityPushTransformState(ref TransformState state);
+```
+
+Authority, just before a state is written. Modify it to send something other than the transform.
+
+### OnNetworkTransformStateUpdated [#onnetworktransformstateupdated]
+
+```csharp
+protected virtual void OnNetworkTransformStateUpdated(ref TransformState state);
+```
+
+Non-authoritative copies, after a received state was applied or buffered.
+
+### Teleport [#teleport]
+
+```csharp
+public void Teleport(Vector3 position, Quaternion rotation, Vector3 scale);
+```
+
+Authority only: move instantly, and make every remote copy snap instead of interpolating.
+
+### SetState [#setstate]
+
+```csharp
+public void SetState(Vector3? position = null, Quaternion? rotation = null, Vector3? scale = null, bool teleport = true);
+```
+
+Authority only: set any of position/rotation/scale (in the configured space); null leaves a part alone.
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```
+
+### OnLostAuthority [#onlostauthority]
+
+```csharp
+public override void OnLostAuthority();
+```
+
+### AuthorityTick [#authoritytick]
+
+```csharp
+protected override void AuthorityTick(uint tick, float deltaTime);
+```
+
+### WriteSyncState [#writesyncstate]
+
+```csharp
+public override void WriteSyncState(NetworkWriter writer, bool full);
+```
+
+### OnSyncStateSent [#onsyncstatesent]
+
+```csharp
+protected internal override void OnSyncStateSent();
+```
+
+### ReadSyncState [#readsyncstate]
+
+```csharp
+public override void ReadSyncState(NetworkReader reader, uint tick, bool full);
+```
+
+### ApplyOwnerState [#applyownerstate]
+
+```csharp
+protected override void ApplyOwnerState(NetworkReader reader, bool full);
+```
+
+### RemoteTick [#remotetick]
+
+```csharp
+public override void RemoteTick(double renderTick);
+```
+
+## Nested types
+
+### InterpolationMode [#interpolationmode]
+
+```csharp
+public enum InterpolationMode : byte
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Buffered` | `0` | Tick-buffered interpolation at [`NetworkTime.RenderTick`](/docs/reference/core/network-time#rendertick) (NGO's Lerp / Legacy lerp): exact, a few ticks behind. |
+| `SmoothDamp` | `1` | Smooth-damp towards the newest state (NGO's Smooth dampening): never behind, never exact. |
+
+### TransformState [#transformstate]
+
+```csharp
+public struct TransformState
+```
+
+A replicated pose. Fields without their Has\* flag were not part of the update.
+
+#### Fields
+
+##### Tick [#tick]
+
+```csharp
+public uint Tick;
+```
+
+##### Position [#position]
+
+```csharp
+public Vector3 Position;
+```
+
+##### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation;
+```
+
+##### Scale [#scale]
+
+```csharp
+public Vector3 Scale;
+```
+
+##### HasPosition, HasRotation, HasScale [#hasposition-hasrotation-hasscale]
+
+```csharp
+public bool HasPosition, HasRotation, HasScale;
+```
+
+##### Teleport [#teleport]
+
+```csharp
+public bool Teleport;
+```
+
+##### InLocalSpace [#inlocalspace]
+
+```csharp
+public bool InLocalSpace;
+```
+
+Position/rotation are expressed in the local (parent) space rather than world space.
+

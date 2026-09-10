@@ -1,0 +1,67 @@
+---
+title: "NebulaWorldStreaming"
+description: "Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them (seam physics and ghosts need the neighbo..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/NebulaWorldStreaming.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaWorldStreaming.cs)</div>
+
+```csharp
+public sealed class NebulaWorldStreaming : MonoBehaviour, IWorldAnchor
+```
+
+Decides, per role, which cells this process keeps loaded and where the floating origin sits:
+
+- **worker**: the cells of every container it leases plus [`NebulaConfig.WorkerLoadRingCells`](/docs/reference/core/nebula-config#workerloadringcells) rings around them (seam physics and ghosts need the neighbours' geometry). The origin follows the centroid of the owned cells.
+- **client** (players and bots): [`NebulaConfig.ClientLoadRadiusCells`](/docs/reference/core/nebula-config#clientloadradiuscells) around the local pawn, the origin follows the pawn. Before a pawn exists, the cells around the origin cell.
+- **gateway / orchestrator**: nothing. They only need the container maths, which the manifest provides.
+
+The origin shifts once the pawn/centroid is more than [`NebulaConfig.OriginShiftThresholdCells`](/docs/reference/core/nebula-config#originshiftthresholdcells) cells from the origin cell, so a shift is rare and never happens while pacing on a cell boundary.
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### Worker [#worker]
+
+```csharp
+public NebulaWorker Worker { get; }
+```
+
+### Client [#client]
+
+```csharp
+public NebulaClient Client { get; }
+```
+
+### OwnedCellCount [#ownedcellcount]
+
+```csharp
+public int OwnedCellCount { get; }
+```
+
+### RequiredCellCount [#requiredcellcount]
+
+```csharp
+public int RequiredCellCount { get; }
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(NebulaConfig config, NebulaWorker worker, NebulaClient client);
+```
+
+### Centroid [#centroid]
+
+```csharp
+public static Vector3Int Centroid(ICollection<Vector3Int> cells);
+```
+
+Rounded average coordinate of a set of cells.
+

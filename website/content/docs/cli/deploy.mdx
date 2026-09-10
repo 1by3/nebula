@@ -1,0 +1,50 @@
+---
+title: "nebula deploy"
+description: "Build, publish the control plane and run the mesh on the configured deploy target"
+---
+
+Build, publish the control plane and run the mesh on the configured deploy target.
+
+```bash
+nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui]
+```
+
+```text
+Steps: build the Linux dedicated server (Builds/nebula-linux.tar.gz), publish the control-plane module to the
+configured SpacetimeDB server, create the cloud resources that are missing (ssh key, private network,
+firewalls, orchestrator VM), upload the build and (re)start the orchestrator service, which creates one VM per
+worker. Re-run after every code change; a redeploy restarts the orchestrator, which recreates its workers.
+
+Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spacetime`) must be configured.
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--target <name>` | deploy target (default from nebula.json: hetzner) |
+| `--workers <N>` | worker VMs the orchestrator keeps running (default from nebula.json, 4) |
+| `--npcs <N>` | worker-simulated NPCs at start (default from nebula.json) |
+| `--open-ui` | open the mesh dashboard once it answers |
+| `--skip-build` | use the existing Builds/nebula-linux.tar.gz |
+| `--skip-publish` | do not publish the control-plane module |
+| `--skip-upload` | only rewrite the service and restart (no build, no upload) |
+| `--reset-control-plane` | publish the module with --delete-data (wipes the control-plane tables) |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula deploy
+nebula deploy --workers 4 --npcs 128 --open-ui
+nebula deploy --skip-build
+```

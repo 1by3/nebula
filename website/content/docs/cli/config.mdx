@@ -1,0 +1,51 @@
+---
+title: "nebula config"
+description: "Configure a deploy target, Spacetime Maincloud, or the Unity editor path"
+---
+
+Configure a deploy target, Spacetime Maincloud, or the Unity editor path.
+
+```bash
+nebula config <hetzner|spacetime|unity|source|show>
+```
+
+```text
+hetzner    API token, project, region and machine types for `nebula deploy --target hetzner`
+  spacetime  log in to SpacetimeDB Maincloud (or another server) and pick the control-plane database name
+  unity      the Unity editor to build with, when it is not where Unity Hub puts it
+  source     the Nebula checkout `nebula init --embed` copies the package from (--path; 'none' to clone on demand)
+  show       print the current configuration (secrets masked)
+
+Settings live in ~/.nebula-cli/config.json. Inside a project, the database name and the mesh defaults are also
+written to nebula.json so they travel with the project.
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--token <token>` | hetzner: API token (else prompted; HCLOUD\_TOKEN in the environment always wins) |
+| `--location <name>` | hetzner: region (ash, hil, sin, nbg1, fsn1, hel1) |
+| `--server <name>` | spacetime: server nickname or URL (default maincloud) |
+| `--database <name>` | spacetime: control-plane database name |
+| `--editor <path>` | unity: path to the editor executable or the Hub's Editor folder |
+| `--path <path>` | source: a Nebula checkout for `nebula init` to copy from ('none' to clone on demand) |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula config hetzner
+nebula config spacetime
+nebula config unity --editor "C:\Program Files\Unity\Hub\Editor"
+nebula config show
+```

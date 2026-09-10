@@ -1,0 +1,110 @@
+---
+title: "ProcessWorkerHost"
+description: "Runs every worker as a child process of the orchestrator, from the same executable."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/ProcessWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/ProcessWorkerHost.cs)</div>
+
+```csharp
+public sealed class ProcessWorkerHost : IWorkerHost
+```
+
+Runs every worker as a child process of the orchestrator, from the same executable. This is the local mesh (`nebula start`) and the reference implementation of [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host). The orchestrator also uses it to start co-located services (the gateway) whatever host the workers use.
+
+## Constructors
+
+### ProcessWorkerHost [#processworkerhost]
+
+```csharp
+public ProcessWorkerHost(string executable, string advertiseAddress);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `executable` | Player executable to run; empty = the orchestrator's own. |
+| `advertiseAddress` | Address child workers advertise to peers (127.0.0.1 on one machine). |
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsReady [#isready]
+
+```csharp
+public bool IsReady { get; }
+```
+
+### InitializationError [#initializationerror]
+
+```csharp
+public string InitializationError { get; }
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(Action<string, string> log);
+```
+
+### Launch [#launch]
+
+```csharp
+public IWorkerHandle Launch(WorkerLaunchSpec spec);
+```
+
+### LaunchService [#launchservice]
+
+```csharp
+public Process LaunchService(string role, string roleArgs, string logName, string commonArgs);
+```
+
+Start a non-worker role (the gateway) next to the orchestrator. Returns null on failure.
+
+### Kill [#kill]
+
+```csharp
+public void Kill(IWorkerHandle handle);
+```
+
+### KillProcess [#killprocess]
+
+```csharp
+public static void KillProcess(Process p);
+```
+
+### SafePid [#safepid]
+
+```csharp
+public static int SafePid(Process p);
+```
+
+### HasExited [#hasexited]
+
+```csharp
+public static bool HasExited(Process p);
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### WriteHandleJson [#writehandlejson]
+
+```csharp
+public void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

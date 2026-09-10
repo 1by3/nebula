@@ -1,0 +1,270 @@
+---
+title: "NetworkIdentity"
+description: "Marks a GameObject as a meshed entity."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class NetworkIdentity : MonoBehaviour
+```
+
+Marks a GameObject as a meshed entity. Holds the entity's network identity (a 64-bit id minted by the worker that spawned it, never by a central allocator), its current container, its authority epoch and which worker/client owns it. Every [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the object hangs off this.
+
+## Fields
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId = ushort.MaxValue;
+```
+
+Set automatically from the NebulaConfig prefab list at spawn time.
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+Velocity as reported by the authority; used for extrapolation and carried through handover.
+
+### SyncKeyframeInterval [#synckeyframeinterval]
+
+```csharp
+public const uint SyncKeyframeInterval = 30;
+```
+
+Every this many ticks a dirty sync behaviour writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
+
+### PoseHistoryTicks [#posehistoryticks]
+
+```csharp
+public const int PoseHistoryTicks = 64;
+```
+
+Ticks of pose history kept per entity (about a second at 60 Hz).
+
+## Properties
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId { get; }
+```
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public uint OwnerClientId { get; }
+```
+
+### OwnerIsBot [#ownerisbot]
+
+```csharp
+public bool OwnerIsBot { get; }
+```
+
+The owning client is a headless bot. Informational (dashboard/overlay); carried through handover.
+
+### IsServerDriven [#isserverdriven]
+
+```csharp
+public bool IsServerDriven { get; }
+```
+
+No client owns this entity: whichever worker is authoritative drives it (a [`PredictedBehaviour<TInput>`](/docs/reference/core/predicted-behaviour) gets its input from `GatherServerInput`). What the game calls it (NPC, monster, vehicle) is up to the game; it costs no client process and no gateway connection. Carried through ghosting and handover.
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch { get; }
+```
+
+Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.
+
+### Container [#container]
+
+```csharp
+public Container Container { get; }
+```
+
+### ContainerIndex [#containerindex]
+
+```csharp
+public ushort ContainerIndex { get; }
+```
+
+### IsSpawned [#isspawned]
+
+```csharp
+public bool IsSpawned { get; }
+```
+
+### HasAuthority [#hasauthority]
+
+```csharp
+public bool HasAuthority { get; }
+```
+
+Worker side: this process is authoritative. Client side: always false.
+
+### IsLocalPlayer [#islocalplayer]
+
+```csharp
+public bool IsLocalPlayer { get; }
+```
+
+Client side: owned by the local client.
+
+### OwnerWorkerIndex [#ownerworkerindex]
+
+```csharp
+public ushort OwnerWorkerIndex { get; }
+```
+
+Index of the worker currently authoritative (as last heard). Debug/overlay only.
+
+### Behaviours [#behaviours]
+
+```csharp
+public NetworkBehaviour[] Behaviours { get; } = Array.Empty<NetworkBehaviour>();
+```
+
+### Predicted [#predicted]
+
+```csharp
+public PredictedBehaviourBase Predicted { get; }
+```
+
+### Interpolator [#interpolator]
+
+```csharp
+public RemoteInterpolator Interpolator { get; }
+```
+
+### HasSyncState [#hassyncstate]
+
+```csharp
+public bool HasSyncState { get; }
+```
+
+### SyncContainer [#synccontainer]
+
+```csharp
+public Container SyncContainer { get; }
+```
+
+The container the sync chunks currently being read were expressed in (world-space NetworkTransform values are container-local on the wire). Valid only inside [`NetworkBehaviour.ReadSyncState`](/docs/reference/core/network-behaviour#readsyncstate).
+
+### LocalPosition [#localposition]
+
+```csharp
+public Vector3 LocalPosition { get; }
+```
+
+Position in the current container's local space (what goes on the wire).
+
+### LocalRotation [#localrotation]
+
+```csharp
+public Quaternion LocalRotation { get; }
+```
+
+## Events
+
+### ContainerChanged [#containerchanged]
+
+```csharp
+public event Action<Container, Container> ContainerChanged;
+```
+
+## Methods
+
+### TryGetPoseAt [#trygetposeat]
+
+```csharp
+public bool TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation);
+```
+
+The pose recorded for `tick`, or the nearest later one within a few ticks (a ghost that arrived recently has a short history). False when nothing usable was recorded.
+
+### WriteVars [#writevars]
+
+```csharp
+public void WriteVars(NetworkWriter writer);
+```
+
+### ReadVars [#readvars]
+
+```csharp
+public void ReadVars(NetworkReader reader);
+```
+
+### WriteHandoverState [#writehandoverstate]
+
+```csharp
+public void WriteHandoverState(NetworkWriter writer);
+```
+
+Handover-only state from every behaviour (see [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate)).
+
+### ReadHandoverState [#readhandoverstate]
+
+```csharp
+public void ReadHandoverState(NetworkReader reader);
+```
+
+Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
+
+### ClearDirty [#cleardirty]
+
+```csharp
+public void ClearDirty();
+```
+
+### WriteSyncSnapshot [#writesyncsnapshot]
+
+```csharp
+public void WriteSyncSnapshot(NetworkWriter writer);
+```
+
+A keyframe from every sync behaviour: what rides the spawn/handover message.
+
+### WriteSyncState [#writesyncstate]
+
+```csharp
+public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery);
+```
+
+Authority, once per tick per delivery class and per destination: the chunks due this tick. A behaviour is written when it is dirty, or (unreliable only) when a keyframe is due. The keyframe decision depends only on the tick and on state that [`ClearDirty`](#cleardirty) advances, so every destination written in the same tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns the number of chunks written; when zero the writer has been left untouched.
+
+### ReadSyncState [#readsyncstate]
+
+```csharp
+public void ReadSyncState(NetworkReader reader, uint tick, Container container);
+```
+
+Non-authoritative copies: hand each chunk to its behaviour. Chunks for unknown indices are skipped.
+
+### RemoteTick [#remotetick]
+
+```csharp
+public void RemoteTick(double renderTick);
+```
+
+Present the tick `renderTick` on every behaviour (ghosts and remote client copies).
+
+### SetLocalPose [#setlocalpose]
+
+```csharp
+public void SetLocalPose(Container container, Vector3 localPosition, Quaternion localRotation);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

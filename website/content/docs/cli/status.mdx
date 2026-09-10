@@ -1,0 +1,27 @@
+---
+title: "nebula status"
+description: "Show the mesh: workers, containers, players, bots, NPCs and recent events"
+---
+
+Show the mesh: workers, containers, players, bots, NPCs and recent events.
+
+```bash
+nebula status [--cloud]
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--cloud` | the deployed mesh (Hetzner servers + the remote dashboard) instead of the local one |
+| `--json` | print the raw /api/state JSON |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |

@@ -1,0 +1,79 @@
+---
+title: "NebulaMesh"
+description: "Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaMesh.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaMesh.cs)</div>
+
+```csharp
+public static class NebulaMesh
+```
+
+Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client.
+
+## Properties
+
+### ModuleDir [#moduledir]
+
+```csharp
+public static string ModuleDir { get; }
+```
+
+## Methods
+
+### StartSpacetime [#startspacetime]
+
+```csharp
+[MenuItem("Nebula/Control Plane/Start SpacetimeDB (local)", priority = 20)]
+public static void StartSpacetime();
+```
+
+### PublishModule [#publishmodule]
+
+```csharp
+[MenuItem("Nebula/Control Plane/Publish Module", priority = 21)]
+public static void PublishModule();
+```
+
+### RegenerateBindings [#regeneratebindings]
+
+```csharp
+[MenuItem("Nebula/Control Plane/Regenerate C# Bindings", priority = 22)]
+public static void RegenerateBindings();
+```
+
+### StartLocalMesh [#startlocalmesh]
+
+```csharp
+[MenuItem("Nebula/Mesh/Start Local Mesh (orchestrator + gateway + workers)", priority = 40)]
+public static void StartLocalMesh();
+```
+
+### StopLocalMesh [#stoplocalmesh]
+
+```csharp
+[MenuItem("Nebula/Mesh/Stop Local Mesh", priority = 41)]
+public static void StopLocalMesh();
+```
+
+### OpenDashboard [#opendashboard]
+
+```csharp
+[MenuItem("Nebula/Mesh/Open Dashboard (workers, containers, players)", priority = 43)]
+public static void OpenDashboard();
+```
+
+### LaunchClient [#launchclient]
+
+```csharp
+[MenuItem("Nebula/Mesh/Launch Extra Client Window", priority = 42)]
+public static void LaunchClient();
+```
+
+### StopSpacetime [#stopspacetime]
+
+```csharp
+[MenuItem("Nebula/Control Plane/Stop SpacetimeDB", priority = 23)]
+public static void StopSpacetime();
+```
+

@@ -1,0 +1,122 @@
+---
+title: "NebulaBuild"
+description: "Builds the executables every Nebula role runs from."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaBuild.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaBuild.cs)</div>
+
+```csharp
+public static class NebulaBuild
+```
+
+Builds the executables every Nebula role runs from. Workers and services run them with `-batchmode -nographics -nebula-role ...`; players run the Windows build as-is. Menu: Nebula \> Build.
+
+- Windows player: `Builds/Win64/Nebula.exe` - the local mesh, bots and the human client.
+- Linux dedicated server: `Builds/Linux64/Nebula.x86_64` - what runs on cloud VMs (orchestrator, gateway, workers). No graphics subsystem at all, so it needs no display libraries on the machine.
+
+Batchmode: `Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch` or `...NebulaBuild.BuildLinuxServerBatch`.
+
+## Properties
+
+### ProjectRoot [#projectroot]
+
+```csharp
+public static string ProjectRoot { get; }
+```
+
+### BuildDir [#builddir]
+
+```csharp
+public static string BuildDir { get; }
+```
+
+### ExecutablePath [#executablepath]
+
+```csharp
+public static string ExecutablePath { get; }
+```
+
+### LinuxBuildDir [#linuxbuilddir]
+
+```csharp
+public static string LinuxBuildDir { get; }
+```
+
+### LinuxExecutablePath [#linuxexecutablepath]
+
+```csharp
+public static string LinuxExecutablePath { get; }
+```
+
+### MacBuildDir [#macbuilddir]
+
+```csharp
+public static string MacBuildDir { get; }
+```
+
+### MacExecutablePath [#macexecutablepath]
+
+```csharp
+public static string MacExecutablePath { get; }
+```
+
+## Methods
+
+### BuildWindowsMenu [#buildwindowsmenu]
+
+```csharp
+[MenuItem("Nebula/Build/Windows Player (Mono, development)", priority = 0)]
+public static void BuildWindowsMenu();
+```
+
+### BuildLinuxServerMenu [#buildlinuxservermenu]
+
+```csharp
+[MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 1)]
+public static void BuildLinuxServerMenu();
+```
+
+### BuildWindows [#buildwindows]
+
+```csharp
+public static BuildReport BuildWindows();
+```
+
+### BuildLinuxServer [#buildlinuxserver]
+
+```csharp
+public static BuildReport BuildLinuxServer();
+```
+
+### BuildMac [#buildmac]
+
+```csharp
+public static BuildReport BuildMac();
+```
+
+macOS player (Builds/MacOS/Nebula.app): what `nebula start` runs on a Mac.
+
+### BuildWindowsBatch [#buildwindowsbatch]
+
+```csharp
+public static void BuildWindowsBatch();
+```
+
+Entry point for batchmode builds; exits with a non-zero code on failure.
+
+### BuildLinuxServerBatch [#buildlinuxserverbatch]
+
+```csharp
+public static void BuildLinuxServerBatch();
+```
+
+Entry point for batchmode Linux server builds; exits with a non-zero code on failure.
+
+### BuildMacBatch [#buildmacbatch]
+
+```csharp
+public static void BuildMacBatch();
+```
+
+Entry point for batchmode macOS player builds; exits with a non-zero code on failure.
+

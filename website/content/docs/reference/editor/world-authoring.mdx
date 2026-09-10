@@ -1,0 +1,69 @@
+---
+title: "WorldAuthoring"
+description: "Create, open, close, delete and populate cell scenes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldAuthoring.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldAuthoring.cs)</div>
+
+```csharp
+public static class WorldAuthoring
+```
+
+Create, open, close, delete and populate cell scenes. Everything the World window does goes through here.
+
+## Methods
+
+### CreateCell [#createcell]
+
+```csharp
+public static Scene CreateCell(WorldDefinition world, Vector3Int coord);
+```
+
+Create the cell scene for `coord` (cell-local: an empty scene with a [`WorldCell`](/docs/reference/world/world-cell) root at the origin), register it in the definition and the build settings, and open it placed.
+
+### OpenCell [#opencell]
+
+```csharp
+public static Scene OpenCell(WorldDefinition world, Vector3Int coord);
+```
+
+### CloseCell [#closecell]
+
+```csharp
+public static bool CloseCell(WorldDefinition world, Vector3Int coord);
+```
+
+Close the cell scene, asking to save first. False if the user cancelled.
+
+### DeleteCell [#deletecell]
+
+```csharp
+public static bool DeleteCell(WorldDefinition world, Vector3Int coord);
+```
+
+Forget the cell and delete its scene asset (after confirmation).
+
+### MoveIntoCell [#moveintocell]
+
+```csharp
+public static int MoveIntoCell(WorldDefinition world, Vector3Int coord, IEnumerable<GameObject> roots);
+```
+
+Move `roots` (root objects of any open scene, typically a single-scene level being partitioned) into the cell scene for `coord`, creating it if needed. Objects keep their editor positions; because the cell scene is placed at its editor offset, that is exactly cell-local plus offset, and the save hook stores them cell-local.
+
+### CellOfEditorPosition [#cellofeditorposition]
+
+```csharp
+public static Vector3Int CellOfEditorPosition(WorldDefinition world, Vector3 editorPosition);
+```
+
+Which cell (of `world`, given the current editor origin) a root object's position falls in.
+
+### PartitionScene [#partitionscene]
+
+```csharp
+public static int PartitionScene(WorldDefinition world, Scene source, IEnumerable<GameObject> keepInSource);
+```
+
+Partition every non-cell root object of `source` into cells by position (objects that span several cells go to the one holding their pivot). Returns the number of objects moved.
+

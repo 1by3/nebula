@@ -1,0 +1,221 @@
+---
+title: Debugging and observability
+description: The in-game overlay and console, NebulaLog, where every log lives, the dashboard event log, reading a handover, the smoke test and typecheck, and a troubleshooting table.
+---
+
+A mesh is several processes on several machines, so most debugging is reading the right log. Every Nebula line is prefixed `[nebula]` so it is greppable in a headless Unity log, the orchestrator keeps an event log on the dashboard, and every role can draw a status overlay. This page lists what each of those shows and what to look for when something is wrong.
+
+## The in-game overlay
+
+[`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay) is an IMGUI box in the top-left corner that reads `NebulaBootstrap.Instance` and prints one block per role present in the process:
+
+| Role | Line |
+| --- | --- |
+| Header | `Nebula roles=Client` |
+| Client | `client InGame id=3 rtt=42ms serverTick~12345 predict=12351 lead=6 (adaptive +2, worker sees 3)`, then `entities=140 authorityChanges=12`, then `me: quadrant-NE on worker w1 epoch=3 corrections=4 last=0.12m` |
+| Worker | `worker w1 tick=12345 0.31ms auth=40 ghosts=6 players=1 bots=2 serverDriven=32 out=17 in=15 local=0` |
+| Gateway | `gateway clients=3 workers=4 entities=140` |
+| Orchestrator | `orchestrator desired=4 rebalances=2 dashboard=http://localhost:7080/` |
+| Containers | One line per container: a colour swatch for the owning worker, `quadrant-NE -> w1 (lease e3)` |
+
+The client line is the one to read when input feels wrong. `lead` is how many ticks ahead of the estimated server tick the client stamps its inputs; `adaptive` is the part added at runtime because the worker reported inputs arriving late; `worker sees` is the last lead the worker reported back. `corrections` and `last` are how often and how far prediction was corrected; a handover should not change either distribution.
+
+The overlay reads no input of its own, so it works with any input backend. Game code toggles its public `Visible` field. ShooterGame's `ShooterHud` finds the overlay in `Start`, hides it (`_overlay.Visible = false`) so players see the HUD instead, and flips it on `keyboard.f3Key.wasPressedThisFrame`. Press **F3** in the shooter. Headless roles have the component too but draw nothing.
+
+## The in-game console
+
+The backquote key (`` ` ``) opens the Quantum Console on clients (`ShooterConsole` instantiates the prefab on clients only). While it is open the cursor is free and the pawn ignores the keyboard and mouse. Commands live in `ShooterCommands`:
+
+```
+npcs           how many NPCs this client sees, and the mesh-wide total
+npcs 200       set the mesh-wide NPC total; workers spawn or despawn to match, no restart
+```
+
+`npcs <count>` goes through the local pawn as a `ServerRpc`, so it reaches whichever worker owns the pawn; that worker writes the `npcs` mesh setting and every worker's `NpcDirector` reconciles against it. The console prints `mesh NPC total set to 200` when the value lands. Any player may run it; it is a load control for the prototype, not an admin command.
+
+## NebulaLog and `-nebula-verbose`
+
+`NebulaLog` wraps `Debug.Log` with the `[nebula]` prefix: `Info`, `Warn`, `Error`, and `Debugf`, which only prints when `NebulaLog.Verbose` is true. `-nebula-verbose` on any role sets it, the orchestrator forwards it to every role it launches, and `nebula start --verbose` / `nebula deploy --verbose` pass it to the orchestrator. Verbose adds the launch command lines, dropped control-plane writes while disconnected, and per-message detail; leave it off when measuring tick time.
+
+Warnings and errors are worth grepping for by category: `LogWarning`, `LogError` and `Exception` are what `smoke-test.ps1` counts per worker.
+
+## The worker tick profile
+
+Every worker logs one line every 5 s with where its tick went:
+
+```
+[nebula] profile 300 ticks/5s 300 frames avg 6.8ms max 29.6ms dup 4 skip 0 gc 1 auth 331 ghosts 64 | npc.brain=0.75 npc.move=3.64 npc.fire=0.65 npc.path=0.08 poll=0.03 ghosts=0.07 physics.sync=0.08 simulate=5.40 poses=0.14 containers=0.56 band=0.26 publish=0.28 gap=9.86
+```
+
+- `ticks` should be 60 per second and `frames` close to it. Fewer frames than ticks means the process cannot keep up and Unity is running catch-up FixedUpdates.
+- `dup` is FixedUpdates that found no new tick number to simulate (harmless); `skip` is tick numbers dropped because the worker fell more than `NebulaWorker.MaxCatchUpTicks` behind the wall clock. A steady `skip` is the lag players feel.
+- Every section is milliseconds per tick, so the Nebula sections (`ghosts`, `physics.sync`, `simulate`, `poses`, `containers`, `band`, `publish`) add up to `avg`. `simulate` is all of the game's `NetworkTick` code; `gap` is everything between two ticks (the physics step, `Update`, idle time), so `avg + gap` is about 16.7 ms when the worker is keeping 60 fps.
+- Game code adds its own sections with `NebulaProfiler.Section("name")` and `Begin()`/`End()`; ShooterGame's `npc.*` sections are inside `simulate`. A call count in brackets appears when a section does not run exactly once per tick.
+
+Read it on a remote mesh with `nebula logs --cloud w1 -n 300 | Select-String profile` (PowerShell) or `| grep profile`.
+
+## Where logs live
+
+**Locally**, every process logs next to the build in `Builds/<platform>/Logs/` (`Win64`, `MacOS` or `Linux64`; the orchestrator's process host puts them in `Logs/` beside the executable):
+
+| File | Process |
+| --- | --- |
+| `orchestrator.log` | The orchestrator, including every dashboard event. |
+| `gateway.log` | The gateway. |
+| `w1.log` .. `wN.log` | One per worker. A relaunched worker appends to the same file. |
+| `bot1.log` .. | One per bot client from `nebula start --bots`. |
+| `client123.log` | Extra client windows from **Nebula > Mesh > Launch Extra Client Window**. |
+| `spacetimedb.log` | The local SpacetimeDB that `nebula start` started. |
+| `Builds/unity-build.log` | The last `nebula build`. |
+
+`nebula start` deletes nothing; `smoke-test.ps1` clears the folder before a run.
+
+**In the cloud** the paths differ per VM: `/var/log/nebula/orchestrator.log` and `/opt/nebula/bin/Logs/gateway.log` on the orchestrator VM, `/var/log/nebula-bootstrap.log` and `/var/log/nebula-worker.log` on each worker VM. See [Deploying to Hetzner](/docs/deploy/hetzner#operating-it).
+
+### `nebula status` and `nebula logs`
+
+```bash
+nebula status
+nebula status --json
+nebula logs
+nebula logs w2 -n 200
+nebula logs gateway --follow
+nebula logs --cloud w1
+```
+
+`status` reads `/api/state` from the dashboard (local, or the deployed one with `--cloud`) and prints a worker table (state, address, containers, players, bots, NPCs, tick ms, authoritative and ghost counts, heartbeat age) and recent events. `logs` prints the last 60 lines of a role's log (`orchestrator` when no role is given) and `--follow` keeps printing as it grows; it opens the file with sharing because Unity keeps it open for writing. `--cloud` reads over ssh and cannot follow.
+
+### The dashboard event log
+
+The orchestrator keeps its last 200 log lines as events and publishes the newest 60 in `/api/state` under `events[]` (`time`, `level`, `message`). The dashboard shows them at the bottom of the page with warnings and errors highlighted. This is the fastest way to answer "what did the orchestrator decide and when": every launch, assignment, retirement, dead-worker declaration and dashboard command lands there.
+
+## Reading a handover in the logs
+
+A handover is two lines on two workers. On the old owner:
+
+```
+[nebula] handover OUT Player#281474976710659(e3,quadrant-SE,auth) -> w2 (epoch 4, tick 12345)
+```
+
+On the new owner:
+
+```
+[nebula] handover IN  Player#281474976710659(e3,quadrant-SE,ghost) <- w1 (epoch 4, tick 12346)
+```
+
+The entity prints as `name#netId(e<epoch>,<container>,<role>)`: the epoch and role shown are the ones *before* the line's transfer applied, and the high 16 bits of the net id are the index of the worker that minted it (`281474976710659` is `w1`, sequence 3).
+
+Across all worker logs the number of `handover OUT` lines must equal the number of `handover IN` lines ("out = in"). That is the single invariant `smoke-test.ps1` prints in colour: green when they match and are non-zero. A missing IN means the transfer message never arrived or was rejected; look for `stale authority transfer for ... ignored` (epoch went backwards) or `peer worker w2 disconnected` on the sender. The same tick number on both sides, plus or minus one, is normal.
+
+A container reassignment is the same thing many times over. On the orchestrator you see `assign quadrant-SE -> w1`; on the workers a burst of OUT and IN lines as every entity in that container crosses. If a retirement is what triggered it, the orchestrator follows with `worker w3 drained; shutting it down`, or the warning `still reports N authoritative entities after the drain timeout; killing it anyway` when something did not hand over within `WorkerDrainTimeoutSeconds`.
+
+Other lines to know:
+
+| Line | Meaning |
+| --- | --- |
+| `registered with control plane as w1` | The worker's `RegisterWorker` went through. Missing: the control plane is unreachable. |
+| `peer worker w2 (index 2) connected` | The lateral link is up. Missing: workers cannot reach each other's advertised address. |
+| `gateway gw1 connected; announcing 40 entities` | The gateway attached to this worker. |
+| `spawned player Player(jesse) for client 3 in quadrant-NE` | The game mode created a pawn. |
+| `X is in quadrant-SE owned by 'w3' but that worker is not connected; keeping authority` | The lease says another worker owns the container but there is no link to it; authority stays put until there is. |
+| `w2 claims X at epoch 5 > ours 4; yielding authority` | Two workers disagreed and the higher epoch won. |
+| `worker w3 missed heartbeats for 5.2s; declaring dead` | Orchestrator reaper. Followed by reassignment and, 8 s later, `relaunching worker w3`. |
+| `ReadHandoverState on NetworkRigidbody of Box threw: ...` | The receiving behaviour could not read what the sender wrote. See troubleshooting. |
+
+## Tools/smoke-test.ps1
+
+The smoke test runs the whole mesh headless with bot clients that roam between quadrants and shoot at each other, optionally injects a failure or a scale change, and then reads the logs. It drives the mesh through the CLI (`nebula stop`, `nebula start`, `nebula stop`) and the dashboard API.
+
+```powershell
+pwsh Tools/smoke-test.ps1
+pwsh Tools/smoke-test.ps1 -Workers 3 -Bots 3 -Seconds 90
+pwsh Tools/smoke-test.ps1 -KillWorker w2 -KillAfter 30
+pwsh Tools/smoke-test.ps1 -ScaleTo 2 -ScaleAfter 25 -Seconds 75
+pwsh Tools/smoke-test.ps1 -Workers 2 -ScaleTo 4 -ScaleAfter 25
+```
+
+| Parameter | Default | Effect |
+| --- | --- | --- |
+| `-Workers` | 4 | Worker processes. |
+| `-Bots` | 2 | Bot clients. |
+| `-Npcs` | 0 | Server-driven NPCs. |
+| `-Seconds` | 60 | Run length. Progress is printed every 5 s from `/api/state`. |
+| `-KillWorker w2` | none | Hard-kill that worker's process (`Stop-Process`) once the run passes `-KillAfter`. |
+| `-KillAfter` | 30 | Seconds into the run. |
+| `-ScaleTo` | off | `POST /api/desired` with this count once the run passes `-ScaleAfter`. |
+| `-ScaleAfter` | 30 | Seconds into the run. |
+| `-DashboardPort` | 7080 | Where to find the API. |
+| `-KeepRunning` | off | Leave the mesh up afterwards. |
+
+At the end it reports, from the logs:
+
+- **orchestrator**: assignments, dead-declared, relaunched, scaled-up, retired, drain-timeouts.
+- **gateway**: workers-connected, clients-connected, spawn-requests.
+- **per worker**: registered, peers, spawned, handover-out, handover-in, cross-worker-hits, kills, warnings, errors.
+- **per bot**: welcome, local-player, errors.
+- **TOTAL handovers: out=N in=N** in green when out is non-zero.
+
+A healthy run has out = in, 0 errors, 0 drain-timeouts, and after a `-KillWorker` exactly one dead-declared and one relaunched.
+
+## Tools/typecheck.ps1
+
+The Editor holds an exclusive lock on the project, so a batchmode compile cannot run while it is open. `typecheck.ps1` reads every `.asmdef` under `Assets/`, generates matching csproj files that reference Unity's managed assemblies directly (resolving package assemblies from `Library/ScriptAssemblies` or from source), and builds them with `dotnet build`. It reproduces the asmdef reference graph, so it catches assembly-boundary violations as well as type errors, in seconds, without touching the Editor.
+
+```powershell
+powershell -File Tools/typecheck.ps1
+pwsh Tools/typecheck.ps1 -ShowWarnings
+pwsh Tools/typecheck.ps1 -ExtraSourceRoots C:\path\to\spacetimedbsdk
+```
+
+`-UnityVersion` (default `6000.6.0f1`) picks the Unity install whose assemblies are referenced. It is a typecheck, not a substitute for compiling inside Unity.
+
+## EditMode tests
+
+`Packages/com.1by3.nebula/Tests/EditMode` holds the tests that run without a mesh: serialization round-trips, the assignment policy and scaling helpers (`FourWorkersGetOneContainerEach`, `DeadWorkersContainerMovesAndNothingElseDoes`, `NextFreeIndexReusesGapsAndStartsAtOne`, `HighestIndexWorkerRetiresFirst`, and more), container resolution and hysteresis, the local control plane's lease semantics, RPC binding, handover state chunking, NetworkVariable discovery, the interpolator and the sync components. Run them from **Window > General > Test Runner** in the Editor (EditMode tab), or in batchmode:
+
+```powershell
+Unity -batchmode -projectPath . -runTests -testPlatform EditMode -testResults Temp\editmode.xml
+```
+
+## Editor menu items
+
+Everything under **Nebula** in the menu bar:
+
+| Menu | What it does |
+| --- | --- |
+| Build > Windows Player (Mono, development) | `Builds/Win64/Nebula.exe`; the local mesh, bots and the human client. |
+| Build > Linux Dedicated Server (Mono, development) | `Builds/Linux64/Nebula.x86_64`; what runs on cloud VMs. |
+| Control Plane > Start SpacetimeDB (local) | `spacetime start` on `127.0.0.1:3000` with data in `Temp/spacetimedb`. |
+| Control Plane > Publish Module | `spacetime publish -s local <database> --delete-data -y`. |
+| Control Plane > Regenerate C# Bindings | `spacetime generate` into `Packages/com.1by3.nebula/SpacetimeDB/Generated`. |
+| Control Plane > Stop SpacetimeDB | Kills the SpacetimeDB the Editor started. |
+| Mesh > Start Local Mesh | Starts SpacetimeDB, publishes, launches the orchestrator from the last build with `NebulaConfig.WorkerCount` workers. |
+| Mesh > Stop Local Mesh | Kills the orchestrator and every `Nebula` process. |
+| Mesh > Launch Extra Client Window | A second windowed client (`client<n>.log`). |
+| Mesh > Open Dashboard | Opens `http://localhost:<DashboardPort>/`. |
+
+The `nebula` CLI does the same things from a terminal and is the preferred route; see [Running locally](/docs/getting-started/running-locally).
+
+## Troubleshooting
+
+| Symptom | Likely cause | What to do |
+| --- | --- | --- |
+| `nebula build` fails at once, or Unity reports the project is locked | The Editor has the project open and holds `Temp/UnityLockfile`. | Nothing: the CLI detects the lock and builds from a mirrored copy under `~/.nebula-cli/scratch/<project>`, then copies the result into `Builds/`. If you used `--force` to build in place, close the Editor. The first mirror is slow (Library included). |
+| Build fails with "no scenes in Build Settings" | The scene list is empty. | Add your scene in File > Build Profiles. |
+| Can't damage anyone or throw boxes on a remote mesh; movement fine | Inputs arrive at the worker after the tick they are stamped for and are discarded. The client's lead (half RTT + 2 ticks) was too small for the real path through the gateway. | This was the Hetzner bug. The adaptive lead fixes it: the worker reports the worst lead it saw in `OwnerState`, the client raises `InputLeadAdjustTicks` until the target of 3 is met. Press F3 and watch `lead` and `worker sees`; if `worker sees` stays below 1, inputs are still being dropped. Raise `InputLeadMarginTicks` or `InputLeadMaxAdjustTicks` in `NebulaConfig` if the adaptive range is exhausted. |
+| Workers never register; dashboard shows them `launching` then `dead` | The workers cannot reach SpacetimeDB, or the module is not published under the configured database name. | Check `w1.log` for `control plane connect error` or `subscription error`. Locally, `nebula start` must have published; the Editor's **Publish Module** does the same. In the cloud, confirm `-nebula-spacetime` and `-nebula-database` in the systemd unit match `nebula config show`, and that the Maincloud login has not expired (`nebula config spacetime`). |
+| Dashboard empty or "Lost contact with the orchestrator" | The orchestrator is not running, is bound to another port, or (in the cloud) is bound to `localhost` only. | `nebula logs orchestrator`. Look for `dashboard at http://localhost:7080/ (bind localhost)`; on a VM the bind must be `+`. `dashboard failed to start on port 7080` means the port is taken. |
+| Dashboard shows the control plane pill red, workers listed but nothing assigned | The orchestrator itself lost SpacetimeDB. | The mesh keeps simulating on its last topology; assignment resumes when the connection comes back (2 s retry). Check `orchestrator.log` for `control plane disconnected`. |
+| `worker host 'hetzner' unavailable: ...` in the events | Missing or wrong token, or the network / ssh key does not exist in the Hetzner project. | `nebula deploy` creates them; the message names which one is missing. `HCLOUD_TOKEN` in `/etc/nebula/env` must be a Read & Write token. |
+| Worker VM created but never registers | The bootstrap could not fetch the build or the private IP. | `nebula logs --cloud w1` prints the bootstrap log first: `build download attempt N failed` means the orchestrator's `/build/nebula-linux.tar.gz` was not reachable over the private network (`-nebula-build-dir` and `-nebula-advertise` on the orchestrator). |
+| Entities freeze or snap after a handover; `handover IN` present | `ReadHandoverState` read a different layout than `WriteHandoverState` wrote (a field added on one side, or reads in a different order). | `NetworkIdentity` isolates each behaviour's chunk and logs `ReadHandoverState on <Behaviour> of <entity> threw: ...`; grep the receiving worker's log for it. Make the read mirror the write exactly. Both workers run the same build, so a mismatch is always a code bug, not a version skew. |
+| `handover OUT` with no matching `IN` | The lateral link to the target is down, or the target rejected a stale epoch. | Look for `peer worker wN disconnected` on the sender and `stale authority transfer` on the receiver. `... owned by 'wN' but that worker is not connected; keeping authority` means the sender is waiting for the link. |
+| Players spawn but nobody moves; `gateway clients=N workers=0` | The gateway has no worker links. | Gateway log: `dialing worker w1 at <addr>:7101` then `worker w1 (index 1) connected`. If it dials a private address you cannot reach, `-nebula-advertise` on the worker is wrong. |
+| Retiring a worker always ends in `killing it anyway` | Something on it never handed over: usually an entity in a container that still has no other owner, or a behaviour throwing in `WriteHandoverState`. | Check the retiring worker's log for `handover OUT` counts versus its `auth=` count on the overlay, and for exceptions. `WorkerDrainTimeoutSeconds` (10 s) is generous for a few hundred entities. |
+| `128` bots grind the machine to a halt | Each bot is a whole headless Unity player. | Use NPCs for load (`--npcs`), bots only to exercise the client path. |
+
+<Cards>
+  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="What every event and API route means." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What WriteHandoverState / ReadHandoverState carry." />
+  <Card title="Deploying to Hetzner" href="/docs/deploy/hetzner" description="Cloud log paths and the remote dashboard." />
+</Cards>

@@ -1,0 +1,24 @@
+{
+  "title": "CLI reference",
+  "description": "Generated from nebula help --json",
+  "root": true,
+  "pages": [
+    "index",
+    "---Getting started---",
+    "setup",
+    "init",
+    "---Running locally---",
+    "build",
+    "start",
+    "stop",
+    "status",
+    "logs",
+    "---Deploying---",
+    "config",
+    "deploy",
+    "destroy",
+    "---Other---",
+    "version",
+    "help"
+  ]
+}

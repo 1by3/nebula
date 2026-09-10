@@ -1,0 +1,34 @@
+# Builds the per-platform CLI archives the install scripts download and attaches them to the GitHub release
+# for the pushed tag. Unity builds and tests need an editor licence and stay local (Tools/typecheck.ps1).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check the tag matches the CLI version
+        run: |
+          version="$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' cli/Nebula.Cli/Nebula.Cli.csproj | head -n1)"
+          [ "v$version" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} but Nebula.Cli.csproj says $version"; exit 1; }
+          pkg="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' Packages/com.1by3.nebula/package.json | head -n1)"
+          [ "$pkg" = "$version" ] || { echo "package.json says $pkg but the CLI is $version"; exit 1; }
+      - name: Build the archives
+        run: sh cli/scripts/package.sh
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cli/dist/*.zip
+            cli/dist/*.tar.gz
+          generate_release_notes: true

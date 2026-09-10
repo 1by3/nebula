@@ -1,0 +1,53 @@
+---
+title: "nebula init"
+description: "Install Nebula into the Unity project in the current folder"
+---
+
+Install Nebula into the Unity project in the current folder.
+
+```bash
+nebula init [--ref <tag|branch>] [--embed [--source <path>]] [--force]
+```
+
+```text
+Run inside a Unity project. It adds the Nebula package (com.1by3.nebula, fetched by Unity from the Nebula
+repository on GitHub and pinned to this CLI's release) and the SpacetimeDB SDK to Packages/manifest.json, lists the
+package in `testables` so its tests show in the Test Runner, creates Assets/Resources/NebulaConfig.asset with the
+defaults and writes nebula.json at the project root.
+
+--embed copies the package's sources into Packages/com.1by3.nebula instead, so you can read and modify the middleware
+in place. The sources come from --source, $NEBULA_SOURCE, the sdkSource in the CLI config (set when the CLI was
+installed from a checkout), or a shallow git clone of the repository into ~/.nebula-cli/sdk.
+
+Re-run with --force to move an existing install to this CLI's release (or to re-copy an embedded package).
+NebulaConfig.asset and nebula.json are always kept.
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--ref <ref>` | git tag or branch of the package to install (default: this CLI's release tag) |
+| `--embed` | copy the package sources into Packages/com.1by3.nebula instead of referencing the repository |
+| `--source <path>` | with --embed: a checkout of the Nebula repository to copy the package from |
+| `--force` | replace an existing Nebula package entry or embedded copy (NebulaConfig.asset and nebula.json are kept) |
+| `--sample <name>` | start from a sample game (not available yet) |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula init
+nebula init --ref main
+nebula init --embed --source C:\Dev\nebula
+nebula init --force
+```

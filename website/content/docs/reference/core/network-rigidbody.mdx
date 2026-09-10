@@ -1,0 +1,69 @@
+---
+title: "NetworkRigidbody"
+description: "Puts a Unity Rigidbody under the mesh's authority model."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkRigidbody.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkRigidbody.cs)</div>
+
+```csharp
+[RequireComponent(typeof(Rigidbody))]
+[DisallowMultipleComponent]
+public sealed class NetworkRigidbody : NetworkBehaviour
+```
+
+Puts a Unity `Rigidbody` under the mesh's authority model. On the worker that owns the entity the body is dynamic and PhysX simulates it; everywhere else (ghosts on neighbouring workers, every client) it is kinematic and follows the owner's state stream. Linear velocity is mirrored into [`NetworkIdentity.Velocity`](/docs/reference/core/network-identity#velocity) every tick so remote copies extrapolate and a handover keeps momentum; angular velocity only matters to the next simulating worker, so it travels with the handover alone through [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate). Add it next to the NetworkIdentity of any physics prop.
+
+## Properties
+
+### Body [#body]
+
+```csharp
+public Rigidbody Body { get; }
+```
+
+## Methods
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```
+
+### OnLostAuthority [#onlostauthority]
+
+```csharp
+public override void OnLostAuthority();
+```
+
+### NetworkTick [#networktick]
+
+```csharp
+public override void NetworkTick(uint tick, float deltaTime);
+```
+
+### WriteHandoverState [#writehandoverstate]
+
+```csharp
+public override void WriteHandoverState(NetworkWriter writer);
+```
+
+### ReadHandoverState [#readhandoverstate]
+
+```csharp
+public override void ReadHandoverState(NetworkReader reader);
+```
+
+### SetVelocity [#setvelocity]
+
+```csharp
+public void SetVelocity(Vector3 linear, Vector3 angular = default);
+```
+
+Authority only: set the body's momentum (e.g. to launch a freshly spawned prop).
+

@@ -1,0 +1,14 @@
+---
+title: "AuthorityRpcAttribute"
+description: "Runs on whichever worker has authority over the entity, no matter which worker calls it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/Rpc.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/Rpc.cs)</div>
+
+```csharp
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class AuthorityRpcAttribute : Attribute
+```
+
+Runs on whichever worker has authority over the entity, no matter which worker calls it. If the caller is authoritative it is a direct call; if the caller only holds a ghost, it crosses the lateral link. This is the primitive behind cross-container interactions such as damage claims.
+

@@ -1,0 +1,148 @@
+---
+title: "OrchestratorHttpServer"
+description: "The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/OrchestratorHttpServer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/OrchestratorHttpServer.cs)</div>
+
+```csharp
+public sealed class OrchestratorHttpServer : IDisposable
+```
+
+The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. Runs on Mono's managed `HttpListener`, so it needs no URL ACLs and no external dependencies. Reads are answered from the listener thread with the last published state; writes are queued and executed by [`Pump`](#pump) from the orchestrator's Update, and the HTTP response waits for that.
+
+## Constructors
+
+### OrchestratorHttpServer [#orchestratorhttpserver]
+
+```csharp
+public OrchestratorHttpServer(string bind, ushort port, string page, string artifactDir = null);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `bind` | "localhost" (default), "+" / "\*" for every interface, or one address. |
+| `artifactDir` | Directory served read-only under `/build/` (the Linux server tarball worker VMs fetch); null disables. |
+
+## Properties
+
+### Url [#url]
+
+```csharp
+public string Url { get; }
+```
+
+## Methods
+
+### Start [#start]
+
+```csharp
+public void Start();
+```
+
+### PublishState [#publishstate]
+
+```csharp
+public void PublishState(string json);
+```
+
+Replace the state document served by GET /api/state. Call from the main thread whenever something changed.
+
+### Pump [#pump]
+
+```csharp
+public void Pump(Func<Request, Response> handler);
+```
+
+Main thread: execute queued commands. Each waiting HTTP response is released with the handler's result.
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### TryGetInt [#trygetint]
+
+```csharp
+public static bool TryGetInt(string body, string key, out int value);
+```
+
+Reads an integer property from a flat JSON object body (the dashboard only ever sends \{"key": value\}).
+
+### GetString [#getstring]
+
+```csharp
+public static string GetString(string body, string key);
+```
+
+Reads a string property from a flat JSON object body; "" when absent.
+
+## Nested types
+
+### Request [#request]
+
+```csharp
+public sealed class Request
+```
+
+#### Fields
+
+##### Method [#method]
+
+```csharp
+public string Method;
+```
+
+##### Path [#path]
+
+```csharp
+public string Path;
+```
+
+##### Body [#body]
+
+```csharp
+public string Body;
+```
+
+### Response [#response]
+
+```csharp
+public struct Response
+```
+
+#### Fields
+
+##### Status [#status]
+
+```csharp
+public int Status;
+```
+
+##### ContentType [#contenttype]
+
+```csharp
+public string ContentType;
+```
+
+##### Body [#body]
+
+```csharp
+public string Body;
+```
+
+#### Methods
+
+##### Json [#json]
+
+```csharp
+public static Response Json(int status, string body);
+```
+
+##### Error [#error]
+
+```csharp
+public static Response Error(int status, string message);
+```
+

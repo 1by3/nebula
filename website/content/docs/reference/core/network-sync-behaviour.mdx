@@ -1,0 +1,87 @@
+---
+title: "NetworkSyncBehaviour"
+description: "Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority choice: NetworkTransform and NetworkAnimator."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs)</div>
+
+```csharp
+public abstract class NetworkSyncBehaviour : NetworkBehaviour
+```
+
+Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority choice: [`NetworkTransform`](/docs/reference/core/network-transform) and [`NetworkAnimator`](/docs/reference/core/network-animator). Derived classes detect changes in [`AuthorityTick`](#authoritytick) (called on whichever copy is the source of truth, once per tick) and implement the write/read pair; this class decides who is authoritative and pumps the owner -\> worker leg over a ServerRpc.
+
+## Properties
+
+### Authority [#authority]
+
+```csharp
+public AuthorityMode Authority { get; set; }
+```
+
+### HasSyncState [#hassyncstate]
+
+```csharp
+public sealed override bool HasSyncState { get; }
+```
+
+### IsOwnerAuthoritative [#isownerauthoritative]
+
+```csharp
+public bool IsOwnerAuthoritative { get; }
+```
+
+Whether owner authority is in effect (the mode is Owner and a client owns the entity).
+
+### IsSyncAuthority [#issyncauthority]
+
+```csharp
+public bool IsSyncAuthority { get; }
+```
+
+This copy is the source of truth for the synced state right now.
+
+### IsRelayingWorker [#isrelayingworker]
+
+```csharp
+protected bool IsRelayingWorker { get; }
+```
+
+This worker holds the entity but the owner drives the state: apply what arrives and re-broadcast it.
+
+## Methods
+
+### AuthorityTick [#authoritytick]
+
+```csharp
+protected abstract void AuthorityTick(uint tick, float deltaTime);
+```
+
+Once per tick on the source of truth: compare against what was last sent and [`NetworkBehaviour.MarkSyncDirty`](/docs/reference/core/network-behaviour#marksyncdirty) as needed.
+
+### ApplyOwnerState [#applyownerstate]
+
+```csharp
+protected virtual void ApplyOwnerState(NetworkReader reader, bool full);
+```
+
+Worker side of owner authority: an owner chunk just arrived. Apply it to the local object immediately (the worker is the simulation; nothing to interpolate) and queue the same deltas for re-broadcast. Default: the ordinary [`NetworkBehaviour.ReadSyncState`](/docs/reference/core/network-behaviour#readsyncstate) at the current tick.
+
+### NetworkTick [#networktick]
+
+```csharp
+public override void NetworkTick(uint tick, float deltaTime);
+```
+
+### Update [#update]
+
+```csharp
+protected virtual void Update();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```
+

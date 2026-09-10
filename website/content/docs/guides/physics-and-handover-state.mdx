@@ -1,0 +1,287 @@
+---
+title: Physics, handover state and the sync channel
+description: NetworkRigidbody, the handover-only state hook every behaviour gets, and how to write your own per-tick replicated component on the sync channel.
+---
+
+Nebula replicates an entity through three channels. The identity stream carries the root pose and velocity every tick. `NetworkVariable` fields carry low-rate state as a full blob whenever one changes (see [NetworkBehaviour](/docs/guides/network-behaviour)). The **sync channel** carries per-tick deltas from any behaviour that opts in; `NetworkTransform` and `NetworkAnimator` are built on it, and so can your own components. Separate from all three, the **handover state** hook lets a behaviour send state that only the next simulating worker needs, once, inside the authority transfer.
+
+This page covers `NetworkRigidbody`, which uses the identity stream and the handover hook; the handover hook itself; and how to write a sync-channel behaviour.
+
+## NetworkRigidbody
+
+[`NetworkRigidbody`](/docs/reference/core/network-rigidbody) puts a Unity `Rigidbody` under the mesh's authority model. Add it next to the `NetworkIdentity` of any physics prop; it requires a `Rigidbody` on the same GameObject.
+
+| Copy | Body state |
+| --- | --- |
+| Authoritative worker | Dynamic. PhysX simulates it. Each `NetworkTick` mirrors `Body.linearVelocity` into `NetworkIdentity.Velocity`, so the identity stream carries the velocity remote copies extrapolate with and a handover keeps momentum. |
+| Ghost on a neighbouring worker | Kinematic. The worker moves it to the pose the owner streamed, one tick behind, before physics syncs. Other dynamic bodies on that worker collide with it as a moving kinematic. |
+| Every client | Kinematic. Follows the identity stream through `RemoteInterpolator`. |
+
+The switches happen in the lifecycle hooks: `OnNetworkSpawn` sets `isKinematic = !HasAuthority`, `OnLostAuthority` makes the body kinematic, `OnGainedAuthority` makes it dynamic and restores `linearVelocity` from `Identity.Velocity` and `angularVelocity` from the handover state.
+
+Angular velocity does not go in the per-tick stream. Nothing but the next simulating worker needs it (ghosts and clients are kinematic and rotate to the streamed pose), so it rides the handover only:
+
+```csharp title="NetworkRigidbody.cs"
+public override void WriteHandoverState(NetworkWriter writer)
+{
+    writer.WriteVector3(Body.angularVelocity);
+}
+
+public override void ReadHandoverState(NetworkReader reader)
+{
+    _handoverAngularVelocity = reader.ReadVector3();
+}
+```
+
+`SetVelocity(Vector3 linear, Vector3 angular = default)` is the authority-only way to launch a freshly spawned prop: it writes `Identity.Velocity` and, when the body is dynamic, the Rigidbody's velocities. The box gun in the sample calls it right after `SpawnPrefab`:
+
+```csharp title="PlayerController.cs"
+var identity = worker.SpawnPrefab(mode.BoxPrefab, origin, Quaternion.LookRotation(dir), Container);
+var body = identity.GetComponent<NetworkRigidbody>();
+if (body != null) body.SetVelocity(dir * BoxLaunchSpeed);
+```
+
+The sample's `PhysicsBox` component adds nothing to the meshing; it only tints the box by the worker that owns it so a seam crossing is visible.
+
+<Callout type="info" title="Prediction and rigidbodies do not mix">
+The predicted player controller in the sample resolves its collisions with physics queries against static level geometry and ignores rigidbodies and other pawns: their state differs between the predicting client and the worker and would break reconciliation. A `NetworkRigidbody` is worker-simulated only.
+</Callout>
+
+## Handover state
+
+Every `NetworkBehaviour` has two virtual methods:
+
+```csharp
+public virtual void WriteHandoverState(NetworkWriter writer) { }
+public virtual void ReadHandoverState(NetworkReader reader) { }
+```
+
+`WriteHandoverState` is called on the outgoing worker while it builds the `AuthorityTransfer`, before `OnLostAuthority`. `ReadHandoverState` is called on the incoming worker after the entity's pose, velocity, `NetworkVariable` values and sync-channel keyframes have been applied and before `OnGainedAuthority`. What you write in one you must read, exactly, in the other.
+
+What belongs there: state that only the next simulating worker needs and that is not already replicated. Angular velocity, cooldown and respawn timers, RNG state, an AI's current plan, the remaining ticks of a door's auto-close. What does not: anything a client or ghost must see (that is a `NetworkVariable` or the sync channel), and anything derivable from replicated state.
+
+The wire format is one length-prefixed chunk per behaviour, in behaviour order: `[count:byte]{[len:ushort][chunk]}`. On the receiving side each behaviour reads from a reader bounded to its own chunk. A behaviour that reads past its chunk throws, the error is logged with the behaviour's type and the entity's name, and the next behaviour still gets its own bytes; a behaviour that reads too little leaves no residue. A mismatch between what you write and read is therefore a logged bug on that behaviour, not a corrupted entity.
+
+Handover state travels only with `AuthorityTransfer`. It is not in the per-tick stream, not in the spawn message, not cached by the gateway, and a local handover between two containers on the same worker never serialises it at all.
+
+## The sync channel
+
+Any `NetworkBehaviour` can replicate through the sync channel by overriding a small set of members:
+
+| Member | Role |
+| --- | --- |
+| `bool HasSyncState` | Return true to opt in. `NetworkIdentity.Initialize` collects the opted-in behaviours into `SyncBehaviours`. |
+| `Delivery SyncDelivery` | `Delivery.ReliableOrdered` (default) or `Delivery.Sequenced` (unreliable, newest wins). |
+| `void MarkSyncDirty()` | Authority: ask the worker to send this behaviour's chunk at the end of the current tick. |
+| `void WriteSyncState(NetworkWriter writer, bool full)` | Authority: write the state. `full` is a keyframe: write everything. Otherwise only what changed is needed, though writing everything is always correct. |
+| `void ReadSyncState(NetworkReader reader, uint tick, bool full)` | Non-authoritative copies: read what `WriteSyncState` wrote. `tick` is the simulation tick the state belongs to, 0 for a spawn snapshot. |
+| `void OnSyncStateSent()` | Authority: the tick's sends are done; clear per-tick pending deltas. `protected internal`. |
+| `void RemoteTick(double renderTick)` | Every copy this process does not simulate: present the state for `renderTick`. |
+
+### Who sends what, when
+
+Each tick, after simulating, the worker walks its authoritative entities. For each one with sync behaviours it calls `NetworkIdentity.WriteSyncState` once per delivery class, which visits the behaviours of that class and writes a chunk for each that is due:
+
+- a behaviour is due when it is dirty;
+- on a keyframe tick (`tick % NetworkIdentity.SyncKeyframeInterval == 0`, every 30 ticks) or on a behaviour's first send since gaining authority, a chunk that is written is a keyframe (`full == true`);
+- an unreliable behaviour is also due on every keyframe tick whether or not it is dirty, so a lost delta is healed within half a second at 60 Hz. A reliable behaviour never loses a delta and only sends when dirty.
+
+The chunks of one delivery class become one `EntityState` message to the gateway and one `GhostSyncState` message to every worker that holds a ghost of the entity, both carrying `(netId, epoch, tick, containerIndex)` and a flag saying which delivery class they went out on so the gateway re-emits them on the same one. When the tick's sends are done, `NetworkIdentity.ClearDirty` calls `OnSyncStateSent` on every behaviour that was dirty and clears the flag.
+
+Gaining authority (spawn or handover in) resets every sync behaviour to "never sent" and marks it dirty, so a new epoch always opens with keyframes. That is what the gateway's cache and a fresh ghost start from.
+
+### Envelope format
+
+`SyncStateCodec` writes the same envelope for the per-tick messages and for the spawn snapshot:
+
+```
+[count:byte] { [behaviourIndex:byte] [flags:byte] [len:ushort] [chunk:len bytes] } * count
+```
+
+`flags` is `SyncStateCodec.ChunkFlags`: `Full` (1) for a keyframe, `None` for a delta. Each chunk is bounded exactly like handover state: `ReadSyncState` gets a reader limited to its own bytes, an over-read throws and is logged, an under-read is harmless. Chunks for a behaviour index the receiver does not have are skipped.
+
+### The receiving side
+
+`NetworkIdentity.ReadSyncState(reader, tick, container)` sets `SyncContainer` (the container the values were expressed in, for behaviours that send world-space positions container-local like `NetworkTransform`) and hands each chunk to its behaviour. On a client this happens for `EntityState` messages with the message's tick, and for the spawn message with tick 0. On a worker it happens for `GhostSyncState` on ghosts, and for the snapshot inside a `GhostSpawn` or `AuthorityTransfer` with tick 0.
+
+Presentation is separate from reception. `RemoteTick(renderTick)` is called on every non-authoritative copy: once per frame on a client, at `NetworkTime.RenderTick`, which sits `NebulaConfig.InterpolationDelayTicks` behind the newest snapshot; once per tick on a worker for each ghost, at `tick - 1`, before `Physics.SyncTransforms` so ghost colliders are placed before anything raycasts that tick. A buffering behaviour stores samples by tick in `ReadSyncState` and interpolates between the two that straddle `renderTick` here. A behaviour that does not need smoothing can apply the state directly in `ReadSyncState` and leave `RemoteTick` empty.
+
+### What the gateway caches
+
+The gateway never instantiates entities, but it keeps, per entity, the newest keyframe chunk per behaviour index: seeded from the spawn message's snapshot and replaced whenever an `EntityState` arrives with a `Full` chunk. When a client connects late, the gateway assembles those chunks into the spawn message it sends, so the joiner's copy reads them with tick 0 and starts from the current state rather than the prefab's. Deltas are not cached; between keyframes a late joiner is at most `SyncKeyframeInterval` ticks stale on each behaviour until the next keyframe arrives.
+
+This is why a keyframe must be self-contained: write everything a fresh copy needs, not just what changed since the last keyframe.
+
+## A complete example
+
+A door on a child transform of a larger entity. The hinge angle changes every tick while the door moves, so it goes on the sync channel unreliably with buffered interpolation; a locked flag changes rarely and rides the same chunk. The auto-close deadline is a tick number only the simulating worker cares about, so it travels as handover state.
+
+```csharp title="NetworkDoor.cs"
+using Nebula;
+using UnityEngine;
+
+public sealed class NetworkDoor : NetworkBehaviour
+{
+    [SerializeField] private Transform _hinge;
+    [SerializeField] private float _openAngle = 90f;
+    [SerializeField] private float _degreesPerSecond = 120f;
+    [SerializeField] private float _autoCloseSeconds = 3f;
+
+    // Authority-side simulation state.
+    private float _angle;
+    private bool _locked;
+    private bool _open;
+    private uint _closeAtTick;          // handover state: the next worker must keep the timer
+    private float _lastSentAngle;
+    private bool _lastSentLocked;
+    private bool _angleDirty, _lockedDirty;
+
+    // Receiver-side ring of samples keyed by tick, like NetworkTransform's.
+    private struct Sample { public uint Tick; public float Angle; public bool Valid; }
+    private const int Capacity = 64;
+    private readonly Sample[] _ring = new Sample[Capacity];
+    private uint _latestTick;
+    private bool _anySample;
+
+    public override bool HasSyncState => true;
+    public override Delivery SyncDelivery => Delivery.Sequenced;
+
+    // ---- authority ------------------------------------------------------------------------------
+
+    /// <summary>Worker only. Open the door unless it is locked; it closes itself a few seconds later.</summary>
+    public void Open()
+    {
+        if (!HasAuthority || _locked) return;
+        _open = true;
+        _closeAtTick = NetworkTime.Tick + (uint)(_autoCloseSeconds * NetworkTime.TickRate);
+    }
+
+    public void SetLocked(bool locked)
+    {
+        if (!HasAuthority) return;
+        _locked = locked;
+    }
+
+    public override void NetworkTick(uint tick, float deltaTime)
+    {
+        if (_open && tick >= _closeAtTick) _open = false;
+        float target = _open ? _openAngle : 0f;
+        _angle = Mathf.MoveTowards(_angle, target, _degreesPerSecond * deltaTime);
+        _hinge.localRotation = Quaternion.Euler(0f, _angle, 0f);
+
+        if (Mathf.Abs(_angle - _lastSentAngle) >= 0.01f) _angleDirty = true;
+        if (_locked != _lastSentLocked) _lockedDirty = true;
+        if (_angleDirty || _lockedDirty) MarkSyncDirty();
+    }
+
+    public override void WriteSyncState(NetworkWriter writer, bool full)
+    {
+        bool angle = full || _angleDirty;
+        bool locked = full || _lockedDirty;
+        writer.WriteByte((byte)((angle ? 1 : 0) | (locked ? 2 : 0)));
+        if (angle) { writer.WriteHalf(_angle); _lastSentAngle = _angle; }
+        if (locked) { writer.WriteBool(_locked); _lastSentLocked = _locked; }
+    }
+
+    protected internal override void OnSyncStateSent()
+    {
+        _angleDirty = false;
+        _lockedDirty = false;
+    }
+
+    public override void OnGainedAuthority()
+    {
+        // A new epoch opens with a keyframe; make sure it reflects the hinge we were handed.
+        _angle = _hinge.localEulerAngles.y;
+        _open = _closeAtTick > NetworkTime.Tick;
+        for (int i = 0; i < Capacity; i++) _ring[i].Valid = false;
+        _anySample = false;
+    }
+
+    // ---- handover: only the next simulating worker needs the timer ------------------------------
+
+    public override void WriteHandoverState(NetworkWriter writer)
+    {
+        writer.WriteUInt(_closeAtTick);
+    }
+
+    public override void ReadHandoverState(NetworkReader reader)
+    {
+        _closeAtTick = reader.ReadUInt();
+    }
+
+    // ---- non-authoritative copies ---------------------------------------------------------------
+
+    public override void ReadSyncState(NetworkReader reader, uint tick, bool full)
+    {
+        byte fields = reader.ReadByte();
+        if ((fields & 2) != 0) _locked = reader.ReadBool();
+        if ((fields & 1) == 0) return;
+        float angle = reader.ReadHalf();
+
+        if (tick == 0)
+        {
+            // Spawn snapshot (late joiner, fresh ghost): apply at once, nothing to interpolate against.
+            _hinge.localRotation = Quaternion.Euler(0f, angle, 0f);
+            _anySample = false;
+            return;
+        }
+        if (_anySample && tick + Capacity <= _latestTick) return; // too old
+        if (!_anySample || tick > _latestTick) _latestTick = tick;
+        _anySample = true;
+        _ring[tick % Capacity] = new Sample { Tick = tick, Angle = angle, Valid = true };
+    }
+
+    public override void RemoteTick(double renderTick)
+    {
+        if (!_anySample) return;
+        if (renderTick >= _latestTick)
+        {
+            _hinge.localRotation = Quaternion.Euler(0f, _ring[_latestTick % Capacity].Angle, 0f);
+            return;
+        }
+        uint floor = (uint)System.Math.Floor(renderTick);
+        Sample before = default, after = default;
+        for (int i = 0; i < Capacity; i++)
+        {
+            uint t = floor - (uint)i;
+            if (t > floor) break; // underflow
+            var s = _ring[t % Capacity];
+            if (s.Valid && s.Tick == t) { before = s; break; }
+        }
+        for (uint t = floor + 1; t <= _latestTick; t++)
+        {
+            var s = _ring[t % Capacity];
+            if (s.Valid && s.Tick == t) { after = s; break; }
+        }
+        float angle;
+        if (before.Valid && after.Valid)
+        {
+            float f = (float)((renderTick - before.Tick) / (after.Tick - before.Tick));
+            angle = Mathf.LerpAngle(before.Angle, after.Angle, f);
+        }
+        else angle = after.Valid ? after.Angle : before.Angle;
+        _hinge.localRotation = Quaternion.Euler(0f, angle, 0f);
+    }
+}
+```
+
+Points worth noting in the example:
+
+- `NetworkTick` only runs on the authoritative worker, so change detection and `MarkSyncDirty` need no guards.
+- The delta writes a field mask, and the receiver's `_locked` keeps its previous value when the mask leaves it out. The keyframe path writes both fields, so a late joiner is complete.
+- `_lastSentAngle` is updated when the value actually goes on the wire, in `WriteSyncState`, not in `NetworkTick`; the threshold compares against what remote copies have.
+- `OnSyncStateSent` clears the pending flags once the worker has sent the tick to every peer and gateway. Clearing them in `WriteSyncState` would be wrong: the worker may call it more than once per tick (one envelope per destination).
+- The handover carries only `_closeAtTick`. `_locked` is already on the sync channel: the `AuthorityTransfer` carries the same spawn data as a `GhostSpawn`, including a sync keyframe from every behaviour, and the incoming worker applies that (with tick 0) before `ReadHandoverState` runs, so even a worker that held no ghost of the entity has the current `_locked` by then. The angle needs no handover entry either: the hinge's rotation is on the object, and `OnGainedAuthority` reads it back.
+- Ghosts on a worker also run `RemoteTick`, so a door's collider on a neighbouring worker is at the same angle the owner's stream says. If you only need visuals you can early-out on `IsServer`.
+
+If your component also needs owner authority (the owning client drives it and the worker relays), derive from `NetworkSyncBehaviour` instead: it adds the `Authority` field, `IsSyncAuthority`, `IsRelayingWorker`, the owner-to-worker `ServerRpc` leg and a per-tick `AuthorityTick` to put your change detection in. `NetworkTransform` is the reference implementation.
+
+## Related
+
+<Cards>
+  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="The built-in sync-channel component for transforms." />
+  <Card title="NetworkAnimator" href="/docs/guides/network-animator" description="The built-in sync-channel component for animators." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="When and how an authority transfer happens." />
+  <Card title="Serialization" href="/docs/guides/serialization" description="NetworkWriter and NetworkReader." />
+</Cards>

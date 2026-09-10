@@ -1,0 +1,4 @@
+{
+  "title": "Control plane",
+  "pages": ["control-plane-extensions", "gateway-info", "i-control-plane", "lease-info", "lease-state", "local-control-plane", "spacetime-control-plane", "worker-info", "worker-stats", "worker-status"]
+}

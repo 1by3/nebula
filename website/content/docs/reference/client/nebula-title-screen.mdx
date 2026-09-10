@@ -1,0 +1,29 @@
+---
+title: "NebulaTitleScreen"
+description: "The human client's front door: a small IMGUI panel to type the gateway address and a display name before connecting, and a way back when the connection drops."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/NebulaTitleScreen.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/NebulaTitleScreen.cs)</div>
+
+```csharp
+public sealed class NebulaTitleScreen : MonoBehaviour
+```
+
+The human client's front door: a small IMGUI panel to type the gateway address and a display name before connecting, and a way back when the connection drops. Shown only when the client was not told where to go on the command line (`-nebula-gateway`, `-nebula-bot`, `-nebula-connect` skip it), so scripted clients behave as before. Choices persist in PlayerPrefs.
+
+## Fields
+
+### Client [#client]
+
+```csharp
+public NebulaClient Client;
+```
+
+## Methods
+
+### TryParse [#tryparse]
+
+```csharp
+public static bool TryParse(string text, out string address, out ushort port);
+```
+

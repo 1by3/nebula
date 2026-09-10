@@ -1,0 +1,43 @@
+---
+title: "MsgId"
+description: "Wire message ids."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public enum MsgId : byte
+```
+
+Wire message ids. One byte header on every packet. The same entity message shapes are used on all three links (client-gateway, gateway-worker, worker-worker); only the id tells the receiver which role sent it.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Hello` | `1` |  |
+| `Welcome` | `2` |  |
+| `Ping` | `3` |  |
+| `Pong` | `4` |  |
+| `EntitySpawn` | `10` |  |
+| `EntityDespawn` | `11` |  |
+| `EntityVars` | `12` |  |
+| `EntityRpc` | `13` |  |
+| `WorldState` | `14` |  |
+| `OwnerState` | `15` |  |
+| `ContainerOwnership` | `16` |  |
+| `EntityState` | `17` | Per-behaviour sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick. |
+| `Batch` | `18` | Gateway -\> client: several reliable messages in one packet: `[count:ushort]{[len:ushort][message]}`. A big mesh produces hundreds of small reliable messages a second (an RPC per shot, a vars update per hit); one packet each was most of a client's packet rate. |
+| `ClientInput` | `20` |  |
+| `ServerRpc` | `21` |  |
+| `SpawnPlayer` | `30` |  |
+| `DespawnPlayer` | `31` |  |
+| `GhostSpawn` | `40` |  |
+| `GhostState` | `41` |  |
+| `GhostVars` | `42` |  |
+| `GhostDespawn` | `43` |  |
+| `AuthorityTransfer` | `44` |  |
+| `ForwardInput` | `45` |  |
+| `AuthorityRpc` | `46` |  |
+| `GhostSyncState` | `47` |  |
+

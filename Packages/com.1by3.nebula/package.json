@@ -1,0 +1,13 @@
+{
+  "name": "com.1by3.nebula",
+  "version": "0.1.0",
+  "displayName": "Nebula",
+  "description": "Middleware for dynamically meshed multiplayer game servers: Unity dedicated-server workers that hand entities to each other, an orchestrator driven by a SpacetimeDB control plane, and a gateway clients connect to.",
+  "unity": "6000.0",
+  "documentationUrl": "https://nebula.1by3.co/docs",
+  "changelogUrl": "https://github.com/1by3/nebula/releases",
+  "licensesUrl": "https://github.com/1by3/nebula/blob/main/LICENSE",
+  "author": { "name": "1by3", "url": "https://1by3.co" },
+  "keywords": ["multiplayer", "netcode", "dedicated-server", "spacetimedb", "mesh"],
+  "dependencies": {}
+}

@@ -1,0 +1,19 @@
+{
+    "name": "Nebula.Editor",
+    "rootNamespace": "Nebula.Editor",
+    "references": [
+        "Nebula.Runtime",
+        "Nebula.World"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,129 @@
+---
+title: "ContainerRegistry"
+description: "The container graph of the loaded level: every Container, indexed deterministically so all processes agree on indices, plus adjacency."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerRegistry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerRegistry.cs)</div>
+
+```csharp
+public static class ContainerRegistry
+```
+
+The container graph of the loaded level: every [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency. Adjacent = bounds touch or overlap.
+
+Two ways to populate it: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan.
+
+## Properties
+
+### All [#all]
+
+```csharp
+public static IReadOnlyList<Container> All { get; }
+```
+
+### Count [#count]
+
+```csharp
+public static int Count { get; }
+```
+
+### IsGridded [#isgridded]
+
+```csharp
+public static bool IsGridded { get; }
+```
+
+A partitioned world's manifest is loaded: containers know their cell and lookups use the grid.
+
+## Events
+
+### Rebuilt [#rebuilt]
+
+```csharp
+public static event Action Rebuilt;
+```
+
+### LeasesChanged [#leaseschanged]
+
+```csharp
+public static event Action LeasesChanged;
+```
+
+Raised after a batch of leases was applied (the worker and client do this whenever the control plane changes).
+
+## Methods
+
+### Rebuild [#rebuild]
+
+```csharp
+public static void Rebuild();
+```
+
+Scan the loaded scene(s) for containers and index them by id.
+
+### Load [#load]
+
+```csharp
+public static void Load(IList<Container> ordered, bool gridded);
+```
+
+Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point.
+
+### InCell [#incell]
+
+```csharp
+public static IReadOnlyList<Container> InCell(Vector3Int cell);
+```
+
+Containers whose cell is `cell` (the cell container and its nested ones). Empty when not gridded.
+
+### Get [#get]
+
+```csharp
+public static Container Get(ushort index);
+```
+
+### RefreshCaches [#refreshcaches]
+
+```csharp
+public static void RefreshCaches();
+```
+
+Re-read every container's transform (the worker does this once per tick; see [`Container.RefreshCache`](/docs/reference/containers/container#refreshcache)).
+
+### FindById [#findbyid]
+
+```csharp
+public static Container FindById(string id);
+```
+
+### Find [#find]
+
+```csharp
+public static Container Find(Vector3 worldPosition);
+```
+
+The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees.
+
+### Resolve [#resolve]
+
+```csharp
+public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis);
+```
+
+The container the entity should belong to after applying hysteresis: it must be at least `hysteresis` metres inside a different container before we consider it moved.
+
+### ApplyLease [#applylease]
+
+```csharp
+public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch);
+```
+
+### NotifyLeasesChanged [#notifyleaseschanged]
+
+```csharp
+public static void NotifyLeasesChanged();
+```
+
+Tell listeners (world streaming, overlays) that a batch of [`ApplyLease`](#applylease) calls is complete.
+

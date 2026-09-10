@@ -1,0 +1,64 @@
+---
+title: "WorldEditorPlacement"
+description: "Keeps cell scenes usable in the editor even though they are authored cell-local."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldEditorPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldEditorPlacement.cs)</div>
+
+```csharp
+[InitializeOnLoad]
+public static class WorldEditorPlacement
+```
+
+Keeps cell scenes usable in the editor even though they are authored cell-local. Whenever a cell scene is opened it is translated to where its cell sits relative to the [`EditorOriginCell`](#editororigincell), so several open cells line up like they will in the game; on save the translation is taken out again (and put back right after), so the file on disk always stays cell-local. The [`WorldCell`](/docs/reference/world/world-cell) root's position is the record of the applied translation, which makes this stateless across domain reloads.
+
+## Properties
+
+### EditorOriginCell [#editororigincell]
+
+```csharp
+public static Vector3Int EditorOriginCell { get; set; }
+```
+
+The cell the editor shows at Unity's origin. Change it to author regions far from cell (0,0,0).
+
+## Methods
+
+### SetEditorOrigin [#seteditororigin]
+
+```csharp
+public static void SetEditorOrigin(WorldDefinition world, Vector3Int origin);
+```
+
+Move the editor origin and re-place every open cell scene of `world`.
+
+### FindRoot [#findroot]
+
+```csharp
+public static WorldCell FindRoot(Scene scene);
+```
+
+The WorldCell root of a cell scene, or null.
+
+### CurrentOffset [#currentoffset]
+
+```csharp
+public static Vector3 CurrentOffset(Scene scene);
+```
+
+Where the open cell scene currently sits (the translation applied to its cell-local content).
+
+### Place [#place]
+
+```csharp
+public static void Place(Scene scene, WorldDefinition world, Vector3Int coord);
+```
+
+Translate the whole scene so its cell sits where the editor origin says it should.
+
+### Translate [#translate]
+
+```csharp
+public static void Translate(Scene scene, Vector3 delta);
+```
+

@@ -1,0 +1,37 @@
+---
+title: "nebula logs"
+description: "Show a role's log: orchestrator, gateway, w1..wN, bot1.."
+---
+
+Show a role's log: orchestrator, gateway, w1..wN, bot1...
+
+```bash
+nebula logs [role] [--lines N] [--follow] [--cloud]
+```
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `-n, --lines <N>` | lines to show (default 60) |
+| `-f, --follow` | keep printing as the log grows (local only) |
+| `--cloud` | read the log from the deployed mesh over ssh |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |
+
+## Examples
+
+```bash
+nebula logs
+nebula logs w2 -n 200
+nebula logs gateway --follow
+nebula logs --cloud w1
+```

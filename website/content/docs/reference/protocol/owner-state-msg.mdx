@@ -1,0 +1,83 @@
+---
+title: "OwnerStateMsg"
+description: "Authoritative post-simulation state of a predicted entity, for its owner's reconciliation."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct OwnerStateMsg
+```
+
+Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. Sent every tick, whether or not the owner's input for that tick had arrived, so the owner always has something to reconcile against and learns how early its inputs are landing ([`InputLead`](#inputlead)).
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### Tick [#tick]
+
+```csharp
+public uint Tick;
+```
+
+The tick this state is the result of.
+
+### LastInputTick [#lastinputtick]
+
+```csharp
+public uint LastInputTick;
+```
+
+Tick of the newest real (not repeated) input the worker has simulated.
+
+### InputLead [#inputlead]
+
+```csharp
+public sbyte InputLead;
+```
+
+Worst (smallest) lead of the owner's inputs since the previous report: frame tick minus the worker's tick when the frame arrived. Inputs need a lead of at least 1 to be simulated; [`NoInputLead`](#noinputlead) when nothing arrived.
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public uint OwnerClientId;
+```
+
+### State [#state]
+
+```csharp
+public byte[] State;
+```
+
+### NoInputLead [#noinputlead]
+
+```csharp
+public const sbyte NoInputLead = sbyte.MinValue;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static OwnerStateMsg Read(NetworkReader r);
+```
+

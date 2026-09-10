@@ -1,0 +1,89 @@
+---
+title: "HetznerWorkerHost"
+description: "One Hetzner Cloud VM per worker, created through the Hetzner Cloud API (https://docs.hetzner.cloud)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/HetznerWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/HetznerWorkerHost.cs)</div>
+
+```csharp
+public sealed class HetznerWorkerHost : IWorkerHost
+```
+
+One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` Each VM boots Ubuntu with a cloud-init script that downloads the Linux server build from the orchestrator over the private network, reads its own private IP from the Hetzner metadata service, and starts the worker role as a systemd unit advertising that private IP. Killing a worker deletes its VM. On [`Initialize`](#initialize) every VM labelled with this mesh id is deleted, so a restarted orchestrator never inherits (and pays for) stale machines.
+
+All HTTP work runs on the thread pool; results are queued and applied in [`Tick`](#tick) on the main thread, where the JSON is parsed with `JsonUtility`.
+
+## Constructors
+
+### HetznerWorkerHost [#hetznerworkerhost]
+
+```csharp
+public HetznerWorkerHost(CloudHostSettings settings);
+```
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsReady [#isready]
+
+```csharp
+public bool IsReady { get; }
+```
+
+### InitializationError [#initializationerror]
+
+```csharp
+public string InitializationError { get; } = "";
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(Action<string, string> log);
+```
+
+### Launch [#launch]
+
+```csharp
+public IWorkerHandle Launch(WorkerLaunchSpec spec);
+```
+
+### Kill [#kill]
+
+```csharp
+public void Kill(IWorkerHandle handle);
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### WriteHandleJson [#writehandlejson]
+
+```csharp
+public void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### BuildCloudInit [#buildcloudinit]
+
+```csharp
+public static string BuildCloudInit(string buildUrl, string workerArgs);
+```
+
+Boot script for a worker VM. Waits for the private interface, fetches the build from the orchestrator, and runs the worker as a systemd unit. `$PRIVATE_IP` in `workerArgs` expands on the machine.
+

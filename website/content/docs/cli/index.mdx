@@ -1,0 +1,50 @@
+---
+title: CLI reference
+description: Every nebula command, generated from the CLI (version 0.1.0).
+---
+
+The `nebula` command-line tool installs Nebula into a Unity project, runs the mesh locally and deploys it. This reference is generated from the CLI itself (`nebula help --json`) by `website/scripts/gen-cli.mjs`; `nebula --help` and `nebula <command> --help` print the same information in the terminal. See [Install the CLI](/docs/getting-started/install) for how to get it.
+
+```bash
+nebula <command> [options]
+```
+
+## Getting started
+
+| Command | Summary |
+| --- | --- |
+| [nebula setup](/docs/cli/setup) | Install the prerequisites for running Nebula locally |
+| [nebula init](/docs/cli/init) | Install Nebula into the Unity project in the current folder |
+
+## Running locally
+
+| Command | Summary |
+| --- | --- |
+| [nebula build](/docs/cli/build) | Build the game executable every role runs from (orchestrator, gateway, workers, client) |
+| [nebula start](/docs/cli/start) | Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers |
+| [nebula stop](/docs/cli/stop) | Stop the local mesh (every process of the build, and SpacetimeDB if `nebula start` started it) |
+| [nebula status](/docs/cli/status) | Show the mesh: workers, containers, players, bots, NPCs and recent events |
+| [nebula logs](/docs/cli/logs) | Show a role's log: orchestrator, gateway, w1..wN, bot1.. |
+
+## Deploying
+
+| Command | Summary |
+| --- | --- |
+| [nebula config](/docs/cli/config) | Configure a deploy target, Spacetime Maincloud, or the Unity editor path |
+| [nebula deploy](/docs/cli/deploy) | Build, publish the control plane and run the mesh on the configured deploy target |
+| [nebula destroy](/docs/cli/destroy) | Delete every cloud server of the mesh so nothing keeps billing |
+
+## Other
+
+| Command | Summary |
+| --- | --- |
+| [nebula version](/docs/cli/version) | Print the CLI version |
+| [nebula help](/docs/cli/help) | Show help for the CLI or one command |
+
+## Global options
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | run against another Nebula project instead of the current folder |
+| `-v, --verbose` | print stack traces and the commands the CLI runs |
+| `-y, --yes` | answer every confirmation with yes |

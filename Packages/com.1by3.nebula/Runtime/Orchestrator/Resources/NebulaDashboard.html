@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula orchestrator</title>
+<style>
+  :root {
+    --bg: #12141a; --panel: #1a1d26; --panel-2: #21252f; --line: #2c313d;
+    --ink: #e8eaf0; --ink-2: #a8adbb; --ink-3: #6f7585;
+    --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a; --accent: #7aa2ff;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .sub { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); white-space: nowrap; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .pill.ok .dot { background: var(--ok); } .pill.warn .dot { background: var(--warn); } .pill.bad .dot { background: var(--bad); }
+  main { padding: 18px 22px 40px; display: grid; gap: 18px; max-width: 1400px; margin: 0 auto; }
+  .row { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .stat { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; }
+  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat .l { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel-2); }
+  .stepper button { width: 38px; height: 38px; font-size: 20px; }
+  .stepper .n { min-width: 56px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 8px 12px; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button.small { padding: 5px 9px; font-size: 12px; }
+  .workers { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+  .worker { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 12px 20px; overflow: hidden; }
+  .worker::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--wc, #555); }
+  .worker.dim { opacity: .6; }
+  .worker .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .worker .name { font-weight: 600; font-size: 16px; font-family: var(--mono); }
+  .worker .meta { color: var(--ink-3); font-size: 12px; font-family: var(--mono); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; margin: 6px 0 10px; }
+  .chip { font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+  .chip.empty { color: var(--ink-3); border-style: dashed; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+  .metric .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .metric .l { color: var(--ink-3); font-size: 11px; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  td.mono, .mono { font-family: var(--mono); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 7px; background: var(--wc, #555); }
+  .log { font-family: var(--mono); font-size: 12px; max-height: 320px; overflow: auto; }
+  .log div { padding: 2px 0; border-bottom: 1px solid #1f232d; display: grid; grid-template-columns: 78px 1fr; gap: 10px; }
+  .log .t { color: var(--ink-3); }
+  .log .warn { color: var(--warn); } .log .error { color: var(--bad); }
+  #banner { display: none; background: #3a1f22; color: #ffb4b7; border-bottom: 1px solid #5a2a2e; padding: 8px 22px; font-size: 13px; }
+  #banner.show { display: block; }
+  #toast { position: fixed; right: 20px; bottom: 20px; background: #3a1f22; color: #ffb4b7; border: 1px solid #5a2a2e; padding: 10px 14px; border-radius: 8px; display: none; max-width: 420px; }
+  #toast.show { display: block; }
+  .muted { color: var(--ink-3); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Nebula orchestrator</h1>
+  <span class="sub" id="orchId">—</span>
+  <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
+  <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
+  <span class="sub" id="updated" style="margin-left:auto"></span>
+</header>
+<div id="banner">Lost contact with the orchestrator. Retrying…</div>
+
+<main>
+  <div class="row">
+    <section class="card" style="grid-column: 1 / -1">
+      <h2>Mesh</h2>
+      <div class="stats">
+        <div class="stat"><div class="v" id="sLive">–</div><div class="l">live workers</div></div>
+        <div class="stat"><div class="v" id="sDesired">–</div><div class="l">desired</div></div>
+        <div class="stat"><div class="v" id="sContainers">–</div><div class="l">containers</div></div>
+        <div class="stat"><div class="v" id="sPlayers">–</div><div class="l">players</div></div>
+        <div class="stat"><div class="v" id="sBots">–</div><div class="l">bots</div></div>
+        <div class="stat"><div class="v" id="sNpcs">–</div><div class="l">server-driven</div></div>
+        <div class="stat"><div class="v" id="sEntities">–</div><div class="l">entities (auth + ghosts)</div></div>
+        <div class="stat"><div class="v" id="sRebalances">–</div><div class="l">rebalances</div></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Workers</h2>
+    <div class="controls">
+      <span class="muted">Desired workers</span>
+      <span class="stepper">
+        <button id="btnMinus" title="Remove one worker (highest index drains first)">−</button>
+        <span class="n" id="desiredN">–</span>
+        <button id="btnPlus" title="Launch another worker">+</button>
+      </span>
+      <button id="btnAdd" class="primary">Add worker</button>
+      <button id="btnRebalance">Rebalance now</button>
+      <span class="muted" id="hint" style="margin-left:auto; font-size:12px">Changing the count launches or drains processes; containers move to keep the load even.</span>
+    </div>
+  </section>
+
+  <div class="workers" id="workers"></div>
+
+  <section class="card">
+    <h2>Settings</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:8px">Mesh-wide key/values the game reads on every worker (ShooterGame: <b>npcs</b> is the NPC total). Nebula gives them no meaning.</div>
+    <div id="settings"></div>
+    <div class="controls" style="margin-top:8px">
+      <input id="newKey" placeholder="key" style="width:140px">
+      <input id="newValue" placeholder="value" style="width:200px">
+      <button id="btnNewSetting">Set</button>
+    </div>
+  </section>
+
+  <div class="row">
+    <section class="card">
+      <h2>Containers</h2>
+      <table>
+        <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th></tr></thead>
+        <tbody id="containers"></tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2>Gateways</h2>
+      <table>
+        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th></tr></thead>
+        <tbody id="gateways"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Events</h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let busy = false;
+  let lastState = null;
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
+  function fmtTime(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], {hour12:false}); }
+
+  function stateClass(w) {
+    if (w.state === 'ready') return 'ok';
+    if (w.state === 'dead') return 'bad';
+    return 'warn';
+  }
+  function stateLabel(w) {
+    if (w.state === 'draining') return 'draining' + (w.drainRemainingSeconds >= 0 ? ' · ' + Math.ceil(w.drainRemainingSeconds) + 's' : '');
+    if (w.state === 'relaunching') return 'relaunch in ' + Math.ceil(Math.max(0, w.relaunchInSeconds)) + 's';
+    return w.state;
+  }
+
+  function render(s) {
+    if (!s || !s.totals) return; // first snapshot may not be published yet
+    lastState = s;
+    $('orchId').textContent = s.orchestratorId + ' · host ' + (s.host || 'process') + (s.hostReady ? '' : (s.hostError ? ' (error: ' + s.hostError + ')' : ' (starting)')) + (s.localControlPlane ? ' · local control plane' : '');
+    const cp = $('cpPill'); cp.className = 'pill ' + (s.controlPlaneConnected ? 'ok' : 'bad');
+    cp.lastElementChild.textContent = s.controlPlaneConnected ? 'control plane connected' : 'control plane disconnected';
+    $('updated').textContent = 'updated ' + fmtTime(s.serverTimeUtc);
+
+    $('sLive').textContent = s.totals.liveWorkers;
+    $('sDesired').textContent = s.desiredWorkers;
+    $('sContainers').textContent = s.totals.containers;
+    $('sPlayers').textContent = s.totals.players;
+    $('sBots').textContent = s.totals.bots;
+    $('sNpcs').textContent = s.totals.serverDriven;
+    $('sEntities').textContent = s.totals.authoritative + ' + ' + (s.totals.entities - s.totals.authoritative);
+    $('sRebalances').textContent = s.rebalances;
+    $('desiredN').textContent = s.desiredWorkers;
+    $('btnMinus').disabled = busy || s.desiredWorkers <= 0;
+    $('btnPlus').disabled = busy || s.desiredWorkers >= s.maxWorkers;
+    $('btnAdd').disabled = busy || s.desiredWorkers >= s.maxWorkers;
+    $('btnRebalance').disabled = busy;
+    $('btnNewSetting').disabled = busy;
+    const st = $('settings');
+    const keys = Object.keys(s.settings || {}).sort();
+    if (!keys.length) st.innerHTML = '<div class="muted">No settings.</div>';
+    else if (!st.contains(document.activeElement)) {
+      st.innerHTML = keys.map(k => `<div class="controls" style="margin-bottom:4px"><span class="n" style="min-width:140px">${esc(k)}</span><input data-key="${esc(k)}" value="${esc(s.settings[k])}" style="width:200px"><button data-set="${esc(k)}">Set</button></div>`).join('');
+    }
+
+    const ws = $('workers');
+    if (!s.workers.length) {
+      ws.innerHTML = '<div class="card muted">No workers. Use <b>Add worker</b> to launch one.</div>';
+    } else {
+      ws.innerHTML = s.workers.map(w => `
+        <article class="worker ${w.alive ? '' : 'dim'}" style="--wc:${esc(w.color)}">
+          <div class="head">
+            <div><span class="name">${esc(w.id)}</span> <span class="meta">#${w.index}${w.instance ? ' · ' + esc(w.instance) : ''}${w.publicIp ? ' · public ' + esc(w.publicIp) : ''}${w.managed ? '' : ' · external'}</span></div>
+            <span class="pill ${stateClass(w)}"><span class="dot"></span><span>${esc(stateLabel(w))}</span></span>
+          </div>
+          <div class="chips">${w.containers.length ? w.containers.map(c => `<span class="chip">${esc(c)}</span>`).join('') : '<span class="chip empty">no containers</span>'}</div>
+          <div class="metrics">
+            <div class="metric"><div class="v">${w.players}</div><div class="l">players</div></div>
+            <div class="metric"><div class="v">${w.bots}</div><div class="l">bots</div></div>
+            <div class="metric"><div class="v">${w.serverDriven}</div><div class="l">server-driven</div></div>
+            <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
+            <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
+          </div>
+          <div class="meta" style="margin-bottom:8px">heartbeat ${fmtAge(w.heartbeatAgeSeconds)} · ${esc(w.address || 'not registered')} · tick ${w.tickCount}</div>
+          <div class="actions">
+            <button class="small danger" data-act="kill" data-id="${esc(w.id)}" ${(!w.managed || !w.instance || busy) ? 'disabled' : ''} title="Kill the process / delete the VM to simulate a crash; the orchestrator relaunches it">Kill</button>
+            <button class="small" data-act="remove" data-id="${esc(w.id)}" ${(w.retiring || busy) ? 'disabled' : ''} title="Drain this worker's containers to the others, then shut it down">Remove</button>
+          </div>
+        </article>`).join('');
+    }
+
+    $('containers').innerHTML = s.containers.map(c => `
+      <tr><td class="mono"><span class="sw" style="--wc:${esc(c.color)}"></span>${esc(c.id)}</td>
+          <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
+          <td>${c.epoch}</td><td>${esc(c.state)}</td></tr>`).join('');
+
+    $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => `
+      <tr><td class="mono">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="muted">no gateway registered</td></tr>';
+
+    $('log').innerHTML = s.events.map(e => `<div class="${esc(e.level)}"><span class="t">${fmtTime(e.time)}</span><span>${esc(e.message)}</span></div>`).join('');
+  }
+
+  function setOnline(ok) {
+    $('banner').classList.toggle('show', !ok);
+    const p = $('netPill'); p.className = 'pill ' + (ok ? 'ok' : 'bad');
+    p.lastElementChild.textContent = ok ? 'dashboard live' : 'dashboard offline';
+  }
+
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/state', { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      render(await r.json());
+      setOnline(true);
+    } catch (e) {
+      setOnline(false);
+    }
+  }
+
+  async function post(path, body) {
+    if (busy) return;
+    busy = true;
+    if (lastState) render(lastState);
+    try {
+      const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) toast(j.error || ('request failed: ' + r.status));
+    } catch (e) {
+      toast('request failed: ' + e.message);
+    } finally {
+      busy = false;
+      await refresh();
+    }
+  }
+
+  $('btnPlus').onclick = () => post('/api/workers/add');
+  $('btnNewSetting').onclick = () => { const k = $('newKey').value.trim(); if (!k) return; post('/api/settings', { key: k, value: $('newValue').value }); $('newKey').value = ''; $('newValue').value = ''; };
+  $('settings').addEventListener('click', (ev) => {
+    const k = ev.target && ev.target.dataset ? ev.target.dataset.set : null;
+    if (!k) return;
+    const input = $('settings').querySelector(`input[data-key="${CSS.escape(k)}"]`);
+    post('/api/settings', { key: k, value: input ? input.value : '' });
+  });
+  $('settings').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' || !ev.target.dataset || !ev.target.dataset.key) return;
+    post('/api/settings', { key: ev.target.dataset.key, value: ev.target.value });
+  });
+  $('btnAdd').onclick = () => post('/api/workers/add');
+  $('btnMinus').onclick = () => post('/api/workers/remove');
+  $('btnRebalance').onclick = () => post('/api/rebalance');
+  $('workers').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-act]');
+    if (!b || b.disabled) return;
+    if (b.dataset.act === 'remove') post('/api/workers/remove', { workerId: b.dataset.id });
+    else if (b.dataset.act === 'kill') post('/api/workers/kill', { workerId: b.dataset.id });
+  });
+
+  refresh();
+  setInterval(refresh, 1000);
+})();
+</script>
+</body>
+</html>

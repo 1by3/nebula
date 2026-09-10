@@ -1,0 +1,47 @@
+---
+title: "NebulaGameMode"
+description: "Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaGameMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaGameMode.cs)</div>
+
+```csharp
+public abstract class NebulaGameMode : MonoBehaviour
+```
+
+Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. Put exactly one subclass in the game scene. Called on whichever worker the gateway picked for the player.
+
+## Methods
+
+### OnSpawnPlayer [#onspawnplayer]
+
+```csharp
+public abstract NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container);
+```
+
+Create and spawn the player's entity inside `container`. Return the spawned identity.
+
+### OnPlayerDespawn [#onplayerdespawn]
+
+```csharp
+public virtual void OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player);
+```
+
+The player's client went away; the worker despawns the entity after this returns.
+
+### OnWorkerStarted [#onworkerstarted]
+
+```csharp
+public virtual void OnWorkerStarted(NebulaWorker worker);
+```
+
+Called once the worker is listening and registered with the control plane.
+
+### RandomPointIn [#randompointin]
+
+```csharp
+public static Vector3 RandomPointIn(Container container, float margin = 2f, float y = 0f);
+```
+
+A convenient uniform spawn point inside a container's floor area.
+

@@ -1,0 +1,35 @@
+---
+title: "ProfileSection"
+description: "A named stretch of code whose cost is accumulated by NebulaProfiler."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Debug/NebulaProfiler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Debug/NebulaProfiler.cs)</div>
+
+```csharp
+public sealed class ProfileSection
+```
+
+A named stretch of code whose cost is accumulated by [`NebulaProfiler`](/docs/reference/debug/nebula-profiler). Begin/End are a `Stopwatch.GetTimestamp` read each, cheap enough to leave in shipping workers.
+
+## Fields
+
+### Name [#name]
+
+```csharp
+public readonly string Name;
+```
+
+## Methods
+
+### Begin [#begin]
+
+```csharp
+public void Begin();
+```
+
+### End [#end]
+
+```csharp
+public void End();
+```
+

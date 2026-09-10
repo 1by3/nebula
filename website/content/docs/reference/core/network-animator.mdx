@@ -1,0 +1,136 @@
+---
+title: "NetworkAnimator"
+description: "Replicates an Animator the way NGO's NetworkAnimator does."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkAnimator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkAnimator.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public class NetworkAnimator : NetworkSyncBehaviour
+```
+
+Replicates an [`Animator`](#animator) the way NGO's NetworkAnimator does. The Animator keeps running on every copy; what travels is what would otherwise diverge: parameter changes (int, float, bool; floats past a threshold), triggers (only through [`SetTrigger`](#settrigger), exactly like NGO), and per-layer state (state hash, normalized time, weight) plus in-progress transitions so a state entered on the authority is entered everywhere. Keyframes carry all of it, so late joiners and fresh ghosts start in the right pose. Parameters driven by animation curves are skipped (NGO does the same). Always reliable: a lost trigger would never be recovered.
+
+Server authority (default): the worker drives the Animator; an owning client calling [`SetTrigger`](#settrigger) asks the worker over a ServerRpc and sees the result one round trip later, as in NGO. Owner authority: the owning client drives it and the worker relays (NGO's OwnerNetworkAnimator).
+
+## Fields
+
+### SyncParameters [#syncparameters]
+
+```csharp
+public bool SyncParameters = true;
+```
+
+### SyncLayerStates [#synclayerstates]
+
+```csharp
+public bool SyncLayerStates = true;
+```
+
+### SyncLayerWeights [#synclayerweights]
+
+```csharp
+public bool SyncLayerWeights = true;
+```
+
+### SyncTransitions [#synctransitions]
+
+```csharp
+public bool SyncTransitions = true;
+```
+
+### FloatThreshold [#floatthreshold]
+
+```csharp
+public float FloatThreshold = 0.001f;
+```
+
+A float parameter must move by at least this much to be sent.
+
+### NormalizedTimeResyncThreshold [#normalizedtimeresyncthreshold]
+
+```csharp
+public float NormalizedTimeResyncThreshold = 0.25f;
+```
+
+Keyframes re-sync a looping state's playhead only if it drifted by more than this (normalized time).
+
+### DisableRootMotionOnRemote [#disablerootmotiononremote]
+
+```csharp
+public bool DisableRootMotionOnRemote = true;
+```
+
+Non-authoritative copies do not apply root motion: the entity's pose comes from the network, not the clip.
+
+## Properties
+
+### Animator [#animator]
+
+```csharp
+public Animator Animator { get; }
+```
+
+## Methods
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```
+
+### OnLostAuthority [#onlostauthority]
+
+```csharp
+public override void OnLostAuthority();
+```
+
+### SetTrigger [#settrigger]
+
+```csharp
+public void SetTrigger(string name);
+public void SetTrigger(int hash);
+```
+
+Fire a trigger on every copy. On the authority it fires locally and is replicated; an owning client under server authority forwards the request to the worker (one round trip of latency, as in NGO).
+
+### ResetTrigger [#resettrigger]
+
+```csharp
+public void ResetTrigger(string name);
+public void ResetTrigger(int hash);
+```
+
+Reset a trigger locally on this copy. Never replicated (a trigger that was sent is already consumed remotely).
+
+### AuthorityTick [#authoritytick]
+
+```csharp
+protected override void AuthorityTick(uint tick, float deltaTime);
+```
+
+### WriteSyncState [#writesyncstate]
+
+```csharp
+public override void WriteSyncState(NetworkWriter writer, bool full);
+```
+
+### OnSyncStateSent [#onsyncstatesent]
+
+```csharp
+protected internal override void OnSyncStateSent();
+```
+
+### ReadSyncState [#readsyncstate]
+
+```csharp
+public override void ReadSyncState(NetworkReader reader, uint tick, bool full);
+```
+

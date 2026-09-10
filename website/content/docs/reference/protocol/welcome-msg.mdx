@@ -1,0 +1,45 @@
+---
+title: "WelcomeMsg"
+description: ""
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct WelcomeMsg
+```
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public uint ClientId;
+```
+
+### TickRate [#tickrate]
+
+```csharp
+public byte TickRate;
+```
+
+### ServerTick [#servertick]
+
+```csharp
+public uint ServerTick;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static WelcomeMsg Read(NetworkReader r);
+```
+

@@ -1,0 +1,6 @@
+{
+  "title": "API reference",
+  "description": "Generated from the C# sources",
+  "root": true,
+  "pages": ["index", "core", "containers", "world", "worker", "client", "gateway", "orchestrator", "control-plane", "bootstrap", "serialization", "transport", "protocol", "debug", "editor", "spacetime-module"]
+}

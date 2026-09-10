@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8639aa5b9a960fe84b71286ec12a096, type: 3}
+  m_Name: NebulaConfig
+  m_EditorClassIdentifier: Nebula.Runtime::Nebula.NebulaConfig
+  GameScene: 
+  WorldManifest: {fileID: 0}
+  ClientLoadRadiusCells: 1
+  WorkerLoadRingCells: 1
+  OriginShiftThresholdCells: 4
+  GatewayAddress: 127.0.0.1
+  GatewayPort: 7000
+  WorkerBasePort: 7100
+  WorkerAdvertiseAddress: 127.0.0.1
+  SpacetimeUri: http://127.0.0.1:3000
+  SpacetimeDatabase: nebula
+  UseLocalControlPlane: 0
+  WorkerCount: 4
+  WorkerExecutable: 
+  WorkerHost: process
+  BuildArtifactDir: 
+  OrchestratorSpawnsGateway: 1
+  WorkerHeartbeatSeconds: 1
+  WorkerTimeoutSeconds: 5
+  DeadWorkerReplaceDelaySeconds: 8
+  WorkerDrainTimeoutSeconds: 10
+  DashboardPort: 7080
+  GhostBandMargin: 4
+  HandoverHysteresis: 0.35
+  GhostLingerSeconds: 2
+  InterestNearRadius: 30
+  InterestFarRadius: 80
+  InterestMidDivisor: 4
+  InterestFarDivisor: 12
+  InterpolationDelayTicks: 3
+  InputLeadMarginTicks: 2
+  InputLeadTargetTicks: 3
+  InputLeadMaxAdjustTicks: 30
+  NetworkPrefabs: []

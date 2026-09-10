@@ -1,0 +1,219 @@
+---
+title: "WorldStreamer"
+description: "Loads and unloads cell scenes additively and keeps them placed relative to the floating origin."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/WorldStreamer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/WorldStreamer.cs)</div>
+
+```csharp
+[DefaultExecutionOrder(-500)]
+public sealed class WorldStreamer : MonoBehaviour
+```
+
+Loads and unloads cell scenes additively and keeps them placed relative to the floating origin. Which cells are wanted comes from two sources that are unioned every policy pass:
+
+- **anchors** ([`IWorldAnchor`](/docs/reference/world/i-world-anchor)): a position plus a radius in cells; the cube of cells around each anchor is loaded. A [`WorldAnchor`](/docs/reference/world/world-anchor) component on the player is the usual one.
+- **required cells** ([`SetRequired`](#setrequired)): an explicit set, for callers that know exactly what they need (a server that simulates a region and wants its cells and a ring around them).
+
+Cells leaving the wanted set linger [`LingerSeconds`](#lingerseconds) before unloading so a player pacing on a boundary does not thrash. When [`AutoShiftOrigin`](#autoshiftorigin) is on and the primary anchor strays more than [`ShiftThresholdCells`](#shiftthresholdcells) from the origin cell, the origin moves to the anchor's cell: every loaded cell's root objects are translated and [`WorldOrigin.Shifted`](/docs/reference/world/world-origin#shifted) tells everyone else.
+
+Works on its own (no Nebula dependency); Nebula's integration drives it from leases and the local pawn.
+
+## Fields
+
+### Definition [#definition]
+
+```csharp
+public WorldDefinition Definition;
+```
+
+### LingerSeconds [#lingerseconds]
+
+```csharp
+public float LingerSeconds = 3f;
+```
+
+Cells stay loaded this long after nothing wants them any more.
+
+### MaxConcurrentLoads [#maxconcurrentloads]
+
+```csharp
+public int MaxConcurrentLoads = 2;
+```
+
+How many cell scenes may be loading at once.
+
+### PolicyIntervalSeconds [#policyintervalseconds]
+
+```csharp
+public float PolicyIntervalSeconds = 0.25f;
+```
+
+How often the wanted set is recomputed.
+
+### AutoShiftOrigin [#autoshiftorigin]
+
+```csharp
+public bool AutoShiftOrigin = true;
+```
+
+Move the floating origin to follow the primary anchor.
+
+### ShiftThresholdCells [#shiftthresholdcells]
+
+```csharp
+public int ShiftThresholdCells = 1;
+```
+
+Shift once the primary anchor is more than this many cells from the origin cell on any axis.
+
+### Passive [#passive]
+
+```csharp
+public bool Passive;
+```
+
+Load nothing on the streamer's own initiative (a process that only needs the grid maths).
+
+## Properties
+
+### Instance [#instance]
+
+```csharp
+public static WorldStreamer Instance { get; }
+```
+
+### PrimaryAnchor [#primaryanchor]
+
+```csharp
+public IWorldAnchor PrimaryAnchor { get; set; }
+```
+
+Anchor that the floating origin follows. Defaults to the first registered anchor.
+
+### LoadedCount [#loadedcount]
+
+```csharp
+public int LoadedCount { get; }
+```
+
+### LoadsInFlight [#loadsinflight]
+
+```csharp
+public int LoadsInFlight { get; }
+```
+
+### HasPendingWork [#haspendingwork]
+
+```csharp
+public bool HasPendingWork { get; }
+```
+
+### LoadedCells [#loadedcells]
+
+```csharp
+public IEnumerable<Vector3Int> LoadedCells { get; }
+```
+
+## Events
+
+### CellLoaded [#cellloaded]
+
+```csharp
+public event Action<Vector3Int, Scene> CellLoaded;
+```
+
+### CellUnloading [#cellunloading]
+
+```csharp
+public event Action<Vector3Int, Scene> CellUnloading;
+```
+
+### CellUnloaded [#cellunloaded]
+
+```csharp
+public event Action<Vector3Int> CellUnloaded;
+```
+
+### OriginShifted [#originshifted]
+
+```csharp
+public event Action<Vector3> OriginShifted;
+```
+
+The origin moved by this delta (after the loaded cells were translated). Same as [`WorldOrigin.Shifted`](/docs/reference/world/world-origin#shifted).
+
+## Methods
+
+### IsLoaded [#isloaded]
+
+```csharp
+public bool IsLoaded(Vector3Int coord);
+```
+
+### TryGetScene [#trygetscene]
+
+```csharp
+public bool TryGetScene(Vector3Int coord, out Scene scene);
+```
+
+### AddAnchor [#addanchor]
+
+```csharp
+public void AddAnchor(IWorldAnchor anchor);
+```
+
+### RemoveAnchor [#removeanchor]
+
+```csharp
+public void RemoveAnchor(IWorldAnchor anchor);
+```
+
+### SetRequired [#setrequired]
+
+```csharp
+public void SetRequired(IEnumerable<Vector3Int> cells);
+```
+
+Replace the explicitly required set. Cells outside the definition are ignored.
+
+### Poke [#poke]
+
+```csharp
+public void Poke();
+```
+
+Recompute the wanted set on the next frame instead of waiting for the policy interval.
+
+### ShiftOrigin [#shiftorigin]
+
+```csharp
+public void ShiftOrigin(Vector3Int cell);
+```
+
+Move the floating origin to `cell` now (no-op if it already is there).
+
+### ComputeWanted [#computewanted]
+
+```csharp
+public static void ComputeWanted(WorldDefinition definition, IList<(Vector3Int cell, int radius)> anchors, IEnumerable<Vector3Int> required, HashSet<Vector3Int> result);
+```
+
+The set of cells to have loaded: the cube of `radius` cells around every anchor plus the required set, limited to cells the definition has. Pure, so it is testable without scenes.
+
+## Nested types
+
+### CellStatus [#cellstatus]
+
+```csharp
+public enum CellStatus
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Loading` |  |  |
+| `Loaded` |  |  |
+| `Unloading` |  |  |
+

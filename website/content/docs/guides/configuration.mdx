@@ -1,0 +1,103 @@
+---
+title: Configuration
+description: NebulaConfig, the command-line switches that override it, nebula.json, and the CLI's own config file.
+---
+
+Nebula is configured in four places, from the inside out: the `NebulaConfig` asset every process loads, `-nebula-*` command-line switches that override individual fields at runtime, the per-project `nebula.json` the CLI reads, and the CLI's machine-wide config with credentials.
+
+## NebulaConfig
+
+`Assets/Resources/NebulaConfig.asset` is a ScriptableObject loaded by every role (worker, gateway, orchestrator, client), so they all agree on the scene, the ports and the meshing parameters. `nebula init` writes a default one; the fields are edited in the Inspector. The complete list with defaults is on the [NebulaConfig](/docs/reference/core/nebula-config) reference page; the ones you will touch:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `GameScene` | `Arena` | Scene with the Container volumes and gameplay, loaded by every role. |
+| `NetworkPrefabs` | empty | Every prefab that can be spawned over the network. The index is the prefab id on the wire. |
+| `GatewayAddress`, `GatewayPort` | `127.0.0.1`, `7000` | Where clients connect. |
+| `WorkerBasePort` | `7100` | Workers listen on `WorkerBasePort + workerIndex`. |
+| `WorkerAdvertiseAddress` | `127.0.0.1` | Address workers advertise to peers and the gateway. |
+| `SpacetimeUri`, `SpacetimeDatabase` | `http://127.0.0.1:3000`, `nebula` | The control plane. |
+| `UseLocalControlPlane` | `false` | In-process control plane instead of SpacetimeDB; only meaningful when orchestrator, gateway and worker share a process (tests). |
+| `WorkerCount` | `4` | Workers the orchestrator keeps running initially. |
+| `WorkerHost` | `process` | Where workers run: `process` (child processes) or `hetzner` (one VM per worker). |
+| `WorkerHeartbeatSeconds`, `WorkerTimeoutSeconds` | `1`, `5` | Heartbeat period, and how long without one before a worker is declared dead. |
+| `DeadWorkerReplaceDelaySeconds` | `8` | Wait before a replacement for a dead worker is launched. |
+| `WorkerDrainTimeoutSeconds` | `10` | How long a retiring worker gets to hand its entities over before it is killed regardless. |
+| `DashboardPort` | `7080` | The orchestrator's web dashboard; `0` disables it. |
+| `WorldManifest` | none | Baked container manifest of a [partitioned world](/docs/guides/world-partition); unset means the game scene is the whole world. |
+| `ClientLoadRadiusCells`, `WorkerLoadRingCells`, `OriginShiftThresholdCells` | `1`, `1`, `4` | Cell streaming and floating-origin policy of a partitioned world. |
+| `GhostBandMargin` | `4` m | Entities within this distance of a neighbouring container are ghosted to its worker ahead of time. |
+| `HandoverHysteresis` | `0.35` m | An entity must be this far inside a new container before authority flips. |
+| `GhostLingerSeconds` | `2` | Ghosts stay resident this long after leaving the band. |
+| `InterpolationDelayTicks` | `3` | Client render delay for remote entities. |
+| `InputLeadMarginTicks`, `InputLeadTargetTicks`, `InputLeadMaxAdjustTicks` | `2`, `3`, `30` | The client's adaptive input lead; see [Prediction](/docs/guides/prediction#the-adaptive-input-lead). |
+
+The tick rate is not a setting: `NetworkTime.TickRate` is a constant, 60 Hz, and every worker derives its tick from the wall clock so no tick master is needed.
+
+## Command-line switches
+
+`NebulaBootstrap` reads these from the process command line. The CLI and the orchestrator pass the right ones to the processes they launch; you only need them to run a role by hand. Flags are `-name value` or bare `-name` for booleans.
+
+| Switch | Role | Meaning |
+| --- | --- | --- |
+| `-nebula-role client\|worker\|gateway\|orchestrator` | all | Comma separated. `services` = gateway and orchestrator. A process cannot be both client and worker. |
+| `-nebula-scene <name>` | all | Overrides `GameScene`. |
+| `-nebula-gateway <addr:port>` | client, worker | The gateway to connect to. A client with this switch skips the title screen. |
+| `-nebula-connect` | client | Connect at once to the configured gateway instead of showing the title screen. |
+| `-nebula-name <name>` | client | Display name. |
+| `-nebula-bot` | client | Drive the pawn with the bot brain; the gateway and workers count it as a bot. |
+| `-nebula-worker-id <id>`, `-nebula-worker-index <n>`, `-nebula-port <port>` | worker | Identity and listen port, normally set by the orchestrator. |
+| `-nebula-advertise <ip\|auto>` | worker, gateway | Address to advertise to peers. `auto` picks the machine's first private IPv4. |
+| `-nebula-spacetime <uri>`, `-nebula-database <name>` | worker, gateway, orchestrator | The control plane. |
+| `-nebula-local-control-plane` | all server roles | Use the in-process control plane. |
+| `-nebula-workers <n>` | orchestrator | Initial worker count. |
+| `-nebula-settings k=v,k=v` | orchestrator | Seed mesh-wide settings on the control plane (`nebula start --npcs N` seeds `npcs=N`). |
+| `-nebula-dashboard-port <port>`, `-nebula-dashboard-bind +` | orchestrator | Dashboard port; `+` binds all interfaces instead of localhost. |
+| `-nebula-host process\|hetzner` | orchestrator | Where workers run. |
+| `-nebula-worker-exe <path>` | orchestrator | Executable to launch workers and the gateway with (default: this process's own). |
+| `-nebula-build-dir <dir>` | orchestrator | Directory served at `/build/` for worker VMs to download the server tarball. |
+| `-nebula-cloud-location`, `-type`, `-image`, `-network`, `-sshkey`, `-firewall`, `-mesh`, `-token`, `-nebula-build-url` | orchestrator (cloud hosts) | Provider-neutral settings for a cloud worker host; the token can also come from `HCLOUD_TOKEN`. |
+| `-nebula-ghost-band <m>`, `-nebula-hysteresis <m>` | worker | Override the meshing parameters for experiments. |
+| `-nebula-reset false` | orchestrator | Keep the control-plane tables on startup. The default (`true`) resets them, since they only hold ephemeral registry state. |
+| `-nebula-verbose` | all | Debug-level logging. |
+
+Standard Unity switches apply too: workers, gateway and orchestrator run with `-batchmode -nographics`, and `-logFile <path>` sets the log location the CLI uses.
+
+## nebula.json
+
+Per-project settings that travel with the project, written by `nebula init` and read by every CLI command:
+
+```json title="nebula.json"
+{
+  "nebula": "0.1.0",
+  "executable": "Nebula",
+  "mesh": {
+    "workers": 4,
+    "npcs": 0,
+    "dashboardPort": 7080,
+    "gatewayPort": 7000,
+    "spacetimeUri": "http://127.0.0.1:3000",
+    "database": "nebula"
+  },
+  "deploy": {
+    "target": "hetzner",
+    "meshName": "nebula",
+    "database": "nebula-mygame",
+    "workers": 4,
+    "npcs": 0
+  }
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `nebula` | The CLI version that wrote the file (updated by `nebula init`). |
+| `executable` | Base name NebulaBuild gives the player: `Nebula.exe`, `Nebula.x86_64`, `Nebula.app`. |
+| `mesh.*` | Defaults for `nebula start`: worker and NPC counts, dashboard and gateway ports, the local SpacetimeDB address and database. |
+| `deploy.*` | Defaults for `nebula deploy`: the target (`hetzner` is the only one today), the mesh name used to label cloud resources, the Maincloud database, worker and NPC counts. Optional `workerType`, `orchestratorType` and `location` override the VM types and region from the CLI config; `ccx13` gives dedicated vCPUs when measuring tick time. |
+
+## The CLI's config
+
+`~/.nebula-cli/config.json` (0600 on Unix) holds machine-wide settings and credentials: the Nebula source checkout `nebula init` copies from (`nebula config source`), the Unity editor path (`nebula config unity`), the Hetzner token, project label, region and VM types (`nebula config hetzner`), and the SpacetimeDB server and database for deployment (`nebula config spacetime`). `nebula config show` prints it with the token masked. `HCLOUD_TOKEN` in the environment always wins over the stored token.
+
+The whole `~/.nebula-cli` folder can be moved with `NEBULA_CLI_HOME`. It also holds the CLI binary (`bin/`), a shallow clone of the SDK when no source is configured (`sdk/`) and the mirrored project copies used to build while the Editor holds the project (`scratch/`).

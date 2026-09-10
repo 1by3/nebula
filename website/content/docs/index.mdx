@@ -1,0 +1,65 @@
+---
+title: Introduction
+description: What Nebula is, what it is not yet, and where to go next.
+---
+
+Nebula is middleware for dynamically meshed multiplayer game servers, Unity-first. One world is served by many dedicated server processes. Each one is leased authority over a set of *containers*, the designer-authored volumes your level is divided into, and entities cross between them without the player noticing. The reference point is Star Citizen's server meshing; the hard part Nebula targets is the dynamic case, where which server owns which part of the world changes at runtime.
+
+This site documents the prototype in the `nebula` repository. It is a complete, working end-to-end mesh, deliberately small: four containers, N workers, one gateway, one orchestrator, one control plane, and a first-person shooter that exists to make crossing a boundary mid-firefight visible.
+
+## How the pieces fit
+
+```
+                 ┌──────────────────────────────────────────────────────────┐
+                 │  SpacetimeDB  (control plane: workers, leases, gateways)  │
+                 └──────▲──────────────▲──────────────▲──────────────▲──────┘
+                        │ reducers     │ subscribe    │              │
+                 ┌──────┴──────┐  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
+                 │ Orchestrator│  │ Gateway │   │ Worker w1 │◄─►│ Worker w2 │ ... lateral link (UDP)
+                 │ spawns procs│  │ udp/7000│◄─►│ udp/7101  │   │ udp/7102  │     ghosts + authority transfers
+                 └─────────────┘  └────▲────┘   └───────────┘  └───────────┘
+                                       │ one connection per client
+                                  ┌────┴────┐
+                                  │ Client  │  inputs up, snapshots down, predicted local player
+                                  └─────────┘
+```
+
+Every box is the same Unity player build started with a different `-nebula-role`. The Editor plays the client role by default.
+
+- **Workers** are headless Unity processes simulating at 60 Hz. Each holds authority over the containers it leases, ghosts entities that approach a neighbouring container to that container's worker, and hands authority over when they cross.
+- **The gateway** is the one address clients connect to. It routes each client's inputs to whichever worker currently owns their entity and re-emits the workers' replication streams.
+- **The orchestrator** keeps N workers running and deals containers to them through the control plane. Its dashboard lets you add, remove and kill workers while the game runs.
+- **The control plane** is a tiny SpacetimeDB module holding worker registrations, container leases with epochs, and mesh-wide settings. It is never on the per-tick path.
+- **Clients** predict and reconcile their own player and are never a party to the handover protocol.
+
+## The API
+
+Gameplay code is written against a surface Mirror and Netcode for GameObjects users already know: `NetworkBehaviour`, `NetworkVariable<T>`, `[ClientRpc]`, `[ServerRpc]`, `NetworkTransform`, `NetworkAnimator`, `NetworkRigidbody`, and a `PredictedBehaviour<TInput>` for client-predicted controllers. The meshing-specific additions are small: `HasAuthority`, `IsGhost`, `OnGainedAuthority`/`OnLostAuthority`, a handover-state hook, and `[AuthorityRpc]`, which runs on whichever worker owns an entity no matter who calls it.
+
+```csharp
+public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+{
+    public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
+
+    protected override ShooterInput GatherInput() { /* owner client: read the Input System */ }
+    protected override void Simulate(uint tick, in ShooterInput input, float dt) { /* worker + predicting client */ }
+
+    [AuthorityRpc] void TakeDamage(float amount, ulong attacker, string attackerName) { Health.Value -= amount; }
+    [ClientRpc]    void RpcShotFired(Vector3 from, Vector3 to, bool hit) { /* laser bolt */ }
+}
+```
+
+## Where to go
+
+<Cards>
+  <Card title="Install the CLI" href="/docs/getting-started/install" description="One command on Windows, macOS or Linux. Or build it from a checkout." />
+  <Card title="Tutorial" href="/docs/getting-started/tutorial" description="Install Nebula into a Unity project, author containers, write a player, run the mesh." />
+  <Card title="Architecture" href="/docs/concepts/architecture" description="The design: containers, seams, two kinds of handover, the tier stack, failure behaviour." />
+  <Card title="Guides" href="/docs/guides/network-behaviour" description="Each component of the runtime in depth, from NetworkVariable to the orchestrator." />
+  <Card title="CLI reference" href="/docs/cli" description="Every nebula command, generated from the CLI." />
+  <Card title="API reference" href="/docs/reference" description="Every public type, generated from the C# sources." />
+</Cards>
+
+## What it is not yet
+
+Nebula is a prototype, and the docs say so wherever it matters. There is no persistence, no rewind on hit validation, no delta compression, no authored seam volumes, no warm pool of workers, and the control-plane reducers accept any caller. What has been verified on one machine and on Hetzner Cloud VMs is listed on the [architecture](/docs/concepts/architecture#what-the-prototype-proves) page, and every guide has a section on what is deliberately not there.

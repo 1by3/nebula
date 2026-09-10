@@ -1,0 +1,6 @@
+{
+  "native-aot": true,
+  "server": "local",
+  "database": "nebula",
+  "module-path": "."
+}

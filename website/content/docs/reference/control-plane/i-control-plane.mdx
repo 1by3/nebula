@@ -1,0 +1,157 @@
+---
+title: "IControlPlane"
+description: "Everything the mesh needs from the control plane: a node registry and container leases with epochs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs)</div>
+
+```csharp
+public interface IControlPlane : IDisposable
+```
+
+Everything the mesh needs from the control plane: a node registry and container leases with epochs. Low write volume, subscription push, never on the per-tick hot path. [`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) is the real implementation; [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) is in-process for tests and single-process runs. All callbacks fire on the main thread from [`Tick`](#tick).
+
+## Properties
+
+### IsConnected [#isconnected]
+
+```csharp
+bool IsConnected { get; }
+```
+
+### Now [#now]
+
+```csharp
+DateTime Now { get; }
+```
+
+Best estimate of the control plane's clock (for heartbeat age checks).
+
+### Workers [#workers]
+
+```csharp
+IReadOnlyList<WorkerInfo> Workers { get; }
+```
+
+### Leases [#leases]
+
+```csharp
+IReadOnlyList<LeaseInfo> Leases { get; }
+```
+
+### Gateways [#gateways]
+
+```csharp
+IReadOnlyList<GatewayInfo> Gateways { get; }
+```
+
+### Settings [#settings]
+
+```csharp
+IReadOnlyDictionary<string, string> Settings { get; }
+```
+
+Mesh-wide live settings: string key/values Nebula attaches no meaning to. The orchestrator seeds them (`-nebula-settings k=v,k=v`), the dashboard edits them, and game code on a worker may write them. They are the game's low-volume coordination channel across workers (e.g. a spawn budget every worker reconciles against); never per-tick state.
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+event Action Changed;
+```
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+void Tick();
+```
+
+### RegisterWorker [#registerworker]
+
+```csharp
+void RegisterWorker(string workerId, uint workerIndex, string address, ushort port);
+```
+
+### HeartbeatWorker [#heartbeatworker]
+
+```csharp
+void HeartbeatWorker(string workerId, string status, in WorkerStats stats);
+```
+
+### UnregisterWorker [#unregisterworker]
+
+```csharp
+void UnregisterWorker(string workerId);
+```
+
+### RegisterGateway [#registergateway]
+
+```csharp
+void RegisterGateway(string gatewayId, string address, ushort port);
+```
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+void HeartbeatGateway(string gatewayId);
+```
+
+### UnregisterGateway [#unregistergateway]
+
+```csharp
+void UnregisterGateway(string gatewayId);
+```
+
+### HeartbeatOrchestrator [#heartbeatorchestrator]
+
+```csharp
+void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
+```
+
+### SetSetting [#setsetting]
+
+```csharp
+void SetSetting(string key, string value);
+```
+
+Set (or create) one mesh-wide setting. Every subscriber sees it through [`Changed`](#changed).
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+void EnsureContainer(string containerId);
+```
+
+### AssignContainer [#assigncontainer]
+
+```csharp
+void AssignContainer(string containerId, string workerId);
+```
+
+### SetLeaseState [#setleasestate]
+
+```csharp
+void SetLeaseState(string containerId, string state);
+```
+
+### ReleaseContainer [#releasecontainer]
+
+```csharp
+void ReleaseContainer(string containerId);
+```
+
+### ResetControlPlane [#resetcontrolplane]
+
+```csharp
+void ResetControlPlane();
+```
+

@@ -1,0 +1,29 @@
+---
+title: "NebulaProfiler"
+description: "Where a worker's tick goes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Debug/NebulaProfiler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Debug/NebulaProfiler.cs)</div>
+
+```csharp
+public static class NebulaProfiler
+```
+
+Where a worker's tick goes. Nebula times each phase of its own tick; game code may add sections of its own (`static readonly ProfileSection Move = NebulaProfiler.Section("npc.move")`) and they appear in the same report: one `[nebula] profile` log line per [`NebulaWorker`](/docs/reference/worker/nebula-worker) every few seconds, with every section's cost expressed in milliseconds per simulated tick so the columns add up to the tick time.
+
+## Methods
+
+### Section [#section]
+
+```csharp
+public static ProfileSection Section(string name);
+```
+
+### ReportAndReset [#reportandreset]
+
+```csharp
+public static string ReportAndReset(int ticks);
+```
+
+Every section as `name=ms/tick` (with its call count when it differs from the tick count), then reset.
+
