@@ -22,6 +22,14 @@ public ushort PrefabId = ushort.MaxValue;
 
 Set automatically from the NebulaConfig prefab list at spawn time.
 
+### SceneId [#sceneid]
+
+```csharp
+public uint SceneId;
+```
+
+Non-zero for an entity authored into a scene (assigned when the scene is saved). The worker owning its container spawns it; clients and neighbours bind to their own copy of the scene object. Leave 0 on prefabs.
+
 ### Velocity [#velocity]
 
 ```csharp
@@ -47,6 +55,14 @@ public const int PoseHistoryTicks = 64;
 Ticks of pose history kept per entity (about a second at 60 Hz).
 
 ## Properties
+
+### IsSceneEntity [#issceneentity]
+
+```csharp
+public bool IsSceneEntity { get; }
+```
+
+Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see [`SceneEntities`](/docs/reference/core/scene-entities)).
 
 ### NetId [#netid]
 

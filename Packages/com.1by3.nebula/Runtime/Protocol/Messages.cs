@@ -81,7 +81,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 4;
+        public const ushort ProtocolVersion = 5;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -172,6 +172,8 @@ namespace Nebula
         public Quaternion LocalRotation;
         public Vector3 Velocity;
         public EntityFlags Flags;
+        /// <summary>Non-zero: bind the receiver's own copy of the scene object with this <see cref="NetworkIdentity.SceneId"/> instead of instantiating <see cref="PrefabId"/>.</summary>
+        public uint SceneId;
         public byte[] Vars;
         /// <summary>Keyframe from every sync behaviour (<see cref="NetworkIdentity.WriteSyncSnapshot"/>); empty when the prefab has none.</summary>
         public byte[] State;
@@ -192,6 +194,7 @@ namespace Nebula
             {
                 NetId = id.NetId,
                 PrefabId = id.PrefabId,
+                SceneId = id.SceneId,
                 OwnerClientId = id.OwnerClientId,
                 Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
                 ContainerIndex = id.ContainerIndex,
@@ -223,6 +226,7 @@ namespace Nebula
             w.WriteQuaternion(LocalRotation);
             w.WriteVector3(Velocity);
             w.WriteByte((byte)Flags);
+            w.WriteUInt(SceneId);
             w.WriteBytes(Vars);
             w.WriteBytes(State);
         }
@@ -241,6 +245,7 @@ namespace Nebula
                 LocalRotation = r.ReadQuaternion(),
                 Velocity = r.ReadVector3(),
                 Flags = (EntityFlags)r.ReadByte(),
+                SceneId = r.ReadUInt(),
                 Vars = r.ReadBytes(),
                 State = r.ReadBytes(),
             };

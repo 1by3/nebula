@@ -108,7 +108,7 @@ public sealed class NebulaProject
     {
         if (Directory.Exists(Path.Combine(EmbeddedPackageDir, "Runtime"))) return EmbeddedPackageDir;
         // "file:<path>" dependencies are relative to the Packages folder (absolute paths work too).
-        var m = Regex.Match(ReadManifest(), $@"""{Regex.Escape(Platform.PackageName)}""s*:s*""file:([^""]+)""");
+        var m = Regex.Match(ReadManifest(), $@"""{Regex.Escape(Platform.PackageName)}""\s*:\s*""file:([^""]+)""");
         if (m.Success)
         {
             string p = Path.GetFullPath(Path.Combine(PackagesDir, m.Groups[1].Value));

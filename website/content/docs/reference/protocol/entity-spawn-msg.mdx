@@ -73,6 +73,14 @@ public Vector3 Velocity;
 public EntityFlags Flags;
 ```
 
+### SceneId [#sceneid]
+
+```csharp
+public uint SceneId;
+```
+
+Non-zero: bind the receiver's own copy of the scene object with this [`NetworkIdentity.SceneId`](/docs/reference/core/network-identity#sceneid) instead of instantiating [`PrefabId`](#prefabid).
+
 ### Vars [#vars]
 
 ```csharp

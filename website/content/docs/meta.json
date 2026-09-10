@@ -16,6 +16,7 @@
     "guides/rpcs",
     "guides/prediction",
     "guides/spawning",
+    "guides/scene-entities",
     "guides/network-transform",
     "guides/network-animator",
     "guides/physics-and-handover-state",

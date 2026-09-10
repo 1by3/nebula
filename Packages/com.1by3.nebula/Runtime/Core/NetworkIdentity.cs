@@ -16,6 +16,11 @@ namespace Nebula
     {
         [Tooltip("Set automatically from the NebulaConfig prefab list at spawn time.")]
         public ushort PrefabId = ushort.MaxValue;
+        [Tooltip("Non-zero for an entity authored into a scene (assigned when the scene is saved). The worker owning its container spawns it; clients and neighbours bind to their own copy of the scene object. Leave 0 on prefabs.")]
+        public uint SceneId;
+
+        /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
+        public bool IsSceneEntity => SceneId != 0;
 
         public ulong NetId { get; internal set; }
         public uint OwnerClientId { get; internal set; }
@@ -120,7 +125,8 @@ namespace Nebula
 
         internal void ShiftFrame(Vector3 delta)
         {
-            if (Container == null) transform.position += delta;
+            // A scene entity was moved with its scene's roots by the streamer, a contained one with its container.
+            if (Container == null && !IsSceneEntity) transform.position += delta;
             if (_poseHistory != null)
                 for (int i = 0; i < _poseHistory.Length; i++) if (_poseHistory[i].Valid) _poseHistory[i].Position += delta;
             Interpolator?.Shift(delta);
@@ -131,7 +137,47 @@ namespace Nebula
             }
         }
 
-        private void OnDestroy() => Live.Remove(this);
+        private void Awake()
+        {
+            // A prefab instance initialises when it is instantiated through NetworkPrefabs; a scene object has no
+            // such moment, so it initialises here and announces itself. It stays unspawned until a worker spawns it
+            // or a spawn for its id arrives.
+            if (!IsSceneEntity || Initialized) return;
+            Initialize();
+            SceneEntities.Register(this);
+        }
+
+        private void OnDestroy()
+        {
+            if (IsSceneEntity) SceneEntities.Unregister(this);
+            Live.Remove(this);
+        }
+
+        /// <summary>
+        /// A scene entity leaves the network (despawned, or its process lost track of it) without leaving its scene:
+        /// back to the unspawned state it loaded in, keeping its last replicated values.
+        /// </summary>
+        internal void Unbind()
+        {
+            if (IsSpawned) InvokeDespawn();
+            NetId = 0;
+            Epoch = 0;
+            OwnerClientId = 0;
+            OwnerIsBot = false;
+            IsServerDriven = false;
+            HasAuthority = false;
+            IsLocalPlayer = false;
+            OwnerWorkerIndex = 0;
+            Velocity = Vector3.zero;
+            Container = null;
+            if (Interpolator != null)
+            {
+                Destroy(Interpolator);
+                Interpolator = null;
+            }
+            _poseHistory = null;
+            ClearDirty();
+        }
 
         internal void Initialize()
         {
@@ -331,7 +377,8 @@ namespace Nebula
             var previous = Container;
             if (previous == container) return;
             Container = container;
-            if (reparent && container != null)
+            // A scene object stays in its scene's hierarchy (the streamer moves the scene, not the container).
+            if (reparent && container != null && !IsSceneEntity)
             {
                 transform.SetParent(container.transform, true);
             }
@@ -380,7 +427,8 @@ namespace Nebula
         public override string ToString()
         {
             string role = NebulaRuntime.IsServer ? (HasAuthority ? "auth" : "ghost") : (IsLocalPlayer ? "local" : "remote");
-            return $"{name}#{NetId}(e{Epoch},{(Container != null ? Container.ContainerId : "-")},{role})";
+            string scene = IsSceneEntity ? $",scene {SceneId}" : "";
+            return $"{name}#{NetId}(e{Epoch},{(Container != null ? Container.ContainerId : "-")},{role}{scene})";
         }
     }
 }

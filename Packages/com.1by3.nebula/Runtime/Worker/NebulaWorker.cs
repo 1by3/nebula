@@ -73,6 +73,16 @@ namespace Nebula
         private readonly List<NetworkIdentity> _scratchEntities = new List<NetworkIdentity>();
         private readonly List<string> _scratchStrings = new List<string>();
 
+        // Scene entities (see SceneEntities): spawns and handovers that arrived for a scene object whose cell is not
+        // loaded here yet wait by scene id, and are applied when the object registers. Containers this worker leases
+        // are dated so a freshly leased one gets its grace period before its unspawned scene entities are spawned.
+        private struct PendingTransfer { public Peer From; public AuthorityTransferMsg Msg; }
+        private readonly Dictionary<uint, EntitySpawnMsg> _pendingSceneGhosts = new Dictionary<uint, EntitySpawnMsg>();
+        private readonly Dictionary<uint, PendingTransfer> _pendingSceneTransfers = new Dictionary<uint, PendingTransfer>();
+        private readonly Dictionary<ushort, float> _ownedSince = new Dictionary<ushort, float>();
+        private const float ScenePassSeconds = 0.25f;
+        private float _nextScenePass;
+
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
         private readonly NetworkReader _reader = new NetworkReader();
@@ -133,12 +143,19 @@ namespace Nebula
             _transport.Listen(Port);
             IsListening = true;
             ControlPlane.Changed += OnControlPlaneChanged;
+            ContainerRegistry.LeasesChanged += OnLeasesChanged;
+            SceneEntities.Registered += OnSceneEntityRegistered;
+            SceneEntities.Unregistering += OnSceneEntityUnregistering;
+            OnLeasesChanged();
             NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port}");
             _gameMode?.OnWorkerStarted(this);
         }
 
         private void OnDestroy()
         {
+            ContainerRegistry.LeasesChanged -= OnLeasesChanged;
+            SceneEntities.Registered -= OnSceneEntityRegistered;
+            SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             if (ControlPlane != null)
             {
                 ControlPlane.Changed -= OnControlPlaneChanged;
@@ -174,6 +191,108 @@ namespace Nebula
                 _nextHeartbeat = Time.unscaledTime + Config.WorkerHeartbeatSeconds;
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
+            if (_registered && Time.unscaledTime >= _nextScenePass)
+            {
+                _nextScenePass = Time.unscaledTime + ScenePassSeconds;
+                SpawnSceneEntities();
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------- scene entities
+
+        private void OnLeasesChanged()
+        {
+            float now = Time.unscaledTime;
+            foreach (var c in ContainerRegistry.All)
+            {
+                if (c.IsOwnedBy(WorkerId)) { if (!_ownedSince.ContainsKey(c.Index)) _ownedSince[c.Index] = now; }
+                else _ownedSince.Remove(c.Index);
+            }
+        }
+
+        /// <summary>
+        /// Spawn the resident scene entities standing in containers this worker leases and nobody has spawned yet.
+        /// A lease must be <see cref="NebulaConfig.SceneEntityGraceSeconds"/> old first: when a lease moves, the
+        /// previous owner hands the entity over (or its ghost is already here), and that binding must win over a
+        /// second life. Nothing is spawned into an unloaded cell: the object is not here to spawn.
+        /// </summary>
+        private void SpawnSceneEntities()
+        {
+            if (SceneEntities.Count == 0) return;
+            float now = Time.unscaledTime;
+            foreach (var e in SceneEntities.All)
+            {
+                if (e.IsSpawned || e.NetId != 0) continue;
+                if (_pendingSceneTransfers.ContainsKey(e.SceneId) || _pendingSceneGhosts.ContainsKey(e.SceneId)) continue;
+                var c = ContainerRegistry.Find(e.transform.position);
+                if (c == null || !c.IsOwnedBy(WorkerId)) continue;
+                if (!_ownedSince.TryGetValue(c.Index, out float since) || now - since < Config.SceneEntityGraceSeconds) continue;
+                Spawn(e, c);
+            }
+        }
+
+        /// <summary>A scene object became resident: apply the handover or ghost that was waiting for it.</summary>
+        private void OnSceneEntityRegistered(NetworkIdentity e)
+        {
+            if (_pendingSceneTransfers.TryGetValue(e.SceneId, out var transfer))
+            {
+                _pendingSceneTransfers.Remove(e.SceneId);
+                _pendingSceneGhosts.Remove(e.SceneId);
+                OnAuthorityTransfer(transfer.From, transfer.Msg);
+                return;
+            }
+            if (_pendingSceneGhosts.TryGetValue(e.SceneId, out var ghost))
+            {
+                _pendingSceneGhosts.Remove(e.SceneId);
+                InstantiateGhost(ghost);
+            }
+        }
+
+        /// <summary>
+        /// A bound scene object is leaving with its scene. The authority despawns it for the mesh (a re-lease spawns
+        /// it again); a ghost is simply forgotten.
+        /// </summary>
+        private void OnSceneEntityUnregistering(NetworkIdentity e)
+        {
+            if (e.NetId == 0 || !_entities.ContainsKey(e.NetId)) return;
+            if (e.HasAuthority)
+            {
+                NebulaLog.Info($"scene entity {e} unloaded with its cell; despawning");
+                Despawn(e);
+            }
+            else RemoveLocal(e);
+        }
+
+        /// <summary>
+        /// The resident scene object a spawn refers to, ready to bind. Null, and the spawn remembered, while its
+        /// scene is not loaded here. A stale binding to another id (a duplicate we spawned because the previous
+        /// owner's handover outran the grace period, or a ghost of a life that ended) is dropped first: the incoming
+        /// one is the life the rest of the mesh knows.
+        /// </summary>
+        private NetworkIdentity BindSceneEntity(EntitySpawnMsg msg)
+        {
+            var identity = SceneEntities.Find(msg.SceneId);
+            if (identity == null)
+            {
+                _pendingSceneGhosts[msg.SceneId] = msg;
+                return null;
+            }
+            if (identity.NetId != 0 && identity.NetId != msg.NetId)
+            {
+                NebulaLog.Warn($"scene entity {identity} is being rebound to #{msg.NetId}; dropping the local life");
+                if (identity.HasAuthority) Despawn(identity); else RemoveLocal(identity);
+            }
+            return identity;
+        }
+
+        private void DropPendingScene(ulong netId)
+        {
+            uint sceneId = 0;
+            foreach (var kv in _pendingSceneGhosts) if (kv.Value.NetId == netId) { sceneId = kv.Key; break; }
+            if (sceneId != 0) _pendingSceneGhosts.Remove(sceneId);
+            sceneId = 0;
+            foreach (var kv in _pendingSceneTransfers) if (kv.Value.Msg.Entity.NetId == netId) { sceneId = kv.Key; break; }
+            if (sceneId != 0) _pendingSceneTransfers.Remove(sceneId);
         }
 
         /// <summary>
@@ -408,7 +527,7 @@ namespace Nebula
         {
             if (identity == null) throw new ArgumentNullException(nameof(identity));
             if (identity.IsSpawned) throw new InvalidOperationException($"{identity} is already spawned");
-            if (identity.PrefabId == ushort.MaxValue)
+            if (identity.PrefabId == ushort.MaxValue && !identity.IsSceneEntity)
             {
                 NebulaLog.Error($"{identity.name} has no prefab id; instantiate it through NetworkPrefabs or register the prefab in NebulaConfig");
             }
@@ -473,7 +592,8 @@ namespace Nebula
             if (identity.OwnerClientId != 0 && _players.TryGetValue(identity.OwnerClientId, out var p) && p == identity) _players.Remove(identity.OwnerClientId);
             identity.InvokeDespawn();
             EntityDespawned?.Invoke(identity);
-            Destroy(identity.gameObject);
+            if (identity.IsSceneEntity) identity.Unbind(); // the object belongs to its scene
+            else Destroy(identity.gameObject);
         }
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
@@ -660,7 +780,16 @@ namespace Nebula
 
         private void OnAuthorityTransfer(Peer from, AuthorityTransferMsg msg)
         {
-            var e = Find(msg.Entity.NetId) ?? InstantiateGhost(msg.Entity);
+            var e = Find(msg.Entity.NetId);
+            if (e == null && msg.Entity.SceneId != 0 && SceneEntities.Find(msg.Entity.SceneId) == null)
+            {
+                // The lease that sent this also made the streamer load the cell; the object arrives shortly.
+                _pendingSceneTransfers[msg.Entity.SceneId] = new PendingTransfer { From = from, Msg = msg };
+                _pendingSceneGhosts.Remove(msg.Entity.SceneId);
+                NebulaLog.Info($"handover IN  scene entity {msg.Entity.SceneId} #{msg.Entity.NetId} <- {from.Id} waits for its cell");
+                return;
+            }
+            if (e == null) e = InstantiateGhost(msg.Entity);
             if (e == null) return;
             if (msg.NewEpoch <= e.Epoch && e.HasAuthority)
             {
@@ -715,7 +844,9 @@ namespace Nebula
         private NetworkIdentity InstantiateGhost(EntitySpawnMsg msg)
         {
             var container = ContainerRegistry.Get(msg.ContainerIndex);
-            var identity = NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
+            var identity = msg.SceneId != 0
+                ? BindSceneEntity(msg)
+                : NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
             if (identity == null) return null;
             identity.NetId = msg.NetId;
             identity.HasAuthority = false;
@@ -842,7 +973,8 @@ namespace Nebula
         private void OnGhostDespawn(Peer from, EntityDespawnMsg msg)
         {
             var e = Find(msg.NetId);
-            if (e == null || e.HasAuthority || msg.Epoch < e.Epoch) return;
+            if (e == null) { DropPendingScene(msg.NetId); return; }
+            if (e.HasAuthority || msg.Epoch < e.Epoch) return;
             RemoveLocal(e);
         }
 

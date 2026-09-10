@@ -34,6 +34,7 @@ Gameplay API: identities, behaviours, variables, RPCs, prediction, the sync comp
 | [PredictedBehaviour\<TInput\>](/docs/reference/core/predicted-behaviour) | Abstract class. A server-authoritative, client-predicted behaviour (the player controller, typically). |
 | [PredictedBehaviourBase](/docs/reference/core/predicted-behaviour-base) | Abstract class. Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour\<TInput\>. |
 | [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
+| [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
 
@@ -201,6 +202,7 @@ Unity Editor tooling: builds, local mesh, control-plane helpers, the World windo
 | --- | --- |
 | [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the executables every Nebula role runs from. |
 | [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client. |
+| [SceneEntityIds](/docs/reference/editor/scene-entity-ids) | Static class. Gives every NetworkIdentity authored into a scene its NetworkIdentity.SceneId when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good. |
 | [WorldAssets](/docs/reference/editor/world-assets) | Static class. Finds world definitions and manifests in the project and maps scenes back to cells. |
 | [WorldAuthoring](/docs/reference/editor/world-authoring) | Static class. Create, open, close, delete and populate cell scenes. |
 | [WorldBaker](/docs/reference/editor/world-baker) | Static class. Builds the WorldContainerManifest: one container per cell plus every Container authored inside the cell scenes, with cell-local poses, in wire order. |

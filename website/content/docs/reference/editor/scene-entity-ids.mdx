@@ -1,0 +1,24 @@
+---
+title: "SceneEntityIds"
+description: "Gives every NetworkIdentity authored into a scene its NetworkIdentity.SceneId when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/SceneEntityIds.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/SceneEntityIds.cs)</div>
+
+```csharp
+[InitializeOnLoad]
+public static class SceneEntityIds
+```
+
+Gives every [`NetworkIdentity`](/docs/reference/core/network-identity) authored into a scene its [`NetworkIdentity.SceneId`](/docs/reference/core/network-identity#sceneid) when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good. Prefab assets keep 0 (they are spawned by prefab id); an instance placed in a scene gets its id as an override. Cell scenes of a partitioned world are separate files, so ids are made unique across every scene that is open at the time as well.
+
+## Methods
+
+### Assign [#assign]
+
+```csharp
+public static int Assign(Scene scene);
+```
+
+Assign ids to the identities in `scene` that have none or share one. Returns how many changed.
+

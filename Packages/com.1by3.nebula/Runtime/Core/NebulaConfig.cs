@@ -65,6 +65,10 @@ namespace Nebula
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;
 
+        [Header("Scene entities")]
+        [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]
+        public float SceneEntityGraceSeconds = 2f;
+
         [Header("Gateway interest management")]
         [Tooltip("Entities within this many metres of a client's pawn get every tick of the world-state stream.")]
         public float InterestNearRadius = 30f;

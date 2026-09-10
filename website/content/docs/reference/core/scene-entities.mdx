@@ -1,0 +1,57 @@
+---
+title: "SceneEntities"
+description: "The scene-placed entities resident in this process, by NetworkIdentity.SceneId."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SceneEntities.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SceneEntities.cs)</div>
+
+```csharp
+public static class SceneEntities
+```
+
+The scene-placed entities resident in this process, by [`NetworkIdentity.SceneId`](/docs/reference/core/network-identity#sceneid). A [`NetworkIdentity`](/docs/reference/core/network-identity) authored into a scene (a door, a lift, a turret) registers itself here when its scene loads and leaves when it unloads. The worker that owns the container it stands in spawns it; every other process binds the spawn it receives to its own copy of the object instead of instantiating a prefab, and when the scene is not resident the spawn waits here-abouts until it is (see the worker's and client's pending records). The object itself is never created or destroyed by the network: it belongs to its scene.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public static int Count { get; }
+```
+
+### All [#all]
+
+```csharp
+public static IReadOnlyList<NetworkIdentity> All { get; }
+```
+
+The resident scene entities. Safe to spawn from while iterating: it is a copy taken now.
+
+## Events
+
+### Registered [#registered]
+
+```csharp
+public static event Action<NetworkIdentity> Registered;
+```
+
+A scene entity became resident (its scene loaded). It is not spawned yet.
+
+### Unregistering [#unregistering]
+
+```csharp
+public static event Action<NetworkIdentity> Unregistering;
+```
+
+A scene entity is about to leave (its scene is unloading or the object was destroyed). Still bound if it was.
+
+## Methods
+
+### Find [#find]
+
+```csharp
+public static NetworkIdentity Find(uint sceneId);
+```
+
+The resident scene entity with this id, or null while its scene is not loaded here.
+

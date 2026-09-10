@@ -91,6 +91,7 @@ namespace Nebula.Tests
                 LocalRotation = Quaternion.identity,
                 Velocity = new Vector3(0, 1, 0),
                 Flags = EntityFlags.ServerDriven,
+                SceneId = 0xC0FFEE,
                 Vars = new byte[] { 9, 8, 7 },
             };
             var w = new NetworkWriter();
@@ -102,6 +103,7 @@ namespace Nebula.Tests
             Assert.AreEqual(msg.Epoch, back.Epoch);
             Assert.AreEqual(msg.OwnerClientId, back.OwnerClientId);
             Assert.AreEqual(EntityFlags.ServerDriven, back.Flags);
+            Assert.AreEqual(0xC0FFEEu, back.SceneId);
             Assert.AreEqual(msg.LocalPosition, back.LocalPosition);
             CollectionAssert.AreEqual(msg.Vars, back.Vars);
         }

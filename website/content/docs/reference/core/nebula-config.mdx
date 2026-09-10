@@ -200,6 +200,14 @@ public float GhostLingerSeconds = 2f;
 
 Ghosts stay resident this long after leaving the band.
 
+### SceneEntityGraceSeconds [#sceneentitygraceseconds]
+
+```csharp
+public float SceneEntityGraceSeconds = 2f;
+```
+
+After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.
+
 ### InterestNearRadius [#interestnearradius]
 
 ```csharp

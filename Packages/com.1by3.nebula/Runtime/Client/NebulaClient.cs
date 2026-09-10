@@ -44,6 +44,13 @@ namespace Nebula
         private ITransport _transport;
         private int _gatewayPeer = -1;
         private readonly Dictionary<ulong, NetworkIdentity> _entities = new Dictionary<ulong, NetworkIdentity>();
+        /// <summary>
+        /// Spawns of scene entities whose cell is not loaded here, by scene id (see <see cref="SceneEntities"/>). The
+        /// gateway sends every entity to every client, so the record is kept current with the variable updates that
+        /// keep arriving and is bound the moment the cell streams in. Indexed by net id too, for those updates.
+        /// </summary>
+        private readonly Dictionary<uint, EntitySpawnMsg> _pendingScene = new Dictionary<uint, EntitySpawnMsg>();
+        private readonly Dictionary<ulong, uint> _pendingSceneByNetId = new Dictionary<ulong, uint>();
         private readonly NetworkWriter _writer = new NetworkWriter(2048);
         private readonly NetworkWriter _inputWriter = new NetworkWriter(256);
         private readonly NetworkReader _reader = new NetworkReader();
@@ -89,6 +96,8 @@ namespace Nebula
             NebulaRuntime.RpcSink = this;
             _transport = new LiteNetTransport("client");
             _transport.StartClient();
+            SceneEntities.Registered += OnSceneEntityRegistered;
+            SceneEntities.Unregistering += OnSceneEntityUnregistering;
             if (autoConnect) Connect();
         }
 
@@ -127,6 +136,8 @@ namespace Nebula
 
         private void OnDestroy()
         {
+            SceneEntities.Registered -= OnSceneEntityRegistered;
+            SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             _transport?.Dispose();
         }
 
@@ -380,7 +391,22 @@ namespace Nebula
                 return;
             }
 
-            e = NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
+            if (msg.SceneId != 0)
+            {
+                e = SceneEntities.Find(msg.SceneId);
+                if (e == null)
+                {
+                    HoldSceneSpawn(msg);
+                    return;
+                }
+                if (e.NetId != 0)
+                {
+                    // Bound to an earlier life whose despawn we have not seen (or will not: a worker died). This is the one.
+                    _entities.Remove(e.NetId);
+                    e.Unbind();
+                }
+            }
+            else e = NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
             if (e == null) return;
             e.NetId = msg.NetId;
             e.Epoch = msg.Epoch;
@@ -427,21 +453,94 @@ namespace Nebula
 
         private void OnEntityDespawn(EntityDespawnMsg msg)
         {
-            if (!_entities.TryGetValue(msg.NetId, out var e)) return;
+            if (!_entities.TryGetValue(msg.NetId, out var e))
+            {
+                if (_pendingSceneByNetId.TryGetValue(msg.NetId, out uint sceneId) && _pendingScene.TryGetValue(sceneId, out var held) && msg.Epoch >= held.Epoch)
+                {
+                    _pendingScene.Remove(sceneId);
+                    _pendingSceneByNetId.Remove(msg.NetId);
+                }
+                return;
+            }
             if (msg.Epoch < e.Epoch) return;
             _entities.Remove(msg.NetId);
             if (LocalPlayer == e) LocalPlayer = null;
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
-            Destroy(e.gameObject);
+            if (e.IsSceneEntity) e.Unbind(); // the object belongs to its scene
+            else Destroy(e.gameObject);
         }
 
         private void OnEntityVars(EntityVarsMsg msg)
         {
-            if (!_entities.TryGetValue(msg.NetId, out var e) || msg.Epoch < e.Epoch) return;
+            if (!_entities.TryGetValue(msg.NetId, out var e))
+            {
+                // A held scene entity: the whole block is sent each time, so the record's copy just gets replaced.
+                if (_pendingSceneByNetId.TryGetValue(msg.NetId, out uint sceneId) && _pendingScene.TryGetValue(sceneId, out var held) && msg.Epoch >= held.Epoch)
+                {
+                    held.Vars = msg.Vars;
+                    _pendingScene[sceneId] = held;
+                }
+                return;
+            }
+            if (msg.Epoch < e.Epoch) return;
             _reader.Set(new ArraySegment<byte>(msg.Vars));
             e.ReadVars(_reader);
             e.ClearDirty();
+        }
+
+        // ---------------------------------------------------------------------------------------- scene entities
+
+        private void HoldSceneSpawn(EntitySpawnMsg msg)
+        {
+            if (_pendingScene.TryGetValue(msg.SceneId, out var held))
+            {
+                if (msg.Epoch < held.Epoch) return;
+                _pendingSceneByNetId.Remove(held.NetId);
+            }
+            _pendingScene[msg.SceneId] = msg;
+            _pendingSceneByNetId[msg.NetId] = msg.SceneId;
+        }
+
+        /// <summary>A scene object became resident: the spawn that was waiting for it binds now.</summary>
+        private void OnSceneEntityRegistered(NetworkIdentity e)
+        {
+            if (!_pendingScene.TryGetValue(e.SceneId, out var held)) return;
+            _pendingScene.Remove(e.SceneId);
+            _pendingSceneByNetId.Remove(held.NetId);
+            OnEntitySpawn(held);
+        }
+
+        /// <summary>
+        /// A bound scene object is leaving with its scene. The entity lives on in the mesh, so its spawn is held
+        /// again (variables keep it current) and binds when the cell comes back.
+        /// </summary>
+        private void OnSceneEntityUnregistering(NetworkIdentity e)
+        {
+            if (e.NetId == 0 || !_entities.TryGetValue(e.NetId, out var bound) || bound != e) return;
+            _entities.Remove(e.NetId);
+            if (LocalPlayer == e) LocalPlayer = null;
+            _writer.Reset();
+            e.WriteVars(_writer);
+            HoldSceneSpawn(new EntitySpawnMsg
+            {
+                NetId = e.NetId,
+                PrefabId = e.PrefabId,
+                SceneId = e.SceneId,
+                OwnerClientId = e.OwnerClientId,
+                ContainerIndex = e.ContainerIndex,
+                Epoch = e.Epoch,
+                OwnerWorkerIndex = e.OwnerWorkerIndex,
+                LocalPosition = e.LocalPosition,
+                LocalRotation = e.LocalRotation,
+                Velocity = e.Velocity,
+                Flags = (e.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (e.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
+                Vars = _writer.ToArray(),
+                State = Array.Empty<byte>(),
+            });
+            e.InvokeDespawn();
+            EntityDespawned?.Invoke(e);
+            e.Unbind();
         }
 
         private void OnEntityRpc(EntityRpcMsg msg)
@@ -538,9 +637,12 @@ namespace Nebula
                 if (e == null) continue;
                 e.InvokeDespawn();
                 EntityDespawned?.Invoke(e);
-                Destroy(e.gameObject);
+                if (e.IsSceneEntity) e.Unbind();
+                else Destroy(e.gameObject);
             }
             _entities.Clear();
+            _pendingScene.Clear();
+            _pendingSceneByNetId.Clear();
             LocalPlayer = null;
         }
 

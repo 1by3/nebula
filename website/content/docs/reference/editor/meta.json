@@ -1,4 +1,4 @@
 {
   "title": "Editor",
-  "pages": ["nebula-build", "nebula-mesh", "world-assets", "world-authoring", "world-baker", "world-editor-placement", "world-editor-window"]
+  "pages": ["nebula-build", "nebula-mesh", "scene-entity-ids", "world-assets", "world-authoring", "world-baker", "world-editor-placement", "world-editor-window"]
 }
