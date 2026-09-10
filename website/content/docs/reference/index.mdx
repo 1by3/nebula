@@ -202,12 +202,15 @@ Unity Editor tooling: builds, local mesh, control-plane helpers, the World windo
 | --- | --- |
 | [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the executables every Nebula role runs from. |
 | [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client. |
+| [NebulaSetup](/docs/reference/editor/nebula-setup) | Static class. One-click setup from the Nebula menu. |
+| [NebulaValidator](/docs/reference/editor/nebula-validator) | Static class. Nebula \> Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh. |
 | [SceneEntityIds](/docs/reference/editor/scene-entity-ids) | Static class. Gives every NetworkIdentity authored into a scene its NetworkIdentity.SceneId when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good. |
 | [WorldAssets](/docs/reference/editor/world-assets) | Static class. Finds world definitions and manifests in the project and maps scenes back to cells. |
 | [WorldAuthoring](/docs/reference/editor/world-authoring) | Static class. Create, open, close, delete and populate cell scenes. |
 | [WorldBaker](/docs/reference/editor/world-baker) | Static class. Builds the WorldContainerManifest: one container per cell plus every Container authored inside the cell scenes, with cell-local poses, in wire order. |
 | [WorldEditorPlacement](/docs/reference/editor/world-editor-placement) | Static class. Keeps cell scenes usable in the editor even though they are authored cell-local. |
 | [WorldEditorWindow](/docs/reference/editor/world-editor-window) | Class. The World window (Nebula \> World): a map of the cell grid, one vertical layer at a time. |
+| [WorldSetup](/docs/reference/editor/world-setup) | Static class. Nebula \> Set Up World Partition: makes the active scene the hub of a partitioned world in one pass. |
 
 ## SpacetimeDB module
 

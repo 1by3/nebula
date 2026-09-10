@@ -13,6 +13,17 @@ Cells are authored **cell-local**: the content of a cell scene sits around that 
 
 The **floating origin** (`WorldOrigin`) is the cell that currently sits at Unity's `(0,0,0)`. When it moves, the streamer translates every loaded cell and raises `WorldOrigin.Shifted(delta)` so anything else caching a position can follow.
 
+## Setting up in one step
+
+Open the level and run **Nebula > Set Up World Partition**. It:
+
+1. runs **Nebula > Set Up Active Scene**, so the level is the game scene with a configured `NebulaBootstrap`;
+2. creates a `WorldDefinition` next to the scene (`World/<Scene>.asset`, 256 m cells) and its `WorldContainerManifest`, or reuses the ones the project already has;
+3. moves the level's root objects into cell scenes by position. Cameras, directional lights, post-processing volumes, UI, the game mode, the Nebula objects and any roots you selected beforehand stay in the hub;
+4. clears Batching Static on the moved content, saves the hub and the cell scenes, bakes the manifest and sets `NebulaConfig.WorldManifest`.
+
+Running it again on a partitioned hub only rebakes. The rest of this page describes what it sets up and how to author from there. **Nebula > Validate Project** reports cell scenes saved after the last bake, cells missing from the build settings and Batching Static objects in open cells.
+
 ## Authoring cells
 
 Open **Nebula > World > World Window**. Pick or create a `WorldDefinition`, then use the map:

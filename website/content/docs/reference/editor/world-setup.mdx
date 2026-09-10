@@ -1,0 +1,47 @@
+---
+title: "WorldSetup"
+description: "Nebula > Set Up World Partition: makes the active scene the hub of a partitioned world in one pass."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/World/WorldSetup.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/World/WorldSetup.cs)</div>
+
+```csharp
+public static class WorldSetup
+```
+
+Nebula \> Set Up World Partition: makes the active scene the hub of a partitioned world in one pass. Runs the scene setup, finds or creates the [`WorldDefinition`](/docs/reference/world/world-definition) and its [`WorldContainerManifest`](/docs/reference/world/world-container-manifest), moves the level's root objects into cell scenes by position (cameras, directional lights, volumes, UI, the game mode, the bootstrap and anything selected stay in the hub), clears static batching on the moved content, saves, bakes the manifest, points [`NebulaConfig.WorldManifest`](/docs/reference/core/nebula-config#worldmanifest) at it and opens the World window. Idempotent like the scene setup: on a hub that is already partitioned it only rebakes.
+
+## Methods
+
+### SetUpMenu [#setupmenu]
+
+```csharp
+[MenuItem("Nebula/Set Up World Partition", priority = -99)]
+[MenuItem("Nebula/World/Set Up World Partition", priority = 30)]
+public static void SetUpMenu();
+```
+
+### SetUp [#setup]
+
+```csharp
+public static NebulaSetup.Report SetUp();
+```
+
+Partition the active scene (see the class summary). Null when the scene setup could not run.
+
+### StaysInHub [#staysinhub]
+
+```csharp
+public static bool StaysInHub(GameObject root);
+```
+
+Roots that belong in the hub rather than in a cell: Nebula's own objects, the game mode, cameras, UI, post-processing volumes and objects holding only directional lights.
+
+### ClearBatchingStatic [#clearbatchingstatic]
+
+```csharp
+public static int ClearBatchingStatic(IEnumerable<GameObject> roots);
+```
+
+Clear `StaticEditorFlags.BatchingStatic` under `roots` (undoable). Returns how many objects changed.
+

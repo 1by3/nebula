@@ -1,0 +1,246 @@
+---
+title: "NebulaSetup"
+description: "One-click setup from the Nebula menu."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaSetup.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaSetup.cs)</div>
+
+```csharp
+public static class NebulaSetup
+```
+
+One-click setup from the Nebula menu. **Set Up Active Scene** turns the open scene into a working Nebula game scene: the `Resources/NebulaConfig` asset, a `Nebula` object with [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) and [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay), [`NebulaConfig.GameScene`](/docs/reference/core/nebula-config#gamescene), the build settings (the scene is the boot scene), the project's [`NebulaGameMode`](/docs/reference/core/nebula-game-mode), starter [`Container`](/docs/reference/containers/container) volumes around the level, and every networked prefab in [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs). Every step is idempotent, so running it again on a configured scene changes nothing and it doubles as a repair.
+
+## Fields
+
+### ConfigAssetPath [#configassetpath]
+
+```csharp
+public const string ConfigAssetPath = "Assets/Resources/NebulaConfig.asset";
+```
+
+### DocsUrl [#docsurl]
+
+```csharp
+public const string DocsUrl = "https://nebula.1by3.co/docs";
+```
+
+### SplitThreshold [#splitthreshold]
+
+```csharp
+public const float SplitThreshold = 40f;
+```
+
+A container footprint at least this long on an axis is split in two along it by the scene setup.
+
+## Methods
+
+### SetUpActiveSceneMenu [#setupactivescenemenu]
+
+```csharp
+[MenuItem("Nebula/Set Up Active Scene", priority = -100)]
+public static void SetUpActiveSceneMenu();
+```
+
+### SelectConfig [#selectconfig]
+
+```csharp
+[MenuItem("Nebula/Select Config", priority = -80)]
+public static void SelectConfig();
+```
+
+### OpenDocumentation [#opendocumentation]
+
+```csharp
+[MenuItem("Nebula/Documentation", priority = 200)]
+public static void OpenDocumentation();
+```
+
+### RegisterNetworkPrefabsMenu [#registernetworkprefabsmenu]
+
+```csharp
+[MenuItem("Nebula/Network Prefabs/Register All Network Prefabs", priority = 60)]
+public static void RegisterNetworkPrefabsMenu();
+```
+
+### SplitSelectedMenu [#splitselectedmenu]
+
+```csharp
+[MenuItem("Nebula/Containers/Split Selected Container (2x2)", priority = 50)]
+public static void SplitSelectedMenu();
+```
+
+### CreateContainerMenu [#createcontainermenu]
+
+```csharp
+[MenuItem("GameObject/Nebula/Container", priority = 10)]
+public static void CreateContainerMenu(MenuCommand command);
+```
+
+### CreateBootstrapMenu [#createbootstrapmenu]
+
+```csharp
+[MenuItem("GameObject/Nebula/Bootstrap", priority = 11)]
+public static void CreateBootstrapMenu();
+```
+
+### SetUpActiveScene [#setupactivescene]
+
+```csharp
+public static Report SetUpActiveScene(bool createContainers);
+```
+
+Configure the active scene as the game scene (see the class summary). Returns null when the scene cannot be set up (a cell scene, or an untitled scene the user declined to save).
+
+### EnsureConfig [#ensureconfig]
+
+```csharp
+public static NebulaConfig EnsureConfig(Report report);
+```
+
+The config every role loads (`Resources/NebulaConfig`), created at [`ConfigAssetPath`](#configassetpath) if missing.
+
+### FindConfig [#findconfig]
+
+```csharp
+public static NebulaConfig FindConfig();
+```
+
+The asset [`NebulaConfig.Load`](/docs/reference/core/nebula-config#load) returns at runtime, or null.
+
+### EnsureBootstrap [#ensurebootstrap]
+
+```csharp
+public static NebulaBootstrap EnsureBootstrap(Scene scene, NebulaConfig config, Report report);
+```
+
+The scene's [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) (created on a root `Nebula` object if missing), wired to `config`, with a debug overlay.
+
+### GameModeTypes [#gamemodetypes]
+
+```csharp
+public static List<Type> GameModeTypes();
+```
+
+Concrete [`NebulaGameMode`](/docs/reference/core/nebula-game-mode) types in player (non-editor, non-test) assemblies.
+
+### LevelBounds [#levelbounds]
+
+```csharp
+public static Bounds LevelBounds(Scene scene);
+```
+
+Union of the renderer and collider bounds in the scene; a 40 m square at the origin for an empty scene.
+
+### Split [#split]
+
+```csharp
+public static List<Container> Split(Container container, int nx, int nz);
+```
+
+Replace `container` with `nx` x `nz` containers tiling its footprint (same parent, rotation, scale and height), ids `<id>-x-z`. Undoable. A container with children is left alone.
+
+### UniqueContainerId [#uniquecontainerid]
+
+```csharp
+public static string UniqueContainerId(string wanted, Container ignore = null);
+```
+
+`wanted`, or `wanted-2`, `wanted-3`... so no container in the open scenes (other than `ignore`) has it.
+
+### RegisterNetworkPrefabs [#registernetworkprefabs]
+
+```csharp
+public static int RegisterNetworkPrefabs(NebulaConfig config, Report report);
+```
+
+Append every prefab under Assets whose root has a [`NetworkIdentity`](/docs/reference/core/network-identity) and is not yet listed to [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs). Existing entries are never reordered or removed: the index is the prefab id on the wire. Returns how many were added.
+
+### NetworkPrefabCandidates [#networkprefabcandidates]
+
+```csharp
+public static List<GameObject> NetworkPrefabCandidates();
+```
+
+Prefab assets under Assets whose root carries a [`NetworkIdentity`](/docs/reference/core/network-identity).
+
+### FindInScene [#findinscene]
+
+```csharp
+public static List<T> FindInScene<T>(Scene scene)
+    where T : Component;
+```
+
+Every `T` in a loaded scene, inactive objects included.
+
+### SceneContains [#scenecontains]
+
+```csharp
+public static bool SceneContains<T>(string scenePath)
+    where T : Component;
+```
+
+Whether the scene at `scenePath` uses a `T` (read from the open scene, else from its file's dependencies).
+
+### ScriptPathOf [#scriptpathof]
+
+```csharp
+public static string ScriptPathOf(Type type);
+```
+
+Project path of the script defining `type`, or null.
+
+### FindScenePath [#findscenepath]
+
+```csharp
+public static string FindScenePath(string sceneName);
+```
+
+Project path of the scene asset named `sceneName` (build settings first), or null.
+
+### Show [#show]
+
+```csharp
+public static void Show(string title, Report report);
+```
+
+Log a report and summarise it in a dialog (the log only, in batchmode).
+
+## Nested types
+
+### Report [#report]
+
+```csharp
+public sealed class Report
+```
+
+What a setup pass did, and what it could not do for you.
+
+#### Fields
+
+##### Done [#done]
+
+```csharp
+public readonly List<string> Done = new List<string>();
+```
+
+##### Warnings [#warnings]
+
+```csharp
+public readonly List<string> Warnings = new List<string>();
+```
+
+#### Methods
+
+##### Did [#did]
+
+```csharp
+public void Did(string line);
+```
+
+##### Warn [#warn]
+
+```csharp
+public void Warn(string line);
+```
+

@@ -5,7 +5,8 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Nebula.Runtime",
-        "Nebula.World"
+        "Nebula.World",
+        "Nebula.Editor"
     ],
     "includePlatforms": [
         "Editor"

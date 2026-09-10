@@ -1,0 +1,86 @@
+---
+title: "NebulaValidator"
+description: "Nebula > Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaValidator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaValidator.cs)</div>
+
+```csharp
+public static class NebulaValidator
+```
+
+Nebula \> Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh. The config asset, the boot and game scenes in the build settings, the game mode, containers, the network prefab table, a partitioned world's manifest and cell scenes, static batching in cells and scene entities waiting for an id. Each issue is logged with its object as context, so clicking the log line selects it.
+
+## Methods
+
+### ValidateMenu [#validatemenu]
+
+```csharp
+[MenuItem("Nebula/Validate Project", priority = -98)]
+public static void ValidateMenu();
+```
+
+### Validate [#validate]
+
+```csharp
+public static List<Issue> Validate();
+```
+
+## Nested types
+
+### Severity [#severity]
+
+```csharp
+public enum Severity
+```
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Info` |  |  |
+| `Warning` |  |  |
+| `Error` |  |  |
+
+### Issue [#issue]
+
+```csharp
+public readonly struct Issue
+```
+
+#### Constructors
+
+##### Issue [#issue]
+
+```csharp
+public Issue(Severity severity, string message, Object context = null);
+```
+
+#### Fields
+
+##### Severity [#severity]
+
+```csharp
+public readonly Severity Severity;
+```
+
+##### Message [#message]
+
+```csharp
+public readonly string Message;
+```
+
+##### Context [#context]
+
+```csharp
+public readonly Object Context;
+```
+
+#### Methods
+
+##### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

@@ -36,6 +36,8 @@ Create a scene called `Arena` and add it to Build Settings. Build a 40 × 40 m f
 | quadrant-SE | (10, 0, -10) | `quadrant-SE` | (20, 10, 20) | (0, 4, 0) |
 | quadrant-SW | (-10, 0, -10) | `quadrant-SW` | (20, 10, 20) | (0, 4, 0) |
 
+**GameObject > Nebula > Container** creates one with a unique id, and **Nebula > Containers > Split Selected Container (2x2)** tiles a selected box into four, so one 40 × 40 m container split once gives exactly this table.
+
 A container is a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space; which worker simulates it is decided at runtime. Ids must be unique in the scene and stable, because the control plane keys leases by them. The gizmo shows the volume in the Scene view.
 
 There is nothing else to author: every container boundary carries an automatic ghost band and an entry hysteresis, so pre-warm-then-flip works out of the box. See [Containers and handover](/docs/concepts/containers-and-handover).
@@ -45,11 +47,11 @@ There is nothing else to author: every container boundary carries an automatic g
 
 ### Add the bootstrap
 
-Create an empty object named `Nebula` in the scene and add `NebulaBootstrap`. Drag `Packages/com.1by3.nebula/Resources/NebulaConfig` into its `Config` field and leave `EditorRole` at `Client`. Add `NebulaDebugOverlay` next to it if you want the tick, RTT, container and worker readout on screen.
+With `Arena` open, run **Nebula > Set Up Active Scene**. It creates a `Nebula` object with `NebulaBootstrap` (its `Config` wired to `Assets/Resources/NebulaConfig`, `EditorRole` left at `Client`) and `NebulaDebugOverlay` for the tick, RTT, container and worker readout, sets `NebulaConfig.GameScene` to `Arena`, and makes `Arena` the first scene in the build settings. On a scene without containers it also authors a starter set around the level.
+
+The setup only fills in what is missing, so it is safe to run again at any point. Run it after the next steps too: it adds your game mode to the scene and registers your network prefabs.
 
 The bootstrap is the entry point of every process. It reads the role from `-nebula-role` (or `EditorRole` when you press Play), loads `NebulaConfig.GameScene`, and starts the matching services. A process is a worker *or* a client, never both.
-
-In `NebulaConfig`, set `GameScene` to `Arena`.
 
 </Step>
 <Step>
@@ -156,7 +158,7 @@ Everything else is what you would write against Mirror or NGO. The guides on [pr
 
 ### Make the player prefab
 
-Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Every networked prefab must be listed in `NebulaConfig.NetworkPrefabs`; the index in that list is the prefab id on the wire, so add the player prefab there.
+Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Every networked prefab must be listed in `NebulaConfig.NetworkPrefabs`; the index in that list is the prefab id on the wire, so add the player prefab there. **Nebula > Network Prefabs > Register All Network Prefabs** does it for every prefab with a `NetworkIdentity` on its root; it only appends, so existing ids never change.
 
 Remote copies of the player (other clients, ghosts on other workers) get a `RemoteInterpolator` attached by the runtime and are moved from the identity's state stream; you do not have to add anything for that.
 
@@ -165,7 +167,7 @@ Remote copies of the player (other clients, ghosts on other workers) get a `Remo
 
 ### Add a game mode
 
-The game mode is the server hook that creates a player when the gateway asks for one, the equivalent of subclassing Mirror's `NetworkManager`. Put exactly one in the scene, on an empty `Game` object, and assign the prefab:
+The game mode is the server hook that creates a player when the gateway asks for one, the equivalent of subclassing Mirror's `NetworkManager`. Put exactly one in the scene, on an empty `Game` object, and assign the prefab. When it is the only game mode in the project, **Nebula > Set Up Active Scene** adds the `Game` object for you:
 
 ```csharp title="TutorialGameMode.cs"
 using Nebula;
@@ -192,6 +194,8 @@ The gateway picks a container whose owning worker is connected and asks that wor
 <Step>
 
 ### Build and run the mesh
+
+**Nebula > Validate Project** checks the setup first: the boot and game scenes in the build settings, the game mode, duplicate container ids and prefabs missing from `NetworkPrefabs`. Each problem is logged with its object, so clicking the Console line selects it.
 
 ```bash
 nebula build
