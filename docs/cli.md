@@ -6,7 +6,7 @@ needed) built from `cli/Nebula.Cli`, and it works the same on Windows, macOS and
 
 ## Installing
 
-Hosted installers (the URLs are not live yet; the scripts are in `cli/install/`):
+Hosted installers (they proxy to `cli/install/` on the `main` branch, so a push updates them):
 
 ```powershell
 iwr https://windows.nebula.1by3.co -useb | iex
