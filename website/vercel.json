@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "install.nebula.1by3.co" }],
+      "destination": "https://raw.githubusercontent.com/1by3/nebula/main/cli/install/install.sh"
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "windows.nebula.1by3.co" }],
+      "destination": "https://raw.githubusercontent.com/1by3/nebula/main/cli/install/install.ps1"
+    },
+    { "source": "/install.sh", "destination": "https://raw.githubusercontent.com/1by3/nebula/main/cli/install/install.sh" },
+    { "source": "/install.ps1", "destination": "https://raw.githubusercontent.com/1by3/nebula/main/cli/install/install.ps1" }
+  ]
+}

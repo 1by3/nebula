@@ -27,3 +27,6 @@ next-env.d.ts
 # reference generator build output
 /tools/ApiGen/bin/
 /tools/ApiGen/obj/
+
+.vercel
+.env*
