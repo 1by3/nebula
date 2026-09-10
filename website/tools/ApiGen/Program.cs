@@ -136,15 +136,15 @@ public static class Program
             {
                 string page = Kebab(t.Name);
                 pages.Add(page);
-                File.WriteAllText(Path.Combine(dir, page + ".mdx"), renderer.RenderType(t), new UTF8Encoding(false));
+                File.WriteAllText(Path.Combine(dir, page + ".mdx"), Lf(renderer.RenderType(t)), new UTF8Encoding(false));
                 indexPage.AppendLine($"| [{Escape(t.DisplayName)}](/docs/reference/{slug}/{page}) | {Escape(t.Kind)}. {Escape(renderer.Description(t.Node))} |");
             }
             indexPage.AppendLine();
-            File.WriteAllText(Path.Combine(dir, "meta.json"), Json(new Dictionary<string, object> { ["title"] = title, ["pages"] = pages }), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, "meta.json"), Lf(Json(new Dictionary<string, object> { ["title"] = title, ["pages"] = pages })), new UTF8Encoding(false));
             rootMeta.Add(slug);
         }
-        File.WriteAllText(Path.Combine(outDir, "index.mdx"), indexPage.ToString(), new UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(outDir, "meta.json"), Json(new Dictionary<string, object> { ["title"] = "API reference", ["description"] = "Generated from the C# sources", ["root"] = true, ["pages"] = rootMeta }), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(outDir, "index.mdx"), Lf(indexPage.ToString()), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(outDir, "meta.json"), Lf(Json(new Dictionary<string, object> { ["title"] = "API reference", ["description"] = "Generated from the C# sources", ["root"] = true, ["pages"] = rootMeta })), new UTF8Encoding(false));
         Console.WriteLine($"apigen: {types.Count} types in {groupOrder.Count} groups -> {outDir}");
         return 0;
     }
@@ -194,6 +194,9 @@ public static class Program
         }
         return sb.ToString();
     }
+
+    /// <summary>Generated files use LF regardless of the host OS, so a regeneration on Windows is not a whole-file diff.</summary>
+    private static string Lf(string text) => text.Replace("\r\n", "\n");
 
     private static string Json(Dictionary<string, object> values)
     {
