@@ -75,6 +75,7 @@ The simulation process: spawning, ghosting, handover, the per-tick loop.
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. The part of NebulaWorker a WorkerQuery talks to. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. The sim worker: a headless Unity process leased authority over a set of containers. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. A question fanned out to several workers over worker messages, with the bookkeeping every such question needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in or time is up. |
+| [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
 
 ## Client
 
@@ -104,6 +105,7 @@ Worker lifecycle, container assignment, the dashboard and worker hosts.
 | [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
 | [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
+| [MeshTelemetry](/docs/reference/orchestrator/mesh-telemetry) | Class. The data behind the World map page of the Nebula Dashboard (/map). |
 | [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |

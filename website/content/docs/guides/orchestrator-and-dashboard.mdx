@@ -59,8 +59,9 @@ The orchestrator serves the Nebula Dashboard, a single page from `Resources/Nebu
 | `-nebula-dashboard-bind +` (or `*`) | Every interface. `nebula deploy` uses this so the page is reachable on the VM's public IP. |
 | `-nebula-dashboard-bind 10.0.1.2` | One specific address. |
 | `-nebula-build-dir <dir>` | Directory served read-only under `/build/` (the Linux tarball worker VMs download). Defaults to the executable's own folder. |
+| `-nebula-telemetry <url>` | Where launched workers post [World map](#world-map) telemetry. Defaults to `http://<advertise address>:<dashboard port>/api/telemetry`; `off` disables it. |
 
-The page polls `/api/state` and shows:
+The dashboard has two pages, **Overview** (`/`) and [**World map**](#world-map) (`/map`). The overview polls `/api/state` and shows:
 
 - **Mesh totals**: live workers, desired, containers, players, bots, server-driven entities, entities (authoritative + ghosts), rebalances.
 - **Workers**: a stepper for the desired count, **Add worker** and **Rebalance now**, then one card per worker with its colour, state (`starting`, `ready`, `draining`, `relaunching`, `launching`, `dead`), the containers it owns, players / bots / server-driven counts, authoritative and ghost entity counts, tick time, heartbeat age, and per-card **Kill** (simulated crash, relaunched) and **Remove** (graceful drain) buttons.
@@ -70,13 +71,27 @@ The page polls `/api/state` and shows:
 - **Gateways**: id, address, heartbeat age.
 - **Events**: the orchestrator's last 60 log lines (it keeps 200), colour-coded by level.
 
+### World map
+
+`/map` draws the mesh from above: the cells of a [partitioned world](/docs/guides/world-partition), every static container in absolute world coordinates filled with the colour of the worker that owns it, the [carried containers](/docs/guides/dynamic-containers) moving where their carriers are, and the entities the workers simulate. Drag to pan, scroll to zoom, hover or click anything for the inspector:
+
+- **A container**: owner, lease and epoch, its box, the containers it sits in and contains, the ones it has seams with, and how many players, bots, server-driven and other entities it holds, per worker, with the ghosts other workers keep of them. A cell container also lists the workers that have the cell loaded.
+- **A carried container**: which worker simulates the hull and which one the interior (they differ when it is pinned), the lease, speed, heading and the container it is in, with **Follow** (the camera tracks it) and the same **Pin interior to…** / **Unpin** as the overview.
+- **An entity**: kind, authoritative worker, container, position and heading.
+
+The rail switches the fill between owner and entity load, toggles layers (cells, containers, carried, entities, the ghost band drawn `GhostBandMargin` inside each wall, labels), and lists workers (hover one to light up what it owns, click to keep it lit) and carried containers.
+
+The live half comes from the workers. Each posts a telemetry document to `POST /api/telemetry` ([`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)) once a second: per container, how many players, bots, server-driven and other entities it is authoritative for and how many ghosts it holds; the box, pose and velocity of every carried container whose carrier it simulates; and the cells it has loaded. While somebody has the map open (the page read `/api/map` in the last 5 s) the reply asks for more, and the worker posts every 0.5 s with one point per authoritative entity, at most 4096. Positions are absolute: every process adds its [floating origin](/docs/guides/world-partition) back, so workers with different origins agree. The document is built in `Update`, never inside the tick, and posted from the thread pool; a post still in flight skips the next one.
+
+The orchestrator passes `-nebula-telemetry http://<advertise address>:<dashboard port>/api/telemetry` to every worker it launches (the address worker VMs already download the build from), and a worker in the orchestrator's own process hands its documents over directly. A worker started by hand needs the switch itself; `-nebula-telemetry off` turns telemetry off. The orchestrator keeps each worker's latest document ([`MeshTelemetry`](/docs/reference/orchestrator/mesh-telemetry)), drops it when the worker dies, retires or stops posting for 15 s, and serves it unparsed; the page joins it with `/api/state`. With the dashboard disabled there is no map and no telemetry.
+
 <Callout type="warn" title="No authentication">
 The dashboard and the API accept any request that reaches the port. Locally that is fine; on a public VM restrict the port to your own IP, as described in [Deploying to Hetzner](/docs/deploy/hetzner#security-and-operations).
 </Callout>
 
 ## HTTP API
 
-Reads are answered from the listener thread with the last published state. Writes are queued and executed on the orchestrator's main thread; the HTTP response waits up to 3 s for that and returns `503` otherwise. Every successful POST answers `{"ok":true,"desired":n}`; errors answer `{"ok":false,"error":"..."}`.
+Reads are answered from the listener thread with the last published state, and so is worker telemetry (`/api/map`, `/api/map/geometry` and `/api/telemetry` touch nothing Unity owns). Other writes are queued and executed on the orchestrator's main thread; the HTTP response waits up to 3 s for that and returns `503` otherwise. Every successful POST answers `{"ok":true,"desired":n}`; errors answer `{"ok":false,"error":"..."}`.
 
 | Method and path | Body | What it does |
 | --- | --- | --- |
@@ -87,6 +102,12 @@ Reads are answered from the listener thread with the last published state. Write
 | `POST /api/workers/remove` | `{"workerId": "w3"}` or `{}` | Drain and stop one worker. Without `workerId` the desired count drops by one and the highest index retires. `404` for an unknown or already retiring id. |
 | `POST /api/workers/kill` | `{"workerId": "w3"}` | Hard-kill the instance (kill the process, delete the VM) to simulate a crash; the reaper reassigns and relaunches it. `404` when the orchestrator has no managed instance for that id. |
 | `POST /api/rebalance` | none | Run an assignment pass now instead of waiting for the next 500 ms tick. |
+| `POST /api/containers/pin` | `{"containerId": "starhopper#…", "workerId": "w2"}` | Give a carried container a worker of its own. `400` for a static container, an unknown one or a worker that is not live. |
+| `POST /api/containers/unpin` | `{"containerId": "starhopper#…"}` | Let a pinned carried container follow its carrier again. |
+| `GET /map` | none | The World map page. |
+| `GET /api/map/geometry` | none | The map's static half, built at startup: `partitioned`, `world` (`name`, `cellSize`, `cells[]` with `coord` and `scene`), `ghostBandMargin`, `handoverHysteresis` and `containers[]` with `id`, `index`, `cell`, `isCell`, `center`, `size`, `rotation` (quaternion), `parent` (smallest enclosing container) and `neighbors`. |
+| `GET /api/map` | none | `geometryVersion` and `workers[]`: each worker's latest telemetry document (`doc`) with its `ageSeconds`. Reading it asks workers for entity positions for the next 5 s. |
+| `POST /api/telemetry` | a worker's telemetry document | Store it. Answers `{"ok":true,"detail":true\|false}`: whether the worker should include entities next time. `400` for a document that is not a JSON object starting with `"worker"`, `413` above 8 MB. |
 | `GET /build/<file>` | none | Stream a file from the artifact directory. Plain file names only, no sub-paths. |
 
 The body parser is deliberately minimal: flat JSON objects with integer or string values. `Tools/smoke-test.ps1 -ScaleTo` and `nebula status` use this API; so can you:

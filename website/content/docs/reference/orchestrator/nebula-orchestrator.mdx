@@ -73,6 +73,14 @@ public IReadOnlyList<OrchestratorEvent> Events { get; }
 public string DashboardUrl { get; }
 ```
 
+### Telemetry [#telemetry]
+
+```csharp
+public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
+```
+
+The World map's data: static container geometry and the latest telemetry each worker posted (see [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)).
+
 ### HostName [#hostname]
 
 ```csharp

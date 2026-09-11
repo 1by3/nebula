@@ -155,6 +155,14 @@ public int BotCount { get; }
 public int ServerDrivenCount { get; }
 ```
 
+### Telemetry [#telemetry]
+
+```csharp
+public WorkerTelemetry Telemetry { get; }
+```
+
+What this worker reports to the dashboard's World map; null when telemetry is off (see [`WorkerTelemetry.Create`](/docs/reference/worker/worker-telemetry#create)).
+
 ### Entities [#entities]
 
 ```csharp

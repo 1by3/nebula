@@ -1,0 +1,149 @@
+---
+title: "MeshTelemetry"
+description: "The data behind the World map page of the Nebula Dashboard (/map)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/MeshTelemetry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/MeshTelemetry.cs)</div>
+
+```csharp
+public sealed class MeshTelemetry
+```
+
+The data behind the World map page of the Nebula Dashboard (`/map`). It has two halves:
+
+- **Geometry**, built once on the orchestrator's main thread from [`ContainerRegistry`](/docs/reference/containers/container-registry) and the world definition: every static container's box in absolute world coordinates, its cell, the container that encloses it and its neighbours (`GET /api/map/geometry`).
+- **Telemetry**, the latest document each worker posted ([`WorkerTelemetry`](/docs/reference/worker/worker-telemetry), `POST /api/telemetry`): entity counts per container, the pose of every carried container whose carrier it simulates, the cells it has loaded and, while somebody has the map open, its authoritative entities (`GET /api/map`).
+
+Thread-safe: workers post, and the page reads, on the dashboard's listener threads. Worker documents are kept as received and spliced into the map document unparsed (the runtime carries no JSON reader); the page does the aggregation.
+
+## Constructors
+
+### MeshTelemetry [#meshtelemetry]
+
+```csharp
+public MeshTelemetry(Func<double> now = null);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `now` | Seconds on a monotonic clock; a stopwatch by default. |
+
+## Fields
+
+### MaxDocumentChars [#maxdocumentchars]
+
+```csharp
+public const int MaxDocumentChars = 4 * 1024 * 1024;
+```
+
+Largest worker document accepted, in characters.
+
+### DetailWindowSeconds [#detailwindowseconds]
+
+```csharp
+public const double DetailWindowSeconds = 5.0;
+```
+
+Workers are asked for their entities while the map was read within this many seconds.
+
+### ExpireSeconds [#expireseconds]
+
+```csharp
+public const double ExpireSeconds = 15.0;
+```
+
+A worker document older than this is dropped: its worker died, retired or stopped posting.
+
+## Properties
+
+### DetailWanted [#detailwanted]
+
+```csharp
+public bool DetailWanted { get; }
+```
+
+Somebody read the map within [`DetailWindowSeconds`](#detailwindowseconds), so workers should include their entities.
+
+### GeometryVersion [#geometryversion]
+
+```csharp
+public int GeometryVersion { get; }
+```
+
+Bumped by every [`PublishGeometry`](#publishgeometry); the page refetches the geometry when it changes.
+
+### GeometryJson [#geometryjson]
+
+```csharp
+public string GeometryJson { get; }
+```
+
+The static geometry document served at `/api/map/geometry`.
+
+### WorkerCount [#workercount]
+
+```csharp
+public int WorkerCount { get; }
+```
+
+Workers with a document on file (expired ones are only dropped when the map is read).
+
+## Methods
+
+### PublishGeometry [#publishgeometry]
+
+```csharp
+public void PublishGeometry(string json);
+```
+
+Replace the static geometry document (see [`BuildGeometryJson`](#buildgeometryjson)).
+
+### Accept [#accept]
+
+```csharp
+public string Accept(string json, out bool detail);
+```
+
+Store a worker's telemetry document, replacing its previous one. The document must be a JSON object whose first property is `"worker"`, as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it. Returns null when it was stored, otherwise why it was refused. `detail` is the answer for the worker: whether its next document should include entities.
+
+### Forget [#forget]
+
+```csharp
+public void Forget(string workerId);
+```
+
+Drop a worker's document now instead of waiting for it to expire.
+
+### BuildMapJson [#buildmapjson]
+
+```csharp
+public string BuildMapJson();
+```
+
+The live map document: every worker's latest telemetry, with its age in seconds, sorted by worker id. Reading it marks the map as watched, which asks workers for their entities ([`DetailWanted`](#detailwanted)).
+
+### BuildGeometryJson [#buildgeometryjson]
+
+```csharp
+public static string BuildGeometryJson(NebulaConfig config);
+```
+
+Every static container of the loaded level as the map draws it: its box in absolute world coordinates ([`ToAbsolute`](#toabsolute)), its cell in a partitioned world, the smallest container enclosing it and its static neighbours, plus the world's cells and the ghost band and hysteresis the mesh runs with. Main thread.
+
+### EnclosingStatic [#enclosingstatic]
+
+```csharp
+public static Container EnclosingStatic(Container c);
+```
+
+The smallest static container whose box holds `c`'s, or null. In a partitioned world only `c`'s own cell is searched.
+
+### ToAbsolute [#toabsolute]
+
+```csharp
+public static void ToAbsolute(Vector3 frame, out double x, out double y, out double z);
+public static void ToAbsolute(Vector3 frame, Vector3Int originCell, Vector3 cellSize, out double x, out double y, out double z);
+```
+
+Absolute world position of a position in this process's frame. Without a partitioned world the frame is the world. With one, every process keeps its own floating origin ([`WorldOrigin`](/docs/reference/world/world-origin)), so the origin cell's offset is added back: two workers report the same place with the same numbers.
+

@@ -55,6 +55,12 @@
   th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
   td { padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   td.mono, .mono { font-family: var(--mono); }
+  .idcell { display: flex; align-items: center; min-width: 0; }
+  .idcell .sw { flex: 0 0 auto; }
+  .idcell span:last-child { overflow-wrap: anywhere; }
+  input, select { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input::placeholder { color: var(--ink-3); }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 7px; background: var(--wc, #555); }
   .log { font-family: var(--mono); font-size: 12px; max-height: 320px; overflow: auto; }
   .log div { padding: 2px 0; border-bottom: 1px solid #1f232d; display: grid; grid-template-columns: 78px 1fr; gap: 10px; }
@@ -73,11 +79,16 @@
   .gateway input { width: 22ch; height: 30px; padding: 0 8px; font: 600 15px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   .gateway input:disabled { opacity: 1; -webkit-text-fill-color: var(--ink); }
   .gateway button { height: 30px; padding: 0 12px; }
+  nav.tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+  nav.tabs a { color: var(--ink-2); text-decoration: none; font-size: 13px; padding: 4px 11px; border-radius: 6px; }
+  nav.tabs a.on { background: var(--bg); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  nav.tabs a:hover:not(.on) { color: var(--ink); }
 </style>
 </head>
 <body>
 <header>
   <h1>Nebula Dashboard</h1>
+  <nav class="tabs"><a href="/" class="on">Overview</a><a href="/map">World map</a></nav>
   <span class="sub" id="orchId">—</span>
   <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
   <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
@@ -250,13 +261,13 @@
     }
 
     $('containers').innerHTML = s.containers.map(c => `
-      <tr><td class="mono"><span class="sw" style="--wc:${esc(c.color)}"></span>${esc(c.id)}</td>
+      <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
           <td>${c.epoch}</td><td>${esc(c.state)}</td></tr>`).join('');
 
     const live = s.workers.filter(w => w.alive && !w.retiring);
     $('carried').innerHTML = s.carried.length ? s.carried.map(c => `
-      <tr><td class="mono"><span class="sw" style="--wc:${esc(c.color)}"></span>${esc(c.id)}</td>
+      <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
           <td>${c.epoch}</td><td>${esc(c.state)}</td>
           <td>${c.pinned

@@ -38,10 +38,14 @@ namespace Nebula
 
         private const string FallbackPage = "<!doctype html><title>Nebula</title><body style='font-family:sans-serif;padding:2em'><h1>Nebula Dashboard</h1><p>The dashboard page (Resources/NebulaDashboard.html) is missing from this build. The API still works: GET <a href='/api/state'>/api/state</a>.</p></body>";
 
+        /// <summary>Largest request body accepted, in bytes (worker telemetry is the biggest thing posted).</summary>
+        public const long MaxBodyBytes = 8L * 1024 * 1024;
+
         public string Url { get; }
 
         private readonly HttpListener _listener = new HttpListener();
-        private readonly string _page;
+        private readonly ConcurrentDictionary<string, string> _pages = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Func<Request, Response>> _direct = new ConcurrentDictionary<string, Func<Request, Response>>(StringComparer.Ordinal);
         private readonly ConcurrentQueue<Request> _commands = new ConcurrentQueue<Request>();
         private readonly string _artifactDir;
         private volatile string _state = "{}";
@@ -51,7 +55,8 @@ namespace Nebula
         /// <param name="artifactDir">Directory served read-only under <c>/build/</c> (the Linux server tarball worker VMs fetch); null disables.</param>
         public OrchestratorHttpServer(string bind, ushort port, string page, string artifactDir = null)
         {
-            _page = string.IsNullOrEmpty(page) ? FallbackPage : page;
+            AddPage("/", string.IsNullOrEmpty(page) ? FallbackPage : page);
+            AddPage("/index.html", string.IsNullOrEmpty(page) ? FallbackPage : page);
             _artifactDir = string.IsNullOrEmpty(artifactDir) ? null : Path.GetFullPath(artifactDir);
             if (string.IsNullOrEmpty(bind) || bind == "localhost")
             {
@@ -78,6 +83,25 @@ namespace Nebula
 
         /// <summary>Replace the state document served by GET /api/state. Call from the main thread whenever something changed.</summary>
         public void PublishState(string json) => _state = json;
+
+        /// <summary>Serve <paramref name="html"/> at <paramref name="path"/> (<c>/map</c>). A trailing slash on the request is ignored.</summary>
+        public void AddPage(string path, string html)
+        {
+            if (string.IsNullOrEmpty(path) || html == null) return;
+            _pages[path.Length > 1 ? path.TrimEnd('/') : path] = html;
+        }
+
+        /// <summary>
+        /// Answer <paramref name="method"/> <paramref name="path"/> on the listener thread instead of queueing it for
+        /// the main thread (<see cref="Pump"/>). For endpoints that are hit often and touch nothing Unity owns, such as
+        /// worker telemetry and the World map document; <paramref name="handler"/> must be thread-safe.
+        /// </summary>
+        public void MapDirect(string method, string path, Func<Request, Response> handler)
+        {
+            string key = method + " " + path.TrimEnd('/');
+            if (handler == null) _direct.TryRemove(key, out _);
+            else _direct[key] = handler;
+        }
 
         /// <summary>Main thread: execute queued commands. Each waiting HTTP response is released with the handler's result.</summary>
         public void Pump(Func<Request, Response> handler)
@@ -107,10 +131,24 @@ namespace Nebula
             {
                 var req = ctx.Request;
                 string path = req.Url.AbsolutePath;
+                string trimmed = path.Length > 1 ? path.TrimEnd('/') : path;
                 Response resp;
-                if (req.HttpMethod == "GET" && (path == "/" || path == "/index.html"))
+                if (req.ContentLength64 > MaxBodyBytes)
                 {
-                    resp = new Response { Status = 200, ContentType = "text/html; charset=utf-8", Body = _page };
+                    resp = Response.Error(413, $"request body larger than {MaxBodyBytes} bytes");
+                }
+                else if (req.HttpMethod == "GET" && _pages.TryGetValue(trimmed, out var html))
+                {
+                    resp = new Response { Status = 200, ContentType = "text/html; charset=utf-8", Body = html };
+                }
+                else if (_direct.TryGetValue(req.HttpMethod + " " + trimmed, out var direct))
+                {
+                    string body = "";
+                    if (req.HasEntityBody)
+                    {
+                        using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8)) body = reader.ReadToEnd();
+                    }
+                    resp = direct(new Request { Method = req.HttpMethod, Path = trimmed, Body = body });
                 }
                 else if (req.HttpMethod == "GET" && path.TrimEnd('/') == "/api/state")
                 {
@@ -229,6 +267,9 @@ namespace Nebula
         public void EndArray() { _sb.Append(']'); _needComma = true; }
 
         public void Key(string name) { Sep(); _sb.Append(Quote(name)).Append(':'); _needComma = false; }
+
+        /// <summary>Append an already serialised JSON value (object, array, number...) as is. The caller vouches that it is valid JSON.</summary>
+        public void Raw(string json) { Sep(); _sb.Append(json); }
 
         public void Value(string s) { Sep(); _sb.Append(Quote(s)); }
         public void Value(bool b) { Sep(); _sb.Append(b ? "true" : "false"); }

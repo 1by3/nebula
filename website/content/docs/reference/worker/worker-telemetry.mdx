@@ -1,0 +1,112 @@
+---
+title: "WorkerTelemetry"
+description: "Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerTelemetry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerTelemetry.cs)</div>
+
+```csharp
+public sealed class WorkerTelemetry : IDisposable
+```
+
+Reports what a worker holds to the World map of the Nebula Dashboard ([`MeshTelemetry`](/docs/reference/orchestrator/mesh-telemetry)):
+
+- for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how many ghosts;
+- the box, pose and velocity of every carried container ([`DynamicContainer`](/docs/reference/containers/dynamic-container)) whose carrier this worker simulates, with the container the carrier sits in;
+- the cells it has loaded, in a partitioned world;
+- and, only while somebody has the map open, one point per authoritative entity.
+
+Positions are absolute world coordinates, so workers with different floating origins agree. The document is posted to `-nebula-telemetry <url>` (the orchestrator passes its own dashboard's `/api/telemetry` to every worker it launches), or handed straight to an orchestrator in the same process. It is built in `Update`, never inside the tick, every [`IdleIntervalSeconds`](#idleintervalseconds) or [`DetailIntervalSeconds`](#detailintervalseconds) while the map is watched, and sent from the thread pool; a post still in flight skips the next one rather than queueing.
+
+## Fields
+
+### IdleIntervalSeconds [#idleintervalseconds]
+
+```csharp
+public const float IdleIntervalSeconds = 1f;
+```
+
+Seconds between documents while nobody has the map open (counts and carried containers only).
+
+### DetailIntervalSeconds [#detailintervalseconds]
+
+```csharp
+public const float DetailIntervalSeconds = 0.5f;
+```
+
+Seconds between documents while the map is watched (with entities).
+
+### MaxEntities [#maxentities]
+
+```csharp
+public const int MaxEntities = 4096;
+```
+
+Most entity points in one document; the rest are counted but not drawn.
+
+### KindPlayer, KindBot, KindServerDriven, KindCarrier, KindOther [#kindplayer-kindbot-kindserverdriven-kindcarrier-kindother]
+
+```csharp
+public const string KindPlayer = "p", KindBot = "b", KindServerDriven = "n", KindCarrier = "v", KindOther = "o";
+```
+
+Entity kinds as the map receives them.
+
+## Properties
+
+### Url [#url]
+
+```csharp
+public string Url { get; }
+```
+
+Where documents are posted; empty when they go to an orchestrator in this process.
+
+### DetailRequested [#detailrequested]
+
+```csharp
+public bool DetailRequested { get; }
+```
+
+The orchestrator asked for entities (somebody has the map open).
+
+### Sent [#sent]
+
+```csharp
+public int Sent { get; }
+```
+
+Documents built and handed off so far.
+
+## Methods
+
+### Create [#create]
+
+```csharp
+public static WorkerTelemetry Create(MeshTelemetry inProcess);
+```
+
+The telemetry sender for a worker: straight into `inProcess` when an orchestrator runs in the same process, else to the URL of `-nebula-telemetry`. Null when neither applies, or when the switch is `off`.
+
+### Write [#write]
+
+```csharp
+public string Write(string workerId, ushort workerIndex, uint tick, IEnumerable<NetworkIdentity> entities, bool includeEntities, IEnumerable<Vector3Int> loadedCells);
+```
+
+Write one telemetry document for the entities a worker holds (authoritative and ghosts). The first property is always `"worker"`: [`MeshTelemetry.Accept`](/docs/reference/orchestrator/mesh-telemetry#accept) reads the id from there without parsing.
+
+### KindOf [#kindof]
+
+```csharp
+public static string KindOf(NetworkIdentity e);
+```
+
+How the map draws an authoritative entity: a carrier, a server-driven entity, a bot's or a player's pawn, or anything else.
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

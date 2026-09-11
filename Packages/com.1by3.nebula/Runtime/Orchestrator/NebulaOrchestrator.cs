@@ -58,6 +58,8 @@ namespace Nebula
         public IReadOnlyList<string> LastAssignmentLog => _log;
         public IReadOnlyList<OrchestratorEvent> Events => _events;
         public string DashboardUrl => _http != null ? _http.Url : "";
+        /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
+        public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
 
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
@@ -92,6 +94,7 @@ namespace Nebula
             _local = new ProcessWorkerHost(config.WorkerExecutable, config.WorkerAdvertiseAddress);
             _host = CreateHost(config);
             Log("info", $"orchestrator {OrchestratorId}: desired workers = {DesiredWorkers}, host={_host.Name}, spawnGateway={config.OrchestratorSpawnsGateway}");
+            Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(config));
             StartDashboard();
             _host.Initialize(Log);
             if (!ReferenceEquals(_host, _local)) _local.Initialize(Log);
@@ -127,8 +130,21 @@ namespace Nebula
                     try { artifacts = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName); } catch { artifacts = null; }
                 }
                 _http = new OrchestratorHttpServer(bind, Config.DashboardPort, page != null ? page.text : null, artifacts);
+                var map = Resources.Load<TextAsset>("NebulaDashboardMap");
+                if (map != null) _http.AddPage("/map", map.text);
+                // Telemetry and the map document are served on the listener thread: workers post several times a
+                // second, and nothing here touches Unity.
+                _http.MapDirect("POST", "/api/telemetry", req =>
+                {
+                    string error = Telemetry.Accept(req.Body, out bool detail);
+                    return error != null
+                        ? OrchestratorHttpServer.Response.Error(400, error)
+                        : OrchestratorHttpServer.Response.Json(200, detail ? "{\"ok\":true,\"detail\":true}" : "{\"ok\":true,\"detail\":false}");
+                });
+                _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
+                _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
                 _http.Start();
-                Log("info", $"dashboard at {_http.Url} (bind {bind}); artifacts from {artifacts ?? "(none)"}");
+                Log("info", $"dashboard at {_http.Url} (bind {bind}); World map at {_http.Url}map; workers post telemetry to {TelemetryUrl()}; artifacts from {artifacts ?? "(none)"}");
             }
             catch (Exception e)
             {
@@ -284,9 +300,23 @@ namespace Nebula
         /// <summary>Switches every launched role inherits from the orchestrator.</summary>
         private string CommonArgs()
         {
-            string args = $"-nebula-spacetime {Config.SpacetimeUri} -nebula-database {Config.SpacetimeDatabase} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort}";
+            string args = $"-nebula-spacetime {Config.SpacetimeUri} -nebula-database {Config.SpacetimeDatabase} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";
             return args;
+        }
+
+        /// <summary>
+        /// Where launched workers post World map telemetry: <c>-nebula-telemetry</c> when given (<c>off</c> disables
+        /// it), otherwise this orchestrator's dashboard at the address it advertises, which is how worker VMs already
+        /// reach it for the build. <c>off</c> when the dashboard is disabled.
+        /// </summary>
+        private string TelemetryUrl()
+        {
+            if (Config.DashboardPort == 0) return "off";
+            string url = CommandLine.Get("nebula-telemetry", "");
+            if (!string.IsNullOrEmpty(url)) return url;
+            string host = string.IsNullOrEmpty(Config.WorkerAdvertiseAddress) ? "127.0.0.1" : Config.WorkerAdvertiseAddress;
+            return $"http://{host}:{Config.DashboardPort}/api/telemetry";
         }
 
         private void LaunchWorker(uint index)
@@ -337,6 +367,7 @@ namespace Nebula
                 _seenAlive.Remove(w.WorkerId);
                 Log("warn", $"worker {w.WorkerId} missed heartbeats for {(ControlPlane.Now - w.LastHeartbeat).TotalSeconds:F1}s; declaring dead");
                 ControlPlane.UnregisterWorker(w.WorkerId);
+                Telemetry.Forget(w.WorkerId);
                 var m = _managed.FirstOrDefault(x => x.Id == w.WorkerId);
                 if (m != null) OnManagedWorkerDead(m);
                 else _retiring.Remove(w.WorkerId);
@@ -468,6 +499,7 @@ namespace Nebula
                         : $"worker {id} drained; shutting it down");
                 ControlPlane.UnregisterWorker(id);
                 _seenAlive.Remove(id);
+                Telemetry.Forget(id);
                 var m = _managed.FirstOrDefault(x => x.Id == id);
                 if (m != null)
                 {

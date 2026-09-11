@@ -24,6 +24,16 @@ public OrchestratorHttpServer(string bind, ushort port, string page, string arti
 | `bind` | "localhost" (default), "+" / "\*" for every interface, or one address. |
 | `artifactDir` | Directory served read-only under `/build/` (the Linux server tarball worker VMs fetch); null disables. |
 
+## Fields
+
+### MaxBodyBytes [#maxbodybytes]
+
+```csharp
+public const long MaxBodyBytes = 8L * 1024 * 1024;
+```
+
+Largest request body accepted, in bytes (worker telemetry is the biggest thing posted).
+
 ## Properties
 
 ### Url [#url]
@@ -47,6 +57,22 @@ public void PublishState(string json);
 ```
 
 Replace the state document served by GET /api/state. Call from the main thread whenever something changed.
+
+### AddPage [#addpage]
+
+```csharp
+public void AddPage(string path, string html);
+```
+
+Serve `html` at `path` (`/map`). A trailing slash on the request is ignored.
+
+### MapDirect [#mapdirect]
+
+```csharp
+public void MapDirect(string method, string path, Func<Request, Response> handler);
+```
+
+Answer `method` `path` on the listener thread instead of queueing it for the main thread ([`Pump`](#pump)). For endpoints that are hit often and touch nothing Unity owns, such as worker telemetry and the World map document; `handler` must be thread-safe.
 
 ### Pump [#pump]
 

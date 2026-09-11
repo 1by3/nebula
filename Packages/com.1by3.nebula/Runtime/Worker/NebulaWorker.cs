@@ -124,6 +124,9 @@ namespace Nebula
         private float _nextHeartbeat;
         private float _nextUnownedWarning;
         private NebulaGameMode _gameMode;
+        private WorkerTelemetry _telemetry;
+        /// <summary>What this worker reports to the dashboard's World map; null when telemetry is off (see <see cref="WorkerTelemetry.Create"/>).</summary>
+        public WorkerTelemetry Telemetry => _telemetry;
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
         public IReadOnlyList<NetworkIdentity> Authoritative => _authoritative;
 
@@ -241,7 +244,9 @@ namespace Nebula
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             OnLeasesChanged();
-            NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port}");
+            var boot = NebulaBootstrap.Instance;
+            _telemetry = WorkerTelemetry.Create(boot != null && boot.Orchestrator != null ? boot.Orchestrator.Telemetry : null);
+            NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port}; telemetry {(_telemetry == null ? "off" : _telemetry.Url == "" ? "to the orchestrator in this process" : "to " + _telemetry.Url)}");
             _gameMode?.OnWorkerStarted(this);
         }
 
@@ -287,6 +292,7 @@ namespace Nebula
                 }
             }
             _transport?.Dispose();
+            _telemetry?.Dispose();
         }
 
         private void Update()
@@ -313,6 +319,7 @@ namespace Nebula
                 _nextHeartbeat = Time.unscaledTime + Config.WorkerHeartbeatSeconds;
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
+            if (_registered) _telemetry?.Update(this);
             if (_registered && Time.unscaledTime >= _nextScenePass)
             {
                 _nextScenePass = Time.unscaledTime + ScenePassSeconds;

@@ -51,6 +51,14 @@ public void EndArray();
 public void Key(string name);
 ```
 
+### Raw [#raw]
+
+```csharp
+public void Raw(string json);
+```
+
+Append an already serialised JSON value (object, array, number...) as is. The caller vouches that it is valid JSON.
+
 ### Value [#value]
 
 ```csharp

@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Boxes, Layers3, Radar, TerminalSquare, Gauge, Globe } from 'lucide-react';
 import { DynamicCodeBlock } from 'fumadocs-ui/components/dynamic-codeblock';
@@ -93,6 +94,42 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Dashboard */}
+      <section className="mx-auto w-full max-w-6xl px-6 py-12">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-2xl font-semibold">Watch the mesh while it runs</h2>
+          <p className="mt-3 text-fd-muted-foreground">
+            The orchestrator serves the Nebula Dashboard. Its World map draws your level from above: every container in the colour of the worker that owns it, the players, bots and NPCs inside, and ships moving with their crews, straight from telemetry the workers post. The overview scales workers up and down, drains or kills one, edits mesh settings and pins a ship&apos;s interior to a worker of its own.
+          </p>
+        </div>
+        <Screenshot
+          className="mt-8"
+          src="/screenshots/dashboard-world-map.png"
+          url="localhost:7080/map"
+          alt="The Nebula Dashboard World map: the Corporation level's containers coloured by the four workers that own them, NPC dots inside them, and a selected Starhopper whose inspector shows its hull on worker w3 and its pinned interior on w4."
+          caption="World map: 64 NPCs across four workers, and a Starhopper whose hull is simulated by w3 while its interior and pilot are pinned to w4."
+        />
+        <div className="mt-6 grid gap-6 md:grid-cols-2">
+          <Screenshot
+            src="/screenshots/dashboard-overview.png"
+            url="localhost:7080"
+            alt="The Nebula Dashboard overview: mesh totals, four worker cards with their leased containers, entity counts and tick times, mesh settings and the container tables."
+            caption="Overview: every worker, the containers it leases, entity counts, tick time and heartbeat; add, drain or kill workers."
+          />
+          <Screenshot
+            src="/screenshots/dashboard-world-map-container.png"
+            url="localhost:7080/map"
+            alt="The World map with the landing-tower container selected: its owner, lease, the entities it holds and the ghosts other workers keep of them."
+            caption="Inspecting a container: owner and lease, what it holds per worker, and the ghosts its neighbours keep."
+          />
+        </div>
+        <div className="mt-6 text-center">
+          <Link href="/docs/guides/orchestrator-and-dashboard#world-map" className="inline-flex items-center gap-1 text-sm font-medium text-fd-primary">
+            Orchestrator and dashboard guide <ArrowRight className="size-4" />
+          </Link>
+        </div>
+      </section>
+
       {/* Topology */}
       <section className="mx-auto w-full max-w-5xl px-6 py-12">
         <div className="grid gap-8 md:grid-cols-2 md:items-center">
@@ -165,6 +202,24 @@ function InstallBox({ label, command }: { label: string; command: string }) {
       <div className="mb-1 text-xs text-fd-muted-foreground">{label}</div>
       <code className="block overflow-x-auto whitespace-nowrap text-xs sm:text-sm">{command}</code>
     </div>
+  );
+}
+
+/** A 1920x1080 dashboard capture in a minimal browser frame. */
+function Screenshot({ src, url, alt, caption, className }: { src: string; url: string; alt: string; caption: string; className?: string }) {
+  return (
+    <figure className={`overflow-hidden rounded-xl border border-fd-border bg-fd-card shadow-lg ${className ?? ''}`}>
+      <div className="flex items-center gap-1.5 border-b border-fd-border px-3 py-2">
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="ml-2 truncate font-mono text-xs text-fd-muted-foreground">{url}</span>
+      </div>
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        <Image src={src} alt={alt} width={1920} height={1080} sizes="(min-width: 1152px) 1104px, 100vw" className="block h-auto w-full" />
+      </a>
+      <figcaption className="border-t border-fd-border px-4 py-3 text-sm text-fd-muted-foreground">{caption}</figcaption>
+    </figure>
   );
 }
 

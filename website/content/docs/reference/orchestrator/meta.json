@@ -1,4 +1,4 @@
 {
   "title": "Orchestrator",
-  "pages": ["cloud-host-settings", "hetzner-worker-host", "i-worker-handle", "i-worker-host", "json-writer", "nebula-orchestrator", "orchestrator-event", "orchestrator-http-server", "process-worker-host", "worker-handle-state", "worker-launch-spec"]
+  "pages": ["cloud-host-settings", "hetzner-worker-host", "i-worker-handle", "i-worker-host", "json-writer", "mesh-telemetry", "nebula-orchestrator", "orchestrator-event", "orchestrator-http-server", "process-worker-host", "worker-handle-state", "worker-launch-spec"]
 }

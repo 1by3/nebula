@@ -1,4 +1,4 @@
 {
   "title": "Worker",
-  "pages": ["i-worker-messaging", "nebula-worker", "worker-query"]
+  "pages": ["i-worker-messaging", "nebula-worker", "worker-query", "worker-telemetry"]
 }

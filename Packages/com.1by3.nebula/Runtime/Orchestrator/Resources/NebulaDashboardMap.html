@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula Dashboard · World map</title>
+<style>
+  :root {
+    --bg: #12141a; --panel: #1a1d26; --panel-2: #21252f; --line: #2c313d;
+    --ink: #e8eaf0; --ink-2: #a8adbb; --ink-3: #6f7585;
+    --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a; --accent: #7aa2ff;
+    --field: #0f1116;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .sub { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+  nav.tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+  nav.tabs a { color: var(--ink-2); text-decoration: none; font-size: 13px; padding: 4px 11px; border-radius: 6px; }
+  nav.tabs a.on { background: var(--bg); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  nav.tabs a:hover:not(.on) { color: var(--ink); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); white-space: nowrap; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .pill.ok .dot { background: var(--ok); } .pill.warn .dot { background: var(--warn); } .pill.bad .dot { background: var(--bad); }
+  #banner { display: none; background: #3a1f22; color: #ffb4b7; border-bottom: 1px solid #5a2a2e; padding: 8px 22px; font-size: 13px; }
+  #banner.show { display: block; }
+  #toast { position: fixed; right: 20px; bottom: 20px; background: #3a1f22; color: #ffb4b7; border: 1px solid #5a2a2e; padding: 10px 14px; border-radius: 8px; display: none; max-width: 420px; z-index: 5; }
+  #toast.show { display: block; }
+  #toast.ok { background: #1c3a2b; color: #b4f0cf; border-color: #2a5a40; }
+
+  button, select { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.small, select.small { padding: 3px 8px; font-size: 12px; border-radius: 6px; }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 312px minmax(0, 1fr); }
+  .rail { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 14px 14px 28px; display: flex; flex-direction: column; gap: 18px; }
+  .rail h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .rail h2 .count { font-family: var(--mono); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .stat { background: var(--panel-2); border-radius: 7px; padding: 7px 8px; min-width: 0; }
+  .stat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .stat .l { color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+  .note.warn { color: var(--warn); }
+  .note code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { flex: 1; border: 0; border-radius: 0; background: var(--panel-2); color: var(--ink-2); padding: 6px 4px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #0b1020; font-weight: 600; }
+  .layers { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+  .layers label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .layers input { accent-color: var(--accent); margin: 0; }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .rows { display: flex; flex-direction: column; gap: 4px; }
+  .row { display: grid; grid-template-columns: 6px 1fr auto; gap: 9px; align-items: center; padding: 6px 8px 6px 0; border-radius: 7px; border: 1px solid transparent; background: var(--panel-2); cursor: pointer; overflow: hidden; }
+  .row:hover { border-color: var(--line); }
+  .row.on { border-color: var(--accent); }
+  .row.dim { opacity: .55; }
+  .row .bar { align-self: stretch; background: var(--wc, #555); }
+  .row .name { font-family: var(--mono); font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .meta { color: var(--ink-3); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .side { display: flex; gap: 5px; align-items: center; }
+  .tag { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+  .tag.warn { color: var(--warn); border-color: #5a4a20; }
+  .tag.bad { color: var(--bad); border-color: #5a2a2e; }
+  .tag.accent { color: var(--accent); border-color: #34446a; }
+  .empty { font-size: 12px; color: var(--ink-3); padding: 8px; border: 1px dashed var(--line); border-radius: 7px; }
+
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; font-size: 12px; color: var(--ink-2); }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .legend svg { flex: 0 0 auto; }
+
+  .field { position: relative; overflow: hidden; background: var(--field); }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  .ov { position: absolute; z-index: 2; }
+  .panel { background: rgba(26, 29, 38, .94); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .7); }
+  #inspector { top: 12px; right: 12px; width: 318px; max-height: calc(100% - 24px); overflow: auto; padding: 12px 14px 14px; }
+  #hud { left: 12px; bottom: 12px; padding: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); pointer-events: none; }
+  #scale { right: 12px; bottom: 12px; padding: 6px 10px 8px; text-align: right; pointer-events: none; }
+  #scale .n { font-family: var(--mono); font-size: 12px; }
+  #scale .b { height: 5px; border: 1px solid var(--ink-2); border-top: 0; margin: 3px 0 0 auto; }
+  #overlayMsg { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 18px; max-width: 440px; text-align: center; color: var(--ink-2); font-size: 13px; display: none; }
+  #overlayMsg.show { display: block; }
+
+  .ik { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); display: flex; justify-content: space-between; gap: 8px; }
+  .it { font-family: var(--mono); font-size: 16px; font-weight: 600; margin: 4px 0 2px; word-break: break-all; }
+  .ip { font-size: 12px; color: var(--ink-3); margin: 0 0 10px; word-break: break-word; }
+  .ip a, .chip { color: var(--ink-2); }
+  .is { margin: 12px 0 7px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); }
+  dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12.5px; }
+  dl.kv dt { color: var(--ink-3); }
+  dl.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--wc, #555); margin-right: 6px; vertical-align: 0; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .metric { background: var(--panel-2); border-radius: 6px; padding: 5px 7px; }
+  .metric .v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .metric .l { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-family: var(--mono); font-size: 11.5px; padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--ink); }
+  .chip.static { cursor: default; }
+  .chip.static:hover { border-color: var(--line); color: var(--ink-2); }
+  .ihint { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+  .iactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64vh auto; }
+    .field { grid-row: 1; }
+    .rail { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
+    #inspector { width: min(300px, calc(100% - 24px)); max-height: 45%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Nebula Dashboard</h1>
+  <nav class="tabs"><a href="/">Overview</a><a href="/map" class="on">World map</a></nav>
+  <span class="sub" id="orchId">—</span>
+  <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
+  <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
+  <span class="pill" id="telPill"><span class="dot"></span><span>telemetry</span></span>
+  <span class="sub" id="updated" style="margin-left:auto"></span>
+</header>
+<div id="banner">Lost contact with the orchestrator. Retrying…</div>
+
+<div class="app">
+  <aside class="rail">
+    <section>
+      <h2>Mesh <span class="count" id="geoSummary"></span></h2>
+      <div class="stats">
+        <div class="stat"><div class="v" id="sWorkers">–</div><div class="l">workers</div></div>
+        <div class="stat"><div class="v" id="sContainers">–</div><div class="l">containers</div></div>
+        <div class="stat"><div class="v" id="sCarried">–</div><div class="l">carried</div></div>
+        <div class="stat"><div class="v" id="sGhosts">–</div><div class="l">ghosts</div></div>
+        <div class="stat"><div class="v" id="sPlayers">–</div><div class="l">players</div></div>
+        <div class="stat"><div class="v" id="sBots">–</div><div class="l">bots</div></div>
+        <div class="stat"><div class="v" id="sNpcs">–</div><div class="l">server-driven</div></div>
+        <div class="stat"><div class="v" id="sOther">–</div><div class="l">other</div></div>
+      </div>
+      <p class="note" id="telNote"></p>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <div class="seg" id="segColour">
+        <button data-colour="owner" aria-pressed="true" title="Fill every container with the colour of the worker that owns it">Owner worker</button>
+        <button data-colour="load" aria-pressed="false" title="Fill every container by how many authoritative entities it holds">Entity load</button>
+      </div>
+      <div class="layers" id="layers">
+        <label><input type="checkbox" data-layer="cells" checked> Cells</label>
+        <label><input type="checkbox" data-layer="containers" checked> Containers</label>
+        <label><input type="checkbox" data-layer="ships" checked> Carried</label>
+        <label><input type="checkbox" data-layer="entities" checked> Entities</label>
+        <label><input type="checkbox" data-layer="band"> Ghost band</label>
+        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+      </div>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="small" id="btnFit" title="Fit the containers (F)">Fit containers</button>
+        <button class="small" id="btnFitWorld" title="Fit every cell of the world">Fit world</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Workers <span class="count" id="workerCount"></span></h2>
+      <div class="rows" id="workerRows"></div>
+      <p class="note">Hover a worker to light up what it owns; click to keep it lit.</p>
+    </section>
+
+    <section>
+      <h2>Carried containers <span class="count" id="carriedCount"></span></h2>
+      <div class="rows" id="carriedRows"></div>
+    </section>
+
+    <section>
+      <h2>Legend</h2>
+      <div class="legend">
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="4.5" fill="#a8adbb" stroke="#fff" stroke-width="1.5"/></svg>Player</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.8 12.2 7 7 12.2 1.8 7Z" fill="#a8adbb"/></svg>Bot</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="3" fill="#a8adbb"/></svg>Server-driven</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="4" y="4" width="6" height="6" fill="none" stroke="#a8adbb" stroke-width="1.5"/></svg>Other entity</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="2.5" y="1.5" width="9" height="11" rx="1" fill="rgba(168,173,187,.3)" stroke="#a8adbb" stroke-width="1.5"/></svg>Carried</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" fill="none" stroke="#6f7585" stroke-dasharray="3 2"/></svg>Cell</span>
+      </div>
+      <p class="note">Entities, ships and containers take the colour of the worker simulating them. A pinned interior shows its own worker's colour inside the hull's.</p>
+    </section>
+  </aside>
+
+  <main class="field" id="field">
+    <canvas id="map" aria-label="World map"></canvas>
+    <div class="ov panel" id="inspector"></div>
+    <div class="ov panel" id="hud">—</div>
+    <div class="ov panel" id="scale"><div class="n" id="scaleN">—</div><div class="b" id="scaleB" style="width:80px"></div></div>
+    <div class="ov panel" id="overlayMsg"></div>
+  </main>
+</div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function fmt(v, d) {
+    const n = Number(v);
+    if (!isFinite(n)) return '—';
+    return n.toFixed(d === undefined ? 1 : d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+  function fmtLen(m) { return Math.abs(m) >= 1000 ? fmt(m / 1000, 2) + ' km' : fmt(m, 1) + ' m'; }
+  function fmtTime(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour12: false }); }
+
+  const STALE_SECONDS = 3;
+  const UNASSIGNED = '#596070';
+  const KIND_NAME = { p: 'Player', b: 'Bot', n: 'Server-driven', v: 'Carrier', o: 'Entity' };
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('nebula.map.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('nebula.map.' + k, JSON.stringify(v)); } catch (e) { } },
+  };
+
+  const S = {
+    geometry: null, geometryVersion: -1, statics: [], staticById: new Map(), childrenOf: new Map(), drawOrder: [],
+    state: null, map: null, mapMissing: false, lastMapAt: 0,
+    workers: new Map(), lease: new Map(), carriedLease: new Map(), counts: new Map(),
+    carried: [], carriedById: new Map(),
+    entities: new Map(), shipPose: new Map(), timing: new Map(), generation: 0,
+    view: { cx: 0, cz: 0, ppm: 2 }, fitted: false,
+    hover: null, pinned: null, follow: null, hoverWorker: null, soloWorker: null,
+    colour: store.get('colour', 'owner'),
+    layers: Object.assign({ cells: true, containers: true, ships: true, entities: true, band: false, labels: true }, store.get('layers', {})),
+    cursor: null, dirty: true, animUntil: 0, lastFrameAt: 0, online: true, busy: false,
+  };
+
+  // ------------------------------------------------------------------------------------------ geometry
+
+  function qrot(q, v) {
+    const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+    const tx = 2 * (qy * v[2] - qz * v[1]), ty = 2 * (qz * v[0] - qx * v[2]), tz = 2 * (qx * v[1] - qy * v[0]);
+    return [v[0] + qw * tx + (qy * tz - qz * ty), v[1] + qw * ty + (qz * tx - qx * tz), v[2] + qw * tz + (qx * ty - qy * tx)];
+  }
+  function hull(pts) {
+    pts = pts.slice().sort((a, b) => a.x - b.x || a.z - b.z);
+    if (pts.length < 3) return pts;
+    const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+    const lower = [], upper = [];
+    for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 1e-9) lower.pop(); lower.push(p); }
+    for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 1e-9) upper.pop(); upper.push(p); }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+  /** The top-down outline of a rotated box: its eight corners projected onto x/z. */
+  function footprint(center, size, rotation) {
+    const pts = [];
+    for (const sx of [-.5, .5]) for (const sy of [-.5, .5]) for (const sz of [-.5, .5]) {
+      const r = qrot(rotation, [sx * size[0], sy * size[1], sz * size[2]]);
+      pts.push({ x: center[0] + r[0], z: center[2] + r[2] });
+    }
+    return hull(pts);
+  }
+  function aabbOf(poly) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const p of poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z; }
+    return { x0, x1, z0, z1 };
+  }
+  function inPoly(poly, x, z) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) inside = !inside;
+    }
+    return inside;
+  }
+  function yawOf(q) {
+    const f = qrot(q, [0, 0, 1]);
+    return (Math.atan2(f[0], f[2]) * 180 / Math.PI + 360) % 360;
+  }
+
+  function buildGeometry(g) {
+    S.geometry = g;
+    const margin = g.ghostBandMargin || 0;
+    S.statics = (g.containers || []).map(c => {
+      const poly = footprint(c.center, c.size, c.rotation);
+      const inner = [Math.max(0, c.size[0] - 2 * margin), c.size[1], Math.max(0, c.size[2] - 2 * margin)];
+      return {
+        type: 'static', id: c.id, index: c.index, isCell: !!c.isCell, cell: c.cell || null, center: c.center, size: c.size,
+        rotation: c.rotation, parent: c.parent || '', neighbors: c.neighbors || [], poly, aabb: aabbOf(poly),
+        band: margin > 0 && !c.isCell && inner[0] > 0 && inner[2] > 0 ? footprint(c.center, inner, c.rotation) : null,
+        volume: c.size[0] * c.size[1] * c.size[2], depth: 0,
+      };
+    });
+    S.staticById = new Map(S.statics.map(s => [s.id, s]));
+    S.childrenOf = new Map();
+    for (const s of S.statics) {
+      let d = 0, p = S.staticById.get(s.parent);
+      while (p && d < 32) { d++; p = S.staticById.get(p.parent); }
+      s.depth = d;
+      if (s.parent) { if (!S.childrenOf.has(s.parent)) S.childrenOf.set(s.parent, []); S.childrenOf.get(s.parent).push(s.id); }
+    }
+    S.drawOrder = S.statics.slice().sort((a, b) => (b.isCell - a.isCell) || (b.volume - a.volume));
+    const cells = g.partitioned && g.world ? g.world.cells.length : 0;
+    $('geoSummary').textContent = g.partitioned ? `${g.world.name} · ${cells} cell${cells === 1 ? '' : 's'}` : 'single scene';
+    fitOnce();
+    S.dirty = true;
+  }
+
+  /** Frame the containers the first time both the geometry and a real canvas size exist (a page opened in a hidden tab has neither at first). */
+  function fitOnce() {
+    if (S.fitted || !S.geometry || W < 50 || H < 50) return;
+    S.fitted = true;
+    fit(false, true);
+  }
+
+  // ------------------------------------------------------------------------------------------ live data
+
+  function zeroCounts() { return { players: 0, bots: 0, serverDriven: 0, other: 0, ghosts: 0, auth: 0, byWorker: new Map() }; }
+  function addCounts(target, c, workerId) {
+    const auth = (c.players || 0) + (c.bots || 0) + (c.serverDriven || 0) + (c.other || 0);
+    target.players += c.players || 0; target.bots += c.bots || 0; target.serverDriven += c.serverDriven || 0;
+    target.other += c.other || 0; target.ghosts += c.ghosts || 0; target.auth += auth;
+    if (workerId !== undefined) {
+      const bw = target.byWorker.get(workerId) || { auth: 0, ghosts: 0 };
+      bw.auth += auth; bw.ghosts += c.ghosts || 0;
+      target.byWorker.set(workerId, bw);
+    }
+  }
+
+  function entityAt(v, now) {
+    const t = clamp((now - v.t0) / v.dur, 0, 1);
+    let dy = ((v.to.yaw - v.from.yaw + 540) % 360) - 180;
+    return { x: lerp(v.from.x, v.to.x, t), y: lerp(v.from.y, v.to.y, t), z: lerp(v.from.z, v.to.z, t), yaw: v.from.yaw + dy * t };
+  }
+  function shipAt(v, now) {
+    const t = clamp((now - v.t0) / v.dur, 0, 1);
+    const a = v.from.rotation, b = v.to.rotation;
+    const s = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]) < 0 ? -1 : 1;
+    let q = [lerp(a[0], s * b[0], t), lerp(a[1], s * b[1], t), lerp(a[2], s * b[2], t), lerp(a[3], s * b[3], t)];
+    const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+    q = q.map(x => x / n);
+    const c = [0, 1, 2].map(i => lerp(v.from.center[i], v.to.center[i], t));
+    return { center: c, rotation: q };
+  }
+
+  /** A new /api/map document: retarget entities and carried containers towards their newest reported poses. */
+  function ingestMap(now) {
+    const m = S.map;
+    if (!m) return;
+    const gen = ++S.generation;
+    // Oldest first, so when a handover leaves an entity in two documents the fresher one wins.
+    const reports = (m.workers || []).slice().sort((a, b) => b.ageSeconds - a.ageSeconds);
+    for (const r of reports) {
+      const d = r.doc || {};
+      let timing = S.timing.get(r.id);
+      if (!timing) { timing = { tick: -1, at: now, interval: 500 }; S.timing.set(r.id, timing); }
+      const fresh = d.tick !== timing.tick;
+      if (fresh) {
+        if (timing.tick >= 0) timing.interval = clamp(now - timing.at, 150, 1500);
+        timing.tick = d.tick; timing.at = now;
+      }
+      for (const c of d.carried || []) {
+        const target = { center: c.center, rotation: c.rotation };
+        let v = S.shipPose.get(c.id);
+        if (!v) { v = { from: target, to: target, t0: now, dur: timing.interval }; S.shipPose.set(c.id, v); }
+        else if (fresh || v.worker !== r.id) { v.from = shipAt(v, now); v.to = target; v.t0 = now; v.dur = timing.interval; }
+        v.report = c; v.worker = r.id; v.gen = gen;
+      }
+      if (!d.detail) continue;
+      const slots = d.containers || [];
+      for (const e of d.entities || []) {
+        const id = e[0], to = { x: e[2], y: e[3], z: e[4], yaw: e[5] };
+        let v = S.entities.get(id);
+        if (!v) { v = { id, from: to, to, t0: now, dur: timing.interval }; S.entities.set(id, v); }
+        else if (fresh || v.worker !== r.id) { v.from = entityAt(v, now); v.to = to; v.t0 = now; v.dur = timing.interval; }
+        // A worker that received the pawn in a handover may only have the prefab's clone name; that says nothing.
+        v.kind = e[1]; v.worker = r.id; v.name = e[7] && !/\(Clone\)$/.test(e[7]) ? e[7] : '';
+        v.container = e[6] >= 0 && slots[e[6]] ? slots[e[6]].id : '';
+        v.gen = gen;
+      }
+    }
+    for (const [id, v] of S.entities) if (v.gen !== gen) S.entities.delete(id);
+    for (const [id, v] of S.shipPose) if (v.gen !== gen) S.shipPose.delete(id);
+    S.animUntil = now + 1600;
+    S.dirty = true;
+  }
+
+  /** Join /api/state (leases, workers) with the telemetry: owners, counts and the carried container list. */
+  function recompute() {
+    const st = S.state, m = S.map;
+    const workers = new Map();
+    if (st) for (const w of st.workers) workers.set(w.id, { id: w.id, index: w.index, color: w.color, alive: w.alive, retiring: w.retiring, state: w.state, leases: w.containers || [], report: null, age: null, totals: zeroCounts() });
+    S.lease = new Map(st ? st.containers.map(c => [c.id, c]) : []);
+    S.carriedLease = new Map(st ? (st.carried || []).map(c => [c.id, c]) : []);
+    const counts = new Map();
+    const since = m ? (performance.now() - S.lastMapAt) / 1000 : 0;
+    if (m) {
+      for (const r of m.workers || []) {
+        let w = workers.get(r.id);
+        if (!w) { w = { id: r.id, index: r.doc && r.doc.index, color: UNASSIGNED, alive: false, state: 'unknown', leases: [], totals: zeroCounts() }; workers.set(r.id, w); }
+        w.report = r.doc || {};
+        w.age = r.ageSeconds + since;
+        for (const c of w.report.containers || []) {
+          if (!counts.has(c.id)) counts.set(c.id, zeroCounts());
+          addCounts(counts.get(c.id), c, r.id);
+          addCounts(w.totals, c);
+        }
+      }
+    }
+    S.workers = workers;
+    S.counts = counts;
+
+    const ids = new Set([...S.shipPose.keys(), ...S.carriedLease.keys()]);
+    S.carried = [...ids].sort().map(id => {
+      const lease = S.carriedLease.get(id) || null;
+      const pose = S.shipPose.get(id) || null;
+      const rep = pose ? pose.report : null;
+      // Unpinned, the interior is by definition wherever the hull is simulated; the telemetry knows that sooner than
+      // the lease row the carrier's worker rewrites after a handover.
+      const pinned = !!(lease && lease.pinned && lease.worker);
+      const interior = pinned ? lease.worker : (pose ? pose.worker : (lease ? lease.worker : ''));
+      return {
+        type: 'carried', id, lease, pose, report: rep, pinned: !!(lease && lease.pinned),
+        hullWorker: pose ? pose.worker : '', interiorWorker: interior,
+        carrier: rep ? rep.carrier : (lease ? String(lease.carrierNetId) : ''),
+        enclosing: rep ? rep.enclosing : '', depth: rep ? rep.depth : 0,
+        size: rep ? rep.size : null, velocity: rep ? rep.velocity : null,
+        counts: counts.get(id) || zeroCounts(),
+      };
+    });
+    S.carriedById = new Map(S.carried.map(c => [c.id, c]));
+    renderRail();
+    renderInspector();
+    S.dirty = true;
+  }
+
+  const colorOf = (workerId) => { const w = workerId && S.workers.get(workerId); return w && w.color ? w.color : UNASSIGNED; };
+  const ownerOf = (s) => { const l = S.lease.get(s.id); return l && l.worker ? l.worker : ''; };
+  const countsOf = (id) => S.counts.get(id) || zeroCounts();
+
+  // ------------------------------------------------------------------------------------------ canvas
+
+  const cv = $('map');
+  const ctx = cv.getContext('2d');
+  const field = $('field');
+  let W = 0, H = 0, DPR = 1;
+  const css = getComputedStyle(document.documentElement);
+  const C = {
+    ink: css.getPropertyValue('--ink').trim(), ink2: css.getPropertyValue('--ink-2').trim(), ink3: css.getPropertyValue('--ink-3').trim(),
+    line: css.getPropertyValue('--line').trim(), accent: css.getPropertyValue('--accent').trim(), field: css.getPropertyValue('--field').trim(),
+    warn: css.getPropertyValue('--warn').trim(), bad: css.getPropertyValue('--bad').trim(),
+  };
+
+  const sx = (x) => (x - S.view.cx) * S.view.ppm + W / 2;
+  const sy = (z) => H / 2 - (z - S.view.cz) * S.view.ppm;
+  const wx = (px) => (px - W / 2) / S.view.ppm + S.view.cx;
+  const wz = (py) => (H / 2 - py) / S.view.ppm + S.view.cz;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const r = field.getBoundingClientRect();
+    W = Math.max(1, Math.floor(r.width)); H = Math.max(1, Math.floor(r.height));
+    cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (S.geometry) fitOnce();
+    S.dirty = true;
+    updateHud();
+  }
+
+  function trace(poly) {
+    ctx.beginPath();
+    ctx.moveTo(sx(poly[0].x), sy(poly[0].z));
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(sx(poly[i].x), sy(poly[i].z));
+    ctx.closePath();
+  }
+  function onScreen(a, pad) {
+    pad = pad || 40;
+    return !(sx(a.x1) < -pad || sx(a.x0) > W + pad || sy(a.z0) < -pad || sy(a.z1) > H + pad);
+  }
+  function alpha(hex, a) {
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  function heat(t) {
+    t = clamp(t, 0, 1);
+    return `hsla(${Math.round(210 - 190 * t)}, 85%, ${Math.round(48 + 8 * t)}%, ${0.1 + 0.55 * t})`;
+  }
+  function label(text, x, y, color, font, align) {
+    ctx.font = font || '12px system-ui, sans-serif';
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(15,17,22,.85)';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+
+  function gridStep() {
+    const steps = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000];
+    for (const s of steps) if (s * S.view.ppm >= 48) return s;
+    return steps[steps.length - 1];
+  }
+  function drawGrid(step) {
+    const x0 = wx(0), x1 = wx(W), z0 = wz(H), z1 = wz(0);
+    ctx.lineWidth = 1;
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+      ctx.strokeStyle = Math.abs(x) < 1e-6 ? 'rgba(122,162,255,.18)' : (Math.round(x / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
+      const p = Math.round(sx(x)) + .5; ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, H); ctx.stroke();
+    }
+    for (let z = Math.ceil(z0 / step) * step; z <= z1; z += step) {
+      ctx.strokeStyle = Math.abs(z) < 1e-6 ? 'rgba(122,162,255,.18)' : (Math.round(z / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
+      const p = Math.round(sy(z)) + .5; ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(W, p); ctx.stroke();
+    }
+  }
+
+  function focusWorker() { return S.hoverWorker || S.soloWorker; }
+
+  function selection() {
+    const ref = S.pinned || S.hover;
+    if (!ref) return null;
+    if (ref.type === 'static') return S.staticById.get(ref.id) || null;
+    if (ref.type === 'carried') return S.carriedById.get(ref.id) || null;
+    if (ref.type === 'entity') { const e = S.entities.get(ref.id); return e ? Object.assign({ type: 'entity' }, e) : null; }
+    return null;
+  }
+
+  function carriedPoly(c, now) {
+    if (!c.pose || !c.size) return null;
+    const p = shipAt(c.pose, now);
+    const poly = footprint(p.center, c.size, p.rotation);
+    return { poly, aabb: aabbOf(poly), center: p.center, rotation: p.rotation };
+  }
+
+  function draw(now) {
+    ctx.fillStyle = C.field;
+    ctx.fillRect(0, 0, W, H);
+    const step = gridStep();
+    drawGrid(step);
+    const g = S.geometry;
+    const ppm = S.view.ppm;
+    const focus = focusWorker();
+    const sel = selection();
+    const L = S.layers;
+
+    // Cells of a partitioned world, with a chip per worker that has the cell loaded.
+    if (g && g.partitioned && g.world && L.cells) {
+      const cs = g.world.cellSize;
+      const loaders = new Map();
+      for (const w of S.workers.values()) for (const c of (w.report && w.report.loadedCells) || []) {
+        const k = c.join(','); if (!loaders.has(k)) loaders.set(k, []); loaders.get(k).push(w.id);
+      }
+      for (const cell of g.world.cells) {
+        const [cx, cy, cz] = cell.coord;
+        const a = { x0: (cx - .5) * cs[0], x1: (cx + .5) * cs[0], z0: (cz - .5) * cs[2], z1: (cz + .5) * cs[2] };
+        if (!onScreen(a)) continue;
+        const X = sx(a.x0), Y = sy(a.z1), w = (a.x1 - a.x0) * ppm, h = (a.z1 - a.z0) * ppm;
+        ctx.setLineDash([6, 5]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(168,173,187,.35)';
+        ctx.strokeRect(X + .5, Y + .5, w, h); ctx.setLineDash([]);
+        if (w > 90 && L.labels) {
+          label(`cell ${cell.coord.join(', ')}`, X + 8, Y + 12, C.ink3, '11px ui-monospace, Consolas, monospace', 'left');
+          (loaders.get(cell.coord.join(',')) || []).forEach((id, i) => { ctx.fillStyle = colorOf(id); ctx.fillRect(X + 8 + i * 14, Y + 22, 11, 4); });
+        }
+      }
+    }
+
+    // Static containers: cells first, then larger boxes under smaller ones.
+    let maxLoad = 1;
+    if (S.colour === 'load') for (const s of S.statics) if (!s.isCell) maxLoad = Math.max(maxLoad, countsOf(s.id).auth);
+    const highlight = new Set(), related = new Set();
+    if (sel && sel.type === 'static') {
+      // Seam neighbours, not the boxes it merely sits in (the cell touches everything inside it).
+      const ancestors = new Set();
+      for (let p = S.staticById.get(sel.parent), i = 0; p && i < 32; p = S.staticById.get(p.parent), i++) ancestors.add(p.id);
+      for (const n of sel.neighbors) if (!ancestors.has(n)) related.add(n);
+      const parent = S.staticById.get(sel.parent);
+      if (parent && !parent.isCell) related.add(parent.id);
+    }
+    if (sel && sel.type === 'carried' && sel.enclosing) related.add(sel.enclosing);
+    if (sel && sel.type === 'entity' && sel.container) related.add(sel.container);
+    for (const s of S.drawOrder) {
+      if (s.isCell ? !L.cells : !L.containers) continue;
+      if (!onScreen(s.aabb)) continue;
+      const owner = ownerOf(s);
+      const dim = focus && owner !== focus;
+      const col = colorOf(owner);
+      trace(s.poly);
+      if (S.colour === 'load' && !s.isCell) ctx.fillStyle = heat(countsOf(s.id).auth / maxLoad);
+      else ctx.fillStyle = alpha(col, s.isCell ? .04 : Math.min(.34, .13 + s.depth * .04));
+      if (dim) ctx.globalAlpha = .25;
+      ctx.fill();
+      ctx.lineWidth = s.isCell ? 1 : 1.25;
+      ctx.strokeStyle = alpha(col, s.isCell ? .45 : .9);
+      if (s.isCell) ctx.setLineDash([2, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (L.band && s.band && (g.ghostBandMargin || 0) * ppm >= 2) {
+        trace(s.band); ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.strokeStyle = alpha(col, .55); ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = 1;
+      if (related.has(s.id)) { trace(s.poly); ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = C.accent; ctx.stroke(); ctx.setLineDash([]); }
+    }
+    if (L.labels) {
+      for (const s of S.drawOrder) {
+        if (s.isCell || !L.containers || !onScreen(s.aabb, 0)) continue;
+        const wpx = (s.aabb.x1 - s.aabb.x0) * ppm, hpx = (s.aabb.z1 - s.aabb.z0) * ppm;
+        if (wpx < 70 || hpx < 34) continue;
+        const dim = focus && ownerOf(s) !== focus;
+        ctx.globalAlpha = dim ? .35 : 1;
+        const cxp = sx((s.aabb.x0 + s.aabb.x1) / 2), top = sy(s.aabb.z1) + 12;
+        label(s.id, cxp, top, C.ink2, '12px system-ui, sans-serif');
+        const k = countsOf(s.id);
+        if (k.auth > 0 && hpx > 64 && wpx > 96) label(`${k.auth} here${k.ghosts ? ' · ' + k.ghosts + ' ghost' + (k.ghosts === 1 ? '' : 's') : ''}`, cxp, top + 15, C.ink3, '11px system-ui, sans-serif');
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Carried containers, where their carriers are this frame.
+    const shipsDrawn = [];
+    if (L.ships) {
+      for (const c of S.carried) {
+        const p = carriedPoly(c, now);
+        if (!p) continue;
+        c.drawn = p;
+        shipsDrawn.push(c);
+        if (!onScreen(p.aabb)) continue;
+        const dim = focus && c.interiorWorker !== focus && c.hullWorker !== focus;
+        ctx.globalAlpha = dim ? .3 : 1;
+        const hull = colorOf(c.hullWorker), interior = colorOf(c.interiorWorker);
+        const wpx = (p.aabb.x1 - p.aabb.x0) * ppm;
+        if (wpx < 9) {
+          const X = sx(p.center[0]), Y = sy(p.center[2]);
+          ctx.beginPath(); ctx.moveTo(X, Y - 7); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 7); ctx.lineTo(X - 7, Y); ctx.closePath();
+          ctx.fillStyle = alpha(interior, .5); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke();
+        } else {
+          trace(p.poly);
+          ctx.fillStyle = alpha(interior, .32); ctx.fill();
+          if (c.pinned) { ctx.lineWidth = 5; ctx.strokeStyle = interior; ctx.stroke(); ctx.setLineDash([6, 4]); }
+          ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke(); ctx.setLineDash([]);
+          // Heading: a chevron at the front (+z) of the box.
+          const f = qrot(p.rotation, [0, 0, c.size[2] / 2]), rt = qrot(p.rotation, [c.size[0] * .3, 0, 0]);
+          const tip = [p.center[0] + f[0], p.center[2] + f[2]];
+          const back = qrot(p.rotation, [0, 0, -Math.min(c.size[2] * .25, 6)]);
+          ctx.beginPath();
+          ctx.moveTo(sx(tip[0] + back[0] - rt[0]), sy(tip[1] + back[2] - rt[2]));
+          ctx.lineTo(sx(tip[0]), sy(tip[1]));
+          ctx.lineTo(sx(tip[0] + back[0] + rt[0]), sy(tip[1] + back[2] + rt[2]));
+          ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke();
+        }
+        if (L.labels) {
+          const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
+          label(`${c.id}${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}${c.pinned ? ' · pinned' : ''}`, sx(p.center[0]), sy(p.aabb.z0) + 14, C.ink, '600 12px system-ui, sans-serif');
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Entities.
+    if (L.entities) {
+      const names = ppm >= 2.5 && L.labels;
+      for (const v of S.entities.values()) {
+        if (v.kind === 'v' && L.ships) continue;
+        const p = entityAt(v, now);
+        const X = sx(p.x), Y = sy(p.z);
+        v.px = undefined;
+        if (X < -10 || X > W + 10 || Y < -10 || Y > H + 10) continue;
+        v.px = X; v.py = Y;
+        const col = colorOf(v.worker);
+        ctx.globalAlpha = focus && v.worker !== focus ? .2 : 1;
+        if (v.kind === 'p' || v.kind === 'b') {
+          const a = p.yaw * Math.PI / 180;
+          ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + Math.sin(a) * 10, Y - Math.cos(a) * 10);
+          ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+          ctx.beginPath();
+          if (v.kind === 'p') ctx.arc(X, Y, 4.5, 0, Math.PI * 2);
+          else { ctx.moveTo(X, Y - 5); ctx.lineTo(X + 5, Y); ctx.lineTo(X, Y + 5); ctx.lineTo(X - 5, Y); ctx.closePath(); }
+          ctx.fillStyle = col; ctx.fill();
+          ctx.lineWidth = 1.5; ctx.strokeStyle = v.kind === 'p' ? '#fff' : 'rgba(255,255,255,.55)'; ctx.stroke();
+          if (names && v.name) label(v.name, X, Y - 13, C.ink, '11px system-ui, sans-serif');
+        } else if (v.kind === 'o' || v.kind === 'v') {
+          ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.strokeRect(X - 2.5, Y - 2.5, 5, 5);
+        } else {
+          ctx.beginPath(); ctx.arc(X, Y, 2.6, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Selection on top.
+    if (sel) {
+      ctx.lineWidth = 2.5; ctx.strokeStyle = C.accent;
+      if (sel.type === 'static') { trace(sel.poly); ctx.stroke(); }
+      else if (sel.type === 'carried' && sel.drawn) { trace(sel.drawn.poly); ctx.stroke(); }
+      else if (sel.type === 'entity') {
+        const p = entityAt(S.entities.get(sel.id), now);
+        ctx.beginPath(); ctx.arc(sx(p.x), sy(p.z), 9, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
+    const px = step * ppm;
+    $('scaleN').textContent = fmtLen(step);
+    $('scaleB').style.width = Math.round(px) + 'px';
+  }
+
+  function render(now) {
+    if (S.follow) {
+      const c = S.carriedById.get(S.follow);
+      const p = c && carriedPoly(c, now);
+      if (p) { S.view.cx = p.center[0]; S.view.cz = p.center[2]; S.dirty = true; }
+    }
+    if (!S.dirty && now > S.animUntil) return;
+    S.dirty = false;
+    draw(now);
+  }
+  function frame(now) {
+    S.lastFrameAt = performance.now();
+    requestAnimationFrame(frame);
+    render(now);
+  }
+  // Embedded browsers can stop animation frames for a pane that is out of sight while timers keep running and the
+  // page still reports itself visible: keep drawing from a timer then, at a lower rate.
+  setInterval(() => { if (performance.now() - S.lastFrameAt > 500) render(performance.now()); }, 200);
+  const nextFrame = (cb) => performance.now() - S.lastFrameAt > 500 ? setTimeout(() => cb(performance.now()), 16) : requestAnimationFrame(cb);
+
+  // ------------------------------------------------------------------------------------------ picking
+
+  function pick(px, py) {
+    const now = performance.now();
+    if (S.layers.entities) {
+      let best = null, bd = 64;
+      for (const v of S.entities.values()) {
+        if (v.px === undefined || (v.kind === 'v' && S.layers.ships)) continue;
+        const d = (v.px - px) ** 2 + (v.py - py) ** 2;
+        if (d < bd) { bd = d; best = v; }
+      }
+      if (best) return { type: 'entity', id: best.id };
+    }
+    const x = wx(px), z = wz(py);
+    if (S.layers.ships) {
+      for (const c of S.carried) {
+        const p = carriedPoly(c, now);
+        if (!p) continue;
+        if (inPoly(p.poly, x, z) || Math.hypot(sx(p.center[0]) - px, sy(p.center[2]) - py) < 9) return { type: 'carried', id: c.id };
+      }
+    }
+    let best = null;
+    for (const s of S.statics) {
+      if (s.isCell ? !S.layers.cells : !S.layers.containers) continue;
+      if (x < s.aabb.x0 || x > s.aabb.x1 || z < s.aabb.z0 || z > s.aabb.z1 || !inPoly(s.poly, x, z)) continue;
+      if (!best || (best.isCell && !s.isCell) || (best.isCell === s.isCell && s.volume < best.volume)) best = s;
+    }
+    return best ? { type: 'static', id: best.id } : null;
+  }
+  const sameRef = (a, b) => (!a && !b) || (a && b && a.type === b.type && a.id === b.id);
+
+  // ------------------------------------------------------------------------------------------ inspector
+
+  const insp = $('inspector');
+  function sw(workerId) { return `<span class="sw" style="--wc:${esc(colorOf(workerId))}"></span>`; }
+  function workerLabel(id) { return id ? `${sw(id)}${esc(id)}` : '<span style="color:var(--ink-3)">unassigned</span>'; }
+  function chip(type, id, text) { return `<span class="chip" data-type="${type}" data-id="${esc(id)}">${esc(text || id)}</span>`; }
+  function metrics(k) {
+    return `<div class="metrics">
+      <div class="metric"><div class="v">${k.players}</div><div class="l">players</div></div>
+      <div class="metric"><div class="v">${k.bots}</div><div class="l">bots</div></div>
+      <div class="metric"><div class="v">${k.serverDriven}</div><div class="l">server-driven</div></div>
+      <div class="metric"><div class="v">${k.other}</div><div class="l">other</div></div></div>`;
+  }
+  function byWorker(k) {
+    if (!k.byWorker.size) return '<div class="ihint">No worker reports anything in here.</div>';
+    return '<dl class="kv">' + [...k.byWorker.entries()].sort().map(([w, c]) => `<dt>${workerLabel(w)}</dt><dd>${c.auth} auth · ${c.ghosts} ghost${c.ghosts === 1 ? '' : 's'}</dd>`).join('') + '</dl>';
+  }
+  const vec = (v, d) => v ? v.map(n => fmt(n, d === undefined ? 1 : d)).join(', ') : '—';
+
+  function renderInspector() {
+    if (insp.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+    const sel = selection();
+    const telemetry = S.map && S.map.workers && S.map.workers.length;
+    if (!sel) {
+      const n = S.statics.length;
+      insp.innerHTML = `<div class="ik"><span>Inspector</span><span>${n} container${n === 1 ? '' : 's'}</span></div>
+        <div class="it">Nothing selected</div>
+        <p class="ihint">Hover a container, a ship or an entity to see who simulates it and what is inside; click to pin it. Drag to pan, scroll to zoom, <b>F</b> fits.</p>
+        ${telemetry ? '' : '<p class="ihint" style="color:var(--warn)">No worker telemetry yet: containers show their owners, but not what is inside them.</p>'}`;
+      return;
+    }
+    let h = '';
+    if (sel.type === 'static') {
+      const l = S.lease.get(sel.id);
+      const owner = l && l.worker ? l.worker : '';
+      const path = [];
+      for (let p = S.staticById.get(sel.parent), i = 0; p && i < 32; p = S.staticById.get(p.parent), i++) path.unshift(p.id);
+      const k = countsOf(sel.id);
+      const kids = S.childrenOf.get(sel.id) || [];
+      h += `<div class="ik"><span>${sel.isCell ? 'Cell container' : 'Container'}</span><span>#${sel.index}</span></div>`;
+      h += `<div class="it">${esc(sel.id)}</div>`;
+      h += `<p class="ip">${path.length ? path.map(id => chip('static', id)).join(' › ') : 'top level'}</p>`;
+      h += `<dl class="kv"><dt>Owner</dt><dd>${workerLabel(owner)}</dd><dt>Lease</dt><dd>${l ? esc(l.state) + ' · epoch ' + l.epoch : 'none'}</dd>`;
+      h += `<dt>Size</dt><dd>${sel.size.map(n => fmt(n, 1)).join(' × ')} m</dd><dt>Centre</dt><dd>${vec(sel.center)}</dd>`;
+      if (sel.cell) h += `<dt>Cell</dt><dd>${sel.cell.join(', ')}</dd>`;
+      h += `</dl>`;
+      h += `<div class="is">Authoritative inside · ${k.auth}</div>${metrics(k)}`;
+      h += `<div class="is">By worker</div>${byWorker(k)}`;
+      if (sel.isCell && S.geometry && S.geometry.partitioned) {
+        const loaded = [...S.workers.values()].filter(w => ((w.report && w.report.loadedCells) || []).some(c => c.join(',') === (sel.cell || []).join(',')));
+        h += `<div class="is">Loaded on</div><div class="chips">${loaded.length ? loaded.map(w => `<span class="chip static">${sw(w.id)}${esc(w.id)}</span>`).join('') : '<span class="ihint">no worker</span>'}</div>`;
+      }
+      if (kids.length) h += `<div class="is">Contains · ${kids.length}</div><div class="chips">${kids.map(id => chip('static', id)).join('')}</div>`;
+      const nb = sel.neighbors.filter(id => !path.includes(id) && !kids.includes(id));
+      if (nb.length) h += `<div class="is">Seams with · ${nb.length}</div><div class="chips">${nb.map(id => chip('static', id)).join('')}</div>`;
+      if (S.geometry && S.geometry.ghostBandMargin) h += `<p class="ihint">Entities within ${fmt(S.geometry.ghostBandMargin, 2)} m of a neighbour are ghosted to its worker; authority flips ${fmt(S.geometry.handoverHysteresis, 2)} m inside.</p>`;
+    } else if (sel.type === 'carried') {
+      const v = sel.velocity ? Math.hypot(sel.velocity[0], sel.velocity[1], sel.velocity[2]) : null;
+      const live = [...S.workers.values()].filter(w => w.alive && !w.retiring);
+      h += `<div class="ik"><span>Carried container</span><span>depth ${sel.depth}</span></div>`;
+      h += `<div class="it">${esc(sel.id)}</div>`;
+      h += `<p class="ip">${sel.enclosing ? 'in ' + (S.carriedById.has(sel.enclosing) ? chip('carried', sel.enclosing) : chip('static', sel.enclosing)) : (sel.pose ? 'outside every container' : 'no telemetry for it yet')}</p>`;
+      h += `<dl class="kv"><dt>Interior</dt><dd>${workerLabel(sel.interiorWorker)}</dd><dt>Hull simulated by</dt><dd>${workerLabel(sel.hullWorker)}</dd>`;
+      h += `<dt>Lease</dt><dd>${sel.lease ? (sel.pinned ? 'pinned' : 'follows carrier') + ' · epoch ' + sel.lease.epoch : 'none'}</dd>`;
+      h += `<dt>Carrier</dt><dd>#${esc(sel.carrier)}</dd>`;
+      const drawn = carriedPoly(sel, performance.now());
+      if (drawn) h += `<dt>Heading</dt><dd>${fmt(yawOf(drawn.rotation), 0)}°</dd><dt>Centre</dt><dd>${vec(drawn.center)}</dd>`;
+      if (v !== null) h += `<dt>Speed</dt><dd>${fmt(v, 1)} m/s</dd>`;
+      if (sel.size) h += `<dt>Size</dt><dd>${sel.size.map(n => fmt(n, 1)).join(' × ')} m</dd>`;
+      h += `</dl>`;
+      h += `<div class="is">Authoritative inside · ${sel.counts.auth}</div>${metrics(sel.counts)}`;
+      h += `<div class="is">By worker</div>${byWorker(sel.counts)}`;
+      h += `<div class="iactions">`;
+      h += `<button class="small ${S.follow === sel.id ? 'on' : ''}" data-act="follow" data-id="${esc(sel.id)}">${S.follow === sel.id ? 'Stop following' : 'Follow'}</button>`;
+      if (sel.lease) {
+        h += sel.pinned
+          ? `<button class="small" data-act="unpin" data-id="${esc(sel.id)}" ${S.busy ? 'disabled' : ''} title="Let the interior follow its carrier's worker again">Unpin</button>`
+          : `<select class="small" data-act="pin" data-id="${esc(sel.id)}" ${S.busy ? 'disabled' : ''} title="Give this interior a worker of its own"><option value="">Pin interior to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`;
+      }
+      h += `</div>`;
+      h += `<p class="ihint">${sel.pinned ? 'Pinned: its worker simulates everyone aboard against a ghost of the hull, while the hull flies on with its own worker.' : 'Follows its carrier: whoever simulates the hull simulates everyone aboard, and they cross seams together.'}</p>`;
+    } else if (sel.type === 'entity') {
+      const p = entityAt(S.entities.get(sel.id), performance.now());
+      h += `<div class="ik"><span>${KIND_NAME[sel.kind] || 'Entity'}</span><span>#${esc(sel.id)}</span></div>`;
+      h += `<div class="it">${esc(sel.name || '#' + sel.id)}</div>`;
+      h += `<p class="ip">${sel.container ? 'in ' + (S.carriedById.has(sel.container) ? chip('carried', sel.container) : chip('static', sel.container)) : 'outside every container'}</p>`;
+      h += `<dl class="kv"><dt>Authority</dt><dd>${workerLabel(sel.worker)}</dd><dt>Position</dt><dd>${fmt(p.x, 1)}, ${fmt(p.y, 1)}, ${fmt(p.z, 1)}</dd><dt>Heading</dt><dd>${fmt((p.yaw + 360) % 360, 0)}°</dd></dl>`;
+    }
+    if (S.pinned) h += `<p class="ihint">Pinned. Click empty ground or press Esc to release.</p>`;
+    insp.innerHTML = h;
+  }
+
+  // pointerdown rather than click: the panels re-render with every poll, and a click whose press and release land
+  // on two generations of the same button never fires.
+  insp.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const c = ev.target.closest('.chip[data-type]');
+    if (c) { S.pinned = { type: c.dataset.type, id: c.dataset.id }; goTo(S.pinned); renderInspector(); S.dirty = true; return; }
+    const b = ev.target.closest('button[data-act]');
+    if (!b || b.disabled) return;
+    if (b.dataset.act === 'follow') { S.follow = S.follow === b.dataset.id ? null : b.dataset.id; renderInspector(); renderRail(); S.dirty = true; }
+    else if (b.dataset.act === 'unpin') post('/api/containers/unpin', { containerId: b.dataset.id });
+  });
+  insp.addEventListener('change', (ev) => {
+    const s = ev.target.closest('select[data-act="pin"]');
+    if (s && s.value) post('/api/containers/pin', { containerId: s.dataset.id, workerId: s.value });
+  });
+
+  // ------------------------------------------------------------------------------------------ rail
+
+  function renderRail() {
+    const st = S.state;
+    const reporting = [...S.workers.values()].filter(w => w.report);
+    const total = zeroCounts();
+    for (const w of reporting) addCounts(total, w.totals);
+    const alive = st ? st.workers.filter(w => w.alive).length : 0;
+    $('sWorkers').textContent = st ? alive : '–';
+    $('sContainers').textContent = S.statics.length;
+    $('sCarried').textContent = S.carried.length;
+    $('sPlayers').textContent = reporting.length ? total.players : '–';
+    $('sBots').textContent = reporting.length ? total.bots : '–';
+    $('sNpcs').textContent = reporting.length ? total.serverDriven : '–';
+    $('sOther').textContent = reporting.length ? total.other : '–';
+    $('sGhosts').textContent = reporting.length ? total.ghosts : '–';
+
+    const stale = reporting.filter(w => w.age > STALE_SECONDS);
+    const silent = st ? st.workers.filter(w => w.alive && !(S.workers.get(w.id) || {}).report) : [];
+    const tp = $('telPill');
+    const note = $('telNote');
+    if (S.mapMissing) {
+      tp.className = 'pill bad'; tp.lastElementChild.textContent = 'no telemetry endpoint';
+      note.className = 'note warn'; note.textContent = 'This orchestrator does not serve /api/map. Rebuild the server with a Nebula version that has the World map.';
+    } else if (!reporting.length) {
+      tp.className = 'pill ' + (alive ? 'bad' : 'warn'); tp.lastElementChild.textContent = 'no telemetry';
+      note.className = 'note warn';
+      note.innerHTML = alive ? 'Workers are not posting telemetry. The orchestrator hands <code>-nebula-telemetry</code> to the workers it launches; a worker started by hand needs <code>-nebula-telemetry http://&lt;orchestrator&gt;:&lt;port&gt;/api/telemetry</code>.' : 'No live workers.';
+    } else {
+      const detail = reporting.some(w => w.report.detail);
+      tp.className = 'pill ' + (stale.length || silent.length ? 'warn' : 'ok');
+      tp.lastElementChild.textContent = `telemetry ${reporting.length - stale.length}/${Math.max(alive, reporting.length)}`;
+      note.className = 'note' + (stale.length || silent.length ? ' warn' : '');
+      note.textContent = stale.length || silent.length
+        ? `${[...stale.map(w => w.id + ' stale'), ...silent.map(w => w.id + ' silent')].join(', ')}.`
+        : (detail ? `Every live worker reporting; ${S.entities.size} entit${S.entities.size === 1 ? 'y' : 'ies'} drawn.` : 'Every live worker reporting; entity positions arrive within a second of opening the map.');
+    }
+
+    const ws = [...S.workers.values()].sort((a, b) => (a.index || 0) - (b.index || 0));
+    $('workerCount').textContent = ws.length ? `${alive} live` : '';
+    setHtml($('workerRows'), ws.length ? ws.map(w => {
+      const staleTag = w.report ? (w.age > STALE_SECONDS ? `<span class="tag warn">${fmt(w.age, 0)}s old</span>` : '') : (w.alive ? '<span class="tag bad">silent</span>' : '');
+      const stateTag = w.state && w.state !== 'ready' ? `<span class="tag ${w.state === 'dead' ? 'bad' : 'warn'}">${esc(w.state)}</span>` : '';
+      const t = w.totals;
+      return `<div class="row ${S.soloWorker === w.id ? 'on' : ''} ${w.alive ? '' : 'dim'}" data-worker="${esc(w.id)}" style="--wc:${esc(w.color || UNASSIGNED)}">
+        <span class="bar"></span>
+        <div style="min-width:0"><div class="name">${esc(w.id)}</div>
+          <div class="meta">${w.leases.length} lease${w.leases.length === 1 ? '' : 's'}${w.report ? ` · ${t.auth} auth · ${t.ghosts} ghosts` : ''}</div></div>
+        <div class="side">${stateTag}${staleTag}</div></div>`;
+    }).join('') : '<div class="empty">No workers.</div>');
+
+    $('carriedCount').textContent = S.carried.length ? S.carried.length : '';
+    setHtml($('carriedRows'), S.carried.length ? S.carried.map(c => {
+      const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
+      return `<div class="row ${S.follow === c.id ? 'on' : ''}" data-carried="${esc(c.id)}" style="--wc:${esc(colorOf(c.interiorWorker))}">
+        <span class="bar"></span>
+        <div style="min-width:0"><div class="name">${esc(c.id)}</div>
+          <div class="meta">${c.interiorWorker ? esc(c.interiorWorker) : 'unowned'}${c.pinned && c.hullWorker && c.hullWorker !== c.interiorWorker ? ' · hull ' + esc(c.hullWorker) : ''} · ${c.counts.auth} aboard${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}</div></div>
+        <div class="side">${c.pinned ? '<span class="tag accent">pinned</span>' : ''}${c.pose ? '' : '<span class="tag warn">no pose</span>'}
+          <button class="small ${S.follow === c.id ? 'on' : ''}" data-follow="${esc(c.id)}" ${c.pose ? '' : 'disabled'}>${S.follow === c.id ? 'Following' : 'Follow'}</button></div></div>`;
+    }).join('') : '<div class="empty">No carried containers. Spawn a vehicle (ShooterGame: the <code>ship</code> console command) and it appears here.</div>');
+  }
+
+  function setHtml(el, html) {
+    if (el._html === html) return;
+    el._html = html;
+    el.innerHTML = html;
+  }
+
+  $('workerRows').addEventListener('mouseover', (ev) => {
+    const r = ev.target.closest('.row[data-worker]');
+    const id = r ? r.dataset.worker : null;
+    if (id !== S.hoverWorker) { S.hoverWorker = id; S.dirty = true; }
+  });
+  $('workerRows').addEventListener('mouseleave', () => { S.hoverWorker = null; S.dirty = true; });
+  $('workerRows').addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const r = ev.target.closest('.row[data-worker]');
+    if (!r) return;
+    S.soloWorker = S.soloWorker === r.dataset.worker ? null : r.dataset.worker;
+    renderRail(); S.dirty = true;
+  });
+  $('carriedRows').addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const b = ev.target.closest('button[data-follow]');
+    if (b) { S.follow = S.follow === b.dataset.follow ? null : b.dataset.follow; if (S.follow) S.pinned = { type: 'carried', id: S.follow }; renderRail(); renderInspector(); S.dirty = true; return; }
+    const r = ev.target.closest('.row[data-carried]');
+    if (r) { S.pinned = { type: 'carried', id: r.dataset.carried }; goTo(S.pinned); renderInspector(); S.dirty = true; }
+  });
+
+  // ------------------------------------------------------------------------------------------ view
+
+  function flyTo(cx, cz, ppm) {
+    S.follow = null;
+    const from = Object.assign({}, S.view), t0 = performance.now(), dur = 450;
+    const tick = (t) => {
+      const u = Math.min(1, (t - t0) / dur), e = u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      S.view.cx = lerp(from.cx, cx, e); S.view.cz = lerp(from.cz, cz, e);
+      S.view.ppm = Math.exp(lerp(Math.log(from.ppm), Math.log(ppm), e));
+      S.dirty = true;
+      if (u < 1) nextFrame(tick);
+    };
+    nextFrame(tick);
+  }
+  function fitBounds(a, pad, instant) {
+    if (!a || !isFinite(a.x0)) return;
+    const w = Math.max(10, a.x1 - a.x0), h = Math.max(10, a.z1 - a.z0);
+    const ppm = clamp(Math.min(W / (w * pad), H / (h * pad)), 0.0005, 400);
+    if (instant) { S.view = { cx: (a.x0 + a.x1) / 2, cz: (a.z0 + a.z1) / 2, ppm }; S.dirty = true; }
+    else flyTo((a.x0 + a.x1) / 2, (a.z0 + a.z1) / 2, ppm);
+  }
+  function union(list) {
+    const a = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
+    for (const b of list) { a.x0 = Math.min(a.x0, b.x0); a.x1 = Math.max(a.x1, b.x1); a.z0 = Math.min(a.z0, b.z0); a.z1 = Math.max(a.z1, b.z1); }
+    return a;
+  }
+  function fit(world, instant) {
+    const g = S.geometry;
+    let boxes = [];
+    if (world && g && g.partitioned && g.world) {
+      const cs = g.world.cellSize;
+      boxes = g.world.cells.map(c => ({ x0: (c.coord[0] - .5) * cs[0], x1: (c.coord[0] + .5) * cs[0], z0: (c.coord[2] - .5) * cs[2], z1: (c.coord[2] + .5) * cs[2] }));
+    }
+    if (!boxes.length) boxes = S.statics.filter(s => !s.isCell).map(s => s.aabb);
+    if (!boxes.length) boxes = S.statics.map(s => s.aabb);
+    if (!boxes.length) boxes = [{ x0: -100, x1: 100, z0: -100, z1: 100 }];
+    fitBounds(union(boxes), 1.12, instant);
+  }
+  function goTo(ref) {
+    if (ref.type === 'static') { const s = S.staticById.get(ref.id); if (s) fitBounds(s.aabb, s.isCell ? 1.1 : 2.2); }
+    else if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); const p = c && carriedPoly(c, performance.now()); if (p) fitBounds(p.aabb, 5); }
+  }
+
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  cv.addEventListener('pointerdown', (e) => { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', (e) => {
+    const r = cv.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    S.cursor = { x: wx(px), z: wz(py) };
+    updateHud();
+    if (dragging) {
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) { moved = true; cv.classList.add('dragging'); S.follow = null; renderRail(); }
+      if (moved) { S.view.cx -= dx / S.view.ppm; S.view.cz += dy / S.view.ppm; S.dirty = true; }
+      lastX = e.clientX; lastY = e.clientY;
+      return;
+    }
+    const hit = pick(px, py);
+    if (!sameRef(hit, S.hover)) { S.hover = hit; if (!S.pinned) renderInspector(); S.dirty = true; }
+  });
+  cv.addEventListener('pointerup', (e) => {
+    dragging = false; cv.classList.remove('dragging');
+    if (moved) return;
+    const r = cv.getBoundingClientRect();
+    const hit = pick(e.clientX - r.left, e.clientY - r.top);
+    S.pinned = hit && !sameRef(hit, S.pinned) ? hit : null;
+    renderInspector(); S.dirty = true;
+  });
+  cv.addEventListener('pointerleave', () => {
+    dragging = false; cv.classList.remove('dragging');
+    S.cursor = null; updateHud();
+    if (S.hover) { S.hover = null; if (!S.pinned) renderInspector(); S.dirty = true; }
+  });
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const bx = wx(px), bz = wz(py);
+    S.view.ppm = clamp(S.view.ppm * Math.exp(-e.deltaY * 0.0015), 0.0005, 400);
+    if (!S.follow) { S.view.cx = bx - (px - W / 2) / S.view.ppm; S.view.cz = bz + (py - H / 2) / S.view.ppm; }
+    S.dirty = true;
+    updateHud();
+  }, { passive: false });
+  window.addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('input, select, textarea')) return;
+    if (e.key === 'Escape') { S.pinned = null; S.follow = null; renderInspector(); renderRail(); S.dirty = true; }
+    else if (e.key === 'f' || e.key === 'F') fit(false);
+  });
+
+  function updateHud() {
+    const c = S.cursor;
+    const g = S.geometry;
+    if (!c) { $('hud').textContent = `zoom ${fmt(S.view.ppm, S.view.ppm < 1 ? 3 : 1)} px/m`; return; }
+    let cell = '';
+    if (g && g.partitioned && g.world) {
+      const cs = g.world.cellSize;
+      cell = ` · cell x ${Math.floor(c.x / cs[0] + .5)} z ${Math.floor(c.z / cs[2] + .5)}`;
+    }
+    $('hud').textContent = `x ${fmt(c.x, 1)} · z ${fmt(c.z, 1)}${cell}`;
+  }
+
+  $('btnFit').onclick = () => fit(false);
+  $('btnFitWorld').onclick = () => fit(true);
+  $('segColour').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-colour]');
+    if (!b) return;
+    S.colour = b.dataset.colour; store.set('colour', S.colour);
+    for (const x of $('segColour').children) x.setAttribute('aria-pressed', String(x === b));
+    S.dirty = true;
+  });
+  for (const x of $('segColour').children) x.setAttribute('aria-pressed', String(x.dataset.colour === S.colour));
+  for (const input of $('layers').querySelectorAll('input[data-layer]')) {
+    input.checked = !!S.layers[input.dataset.layer];
+    input.addEventListener('change', () => { S.layers[input.dataset.layer] = input.checked; store.set('layers', S.layers); S.dirty = true; });
+  }
+
+  // ------------------------------------------------------------------------------------------ network
+
+  function setOnline(ok) {
+    S.online = ok;
+    $('banner').classList.toggle('show', !ok);
+    const p = $('netPill'); p.className = 'pill ' + (ok ? 'ok' : 'bad');
+    p.lastElementChild.textContent = ok ? 'dashboard live' : 'dashboard offline';
+  }
+  let toastTimer = 0;
+  function toast(msg, ok) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show'); t.classList.toggle('ok', !!ok);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+  }
+  async function post(path, body) {
+    if (S.busy) return;
+    S.busy = true; renderInspector();
+    try {
+      const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) toast(j.error || ('request failed: ' + r.status));
+      else toast(path.endsWith('unpin') ? `${body.containerId} follows its carrier again` : `${body.containerId} pinned to ${body.workerId}`, true);
+    } catch (e) {
+      toast('request failed: ' + e.message);
+    } finally {
+      S.busy = false;
+      await pollState();
+    }
+  }
+
+  async function loadGeometry(version) {
+    const r = await fetch('/api/map/geometry', { cache: 'no-store' });
+    if (!r.ok) throw new Error(String(r.status));
+    buildGeometry(await r.json());
+    S.geometryVersion = version;
+  }
+
+  async function pollState() {
+    try {
+      const r = await fetch('/api/state', { cache: 'no-store' });
+      if (!r.ok) throw new Error(String(r.status));
+      const s = await r.json();
+      if (!s || !s.totals) return;
+      S.state = s;
+      setOnline(true);
+      $('orchId').textContent = s.orchestratorId + ' · host ' + (s.host || 'process');
+      const cp = $('cpPill'); cp.className = 'pill ' + (s.controlPlaneConnected ? 'ok' : 'bad');
+      cp.lastElementChild.textContent = s.controlPlaneConnected ? 'control plane connected' : 'control plane disconnected';
+      $('updated').textContent = 'updated ' + fmtTime(s.serverTimeUtc);
+      recompute();
+    } catch (e) {
+      setOnline(false);
+    }
+  }
+
+  async function pollMap() {
+    try {
+      const r = await fetch('/api/map', { cache: 'no-store' });
+      if (r.status === 404) { S.mapMissing = true; renderRail(); return; }
+      if (!r.ok) throw new Error(String(r.status));
+      const m = await r.json();
+      S.mapMissing = false;
+      if (m.geometryVersion !== S.geometryVersion) await loadGeometry(m.geometryVersion);
+      S.map = m;
+      S.lastMapAt = performance.now();
+      ingestMap(S.lastMapAt);
+      recompute();
+    } catch (e) {
+      // /api/state reports the outage.
+    }
+    const msg = $('overlayMsg');
+    const empty = S.geometry && !S.statics.length && !S.carried.length;
+    msg.classList.toggle('show', !!empty);
+    if (empty) msg.textContent = 'The loaded level has no containers, and no carried container has reported in yet.';
+  }
+
+  const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+  async function loop(fn, ms) { for (;;) { await fn(); await sleep(ms); } }
+
+  new ResizeObserver(resize).observe(field);
+  resize();
+  renderRail();
+  renderInspector();
+  requestAnimationFrame(frame);
+  loop(pollState, 1000);
+  loop(pollMap, 500);
+})();
+</script>
+</body>
+</html>
