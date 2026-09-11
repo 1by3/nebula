@@ -40,4 +40,5 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `ForwardInput` | `45` |  |
 | `AuthorityRpc` | `46` |  |
 | `GhostSyncState` | `47` |  |
+| `WorkerMessage` | `48` | Game-defined message between two workers: `[kind:ushort][payload]`. Registered per kind with [`NebulaWorker.RegisterMessageHandler`](/docs/reference/worker/nebula-worker#registermessagehandler); sent with [`NebulaWorker.SendToWorker`](/docs/reference/worker/nebula-worker#sendtoworker). |
 

@@ -182,8 +182,12 @@ namespace Nebula
             _serverTickEstimate = _serverTickAnchor + elapsedTicks;
             NetworkTime.LatestServerTick = _latestServerTick;
 
-            // Remote entities render a few ticks behind the newest snapshot; the local player is predicted.
-            double targetRender = _serverTickEstimate - Config.InterpolationDelayTicks;
+            // Remote entities render a few ticks behind the newest snapshot; the local player is predicted. The
+            // delay counts from the tick the newest snapshot carried, not from the estimated server clock (which
+            // is half an RTT ahead of it): on a 40 ms link the old way left under two ticks of buffer, so every
+            // bit of jitter tipped the interpolator into extrapolating and pawns skipped.
+            double halfRttTicks = RttMs > 0 ? RttMs * 0.5 / 1000.0 * NetworkTime.TickRate : 0.5;
+            double targetRender = _serverTickEstimate - halfRttTicks - Config.InterpolationDelayTicks;
             if (Math.Abs(targetRender - _renderTick) > 10) _renderTick = targetRender;
             else _renderTick += (targetRender - _renderTick) * 0.1;
             NetworkTime.RenderTick = _renderTick;

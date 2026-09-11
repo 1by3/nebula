@@ -159,6 +159,14 @@ public IEnumerable<NetworkIdentity> Entities { get; }
 public IReadOnlyList<NetworkIdentity> Authoritative { get; }
 ```
 
+### ConnectedWorkerIds [#connectedworkerids]
+
+```csharp
+public IEnumerable<string> ConnectedWorkerIds { get; }
+```
+
+Ids of every worker this one currently has a lateral link to.
+
 ### MeshReady [#meshready]
 
 ```csharp
@@ -202,6 +210,37 @@ public event Action<NetworkIdentity, string> AuthorityReceived;
 ```
 
 ## Methods
+
+### RegisterMessageHandler [#registermessagehandler]
+
+```csharp
+public void RegisterMessageHandler(ushort kind, WorkerMessageHandler handler);
+```
+
+Receive worker messages of `kind`. One handler per kind; registering again replaces it.
+
+### UnregisterMessageHandler [#unregistermessagehandler]
+
+```csharp
+public void UnregisterMessageHandler(ushort kind);
+```
+
+### IsWorkerConnected [#isworkerconnected]
+
+```csharp
+public bool IsWorkerConnected(string workerId);
+```
+
+Whether the lateral link to `workerId` is up (both sides have said hello).
+
+### SendToWorker [#sendtoworker]
+
+```csharp
+public bool SendToWorker(string workerId, ushort kind, Action<NetworkWriter> write, Delivery delivery = Delivery.ReliableOrdered);
+public bool SendToWorker(ushort workerIndex, ushort kind, Action<NetworkWriter> write, Delivery delivery = Delivery.ReliableOrdered);
+```
+
+Send a game-defined message to `workerId`. `write` serialises the payload; the handler registered for `kind` on the other side reads it back. False (and nothing sent) when that worker is not connected. Sending to this worker's own id invokes the handler directly.
 
 ### Initialize [#initialize]
 
@@ -248,4 +287,14 @@ public NetworkIdentity Find(ulong netId);
 ```csharp
 public NetworkIdentity FindPlayer(uint clientId);
 ```
+
+## Nested types
+
+### WorkerMessageHandler [#workermessagehandler]
+
+```csharp
+public delegate void WorkerMessageHandler(string fromWorkerId, ushort fromWorkerIndex, NetworkReader reader);
+```
+
+Handler for a game-defined worker message. `reader` is positioned at the payload.
 

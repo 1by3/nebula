@@ -50,6 +50,11 @@ namespace Nebula
         ForwardInput = 45,
         AuthorityRpc = 46,
         GhostSyncState = 47,
+        /// <summary>
+        /// Game-defined message between two workers: <c>[kind:ushort][payload]</c>. Registered per kind with
+        /// <see cref="NebulaWorker.RegisterMessageHandler"/>; sent with <see cref="NebulaWorker.SendToWorker"/>.
+        /// </summary>
+        WorkerMessage = 48,
     }
 
     public enum PeerRole : byte
@@ -81,7 +86,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 5;
+        public const ushort ProtocolVersion = 6;
         public PeerRole Role;
         public string Id;
         public uint Index;

@@ -271,32 +271,49 @@ public const float MaxRewindSeconds = 0.5f;
 
 private void ServerFire(uint tick, uint aimTick)
 {
-    var origin = EyePosition;
-    var dir = AimDirection;
-    float range = DistanceToLevel(origin, dir);   // present-day walls
-
     uint maxRewind = (uint)(MaxRewindSeconds * NetworkTime.TickRate);
     uint rewindTick = aimTick == 0 || aimTick > tick ? tick : aimTick;
     if (tick - rewindTick > maxRewind) rewindTick = tick - maxRewind;
-
-    PlayerController victim = null;
-    float bestT = range;
-    foreach (var e in NebulaBootstrap.Instance.Worker.Entities)
-    {
-        if (e == Identity) continue;
-        var pc = e.GetComponent<PlayerController>();
-        if (pc == null || pc.IsDead.Value) continue;
-        e.TryGetPoseAt(rewindTick, out var pos, out _);   // falls back to the current pose
-        var a = pos + Vector3.up * pc.Radius;
-        var b = pos + Vector3.up * (CapsuleHeight - pc.Radius);
-        if (RayHitsCapsule(origin, dir, a, b, pc.Radius, bestT, out float t)) { bestT = t; victim = pc; }
-    }
-    if (victim != null) victim.AuthorityRpc(victim.TakeDamage, Damage, NetId, PlayerName.Value);
-    ClientRpc(RpcShotFired, MuzzlePosition, origin + dir * bestT, victim != null);
+    ShotRelay.Instance.Fire(this, tick, rewindTick, EyePosition, AimDirection, Range, Damage);
 }
 ```
 
-The capsule test is pure geometry against the historical pose, so it never touches PhysX. The 0.5 s cap on the rewind is the sample's policy, not Nebula's: it bounds how far into the past a laggy or malicious client can claim to have seen. The victim's worker applies the resulting `AuthorityRpc` as-is; there is no second validation on the receiving side.
+```csharp title="Hitscan.cs"
+public static float LevelDistance(Vector3 origin, Vector3 dir, float range)
+{
+    return Physics.Raycast(origin, dir, out var hit, range, PlayerController.LevelMask, QueryTriggerInteraction.Ignore) ? hit.distance : range;
+}
+
+public static PlayerController NearestPawn(List<PlayerController> pawns, Vector3 origin, Vector3 dir, ref float maxT, PlayerController exclude, uint rewindTick, bool authoritativeOnly)
+{
+    PlayerController victim = null;
+    foreach (var pc in pawns)
+    {
+        if (pc == exclude || !pc.IsSpawned || pc.IsDead.Value) continue;
+        if (authoritativeOnly && !pc.HasAuthority) continue;
+        Vector3 pos;
+        if (rewindTick != 0) pc.Identity.TryGetPoseAt(rewindTick, out pos, out _);   // falls back to the current pose
+        else pos = pc.transform.position;
+        var a = pos + Vector3.up * pc.Radius;
+        var b = pos + Vector3.up * (PlayerController.CapsuleHeight - pc.Radius);
+        if (RayHitsCapsule(origin, dir, a, b, pc.Radius, maxT, out float t)) { maxT = t; victim = pc; }
+    }
+    return victim;
+}
+```
+
+The capsule test is pure geometry against the historical pose, so it never touches PhysX. The same two functions run on the owning client for the predicted bolt, with `rewindTick` 0 (the pawns as drawn), so the bolt stops where the worker will say it stopped. The 0.5 s cap on the rewind is the sample's policy, not Nebula's: it bounds how far into the past a laggy or malicious client can claim to have seen.
+
+### Shots that cross workers
+
+A worker only holds ghosts of its neighbours' entities within the ghost band, so a shooter outdoors could never hit someone ten metres inside a building another worker owns: on the shooter's worker that pawn does not exist. The sample's `ShotRelay` carries the shot instead of the entities:
+
+1. The shooter's worker tests the level and its own authoritative pawns (never ghosts: their owner has better history).
+2. `ContainerRegistry.Along(origin, end, margin, result)` lists the containers the ray crosses up to the nearest thing found; every other worker owning one of them gets a `ShotQuery` [worker message](/docs/guides/rpcs#worker-messages) with the ray, the aim tick and the distance to beat.
+3. Each of them tests its own authoritative pawns rewound to the aim tick, applies the damage if it finds one nearer, and replies with a `ShotResult`.
+4. When every reply is in (or 300 ms have passed), the shooter's worker hurts its own candidate unless a neighbour's pawn was nearer, draws the bolt for the clients, and credits the shooter with `CreditShot`, an `AuthorityRpc` that follows the shooter through a handover.
+
+The victim's worker applies damage as-is; there is no second validation on the receiving side. The trigger pull itself is made robust separately: `ShooterInput.FireSeq` counts pulls, so a pull whose tick arrived late (see [when input is missing](#when-input-is-missing-on-the-worker)) still fires on the first input the worker does consume rather than being dropped with the tick.
 
 ## Diagnostics
 

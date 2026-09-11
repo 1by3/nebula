@@ -124,6 +124,42 @@ namespace Nebula
             return a.Contains(b.min) && a.Contains(b.max) && Volume > other.Volume;
         }
 
+        /// <summary>
+        /// Whether the segment from <paramref name="a"/> to <paramref name="b"/> passes through the box grown by
+        /// <paramref name="margin"/> on every side, and where along it (<paramref name="tEnter"/> and
+        /// <paramref name="tExit"/> are fractions of the segment, clamped to [0, 1]). A segment starting inside the
+        /// box enters at 0. Slab test in the container's local space, so rotated boxes are exact. The margin absorbs
+        /// handover hysteresis and an entity's own radius when the caller asks "whose entities could this ray touch".
+        /// </summary>
+        public bool IntersectsSegment(Vector3 a, Vector3 b, float margin, out float tEnter, out float tExit)
+        {
+            EnsureCached();
+            var la = _worldToLocal.MultiplyPoint3x4(a) - Center;
+            var lb = _worldToLocal.MultiplyPoint3x4(b) - Center;
+            var d = lb - la;
+            var h = Size * 0.5f + Vector3.one * margin;
+            float t0 = 0f, t1 = 1f;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                float o = la[axis], dir = d[axis], e = h[axis];
+                if (Mathf.Abs(dir) < 1e-7f)
+                {
+                    if (o < -e || o > e) { tEnter = tExit = 0f; return false; }
+                    continue;
+                }
+                float inv = 1f / dir;
+                float ta = (-e - o) * inv;
+                float tb = (e - o) * inv;
+                if (ta > tb) { float tmp = ta; ta = tb; tb = tmp; }
+                if (ta > t0) t0 = ta;
+                if (tb < t1) t1 = tb;
+                if (t0 > t1) { tEnter = tExit = 0f; return false; }
+            }
+            tEnter = t0;
+            tExit = t1;
+            return true;
+        }
+
         public Vector3 ToLocal(Vector3 world) { EnsureCached(); return _worldToLocal.MultiplyPoint3x4(world); }
         public Vector3 ToWorld(Vector3 local) { EnsureCached(); return _localToWorld.MultiplyPoint3x4(local); }
 

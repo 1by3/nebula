@@ -123,6 +123,83 @@ namespace Nebula
         public event Action<NetworkIdentity, string> AuthorityHandedOff;
         public event Action<NetworkIdentity, string> AuthorityReceived;
 
+        // ---------------------------------------------------------------------------------------- worker messages
+        //
+        // Entities are the unit of authority, and AuthorityRpc reaches whichever worker owns one. Some things a game
+        // wants to say to a neighbour are not about an entity this worker holds: "does this ray hit anything you
+        // own", "is anyone standing in that room". Worker messages are the raw lateral channel for those: a game
+        // picks a kind, registers a handler, and sends a payload it writes itself to a worker by id or index.
+
+        /// <summary>Handler for a game-defined worker message. <paramref name="reader"/> is positioned at the payload.</summary>
+        public delegate void WorkerMessageHandler(string fromWorkerId, ushort fromWorkerIndex, NetworkReader reader);
+
+        private readonly Dictionary<ushort, WorkerMessageHandler> _messageHandlers = new Dictionary<ushort, WorkerMessageHandler>();
+        private readonly NetworkWriter _messageWriter = new NetworkWriter(1024);
+
+        /// <summary>Receive worker messages of <paramref name="kind"/>. One handler per kind; registering again replaces it.</summary>
+        public void RegisterMessageHandler(ushort kind, WorkerMessageHandler handler)
+        {
+            if (handler == null) _messageHandlers.Remove(kind);
+            else _messageHandlers[kind] = handler;
+        }
+
+        public void UnregisterMessageHandler(ushort kind) => _messageHandlers.Remove(kind);
+
+        /// <summary>Whether the lateral link to <paramref name="workerId"/> is up (both sides have said hello).</summary>
+        public bool IsWorkerConnected(string workerId) => !string.IsNullOrEmpty(workerId) && _workerPeersById.TryGetValue(workerId, out var p) && p.HelloReceived;
+
+        /// <summary>Ids of every worker this one currently has a lateral link to.</summary>
+        public IEnumerable<string> ConnectedWorkerIds
+        {
+            get { foreach (var p in _workerPeersById.Values) if (p.HelloReceived) yield return p.Id; }
+        }
+
+        /// <summary>
+        /// Send a game-defined message to <paramref name="workerId"/>. <paramref name="write"/> serialises the payload;
+        /// the handler registered for <paramref name="kind"/> on the other side reads it back. False (and nothing
+        /// sent) when that worker is not connected. Sending to this worker's own id invokes the handler directly.
+        /// </summary>
+        public bool SendToWorker(string workerId, ushort kind, Action<NetworkWriter> write, Delivery delivery = Delivery.ReliableOrdered)
+        {
+            if (write == null) throw new ArgumentNullException(nameof(write));
+            if (workerId == WorkerId)
+            {
+                if (!_messageHandlers.TryGetValue(kind, out var local)) return false;
+                _messageWriter.Reset();
+                write(_messageWriter);
+                _reader.Set(_messageWriter.ToSegment());
+                try { local(WorkerId, WorkerIndex, _reader); }
+                catch (Exception ex) { NebulaLog.Error($"worker message {kind} handler threw: {ex}"); }
+                return true;
+            }
+            if (!_workerPeersById.TryGetValue(workerId, out var peer) || !peer.HelloReceived) return false;
+            _messageWriter.Reset();
+            _messageWriter.WriteByte((byte)MsgId.WorkerMessage);
+            _messageWriter.WriteUShort(kind);
+            write(_messageWriter);
+            _transport.Send(peer.PeerId, delivery, _messageWriter.ToSegment());
+            return true;
+        }
+
+        /// <summary>As <see cref="SendToWorker(string, ushort, Action{NetworkWriter}, Delivery)"/>, addressed by worker index.</summary>
+        public bool SendToWorker(ushort workerIndex, ushort kind, Action<NetworkWriter> write, Delivery delivery = Delivery.ReliableOrdered)
+        {
+            if (workerIndex == WorkerIndex) return SendToWorker(WorkerId, kind, write, delivery);
+            return _workerPeersByIndex.TryGetValue(workerIndex, out var peer) && SendToWorker(peer.Id, kind, write, delivery);
+        }
+
+        private void OnWorkerMessage(Peer from, NetworkReader r)
+        {
+            ushort kind = r.ReadUShort();
+            if (!_messageHandlers.TryGetValue(kind, out var handler))
+            {
+                NebulaLog.Warn($"worker message {kind} from {from.Id} has no handler");
+                return;
+            }
+            try { handler(from.Id, (ushort)from.Index, r); }
+            catch (Exception ex) { NebulaLog.Error($"worker message {kind} handler threw: {ex}"); }
+        }
+
         // ---------------------------------------------------------------------------------------- lifecycle
 
         public void Initialize(NebulaConfig config, IControlPlane controlPlane)
@@ -1330,6 +1407,7 @@ namespace Nebula
                 case MsgId.GhostDespawn: OnGhostDespawn(peer, EntityDespawnMsg.Read(r)); break;
                 case MsgId.AuthorityTransfer: OnAuthorityTransfer(peer, AuthorityTransferMsg.Read(r)); break;
                 case MsgId.AuthorityRpc: OnAuthorityRpc(peer, EntityRpcMsg.Read(r)); break;
+                case MsgId.WorkerMessage: if (peer.Role == PeerRole.Worker) OnWorkerMessage(peer, r); break;
                 case MsgId.Ping:
                 {
                     var ping = PingMsg.Read(r);

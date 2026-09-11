@@ -158,6 +158,14 @@ public bool Encloses(Container other);
 
 `other`'s box lies entirely inside this one (nested containers).
 
+### IntersectsSegment [#intersectssegment]
+
+```csharp
+public bool IntersectsSegment(Vector3 a, Vector3 b, float margin, out float tEnter, out float tExit);
+```
+
+Whether the segment from `a` to `b` passes through the box grown by `margin` on every side, and where along it (`tEnter` and `tExit` are fractions of the segment, clamped to \[0, 1\]). A segment starting inside the box enters at 0. Slab test in the container's local space, so rotated boxes are exact. The margin absorbs handover hysteresis and an entity's own radius when the caller asks "whose entities could this ray touch".
+
 ### ToLocal [#tolocal]
 
 ```csharp

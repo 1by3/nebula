@@ -63,6 +63,8 @@ namespace Nebula
     public abstract class PredictedBehaviour<TInput> : PredictedBehaviourBase where TInput : struct, INetworkInput
     {
         private const int BufferSize = 128;
+        private static readonly NetworkWriter OwnSnapshot = new NetworkWriter(256);
+        private static readonly NetworkReader OwnSnapshotReader = new NetworkReader();
 
         private struct InputSlot { public uint Tick; public TInput Input; public bool Valid; }
         private struct HistorySlot { public uint Tick; public TInput Input; public Vector3 Position; public bool Valid; }
@@ -250,10 +252,12 @@ namespace Nebula
                 ReadState(state);
                 return;
             }
-            // Peek at the server position without disturbing our current pose.
-            var savedPos = transform.position;
-            var savedRot = transform.rotation;
-            var savedVel = Identity.Velocity;
+            // Peek at the server state without disturbing our own. Everything WriteState covers is saved and put
+            // back, not just the pose: a game's extra fields (a weapon cooldown, a trigger counter) belong to the
+            // present, and the server's copy describes an older tick. Restoring only the pose used to hand the
+            // client a stale cooldown on every clean reconcile, which fired a phantom shot on the next tick.
+            OwnSnapshot.Reset();
+            WriteState(OwnSnapshot);
             ReadState(state);
             var serverPos = transform.position;
             var serverRot = transform.rotation;
@@ -261,8 +265,8 @@ namespace Nebula
             float error = (serverPos - h.Position).magnitude;
             if (error <= CorrectionThreshold)
             {
-                transform.SetPositionAndRotation(savedPos, savedRot);
-                Identity.Velocity = savedVel;
+                OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
+                ReadState(OwnSnapshotReader);
                 return;
             }
             // Snap to the server's state at serverTick and replay every input after it.

@@ -125,45 +125,69 @@ There is one ServerRpc per client-to-worker request; the worker cannot send a Se
 - If the calling worker only holds a ghost, the message crosses the lateral link to the owning worker (the worker this entity was last handed to, or the one at `OwnerWorkerIndex`) and runs there. If the entity has moved on again, the receiver forwards it once more.
 - If the owning worker is not connected, the call is dropped with `AuthorityRpc on E: owner worker W not connected`.
 
-This is the primitive behind every cross-container interaction. The shooter's worker resolves a raycast against its own world, which includes kinematic ghosts of entities simulated elsewhere, and the damage claim is executed wherever the victim actually lives:
+This is the primitive for anything one entity does to another entity this worker can see. The sample's damage claim is the canonical shape: the shooter's worker decides a hit and the victim's worker applies it, wherever that is.
 
 ```csharp title="PlayerController.cs"
-private void ServerFire(uint tick, uint aimTick)
+/// <summary>A damage claim for a pawn this worker does not own: runs on whichever worker does.</summary>
+internal void ClaimDamage(float amount, ulong attackerNetId, string attackerName, Vector3 from)
 {
-    // ... trace the shot against the level and the rewound pawns (see the prediction guide) ...
-    if (victim != null)
-    {
-        // Runs on whichever worker owns the victim: locally if that is us, over the lateral link if not.
-        victim.AuthorityRpc(victim.TakeDamage, Damage, NetId, PlayerName.Value);
-    }
-    ClientRpc(RpcShotFired, MuzzlePosition, end, victim != null);
+    AuthorityRpc(TakeDamage, amount, attackerNetId, attackerName, from);
 }
 
 [AuthorityRpc]
-private void TakeDamage(float amount, ulong attackerNetId, string attackerName)
+private void TakeDamage(float amount, ulong attackerNetId, string attackerName, Vector3 from)
 {
-    if (!HasAuthority || IsDead.Value) return;
-    Health.Value = Mathf.Max(0f, Health.Value - amount);
-    _lastAttacker = attackerNetId;
-    if (Health.Value <= 0f)
-    {
-        IsDead.Value = true;
-        Deaths.Value += 1;
-        var attacker = NebulaBootstrap.Instance.Worker.Find(attackerNetId)?.GetComponent<PlayerController>();
-        if (attacker != null) attacker.AuthorityRpc(attacker.CreditKill, NetId, PlayerName.Value);
-        ClientRpc(RpcKillFeed, attackerName, PlayerName.Value);
-        if (!Identity.IsServerDriven) OwnerRpc(RpcDied, attackerName);
-    }
+    ApplyDamage(amount, attackerNetId, attackerName, from);   // checks HasAuthority, IsDead, spawn protection
+}
+
+/// <summary>Runs on the shooter's authority: a shot of ours hurt someone.</summary>
+[AuthorityRpc]
+private void CreditShot(bool kill)
+{
+    if (!HasAuthority) return;
+    if (kill) Kills.Value += 1;
+    if (!Identity.IsServerDriven) OwnerRpc(RpcHitConfirmed, kill);
 }
 ```
 
 Three things about this example are worth copying:
 
-1. The attacker's name travels with the claim. The victim's worker may hold only a ghost of the attacker, or nothing at all if the attacker just left the seam, so anything the handler needs about the caller goes in the arguments.
-2. `TakeDamage` chains another `AuthorityRpc` back to the attacker (`CreditKill`), which again runs wherever the attacker lives. Each hop is one reliable message.
+1. The attacker's name and the shot's origin travel with the claim. The victim's worker may hold only a ghost of the attacker, or nothing at all if the attacker just left the seam, so anything the handler needs about the caller goes in the arguments (the sample's NPCs use the origin to turn towards whoever shot them).
+2. The credit goes back the same way: `CreditShot` is an `AuthorityRpc` on the shooter, so it runs wherever the shooter lives even if the shooter was handed to another worker while the shot was being resolved.
 3. The handler still checks `HasAuthority`. The message is reliable and forwarded, but the receiving side dispatches it whenever it arrives, and the target may be mid-handover.
 
 The victim's worker applies the claim as-is: there is no rewind or validation of the claim on the receiving side. The shooter's worker is trusted, which is fine because every worker is in the same trusted datacenter network.
+
+An `AuthorityRpc` needs a local copy of the target, authoritative or ghost. A worker only ghosts its neighbours' entities within the ghost band, so for something further away (a pawn ten metres inside a building another worker owns) there is nothing to call it on. That is what worker messages are for.
+
+## Worker messages
+
+A worker message is the raw lateral channel: a game-defined `kind`, a payload the sender writes itself, and a handler on the receiving worker. It is addressed to a worker, not an entity, so it works for questions about things this worker cannot see: "does this ray hit anything you own", "is anyone in that room", "spawn this over there".
+
+```csharp
+// Both sides, once (a MonoBehaviour the game mode creates on workers, say):
+worker.RegisterMessageHandler(ShotQueryKind, OnShotQuery);
+
+// Sender: by worker id or index. False, and nothing sent, when that worker is not connected.
+bool sent = worker.SendToWorker(container.OwnerWorkerIndex, ShotQueryKind, w =>
+{
+    w.WriteUInt(shotId);
+    w.WriteVector3(origin);
+    w.WriteVector3(dir);
+    w.WriteFloat(maxDistance);
+});
+
+// Receiver: the reader is positioned at the payload.
+void OnShotQuery(string fromWorkerId, ushort fromWorkerIndex, NetworkReader r)
+{
+    uint shotId = r.ReadUInt();
+    // ... test our own authoritative entities, apply the damage here, reply with SendToWorker(fromWorkerIndex, ...)
+}
+```
+
+`ContainerRegistry.Along(a, b, margin, result)` answers "which containers does this segment cross" (nested boxes included), so the owners of those containers are the workers to ask. The sample's `ShotRelay` does exactly that for every hitscan shot: it tests the level and its own pawns, asks each other worker that owns a container along the ray to test its pawns (rewound to the shooter's aim tick, see [lag compensation](/docs/guides/prediction#lag-compensated-hit-tests)), and only hurts its own candidate once nobody nearer answered. Per-shot cost instead of ghosting everything within weapon range.
+
+Rules: one handler per kind (registering again replaces it); delivery is reliable-ordered unless you pass `Delivery.Sequenced`; sending to this worker's own id invokes the handler directly; a message for a kind with no handler is logged and dropped; handler exceptions are logged, not propagated. Worker messages are never forwarded: if the entity you asked about was handed over between the question and the answer, that is the receiver's problem to notice (its `HasAuthority` check) and yours to time out.
 
 ## Constraints
 

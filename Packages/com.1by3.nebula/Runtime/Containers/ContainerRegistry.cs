@@ -179,6 +179,33 @@ namespace Nebula
             return candidate.SignedDistance(worldPosition) <= -hysteresis ? candidate : current;
         }
 
+        /// <summary>
+        /// Every container whose box (grown by <paramref name="margin"/>) the segment <paramref name="a"/>-<paramref name="b"/>
+        /// passes through, appended to <paramref name="result"/>. Nested containers are all reported: an entity in a
+        /// building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of
+        /// sight uses to find out which workers, besides itself, could own something along the ray. In a gridded
+        /// world only the cells the segment's bounds touch are visited.
+        /// </summary>
+        public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result)
+        {
+            if (_grid == null)
+            {
+                for (int i = 0; i < Containers.Count; i++)
+                    if (Containers[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(Containers[i]);
+                return;
+            }
+            var min = WorldOrigin.CellOf(Vector3.Min(a, b) - Vector3.one * margin);
+            var max = WorldOrigin.CellOf(Vector3.Max(a, b) + Vector3.one * margin);
+            for (int x = min.x - 1; x <= max.x + 1; x++)
+                for (int y = min.y - 1; y <= max.y + 1; y++)
+                    for (int z = min.z - 1; z <= max.z + 1; z++)
+                    {
+                        if (!_grid.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                        for (int i = 0; i < list.Count; i++)
+                            if (list[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(list[i]);
+                    }
+        }
+
         public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch)
         {
             var c = FindById(containerId);

@@ -103,5 +103,48 @@ namespace Nebula.Tests
             Assert.AreSame(east, ContainerRegistry.Resolve(new Vector3(12.5f, 1, 0), room, 0.35f));
             CollectionAssert.Contains(room.Neighbors, east);
         }
+
+        [Test]
+        public void SegmentIntersectionReportsEntryAndExit()
+        {
+            var east = ContainerRegistry.FindById("a-east"); // x in [0, 20], y in [0, 10], z in [-10, 10]
+            // Straight through along x, from outside to outside: enters at x=0 (t=0.25), leaves at x=20 (t=0.75).
+            Assert.IsTrue(east.IntersectsSegment(new Vector3(-10, 5, 0), new Vector3(30, 5, 0), 0f, out float tEnter, out float tExit));
+            Assert.AreEqual(0.25f, tEnter, 1e-4f);
+            Assert.AreEqual(0.75f, tExit, 1e-4f);
+            // Starting inside: enters at 0.
+            Assert.IsTrue(east.IntersectsSegment(new Vector3(10, 5, 0), new Vector3(30, 5, 0), 0f, out tEnter, out tExit));
+            Assert.AreEqual(0f, tEnter, 1e-4f);
+            Assert.AreEqual(0.5f, tExit, 1e-4f);
+            // Parallel to the box but above the ceiling: a miss, unless the margin reaches it.
+            Assert.IsFalse(east.IntersectsSegment(new Vector3(-10, 11, 0), new Vector3(30, 11, 0), 0f, out _, out _));
+            Assert.IsTrue(east.IntersectsSegment(new Vector3(-10, 11, 0), new Vector3(30, 11, 0), 1.5f, out _, out _));
+            // Ends before reaching the box.
+            Assert.IsFalse(east.IntersectsSegment(new Vector3(-10, 5, 0), new Vector3(-2, 5, 0), 0f, out _, out _));
+        }
+
+        [Test]
+        public void AlongListsEveryBoxTheSegmentCrossesIncludingNested()
+        {
+            var room = Make("c-room", new Vector3(10, 0, 0), new Vector3(4, 4, 4));
+            ContainerRegistry.Rebuild();
+            var east = ContainerRegistry.FindById("a-east");
+            var west = ContainerRegistry.FindById("b-west");
+            var hit = new List<Container>();
+            // West to east through the room: all three.
+            ContainerRegistry.Along(new Vector3(-15, 1, 0), new Vector3(18, 1, 0), 0f, hit);
+            CollectionAssert.AreEquivalent(new[] { east, west, room }, hit);
+            // A shot that stays in the west box.
+            hit.Clear();
+            ContainerRegistry.Along(new Vector3(-15, 1, 0), new Vector3(-5, 1, 0), 0f, hit);
+            CollectionAssert.AreEquivalent(new[] { west }, hit);
+            // Grazing past the room (z = 3, room spans z in [-2, 2]) misses it without a margin and catches it with one.
+            hit.Clear();
+            ContainerRegistry.Along(new Vector3(5, 1, 3), new Vector3(18, 1, 3), 0f, hit);
+            CollectionAssert.AreEquivalent(new[] { east }, hit);
+            hit.Clear();
+            ContainerRegistry.Along(new Vector3(5, 1, 3), new Vector3(18, 1, 3), 1.5f, hit);
+            CollectionAssert.AreEquivalent(new[] { east, room }, hit);
+        }
     }
 }

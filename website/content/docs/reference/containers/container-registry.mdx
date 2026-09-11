@@ -113,6 +113,14 @@ public static Container Resolve(Vector3 worldPosition, Container current, float 
 
 The container the entity should belong to after applying hysteresis: it must be at least `hysteresis` metres inside a different container before we consider it moved.
 
+### Along [#along]
+
+```csharp
+public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result);
+```
+
+Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited.
+
 ### ApplyLease [#applylease]
 
 ```csharp
