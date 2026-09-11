@@ -254,6 +254,12 @@ public override void OnGainedAuthority()
 
 Brain state lives on the worker and is lost at handover unless you replicate it. The sample keeps the roaming goal in a `NetworkVariable` so a handover continues the route instead of re-rolling it, and rebuilds the path from that goal in `OnGainedAuthority`.
 
+### NPCs across workers
+
+A brain perceives what its process holds. On a worker that is its own pawns plus the ghosts of its neighbours' pawns within the ghost band, so an NPC standing well inside a building another worker owns would never notice a player fifteen metres outside the door, while that player can hit it (see [shots that cross workers](#shots-that-cross-workers)). The sample's `PresenceRelay` closes that gap without ghosting anything: every 15 ticks each worker sends each connected neighbour one `PresenceQuery` ([a worker query](/docs/guides/rpcs#queries)) with the eye position of every live NPC it drives, and the neighbour answers with the live pawns it owns within `NpcSightRange` of each eye, the eight nearest per NPC, as position, velocity, net id and name. The brain's `FindVisibleEnemy` considers those snapshots alongside `PlayerController.All`, with the same view cone and `Physics.Linecast` line-of-sight test (a worker has its neighbours' cells loaded, `WorkerLoadRingCells`). A pawn this worker also holds as a ghost is taken as the ghost, never as its snapshot.
+
+The brain aims at an `EnemyTarget`: a local pawn, or a snapshot whose position is carried along its velocity since the report (half a second at most). It only fires at a snapshot its owner refreshed within the last two report periods, and drops a target no report has mentioned for two seconds. The shot itself goes through `ShotRelay` unchanged, which asks the owners of the containers along the ray. A reply that lands after the NPC was handed over is discarded, so nothing is aimed on behalf of a pawn this worker no longer drives.
+
 ## Lag-compensated hit tests
 
 A shooter aims at what the screen showed, which is `InterpolationDelayTicks` plus transit plus the input lead in the past, roughly 200 ms at typical latencies. By the time the worker simulates the shot, a target moving sideways has left the capsule. The worker therefore records every entity's pose after simulation each tick, ghosts included (`NetworkIdentity.PoseHistoryTicks`, 64 ticks), and exposes it:
@@ -309,9 +315,9 @@ The capsule test is pure geometry against the historical pose, so it never touch
 A worker only holds ghosts of its neighbours' entities within the ghost band, so a shooter outdoors could never hit someone ten metres inside a building another worker owns: on the shooter's worker that pawn does not exist. The sample's `ShotRelay` carries the shot instead of the entities:
 
 1. The shooter's worker tests the level and its own authoritative pawns (never ghosts: their owner has better history).
-2. `ContainerRegistry.Along(origin, end, margin, result)` lists the containers the ray crosses up to the nearest thing found; every other worker owning one of them gets a `ShotQuery` [worker message](/docs/guides/rpcs#worker-messages) with the ray, the aim tick and the distance to beat.
+2. `ContainerRegistry.Along(origin, end, margin, result)` lists the containers the ray crosses up to the nearest thing found; every other worker owning one of them gets a `ShotQuery` (a [worker query](/docs/guides/rpcs#queries)) with the ray, the aim tick and the distance to beat.
 3. Each of them tests its own authoritative pawns rewound to the aim tick, applies the damage if it finds one nearer, and replies with a `ShotResult`.
-4. When every reply is in (or 300 ms have passed), the shooter's worker hurts its own candidate unless a neighbour's pawn was nearer, draws the bolt for the clients, and credits the shooter with `CreditShot`, an `AuthorityRpc` that follows the shooter through a handover.
+4. When every reply is in (or the query's 300 ms timeout has passed), the shooter's worker hurts its own candidate unless a neighbour's pawn was nearer, draws the bolt for the clients, and credits the shooter with `CreditShot`, an `AuthorityRpc` that follows the shooter through a handover. A shot that needs no neighbour completes inside the same call.
 
 The victim's worker applies damage as-is; there is no second validation on the receiving side. The trigger pull itself is made robust separately: `ShooterInput.FireSeq` counts pulls, so a pull whose tick arrived late (see [when input is missing](#when-input-is-missing-on-the-worker)) still fires on the first input the worker does consume rather than being dropped with the tick.
 

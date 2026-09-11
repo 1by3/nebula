@@ -1,0 +1,133 @@
+---
+title: "WorkerQuery"
+description: "A question fanned out to several workers over worker messages, with the bookkeeping every such question needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in or time is up."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs)</div>
+
+```csharp
+public sealed class WorkerQuery : IDisposable
+```
+
+A question fanned out to several workers over worker messages, with the bookkeeping every such question needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in or time is up. The pair of kinds is the game's; the request handler on the receiving side reads the payload and writes its reply, and the helper carries the id on both legs so the game never sees it.
+
+A target that is not connected is skipped (it never counts as awaited). Sending to this worker's own index answers synchronously, like any worker message to oneself. A reply for an unknown or already completed request is counted in [`RepliesLate`](#replieslate) and dropped. Call [`Update`](#update) once a frame to expire requests whose deadline passed; the completion callback then runs with `false`.
+
+## Constructors
+
+### WorkerQuery [#workerquery]
+
+```csharp
+public WorkerQuery(IWorkerMessaging worker, ushort requestKind, ushort replyKind, RequestHandler onRequest, Func<float> clock = null);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `worker` | The worker to send and receive through. |
+| `requestKind` | Worker message kind of the question. |
+| `replyKind` | Worker message kind of the answer. |
+| `onRequest` | Answers a question on this worker, or null when this worker only asks. |
+| `clock` | Seconds, for the deadline; `Time.unscaledTime` by default. |
+
+## Properties
+
+### RequestsSent [#requestssent]
+
+```csharp
+public int RequestsSent { get; }
+```
+
+Requests fanned out (one per [`Send`](#send) that reached at least one worker).
+
+### RequestsAnswered [#requestsanswered]
+
+```csharp
+public int RequestsAnswered { get; }
+```
+
+Requests answered on this side.
+
+### RepliesReceived [#repliesreceived]
+
+```csharp
+public int RepliesReceived { get; }
+```
+
+Replies received in time.
+
+### RepliesTimedOut [#repliestimedout]
+
+```csharp
+public int RepliesTimedOut { get; }
+```
+
+Workers that had not answered when a request expired.
+
+### RepliesLate [#replieslate]
+
+```csharp
+public int RepliesLate { get; }
+```
+
+Replies that arrived after their request expired, or for an id never sent.
+
+### PendingCount [#pendingcount]
+
+```csharp
+public int PendingCount { get; }
+```
+
+Requests still waiting for at least one worker.
+
+## Methods
+
+### Send [#send]
+
+```csharp
+public uint Send(IEnumerable<ushort> targets, Action<NetworkWriter> write, ReplyHandler onReply, Action<bool> onComplete, float timeoutSeconds);
+```
+
+Ask `targets` (worker indices; duplicates and unreachable workers are skipped). Each reply invokes `onReply`; `onComplete` runs once, with `true` when every asked worker answered and `false` when `timeoutSeconds` passed first. When nobody could be asked it runs immediately with `true`. Returns the request id (0 when nobody was asked).
+
+### Cancel [#cancel]
+
+```csharp
+public bool Cancel(uint id);
+```
+
+Forget request `id`; its callbacks never run. True when it was still pending.
+
+### Update [#update]
+
+```csharp
+public void Update();
+```
+
+Expire requests whose deadline passed, completing each with `false`. Call once a frame.
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+Unregister both handlers; pending requests are dropped without callbacks.
+
+## Nested types
+
+### RequestHandler [#requesthandler]
+
+```csharp
+public delegate void RequestHandler(string fromWorkerId, ushort fromWorkerIndex, NetworkReader request, NetworkWriter reply);
+```
+
+Handles a request on the receiving worker: read `request`, write the answer into `reply`.
+
+### ReplyHandler [#replyhandler]
+
+```csharp
+public delegate void ReplyHandler(string fromWorkerId, ushort fromWorkerIndex, NetworkReader reply);
+```
+
+Handles one reply on the asking worker.
+

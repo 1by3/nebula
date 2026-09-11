@@ -1,0 +1,41 @@
+---
+title: "IWorkerMessaging"
+description: "The part of NebulaWorker a WorkerQuery talks to."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs)</div>
+
+```csharp
+public interface IWorkerMessaging
+```
+
+The part of [`NebulaWorker`](/docs/reference/worker/nebula-worker) a [`WorkerQuery`](/docs/reference/worker/worker-query) talks to. A test can implement it with an in-memory loop between two fakes; the worker implements it over the lateral link.
+
+## Properties
+
+### WorkerIndex [#workerindex]
+
+```csharp
+ushort WorkerIndex { get; }
+```
+
+## Methods
+
+### RegisterMessageHandler [#registermessagehandler]
+
+```csharp
+void RegisterMessageHandler(ushort kind, NebulaWorker.WorkerMessageHandler handler);
+```
+
+### UnregisterMessageHandler [#unregistermessagehandler]
+
+```csharp
+void UnregisterMessageHandler(ushort kind);
+```
+
+### SendToWorker [#sendtoworker]
+
+```csharp
+bool SendToWorker(ushort workerIndex, ushort kind, Action<NetworkWriter> write, Delivery delivery = Delivery.ReliableOrdered);
+```
+

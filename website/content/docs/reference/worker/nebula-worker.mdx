@@ -6,7 +6,7 @@ description: "The sim worker: a headless Unity process leased authority over a s
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs)</div>
 
 ```csharp
-public sealed class NebulaWorker : MonoBehaviour, IRpcSink
+public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
 ```
 
 The sim worker: a headless Unity process leased authority over a set of containers. It simulates the entities in those containers at the tick rate, ghosts entities approaching a neighbouring container to that container's worker over the lateral link, hands authority over when they cross, and streams its authoritative entities to the gateway. One process can own any number of containers; adjacent containers on the same worker hand over locally with no network traffic at all.
@@ -166,6 +166,14 @@ public IEnumerable<string> ConnectedWorkerIds { get; }
 ```
 
 Ids of every worker this one currently has a lateral link to.
+
+### ConnectedWorkerIndices [#connectedworkerindices]
+
+```csharp
+public IEnumerable<ushort> ConnectedWorkerIndices { get; }
+```
+
+Indices of every worker this one currently has a lateral link to (the addresses [`WorkerQuery`](/docs/reference/worker/worker-query) takes).
 
 ### MeshReady [#meshready]
 

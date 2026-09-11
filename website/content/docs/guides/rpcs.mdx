@@ -185,9 +185,43 @@ void OnShotQuery(string fromWorkerId, ushort fromWorkerIndex, NetworkReader r)
 }
 ```
 
-`ContainerRegistry.Along(a, b, margin, result)` answers "which containers does this segment cross" (nested boxes included), so the owners of those containers are the workers to ask. The sample's `ShotRelay` does exactly that for every hitscan shot: it tests the level and its own pawns, asks each other worker that owns a container along the ray to test its pawns (rewound to the shooter's aim tick, see [lag compensation](/docs/guides/prediction#lag-compensated-hit-tests)), and only hurts its own candidate once nobody nearer answered. Per-shot cost instead of ghosting everything within weapon range.
+`ContainerRegistry.Along(a, b, margin, result)` answers "which containers does this segment cross" (nested boxes included), so the owners of those containers are the workers to ask. `NebulaWorker.ConnectedWorkerIndices` lists every worker this one has a lateral link to, for questions that go to all neighbours.
 
 Rules: one handler per kind (registering again replaces it); delivery is reliable-ordered unless you pass `Delivery.Sequenced`; sending to this worker's own id invokes the handler directly; a message for a kind with no handler is logged and dropped; handler exceptions are logged, not propagated. Worker messages are never forwarded: if the entity you asked about was handed over between the question and the answer, that is the receiver's problem to notice (its `HasAuthority` check) and yours to time out.
+
+### Queries
+
+Most worker messages are questions that expect an answer from each worker asked, and every such question needs the same bookkeeping: a request id, the set of workers still owed a reply, a deadline, and a callback once every reply is in or the deadline passes. `WorkerQuery` is that bookkeeping. It takes a pair of kinds (question and answer), a handler that answers on the receiving side, and sends with a per-request timeout; the request id rides on both legs, so the payloads you write and read are only your own.
+
+```csharp
+// Both sides, once. The handler reads the question and writes the answer; the reply is sent when it returns.
+_query = new WorkerQuery(worker, ShotQueryKind, ShotResultKind, OnShotQuery);
+
+void OnShotQuery(string fromWorkerId, ushort fromWorkerIndex, NetworkReader request, NetworkWriter reply)
+{
+    var origin = request.ReadVector3();
+    var dir = request.ReadVector3();
+    // ... test our own authoritative entities ...
+    reply.WriteBool(hit);
+    reply.WriteFloat(distance);
+}
+
+// Asking: fan out to a set of worker indices, collect each reply, act once when all are in or time is up.
+_query.Send(ownersAlongTheRay, w => { w.WriteVector3(origin); w.WriteVector3(dir); },
+    onReply: (fromWorkerId, fromWorkerIndex, r) => { if (r.ReadBool()) nearest = Mathf.Min(nearest, r.ReadFloat()); },
+    onComplete: allAnswered => Resolve(nearest),
+    timeoutSeconds: 0.3f);
+
+// Once a frame: expire requests whose deadline passed (their onComplete runs with false).
+_query.Update();
+```
+
+Workers that are not connected are skipped, and when nobody could be asked `onComplete` runs immediately with `true`, so the caller has one code path whether or not the question had to travel. Asking this worker's own index answers before `Send` returns. A reply for a request that already completed or timed out is counted in `RepliesLate` and dropped; `RepliesTimedOut`, `RequestsSent`, `RequestsAnswered` and `PendingCount` are there for overlays. `Cancel(id)` forgets a request, `Dispose()` unregisters both kinds. The pending and timeout logic is plain C# over the `IWorkerMessaging` interface `NebulaWorker` implements, so it is unit-tested with an in-memory mesh and you can do the same for code built on it.
+
+The sample uses it twice:
+
+- `ShotRelay` sends every hitscan shot as a `ShotQuery` to the workers owning containers along the ray: it tests the level and its own pawns, asks each of them to test its pawns (rewound to the shooter's aim tick, see [lag compensation](/docs/guides/prediction#lag-compensated-hit-tests)), and only hurts its own candidate once nobody nearer answered. Per-shot cost instead of ghosting everything within weapon range.
+- `PresenceRelay` lets NPCs see across seams. Every 15 ticks each worker sends every connected neighbour one `PresenceQuery` listing the eye positions of the NPCs it drives; the neighbour answers with the live pawns it owns within sight range of each eye (the eight nearest per NPC, with position, velocity, net id and name). The brain considers those snapshots alongside the pawns the worker holds, with the same view cone and line-of-sight test, aims at a snapshot extrapolated by its velocity, and shoots through `ShotRelay` like at anything else. One message per worker pair per 15 ticks whatever the pawn count, and nothing is ghosted. See [NPCs across workers](/docs/guides/prediction#npcs-across-workers).
 
 ## Constraints
 

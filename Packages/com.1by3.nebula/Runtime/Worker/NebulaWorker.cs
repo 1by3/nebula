@@ -12,7 +12,7 @@ namespace Nebula
     /// the gateway. One process can own any number of containers; adjacent containers on the same worker hand over
     /// locally with no network traffic at all.
     /// </summary>
-    public sealed class NebulaWorker : MonoBehaviour, IRpcSink
+    public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
     {
         private sealed class Peer
         {
@@ -152,6 +152,12 @@ namespace Nebula
         public IEnumerable<string> ConnectedWorkerIds
         {
             get { foreach (var p in _workerPeersById.Values) if (p.HelloReceived) yield return p.Id; }
+        }
+
+        /// <summary>Indices of every worker this one currently has a lateral link to (the addresses <see cref="WorkerQuery"/> takes).</summary>
+        public IEnumerable<ushort> ConnectedWorkerIndices
+        {
+            get { foreach (var p in _workerPeersById.Values) if (p.HelloReceived) yield return (ushort)p.Index; }
         }
 
         /// <summary>
