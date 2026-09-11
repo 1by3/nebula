@@ -302,7 +302,7 @@ namespace Nebula
                     // The identity stream will resume from the new place; do not lerp across the jump.
                     Identity.Interpolator.Clear();
                     if (state.HasPosition || state.HasRotation)
-                        Identity.Interpolator.Push(tick, transform.position, transform.rotation, Identity.Velocity);
+                        Identity.Interpolator.Push(tick, Container, Identity.LocalPosition, Identity.LocalRotation, Identity.Velocity);
                 }
                 if (IsRelayingWorker && IsRoot && state.HasPosition && !state.Teleport)
                 {

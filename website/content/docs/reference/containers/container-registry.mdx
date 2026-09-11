@@ -1,6 +1,6 @@
 ---
 title: "ContainerRegistry"
-description: "The container graph of the loaded level: every Container, indexed deterministically so all processes agree on indices, plus adjacency."
+description: "The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ..."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerRegistry.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerRegistry.cs)</div>
@@ -9,9 +9,19 @@ description: "The container graph of the loaded level: every Container, indexed 
 public static class ContainerRegistry
 ```
 
-The container graph of the loaded level: every [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency. Adjacent = bounds touch or overlap.
+The container graph of the loaded level: every static [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities on this process, resolved by their carrier's net id.
 
-Two ways to populate it: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan.
+Two ways to populate the static part: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan. Dynamic containers come and go with their carriers ([`RegisterDynamic`](#registerdynamic) / [`UnregisterDynamic`](#unregisterdynamic), called by [`DynamicContainer`](/docs/reference/containers/dynamic-container)).
+
+## Fields
+
+### WorkerIdByIndex [#workeridbyindex]
+
+```csharp
+public static Func<ushort, string> WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
+```
+
+How a worker index maps to a worker id, for the derived ownership of dynamic containers ([`Container.OwnerWorkerId`](/docs/reference/containers/container#ownerworkerid)). The worker installs one that knows its peers; elsewhere the default only recognises this process's own worker id.
 
 ## Properties
 
@@ -21,11 +31,21 @@ Two ways to populate it: [`Rebuild`](#rebuild) scans the loaded scene and sorts 
 public static IReadOnlyList<Container> All { get; }
 ```
 
+The static containers, in wire order.
+
 ### Count [#count]
 
 ```csharp
 public static int Count { get; }
 ```
+
+### Dynamic [#dynamic]
+
+```csharp
+public static IReadOnlyList<Container> Dynamic { get; }
+```
+
+The dynamic containers present on this process (their carriers are resident here), in registration order.
 
 ### IsGridded [#isgridded]
 
@@ -51,6 +71,22 @@ public static event Action LeasesChanged;
 
 Raised after a batch of leases was applied (the worker and client do this whenever the control plane changes).
 
+### DynamicRegistered [#dynamicregistered]
+
+```csharp
+public static event Action<Container> DynamicRegistered;
+```
+
+A dynamic container became resolvable here (its carrier spawned). Messages that were waiting for it can be applied.
+
+### DynamicUnregistering [#dynamicunregistering]
+
+```csharp
+public static event Action<Container> DynamicUnregistering;
+```
+
+A dynamic container is about to go (its carrier is despawning). Its contents are moved to the container around it right after.
+
 ## Methods
 
 ### Rebuild [#rebuild]
@@ -59,7 +95,7 @@ Raised after a batch of leases was applied (the worker and client do this whenev
 public static void Rebuild();
 ```
 
-Scan the loaded scene(s) for containers and index them by id.
+Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities ([`DynamicContainer`](/docs/reference/containers/dynamic-container)) are skipped.
 
 ### Load [#load]
 
@@ -67,7 +103,7 @@ Scan the loaded scene(s) for containers and index them by id.
 public static void Load(IList<Container> ordered, bool gridded);
 ```
 
-Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point.
+Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point. Dynamic containers registered earlier are forgotten: this is a boot-time operation.
 
 ### InCell [#incell]
 
@@ -83,6 +119,25 @@ Containers whose cell is `cell` (the cell container and its nested ones). Empty 
 public static Container Get(ushort index);
 ```
 
+The static container with this wire index, or null (also null for [`ContainerRef.DynamicIndex`](/docs/reference/containers/container-ref#dynamicindex): use [`Resolve`](#resolve)).
+
+### Resolve [#resolve]
+
+```csharp
+public static Container Resolve(ContainerRef r);
+public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null);
+```
+
+The container a wire reference names, static or dynamic, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet).
+
+### FindDynamic [#finddynamic]
+
+```csharp
+public static Container FindDynamic(ulong carrierNetId);
+```
+
+The dynamic container carried by entity `carrierNetId`, or null.
+
 ### RefreshCaches [#refreshcaches]
 
 ```csharp
@@ -97,21 +152,55 @@ Re-read every container's transform (the worker does this once per tick; see [`C
 public static Container FindById(string id);
 ```
 
+The static container with this id, or the dynamic container currently registered under it (`label#netId`), or null.
+
+### IsDynamicId [#isdynamicid]
+
+```csharp
+public static bool IsDynamicId(string id);
+```
+
+Whether a container id names a dynamic container (`label#netId`): static ids never contain '#'.
+
+### CarrierNetIdOf [#carriernetidof]
+
+```csharp
+public static ulong CarrierNetIdOf(string id);
+```
+
+The carrier net id a dynamic container id names, or 0.
+
+### RegisterDynamic [#registerdynamic]
+
+```csharp
+public static void RegisterDynamic(Container container, NetworkIdentity carrier);
+```
+
+Make `container` the dynamic container carried by `carrier`, resolvable by the carrier's net id from now on. [`DynamicContainer`](/docs/reference/containers/dynamic-container) calls this when its entity spawns on any process; game code does not normally need to. The authored [`Container.ContainerId`](/docs/reference/containers/container#containerid) becomes a label: the runtime id is `label#netId`, unique across the mesh.
+
+### UnregisterDynamic [#unregisterdynamic]
+
+```csharp
+public static void UnregisterDynamic(Container container);
+```
+
+Forget a dynamic container. Whatever is still inside it is moved to the container around it (resolved from each entity's world position, ignoring the departing box) and re-parented, so a client destroying a despawned ship does not take the passengers' objects with it. The authority decides what actually happens to them on the next tick; despawn the contents first if they should not survive the carrier.
+
+### NeighborsOf [#neighborsof]
+
+```csharp
+public static void NeighborsOf(Container container, List<Container> result);
+```
+
+Every container adjacent to `container` right now, into `result` (cleared first): its static [`Container.Neighbors`](/docs/reference/containers/container#neighbors) plus every dynamic container whose box currently touches it, and, for a dynamic container, the container its carrier sits in and every container its box touches. This is what the ghost band walks; use it instead of [`Container.Neighbors`](/docs/reference/containers/container#neighbors) wherever a vehicle could be parked next door.
+
 ### Find [#find]
 
 ```csharp
-public static Container Find(Vector3 worldPosition);
+public static Container Find(Vector3 worldPosition, Container exclude = null);
 ```
 
-The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees.
-
-### Resolve [#resolve]
-
-```csharp
-public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis);
-```
-
-The container the entity should belong to after applying hysteresis: it must be at least `hysteresis` metres inside a different container before we consider it moved.
+The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees. `exclude` leaves one container out of the search: an entity carrying a container resolves its own position without it, or it would be found inside itself.
 
 ### Along [#along]
 
@@ -119,13 +208,23 @@ The container the entity should belong to after applying hysteresis: it must be 
 public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result);
 ```
 
-Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited.
+Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited; dynamic containers are always tested.
 
 ### ApplyLease [#applylease]
 
 ```csharp
-public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch);
+public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch, string state = LeaseState.Active);
 ```
+
+Record a control-plane lease on its container. A lease for a dynamic container whose carrier is not resident yet is kept and applied when the carrier registers. `state` is the lease state ([`LeaseState`](/docs/reference/control-plane/lease-state)); for a dynamic container only [`LeaseState.Pinned`](/docs/reference/control-plane/lease-state#pinned) changes who owns it.
+
+### ForgetLease [#forgetlease]
+
+```csharp
+public static void ForgetLease(string containerId);
+```
+
+A lease row went away (a carrier despawned): forget whatever was recorded for it.
 
 ### NotifyLeasesChanged [#notifyleaseschanged]
 

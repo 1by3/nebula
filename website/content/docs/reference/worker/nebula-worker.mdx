@@ -29,6 +29,14 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
 
+### MaxNestingDepth [#maxnestingdepth]
+
+```csharp
+public const int MaxNestingDepth = 8;
+```
+
+Deepest container nesting the ghost band walks (a shuttle in a hangar in a carrier is depth 3).
+
 ## Properties
 
 ### Config [#config]

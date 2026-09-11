@@ -86,7 +86,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 6;
+        public const ushort ProtocolVersion = 7;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -170,7 +170,8 @@ namespace Nebula
         public ulong NetId;
         public ushort PrefabId;
         public uint OwnerClientId;
-        public ushort ContainerIndex;
+        /// <summary>The container the pose is expressed in (static index, or the carrier's net id for a dynamic container).</summary>
+        public ContainerRef Container;
         public uint Epoch;
         public ushort OwnerWorkerIndex;
         public Vector3 LocalPosition;
@@ -202,7 +203,7 @@ namespace Nebula
                 SceneId = id.SceneId,
                 OwnerClientId = id.OwnerClientId,
                 Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
-                ContainerIndex = id.ContainerIndex,
+                Container = id.ContainerRef,
                 Epoch = id.Epoch,
                 OwnerWorkerIndex = NebulaRuntime.LocalWorkerIndex,
                 LocalPosition = id.LocalPosition,
@@ -224,7 +225,7 @@ namespace Nebula
             w.WriteULong(NetId);
             w.WriteUShort(PrefabId);
             w.WriteUInt(OwnerClientId);
-            w.WriteUShort(ContainerIndex);
+            Container.Write(w);
             w.WriteUInt(Epoch);
             w.WriteUShort(OwnerWorkerIndex);
             w.WriteVector3(LocalPosition);
@@ -243,7 +244,7 @@ namespace Nebula
                 NetId = r.ReadULong(),
                 PrefabId = r.ReadUShort(),
                 OwnerClientId = r.ReadUInt(),
-                ContainerIndex = r.ReadUShort(),
+                Container = ContainerRef.Read(r),
                 Epoch = r.ReadUInt(),
                 OwnerWorkerIndex = r.ReadUShort(),
                 LocalPosition = r.ReadVector3(),
@@ -292,7 +293,7 @@ namespace Nebula
     /// <summary>
     /// One entity's sync chunks for one tick (see <see cref="SyncStateCodec"/>). Sent as EntityState (worker -> gateway
     /// -> clients) and GhostSyncState (worker -> worker). <see cref="Reliable"/> tells the gateway which channel to
-    /// re-emit it on; the container index lets world-space chunks be resolved in the same frame as the pose entry
+    /// re-emit it on; the container reference lets world-space chunks be resolved in the same frame as the pose entry
     /// for that tick even when the two packets arrive out of order.
     /// </summary>
     public struct EntitySyncMsg
@@ -300,7 +301,7 @@ namespace Nebula
         public ulong NetId;
         public uint Epoch;
         public uint Tick;
-        public ushort ContainerIndex;
+        public ContainerRef Container;
         public bool Reliable;
         public byte[] Chunks;
 
@@ -312,7 +313,7 @@ namespace Nebula
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
             w.WriteUInt(Tick);
-            w.WriteUShort(ContainerIndex);
+            Container.Write(w);
             w.WriteBool(Reliable);
             w.WriteBytes(Chunks);
         }
@@ -322,7 +323,7 @@ namespace Nebula
             NetId = r.ReadULong(),
             Epoch = r.ReadUInt(),
             Tick = r.ReadUInt(),
-            ContainerIndex = r.ReadUShort(),
+            Container = ContainerRef.Read(r),
             Reliable = r.ReadBool(),
             Chunks = r.ReadBytes(),
         };
@@ -364,15 +365,16 @@ namespace Nebula
     public struct EntityStateEntry
     {
         /// <summary>
-        /// Serialized size of one entry, for sizing Sequenced batches: id, epoch, container, position (3 floats),
-        /// rotation (smallest-three, 4 bytes) and velocity (3 halves). Rotation and velocity are the two fields that
-        /// tolerate compression: a pawn's yaw to a hundredth of a degree and its speed to three decimals.
+        /// Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two
+        /// bytes for a static container, ten for a dynamic one), position (3 floats), rotation (smallest-three,
+        /// 4 bytes) and velocity (3 halves). Rotation and velocity are the two fields that tolerate compression: a
+        /// pawn's yaw to a hundredth of a degree and its speed to three decimals.
         /// </summary>
-        public const int WireSize = 8 + 4 + 2 + 12 + 4 + 6;
+        public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 12 + 4 + 6;
 
         public ulong NetId;
         public uint Epoch;
-        public ushort ContainerIndex;
+        public ContainerRef Container;
         public Vector3 LocalPosition;
         public Quaternion LocalRotation;
         public Vector3 Velocity;
@@ -381,7 +383,7 @@ namespace Nebula
         {
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
-            w.WriteUShort(ContainerIndex);
+            Container.Write(w);
             w.WriteVector3(LocalPosition);
             w.WriteCompressedQuaternion(LocalRotation);
             w.WriteHalf(Velocity.x);
@@ -393,7 +395,7 @@ namespace Nebula
         {
             NetId = r.ReadULong(),
             Epoch = r.ReadUInt(),
-            ContainerIndex = r.ReadUShort(),
+            Container = ContainerRef.Read(r),
             LocalPosition = r.ReadVector3(),
             LocalRotation = r.ReadCompressedQuaternion(),
             Velocity = new Vector3(r.ReadHalf(), r.ReadHalf(), r.ReadHalf()),
@@ -441,6 +443,8 @@ namespace Nebula
         /// </summary>
         public sbyte InputLead;
         public uint OwnerClientId;
+        /// <summary>The container the state's pose is expressed in, so the owner reconciles in the right frame on the tick it crosses a seam.</summary>
+        public ContainerRef Container;
         public byte[] State;
 
         public const sbyte NoInputLead = sbyte.MinValue;
@@ -454,6 +458,7 @@ namespace Nebula
             w.WriteUInt(LastInputTick);
             w.WriteSByte(InputLead);
             w.WriteUInt(OwnerClientId);
+            Container.Write(w);
             w.WriteBytes(State);
         }
 
@@ -465,6 +470,7 @@ namespace Nebula
             LastInputTick = r.ReadUInt(),
             InputLead = r.ReadSByte(),
             OwnerClientId = r.ReadUInt(),
+            Container = ContainerRef.Read(r),
             State = r.ReadBytes(),
         };
     }

@@ -83,6 +83,15 @@ namespace Nebula
         private const float ScenePassSeconds = 0.25f;
         private float _nextScenePass;
 
+        // Dynamic containers (see DynamicContainer): a ghost or a handover for an entity inside a carrier that has
+        // not arrived here yet waits by the carrier's net id and is applied when the carrier's container registers.
+        // Reliable ordering normally delivers the carrier first; this covers a carrier that was never ghosted here.
+        private readonly Dictionary<ulong, List<EntitySpawnMsg>> _pendingGhostsByCarrier = new Dictionary<ulong, List<EntitySpawnMsg>>();
+        private readonly Dictionary<ulong, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ulong, List<PendingTransfer>>();
+        private readonly List<Container> _neighborScratch = new List<Container>();
+        private readonly List<NetworkIdentity> _contentsScratch = new List<NetworkIdentity>();
+        private readonly HashSet<string> _seenLeases = new HashSet<string>();
+
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
         private readonly NetworkReader _reader = new NetworkReader();
@@ -227,6 +236,8 @@ namespace Nebula
             IsListening = true;
             ControlPlane.Changed += OnControlPlaneChanged;
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
+            ContainerRegistry.DynamicRegistered += OnDynamicContainerRegistered;
+            ContainerRegistry.WorkerIdByIndex = ResolveWorkerId;
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             OnLeasesChanged();
@@ -234,9 +245,37 @@ namespace Nebula
             _gameMode?.OnWorkerStarted(this);
         }
 
+        /// <summary>
+        /// Keep the control-plane lease of every carried container this worker's carriers hold in step: a dynamic
+        /// container's lease follows its carrier (this worker assigns it to itself) unless the orchestrator has
+        /// pinned it to a worker of its own, in which case the row is left alone. Called when authority over a
+        /// carrier is gained and whenever the control plane changes; a no-op when nothing is out of date.
+        /// </summary>
+        private void SyncCarriedLeases()
+        {
+            if (!_registered || !ControlPlane.IsConnected) return;
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var carried = _authoritative[i].Carried;
+                if (carried == null || !carried.IsDynamic) continue;
+                var lease = ControlPlane.FindLease(carried.ContainerId);
+                if (lease == null) { ControlPlane.EnsureContainer(carried.ContainerId); ControlPlane.AssignContainer(carried.ContainerId, WorkerId); continue; }
+                if (lease.State == LeaseState.Pinned) continue;
+                if (lease.WorkerId != WorkerId || lease.State != LeaseState.Active) ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
+            }
+        }
+
+        /// <summary>Worker id for a worker index: this worker, or a connected peer. Dynamic containers derive their owner through this.</summary>
+        private string ResolveWorkerId(ushort index)
+        {
+            if (index == WorkerIndex) return WorkerId;
+            return _workerPeersByIndex.TryGetValue(index, out var p) ? p.Id : "";
+        }
+
         private void OnDestroy()
         {
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
+            ContainerRegistry.DynamicRegistered -= OnDynamicContainerRegistered;
             SceneEntities.Registered -= OnSceneEntityRegistered;
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             if (ControlPlane != null)
@@ -512,9 +551,12 @@ namespace Nebula
             foreach (var e in _entities.Values)
             {
                 if (e.HasAuthority) continue;
-                if (e.Interpolator != null && e.Interpolator.Sample(renderTick, out var pos, out var rot))
+                if (e.Interpolator != null && e.Interpolator.Sample(renderTick, out var container, out var pos, out var rot))
                 {
-                    e.transform.SetPositionAndRotation(pos, rot);
+                    // Container-local, applied under the container's transform: a passenger ghost lands where the
+                    // ship ghost is this tick whichever of the two this loop reaches first.
+                    if (container != e.Container) e.SetContainer(container);
+                    e.SetLocalPose(container, pos, rot);
                     e.Velocity = e.Interpolator.LatestVelocity;
                 }
                 e.RemoteTick(renderTick);
@@ -525,16 +567,34 @@ namespace Nebula
             Physics.SyncTransforms();
             ProfSyncTransforms.End();
 
-            // 2. Simulate what we own.
+            // 2. Simulate what we own: carriers before their contents (by nesting depth), with the physics scene
+            // brought up to date in between. A pawn standing in a ship casts against the hull's colliders, and those
+            // have to be where the hull moved to this tick: otherwise the cockpit of a ship at speed sweeps through
+            // the pawn a tick late and the depenetration shoves the pawn out of the ship.
             ProfSimulate.Begin();
-            for (int i = 0; i < _authoritative.Count; i++)
+            for (int depth = 0; depth <= MaxNestingDepth; depth++)
             {
-                var e = _authoritative[i];
-                var behaviours = e.Behaviours;
-                for (int b = 0; b < behaviours.Length; b++)
+                bool deeper = false, carrierTicked = false;
+                for (int i = 0; i < _authoritative.Count; i++)
                 {
-                    try { behaviours[b].NetworkTick(tick, dt); }
-                    catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
+                    var e = _authoritative[i];
+                    int d = e.Container != null ? e.Container.NestingDepth : 0;
+                    if (d > depth) { deeper = true; continue; }
+                    if (d < depth) continue;
+                    var behaviours = e.Behaviours;
+                    for (int b = 0; b < behaviours.Length; b++)
+                    {
+                        try { behaviours[b].NetworkTick(tick, dt); }
+                        catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
+                    }
+                    if (e.Carried != null) carrierTicked = true;
+                }
+                if (!deeper) break;
+                if (carrierTicked)
+                {
+                    ProfSyncTransforms.Begin();
+                    Physics.SyncTransforms();
+                    ProfSyncTransforms.End();
                 }
             }
             ProfSimulate.End();
@@ -550,7 +610,9 @@ namespace Nebula
             _scratchEntities.AddRange(_authoritative);
             foreach (var e in _scratchEntities)
             {
-                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis);
+                if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
+                // A carrier never resolves into the container it carries (its origin is inside its own box).
+                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e.Carried);
                 if (resolved != e.Container)
                 {
                     var previous = e.Container;
@@ -630,6 +692,7 @@ namespace Nebula
             identity.InvokeSpawn();
             foreach (var b in identity.Behaviours) b.OnGainedAuthority();
             identity.ClearDirty();
+            if (identity.Carried != null) SyncCarriedLeases();
 
             var msg = EntitySpawnMsg.From(identity, _scratch);
             foreach (var g in _gateways) SendSpawn(g, msg, MsgId.EntitySpawn);
@@ -656,6 +719,8 @@ namespace Nebula
             }
             var despawn = new EntityDespawnMsg { NetId = identity.NetId, Epoch = identity.Epoch };
             foreach (var g in _gateways) { _writer.Reset(); despawn.Write(_writer, MsgId.EntityDespawn); Send(g, Delivery.ReliableOrdered); }
+            var carried = identity.Carried;
+            if (carried != null && carried.IsDynamic && _registered && ControlPlane.IsConnected) ControlPlane.RemoveContainer(carried.ContainerId);
             if (_ghostTargets.TryGetValue(identity.NetId, out var targets))
             {
                 foreach (var workerId in targets.Keys)
@@ -690,32 +755,37 @@ namespace Nebula
             float now = Time.unscaledTime;
             float margin = Config.GhostBandMargin;
 
-            for (int i = 0; i < _authoritative.Count; i++)
+            // Entities in static containers first, then the contents of carriers by nesting depth: whatever is
+            // inside a ship is ghosted wherever the ship is ghosted, so the neighbour holds the whole subtree warm
+            // before the ship can cross, and that needs the ship's targets decided first.
+            for (int depth = 0; depth <= MaxNestingDepth; depth++)
             {
-                var e = _authoritative[i];
-                var c = e.Container;
-                if (c == null) continue;
-                var pos = e.transform.position;
-                Dictionary<string, float> targets = null;
-                foreach (var n in c.Neighbors)
+                bool deeper = false;
+                for (int i = 0; i < _authoritative.Count; i++)
                 {
-                    var owner = n.OwnerWorkerId;
-                    if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
-                    if (c.DistanceToSeam(pos, n) > margin) continue;
-                    if (!_workerPeersById.TryGetValue(owner, out var peer) || !peer.HelloReceived) continue;
-                    if (targets == null && !_ghostTargets.TryGetValue(e.NetId, out targets))
+                    var e = _authoritative[i];
+                    var c = e.Container;
+                    if (c == null) continue;
+                    int d = c.NestingDepth;
+                    if (d > depth) { deeper = true; continue; }
+                    if (d < depth) continue;
+                    var pos = e.transform.position;
+                    Dictionary<string, float> targets = null;
+                    ContainerRegistry.NeighborsOf(c, _neighborScratch);
+                    foreach (var n in _neighborScratch)
                     {
-                        targets = new Dictionary<string, float>();
-                        _ghostTargets[e.NetId] = targets;
+                        var owner = n.OwnerWorkerId;
+                        if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
+                        if (c.DistanceToSeam(pos, n) > margin) continue;
+                        Ghost(e, owner, ref targets, now);
                     }
-                    if (!targets.ContainsKey(owner))
+                    // Inside a carrier: follow the carrier's ghosts.
+                    if (c.IsDynamic && c.Carrier != null && _ghostTargets.TryGetValue(c.Carrier.NetId, out var carrierTargets))
                     {
-                        SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
-                        GhostsSent++;
-                        NebulaLog.Debugf($"ghost {e} -> {owner}");
+                        foreach (var kv in carrierTargets) Ghost(e, kv.Key, ref targets, now);
                     }
-                    targets[owner] = now;
                 }
+                if (!deeper) break;
             }
 
             // Expire ghosts that left the band a while ago, and stream to the rest.
@@ -809,11 +879,32 @@ namespace Nebula
             GhostsHeld = _entities.Count - _authoritative.Count;
         }
 
+        /// <summary>Deepest container nesting the ghost band walks (a shuttle in a hangar in a carrier is depth 3).</summary>
+        public const int MaxNestingDepth = 8;
+
+        /// <summary>Make sure <paramref name="owner"/> holds a ghost of <paramref name="e"/> and refresh its band timestamp.</summary>
+        private void Ghost(NetworkIdentity e, string owner, ref Dictionary<string, float> targets, float now)
+        {
+            if (!_workerPeersById.TryGetValue(owner, out var peer) || !peer.HelloReceived) return;
+            if (targets == null && !_ghostTargets.TryGetValue(e.NetId, out targets))
+            {
+                targets = new Dictionary<string, float>();
+                _ghostTargets[e.NetId] = targets;
+            }
+            if (!targets.ContainsKey(owner))
+            {
+                SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
+                GhostsSent++;
+                NebulaLog.Debugf($"ghost {e} -> {owner}");
+            }
+            targets[owner] = now;
+        }
+
         private static EntityStateEntry Entry(NetworkIdentity e) => new EntityStateEntry
         {
             NetId = e.NetId,
             Epoch = e.Epoch,
-            ContainerIndex = e.ContainerIndex,
+            Container = e.ContainerRef,
             LocalPosition = e.LocalPosition,
             LocalRotation = e.LocalRotation,
             Velocity = e.Velocity,
@@ -853,12 +944,24 @@ namespace Nebula
             e.OwnerWorkerIndex = (ushort)target.Index;
             _authoritative.Remove(e);
             e.SetAuthority(false);
-            EnsureInterpolator(e).Push(CurrentTick, e.transform.position, e.transform.rotation, e.Velocity);
+            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Velocity);
             SetGhostPhysics(e, true);
             _handedOff[e.NetId] = target.Id;
             HandoversOut++;
             AuthorityHandedOff?.Invoke(e, target.Id);
             NebulaLog.Info($"handover OUT {e} -> {target.Id} (epoch {newEpoch}, tick {CurrentTick})");
+
+            // A carrier takes its contents with it, in the same tick and on the same ordered channel, so the
+            // receiver applies the ship before the passengers and nobody aboard is ever simulated apart from it.
+            // Unless the interior is pinned to a worker of its own: then the contents stay where the lease says.
+            var carried = e.Carried;
+            if (carried != null && carried.Entities.Count > 0 && !carried.IsPinned)
+            {
+                _contentsScratch.Clear();
+                _contentsScratch.AddRange(carried.Entities);
+                foreach (var inner in _contentsScratch)
+                    if (inner != null && inner.HasAuthority) TransferAuthority(inner, target);
+            }
         }
 
         private void OnAuthorityTransfer(Peer from, AuthorityTransferMsg msg)
@@ -870,6 +973,12 @@ namespace Nebula
                 _pendingSceneTransfers[msg.Entity.SceneId] = new PendingTransfer { From = from, Msg = msg };
                 _pendingSceneGhosts.Remove(msg.Entity.SceneId);
                 NebulaLog.Info($"handover IN  scene entity {msg.Entity.SceneId} #{msg.Entity.NetId} <- {from.Id} waits for its cell");
+                return;
+            }
+            if (e == null && msg.Entity.Container.IsDynamic && ContainerRegistry.Resolve(msg.Entity.Container) == null)
+            {
+                Pend(_pendingTransfersByCarrier, msg.Entity.Container.NetId, new PendingTransfer { From = from, Msg = msg });
+                NebulaLog.Info($"handover IN  #{msg.Entity.NetId} <- {from.Id} waits for carrier #{msg.Entity.Container.NetId}");
                 return;
             }
             if (e == null) e = InstantiateGhost(msg.Entity);
@@ -900,6 +1009,7 @@ namespace Nebula
             HandoversIn++;
             AuthorityReceived?.Invoke(e, from.Id);
             NebulaLog.Info($"handover IN  {e} <- {from.Id} (epoch {msg.NewEpoch}, tick {CurrentTick})");
+            if (e.Carried != null) SyncCarriedLeases();
 
             // Tell the gateway we own it now (a spawn for a known id is an update).
             var spawn = EntitySpawnMsg.From(e, _scratch);
@@ -924,9 +1034,36 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- ghosts (receiving)
 
+        private static void Pend<T>(Dictionary<ulong, List<T>> pending, ulong carrierNetId, T item)
+        {
+            if (!pending.TryGetValue(carrierNetId, out var list)) pending[carrierNetId] = list = new List<T>();
+            list.Add(item);
+        }
+
+        /// <summary>A carrier's container is resolvable now: apply the ghosts and handovers that were waiting for it.</summary>
+        private void OnDynamicContainerRegistered(Container container)
+        {
+            ulong netId = container.CarrierNetId;
+            if (_pendingGhostsByCarrier.TryGetValue(netId, out var ghosts))
+            {
+                _pendingGhostsByCarrier.Remove(netId);
+                foreach (var msg in ghosts) OnGhostSpawn(null, msg);
+            }
+            if (_pendingTransfersByCarrier.TryGetValue(netId, out var transfers))
+            {
+                _pendingTransfersByCarrier.Remove(netId);
+                foreach (var t in transfers) OnAuthorityTransfer(t.From, t.Msg);
+            }
+        }
+
         private NetworkIdentity InstantiateGhost(EntitySpawnMsg msg)
         {
-            var container = ContainerRegistry.Get(msg.ContainerIndex);
+            var container = ContainerRegistry.Resolve(msg.Container);
+            if (container == null && msg.Container.IsDynamic)
+            {
+                Pend(_pendingGhostsByCarrier, msg.Container.NetId, msg);
+                return null;
+            }
             var identity = msg.SceneId != 0
                 ? BindSceneEntity(msg)
                 : NetworkPrefabs.Instantiate(msg.PrefabId, Vector3.zero, Quaternion.identity, container != null ? container.transform : null);
@@ -934,7 +1071,7 @@ namespace Nebula
             identity.NetId = msg.NetId;
             identity.HasAuthority = false;
             ApplySpawnData(identity, msg, msg.Epoch);
-            EnsureInterpolator(identity).Push(CurrentTick, identity.transform.position, identity.transform.rotation, identity.Velocity);
+            EnsureInterpolator(identity).Push(CurrentTick, identity.Container, identity.LocalPosition, identity.LocalRotation, identity.Velocity);
             SetGhostPhysics(identity, true);
             _entities[identity.NetId] = identity;
             if (msg.OwnerClientId != 0 && !_players.ContainsKey(msg.OwnerClientId)) _players[msg.OwnerClientId] = identity;
@@ -952,7 +1089,13 @@ namespace Nebula
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
-            var container = ContainerRegistry.Get(msg.ContainerIndex);
+            var container = ContainerRegistry.Resolve(msg.Container);
+            if (container == null && msg.Container.IsDynamic)
+            {
+                // Its carrier is not here (yet): keep the pose in the container we last knew, rather than a wrong one.
+                NebulaLog.Warn($"{e}: spawn data names carrier #{msg.Container.NetId}, unknown here; keeping its current container");
+                container = e.Container;
+            }
             e.SetContainer(container);
             e.SetLocalPose(container, msg.LocalPosition, msg.LocalRotation);
             e.Velocity = msg.Velocity;
@@ -981,7 +1124,7 @@ namespace Nebula
             {
                 if (msg.Epoch > e.Epoch)
                 {
-                    NebulaLog.Warn($"{from.Id} claims {e} at epoch {msg.Epoch} > ours {e.Epoch}; yielding authority");
+                    NebulaLog.Warn($"{(from != null ? from.Id : "a peer")} claims {e} at epoch {msg.Epoch} > ours {e.Epoch}; yielding authority");
                     _authoritative.Remove(e);
                     e.SetAuthority(false);
                     SetGhostPhysics(e, true);
@@ -990,7 +1133,7 @@ namespace Nebula
             }
             if (msg.Epoch < e.Epoch) return;
             ApplySpawnData(e, msg, msg.Epoch);
-            EnsureInterpolator(e).Push(CurrentTick, e.transform.position, e.transform.rotation, e.Velocity);
+            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Velocity);
         }
 
         private void OnGhostState(Peer from, NetworkReader r)
@@ -1001,11 +1144,9 @@ namespace Nebula
                 var entry = EntityStateEntry.Read(r);
                 var e = Find(entry.NetId);
                 if (e == null || e.HasAuthority || entry.Epoch < e.Epoch) continue;
-                var container = ContainerRegistry.Get(entry.ContainerIndex);
-                if (container != e.Container) e.SetContainer(container);
-                Vector3 world = container != null ? container.ToWorld(entry.LocalPosition) : entry.LocalPosition;
-                Quaternion rot = container != null ? container.Rotation * entry.LocalRotation : entry.LocalRotation;
-                EnsureInterpolator(e).Push(tick, world, rot, entry.Velocity);
+                var container = ContainerRegistry.Resolve(entry.Container);
+                if (container == null && entry.Container.IsDynamic) continue; // its carrier has not arrived here yet
+                EnsureInterpolator(e).Push(tick, container, entry.LocalPosition, entry.LocalRotation, entry.Velocity);
                 e.OwnerWorkerIndex = workerIndex;
             }
         }
@@ -1028,7 +1169,7 @@ namespace Nebula
                     NetId = e.NetId,
                     Epoch = e.Epoch,
                     Tick = tick,
-                    ContainerIndex = e.ContainerIndex,
+                    Container = e.ContainerRef,
                     Reliable = delivery == Delivery.ReliableOrdered,
                     Chunks = _scratch.ToArray(),
                 }.Write(_writer, id);
@@ -1041,7 +1182,7 @@ namespace Nebula
             var e = Find(msg.NetId);
             if (e == null || e.HasAuthority || msg.Epoch < e.Epoch) return;
             _reader.Set(new ArraySegment<byte>(msg.Chunks));
-            e.ReadSyncState(_reader, msg.Tick, ContainerRegistry.Get(msg.ContainerIndex));
+            e.ReadSyncState(_reader, msg.Tick, ContainerRegistry.Resolve(msg.Container) ?? e.Container);
         }
 
         private void OnGhostVars(Peer from, EntityVarsMsg msg)
@@ -1055,6 +1196,8 @@ namespace Nebula
 
         private void OnGhostDespawn(Peer from, EntityDespawnMsg msg)
         {
+            _pendingGhostsByCarrier.Remove(msg.NetId);
+            _pendingTransfersByCarrier.Remove(msg.NetId);
             var e = Find(msg.NetId);
             if (e == null) { DropPendingScene(msg.NetId); return; }
             if (e.HasAuthority || msg.Epoch < e.Epoch) return;
@@ -1123,6 +1266,7 @@ namespace Nebula
                         LastInputTick = e.Predicted.LastProcessedInputTick,
                         InputLead = e.Predicted.TakeInputLead(),
                         OwnerClientId = e.OwnerClientId,
+                        Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                     }.Write(_writer);
                     foreach (var g in _gateways) Send(g, Delivery.Sequenced);
@@ -1285,15 +1429,19 @@ namespace Nebula
         private void OnControlPlaneChanged()
         {
             // Leases -> container ownership.
+            _seenLeases.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
                 ushort idx = ushort.MaxValue;
                 var w = ControlPlane.FindWorker(lease.WorkerId);
                 if (w != null) idx = (ushort)w.WorkerIndex;
-                string owner = lease.State == LeaseState.Active || lease.State == LeaseState.Draining ? lease.WorkerId : "";
-                ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch);
+                string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
+                ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
+                _seenLeases.Add(lease.ContainerId);
             }
+            foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
             ContainerRegistry.NotifyLeasesChanged();
+            SyncCarriedLeases();
             // Peers: the lower index dials the higher one so each pair has exactly one link.
             foreach (var w in ControlPlane.Workers)
             {

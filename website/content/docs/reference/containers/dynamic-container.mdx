@@ -1,0 +1,75 @@
+---
+title: "DynamicContainer"
+description: "Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/DynamicContainer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/DynamicContainer.cs)</div>
+
+```csharp
+[RequireComponent(typeof(Container))]
+[DisallowMultipleComponent]
+public sealed class DynamicContainer : NetworkBehaviour
+```
+
+Makes the entity this sits on carry a [`Container`](/docs/reference/containers/container) of its own: a ship with an interior, a train car, a lift, a space station that drifts. The container exists wherever the carrier does (it is created when the entity spawns on a process and removed when it despawns there), it moves with the carrier's transform, and it is owned by whichever worker is authoritative for the carrier: there is no lease on the control plane for it. Entities inside it are parented under the carrier and replicated in its local space, so a full ship crossing a seam is one entity changing containers; everyone aboard is handed over with it, in the same tick, and their coordinates never change.
+
+Put it on the entity's root next to the [`NetworkIdentity`](/docs/reference/core/network-identity), with the [`Container`](/docs/reference/containers/container) that describes the interior box (in the root's local space). The root transform is the container's frame; a frame on a child object is not supported, because the gateway must be able to position the contents from the carrier's pose alone. On the wire the container is named by the carrier's net id ([`ContainerRef`](/docs/reference/containers/container-ref)), so it needs no index and every process resolves it as soon as it has the carrier.
+
+Nesting works as for static containers: the smallest box holding a point wins, so a shuttle parked inside a carrier's hangar is a container inside a container, and the carrier's own position is resolved in the container around it, never in the box it carries. The carrier's [`NetworkIdentity.Container`](/docs/reference/core/network-identity#container) is what it sits in; [`Volume`](#volume) is what it carries.
+
+## Properties
+
+### Volume [#volume]
+
+```csharp
+public Container Volume { get; }
+```
+
+The container this entity carries (the [`Container`](/docs/reference/containers/container) component on the same object).
+
+### Contents [#contents]
+
+```csharp
+public IReadOnlyList<NetworkIdentity> Contents { get; }
+```
+
+The entities currently inside the carried container on this process (authoritative, ghosts or client copies).
+
+### IsRegistered [#isregistered]
+
+```csharp
+public bool IsRegistered { get; }
+```
+
+Registered with the registry: [`ContainerRegistry.Resolve`](/docs/reference/containers/container-registry#resolve) finds it by the carrier's net id.
+
+## Methods
+
+### OfRigidbody [#ofrigidbody]
+
+```csharp
+public static DynamicContainer OfRigidbody(Rigidbody body);
+```
+
+The dynamic container whose carrier owns `body`, or null. Game movement code that treats colliders without a Rigidbody as the level can use this to walk on a vehicle's floor as well.
+
+### IsCarrierGeometry [#iscarriergeometry]
+
+```csharp
+public static bool IsCarrierGeometry(Collider collider);
+```
+
+Whether `collider` belongs to a dynamic container's carrier (the hull of a vehicle, the floor of a lift).
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnNetworkDespawn [#onnetworkdespawn]
+
+```csharp
+public override void OnNetworkDespawn();
+```
+

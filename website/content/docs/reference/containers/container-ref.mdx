@@ -1,0 +1,148 @@
+---
+title: "ContainerRef"
+description: "How a container is named on the wire."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerRef.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerRef.cs)</div>
+
+```csharp
+public readonly struct ContainerRef : IEquatable<ContainerRef>
+```
+
+How a container is named on the wire. A static container (authored into the scene or baked into the world manifest) is its dense registry [`Index`](#index), identical in every process. A dynamic container (one a [`DynamicContainer`](/docs/reference/containers/dynamic-container) entity carries: a ship, a train, a moving station) has no stable index, since it is created and destroyed at runtime by whichever worker spawns its carrier; it is named by the carrier's [`NetId`](#netid), which is already mesh-unique and follows the entity through every handover. On the wire that is two bytes for a static container and ten for a dynamic one.
+
+## Constructors
+
+### ContainerRef [#containerref]
+
+```csharp
+public ContainerRef(ushort index, ulong netId = 0);
+```
+
+## Fields
+
+### NoneIndex [#noneindex]
+
+```csharp
+public const ushort NoneIndex = ushort.MaxValue;
+```
+
+[`Index`](#index) of "no container".
+
+### DynamicIndex [#dynamicindex]
+
+```csharp
+public const ushort DynamicIndex = ushort.MaxValue - 1;
+```
+
+[`Index`](#index) that says "dynamic: look at [`NetId`](#netid)".
+
+### MaxWireSize [#maxwiresize]
+
+```csharp
+public const int MaxWireSize = 2 + 8;
+```
+
+Largest serialized size (a dynamic reference), for sizing fixed batches.
+
+### Index [#index]
+
+```csharp
+public readonly ushort Index;
+```
+
+### NetId [#netid]
+
+```csharp
+public readonly ulong NetId;
+```
+
+### None [#none]
+
+```csharp
+public static readonly ContainerRef None = new ContainerRef(NoneIndex);
+```
+
+## Properties
+
+### IsNone [#isnone]
+
+```csharp
+public bool IsNone { get; }
+```
+
+### IsDynamic [#isdynamic]
+
+```csharp
+public bool IsDynamic { get; }
+```
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static ContainerRef Of(Container container);
+```
+
+The reference for `container` ([`None`](#none) for null).
+
+### Dynamic [#dynamic]
+
+```csharp
+public static ContainerRef Dynamic(ulong carrierNetId);
+```
+
+A reference to the dynamic container carried by entity `carrierNetId`.
+
+### Resolve [#resolve]
+
+```csharp
+public Container Resolve();
+```
+
+The container this names in this process, or null when it is unknown here (see [`ContainerRegistry.Resolve`](/docs/reference/containers/container-registry#resolve)).
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static ContainerRef Read(NetworkReader r);
+```
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(ContainerRef other);
+public override bool Equals(object obj);
+```
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### operator == [#operator]
+
+```csharp
+public static bool operator ==(ContainerRef a, ContainerRef b);
+```
+
+### operator != [#operator]
+
+```csharp
+public static bool operator !=(ContainerRef a, ContainerRef b);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

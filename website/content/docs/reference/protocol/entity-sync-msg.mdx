@@ -9,7 +9,7 @@ description: "One entity's sync chunks for one tick (see SyncStateCodec)."
 public struct EntitySyncMsg
 ```
 
-One entity's sync chunks for one tick (see [`SyncStateCodec`](/docs/reference/core/sync-state-codec)). Sent as EntityState (worker -\> gateway -\> clients) and GhostSyncState (worker -\> worker). [`Reliable`](#reliable) tells the gateway which channel to re-emit it on; the container index lets world-space chunks be resolved in the same frame as the pose entry for that tick even when the two packets arrive out of order.
+One entity's sync chunks for one tick (see [`SyncStateCodec`](/docs/reference/core/sync-state-codec)). Sent as EntityState (worker -\> gateway -\> clients) and GhostSyncState (worker -\> worker). [`Reliable`](#reliable) tells the gateway which channel to re-emit it on; the container reference lets world-space chunks be resolved in the same frame as the pose entry for that tick even when the two packets arrive out of order.
 
 ## Fields
 
@@ -31,10 +31,10 @@ public uint Epoch;
 public uint Tick;
 ```
 
-### ContainerIndex [#containerindex]
+### Container [#container]
 
 ```csharp
-public ushort ContainerIndex;
+public ContainerRef Container;
 ```
 
 ### Reliable [#reliable]

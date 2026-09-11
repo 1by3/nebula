@@ -52,7 +52,8 @@ namespace Nebula
             public uint Epoch;
             public ushort OwnerWorkerIndex;
             public uint OwnerClientId;
-            public ushort ContainerIndex;
+            /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
+            public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
             /// <summary>Newest keyframe per behaviour index, assembled into LastSpawn.State for late joiners.</summary>
             public Dictionary<byte, byte[]> SyncKeyframes;
@@ -169,16 +170,19 @@ namespace Nebula
             _ownership.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
+                // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
+                // still relayed so clients that do hold the carrier can show who is pinned to it.
                 var c = ContainerRegistry.FindById(lease.ContainerId);
-                if (c == null) continue;
+                bool dynamic = c == null && ContainerRegistry.IsDynamicId(lease.ContainerId);
+                if (c == null && !dynamic) continue;
                 var w = ControlPlane.FindWorker(lease.WorkerId);
                 ushort idx = w != null ? (ushort)w.WorkerIndex : ushort.MaxValue;
-                string owner = lease.State == LeaseState.Active || lease.State == LeaseState.Draining ? lease.WorkerId : "";
-                ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch);
+                string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
+                if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
                 _ownership.Add(new ContainerOwnershipEntry
                 {
-                    ContainerIndex = c.Index,
-                    ContainerId = c.ContainerId,
+                    ContainerIndex = c != null ? c.Index : ContainerRef.DynamicIndex,
+                    ContainerId = lease.ContainerId,
                     WorkerIndex = idx,
                     WorkerId = owner,
                     Epoch = lease.Epoch,
@@ -309,7 +313,7 @@ namespace Nebula
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
             rec.OwnerClientId = msg.OwnerClientId;
-            rec.ContainerIndex = msg.ContainerIndex;
+            rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
             rec.SeedKeyframes(msg.State);
@@ -384,8 +388,8 @@ namespace Nebula
                 var entry = EntityStateEntry.Read(r);
                 if (!_entities.TryGetValue(entry.NetId, out var rec)) continue;
                 if (entry.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) continue;
-                rec.ContainerIndex = entry.ContainerIndex;
-                rec.LastSpawn.ContainerIndex = entry.ContainerIndex;
+                rec.Container = entry.Container;
+                rec.LastSpawn.Container = entry.Container;
                 rec.LastSpawn.LocalPosition = entry.LocalPosition;
                 rec.LastSpawn.LocalRotation = entry.LocalRotation;
                 _scratchEntries.Add(entry);
@@ -451,8 +455,7 @@ namespace Nebula
             if (!hasPawn) divisor = Config.InterestFarDivisor;
             else
             {
-                var container = ContainerRegistry.Get(entry.ContainerIndex);
-                var pos = container != null ? container.ToWorld(entry.LocalPosition) : entry.LocalPosition;
+                var pos = WorldPosition(entry.Container, entry.LocalPosition, 0);
                 float d2 = (pos - pawnPos).sqrMagnitude;
                 if (d2 <= Config.InterestNearRadius * Config.InterestNearRadius) return true;
                 divisor = d2 <= Config.InterestFarRadius * Config.InterestFarRadius ? Config.InterestMidDivisor : Config.InterestFarDivisor;
@@ -465,10 +468,53 @@ namespace Nebula
         {
             position = default;
             if (c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var rec)) return false;
-            var container = ContainerRegistry.Get(rec.ContainerIndex);
-            position = container != null ? container.ToWorld(rec.LastSpawn.LocalPosition) : rec.LastSpawn.LocalPosition;
+            position = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
             return true;
         }
+
+        /// <summary>
+        /// A container-local position as a world position. The gateway holds no entities, so a dynamic container's
+        /// frame is rebuilt from its carrier's newest pose (itself container-local, hence the recursion): a
+        /// DynamicContainer's frame is its carrier's root transform, which is what makes this possible here.
+        /// </summary>
+        private Vector3 WorldPosition(ContainerRef container, Vector3 local, int depth)
+        {
+            if (container.IsDynamic)
+            {
+                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                var carrierPos = WorldPosition(carrier.Container, carrier.LastSpawn.LocalPosition, depth + 1);
+                var carrierRot = WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1);
+                return carrierPos + carrierRot * local;
+            }
+            var c = ContainerRegistry.Get(container.Index);
+            return c != null ? c.ToWorld(local) : local;
+        }
+
+        private Quaternion WorldRotation(ContainerRef container, Quaternion local, int depth)
+        {
+            if (container.IsDynamic)
+            {
+                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                return WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1) * local;
+            }
+            var c = ContainerRegistry.Get(container.Index);
+            return c != null ? c.Rotation * local : local;
+        }
+
+        /// <summary>How many carriers an entity's container sits inside (0 in a static container), so a late joiner gets carriers before their contents.</summary>
+        private int CarrierDepth(EntityRecord rec)
+        {
+            int depth = 0;
+            var r = rec.Container;
+            while (r.IsDynamic && depth < 8 && _entities.TryGetValue(r.NetId, out var carrier))
+            {
+                depth++;
+                r = carrier.Container;
+            }
+            return depth;
+        }
+
+        private readonly List<EntityRecord> _replayOrder = new List<EntityRecord>();
 
         private void OnOwnerState(WorkerConn w, NetworkReader r)
         {
@@ -521,7 +567,12 @@ namespace Nebula
                 _writer.Reset();
                 ContainerOwnershipMsg.Write(_writer, _ownership);
                 _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-                foreach (var rec in _entities.Values)
+                // Carriers before their contents: a passenger's spawn names the ship's container, which the client
+                // can only resolve once it has the ship (it holds the spawn otherwise, but this keeps that rare).
+                _replayOrder.Clear();
+                _replayOrder.AddRange(_entities.Values);
+                _replayOrder.Sort((a, b) => CarrierDepth(a).CompareTo(CarrierDepth(b)));
+                foreach (var rec in _replayOrder)
                 {
                     rec.RefreshSpawnState(_scratch);
                     _writer.Reset();

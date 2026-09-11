@@ -161,6 +161,22 @@ Deal containers across live workers as evenly as possible, keeping existing assi
 | --- | --- |
 | `keepOrder` | Deal `containerIds` in the order given instead of sorting by id. A partitioned world lists its containers in Morton order, so each worker's quota is a contiguous run of spatially neighbouring cells - a compact region it can load as a block. |
 
+### PinContainer [#pincontainer]
+
+```csharp
+public string PinContainer(string containerId, string workerId);
+```
+
+Give a carried container (a ship's interior) a worker of its own: the lease is assigned to `workerId` and marked [`LeaseState.Pinned`](/docs/reference/control-plane/lease-state#pinned), so it stops following its carrier. The pinned worker receives a permanent ghost of the carrier and simulates whatever is inside. Null on success, otherwise the reason.
+
+### UnpinContainer [#unpincontainer]
+
+```csharp
+public string UnpinContainer(string containerId);
+```
+
+Let a pinned carried container follow its carrier again. Null on success, otherwise the reason.
+
 ### BuildStateJson [#buildstatejson]
 
 ```csharp

@@ -31,11 +31,13 @@ public ushort PrefabId;
 public uint OwnerClientId;
 ```
 
-### ContainerIndex [#containerindex]
+### Container [#container]
 
 ```csharp
-public ushort ContainerIndex;
+public ContainerRef Container;
 ```
+
+The container the pose is expressed in (static index, or the carrier's net id for a dynamic container).
 
 ### Epoch [#epoch]
 

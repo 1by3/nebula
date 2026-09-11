@@ -144,6 +144,14 @@
       </table>
     </section>
     <section class="card">
+      <h2>Carried containers</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">Interiors of ships and other vehicles. They follow their carrier's worker unless pinned to a worker of their own.</div>
+      <table>
+        <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th><th></th></tr></thead>
+        <tbody id="carried"></tbody>
+      </table>
+    </section>
+    <section class="card">
       <h2>Gateways</h2>
       <table>
         <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th></tr></thead>
@@ -246,6 +254,16 @@
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
           <td>${c.epoch}</td><td>${esc(c.state)}</td></tr>`).join('');
 
+    const live = s.workers.filter(w => w.alive && !w.retiring);
+    $('carried').innerHTML = s.carried.length ? s.carried.map(c => `
+      <tr><td class="mono"><span class="sw" style="--wc:${esc(c.color)}"></span>${esc(c.id)}</td>
+          <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
+          <td>${c.epoch}</td><td>${esc(c.state)}</td>
+          <td>${c.pinned
+            ? `<button class="small" data-act="unpin" data-id="${esc(c.id)}" title="Let it follow its carrier again">Unpin</button>`
+            : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
+
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => `
       <tr><td class="mono">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td></tr>`).join('')
       : '<tr><td colspan="3" class="muted">no gateway registered</td></tr>';
@@ -329,6 +347,15 @@
     if (!b || b.disabled) return;
     if (b.dataset.act === 'remove') post('/api/workers/remove', { workerId: b.dataset.id });
     else if (b.dataset.act === 'kill') post('/api/workers/kill', { workerId: b.dataset.id });
+  });
+
+  $('carried').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-act="unpin"]');
+    if (b && !b.disabled) post('/api/containers/unpin', { containerId: b.dataset.id });
+  });
+  $('carried').addEventListener('change', (ev) => {
+    const sel = ev.target.closest('select[data-act="pin"]');
+    if (sel && sel.value) post('/api/containers/pin', { containerId: sel.dataset.id, workerId: sel.value });
   });
 
   refresh();

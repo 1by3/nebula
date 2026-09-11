@@ -1,4 +1,4 @@
 {
   "title": "Containers",
-  "pages": ["container", "container-registry"]
+  "pages": ["container", "container-ref", "container-registry", "dynamic-container"]
 }

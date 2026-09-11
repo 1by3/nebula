@@ -634,6 +634,7 @@ namespace Nebula.Spacetime
                 Reducer.RegisterGateway args => Reducers.InvokeRegisterGateway(eventContext, args),
                 Reducer.RegisterWorker args => Reducers.InvokeRegisterWorker(eventContext, args),
                 Reducer.ReleaseContainer args => Reducers.InvokeReleaseContainer(eventContext, args),
+                Reducer.RemoveContainer args => Reducers.InvokeRemoveContainer(eventContext, args),
                 Reducer.ResetControlPlane args => Reducers.InvokeResetControlPlane(eventContext, args),
                 Reducer.SetGameSetting args => Reducers.InvokeSetGameSetting(eventContext, args),
                 Reducer.SetLeaseState args => Reducers.InvokeSetLeaseState(eventContext, args),

@@ -1,0 +1,8 @@
+﻿<Solution>
+  <Project Path="LiteNetLib.csproj" />
+  <Project Path="Nebula.Tests.EditMode.csproj" />
+  <Project Path="Nebula.Runtime.csproj" />
+  <Project Path="Nebula.Spacetime.csproj" />
+  <Project Path="Nebula.Editor.csproj" />
+  <Project Path="Nebula.World.csproj" />
+</Solution>

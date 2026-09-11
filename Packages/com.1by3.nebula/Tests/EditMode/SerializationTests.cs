@@ -84,7 +84,7 @@ namespace Nebula.Tests
                 NetId = (1UL << 48) | 42,
                 PrefabId = 3,
                 OwnerClientId = 9,
-                ContainerIndex = 2,
+                Container = new ContainerRef(2),
                 Epoch = 5,
                 OwnerWorkerIndex = 1,
                 LocalPosition = new Vector3(1, 0, -2),

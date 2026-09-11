@@ -21,6 +21,7 @@
     "guides/network-animator",
     "guides/physics-and-handover-state",
     "guides/world-partition",
+    "guides/dynamic-containers",
     "guides/serialization",
     "guides/configuration",
     "guides/orchestrator-and-dashboard",

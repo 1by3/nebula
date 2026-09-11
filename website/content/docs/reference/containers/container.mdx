@@ -1,6 +1,6 @@
 ---
 title: "Container"
-description: "A designer-authored unit of authority: a box volume with its own local coordinate space."
+description: "A unit of authority: a box volume with its own local coordinate space."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Container.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Container.cs)</div>
@@ -10,7 +10,7 @@ description: "A designer-authored unit of authority: a box volume with its own l
 public sealed class Container : MonoBehaviour
 ```
 
-A designer-authored unit of authority: a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space. Containers are static; which worker simulates each one is decided at runtime by the orchestrator.
+A unit of authority: a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space. A **static** container is authored into the scene (or baked into the world manifest) and leased to a worker by the orchestrator; a **dynamic** one is carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): it moves with the entity, exists wherever the entity does and is owned by whoever is authoritative for the entity. Either way, the contents never see the difference.
 
 There are no separate seam volumes in this prototype. Instead every container boundary carries an automatic ghost band ([`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin)) and an entry hysteresis ([`NebulaConfig.HandoverHysteresis`](/docs/reference/core/nebula-config#handoverhysteresis)), which gives the same pre-warm-then-flip behaviour with nothing extra to author.
 
@@ -22,7 +22,7 @@ There are no separate seam volumes in this prototype. Instead every container bo
 public string ContainerId = "container";
 ```
 
-Stable id used by the control plane. Must be unique in the scene.
+Stable id used by the control plane. Must be unique in the scene. On a DynamicContainer prefab it is a label: the runtime id is '\<label\>#\<carrier net id\>'.
 
 ### Size [#size]
 
@@ -46,7 +46,7 @@ public Vector3 Center = new Vector3(0f, 5f, 0f);
 public ushort Index { get; } = ushort.MaxValue;
 ```
 
-Dense index assigned by [`ContainerRegistry`](/docs/reference/containers/container-registry) (sorted by id, or manifest order in a partitioned world). Used on the wire.
+Dense index assigned by [`ContainerRegistry`](/docs/reference/containers/container-registry) (sorted by id, or manifest order in a partitioned world). Used on the wire. A dynamic container has [`ContainerRef.DynamicIndex`](/docs/reference/containers/container-ref#dynamicindex) and is named by its carrier instead (see [`Ref`](#ref)).
 
 ### Cell [#cell]
 
@@ -70,25 +70,95 @@ Partitioned worlds: this container spans its whole cell.
 public List<Container> Neighbors { get; } = new List<Container>();
 ```
 
+Static adjacency: containers whose boxes touch or overlap this one, computed when the registry loads. Dynamic containers are not in it; see [`ContainerRegistry.NeighborsOf`](/docs/reference/containers/container-registry#neighborsof).
+
+### IsDynamic [#isdynamic]
+
+```csharp
+public bool IsDynamic { get; }
+```
+
+Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): created and destroyed with it, moves with it, owned by its authority.
+
+### Carrier [#carrier]
+
+```csharp
+public NetworkIdentity Carrier { get; }
+```
+
+Dynamic containers: the entity carrying this container. Null for static ones.
+
+### CarrierNetId [#carriernetid]
+
+```csharp
+public ulong CarrierNetId { get; }
+```
+
+Dynamic containers: the carrier's net id, which names this container on the wire. 0 for static ones.
+
+### Ref [#ref]
+
+```csharp
+public ContainerRef Ref { get; }
+```
+
+How this container is named on the wire.
+
+### Entities [#entities]
+
+```csharp
+public List<NetworkIdentity> Entities { get; } = new List<NetworkIdentity>();
+```
+
+The entities currently inside this container on this process, kept by [`NetworkIdentity`](/docs/reference/core/network-identity) as they move.
+
+### Enclosing [#enclosing]
+
+```csharp
+public Container Enclosing { get; }
+```
+
+Dynamic containers: the container the carrier itself is in (what encloses this one). Null for static containers and for a carrier in no container.
+
+### LeaseState [#leasestate]
+
+```csharp
+public string LeaseState { get; } = "";
+```
+
+State string of the control-plane lease as last applied ("" when there is none). See `Nebula.LeaseState`.
+
+### IsPinned [#ispinned]
+
+```csharp
+public bool IsPinned { get; }
+```
+
+Dynamic containers: the orchestrator pinned this container to a worker of its own (lease state `Nebula.LeaseState.Pinned`), so it no longer follows its carrier. The pinned worker holds a permanent ghost of the carrier and simulates everything inside.
+
 ### OwnerWorkerId [#ownerworkerid]
 
 ```csharp
-public string OwnerWorkerId { get; } = "";
+public string OwnerWorkerId { get; }
 ```
 
-Runtime: id of the worker currently leasing this container ("" if none). Updated from the control plane.
+Runtime: id of the worker currently authoritative for this container ("" if none). Static containers: from the control plane lease. Dynamic containers: the pinned worker when the lease is pinned, otherwise whoever is authoritative for the carrier, resolved through [`ContainerRegistry.WorkerIdByIndex`](/docs/reference/containers/container-registry#workeridbyindex) (only workers know every peer's id; on a client it is "" unless the game supplies a resolver).
 
 ### OwnerWorkerIndex [#ownerworkerindex]
 
 ```csharp
-public ushort OwnerWorkerIndex { get; } = ushort.MaxValue;
+public ushort OwnerWorkerIndex { get; }
 ```
+
+Index of the owning worker (`ushort.MaxValue` when unowned). Dynamic containers: the pinned worker's, or the carrier's [`NetworkIdentity.OwnerWorkerIndex`](/docs/reference/core/network-identity#ownerworkerindex).
 
 ### LeaseEpoch [#leaseepoch]
 
 ```csharp
 public ulong LeaseEpoch { get; }
 ```
+
+Lease epoch from the control plane. Dynamic containers following their carrier: the carrier's authority epoch.
 
 ### WorldBounds [#worldbounds]
 
@@ -117,6 +187,14 @@ World rotation of the container's frame (cached; see [`RefreshCache`](#refreshca
 ```csharp
 public Quaternion InverseRotation { get; }
 ```
+
+### NestingDepth [#nestingdepth]
+
+```csharp
+public int NestingDepth { get; }
+```
+
+How many carriers this container sits inside, walking up through [`Enclosing`](#enclosing): 0 for a static container, 1 for a ship in a static container, 2 for a shuttle inside that ship.
 
 ## Methods
 
@@ -148,7 +226,7 @@ Signed distance to the box surface: positive outside (how far, in any direction)
 public float DistanceToSeam(Vector3 worldPosition, Container neighbor);
 ```
 
-How far a point inside this container is from its seam with `neighbor`. For a sibling or an inner box that is the neighbour's surface; for a neighbour that encloses this one (a building inside the outdoor area) the seam is this container's own surface, so the answer is how far the point is from getting out - not "inside the enclosing box", which would put every entity in every building in the band permanently.
+How far a point inside this container is from its seam with `neighbor`. For a sibling or an inner box that is the neighbour's surface; for a neighbour that encloses this one (a building inside the outdoor area, the area around a ship) the seam is this container's own surface, so the answer is how far the point is from getting out - not "inside the enclosing box", which would put every entity in every building in the band permanently.
 
 ### Encloses [#encloses]
 
@@ -156,7 +234,7 @@ How far a point inside this container is from its seam with `neighbor`. For a si
 public bool Encloses(Container other);
 ```
 
-`other`'s box lies entirely inside this one (nested containers).
+`other`'s box lies entirely inside this one (nested containers). A dynamic container is enclosed by the container its carrier is in whatever the boxes say.
 
 ### IntersectsSegment [#intersectssegment]
 

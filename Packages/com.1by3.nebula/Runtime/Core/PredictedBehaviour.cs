@@ -18,6 +18,10 @@ namespace Nebula
         public int InputsMissed { get; protected set; }
         public int Corrections { get; protected set; }
         public float LastCorrectionMagnitude { get; protected set; }
+        /// <summary>The largest correction since <see cref="ResetCorrectionStats"/> (or spawn): one big snap hides among many small ones otherwise.</summary>
+        public float MaxCorrectionMagnitude { get; protected set; }
+
+        public void ResetCorrectionStats() { Corrections = 0; LastCorrectionMagnitude = 0f; MaxCorrectionMagnitude = 0f; }
 
         /// <summary>
         /// Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last
@@ -67,7 +71,7 @@ namespace Nebula
         private static readonly NetworkReader OwnSnapshotReader = new NetworkReader();
 
         private struct InputSlot { public uint Tick; public TInput Input; public bool Valid; }
-        private struct HistorySlot { public uint Tick; public TInput Input; public Vector3 Position; public bool Valid; }
+        private struct HistorySlot { public uint Tick; public TInput Input; public Vector3 Position; public Container Container; public bool Valid; }
 
         private readonly InputSlot[] _serverInputs = new InputSlot[BufferSize];
         private readonly HistorySlot[] _history = new HistorySlot[BufferSize];
@@ -103,27 +107,34 @@ namespace Nebula
         /// server, on the predicting client, and again on the client during a replay.</summary>
         protected abstract void Simulate(uint tick, in TInput input, float deltaTime);
 
-        /// <summary>State the owner needs to reconcile. Default: position, rotation, velocity.</summary>
+        /// <summary>
+        /// State the owner needs to reconcile. Default: position and rotation in the current container's local
+        /// space, and velocity. Container-local because the worker and the owning client never see a moving
+        /// container (a ship) at the same place at the same moment; a passenger's pose relative to the ship is what
+        /// both agree on.
+        /// </summary>
         protected virtual void WriteState(NetworkWriter writer)
         {
-            writer.WriteVector3(transform.position);
-            writer.WriteQuaternion(transform.rotation);
+            writer.WriteVector3(Identity.LocalPosition);
+            writer.WriteQuaternion(Identity.LocalRotation);
             writer.WriteVector3(Identity.Velocity);
         }
 
         protected virtual void ReadState(NetworkReader reader)
         {
-            transform.position = reader.ReadVector3();
-            transform.rotation = reader.ReadQuaternion();
+            var position = reader.ReadVector3();
+            var rotation = reader.ReadQuaternion();
+            Identity.SetLocalPose(Identity.Container, position, rotation);
             Identity.Velocity = reader.ReadVector3();
         }
 
         /// <summary>Called on the client after a correction was applied (for effects/telemetry).</summary>
         protected virtual void OnCorrected(float magnitude) { }
 
-        /// <summary>The prediction history holds frame positions; keep them valid across an origin shift. Call base when overriding.</summary>
+        /// <summary>The prediction history holds container-local positions, which an origin shift leaves alone; outside every container they are frame positions and follow the shift. Call base when overriding.</summary>
         public override void OnOriginShifted(Vector3 delta)
         {
+            if (Container != null) return;
             for (int i = 0; i < BufferSize; i++) if (_history[i].Valid) _history[i].Position += delta;
         }
 
@@ -237,7 +248,8 @@ namespace Nebula
             ref var h = ref _history[tick % BufferSize];
             h.Tick = tick;
             h.Input = input;
-            h.Position = transform.position;
+            h.Position = Identity.LocalPosition;
+            h.Container = Identity.Container;
             h.Valid = true;
         }
 
@@ -259,22 +271,29 @@ namespace Nebula
             OwnSnapshot.Reset();
             WriteState(OwnSnapshot);
             ReadState(state);
-            var serverPos = transform.position;
-            var serverRot = transform.rotation;
-            var serverVel = Identity.Velocity;
-            float error = (serverPos - h.Position).magnitude;
+            var serverPos = Identity.LocalPosition;
+            // The prediction was recorded in the container the client was in at that tick; the worker may have moved
+            // the pawn to another (a seam, a ship's door) since. Compare in the worker's frame, or every crossing
+            // would look like a snap the size of the distance between the two origins.
+            var predicted = h.Position;
+            if (h.Container != Identity.Container)
+            {
+                var world = h.Container != null ? h.Container.ToWorld(predicted) : predicted;
+                predicted = Identity.Container != null ? Identity.Container.ToLocal(world) : world;
+            }
+            float error = (serverPos - predicted).magnitude;
             if (error <= CorrectionThreshold)
             {
                 OwnSnapshotReader.Set(OwnSnapshot.ToSegment());
                 ReadState(OwnSnapshotReader);
                 return;
             }
-            // Snap to the server's state at serverTick and replay every input after it.
+            // Snap to the server's state at serverTick (ReadState left us there) and replay every input after it.
             Corrections++;
             LastCorrectionMagnitude = error;
-            transform.SetPositionAndRotation(serverPos, serverRot);
-            Identity.Velocity = serverVel;
+            if (error > MaxCorrectionMagnitude) MaxCorrectionMagnitude = error;
             h.Position = serverPos;
+            h.Container = Identity.Container;
             IsReplaying = true;
             try
             {
@@ -283,7 +302,8 @@ namespace Nebula
                     ref var r = ref _history[t % BufferSize];
                     if (!r.Valid || r.Tick != t) continue;
                     Simulate(t, in r.Input, NetworkTime.TickInterval);
-                    r.Position = transform.position;
+                    r.Position = Identity.LocalPosition;
+                    r.Container = Identity.Container;
                 }
             }
             finally { IsReplaying = false; }

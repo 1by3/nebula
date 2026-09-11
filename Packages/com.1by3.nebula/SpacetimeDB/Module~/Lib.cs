@@ -294,6 +294,16 @@ public static partial class Module
         }
     }
 
+    /// Delete a lease row. Used for dynamic containers (carried by an entity) when the carrier despawns.
+    [SpacetimeDB.Reducer]
+    public static void RemoveContainer(ReducerContext ctx, string containerId)
+    {
+        if (ctx.Db.container_lease.ContainerId.Find(containerId) is { } row)
+        {
+            ctx.Db.container_lease.ContainerId.Delete(row.ContainerId);
+        }
+    }
+
     /// Set (or create) one mesh-wide setting. A no-op when the value is unchanged.
     [SpacetimeDB.Reducer]
     public static void SetGameSetting(ReducerContext ctx, string key, string value)

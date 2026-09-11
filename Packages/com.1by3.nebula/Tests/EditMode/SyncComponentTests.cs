@@ -259,7 +259,7 @@ namespace Nebula.Tests
         [Test]
         public void EntitySyncMsgRoundTrips()
         {
-            var msg = new EntitySyncMsg { NetId = 42, Epoch = 3, Tick = 1000, ContainerIndex = 2, Reliable = false, Chunks = new byte[] { 1, 2, 3 } };
+            var msg = new EntitySyncMsg { NetId = 42, Epoch = 3, Tick = 1000, Container = new ContainerRef(2), Reliable = false, Chunks = new byte[] { 1, 2, 3 } };
             Writer.Reset();
             msg.Write(Writer, MsgId.EntityState);
             var r = new NetworkReader(Writer.ToSegment());
@@ -268,7 +268,7 @@ namespace Nebula.Tests
             Assert.AreEqual(42UL, back.NetId);
             Assert.AreEqual(3U, back.Epoch);
             Assert.AreEqual(1000U, back.Tick);
-            Assert.AreEqual(2, back.ContainerIndex);
+            Assert.AreEqual(new ContainerRef(2), back.Container);
             Assert.AreEqual(Delivery.Sequenced, back.Delivery);
             CollectionAssert.AreEqual(msg.Chunks, back.Chunks);
         }

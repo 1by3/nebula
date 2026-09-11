@@ -92,6 +92,15 @@ public static void SetLeaseState(ReducerContext ctx, string containerId, string 
 public static void ReleaseContainer(ReducerContext ctx, string containerId);
 ```
 
+### RemoveContainer [#removecontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void RemoveContainer(ReducerContext ctx, string containerId);
+```
+
+Delete a lease row. Used for dynamic containers (carried by an entity) when the carrier despawns.
+
 ### SetGameSetting [#setgamesetting]
 
 ```csharp

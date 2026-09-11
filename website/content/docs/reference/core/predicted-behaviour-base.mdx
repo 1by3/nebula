@@ -53,6 +53,14 @@ public int Corrections { get; protected set; }
 public float LastCorrectionMagnitude { get; protected set; }
 ```
 
+### MaxCorrectionMagnitude [#maxcorrectionmagnitude]
+
+```csharp
+public float MaxCorrectionMagnitude { get; protected set; }
+```
+
+The largest correction since [`ResetCorrectionStats`](#resetcorrectionstats) (or spawn): one big snap hides among many small ones otherwise.
+
 ### InputLeadMin [#inputleadmin]
 
 ```csharp
@@ -60,4 +68,12 @@ public int InputLeadMin { get; } = int.MaxValue;
 ```
 
 Server: the smallest input lead (input tick minus the worker's current tick at arrival) seen since the last [`TakeInputLead`](#takeinputlead). An input only gets simulated when it arrives with a lead of at least 1; the owner uses this to stretch or relax how far ahead it sends. `int.MaxValue` while nothing arrived.
+
+## Methods
+
+### ResetCorrectionStats [#resetcorrectionstats]
+
+```csharp
+public void ResetCorrectionStats();
+```
 

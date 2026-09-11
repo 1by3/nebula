@@ -560,6 +560,15 @@ namespace Nebula
                 }
                 return;
             }
+            // Carried containers (dynamic, id 'label#netId') follow their carrier by default and are not dealt. One
+            // that was pinned to a worker that is gone or retiring falls back to following its carrier.
+            foreach (var l in ControlPlane.Leases.ToList())
+            {
+                if (!ContainerRegistry.IsDynamicId(l.ContainerId) || l.State != LeaseState.Pinned) continue;
+                if (eligible.Any(w => w.WorkerId == l.WorkerId)) continue;
+                Log("info", $"unpinning {l.ContainerId} from {l.WorkerId} (not eligible); it follows its carrier again");
+                ControlPlane.SetLeaseState(l.ContainerId, LeaseState.Active);
+            }
             var changes = ComputeAssignment(ids, eligible, ControlPlane.Leases.ToList(), keepOrder: ContainerRegistry.IsGridded);
             if (changes.Count == 0) return;
             Rebalances++;
@@ -629,11 +638,55 @@ namespace Nebula
                 case "/api/rebalance":
                     RequestRebalance();
                     break;
+                case "/api/containers/pin":
+                {
+                    string id = OrchestratorHttpServer.GetString(req.Body, "containerId");
+                    string workerId = OrchestratorHttpServer.GetString(req.Body, "workerId");
+                    string error = PinContainer(id, workerId);
+                    if (error != null) return OrchestratorHttpServer.Response.Error(400, error);
+                    break;
+                }
+                case "/api/containers/unpin":
+                {
+                    string id = OrchestratorHttpServer.GetString(req.Body, "containerId");
+                    string error = UnpinContainer(id);
+                    if (error != null) return OrchestratorHttpServer.Response.Error(400, error);
+                    break;
+                }
                 default:
                     return OrchestratorHttpServer.Response.Error(404, "unknown endpoint");
             }
             PublishState();
             return OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"desired\":{DesiredWorkers}}}");
+        }
+
+        /// <summary>
+        /// Give a carried container (a ship's interior) a worker of its own: the lease is assigned to
+        /// <paramref name="workerId"/> and marked <see cref="LeaseState.Pinned"/>, so it stops following its carrier.
+        /// The pinned worker receives a permanent ghost of the carrier and simulates whatever is inside. Null on
+        /// success, otherwise the reason.
+        /// </summary>
+        public string PinContainer(string containerId, string workerId)
+        {
+            if (!ContainerRegistry.IsDynamicId(containerId)) return "only carried containers ('label#netId') can be pinned";
+            if (ControlPlane.FindLease(containerId) == null) return $"unknown container '{containerId}'";
+            var w = ControlPlane.FindWorker(workerId);
+            if (w == null || !ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds) || _retiring.ContainsKey(workerId)) return $"worker '{workerId}' is not live";
+            ControlPlane.AssignContainer(containerId, workerId);
+            ControlPlane.SetLeaseState(containerId, LeaseState.Pinned);
+            Log("info", $"pinned {containerId} -> {workerId}");
+            return null;
+        }
+
+        /// <summary>Let a pinned carried container follow its carrier again. Null on success, otherwise the reason.</summary>
+        public string UnpinContainer(string containerId)
+        {
+            var lease = ControlPlane.FindLease(containerId);
+            if (lease == null) return $"unknown container '{containerId}'";
+            if (lease.State != LeaseState.Pinned) return $"'{containerId}' is not pinned";
+            ControlPlane.SetLeaseState(containerId, LeaseState.Active);
+            Log("info", $"unpinned {containerId}; it follows its carrier again");
+            return null;
         }
 
         private void PublishState()
@@ -720,7 +773,7 @@ namespace Nebula
                 w.BeginArray();
                 foreach (var l in leases.OrderBy(l => l.ContainerId, StringComparer.Ordinal))
                 {
-                    if (l.WorkerId == id && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning)) w.Value(l.ContainerId);
+                    if (l.WorkerId == id && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning || l.State == LeaseState.Pinned)) w.Value(l.ContainerId);
                 }
                 w.EndArray();
                 w.EndObject();
@@ -746,6 +799,28 @@ namespace Nebula
                     w.Prop("cell", $"{c.Cell.x},{c.Cell.y},{c.Cell.z}");
                     w.Prop("isCell", c.IsCell);
                 }
+                w.EndObject();
+            }
+            w.EndArray();
+
+            // Carried containers: leases workers create for the containers their entities carry (ships, lifts).
+            // They follow their carrier unless pinned to a worker of their own.
+            w.Key("carried");
+            w.BeginArray();
+            foreach (var l in leases.Where(x => ContainerRegistry.IsDynamicId(x.ContainerId)).OrderBy(x => x.ContainerId, StringComparer.Ordinal))
+            {
+                bool pinned = l.State == LeaseState.Pinned;
+                string owner = LeaseState.IsOwning(l.State) ? l.WorkerId : "";
+                var ownerRow = owner != "" ? workers.FirstOrDefault(r => r.WorkerId == owner) : null;
+                w.BeginObject();
+                w.Prop("id", l.ContainerId);
+                w.Prop("carrierNetId", ContainerRegistry.CarrierNetIdOf(l.ContainerId));
+                w.Prop("worker", owner);
+                w.Prop("workerIndex", ownerRow != null ? (int)ownerRow.WorkerIndex : -1);
+                w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
+                w.Prop("epoch", l.Epoch);
+                w.Prop("pinned", pinned);
+                w.Prop("state", pinned ? "pinned" : (owner != "" ? "following carrier" : l.State));
                 w.EndObject();
             }
             w.EndArray();

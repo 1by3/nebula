@@ -3,14 +3,21 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and
+    /// Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and
     /// remote entities on a client. The consumer decides at which (fractional) tick to sample.
+    /// <para>
+    /// Samples are kept in the space they arrived in: container-local, tagged with the container. A pose inside a
+    /// moving container (a passenger on a ship) is therefore interpolated relative to the ship, and the sampled
+    /// local pose is applied under the ship's transform wherever the ship is <i>now</i>, so passengers never lag a
+    /// frame behind the hull. A sample with no container is a world pose (an entity outside every container).
+    /// </para>
     /// </summary>
     public sealed class RemoteInterpolator : MonoBehaviour
     {
         private struct PoseSample
         {
             public uint Tick;
+            public Container Container;
             public Vector3 Position;
             public Quaternion Rotation;
             public Vector3 Velocity;
@@ -25,35 +32,48 @@ namespace Nebula
 
         public uint LatestTick => _latestTick;
         public bool HasSamples => _any;
+        /// <summary>World-space velocity of the newest sample (what the authority reported).</summary>
         public Vector3 LatestVelocity { get; private set; }
-        public Vector3 LatestPosition { get; private set; }
-        public Quaternion LatestRotation { get; private set; } = Quaternion.identity;
+        /// <summary>Container of the newest sample (null: world space).</summary>
+        public Container LatestContainer { get; private set; }
+        /// <summary>Position of the newest sample, in <see cref="LatestContainer"/>'s space.</summary>
+        public Vector3 LatestLocalPosition { get; private set; }
+        public Quaternion LatestLocalRotation { get; private set; } = Quaternion.identity;
+        /// <summary>World position of the newest sample, through its container's current frame.</summary>
+        public Vector3 LatestPosition => LatestContainer != null ? LatestContainer.ToWorld(LatestLocalPosition) : LatestLocalPosition;
+        public Quaternion LatestRotation => LatestContainer != null ? LatestContainer.Rotation * LatestLocalRotation : LatestLocalRotation;
 
-        public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity)
+        /// <summary>Record a pose expressed in <paramref name="container"/>'s local space (world space when null). <paramref name="velocity"/> is world-space.</summary>
+        public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity)
         {
             if (_any && tick + Capacity <= _latestTick) return; // too old to matter
             if (!_any || tick > _latestTick)
             {
                 _previousTick = _any ? _latestTick : tick;
                 _latestTick = tick;
-                LatestPosition = position;
-                LatestRotation = rotation;
+                LatestContainer = container;
+                LatestLocalPosition = localPosition;
+                LatestLocalRotation = localRotation;
                 LatestVelocity = velocity;
             }
             _any = true;
             ref var s = ref _ring[tick % Capacity];
             s.Tick = tick;
-            s.Position = position;
-            s.Rotation = rotation;
+            s.Container = container;
+            s.Position = localPosition;
+            s.Rotation = localRotation;
             s.Velocity = velocity;
             s.Valid = true;
         }
 
-        /// <summary>The floating origin moved: every buffered position follows.</summary>
+        /// <summary>Record a world-space pose (no container).</summary>
+        public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity) => Push(tick, null, position, rotation, velocity);
+
+        /// <summary>The floating origin moved: buffered world poses follow. Container-local poses need nothing (their containers moved).</summary>
         public void Shift(Vector3 delta)
         {
-            for (int i = 0; i < Capacity; i++) if (_ring[i].Valid) _ring[i].Position += delta;
-            LatestPosition += delta;
+            for (int i = 0; i < Capacity; i++) if (_ring[i].Valid && _ring[i].Container == null) _ring[i].Position += delta;
+            if (LatestContainer == null) LatestLocalPosition += delta;
         }
 
         public void Clear()
@@ -69,13 +89,17 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Interpolated pose at <paramref name="renderTick"/>. Falls back to extrapolating from the newest sample by
-        /// its velocity (capped) when asked for a time we have not received yet.
+        /// Interpolated pose at <paramref name="renderTick"/>, in the space of <paramref name="container"/> (the
+        /// newer sample's container; null means world). Falls back to extrapolating from the newest sample by its
+        /// velocity (capped) when asked for a time we have not received yet. Apply it with
+        /// <see cref="NetworkIdentity.SetLocalPose"/> so an entity under a moving container lands where the
+        /// container is this frame.
         /// </summary>
-        public bool Sample(double renderTick, out Vector3 position, out Quaternion rotation)
+        public bool Sample(double renderTick, out Container container, out Vector3 localPosition, out Quaternion localRotation)
         {
-            position = LatestPosition;
-            rotation = LatestRotation;
+            container = LatestContainer;
+            localPosition = LatestLocalPosition;
+            localRotation = LatestLocalRotation;
             if (!_any) return false;
 
             if (renderTick >= _latestTick)
@@ -85,8 +109,8 @@ namespace Nebula
                 // and never less than a few ticks for a full-rate stream that just lost a packet.
                 float spacing = Mathf.Max(6f, _latestTick - _previousTick);
                 float ahead = Mathf.Min((float)(renderTick - _latestTick), spacing);
-                position = LatestPosition + LatestVelocity * (ahead * NetworkTime.TickInterval);
-                rotation = LatestRotation;
+                var v = container != null ? container.InverseRotation * LatestVelocity : LatestVelocity;
+                localPosition = LatestLocalPosition + v * (ahead * NetworkTime.TickInterval);
                 return true;
             }
 
@@ -108,23 +132,38 @@ namespace Nebula
             {
                 float span = after.Tick - before.Tick;
                 float f = span > 0 ? (float)((renderTick - before.Tick) / span) : 0f;
-                position = Vector3.Lerp(before.Position, after.Position, f);
-                rotation = Quaternion.Slerp(before.Rotation, after.Rotation, f);
+                container = after.Container;
+                var bp = before.Position;
+                var br = before.Rotation;
+                if (before.Container != after.Container)
+                {
+                    // The entity changed container between the two samples: express the older one in the newer frame.
+                    var world = before.Container != null ? before.Container.ToWorld(bp) : bp;
+                    var worldRot = before.Container != null ? before.Container.Rotation * br : br;
+                    bp = container != null ? container.ToLocal(world) : world;
+                    br = container != null ? container.InverseRotation * worldRot : worldRot;
+                }
+                localPosition = Vector3.Lerp(bp, after.Position, f);
+                localRotation = Quaternion.Slerp(br, after.Rotation, f);
                 return true;
             }
-            if (hasAfter)
+            if (hasAfter || hasBefore)
             {
-                position = after.Position;
-                rotation = after.Rotation;
-                return true;
-            }
-            if (hasBefore)
-            {
-                position = before.Position;
-                rotation = before.Rotation;
-                return true;
+                var only = hasAfter ? after : before;
+                container = only.Container;
+                localPosition = only.Position;
+                localRotation = only.Rotation;
             }
             return true;
+        }
+
+        /// <summary>Interpolated world pose at <paramref name="renderTick"/> (through each sample's container as it stands now).</summary>
+        public bool Sample(double renderTick, out Vector3 position, out Quaternion rotation)
+        {
+            bool ok = Sample(renderTick, out var container, out var lp, out var lr);
+            position = container != null ? container.ToWorld(lp) : lp;
+            rotation = container != null ? container.Rotation * lr : lr;
+            return ok;
         }
     }
 }

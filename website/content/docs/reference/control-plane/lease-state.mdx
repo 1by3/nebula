@@ -35,3 +35,21 @@ public const string Draining = "draining";
 public const string Orphaned = "orphaned";
 ```
 
+### Pinned [#pinned]
+
+```csharp
+public const string Pinned = "pinned";
+```
+
+Dynamic containers only: the orchestrator (or the dashboard) assigned this carried container to a worker of its own, so it no longer follows its carrier. Anything else means "follows the carrier" for such a lease.
+
+## Methods
+
+### IsOwning [#isowning]
+
+```csharp
+public static bool IsOwning(string state);
+```
+
+The lease names a worker that currently simulates the container.
+

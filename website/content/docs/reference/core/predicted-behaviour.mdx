@@ -73,7 +73,7 @@ Advance the entity by one tick. Must be a pure function of (current state, input
 protected virtual void WriteState(NetworkWriter writer);
 ```
 
-State the owner needs to reconcile. Default: position, rotation, velocity.
+State the owner needs to reconcile. Default: position and rotation in the current container's local space, and velocity. Container-local because the worker and the owning client never see a moving container (a ship) at the same place at the same moment; a passenger's pose relative to the ship is what both agree on.
 
 ### ReadState [#readstate]
 
@@ -95,7 +95,7 @@ Called on the client after a correction was applied (for effects/telemetry).
 public override void OnOriginShifted(Vector3 delta);
 ```
 
-The prediction history holds frame positions; keep them valid across an origin shift. Call base when overriding.
+The prediction history holds container-local positions, which an origin shift leaves alone; outside every container they are frame positions and follow the shift. Call base when overriding.
 
 ### NetworkTick [#networktick]
 

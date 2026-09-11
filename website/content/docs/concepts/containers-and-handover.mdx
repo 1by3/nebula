@@ -7,9 +7,9 @@ The [architecture](/docs/concepts/architecture) describes containers, seams and 
 
 ## Containers
 
-A `Container` is a MonoBehaviour on a scene object: a box volume (`Size`, centred on `Center`) with a stable `ContainerId`. The object's transform defines the container's local coordinate space. Entities inside a container are parented under its transform, and every position on the wire is expressed in container-local space, so a container could move without its contents ever changing coordinates. Containers are static.
+A `Container` is a MonoBehaviour on a scene object: a box volume (`Size`, centred on `Center`) with a stable `ContainerId`. The object's transform defines the container's local coordinate space. Entities inside a container are parented under its transform, and every position on the wire is expressed in container-local space, so a container can move without its contents ever changing coordinates. A container authored into a scene is static and leased to a worker; a container carried by an entity (a ship, a train, a lift) is created and destroyed with the entity, moves with it, and is owned by whichever worker simulates it. This page is about the static kind; [Dynamic containers](/docs/guides/dynamic-containers) covers the carried kind.
 
-At startup every role calls `ContainerRegistry.Rebuild()`, which collects the containers in the loaded scene, sorts them by id and assigns each a dense `Index`. The index is what travels in messages; the id is what the control plane keys leases by. Two containers are neighbours when their bounds touch or overlap; the registry fills `Neighbors` for each.
+At startup every role calls `ContainerRegistry.Rebuild()`, which collects the containers in the loaded scene, sorts them by id and assigns each a dense `Index`. The index is what travels in messages (as a `ContainerRef`, which can also name a dynamic container by its carrier's net id); the id is what the control plane keys leases by. Two containers are neighbours when their bounds touch or overlap; the registry fills `Neighbors` for each, and `ContainerRegistry.NeighborsOf` adds the dynamic containers currently touching a box.
 
 A container knows who owns it: `OwnerWorkerId`, `OwnerWorkerIndex` and `LeaseEpoch` are updated from the control plane on every role, workers included. Gameplay code can ask `container.IsOwnedBy(workerId)`, `Contains(worldPosition)` and `SignedDistance(worldPosition)`, and convert with `ToLocal` and `ToWorld`.
 
@@ -36,7 +36,7 @@ Each worker derives the tick it should be simulating from the wall clock and a f
 1. Moves the ghosts it holds to the pose their owners streamed (kinematic, no physics solve of their own; `RemoteTick` on their behaviours presents the sync channel).
 2. Runs `NetworkTick` (and therefore `Simulate` on predicted behaviours) on every entity it has authority over, then lets PhysX step.
 3. Re-evaluates container membership for its authoritative entities, with hysteresis, and transfers authority for entities that crossed into a container owned by another worker.
-4. Maintains the ghost band: any authoritative entity within `GhostBandMargin` of a neighbouring container owned by another worker gets a `GhostSpawn` on that worker, then `GhostState` at 60 Hz, `GhostVars` when a NetworkVariable changes and `GhostSyncState` for the sync channel.
+4. Maintains the ghost band: any authoritative entity within `GhostBandMargin` of a neighbouring container owned by another worker gets a `GhostSpawn` on that worker, then `GhostState` at 60 Hz, `GhostVars` when a NetworkVariable changes and `GhostSyncState` for the sync channel. Entities inside a carried container are ghosted wherever their carrier is.
 5. Streams `WorldState`, `OwnerState`, `EntityVars` and `EntityState` for its authoritative entities to the gateway.
 6. Records every resident entity's pose for the lag-compensation history (`NetworkIdentity.TryGetPoseAt`).
 
@@ -63,6 +63,8 @@ When an authoritative entity's position is more than `HandoverHysteresis` inside
 On the sender, the entity becomes a ghost: `OnLostAuthority` fires, and inputs that still arrive from the gateway for it are forwarded to the new owner for a while. On the receiver, the ghost (or a fresh instance, if no ghost existed) snaps to the handed state, `ReadHandoverState` and then `OnGainedAuthority` fire, and the entity is authoritative from the next tick. The receiver never computes a starting state; it is handed one. Both workers report the handover to the gateway through `ContainerOwnership` and their entity streams, and the gateway starts accepting the new epoch and routing the owning client's inputs to the new worker.
 
 If the two containers are owned by the same worker, none of this leaves the process: the entity is reparented, `OnContainerChanged` fires and `LocalHandovers` ticks up.
+
+When the entity that crosses carries a container of its own, everything inside that container is transferred right after it, in the same tick and on the same ordered channel: a ship crossing a seam takes its crew along, and their container-local poses never change.
 
 Clients see none of the protocol. A client's copy of an entity keeps its net id; the snapshot stream simply starts arriving with a new epoch and worker index, which the debug overlay counts as an authority change. The owning client's prediction keeps running through the flip because its inputs travelled with the entity.
 

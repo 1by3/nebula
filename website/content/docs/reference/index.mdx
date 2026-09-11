@@ -33,7 +33,7 @@ Gameplay API: identities, behaviours, variables, RPCs, prediction, the sync comp
 | [NetworkVariableBase](/docs/reference/core/network-variable-base) | Abstract class.  |
 | [PredictedBehaviour\<TInput\>](/docs/reference/core/predicted-behaviour) | Abstract class. A server-authoritative, client-predicted behaviour (the player controller, typically). |
 | [PredictedBehaviourBase](/docs/reference/core/predicted-behaviour-base) | Abstract class. Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour\<TInput\>. |
-| [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
+| [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
 | [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
@@ -44,8 +44,10 @@ The designer-authored authority volumes and their registry.
 
 | Type | Summary |
 | --- | --- |
-| [Container](/docs/reference/containers/container) | Class. A designer-authored unit of authority: a box volume with its own local coordinate space. |
-| [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every Container, indexed deterministically so all processes agree on indices, plus adjacency. |
+| [Container](/docs/reference/containers/container) | Class. A unit of authority: a box volume with its own local coordinate space. |
+| [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
+| [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
+| [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
 
 ## World partition
 

@@ -1,6 +1,6 @@
 ---
 title: "RemoteInterpolator"
-description: "Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client."
+description: "Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/RemoteInterpolator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/RemoteInterpolator.cs)</div>
@@ -9,7 +9,9 @@ description: "Tick-indexed transform buffer for copies of an entity this process
 public sealed class RemoteInterpolator : MonoBehaviour
 ```
 
-Tick-indexed transform buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. The consumer decides at which (fractional) tick to sample.
+Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. The consumer decides at which (fractional) tick to sample.
+
+Samples are kept in the space they arrived in: container-local, tagged with the container. A pose inside a moving container (a passenger on a ship) is therefore interpolated relative to the ship, and the sampled local pose is applied under the ship's transform wherever the ship is *now*, so passengers never lag a frame behind the hull. A sample with no container is a world pose (an entity outside every container).
 
 ## Properties
 
@@ -31,16 +33,42 @@ public bool HasSamples { get; }
 public Vector3 LatestVelocity { get; }
 ```
 
+World-space velocity of the newest sample (what the authority reported).
+
+### LatestContainer [#latestcontainer]
+
+```csharp
+public Container LatestContainer { get; }
+```
+
+Container of the newest sample (null: world space).
+
+### LatestLocalPosition [#latestlocalposition]
+
+```csharp
+public Vector3 LatestLocalPosition { get; }
+```
+
+Position of the newest sample, in [`LatestContainer`](#latestcontainer)'s space.
+
+### LatestLocalRotation [#latestlocalrotation]
+
+```csharp
+public Quaternion LatestLocalRotation { get; } = Quaternion.identity;
+```
+
 ### LatestPosition [#latestposition]
 
 ```csharp
 public Vector3 LatestPosition { get; }
 ```
 
+World position of the newest sample, through its container's current frame.
+
 ### LatestRotation [#latestrotation]
 
 ```csharp
-public Quaternion LatestRotation { get; } = Quaternion.identity;
+public Quaternion LatestRotation { get; }
 ```
 
 ## Methods
@@ -48,8 +76,11 @@ public Quaternion LatestRotation { get; } = Quaternion.identity;
 ### Push [#push]
 
 ```csharp
+public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity);
 public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity);
 ```
+
+Record a pose expressed in `container`'s local space (world space when null). `velocity` is world-space.
 
 ### Shift [#shift]
 
@@ -57,7 +88,7 @@ public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 veloc
 public void Shift(Vector3 delta);
 ```
 
-The floating origin moved: every buffered position follows.
+The floating origin moved: buffered world poses follow. Container-local poses need nothing (their containers moved).
 
 ### Clear [#clear]
 
@@ -68,8 +99,9 @@ public void Clear();
 ### Sample [#sample]
 
 ```csharp
+public bool Sample(double renderTick, out Container container, out Vector3 localPosition, out Quaternion localRotation);
 public bool Sample(double renderTick, out Vector3 position, out Quaternion rotation);
 ```
 
-Interpolated pose at `renderTick`. Falls back to extrapolating from the newest sample by its velocity (capped) when asked for a time we have not received yet.
+Interpolated pose at `renderTick`, in the space of `container` (the newer sample's container; null means world). Falls back to extrapolating from the newest sample by its velocity (capped) when asked for a time we have not received yet. Apply it with [`NetworkIdentity.SetLocalPose`](/docs/reference/core/network-identity#setlocalpose) so an entity under a moving container lands where the container is this frame.
 

@@ -42,7 +42,7 @@ The transport is poll-driven: nothing is raised outside `Poll`, so nothing mutat
 
 ## Messages
 
-Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][sequence:48]`, minted locally by the spawning worker, never by a central allocator. Positions and rotations are sent in container-local space with the container index of the same tick. The message structs live in `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs` and are listed in the [Protocol reference](/docs/reference#protocol).
+Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][sequence:48]`, minted locally by the spawning worker, never by a central allocator. Positions and rotations are sent in container-local space with a `ContainerRef` (the container's index, or its carrier's net id for a dynamic container) of the same tick. The message structs live in `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs` and are listed in the [Protocol reference](/docs/reference#protocol).
 
 **Session**
 

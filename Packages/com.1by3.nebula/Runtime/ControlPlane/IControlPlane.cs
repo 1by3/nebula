@@ -59,6 +59,14 @@ namespace Nebula
         public const string Active = "active";
         public const string Draining = "draining";
         public const string Orphaned = "orphaned";
+        /// <summary>
+        /// Dynamic containers only: the orchestrator (or the dashboard) assigned this carried container to a worker of
+        /// its own, so it no longer follows its carrier. Anything else means "follows the carrier" for such a lease.
+        /// </summary>
+        public const string Pinned = "pinned";
+
+        /// <summary>The lease names a worker that currently simulates the container.</summary>
+        public static bool IsOwning(string state) => state == Active || state == Draining || state == Pinned;
     }
 
     public static class WorkerStatus
@@ -113,6 +121,8 @@ namespace Nebula
         void AssignContainer(string containerId, string workerId);
         void SetLeaseState(string containerId, string state);
         void ReleaseContainer(string containerId);
+        /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>
+        void RemoveContainer(string containerId);
         void ResetControlPlane();
     }
 

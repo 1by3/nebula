@@ -35,7 +35,13 @@ namespace Nebula
         /// <summary>Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.</summary>
         public uint Epoch { get; internal set; }
         public Container Container { get; internal set; }
+        /// <summary>Wire index of the current container (<see cref="ContainerRef.DynamicIndex"/> inside a dynamic one, <see cref="ushort.MaxValue"/> in none). Prefer <see cref="ContainerRef"/>.</summary>
         public ushort ContainerIndex => Container != null ? Container.Index : ushort.MaxValue;
+        /// <summary>How the current container is named on the wire (see <see cref="Nebula.ContainerRef"/>).</summary>
+        public ContainerRef ContainerRef => ContainerRef.Of(Container);
+        /// <summary>The dynamic container this entity carries (a <see cref="DynamicContainer"/> on its root), or null.</summary>
+        public Container Carried => _carried != null ? _carried.Volume : null;
+        private DynamicContainer _carried;
         public bool IsSpawned { get; internal set; }
         /// <summary>Worker side: this process is authoritative. Client side: always false.</summary>
         public bool HasAuthority { get; internal set; }
@@ -169,7 +175,7 @@ namespace Nebula
             IsLocalPlayer = false;
             OwnerWorkerIndex = 0;
             Velocity = Vector3.zero;
-            Container = null;
+            SetContainer(null, reparent: false);
             if (Interpolator != null)
             {
                 Destroy(Interpolator);
@@ -188,6 +194,7 @@ namespace Nebula
             var found = GetComponentsInChildren<NetworkBehaviour>(true);
             // Deterministic order on every process: the same prefab yields the same component order.
             Behaviours = found;
+            _carried = GetComponent<DynamicContainer>();
             var vars = new List<NetworkVariableBase>();
             for (int i = 0; i < Behaviours.Length; i++)
             {
@@ -376,11 +383,19 @@ namespace Nebula
         {
             var previous = Container;
             if (previous == container) return;
-            Container = container;
-            // A scene object stays in its scene's hierarchy (the streamer moves the scene, not the container).
-            if (reparent && container != null && !IsSceneEntity)
+            if (container != null && container.Carrier == this)
             {
-                transform.SetParent(container.transform, true);
+                NebulaLog.Warn($"{this} cannot be inside the container it carries; ignored");
+                return;
+            }
+            Container = container;
+            if (previous != null) previous.Entities.Remove(this);
+            if (container != null) container.Entities.Add(this);
+            // A scene object stays in its scene's hierarchy (the streamer moves the scene, not the container).
+            if (reparent && !IsSceneEntity)
+            {
+                if (container != null) transform.SetParent(container.transform, true);
+                else if (previous != null && previous.IsDynamic) transform.SetParent(null, true); // out of a departing carrier
             }
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);
@@ -408,15 +423,45 @@ namespace Nebula
             else foreach (var b in Behaviours) b.OnLostAuthority();
         }
 
-        /// <summary>Position in the current container's local space (what goes on the wire).</summary>
-        public Vector3 LocalPosition => Container != null ? Container.ToLocal(transform.position) : transform.position;
-        public Quaternion LocalRotation => Container != null ? Container.InverseRotation * transform.rotation : transform.rotation;
+        /// <summary>
+        /// Position in the current container's local space (what goes on the wire). An entity parented under its
+        /// container reads its local transform directly, which is exact even when the container moved this tick.
+        /// </summary>
+        public Vector3 LocalPosition
+        {
+            get
+            {
+                if (Container == null) return transform.position;
+                return transform.parent == Container.transform ? transform.localPosition : Container.ToLocal(transform.position);
+            }
+        }
 
+        public Quaternion LocalRotation
+        {
+            get
+            {
+                if (Container == null) return transform.rotation;
+                return transform.parent == Container.transform ? transform.localRotation : Container.InverseRotation * transform.rotation;
+            }
+        }
+
+        /// <summary>
+        /// Place the entity at a pose expressed in <paramref name="container"/>'s space (world space when null). An
+        /// entity parented under the container's transform is moved through its local pose, so where it ends up
+        /// this frame follows wherever the container is this frame, whichever of the two is updated first: this is
+        /// what keeps passengers glued to a moving ship on every process.
+        /// </summary>
         public void SetLocalPose(Container container, Vector3 localPosition, Quaternion localRotation)
         {
             if (container != null)
             {
-                transform.SetPositionAndRotation(container.ToWorld(localPosition), container.Rotation * localRotation);
+                var t = transform;
+                if (t.parent == container.transform)
+                {
+                    t.localPosition = localPosition;
+                    t.localRotation = localRotation;
+                }
+                else t.SetPositionAndRotation(container.ToWorld(localPosition), container.Rotation * localRotation);
             }
             else
             {

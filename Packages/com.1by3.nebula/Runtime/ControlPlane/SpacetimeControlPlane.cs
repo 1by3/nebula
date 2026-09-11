@@ -245,6 +245,11 @@ namespace Nebula
             if (Ready("ReleaseContainer")) _conn.Reducers.ReleaseContainer(containerId);
         }
 
+        public void RemoveContainer(string containerId)
+        {
+            if (Ready("RemoveContainer")) _conn.Reducers.RemoveContainer(containerId);
+        }
+
         public void ResetControlPlane()
         {
             if (Ready("ResetControlPlane")) _conn.Reducers.ResetControlPlane();

@@ -42,6 +42,7 @@ Five tables, all public. Timestamps are SpacetimeDB `Timestamp` values set from 
 | `AssignContainer` | `containerId, workerId` | Set the owner, bump the epoch, state `active`. A no-op when the same worker already holds it active, so no epoch is burned. Inserts at epoch 1 if the row is missing. |
 | `SetLeaseState` | `containerId, state` | Overwrite the state string. |
 | `ReleaseContainer` | `containerId` | `WorkerId = ""`, state `orphaned`. |
+| `RemoveContainer` | `containerId` | Delete the lease row. Workers call it when the carrier of a [dynamic container](/docs/guides/dynamic-containers) despawns. |
 | `SetGameSetting` | `key, value` | Insert at version 1, or update and bump the version. No-op when the value is unchanged. |
 | `ResetControlPlane` | none | Delete every row of every table. The orchestrator calls it at startup (`-nebula-reset`, default on). |
 
@@ -55,6 +56,7 @@ Five tables, all public. Timestamps are SpacetimeDB `Timestamp` values set from 
 | `active` | The worker in `WorkerId` owns the container at `Epoch`. |
 | `draining` | Reserved. Not produced; retirement reuses the per-entity handover path with the lease staying `active` until it moves. |
 | `orphaned` | No owner. Set by `EnsureContainer`, `ReleaseContainer` and `UnregisterWorker`; the next assignment pass deals it out. |
+| `pinned` | Dynamic containers only: the orchestrator gave this carried container a worker of its own, so it no longer follows its carrier. Set through the dashboard or `POST /api/containers/pin`. |
 
 | Worker status | Meaning |
 | --- | --- |

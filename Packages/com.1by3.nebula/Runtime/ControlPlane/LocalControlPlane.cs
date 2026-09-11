@@ -156,6 +156,11 @@ namespace Nebula
             Touch();
         }
 
+        public void RemoveContainer(string containerId)
+        {
+            if (_leases.RemoveAll(l => l.ContainerId == containerId) > 0) Touch();
+        }
+
         public void ResetControlPlane()
         {
             _workers.Clear();

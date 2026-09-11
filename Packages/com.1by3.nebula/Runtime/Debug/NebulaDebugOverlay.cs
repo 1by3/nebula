@@ -48,7 +48,7 @@ namespace Nebula
                 if (lp != null)
                 {
                     _sb.Append($"me: {(lp.Container != null ? lp.Container.ContainerId : "-")} on worker {WorkerLabel(lp.OwnerWorkerIndex)} epoch={lp.Epoch}");
-                    if (lp.Predicted != null) _sb.Append($" corrections={lp.Predicted.Corrections} last={lp.Predicted.LastCorrectionMagnitude:F2}m");
+                    if (lp.Predicted != null) _sb.Append($" corrections={lp.Predicted.Corrections} last={lp.Predicted.LastCorrectionMagnitude:F2}m max={lp.Predicted.MaxCorrectionMagnitude:F2}m");
                     _sb.Append('\n');
                 }
             }
@@ -67,6 +67,12 @@ namespace Nebula
             {
                 var col = ColorForWorker(c.OwnerWorkerIndex);
                 _sb.Append($"  <color=#{ColorUtility.ToHtmlStringRGB(col)}>■</color> {c.ContainerId} -> {(string.IsNullOrEmpty(c.OwnerWorkerId) ? "unassigned" : c.OwnerWorkerId)} (lease e{c.LeaseEpoch})\n");
+            }
+            foreach (var c in ContainerRegistry.Dynamic)
+            {
+                var col = ColorForWorker(c.OwnerWorkerIndex);
+                string owner = string.IsNullOrEmpty(c.OwnerWorkerId) ? $"worker {c.OwnerWorkerIndex}" : c.OwnerWorkerId;
+                _sb.Append($"  <color=#{ColorUtility.ToHtmlStringRGB(col)}>◆</color> {c.ContainerId} (carried, in {(c.Enclosing != null ? c.Enclosing.ContainerId : "-")}) -> {owner} {(c.IsPinned ? "pinned" : "follows carrier")} e{c.LeaseEpoch}, {c.Entities.Count} inside\n");
             }
             _sb.Append("<i>F3 toggles this overlay</i>");
             var rect = new Rect(10, 10, 620, 24 + 18 * CountLines(_sb));

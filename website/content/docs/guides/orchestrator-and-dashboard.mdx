@@ -66,6 +66,7 @@ The page polls `/api/state` and shows:
 - **Workers**: a stepper for the desired count, **Add worker** and **Rebalance now**, then one card per worker with its colour, state (`starting`, `ready`, `draining`, `relaunching`, `launching`, `dead`), the containers it owns, players / bots / server-driven counts, authoritative and ghost entity counts, tick time, heartbeat age, and per-card **Kill** (simulated crash, relaunched) and **Remove** (graceful drain) buttons.
 - **Settings**: the mesh-wide key/values from `game_setting`, editable in place (ShooterGame reads `npcs` here, and `damage`: `all`, `npcs` for invulnerable players while you watch a big NPC fight, or `none`; the in-game console's `damage` command sets the same value).
 - **Containers**: container to worker with lease epoch and state.
+- **Carried containers**: the interiors of ships and other vehicles ([dynamic containers](/docs/guides/dynamic-containers)), whose leases workers create at runtime. Each follows its carrier's worker unless you pin it to a worker of its own from the row's drop-down (`POST /api/containers/pin` with `{"containerId": "starhopper#…", "workerId": "w2"}`; `/api/containers/unpin` reverts). A pinned interior falls back to following its carrier when its worker dies or retires.
 - **Gateways**: id, address, heartbeat age.
 - **Events**: the orchestrator's last 60 log lines (it keeps 200), colour-coded by level.
 

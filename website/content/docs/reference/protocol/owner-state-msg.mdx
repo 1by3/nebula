@@ -55,6 +55,14 @@ Worst (smallest) lead of the owner's inputs since the previous report: frame tic
 public uint OwnerClientId;
 ```
 
+### Container [#container]
+
+```csharp
+public ContainerRef Container;
+```
+
+The container the state's pose is expressed in, so the owner reconciles in the right frame on the tick it crosses a seam.
+
 ### State [#state]
 
 ```csharp

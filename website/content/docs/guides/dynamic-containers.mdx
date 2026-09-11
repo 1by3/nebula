@@ -1,0 +1,83 @@
+---
+title: Dynamic containers
+description: Containers carried by entities: ships with interiors, trains, lifts and moving stations, created and destroyed at runtime and owned by whoever simulates the carrier.
+---
+
+A static [container](/docs/concepts/containers-and-handover) is authored into a scene and leased to a worker by the orchestrator. A **dynamic container** is carried by an entity: it is created wherever the entity spawns, destroyed when it despawns, moves with the entity's transform and is owned by whichever worker is authoritative for the entity. Everything inside it is replicated in the entity's local space and handed between workers together with it. The mechanism is generic: a ship with an interior, a train car, a lift, a bus, a boat, a space station that drifts, a building on a mobile platform. This page uses a ship.
+
+## Adding one to a prefab
+
+Put three components on the root of a spawnable prefab, next to its other behaviours:
+
+| Component | Role |
+| --- | --- |
+| `NetworkIdentity` | The carrier is an ordinary entity: spawned by a worker, ghosted, handed over. |
+| `Container` | The box the carrier holds, in the root's local space (`Center`, `Size`). `ContainerId` is a label: at runtime the container is called `<label>#<net id>`. |
+| `DynamicContainer` | Marks the `Container` as carried by this entity and registers it with the [`ContainerRegistry`](/docs/reference/containers/container-registry) on every process the entity reaches. |
+
+The root transform is the container's frame. Putting the frame on a child object is not supported: the gateway holds no entities, only poses, and rebuilds a passenger's world position from the carrier's pose alone (see [interest management](#what-changes-on-the-wire) below).
+
+Spawn the prefab like any entity. The sample's `ShipDirector` does it with `SpawnServerDriven`; nothing about spawning is special:
+
+```csharp title="ShipDirector.cs (from the sample)"
+var identity = NetworkPrefabs.Instantiate(prefabId, ground + Vector3.up * clearance, yaw, container.transform);
+identity.name = name;
+worker.SpawnServerDriven(identity, container);
+```
+
+From the moment `OnNetworkSpawn` runs on the `DynamicContainer`, the carried box takes part in every container lookup on that process: `ContainerRegistry.Find` returns it for points inside it (the smallest box wins, exactly as a building box inside an outdoor box), `Resolve` applies the usual entry hysteresis, `Along` reports it for a ray that crosses it. `ContainerRegistry.Dynamic` lists the ones present; `Container.IsDynamic`, `Carrier`, `Enclosing` (the container the carrier itself sits in) and `Entities` (what is inside, on this process) describe them.
+
+<Callout type="info" title="A carrier is never inside its own box">
+The carrier's own position is resolved with its carried container excluded, so a ship sits in the outdoor container around it, not in its own interior. Nested carriers work the same way: a shuttle parked in a carrier's hangar is in the carrier's container, and its own box nests inside that. `Container.NestingDepth` counts the levels.
+</Callout>
+
+## Ownership follows the carrier, unless pinned
+
+By default a dynamic container is owned by whoever owns its carrier: `Container.OwnerWorkerIndex` is the carrier's `OwnerWorkerIndex`, `OwnerWorkerId` is resolved from it (workers know every peer; a client sees `""` unless the game installs a resolver in `ContainerRegistry.WorkerIdByIndex`), and `LeaseEpoch` is the carrier's authority epoch. The carrier's worker still writes a lease row for it on the control plane (`label#netId`, kept assigned to itself and deleted with `RemoveContainer` when the carrier despawns), so the interior shows up on the Nebula Dashboard under **Carried containers**, but that row is informational: it follows the hull.
+
+The dashboard (or `POST /api/containers/pin`) can **pin** the interior to a worker of its own, which sets the lease to `pinned` and makes it authoritative. From then on the pinned worker owns everything inside the box, the hull's worker sends it a permanent ghost of the carrier (the hull sits inside its own box, so the ghost band does this on its own), and the crew is simulated against that ghost while the hull flies on elsewhere. A crowded capital ship can get a dedicated worker this way while its hull stays with the region it is crossing. Unpinning, or the pinned worker dying or retiring, hands the interior back to the hull's worker on the next tick. The consequences of the default:
+
+- **The crew is simulated by the ship's worker.** A pawn that walks up the ramp enters the ship's box; the membership pass on its worker sees a container owned by another worker (when it is) and hands the pawn over, exactly as for a doorway into a building. From then on the pawn and the ship are always on the same worker, which is what lets the pilot's inputs reach the ship by a direct call.
+- **When the ship crosses a seam, everyone aboard crosses with it.** The ship is one entity changing container; `TransferAuthority` on the outgoing worker hands over the ship and then, in the same tick and on the same reliable channel, every authoritative entity inside its box (recursively for nested carriers). The receiver applies the ship first and the passengers after it, so nobody aboard is simulated apart from the hull for even one tick, and their container-local poses do not change at all. A pinned interior is the exception: its contents stay where the lease says.
+- **The ghost band follows the carrier.** An entity inside a dynamic container is ghosted to every worker the carrier is ghosted to, so a neighbour holds the whole subtree warm before the ship can cross. Entities outside a ship get ghosted to its worker when they come within `GhostBandMargin` of its box, like any neighbouring container; `ContainerRegistry.NeighborsOf` is the adjacency the band walks, and it includes the dynamic containers currently touching a box (the static `Container.Neighbors` list never does).
+- **Lease changes still work.** When the orchestrator moves the container a ship is parked in, the ship is handed to the new owner as an entity in that container, and its contents go with it.
+
+When the interior is pinned, game code that talks from the crew to the hull (a pilot's inputs, a switch on the bridge) crosses workers. Use `AuthorityRpc` on the hull's behaviours for that: it runs locally while the hull is here and travels the lateral link when it is not, so the same code serves both cases. The sample's `ShipController.SetPilotInput` does exactly this.
+
+## Moving with the container
+
+A container that moves needs everything expressed in its space to be applied in its space. Nebula does this for you:
+
+- Positions and rotations were always container-local on the wire. The `RemoteInterpolator` now buffers samples in container space too, tagged with the container, and the sampled pose is applied through `NetworkIdentity.SetLocalPose`, which sets the entity's *local* transform under the container. A passenger is therefore drawn where the ship is *this frame*, whichever of the two an update loop reaches first, on clients and on workers holding ghosts alike.
+- A dynamic container refreshes its cached frame on first use in every frame (and at the top of every worker tick), so `ToLocal`, `ToWorld`, `Contains` and the rest are never stale.
+- `PredictedBehaviour` reconciles in container-local space: the owner state carries the pose relative to the container and the container itself, and the client's prediction history is kept in the same space. The worker and the owning client never see a moving ship at the same place at the same moment; what they agree on is where the passenger is relative to the ship. Each history entry remembers the container it was recorded in, so when the worker moves the pawn to another container (a seam, a ship's door) the prediction for that tick is compared in the worker's frame rather than snapping by the distance between the two origins.
+- Anything *your* input expresses relative to the container needs the same care. The sample sends the pawn's yaw relative to the container's heading (so a passenger turns with the ship), and when the pawn changes container the inputs already on the wire, and the ones in the owner's replay history, are still relative to the old heading. The sample stamps every input with a one-byte frame counter that the owner bumps on each container change; the worker (and the owner's replay) rebases inputs carrying the previous stamp until the first one with the new stamp arrives. Without it a pawn walking through the door of a ship parked facing the other way faces backwards for a round trip.
+- Entities under a carrier are parented under its transform, so on the authoritative worker a pawn standing in a ship moves with it through the hierarchy before its own simulation step runs. A capsule that moves by casts (the sample's `PlayerController`) gets a moving platform for free, provided its casts count the hull as level: `DynamicContainer.IsCarrierGeometry(collider)` says whether a collider belongs to a carrier.
+- The worker ticks carriers before their contents (by nesting depth) and calls `Physics.SyncTransforms` in between, and the client does the same before predicting the local pawn, so those casts hit the hull where it is *this* tick. Without that PhysX still holds last tick's hull, and at speed the deck is a step behind under the pawn: the pawn drops through the floor of a descending ship or is shoved out of the cockpit of an accelerating one, leaves the box, and the membership pass hands it to whatever static container is around.
+
+What Nebula does **not** do is local physics: gravity stays world-down, PhysX simulates the world in one space, and a pawn on a rolling ship keeps world-up. That is the next step, and it builds on the same container.
+
+## Despawning a carrier
+
+When a `DynamicContainer` unregisters (its entity despawns on a process, or the object is destroyed), whatever is still inside the box is moved to the container around it, resolved from each entity's world position, and re-parented out of the carrier's hierarchy. A client destroying a despawned ship never takes the passengers' objects with it; the authority decides what actually happens to them on the next tick. Despawn the contents first if they should not survive the carrier.
+
+## What changes on the wire
+
+A container is named on the wire by a [`ContainerRef`](/docs/reference/containers/container-ref): two bytes for a static container (its registry index, as before) or ten for a dynamic one (a marker plus the carrier's net id, which is already mesh-unique and follows the entity through every handover). `EntitySpawn`, `WorldState` entries, `EntityState` chunks and `OwnerState` carry one; `ContainerRegistry.Resolve(ref)` turns it back into a `Container`, or null when the carrier is not known on this process.
+
+That "not known" case is handled everywhere it can happen. A worker that receives a ghost or a handover for an entity inside a carrier it does not have parks the message by carrier net id and applies it when the carrier's container registers; a client does the same with spawns (the gateway replays its cache to a late joiner carriers-first, which keeps this rare). State entries for an unknown carrier are simply skipped until the next one.
+
+The gateway's interest management positions an entity inside a carrier by rebuilding the carrier's world pose from its own newest entry, recursively for nested carriers. This is why the container frame must be the carrier's root transform.
+
+## Limits and notes
+
+- The ghost band walks carriers up to eight levels deep (`NebulaWorker.MaxNestingDepth`).
+- A dynamic container's box is refreshed per frame rather than per tick; a large fleet of carriers with many contents each will show up in the worker's `containers` and `band` profile sections before anything else.
+- Scene entities never enter a dynamic container (they stay in their scene's hierarchy); anything that rides a carrier must be a spawned entity.
+- Entities in a carrier are replicated with the carrier's velocity subtracted, since their poses are local; `NetworkIdentity.Velocity` on a passenger is its own movement, not the ship's.
+
+<Cards>
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="The static half: leases, the ghost band, the flip." />
+  <Card title="Prediction" href="/docs/guides/prediction" description="What a predicted behaviour reconciles, and in which space." />
+  <Card title="Spawning" href="/docs/guides/spawning" description="Spawning a carrier is spawning any entity." />
+</Cards>

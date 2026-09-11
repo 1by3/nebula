@@ -112,6 +112,24 @@ public Container Container { get; }
 public ushort ContainerIndex { get; }
 ```
 
+Wire index of the current container ([`ContainerRef.DynamicIndex`](/docs/reference/containers/container-ref#dynamicindex) inside a dynamic one, `ushort.MaxValue` in none). Prefer [`ContainerRef`](/docs/reference/containers/container-ref).
+
+### ContainerRef [#containerref]
+
+```csharp
+public ContainerRef ContainerRef { get; }
+```
+
+How the current container is named on the wire (see `Nebula.ContainerRef`).
+
+### Carried [#carried]
+
+```csharp
+public Container Carried { get; }
+```
+
+The dynamic container this entity carries (a [`DynamicContainer`](/docs/reference/containers/dynamic-container) on its root), or null.
+
 ### IsSpawned [#isspawned]
 
 ```csharp
@@ -180,7 +198,7 @@ The container the sync chunks currently being read were expressed in (world-spac
 public Vector3 LocalPosition { get; }
 ```
 
-Position in the current container's local space (what goes on the wire).
+Position in the current container's local space (what goes on the wire). An entity parented under its container reads its local transform directly, which is exact even when the container moved this tick.
 
 ### LocalRotation [#localrotation]
 
@@ -277,6 +295,8 @@ Present the tick `renderTick` on every behaviour (ghosts and remote client copie
 ```csharp
 public void SetLocalPose(Container container, Vector3 localPosition, Quaternion localRotation);
 ```
+
+Place the entity at a pose expressed in `container`'s space (world space when null). An entity parented under the container's transform is moved through its local pose, so where it ends up this frame follows wherever the container is this frame, whichever of the two is updated first: this is what keeps passengers glued to a moving ship on every process.
 
 ### ToString [#tostring]
 

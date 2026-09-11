@@ -149,6 +149,14 @@ void SetLeaseState(string containerId, string state);
 void ReleaseContainer(string containerId);
 ```
 
+### RemoveContainer [#removecontainer]
+
+```csharp
+void RemoveContainer(string containerId);
+```
+
+Delete a lease row outright (a dynamic container whose carrier despawned).
+
 ### ResetControlPlane [#resetcontrolplane]
 
 ```csharp
