@@ -1,6 +1,6 @@
 ---
 title: Dynamic containers
-description: Containers carried by entities: ships with interiors, trains, lifts and moving stations, created and destroyed at runtime and owned by whoever simulates the carrier.
+description: "Containers carried by entities: ships with interiors, trains, lifts and moving stations, created and destroyed at runtime and owned by whoever simulates the carrier."
 ---
 
 A static [container](/docs/concepts/containers-and-handover) is authored into a scene and leased to a worker by the orchestrator. A **dynamic container** is carried by an entity: it is created wherever the entity spawns, destroyed when it despawns, moves with the entity's transform and is owned by whichever worker is authoritative for the entity. Everything inside it is replicated in the entity's local space and handed between workers together with it. The mechanism is generic: a ship with an interior, a train car, a lift, a bus, a boat, a space station that drifts, a building on a mobile platform. This page uses a ship.
