@@ -1,6 +1,6 @@
 {
   "name": "com.1by3.nebula",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "displayName": "Nebula",
   "description": "Middleware for dynamically meshed multiplayer game servers: Unity dedicated-server workers that hand entities to each other, an orchestrator driven by a SpacetimeDB control plane, and a gateway clients connect to.",
   "unity": "6000.0",
