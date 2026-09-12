@@ -44,7 +44,7 @@ Clients keep this many cells around the local pawn loaded (1 = the 3x3x3 block).
 public int WorkerLoadRingCells = 1;
 ```
 
-Workers keep this many rings of cells around every cell they lease loaded (seam physics and ghosts need the neighbours' geometry).
+Workers keep this many rings of neighboring cells loaded around every cell they control. Ghosts and boundary physics need this geometry.
 
 ### OriginShiftThresholdCells [#originshiftthresholdcells]
 
@@ -190,7 +190,7 @@ Entities within this many metres of a neighbouring container are ghosted to its 
 public float HandoverHysteresis = 0.35f;
 ```
 
-An entity must be this far inside a new container before authority flips (anti-thrash).
+An entity must be this far inside a new container before authority transfers. This prevents repeated transfers near a boundary.
 
 ### GhostLingerSeconds [#ghostlingerseconds]
 

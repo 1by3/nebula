@@ -5,7 +5,7 @@ namespace Nebula.Cli.Commands;
 public sealed class BuildCommand : Command
 {
     public override string Name => "build";
-    public override string Summary => "Build the game executable every role runs from (orchestrator, gateway, workers, client)";
+    public override string Summary => "Build the Unity player used by every Nebula role";
     public override string Usage => "[worker|client] [--linux] [--scratch] [--stop-mesh]";
     public override string? Details => @"
 Every Nebula role is the same player build started with a different -nebula-role, so `worker` and `client`
@@ -32,7 +32,7 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
             throw new CliError($"unknown build target '{args.Positional[0]}'", "nebula build [worker|client] [--linux]");
         var target = args.Has("linux") ? BuildTarget.Linux : BuildTarget.Host;
         UnityBuild.Build(ctx, project, new UnityBuild.Options(target, args.Has("scratch"), args.Has("force"), args.Has("stop-mesh")));
-        Ui.Info(target == BuildTarget.Linux ? "ship it: nebula deploy" : "run it: nebula start --open-ui");
+        Ui.Info(target == BuildTarget.Linux ? "to deploy this build, run: nebula deploy" : "to start this build, run: nebula start --open-ui");
         return 0;
     }
 }

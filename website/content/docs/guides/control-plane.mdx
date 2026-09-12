@@ -1,21 +1,23 @@
 ---
 title: Control plane (SpacetimeDB)
-description: The SpacetimeDB module that holds the node registry, container leases and mesh settings, the IControlPlane abstraction over it, and how to build, publish and deploy it.
+description: Use the SpacetimeDB control plane to register processes, assign containers, and share low-frequency settings.
 ---
 
-The control plane is the one shared, transactionally consistent place where the mesh agrees on *who exists* and *who owns what*: which workers and gateways are up, which worker holds the lease on each container and at what epoch, and a handful of mesh-wide settings. It is a tiny SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs`, and every process talks to it through [`IControlPlane`](/docs/reference/control-plane/i-control-plane).
+Use the control plane to share process registrations, container assignments, and low-frequency settings across the mesh. The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs`. Nebula processes access it through [`IControlPlane`](/docs/reference/control-plane/i-control-plane).
 
 ## What it is for, and what it is not
 
-It is for low-volume, low-write coordination: registration, heartbeats, leases, epochs, settings. The orchestrator writes leases; workers and gateways register and heartbeat; everybody subscribes.
+Use it for process registration, heartbeats, container assignments, authority epochs, and shared settings. The orchestrator writes assignments. Workers and gateways register themselves and update their heartbeats. Each process subscribes to the records it needs.
 
-It is never on the per-tick path. Transforms, inputs, RPCs and ghost state flow over the lateral link (worker to worker) and through the gateway (worker to client), never through the database. Nothing in a tick waits on it.
+Do not use the control plane for per-tick state. Workers exchange transforms, input, RPCs, and ghost state over their direct links and through the gateway. Simulation ticks do not wait for database operations.
 
-If the control plane goes away, the mesh keeps simulating with its last known topology. `SpacetimeControlPlane` logs `control plane disconnected; mesh keeps running on its last known topology`, drops any writes while disconnected (`control plane not connected; dropping HeartbeatWorker` at verbose level) and reconnects every 2 s. What stops during the outage is reassignment: the orchestrator's pass returns early while `IsConnected` is false, so no containers move, no workers are declared dead and no replacements launch. Handovers between workers continue, because they only need the leases each worker already read.
+If the control-plane connection fails, workers continue with the last assignments they received. `SpacetimeControlPlane` attempts to reconnect every two seconds and discards writes while disconnected.
+
+During the outage, the orchestrator does not reassign containers, declare workers dead, or start replacements. Handovers can continue between connected workers because they use the last known assignments.
 
 ## The module
 
-Five tables, all public. Timestamps are SpacetimeDB `Timestamp` values set from `ctx.Timestamp` inside the reducer, so every clock in the mesh is the database's.
+The module exposes five public tables. Reducers use `ctx.Timestamp` for each SpacetimeDB `Timestamp`, so the records use one clock.
 
 | Table | Primary key | Columns |
 | --- | --- | --- |
@@ -25,7 +27,9 @@ Five tables, all public. Timestamps are SpacetimeDB `Timestamp` values set from 
 | `orchestrator` | `OrchestratorId` | `LastHeartbeat`, `DesiredWorkers` |
 | `game_setting` | `Key` | `Value`, `Version` (bumped on every change), `UpdatedAt` |
 
-`WorkerIndex` is the small dense index the orchestrator hands out; it becomes the high 16 bits of every entity id the worker mints and the worker's debug colour. `Epoch` is monotonic per container and bumped on every (re)assignment, so a worker or gateway that sees a message with a stale epoch can reject it.
+The orchestrator assigns each worker a `WorkerIndex`. This value becomes the high 16 bits of network IDs created by that worker and selects its diagnostic color.
+
+Each container has an `Epoch` that increases when its assigned worker changes. Workers and the gateway use it to reject state from a previous assignment.
 
 ### Reducers
 
@@ -106,26 +110,28 @@ public interface IControlPlane : IDisposable
 
 ### SpacetimeControlPlane
 
-[`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) is the real implementation. It connects with `DbConnection.Builder().WithUri(uri).WithDatabaseName(database)`, subscribes to all tables, and on every insert, update or delete marks itself dirty; the next `Tick()` pumps the connection (`FrameTick`), rebuilds the plain lists from the client cache, and raises `Changed` once. Writes call the generated reducer stubs in `Nebula.Spacetime` (`_conn.Reducers.AssignContainer(...)`). A reducer failure is logged as `control plane reducer failed: ...`.
+[`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) connects Nebula to SpacetimeDB. It subscribes to the control-plane tables and refreshes its local lists after a row changes. It raises `Changed` once on the next `Tick()`.
+
+Write operations call the generated reducer methods in `Nebula.Spacetime`. Nebula logs a reducer failure as `control plane reducer failed: ...`.
 
 The URI and database come from `NebulaConfig.SpacetimeUri` / `SpacetimeDatabase` (defaults `http://127.0.0.1:3000` and `nebula`), overridden by `-nebula-spacetime <uri>` and `-nebula-database <name>`; the orchestrator passes both to every role it launches.
 
 ### LocalControlPlane
 
-[`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) is an in-process double with the exact semantics of the module: same epoch bumps, same orphaning on unregister, same no-op rules. Changes apply synchronously and `Changed` fires on the next `Tick()`, mirroring the subscription push. It exists for the EditMode tests (`LocalControlPlaneLeaseSemanticsMatchTheModule`) and for single-process runs.
+[`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) keeps control-plane state inside one process. It follows the same lease and epoch rules as the SpacetimeDB implementation. Use it for automated tests or other single-process runs.
 
 Select it with `NebulaConfig.UseLocalControlPlane` or `-nebula-local-control-plane`. Because it is in-process, nothing outside the process can see it: the orchestrator skips launching the gateway, reconciling the worker count and relaunching workers when it is on. It is a test harness, not a way to run a mesh without SpacetimeDB.
 
 ## Mesh settings
 
-`game_setting` rows are string key/values that Nebula attaches no meaning to. They are the game's low-volume coordination channel across workers: a value every worker reconciles against, never per-tick state.
+Use `game_setting` rows for values that every worker needs but that do not change every tick. Nebula stores each setting as a string key and value. Your game defines what it means.
 
-- The orchestrator seeds them at startup from `-nebula-settings npcs=128`.
-- The dashboard edits them (Settings card, `POST /api/settings`).
-- Game code on a worker may write them with `ControlPlane.SetSetting`. ShooterGame's in-game `npcs 200` command does this through an ordinary `ServerRpc`: it reaches whichever worker owns the player's pawn, and that worker writes the setting.
-- Every subscriber reads them from `IControlPlane.Settings` (or `GetSettingInt("npcs", 0)`) after `Changed`.
+- Seed settings when the orchestrator starts with `-nebula-settings key=value,key=value`.
+- Edit settings from the dashboard or with `POST /api/settings`.
+- Call `ControlPlane.SetSetting` from game code on a worker.
+- Read settings from `IControlPlane.Settings` after the `Changed` event. Use `GetSetting` or `GetSettingInt` to supply a fallback value.
 
-ShooterGame's `NpcDirector` is the worked example: every worker reconciles against `npcs` using the census the heartbeats already carry (`WorkerInfo.ServerDrivenCount`): the live workers, sorted by index, each spawn their rank's share of the deficit, trim their share of a sustained excess, and a smaller total makes whichever worker currently simulates an NPC above it despawn it. The target is met with however many workers are alive. This "everyone reconciles against a shared value" pattern is the extent of Nebula's cross-worker game logic today. Anything that needs a single decision-maker would want a mesh singleton, which does not exist yet.
+Nebula does not provide a singleton gameplay worker. If each worker must respond to a shared value, make the operation idempotent and let each worker reconcile its authoritative entities. See [Spawning and mesh settings](/docs/guides/spawning#coordinate-work-from-a-setting).
 
 ## Building, publishing and regenerating bindings
 
@@ -148,10 +154,12 @@ The control plane holds only ephemeral registry state, so wiping it is always sa
 
 ### Maincloud for deployment
 
-A deployed mesh keeps its control plane on a SpacetimeDB the cloud VMs can reach. `nebula config spacetime` runs `spacetime login` for Maincloud (`https://maincloud.spacetimedb.com`) or records another server nickname or URL, and stores the database name in the `deploy.database` field of `nebula.json` (this repository uses `nebula-shootergame`). `nebula deploy` publishes the module there before touching any VM and passes `-nebula-spacetime <server> -nebula-database <name>` to the orchestrator, which forwards them to every worker and the gateway. `--reset-control-plane` adds `--delete-data` to that publish.
+For deployment, configure a SpacetimeDB server that every virtual machine can reach. Run `nebula config spacetime` to sign in to Maincloud at `https://maincloud.spacetimedb.com` or record another server URL. Set a unique database name in `deploy.database` in `nebula.json`.
+
+When you run `nebula deploy`, the CLI publishes the module before it creates virtual machines. It passes the server and database to the orchestrator, which passes them to the workers and gateway. Add `--reset-control-plane` to publish with `--delete-data`.
 
 <Callout type="warn" title="Reducers accept any caller">
-Nothing in the module checks who is calling. Anyone who knows the server and database name can register a fake worker, grab a lease or rewrite a setting. Locally that is irrelevant; on Maincloud it means the database name is effectively a credential. A shared secret checked inside the reducers is the planned next step and is not implemented.
+The module does not authenticate reducer callers. Anyone who can connect to the database can register a worker, change a container assignment, or rewrite a setting. Do not treat the database name as a security boundary. Restrict access with deployment infrastructure until you add authentication that meets your game's requirements.
 </Callout>
 
 <Cards>

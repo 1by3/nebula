@@ -1,6 +1,6 @@
 ---
 title: "NebulaSetup"
-description: "One-click setup from the Nebula menu."
+description: "Adds the components and settings required to use Nebula in the active scene."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaSetup.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaSetup.cs)</div>
@@ -9,7 +9,7 @@ description: "One-click setup from the Nebula menu."
 public static class NebulaSetup
 ```
 
-One-click setup from the Nebula menu. **Set Up Active Scene** turns the open scene into a working Nebula game scene: the `Resources/NebulaConfig` asset, a `Nebula` object with [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) and [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay), [`NebulaConfig.GameScene`](/docs/reference/core/nebula-config#gamescene), the build settings (the scene is the boot scene), the project's [`NebulaGameMode`](/docs/reference/core/nebula-game-mode), starter [`Container`](/docs/reference/containers/container) volumes around the level, and every networked prefab in [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs). Every step is idempotent, so running it again on a configured scene changes nothing and it doubles as a repair.
+Adds the components and settings required to use Nebula in the active scene. The setup creates the `Resources/NebulaConfig` asset and a `Nebula` object with [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) and [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay). It also configures the game scene, build settings, game mode, starter [`Container`](/docs/reference/containers/container) volumes, and networked prefabs. Run the setup again to restore missing configuration.
 
 ## Fields
 

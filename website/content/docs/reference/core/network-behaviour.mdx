@@ -1,6 +1,6 @@
 ---
 title: "NetworkBehaviour"
-description: "Base class for meshed gameplay code."
+description: "Base class for replicated gameplay components."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkBehaviour.cs)</div>
@@ -10,7 +10,7 @@ description: "Base class for meshed gameplay code."
 public abstract class NetworkBehaviour : MonoBehaviour
 ```
 
-Base class for meshed gameplay code. The surface is deliberately the one Mirror/NGO users know: [`IsServer`](#isserver)/[`IsClient`](#isclient)/[`IsOwner`](#isowner), spawn/despawn hooks, NetworkVariables and RPCs. The meshing-specific additions are small: [`HasAuthority`](#hasauthority) (this worker owns the entity right now), [`IsGhost`](#isghost) (this worker holds a kinematic replica owned by a neighbour), [`OnGainedAuthority`](#ongainedauthority)/[`OnLostAuthority`](#onlostauthority), and [`AuthorityRpc`](#authorityrpc).
+Base class for replicated gameplay components. Use [`IsServer`](#isserver), [`IsClient`](#isclient), and [`IsOwner`](#isowner) to inspect the current role. Use [`HasAuthority`](#hasauthority) to check whether this worker controls the entity, and [`IsGhost`](#isghost) to check whether it holds a non-authoritative copy. Override the lifecycle methods to respond to spawn, despawn, and authority changes.
 
 ## Properties
 

@@ -1,23 +1,25 @@
 ---
 title: NetworkBehaviour and NetworkVariable
-description: The component model for meshed entities, the role flags each process sees, the lifecycle hooks, and how replicated fields work.
+description: Create a networked entity, check its current role and authority, respond to lifecycle events, and replicate fields.
 ---
 
-A meshed entity is a GameObject with a `NetworkIdentity` and one or more `NetworkBehaviour` components. The surface is deliberately the one Mirror and NGO users know: `IsServer`, `IsClient`, `IsOwner`, spawn and despawn hooks, `NetworkVariable<T>` and RPCs. The meshing-specific additions are small: `HasAuthority` and `IsGhost` tell a worker whether it simulates the entity or only holds a replica of it, and `OnGainedAuthority` / `OnLostAuthority` fire when that changes.
+Add one `NetworkIdentity` to the root GameObject of each networked entity. Add one or more `NetworkBehaviour` components to the root or its children.
 
-This page covers the identity, the behaviour base class and replicated fields. RPCs have their own page at [/docs/guides/rpcs](/docs/guides/rpcs); predicted movement is at [/docs/guides/prediction](/docs/guides/prediction).
+Use `IsServer`, `IsClient`, and `IsOwner` to inspect the process and client owner. Use `HasAuthority` to check whether the current worker controls the entity. Use `IsGhost` to check whether the worker holds a non-authoritative copy.
+
+This page covers identities, behavior components, lifecycle methods, and replicated fields. See [RPCs and worker messages](/docs/guides/rpcs) for remote calls. See [Prediction and reconciliation](/docs/guides/prediction) for predicted movement.
 
 ## NetworkIdentity
 
-[`NetworkIdentity`](/docs/reference/core/network-identity) marks the GameObject as an entity and holds everything the mesh knows about it. Every `NetworkBehaviour` on the object (or its children) hangs off it. One per object; put it on the root.
+Add [`NetworkIdentity`](/docs/reference/core/network-identity) to mark a GameObject as a networked entity. Put one identity on the root. Nebula associates each `NetworkBehaviour` on the root and its children with that identity.
 
 | Member | Type | What it holds |
 | --- | --- | --- |
-| `NetId` | `ulong` | The entity id, minted by the worker that spawned it: `[workerIndex:16][sequence:48]`. There is no central allocator. |
+| `NetId` | `ulong` | The entity ID created by the worker that spawned it: `[workerIndex:16][sequence:48]`. |
 | `Epoch` | `uint` | Monotonic authority epoch, bumped on every authority change. Every entity message carries it and stale-epoch messages are dropped everywhere. |
 | `Container` | `Container` | The container the entity is currently in. Positions travel container-local on the wire. |
 | `OwnerClientId` | `uint` | The owning client, or `0` when no client owns it. |
-| `IsServerDriven` | `bool` | No client owns this entity; whichever worker holds authority drives it (an NPC, a vehicle). Spawned with `NebulaWorker.SpawnServerDriven`. |
+| `IsServerDriven` | `bool` | No client owns this entity. The worker with authority drives it. Spawn it with `NebulaWorker.SpawnServerDriven`. |
 | `HasAuthority` | `bool` | Worker side: this process simulates the entity right now. Always `false` on a client. |
 | `IsLocalPlayer` | `bool` | Client side: the local client owns this entity. |
 | `IsSpawned` | `bool` | True between `OnNetworkSpawn` and `OnNetworkDespawn`. |
@@ -25,16 +27,16 @@ This page covers the identity, the behaviour base class and replicated fields. R
 | `OwnerWorkerIndex` | `ushort` | Index of the worker last heard to be authoritative. Debug and overlay only. |
 | `PrefabId` | `ushort` | Index into `NebulaConfig.NetworkPrefabs`. Set at spawn time. |
 
-`Behaviours` is the array of `NetworkBehaviour` components found on the object, in `GetComponentsInChildren` order. That order is what identifies a behaviour on the wire (`BehaviourIndex`), so the prefab must be identical on every process.
+`Behaviours` contains the `NetworkBehaviour` components in `GetComponentsInChildren` order. Nebula uses each component's position in this array as its network index. Use the same prefab and component order in every process.
 
-`NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). That is covered in [/docs/guides/prediction](/docs/guides/prediction#lag-compensated-hit-tests).
+`NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). See [Prediction](/docs/guides/prediction#lag-compensated-hit-tests).
 
 ## NetworkBehaviour
 
-Derive from [`NetworkBehaviour`](/docs/reference/core/network-behaviour) for any component that needs to know its role, replicate fields or send RPCs. It requires a `NetworkIdentity` on the same object or a parent.
+Derive a component from [`NetworkBehaviour`](/docs/reference/core/network-behaviour) when it must inspect its role, replicate fields, or send RPCs. Add `NetworkIdentity` to the same GameObject or a parent.
 
 ```csharp title="PlayerController.cs"
-public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 {
     public NetworkVariable<string> PlayerName = new NetworkVariable<string>("");
     public NetworkVariable<float> Health = new NetworkVariable<float>(MaxHealth);
@@ -68,7 +70,7 @@ What each process sees for one entity:
 | Authoritative worker | yes | no | no | yes | no |
 | Worker holding a ghost | yes | no | no | no | yes |
 
-`IsOwner` is a client-side notion only. The authoritative worker for a player's entity has `HasAuthority`, not `IsOwner`, and `OwnerClientId` tells it which client it is simulating for. A server-driven entity has `OwnerClientId == 0` and is never anyone's `IsOwner`.
+Check `IsOwner` only for client ownership. On a worker, check `HasAuthority` and read `OwnerClientId`. A server-driven entity has `OwnerClientId == 0` and no owning client.
 
 Convenience accessors on the behaviour forward to the identity: `NetId`, `IsSpawned`, `OwnerClientId`, `Container` and `Identity` itself.
 
@@ -85,13 +87,20 @@ All hooks are `virtual` with empty defaults.
 | `OnContainerChanged(Container previous, Container current)` | The identity's container changed. Fires on every process that tracks the entity, including during spawn (with `previous == null`) and whenever the entity crosses a boundary. |
 | `OnNetworkDespawn()` | The entity is about to be destroyed on this process. |
 
-Over a typical player entity's life on the mesh the order is: `OnContainerChanged(null, spawnContainer)`, `OnNetworkSpawn`, `OnGainedAuthority`, then `NetworkTick` every tick. When it walks into a container owned by another worker, the outgoing worker sees `OnContainerChanged`, then `WriteHandoverState`, then `OnLostAuthority`; the incoming worker sees `OnContainerChanged`, `ReadHandoverState`, `OnGainedAuthority` and takes over `NetworkTick`. `OnNetworkDespawn` runs last, on every process, when the authority despawns it.
+Expect this order on the worker that spawns an entity:
+
+1. `OnContainerChanged(null, spawnContainer)`
+2. `OnNetworkSpawn`
+3. `OnGainedAuthority`
+4. `NetworkTick` on each tick
+
+During a cross-worker handover, the previous worker calls `OnContainerChanged`, `WriteHandoverState`, and `OnLostAuthority`. The new worker calls `OnContainerChanged`, `ReadHandoverState`, and `OnGainedAuthority`, then begins calling `NetworkTick`. When the authoritative worker despawns the entity, each process calls `OnNetworkDespawn` before removing its copy.
 
 Two more pairs of hooks exist for state that is not a `NetworkVariable`: `WriteHandoverState` / `ReadHandoverState` for state only the next simulating worker needs, and `WriteSyncState` / `ReadSyncState` for per-tick delta channels. Both are described in [/docs/guides/physics-and-handover-state](/docs/guides/physics-and-handover-state).
 
 ### Ghost semantics
 
-A ghost is the copy of an entity that a worker holds because the entity is near (or has crossed into) one of its containers while a neighbouring worker still simulates it. On a ghost:
+A **ghost** is a non-authoritative copy of an entity on another worker. Nebula creates one near a container boundary so the next worker has the entity's state before a handover. On a ghost:
 
 - `HasAuthority` is false and `IsGhost` is true.
 - `NetworkTick` is not called. The pose is driven by the neighbour's `GhostState` stream through an interpolator, one tick behind the simulation tick; any Rigidbody is set kinematic.
@@ -124,19 +133,17 @@ NetworkVariable on PlayerController written without authority (netId 28147497671
 
 The check applies once the entity is spawned. Before that (in a constructor or `Awake`, or on a prefab you are configuring before `Spawn`) any process may set the initial value.
 
-Assigning an equal value is a no-op. Assigning a different value marks the entity's variables dirty and raises `OnValueChanged(previous, current)` on the authority at once. At the end of the tick the worker sends the entity's variables to the gateway (`EntityVars`, reliable) and to every worker holding a ghost of it (`GhostVars`); each receiving copy applies the new values and raises `OnValueChanged` for every variable whose value actually changed. Late joiners and fresh ghosts get the current values inside the spawn message, and a handover carries them in the `AuthorityTransfer`.
+Assigning the current value makes no change. Assigning a different value marks the entity's variables as dirty and immediately raises `OnValueChanged(previous, current)` on the authoritative worker.
+
+At the end of the tick, the worker sends all variables for that entity to the gateway and each worker that holds a ghost. Receiving copies apply the values and raise `OnValueChanged` for values that differ. A spawn or authority-transfer message also includes the current values.
 
 ```csharp title="PlayerController.cs"
 [AuthorityRpc]
-private void TakeDamage(float amount, ulong attackerNetId, string attackerName)
+private void TakeDamage(float amount)
 {
     if (!HasAuthority || IsDead.Value) return;
     Health.Value = Mathf.Max(0f, Health.Value - amount);
-    if (Health.Value <= 0f)
-    {
-        IsDead.Value = true;
-        Deaths.Value += 1;
-    }
+    if (Health.Value <= 0f) IsDead.Value = true;
 }
 ```
 
@@ -150,11 +157,13 @@ Health.OnValueChanged += (previous, current) => _bar.fillAmount = current / MaxH
 
 ### Discovery
 
-Binding is reflection-based. When an identity initialises, every `NetworkBehaviour` on the object is scanned for fields (public or private) whose type derives from `NetworkVariableBase`, walking from the concrete class up to `NetworkBehaviour`. Fields are ordered by metadata token, which is declaration order within a class. A null field is instantiated for you. The resulting index is the variable's identity on the wire, so:
+When an identity starts, Nebula finds every public or private field whose type derives from `NetworkVariableBase`. It checks the concrete behavior class and each base class up to `NetworkBehaviour`.
+
+Nebula assigns each field a numeric index based on declaration order. It also creates an instance for a field that is `null`. Follow these rules to keep the indices consistent:
 
 - Declare variables as fields, not properties.
 - Keep the same class and the same field order on every process (the same assembly on client and worker guarantees this).
-- Adding or removing a variable changes every index after it; there is no per-variable naming on the wire.
+- Adding or removing a variable changes every index after it. Network messages do not include the field name.
 
 ### Supported value types
 
@@ -164,7 +173,9 @@ Equality uses `EqualityComparer<T>.Default`, so a struct `T` needs a sensible `E
 
 ### What travels on the wire
 
-There is no delta compression and no per-variable dirty tracking on the wire. When any variable on an entity changes, the entity's whole variable blob (every `NetworkVariable` on every behaviour, in discovery order) is written and sent. Receivers read the whole blob and raise `OnValueChanged` only for the variables whose value differs. Keep variables to state that changes on events (health, names, goals); anything that changes every tick belongs in the identity's pose stream, a `PredictedBehaviour` state, or the sync channel.
+Nebula does not send a per-variable delta. When any `NetworkVariable` on an entity changes, it sends every variable on that entity in discovery order. Receivers still raise `OnValueChanged` only for values that differ.
+
+Use `NetworkVariable` for state that changes occasionally, such as health, a display name, or a target. Put per-tick values in the identity pose stream, predicted state, or a custom sync component.
 
 <Callout type="info" title="Sending a string every tick">
 A `NetworkVariable<string>` that changes often re-sends every other variable on the entity with it. Keep text that changes every tick out of `NetworkVariable`s; send it through the sync channel or an RPC instead.

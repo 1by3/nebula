@@ -1,5 +1,5 @@
 export const appName = 'Nebula';
-export const tagline = 'Dynamically meshed multiplayer servers for Unity';
+export const tagline = 'Run one Unity world across multiple game servers';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';

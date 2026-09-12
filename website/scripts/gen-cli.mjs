@@ -31,13 +31,19 @@ const doc = JSON.parse(json);
 
 const escape = (s) => s.replace(/[<>{}*_\\|]/g, (c) => '\\' + c);
 const code = (s) => '`' + s + '`';
+const sentence = (s) => {
+  const text = s.trim();
+  if (!text) return text;
+  const capitalized = text.charAt(0).toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : capitalized + '.';
+};
 
 function optionRows(options) {
   const lines = ['| Option | Description |', '| --- | --- |'];
   for (const o of options) {
     let flag = '--' + o.name + (o.hasValue ? ' <' + (o.valueName ?? 'value') + '>' : '');
     if (o.short) flag = '-' + o.short + ', ' + flag;
-    lines.push(`| ${code(flag)} | ${escape(o.help)} |`);
+    lines.push(`| ${code(flag)} | ${escape(sentence(o.help))} |`);
   }
   return lines.join('\n');
 }
@@ -48,7 +54,7 @@ mkdirSync(outDir, { recursive: true });
 const groups = [
   { title: 'Getting started', commands: ['setup', 'init'] },
   { title: 'Running locally', commands: ['build', 'start', 'stop', 'status', 'logs'] },
-  { title: 'Deploying', commands: ['config', 'deploy', 'destroy'] },
+  { title: 'Deploy', commands: ['config', 'deploy', 'destroy'] },
   { title: 'Other', commands: ['version', 'help'] },
 ];
 const known = new Set(groups.flatMap((g) => g.commands));
@@ -63,7 +69,8 @@ for (const c of doc.commands) {
   parts.push(`description: "${c.summary.replace(/"/g, '\\"')}"`);
   parts.push('---');
   parts.push('');
-  parts.push(escape(c.summary) + '.');
+  const instruction = c.summary.charAt(0).toLowerCase() + c.summary.slice(1);
+  parts.push(`To ${escape(instruction)}, run:`);
   parts.push('');
   parts.push('```bash');
   parts.push(`nebula ${c.name}${c.usage ? ' ' + c.usage : ''}`.trim());
@@ -74,11 +81,10 @@ for (const c of doc.commands) {
     parts.push('');
   }
   if (c.details) {
-    // Details are pre-formatted help text (aligned columns); keep them verbatim.
-    parts.push('```text');
-    parts.push(c.details);
-    parts.push('```');
-    parts.push('');
+    for (const paragraph of c.details.trim().split(/\r?\n\s*\r?\n/)) {
+      parts.push(escape(paragraph.replace(/\r?\n/g, ' ')));
+      parts.push('');
+    }
   }
   if (c.options?.length) {
     parts.push('## Options');
@@ -107,11 +113,11 @@ for (const c of doc.commands) {
 const index = [];
 index.push('---');
 index.push('title: CLI reference');
-index.push(`description: Every nebula command, generated from the CLI (version ${doc.version}).`);
+index.push(`description: Find the syntax and options for each nebula command (version ${doc.version}).`);
 index.push('---');
 index.push('');
 index.push(
-  'The `nebula` command-line tool installs Nebula into a Unity project, runs the mesh locally and deploys it. This reference is generated from the CLI itself (`nebula help --json`) by `website/scripts/gen-cli.mjs`; `nebula --help` and `nebula <command> --help` print the same information in the terminal. See [Install the CLI](/docs/getting-started/install) for how to get it.',
+  'Use the `nebula` command-line tool to add Nebula to a Unity project, run a local mesh, and deploy it. To read the same help in a terminal, run `nebula --help` or `nebula <command> --help`. See [Install the CLI](/docs/getting-started/install) before you begin.',
 );
 index.push('');
 index.push('```bash');
@@ -143,6 +149,6 @@ for (const g of groups) {
 }
 writeFileSync(
   join(outDir, 'meta.json'),
-  JSON.stringify({ title: 'CLI reference', description: 'Generated from nebula help --json', root: true, pages }, null, 2) + '\n',
+  JSON.stringify({ title: 'CLI reference', description: 'Commands and options for the nebula CLI', root: true, pages }, null, 2) + '\n',
 );
 console.log(`gen-cli: ${doc.commands.length} commands (nebula ${doc.version}) -> ${outDir}`);

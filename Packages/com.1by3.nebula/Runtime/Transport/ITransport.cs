@@ -3,8 +3,7 @@ using System;
 namespace Nebula
 {
     /// <summary>
-    /// Delivery classes every Nebula link needs. Maps 1:1 onto QUIC streams/datagrams and onto
-    /// LiteNetLib delivery methods, so swapping the transport later is contained to one class.
+    /// Delivery classes supported by each Nebula network link.
     /// </summary>
     public enum Delivery : byte
     {
@@ -31,11 +30,9 @@ namespace Nebula
     }
 
     /// <summary>
-    /// The seam between Nebula and whatever moves bytes. Sockets, reliability and sequencing are bought
-    /// (LiteNetLib today), replication and authority are built on top. Poll-driven: nothing is raised
-    /// outside <see cref="Poll"/>, so nothing mutates the world behind the simulation loop's back.
-    /// A single transport can both listen and dial out, which is what workers need (they accept the
-    /// gateway and their peers, and dial peers themselves).
+    /// Provides the network transport used by Nebula. Call <see cref="Poll"/> to receive events on the simulation
+    /// thread. A transport can listen for incoming connections and connect to other processes, which lets a worker
+    /// accept the gateway and worker peers while also connecting to peers.
     /// </summary>
     public interface ITransport : IDisposable
     {

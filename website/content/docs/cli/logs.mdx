@@ -1,9 +1,9 @@
 ---
 title: "nebula logs"
-description: "Show a role's log: orchestrator, gateway, w1..wN, bot1.."
+description: "Read the log for the orchestrator, gateway, a worker, or a bot client"
 ---
 
-Show a role's log: orchestrator, gateway, w1..wN, bot1...
+To read the log for the orchestrator, gateway, a worker, or a bot client, run:
 
 ```bash
 nebula logs [role] [--lines N] [--follow] [--cloud]
@@ -13,9 +13,9 @@ nebula logs [role] [--lines N] [--follow] [--cloud]
 
 | Option | Description |
 | --- | --- |
-| `-n, --lines <N>` | lines to show (default 60) |
-| `-f, --follow` | keep printing as the log grows (local only) |
-| `--cloud` | read the log from the deployed mesh over ssh |
+| `-n, --lines <N>` | Lines to show (default 60). |
+| `-f, --follow` | Keep printing as the log grows (local only). |
+| `--cloud` | Read the log from the deployed mesh over ssh. |
 
 ## Global options
 
@@ -23,9 +23,9 @@ These work with every command and may appear before or after it.
 
 | Option | Description |
 | --- | --- |
-| `--project <path>` | run against another Nebula project instead of the current folder |
-| `-v, --verbose` | print stack traces and the commands the CLI runs |
-| `-y, --yes` | answer every confirmation with yes |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
 
 ## Examples
 

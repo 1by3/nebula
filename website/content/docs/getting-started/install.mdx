@@ -3,16 +3,16 @@ title: Install the CLI
 description: Get the nebula command-line tool and the prerequisites for running a mesh locally.
 ---
 
-The `nebula` CLI is the front door to Nebula: it installs the middleware into a Unity project, builds the player, runs the whole mesh on your machine and deploys it to a cloud provider. It is one self-contained executable (no .NET runtime needed) built from `cli/Nebula.Cli`, and it works the same on Windows, macOS and Linux.
+Install the `nebula` command-line interface (CLI) to add Nebula to a Unity project, build the game, run it locally, and deploy it. The installed command is a self-contained executable, so it does not need a separate .NET runtime.
 
 ## Prerequisites
 
 | What | Why | Notes |
 | --- | --- | --- |
-| Unity 6 (6000.x) | Nebula is a Unity project; every role is the same player build | Developed on 6000.6. Add the **Linux Dedicated Server** module to deploy to the cloud. |
+| Unity 6 (6000.x) | Builds the player used by every Nebula role | Nebula is developed with 6000.6. To deploy Linux servers, add the **Linux Dedicated Server** module. |
 | SpacetimeDB CLI | Runs the local control plane and publishes the module | `nebula setup` installs it with the official installer. |
 | .NET 10 SDK | Compiles the control-plane module (and the CLI itself, when built from source) | `nebula setup` installs it into `~/.dotnet` if missing. |
-| git, ssh | `nebula init` fetches the SDK; `nebula deploy` reaches the VMs | Only needed for those two commands. |
+| Git and SSH | `nebula init` fetches the package, and `nebula deploy` connects to virtual machines | Install these tools before you run either command. |
 
 ## Install
 
@@ -23,7 +23,7 @@ The `nebula` CLI is the front door to Nebula: it installs the middleware into a 
 iwr https://windows.nebula.1by3.co -useb | iex
 ```
 
-The installer puts `nebula.exe` in `~/.nebula-cli/bin` and adds that folder to your user `PATH`. Open a new terminal afterwards.
+The installer puts `nebula.exe` in `~/.nebula-cli/bin` and adds that folder to your user `PATH`. Open a new terminal after the installer finishes.
 
 </Tab>
 <Tab value="macOS / Linux">
@@ -32,12 +32,12 @@ The installer puts `nebula.exe` in `~/.nebula-cli/bin` and adds that folder to y
 curl -sSf https://install.nebula.1by3.co | sh
 ```
 
-The installer puts `nebula` in `~/.nebula-cli/bin` and adds that folder to `PATH` in your shell profile. Open a new terminal afterwards.
+The installer puts `nebula` in `~/.nebula-cli/bin` and adds that folder to `PATH` in your shell profile. Open a new terminal after the installer finishes.
 
 </Tab>
 <Tab value="From a checkout">
 
-The same scripts can build the CLI from the repository with `dotnet publish` (needs the .NET 10 SDK). They also remember the checkout, so `nebula init` copies `Packages/com.1by3.nebula` from it instead of cloning.
+To build the CLI from a repository checkout, run the installer script for your platform. This method requires the .NET 10 SDK. The installer also records the checkout path, so `nebula init` copies the Nebula package from that checkout.
 
 ```powershell
 powershell -File cli\install\install.ps1 -Source .
@@ -47,7 +47,7 @@ powershell -File cli\install\install.ps1 -Source .
 sh cli/install/install.sh --source .
 ```
 
-To run the CLI without installing it at all:
+To run the CLI without installing it, run:
 
 ```bash
 dotnet run --project cli/Nebula.Cli -- --help
@@ -57,7 +57,9 @@ dotnet run --project cli/Nebula.Cli -- --help
 </Tabs>
 
 <Callout type="info" title="Hosted installer URLs">
-The hosted URLs are not live yet. Until they are, install from a checkout, or use the installer scripts in `cli/install/` with `-Archive`/`--archive <file>` pointing at a release archive built by `cli/scripts/package.ps1` or `package.sh`. Without either, the scripts download `nebula-<version>-<rid>.zip` or `.tar.gz` from the repository's releases; `NEBULA_VERSION` picks a version and `NEBULA_RELEASE_BASE` another host.
+The hosted installer URLs are not available yet. For now, install from a repository checkout. You can also pass `-Archive` or `--archive <file>` to a script in `cli/install/` and use an archive created by `cli/scripts/package.ps1` or `cli/scripts/package.sh`.
+
+If you do not provide a checkout or archive, the script downloads `nebula-<version>-<rid>.zip` or `.tar.gz` from the repository releases. Set `NEBULA_VERSION` to select a version. Set `NEBULA_RELEASE_BASE` to use a different download host.
 </Callout>
 
 ## Check the install and set up prerequisites
@@ -67,7 +69,9 @@ nebula --version
 nebula setup
 ```
 
-`nebula setup` installs what is missing and reports what it finds: the SpacetimeDB CLI, a .NET 10 SDK, git and ssh, and the Unity editors Unity Hub has installed (with whether they include Linux Dedicated Server support). `nebula setup --check` only reports. `nebula setup --yes` answers every prompt with yes.
+Run `nebula setup` to inspect your system and install missing prerequisites. It checks the SpacetimeDB CLI, the .NET 10 SDK, Git, SSH, and Unity versions registered with Unity Hub. It also reports whether each Unity installation includes Linux Dedicated Server support.
+
+To check without installing anything, run `nebula setup --check`. To accept every installation prompt, run `nebula setup --yes`.
 
 ## Environment variables
 
@@ -82,6 +86,6 @@ nebula setup
 
 <Cards>
   <Card title="Tutorial" href="/docs/getting-started/tutorial" description="Install Nebula into a Unity project and run your first mesh." />
-  <Card title="Running locally" href="/docs/getting-started/running-locally" description="build, start, stop, status, logs, and the dashboard." />
+  <Card title="Run Nebula locally" href="/docs/getting-started/running-locally" description="Build, start, inspect, and stop a local mesh." />
   <Card title="CLI reference" href="/docs/cli" description="Every command and option." />
 </Cards>

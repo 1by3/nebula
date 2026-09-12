@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// The one address clients connect to. It holds a link to every worker, forwards each client's inputs to whichever
+    /// Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the
     /// worker currently owns that client's entity, and fans the workers' replication streams out to the clients,
     /// de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative:
     /// if the gateway dies, clients reconnect and the workers re-announce their entities.

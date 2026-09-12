@@ -1,209 +1,146 @@
 ---
-title: Orchestrator, Nebula Dashboard and worker hosts
-description: How the orchestrator keeps workers running and containers assigned, what the Nebula Dashboard and its HTTP API expose, and how worker hosts decide where a worker runs.
+title: Manage workers and containers
+description: Use the orchestrator, Nebula Dashboard, and HTTP API to inspect and resize a running mesh.
 ---
 
-The orchestrator is the one process that decides *how many* workers exist and *which containers* each of them owns. It never simulates anything and it is never on the per-tick path: workers and the gateway talk to each other directly, and the orchestrator only writes leases to the control plane and starts or stops worker instances. Every box in the mesh is the same player build started with a different `-nebula-role`; the orchestrator is `-nebula-role orchestrator`.
+Use the **orchestrator** to keep the requested number of workers running and distribute containers between them. The orchestrator does not simulate gameplay. Workers communicate directly with the gateway and with each other during normal simulation.
 
-This page covers [`NebulaOrchestrator`](/docs/reference/orchestrator/nebula-orchestrator), the Nebula Dashboard served by [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server), and the [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) abstraction that puts workers on local processes or cloud VMs. For the leases themselves see [Control plane](/docs/guides/control-plane); for what happens on a worker when a container moves see [Containers and handover](/docs/concepts/containers-and-handover).
+Start the orchestrator with `-nebula-role orchestrator`. The `nebula start` and `nebula deploy` commands supply this option for you.
 
-## What the orchestrator does
+## Understand container assignment
 
-On startup it:
+The orchestrator stores each container assignment as a **lease** in the control plane. A lease names the worker that currently controls the container. Its **epoch** is a number that increases whenever the assignment changes, which lets workers reject an older assignment.
 
-1. Connects to the control plane and resets it (`-nebula-reset`, default on), so rows from a previous run never survive.
-2. Writes one `container_lease` row per container in the scene (`EnsureContainer` for every entry of `ContainerRegistry`).
-3. Seeds mesh settings from `-nebula-settings key=value,key=value`.
-4. Launches the gateway next to itself (`-nebula-gateway-id gw1`), always through the process host, whatever host the workers use.
-5. Starts the dashboard.
+Every 500 milliseconds, the orchestrator:
 
-Then, every 500 ms, it runs one pass: heartbeat the `orchestrator` row, reap dead workers, reconcile the desired count, rebalance, finish retirements, relaunch what needs relaunching, and publish a fresh state document for the dashboard. Every dashboard command just schedules the next pass immediately.
+1. Reports its own heartbeat.
+2. Checks worker heartbeats and removes dead workers.
+3. Starts or retires workers until the requested count is reached.
+4. Distributes containers as evenly as possible.
+5. Publishes a current state snapshot for the dashboard.
 
-### Assignment: even and sticky
+Nebula keeps a container on its current live worker when that worker remains within its even share. This reduces container movement during a resize.
 
-`NebulaOrchestrator.ComputeAssignment` is a pure function of (containers, live workers, current leases). It sorts containers by id and workers by index, gives every worker a quota of `containers / workers` with the remainder going to the lowest indices, keeps every active lease whose owner is alive and still under quota, and deals the rest to the first worker with room. Four workers and four containers means one each; three workers means one of them simulates two; one worker takes everything.
+For example, four workers and four containers results in one container per worker. With three workers, one worker receives two containers. With one worker, that worker receives every container.
 
-Because existing leases are kept wherever they fit, a rebalance moves as few containers as possible. Each change is applied with `AssignContainer`, which bumps the container's epoch, and logged as `assign <container> -> <worker>`. Workers that are retiring are excluded from the assignment set but stay alive to drain.
+## Change the worker count
 
-### Worker count is a live setting
+Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. Nebula supports up to 32 workers.
 
-`DesiredWorkers` starts at `WorkerCount` (`-nebula-workers`) and is clamped to `MaxWorkers` (32). Changing it on the dashboard, over the API, or through `nebula status`-adjacent tooling takes effect on the next pass.
+When you add a worker, the orchestrator starts it on the lowest available worker index and rebalances containers.
 
-**Growing** launches a worker on the next free index (`NextFreeIndex`: the smallest positive index not used by a managed worker or a control-plane row). Indices are reused so worker ids (`w1..wN`), ports (`WorkerBasePort + index`, 7101 upwards) and entity-id prefixes stay dense.
+When you remove a worker, the orchestrator retires the highest-index worker by default. It first assigns the worker's containers to other workers. The retiring worker then transfers its authoritative entities through the normal handover process.
 
-**Shrinking** retires the highest-index worker (`PickWorkerToRetire`). Retiring means:
+The orchestrator stops the retiring worker after it has no containers or authoritative entities. It stops the worker after `WorkerDrainTimeoutSeconds` even if the drain has not completed. If you scale to zero, no worker can receive the entities, so every retiring worker stops after the timeout.
 
-1. The worker is dropped from the assignment set; the next pass moves its containers to the survivors.
-2. The worker hands its entities over through the normal per-entity handover path. Nothing is special-cased; a drain is just every entity crossing at once.
-3. Once it holds no active or assigning lease *and* reports zero authoritative entities, the orchestrator unregisters and kills it (`worker w3 drained; shutting it down`).
-4. If `WorkerDrainTimeoutSeconds` (default 10 s) passes first, it is killed anyway and a warning is logged.
+## Handle a failed worker
 
-Scaling to zero has nobody to hand over to, so leases are released and the retirees drain by timeout.
+Each worker writes a heartbeat to the control plane. When a heartbeat is older than `WorkerTimeoutSeconds`, the orchestrator treats the worker as dead and assigns its containers to surviving workers.
 
-### Dead workers
+After `DeadWorkerReplaceDelaySeconds`, the orchestrator starts a replacement on the same worker index. It can react sooner when the worker process exits or its cloud VM disappears.
 
-Liveness is always judged from control-plane heartbeats, whatever the host. A worker whose heartbeat is older than `WorkerTimeoutSeconds` (default 5 s) is declared dead: the orchestrator calls `UnregisterWorker`, which orphans its leases, and the same pass reassigns them to the survivors. A replacement is launched on the same index after `DeadWorkerReplaceDelaySeconds` (default 8 s); containers then flow back to it on a later rebalance.
-
-Two shortcuts exist. If the host reports the instance gone (process exited, VM deleted) the worker is treated as dead at once without waiting for the timeout. And rows the orchestrator never saw alive (leftovers from an earlier run) are never "declared dead", only reset.
-
-The gateway holds nothing authoritative, so a dead worker's entities are dropped and its players are respawned on whichever worker now owns their container.
-
-## The Nebula Dashboard
-
-The orchestrator serves the Nebula Dashboard, a single page from `Resources/NebulaDashboard.html`, on `DashboardPort` (default 7080, `-nebula-dashboard-port`; 0 disables it). It binds to `localhost` unless told otherwise:
-
-| Switch | Effect |
-| --- | --- |
-| `-nebula-dashboard-port 7080` | Port for the page and the API. |
-| `-nebula-dashboard-bind localhost` | Default: `http://localhost:7080/` and `http://127.0.0.1:7080/` only. |
-| `-nebula-dashboard-bind +` (or `*`) | Every interface. `nebula deploy` uses this so the page is reachable on the VM's public IP. |
-| `-nebula-dashboard-bind 10.0.1.2` | One specific address. |
-| `-nebula-build-dir <dir>` | Directory served read-only under `/build/` (the Linux tarball worker VMs download). Defaults to the executable's own folder. |
-| `-nebula-telemetry <url>` | Where launched workers post [World map](#world-map) telemetry. Defaults to `http://<advertise address>:<dashboard port>/api/telemetry`; `off` disables it. |
-
-The dashboard has two pages, **Overview** (`/`) and [**World map**](#world-map) (`/map`). The overview polls `/api/state` and shows:
-
-- **Mesh totals**: live workers, desired, containers, players, bots, server-driven entities, entities (authoritative + ghosts), rebalances.
-- **Workers**: a stepper for the desired count, **Add worker** and **Rebalance now**, then one card per worker with its colour, state (`starting`, `ready`, `draining`, `relaunching`, `launching`, `dead`), the containers it owns, players / bots / server-driven counts, authoritative and ghost entity counts, tick time, heartbeat age, and per-card **Kill** (simulated crash, relaunched) and **Remove** (graceful drain) buttons.
-- **Settings**: the mesh-wide key/values from `game_setting`, editable in place (ShooterGame reads `npcs` here, and `damage`: `all`, `npcs` for invulnerable players while you watch a big NPC fight, or `none`; the in-game console's `damage` command sets the same value).
-- **Containers**: container to worker with lease epoch and state.
-- **Carried containers**: the interiors of ships and other vehicles ([dynamic containers](/docs/guides/dynamic-containers)), whose leases workers create at runtime. Each follows its carrier's worker unless you pin it to a worker of its own from the row's drop-down (`POST /api/containers/pin` with `{"containerId": "starhopper#…", "workerId": "w2"}`; `/api/containers/unpin` reverts). A pinned interior falls back to following its carrier when its worker dies or retires.
-- **Gateways**: id, address, heartbeat age.
-- **Events**: the orchestrator's last 60 log lines (it keeps 200), colour-coded by level.
-
-### World map
-
-`/map` draws the mesh from above: the cells of a [partitioned world](/docs/guides/world-partition), every static container in absolute world coordinates filled with the colour of the worker that owns it, the [carried containers](/docs/guides/dynamic-containers) moving where their carriers are, and the entities the workers simulate. Drag to pan, scroll to zoom, hover or click anything for the inspector:
-
-- **A container**: owner, lease and epoch, its box, the containers it sits in and contains, the ones it has seams with, and how many players, bots, server-driven and other entities it holds, per worker, with the ghosts other workers keep of them. A cell container also lists the workers that have the cell loaded.
-- **A carried container**: which worker simulates the hull and which one the interior (they differ when it is pinned), the lease, speed, heading and the container it is in, with **Follow** (the camera tracks it) and the same **Pin interior to…** / **Unpin** as the overview.
-- **An entity**: kind, authoritative worker, container, position and heading.
-
-The rail switches the fill between owner and entity load, toggles layers (cells, containers, carried, entities, the ghost band drawn `GhostBandMargin` inside each wall, labels), and lists workers (hover one to light up what it owns, click to keep it lit) and carried containers.
-
-The live half comes from the workers. Each posts a telemetry document to `POST /api/telemetry` ([`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)) once a second: per container, how many players, bots, server-driven and other entities it is authoritative for and how many ghosts it holds; the box, pose and velocity of every carried container whose carrier it simulates; and the cells it has loaded. While somebody has the map open (the page read `/api/map` in the last 5 s) the reply asks for more, and the worker posts every 0.5 s with one point per authoritative entity, at most 4096. Positions are absolute: every process adds its [floating origin](/docs/guides/world-partition) back, so workers with different origins agree. The document is built in `Update`, never inside the tick, and posted from the thread pool; a post still in flight skips the next one.
-
-The orchestrator passes `-nebula-telemetry http://<advertise address>:<dashboard port>/api/telemetry` to every worker it launches (the address worker VMs already download the build from), and a worker in the orchestrator's own process hands its documents over directly. A worker started by hand needs the switch itself; `-nebula-telemetry off` turns telemetry off. The orchestrator keeps each worker's latest document ([`MeshTelemetry`](/docs/reference/orchestrator/mesh-telemetry)), drops it when the worker dies, retires or stops posting for 15 s, and serves it unparsed; the page joins it with `/api/state`. With the dashboard disabled there is no map and no telemetry.
-
-<Callout type="warn" title="No authentication">
-The dashboard and the API accept any request that reaches the port. Locally that is fine; on a public VM restrict the port to your own IP, as described in [Deploying to Hetzner](/docs/deploy/hetzner#security-and-operations).
+<Callout type="warn" title="Transient state is not restored">
+Nebula does not persist entity state. Entities controlled only by a failed worker are lost. The gateway asks the new container owner to spawn affected players again.
 </Callout>
 
-## HTTP API
+## Open the Nebula Dashboard
 
-Reads are answered from the listener thread with the last published state, and so is worker telemetry (`/api/map`, `/api/map/geometry` and `/api/telemetry` touch nothing Unity owns). Other writes are queued and executed on the orchestrator's main thread; the HTTP response waits up to 3 s for that and returns `503` otherwise. Every successful POST answers `{"ok":true,"desired":n}`; errors answer `{"ok":false,"error":"..."}`.
+To open the local dashboard, visit `http://localhost:7080/`. Change `NebulaConfig.DashboardPort` or pass `-nebula-dashboard-port` to use another port. Set the port to `0` to disable the dashboard.
 
-| Method and path | Body | What it does |
-| --- | --- | --- |
-| `GET /api/state` | none | Full JSON snapshot: `orchestratorId`, `controlPlaneConnected`, `host`, `hostReady`, `hostError`, `desiredWorkers`, `maxWorkers`, `rebalances`, `workerTimeoutSeconds`, `workers[]`, `containers[]`, `gateways[]`, `totals`, `settings`, `events[]`. |
-| `POST /api/desired` | `{"desired": n}` | Set the desired worker count (clamped to 0..32). `400` without an integer `desired`. |
-| `POST /api/settings` | `{"key": "npcs", "value": "128"}` | Set one mesh-wide setting. Key at most 64 characters, value at most 1024. |
-| `POST /api/workers/add` | none | Desired count + 1. `409` at the maximum. |
-| `POST /api/workers/remove` | `{"workerId": "w3"}` or `{}` | Drain and stop one worker. Without `workerId` the desired count drops by one and the highest index retires. `404` for an unknown or already retiring id. |
-| `POST /api/workers/kill` | `{"workerId": "w3"}` | Hard-kill the instance (kill the process, delete the VM) to simulate a crash; the reaper reassigns and relaunches it. `404` when the orchestrator has no managed instance for that id. |
-| `POST /api/rebalance` | none | Run an assignment pass now instead of waiting for the next 500 ms tick. |
-| `POST /api/containers/pin` | `{"containerId": "starhopper#…", "workerId": "w2"}` | Give a carried container a worker of its own. `400` for a static container, an unknown one or a worker that is not live. |
-| `POST /api/containers/unpin` | `{"containerId": "starhopper#…"}` | Let a pinned carried container follow its carrier again. |
-| `GET /map` | none | The World map page. |
-| `GET /api/map/geometry` | none | The map's static half, built at startup: `partitioned`, `world` (`name`, `cellSize`, `cells[]` with `coord` and `scene`), `ghostBandMargin`, `handoverHysteresis` and `containers[]` with `id`, `index`, `cell`, `isCell`, `center`, `size`, `rotation` (quaternion), `parent` (smallest enclosing container) and `neighbors`. |
-| `GET /api/map` | none | `geometryVersion` and `workers[]`: each worker's latest telemetry document (`doc`) with its `ageSeconds`. Reading it asks workers for entity positions for the next 5 s. |
-| `POST /api/telemetry` | a worker's telemetry document | Store it. Answers `{"ok":true,"detail":true\|false}`: whether the worker should include entities next time. `400` for a document that is not a JSON object starting with `"worker"`, `413` above 8 MB. |
-| `GET /build/<file>` | none | Stream a file from the artifact directory. Plain file names only, no sub-paths. |
+The dashboard binds to `localhost` by default. Pass `-nebula-dashboard-bind +` to listen on every interface, or pass one address to listen only on that interface.
 
-The body parser is deliberately minimal: flat JSON objects with integer or string values. `Tools/smoke-test.ps1 -ScaleTo` and `nebula status` use this API; so can you:
+<Callout type="warn" title="Restrict dashboard access">
+The dashboard and its HTTP API do not require authentication. When you expose the port outside your computer, use a firewall to allow only trusted addresses.
+</Callout>
+
+Use the overview to:
+
+- Check live and requested worker counts.
+- See which worker controls each container.
+- Compare authoritative and ghost entity counts.
+- Review player, bot, and server-driven entity counts.
+- Check tick time and heartbeat age for each worker.
+- Add, retire, or stop a worker.
+- Edit game-defined mesh settings.
+- Pin a dynamic container to a worker or return it to its carrier's worker.
+- Read recent orchestrator events.
+
+Stopping a worker with **Kill** simulates a crash. The orchestrator reassigns its containers and starts a replacement. Removing a worker performs a graceful drain and reduces the requested worker count.
+
+## Inspect the world map
+
+Open `/map` from the dashboard to see the mesh from above. The map shows:
+
+- Static and world-partition cell containers.
+- The worker that controls each container.
+- Dynamic containers and their carriers.
+- Authoritative entities and ghost copies.
+- Loaded world cells and container boundaries.
+
+Drag to pan, scroll to zoom, and select an item to inspect it. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
+
+Workers send summary telemetry once per second. While someone has the map open, workers send detailed entity positions every half second, up to 4,096 authoritative entities per worker. Pass `-nebula-telemetry off` to a manually started worker to disable this telemetry.
+
+## Use the HTTP API
+
+The dashboard and API use the same port. Read `/api/state` to get the latest orchestrator snapshot.
 
 ```powershell
 Invoke-RestMethod http://localhost:7080/api/state | Select-Object desiredWorkers, totals
+```
+
+Send JSON with `Content-Type: application/json` for operations that change the mesh:
+
+```powershell
 Invoke-RestMethod -Method Post http://localhost:7080/api/desired -ContentType application/json -Body '{"desired": 2}'
 Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentType application/json -Body '{"workerId": "w3"}'
 ```
 
-Each worker entry in `workers[]` carries `id`, `index`, `color`, `state`, `alive`, `retiring`, `managed`, `instance` (the host's description, such as `pid 1234` or `hetzner server 5551 nebula-w1-1 10.0.1.4`), `address`, `heartbeatAgeSeconds`, `relaunchInSeconds`, `drainRemainingSeconds`, `tickMs`, `tickCount`, `entities`, `authoritative`, `ghosts`, `players`, `bots`, `serverDriven`, `containers[]`, plus host-specific fields (`pid` for processes; `serverId`, `serverName`, `serverStatus`, `publicIp`, `privateIp` for Hetzner).
+| Method and path | Body | Result |
+| --- | --- | --- |
+| `GET /api/state` | none | Returns workers, containers, gateways, totals, settings, and recent events. |
+| `POST /api/desired` | `{"desired": 2}` | Sets the requested worker count between 0 and 32. |
+| `POST /api/settings` | `{"key": "round-time", "value": "600"}` | Sets one game-defined mesh setting. |
+| `POST /api/workers/add` | none | Adds one to the requested worker count. |
+| `POST /api/workers/remove` | `{"workerId": "w3"}` or `{}` | Gracefully retires one worker. Without an ID, Nebula chooses the highest index. |
+| `POST /api/workers/kill` | `{"workerId": "w3"}` | Stops one worker immediately to simulate a failure. |
+| `POST /api/rebalance` | none | Runs a container-assignment pass immediately. |
+| `POST /api/containers/pin` | `{"containerId": "interior#…", "workerId": "w2"}` | Assigns a dynamic container to a live worker. |
+| `POST /api/containers/unpin` | `{"containerId": "interior#…"}` | Returns a dynamic container to its carrier's worker. |
+| `GET /api/map/geometry` | none | Returns static world and container geometry. |
+| `GET /api/map` | none | Returns the latest worker telemetry. |
 
-## Worker hosts
+Successful changes return `{"ok":true}`. Invalid requests return an error message. An API write can return `503` when it cannot reach the orchestrator's main thread within three seconds.
 
-The orchestrator never starts a worker itself. It asks an [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) to, and the host decides *where* the worker runs and how to start and stop it. The orchestrator keeps deciding how many and which containers each owns.
+## Choose where workers run
 
-```csharp
-public interface IWorkerHost : IDisposable
-{
-    string Name { get; }                       // "process", "hetzner": shown on the dashboard
-    void Initialize(Action<string, string> log); // look up resources, sweep leftovers of a previous run
-    bool IsReady { get; }
-    string InitializationError { get; }
-    IWorkerHandle Launch(WorkerLaunchSpec spec);
-    void Kill(IWorkerHandle handle);           // crash semantics: kill the process, delete the machine
-    void Tick();                               // main thread, every frame: apply background results
-    void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
-}
+Set `NebulaConfig.WorkerHost` or pass `-nebula-host` to select a worker host:
+
+| Value | Where workers run | When to use it |
+| --- | --- | --- |
+| `process` | Child processes on the orchestrator's computer | Use for local development. This is the default used by `nebula start`. |
+| `hetzner` | One Hetzner Cloud VM per worker | Use for hosted tests. This is the host used by `nebula deploy`. |
+
+The gateway always runs as a child process next to the orchestrator, even when workers run on cloud VMs.
+
+For a local process host, set `NebulaConfig.WorkerExecutable` or pass `-nebula-worker-exe` when the orchestrator cannot find the game executable. Worker logs are written to the build's `Logs` directory.
+
+For Hetzner, let `nebula deploy` configure the private network, VM image, firewall, SSH key, build URL, and API token. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
+
+## Test simulation load
+
+Start a bot to test the complete client path:
+
+```bash
+nebula start --bots 2
 ```
 
-`WorkerLaunchSpec` is what the orchestrator asks for: `WorkerId`, `Index`, `Port` and `CommonArgs` (the `-nebula-spacetime`, `-nebula-database`, `-nebula-gateway` and optional `-nebula-verbose` switches every role inherits). `IWorkerHandle` is the host's view of one instance: `WorkerId`, `State`, `Describe`, `Address` (when the host knows it before the worker registers) and `Reason`. `WorkerHandleState` is `Launching`, `Running`, `Exited` or `Failed`.
+A bot is a headless client process. Your game must provide its input behavior. Each bot runs a complete Unity player, so start only as many as you need.
 
-Hosts must be safe to call every frame. Slow work happens off the main thread and surfaces from `Tick()`. A host's handle state only lets the orchestrator react *sooner* when an instance is known to be gone; heartbeats remain the source of truth for liveness.
-
-### ProcessWorkerHost
-
-[`ProcessWorkerHost`](/docs/reference/orchestrator/process-worker-host) (`-nebula-host process`, the default) runs every worker as a child process of the same executable, with `-batchmode -nographics -nebula-role worker -nebula-worker-id wN -nebula-worker-index N -nebula-port 710N -nebula-advertise 127.0.0.1` plus the common args, logging to `Logs/<id>.log` next to the executable. This is the local mesh that `nebula start` runs. The orchestrator also uses it to start the gateway regardless of the worker host. If the executable is missing it fails the launch with a message pointing at `NebulaConfig.WorkerExecutable` and `-nebula-worker-exe`.
-
-### HetznerWorkerHost
-
-[`HetznerWorkerHost`](/docs/reference/orchestrator/hetzner-worker-host) (`-nebula-host hetzner`) creates one Hetzner Cloud VM per worker through the Hetzner API and deletes it on kill or retire. On `Initialize` it looks up the private network, ssh key and firewall by name and deletes every server labelled `nebula-mesh=<mesh>,nebula-role=worker` left by a previous run, so a crashed orchestrator never leaves machines billing. It polls the server list every 15 s and marks a handle `Exited` when its VM is `off`, `deleting` or gone. How the VMs boot is described in [Deploying to Hetzner](/docs/deploy/hetzner).
-
-Its settings are read from provider-neutral switches (`CloudHostSettings.FromCommandLine`), so a second provider can reuse them:
-
-| Switch | Default | Meaning |
-| --- | --- | --- |
-| `-nebula-cloud-location` | `ash` | Provider region. |
-| `-nebula-cloud-type` | `cpx21` | Machine size for worker VMs. |
-| `-nebula-cloud-image` | `ubuntu-24.04` | Base OS image. |
-| `-nebula-cloud-network` | `nebula` | Private network every machine joins. |
-| `-nebula-cloud-sshkey` | `nebula` | SSH key installed on every machine. |
-| `-nebula-cloud-firewall` | `nebula-worker` | Optional firewall applied to worker VMs. |
-| `-nebula-cloud-mesh` | the orchestrator id | Label grouping every machine this orchestrator owns. |
-| `-nebula-cloud-token` | `HCLOUD_TOKEN` env var | Provider API token. Never logged. |
-| `-nebula-build-url` | `http://<advertise>:<dashboard port>/build/nebula-linux.tar.gz` | Where a VM downloads the server build. |
-
-### Adding a provider
-
-Implement `IWorkerHost` and `IWorkerHandle` for your provider, then add one case to `NebulaOrchestrator.CreateHost`:
-
-```csharp
-private IWorkerHost CreateHost(NebulaConfig config)
-{
-    switch ((config.WorkerHost ?? "process").Trim().ToLowerInvariant())
-    {
-        case "hetzner":
-            return new HetznerWorkerHost(CloudHostSettings.FromCommandLine(OrchestratorId, config.WorkerAdvertiseAddress, config.DashboardPort));
-        case "": case "process": case "local":
-            return _local;
-        default:
-            Log("error", $"unknown worker host '{config.WorkerHost}'; using local processes");
-            return _local;
-    }
-}
-```
-
-Keep `HetznerWorkerHost` open as the reference: do the HTTP work on the thread pool, queue results, and apply them in `Tick()`; sweep stale machines in `Initialize`; put your provider's fields in `WriteHandleJson` so they show up on the dashboard.
-
-## Bots vs NPCs
-
-Two different things drive a pawn without a human, and they cost very different amounts:
-
-| | Bot | NPC (server-driven entity) |
-| --- | --- | --- |
-| What it is | A full client process: `Nebula.exe -nebula-role client -nebula-bot` | An ordinary entity with no owning client (`NetworkIdentity.IsServerDriven`, spawned with `NebulaWorker.SpawnServerDriven`) |
-| Who drives it | `BotBrain` in place of the keyboard; predicts, reconciles, sends inputs through the gateway | Whichever worker holds authority calls `GatherServerInput` each tick |
-| What it exercises | The whole client path | Ghosting, handover, shooting and being shot, exactly like a player's pawn |
-| Cost | One headless Unity player each | One entity |
-| Use for | A handful, to test the client path (`nebula start --bots 2`) | Load: hundreds (`nebula start --npcs 128`) |
-
-128 bots on one machine starve the workers; 128 NPCs across four workers cost about 15% of a core per worker. Workers learn whether a client is a bot from the gateway (the client's `Hello` carries the flag), and both the bot flag and the server-driven flag travel with the entity through ghosting and handover, so the per-worker player / bot / server-driven split on the dashboard stays right after a container moves.
-
-How many NPCs exist is game policy, not Nebula's. ShooterGame's `NpcDirector` reconciles against the `npcs` mesh setting on every worker; see [Control plane](/docs/guides/control-plane#mesh-settings) for the setting mechanism and [Spawning](/docs/guides/spawning) for `SpawnServerDriven`.
+Use `NebulaWorker.SpawnServerDriven` to test worker simulation without another client process. Your game must provide the entity's behavior and spawning policy.
 
 <Cards>
-  <Card title="Control plane" href="/docs/guides/control-plane" description="Tables, reducers and lease states the orchestrator writes." />
-  <Card title="Deploying to Hetzner" href="/docs/deploy/hetzner" description="The same orchestrator with -nebula-host hetzner on real machines." />
-  <Card title="Debugging" href="/docs/guides/debugging" description="Reading the event log, worker logs and the smoke test." />
+  <Card title="Control plane" href="/docs/guides/control-plane" description="Understand registrations, container leases, and game settings." />
+  <Card title="Deploy to Hetzner" href="/docs/deploy/hetzner" description="Run the orchestrator and workers on cloud VMs." />
+  <Card title="Debug a mesh" href="/docs/guides/debugging" description="Inspect logs, worker state, and handovers." />
 </Cards>

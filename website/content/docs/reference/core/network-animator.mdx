@@ -1,6 +1,6 @@
 ---
 title: "NetworkAnimator"
-description: "Replicates an Animator the way NGO's NetworkAnimator does."
+description: "Replicates selected Animator parameters from the authoritative worker to clients and ghost workers."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkAnimator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkAnimator.cs)</div>
@@ -10,9 +10,9 @@ description: "Replicates an Animator the way NGO's NetworkAnimator does."
 public class NetworkAnimator : NetworkSyncBehaviour
 ```
 
-Replicates an [`Animator`](#animator) the way NGO's NetworkAnimator does. The Animator keeps running on every copy; what travels is what would otherwise diverge: parameter changes (int, float, bool; floats past a threshold), triggers (only through [`SetTrigger`](#settrigger), exactly like NGO), and per-layer state (state hash, normalized time, weight) plus in-progress transitions so a state entered on the authority is entered everywhere. Keyframes carry all of it, so late joiners and fresh ghosts start in the right pose. Parameters driven by animation curves are skipped (NGO does the same). Always reliable: a lost trigger would never be recovered.
+Replicates selected [`Animator`](#animator) parameters from the authoritative worker to clients and ghost workers. Each copy continues to run its own Animator. Nebula sends changed integer, float, and Boolean parameters; triggers set through [`SetTrigger`](#settrigger); layer state; and transitions. Keyframes give late joiners and new ghosts a complete state. Nebula skips parameters controlled by animation curves and sends animation changes reliably.
 
-Server authority (default): the worker drives the Animator; an owning client calling [`SetTrigger`](#settrigger) asks the worker over a ServerRpc and sees the result one round trip later, as in NGO. Owner authority: the owning client drives it and the worker relays (NGO's OwnerNetworkAnimator).
+With server authority, the worker drives the Animator. When an owning client calls [`SetTrigger`](#settrigger), it asks the worker to set the trigger through a ServerRpc. With owner authority, the owning client drives the Animator and the worker relays its changes.
 
 ## Fields
 
@@ -99,7 +99,7 @@ public void SetTrigger(string name);
 public void SetTrigger(int hash);
 ```
 
-Fire a trigger on every copy. On the authority it fires locally and is replicated; an owning client under server authority forwards the request to the worker (one round trip of latency, as in NGO).
+Fire a trigger on every copy. On the authority it fires locally and is replicated; an owning client under server authority forwards the request to the worker, which adds one network round trip of latency.
 
 ### ResetTrigger [#resettrigger]
 

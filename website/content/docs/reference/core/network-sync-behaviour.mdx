@@ -1,6 +1,6 @@
 ---
 title: "NetworkSyncBehaviour"
-description: "Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority choice: NetworkTransform and NetworkAnimator."
+description: "Base for components that replicate through the per-tick sync channel and support server or owner authority."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs)</div>
@@ -9,7 +9,7 @@ description: "Base for components that replicate through the per-tick sync chann
 public abstract class NetworkSyncBehaviour : NetworkBehaviour
 ```
 
-Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority choice: [`NetworkTransform`](/docs/reference/core/network-transform) and [`NetworkAnimator`](/docs/reference/core/network-animator). Derived classes detect changes in [`AuthorityTick`](#authoritytick) (called on whichever copy is the source of truth, once per tick) and implement the write/read pair; this class decides who is authoritative and pumps the owner -\> worker leg over a ServerRpc.
+Base for components that replicate through the per-tick sync channel and support server or owner authority. [`NetworkTransform`](/docs/reference/core/network-transform) and [`NetworkAnimator`](/docs/reference/core/network-animator) use this base. Derived classes detect changes in [`AuthorityTick`](#authoritytick) (called once per tick on the copy that produces state) and implement the write/read pair. This class selects the source of state and sends owner state to the worker through a ServerRpc.
 
 ## Properties
 
@@ -39,7 +39,7 @@ Whether owner authority is in effect (the mode is Owner and a client owns the en
 public bool IsSyncAuthority { get; }
 ```
 
-This copy is the source of truth for the synced state right now.
+Whether this copy currently produces the synchronized state.
 
 ### IsRelayingWorker [#isrelayingworker]
 
@@ -57,7 +57,7 @@ This worker holds the entity but the owner drives the state: apply what arrives 
 protected abstract void AuthorityTick(uint tick, float deltaTime);
 ```
 
-Once per tick on the source of truth: compare against what was last sent and [`NetworkBehaviour.MarkSyncDirty`](/docs/reference/core/network-behaviour#marksyncdirty) as needed.
+Called once per tick on the state producer. Compare with the last sent state and call [`NetworkBehaviour.MarkSyncDirty`](/docs/reference/core/network-behaviour#marksyncdirty) when needed.
 
 ### ApplyOwnerState [#applyownerstate]
 

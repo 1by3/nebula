@@ -5,6 +5,7 @@ using UnityEngine.SceneManagement;
 
 namespace Nebula
 {
+    /// <summary>Lists the process roles that <see cref="NebulaBootstrap"/> can start.</summary>
     [Flags]
     public enum NebulaRoles
     {
@@ -24,12 +25,13 @@ namespace Nebula
     /// <item><c>-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101</c></item>
     /// <item><c>-nebula-gateway 127.0.0.1:7000</c></item>
     /// <item><c>-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula</c></item>
-    /// <item><c>-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings npcs=64</c> (orchestrator; settings are
+    /// <item><c>-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600</c> (orchestrator; settings are
     /// game-defined key/values seeded on the control plane, editable on the dashboard)</item>
     /// <item><c>-nebula-name Jesse</c> (client display name)</item>
     /// <item><c>-nebula-advertise 10.0.1.2|auto</c> (address this worker/gateway advertises to peers)</item>
     /// <item><c>-nebula-host process|hetzner -nebula-build-dir /opt/nebula/artifacts</c> (orchestrator: where workers run;
-    /// cloud hosts also read <c>-nebula-cloud-location/-type/-image/-network/-sshkey/-firewall</c>, <c>-nebula-build-url</c>
+    /// cloud hosts also read <c>-nebula-cloud-location</c>, <c>-nebula-cloud-type</c>, <c>-nebula-cloud-image</c>,
+    /// <c>-nebula-cloud-network</c>, <c>-nebula-cloud-sshkey</c>, <c>-nebula-cloud-firewall</c>, <c>-nebula-build-url</c>,
     /// and the provider token from <c>-nebula-cloud-token</c> or <c>HCLOUD_TOKEN</c>)</item>
     /// </list>
     /// </summary>

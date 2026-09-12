@@ -1,6 +1,6 @@
 ---
 title: "AuthorityMode"
-description: "Who is the source of truth for a synced component (NGO's AuthorityModes)."
+description: "Lists which process produces state for a synchronized component."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkSyncBehaviour.cs)</div>
@@ -9,12 +9,12 @@ description: "Who is the source of truth for a synced component (NGO's Authority
 public enum AuthorityMode : byte
 ```
 
-Who is the source of truth for a synced component (NGO's `AuthorityModes`).
+Lists which process produces state for a synchronized component.
 
 ## Members
 
 | Name | Value | Description |
 | --- | --- | --- |
 | `Server` | `0` | The authoritative worker writes the state; every client (the owner included) follows it. |
-| `Owner` | `1` | The owning client writes the state and sends it to the worker, which applies it and re-broadcasts it to everyone else (NGO's `ClientNetworkTransform`/`OwnerNetworkAnimator`). The worker still hands the entity over between containers as usual; the owner's stream simply follows it to the new worker. Entities with no owning client (NPCs) fall back to server authority. |
+| `Owner` | `1` | The owning client writes the state and sends it to the worker, which applies it and re-broadcasts it to everyone else. The worker still hands the entity over between containers as usual; the owner's stream simply follows it to the new worker. Entities with no owning client fall back to server authority. |
 

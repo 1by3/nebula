@@ -1,6 +1,6 @@
 ---
 title: "WorkerQuery"
-description: "A question fanned out to several workers over worker messages, with the bookkeeping every such question needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in or time is up."
+description: "Sends one game-defined request to several workers and collects their replies."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs)</div>
@@ -9,7 +9,7 @@ description: "A question fanned out to several workers over worker messages, wit
 public sealed class WorkerQuery : IDisposable
 ```
 
-A question fanned out to several workers over worker messages, with the bookkeeping every such question needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in or time is up. The pair of kinds is the game's; the request handler on the receiving side reads the payload and writes its reply, and the helper carries the id on both legs so the game never sees it.
+Sends one game-defined request to several workers and collects their replies. Tracks the request id, workers that have not replied, deadline, and completion callback. The receiving handler reads the request payload and writes a reply. WorkerQuery adds the request id to both messages.
 
 A target that is not connected is skipped (it never counts as awaited). Sending to this worker's own index answers synchronously, like any worker message to oneself. A reply for an unknown or already completed request is counted in [`RepliesLate`](#replieslate) and dropped. Call [`Update`](#update) once a frame to expire requests whose deadline passed; the completion callback then runs with `false`.
 
@@ -37,7 +37,7 @@ public WorkerQuery(IWorkerMessaging worker, ushort requestKind, ushort replyKind
 public int RequestsSent { get; }
 ```
 
-Requests fanned out (one per [`Send`](#send) that reached at least one worker).
+Requests sent to at least one worker.
 
 ### RequestsAnswered [#requestsanswered]
 

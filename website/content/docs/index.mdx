@@ -3,60 +3,62 @@ title: Introduction
 description: What Nebula is, how the pieces fit, and where to go next.
 ---
 
-Nebula is middleware for dynamically meshed multiplayer game servers, Unity-first. One world is served by many dedicated server processes. Each one is leased authority over a set of *containers*, the designer-authored volumes your level is divided into, and entities cross between them without the player noticing. The reference point is Star Citizen's server meshing; the hard part Nebula targets is the dynamic case, where which server owns which part of the world changes at runtime.
+Use Nebula to run one Unity game world across multiple dedicated server processes. Divide your level into box-shaped areas called **containers**. Nebula assigns each container to a **worker**, which is a headless Unity process that simulates the entities inside it.
 
-A Nebula mesh is a small set of roles, all built from one Unity player: N workers, one gateway, one orchestrator and one control plane. The design is validated on the strictest case, a first-person shooter where players cross container boundaries mid-firefight.
+When an entity enters a container assigned to another worker, Nebula transfers control of that entity to the new worker. Nebula calls this transfer a **handover**.
+
+All Nebula processes use the same Unity player build. Start each process with a different role: worker, gateway, orchestrator, or client. Nebula also uses SpacetimeDB as a control plane. The control plane stores worker registrations, container assignments, and settings that apply to the whole group of processes. Nebula calls this group a **mesh**.
 
 ## How the pieces fit
 
 ```
                  ┌──────────────────────────────────────────────────────────┐
-                 │  SpacetimeDB  (control plane: workers, leases, gateways)  │
+                 │ SpacetimeDB (process records and container assignments)   │
                  └──────▲──────────────▲──────────────▲──────────────▲──────┘
-                        │ reducers     │ subscribe    │              │
+                        │ reads and writes shared records             │
                  ┌──────┴──────┐  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
-                 │ Orchestrator│  │ Gateway │   │ Worker w1 │◄─►│ Worker w2 │ ... lateral link (UDP)
-                 │ spawns procs│  │ udp/7000│◄─►│ udp/7101  │   │ udp/7102  │     ghosts + authority transfers
+                 │ Orchestrator│  │ Gateway │   │ Worker w1 │◄─►│ Worker w2 │ ... direct UDP connection
+                 │starts workers│ │ UDP 7000│◄─►│ UDP 7101  │   │ UDP 7102  │     ghost copies + handovers
                  └─────────────┘  └────▲────┘   └───────────┘  └───────────┘
                                        │ one connection per client
                                   ┌────┴────┐
-                                  │ Client  │  inputs up, snapshots down, predicted local player
+                                  │ Client  │  sends input and receives entity state
                                   └─────────┘
 ```
 
-Every box is the same Unity player build started with a different `-nebula-role`. The Editor plays the client role by default.
+Start each process with `-nebula-role <role>`. When you enter Play mode in the Unity Editor, Nebula uses the client role by default.
 
-- **Workers** are headless Unity processes simulating at 60 Hz. Each holds authority over the containers it leases, ghosts entities that approach a neighbouring container to that container's worker, and hands authority over when they cross.
-- **The gateway** is the one address clients connect to. It routes each client's inputs to whichever worker currently owns their entity and re-emits the workers' replication streams.
-- **The orchestrator** keeps N workers running and deals containers to them through the control plane. Its dashboard lets you add, remove and kill workers while the game runs.
-- **The control plane** is a tiny SpacetimeDB module holding worker registrations, container leases with epochs, and mesh-wide settings. It is never on the per-tick path.
-- **Clients** predict and reconcile their own player and are never a party to the handover protocol.
+- A **worker** simulates the entities in its assigned containers at 60 ticks per second. Before an entity crosses a container boundary, the current worker creates a non-authoritative copy, called a **ghost**, on the next worker. The next worker can then take control without loading the entity from scratch.
+- The **gateway** accepts client connections. It routes player input to the worker that controls the player's entity and sends replicated state from workers to clients.
+- The **orchestrator** starts workers and assigns containers to them. Use the Nebula Dashboard to add, remove, or stop workers while the game runs.
+- The **control plane** stores the current workers, container assignments, and shared settings in SpacetimeDB. Workers do not use it to exchange state during a simulation tick.
+- A **client** predicts the local player's movement and corrects that prediction from worker snapshots. Clients connect only to the gateway.
 
 ## The API
 
-Gameplay code is written against a surface Mirror and Netcode for GameObjects users already know: `NetworkBehaviour`, `NetworkVariable<T>`, `[ClientRpc]`, `[ServerRpc]`, `NetworkTransform`, `NetworkAnimator`, `NetworkRigidbody`, and a `PredictedBehaviour<TInput>` for client-predicted controllers. The meshing-specific additions are small: `HasAuthority`, `IsGhost`, `OnGainedAuthority`/`OnLostAuthority`, a handover-state hook, and `[AuthorityRpc]`, which runs on whichever worker owns an entity no matter who calls it.
+Build networked gameplay with `NetworkBehaviour`, `NetworkVariable<T>`, remote procedure call (RPC) attributes, and the supplied transform, animator, rigidbody, and prediction components.
+
+Use `HasAuthority` to check whether the current worker controls an entity. Use `IsGhost` to check whether the entity is a non-authoritative copy. Override `OnGainedAuthority`, `OnLostAuthority`, or the handover-state methods when your component must react to a transfer. Use `[AuthorityRpc]` for a call that must run on the worker that currently controls the target entity.
 
 ```csharp
-public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 {
     public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
 
-    protected override ShooterInput GatherInput() { /* owner client: read the Input System */ }
-    protected override void Simulate(uint tick, in ShooterInput input, float dt) { /* worker + predicting client */ }
+    protected override PlayerInput GatherInput() { /* Read local input. */ }
+    protected override void Simulate(uint tick, in PlayerInput input, float dt) { /* Move the player. */ }
 
-    [AuthorityRpc] void TakeDamage(float amount, ulong attacker, string attackerName) { Health.Value -= amount; }
-    [ClientRpc]    void RpcShotFired(Vector3 from, Vector3 to, bool hit) { /* laser bolt */ }
+    [AuthorityRpc] void TakeDamage(float amount) { Health.Value -= amount; }
 }
 ```
 
 ## Where to go
 
 <Cards>
-  <Card title="Install the CLI" href="/docs/getting-started/install" description="One command on Windows, macOS or Linux. Or build it from a checkout." />
-  <Card title="Tutorial" href="/docs/getting-started/tutorial" description="Install Nebula into a Unity project, author containers, write a player, run the mesh." />
-  <Card title="Architecture" href="/docs/concepts/architecture" description="The design: containers, seams, two kinds of handover, the tier stack, failure behaviour." />
-  <Card title="Guides" href="/docs/guides/network-behaviour" description="Each component of the runtime in depth, from NetworkVariable to the orchestrator." />
-  <Card title="CLI reference" href="/docs/cli" description="Every nebula command, generated from the CLI." />
-  <Card title="API reference" href="/docs/reference" description="Every public type, generated from the C# sources." />
+  <Card title="Install the CLI" href="/docs/getting-started/install" description="Install the nebula command on Windows, macOS, or Linux." />
+  <Card title="Follow the tutorial" href="/docs/getting-started/tutorial" description="Add Nebula to a Unity project, create containers and a player, then run a local mesh." />
+  <Card title="Understand the architecture" href="/docs/concepts/architecture" description="Learn how containers, workers, handovers, and process failures work." />
+  <Card title="Use the gameplay API" href="/docs/guides/network-behaviour" description="Add replicated state, RPCs, prediction, physics, and spawning to your game." />
+  <Card title="Use the CLI" href="/docs/cli" description="Find the syntax and options for each nebula command." />
+  <Card title="Use the C# API" href="/docs/reference" description="Find signatures and descriptions for Nebula's public C# types." />
 </Cards>
-

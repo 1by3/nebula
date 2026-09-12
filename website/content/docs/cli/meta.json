@@ -1,6 +1,6 @@
 {
   "title": "CLI reference",
-  "description": "Generated from nebula help --json",
+  "description": "Commands and options for the nebula CLI",
   "root": true,
   "pages": [
     "index",
@@ -13,7 +13,7 @@
     "stop",
     "status",
     "logs",
-    "---Deploying---",
+    "---Deploy---",
     "config",
     "deploy",
     "destroy",

@@ -27,7 +27,7 @@ public sealed class HelpCommand : Command
             return 0;
         }
 
-        Ui.Title($"nebula {Platform.CliVersion} - dynamically meshed multiplayer servers for Unity");
+        Ui.Title($"nebula {Platform.CliVersion} - run one Unity world across multiple game servers");
         Ui.Blank();
         Console.WriteLine("usage: nebula <command> [options]");
         Ui.Blank();
@@ -45,7 +45,7 @@ public sealed class HelpCommand : Command
         Console.WriteLine("deploying");
         PrintRow("config", "configure a deploy target (hetzner), Spacetime Maincloud, or the Unity editor path");
         PrintRow("deploy", "build, publish the control plane and run the mesh in the cloud");
-        PrintRow("destroy", "delete the cloud mesh so nothing keeps billing");
+        PrintRow("destroy", "delete the mesh's cloud servers");
         Ui.Blank();
         Console.WriteLine("other");
         PrintRow("version", "print the CLI version");

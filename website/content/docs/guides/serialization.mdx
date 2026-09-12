@@ -1,11 +1,13 @@
 ---
 title: Serialization
-description: NetworkWriter and NetworkReader, INetworkSerializable for your own structs, NetworkSerialization.Register for types you cannot modify, and where each is used.
+description: Write and read message data, serialize custom types, and register serializers for types you cannot modify.
 ---
 
-Every Nebula message is a plain little-endian byte stream written with `NetworkWriter` and read back with `NetworkReader`. There is no bit packing, no quantisation by default and no delta compression: the format is optimised for correctness and debuggability, and bandwidth on the lateral link is not the constraint. The one rule that matters is that a reader reads exactly what the writer wrote, in the same order.
+Nebula writes messages as little-endian byte streams with `NetworkWriter` and reads them with `NetworkReader`. The default format does not apply bit packing, quantization, or delta compression.
 
-Two layers sit on top of the writer and reader. `INetworkSerializable` is the interface your own structs implement; `NetworkSerialization` is the type-driven table that `NetworkVariable<T>` and RPC arguments go through.
+Read each field in the same order and with the same type used to write it. A mismatched reader can corrupt the rest of the message or throw when it reaches the end.
+
+Implement `INetworkSerializable` on custom structs and classes. `NetworkVariable<T>` and RPC arguments use the serializers registered in `NetworkSerialization`.
 
 ## NetworkWriter and NetworkReader
 
@@ -68,8 +70,8 @@ On the reader, `Remaining` and `Position` tell you where you are, `Skip(int)` ad
 
 Implement `INetworkSerializable` on a struct (or class) to use it as a `NetworkVariable<T>` value, an RPC argument, or a predicted input (`INetworkInput` is `INetworkSerializable` with no extra members). `Deserialize` must mirror `Serialize` exactly:
 
-```csharp title="ShooterInput.cs"
-public struct ShooterInput : INetworkInput
+```csharp title="PlayerInput.cs"
+public struct PlayerInput : INetworkInput
 {
     public Vector2 Move;
     public float Yaw;
@@ -123,7 +125,7 @@ Not built in: `Vector4`, `Vector2Int`, `Vector3Int`, `Bounds`, `Rect`, `Matrix4x
 For a type you do not own, or a built-in you want on the wire in a different format, register a writer and reader pair. Registration replaces any existing entry for that type, and registered delegates take precedence over the enum and `INetworkSerializable` paths.
 
 ```csharp
-public static class ShooterSerializers
+public static class GameSerializers
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Register()
@@ -155,19 +157,21 @@ Register before the first entity spawns on every process, worker and client alik
 
 ## Read exactly what you wrote
 
-There is no schema on the wire and no self-describing framing. If `Deserialize` reads a `float` where `Serialize` wrote a `byte`, the next 3 bytes of someone else's data are consumed and everything after is misaligned. Three habits keep this from happening:
+Network messages do not describe their own field types. If `Deserialize` reads a `float` where `Serialize` wrote a `byte`, it consumes three bytes that belong to later data. Follow these rules:
 
 1. Write `Serialize` and `Deserialize` next to each other, one line per field, in the same order.
 2. Never make a write conditional on state the reader does not have. Write a `bool` first and branch on it in both directions if a field is optional.
 3. Keep the same build on every process. A worker and a client running different versions of a struct will desynchronise silently on the first message.
 
-`NetworkReader` catches over-reads at the end of the buffer only. A mismatch in the middle of a blob is undetectable by the reader itself, which is why the two hook-based channels bound each behaviour's chunk.
+`NetworkReader` detects only reads past the end of its buffer. It cannot detect a type mismatch in the middle of a message.
 
 ### Bounded chunks for handover and sync state
 
-`NetworkIdentity.WriteHandoverState` writes the behaviour count, then for each behaviour a `ushort` length followed by what that behaviour's `WriteHandoverState` produced. `ReadHandoverState` slices each chunk out and hands the behaviour a reader that ends where its chunk ends. A behaviour that reads too much throws inside its own chunk, which is caught and logged as `ReadHandoverState on T of E threw: ...`, and the next behaviour still gets its bytes intact. A behaviour that reads too little leaves no residue, because the next chunk starts at the recorded offset regardless.
+`NetworkIdentity.WriteHandoverState` writes a separate length-prefixed section for each behavior. `ReadHandoverState` gives each behavior a reader limited to its section.
 
-The sync channel does the same per chunk (`behaviourIndex`, flags, `ushort` length, bytes): a chunk whose behaviour throws in `ReadSyncState` is logged as an error, and a chunk whose index does not exist locally is skipped silently. Either way the remaining chunks in the message are still read correctly.
+If a behavior reads too much, Nebula logs the error and continues with the next section. If it reads too little, Nebula skips to the start of the next section.
+
+The sync channel also limits each behavior to its own section. Nebula logs an error from `ReadSyncState`, skips an unknown behavior index, and continues reading later sections.
 
 `NetworkVariable` blobs, RPC arguments and predicted inputs are not bounded this way: they are written back to back, and a mismatch cascades into whatever follows. For those, the "same code on every process" rule is the protection.
 

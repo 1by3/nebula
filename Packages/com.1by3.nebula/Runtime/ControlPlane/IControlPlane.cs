@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace Nebula
 {
+    /// <summary>Describes a worker registered with the control plane.</summary>
     public sealed class WorkerInfo
     {
         public string WorkerId;
@@ -36,6 +37,7 @@ namespace Nebula
         public uint ServerDrivenCount;
     }
 
+    /// <summary>Describes the current worker assignment for one container.</summary>
     public sealed class LeaseInfo
     {
         public string ContainerId;
@@ -45,6 +47,7 @@ namespace Nebula
         public DateTime UpdatedAt;
     }
 
+    /// <summary>Describes a gateway registered with the control plane.</summary>
     public sealed class GatewayInfo
     {
         public string GatewayId;
@@ -53,6 +56,7 @@ namespace Nebula
         public DateTime LastHeartbeat;
     }
 
+    /// <summary>Provides the states used by a container lease.</summary>
     public static class LeaseState
     {
         public const string Assigning = "assigning";
@@ -69,6 +73,7 @@ namespace Nebula
         public static bool IsOwning(string state) => state == Active || state == Draining || state == Pinned;
     }
 
+    /// <summary>Provides the lifecycle states reported by a worker.</summary>
     public static class WorkerStatus
     {
         public const string Starting = "starting";
@@ -78,10 +83,10 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Everything the mesh needs from the control plane: a node registry and container leases with epochs.
-    /// Low write volume, subscription push, never on the per-tick hot path. <see cref="SpacetimeControlPlane"/>
-    /// is the real implementation; <see cref="LocalControlPlane"/> is in-process for tests and single-process runs.
-    /// All callbacks fire on the main thread from <see cref="Tick"/>.
+    /// Provides process registration, container assignments with epochs, and game-defined settings. Use
+    /// <see cref="SpacetimeControlPlane"/> for a mesh. Use <see cref="LocalControlPlane"/> for tests and
+    /// single-process runs. Call <see cref="Tick"/> to receive callbacks on the main thread. Do not use the control
+    /// plane for per-tick entity state.
     /// </summary>
     public interface IControlPlane : IDisposable
     {

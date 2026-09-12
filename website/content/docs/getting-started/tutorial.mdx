@@ -3,7 +3,7 @@ title: Tutorial
 description: From an empty Unity project to a four-container mesh you can walk across, with a predicted player and a cross-worker hit.
 ---
 
-This tutorial builds the smallest possible meshed game: a room split into four containers, a capsule you can walk around with, and a raycast weapon whose hits land on whichever worker owns the victim. It is a cut-down version of the ShooterGame demo (a separate project that uses Nebula through the package, with licensed art that cannot be redistributed), so when a step says "see the sample", it means that project's `Assets/ShooterGame/Scripts`.
+Follow this tutorial to build a small multiplayer test scene. You will split a room into four containers, create a movable player capsule, and add a raycast weapon. Nebula will send each hit to the worker that controls the target player.
 
 You need the [CLI installed](/docs/getting-started/install), `nebula setup` run once, and Unity 6.
 
@@ -18,7 +18,7 @@ Create a Unity project (any 3D template), then from a terminal inside it:
 nebula init
 ```
 
-`init` copies `Packages/com.1by3.nebula` (runtime, editor tooling, the SpacetimeDB module and its generated bindings, vendored LiteNetLib, EditMode tests) from the Nebula sources, adds the SpacetimeDB SDK package to `Packages/manifest.json`, writes a default `Assets/Resources/NebulaConfig.asset` and creates `nebula.json` at the project root. Where the sources come from is described on the [nebula init](/docs/cli/init) page; from a checkout, `nebula init --source C:\Dev\nebula`.
+The command copies the Nebula package into `Packages/com.1by3.nebula`, adds the SpacetimeDB SDK to `Packages/manifest.json`, creates `Assets/Resources/NebulaConfig.asset`, and creates `nebula.json` in the project root. To choose a local Nebula checkout as the source, pass its path to `--source`. See [`nebula init`](/docs/cli/init) for all source options.
 
 Open the project in Unity once so it imports the assets and resolves the package.
 
@@ -38,16 +38,20 @@ Create a scene called `Arena` and add it to Build Settings. Build a 40 × 40 m f
 
 **GameObject > Nebula > Container** creates one with a unique id, and **Nebula > Containers > Split Selected Container (2x2)** tiles a selected box into four, so one 40 × 40 m container split once gives exactly this table.
 
-A container is a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space; which worker simulates it is decided at runtime. Ids must be unique in the scene and stable, because the control plane keys leases by them. The gizmo shows the volume in the Scene view.
+A container is a box volume with its own local coordinate space. Nebula places entities inside the container's transform and sends their positions relative to it.
 
-There is nothing else to author: every container boundary carries an automatic ghost band and an entry hysteresis, so pre-warm-then-flip works out of the box. See [Containers and handover](/docs/concepts/containers-and-handover).
+Give every container a unique, stable ID. The control plane uses this ID to record the worker assignment. The Scene view gizmo shows the container volume.
+
+You do not need to create separate boundary objects. Nebula uses `GhostBandMargin` to create remote copies near a boundary. It uses `HandoverHysteresis` to stop an entity near the boundary from moving back and forth between workers. See [Containers and handover](/docs/concepts/containers-and-handover).
 
 </Step>
 <Step>
 
 ### Add the bootstrap
 
-With `Arena` open, run **Nebula > Set Up Active Scene**. It creates a `Nebula` object with `NebulaBootstrap` (its `Config` wired to `Assets/Resources/NebulaConfig`, `EditorRole` left at `Client`) and `NebulaDebugOverlay` for the tick, RTT, container and worker readout, sets `NebulaConfig.GameScene` to `Arena`, and makes `Arena` the first scene in the build settings. On a scene without containers it also authors a starter set around the level.
+With `Arena` open, run **Nebula > Set Up Active Scene**. The command creates a `Nebula` object and adds `NebulaBootstrap` and `NebulaDebugOverlay`. It also selects `Arena` as the game and boot scene. If the scene has no containers, the command adds a starter set around the level.
+
+The overlay shows the network tick, round-trip time (RTT), container, and worker while the game runs.
 
 The setup only fills in what is missing, so it is safe to run again at any point. Run it after the next steps too: it adds your game mode to the scene and registers your network prefabs.
 
@@ -60,11 +64,11 @@ The bootstrap is the entry point of every process. It reads the role from `-nebu
 
 The input struct is what the owning client sends every tick and what the worker simulates. It must serialize itself:
 
-```csharp title="ShooterInput.cs"
+```csharp title="PlayerInput.cs"
 using Nebula;
 using UnityEngine;
 
-public struct ShooterInput : INetworkInput
+public struct PlayerInput : INetworkInput
 {
     public const byte FireButton = 1;
 
@@ -78,14 +82,14 @@ public struct ShooterInput : INetworkInput
 }
 ```
 
-The player is a `PredictedBehaviour<ShooterInput>`. `GatherInput` runs on the owning client; `Simulate` runs on the authoritative worker with the client's input, on the client immediately as a prediction, and again on the client when a server correction forces a replay. It has to be a pure function of (current state, input).
+Create the player as a `PredictedBehaviour<PlayerInput>`. Nebula calls `GatherInput` on the client that owns the player. It calls `Simulate` on the controlling worker and on the owning client. The client may call `Simulate` again when it corrects a prediction, so keep the method deterministic and do not trigger one-time effects inside it.
 
 ```csharp title="PlayerController.cs"
 using Nebula;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 {
     public float Speed = 6f;
     public float Damage = 25f;
@@ -102,29 +106,29 @@ public sealed class PlayerController : PredictedBehaviour<ShooterInput>
         if (mouse != null) { _yaw += mouse.delta.ReadValue().x * 0.08f; if (mouse.leftButton.wasPressedThisFrame) _firePressed = true; }
     }
 
-    protected override ShooterInput GatherInput()
+    protected override PlayerInput GatherInput()
     {
         var k = Keyboard.current;
-        var input = new ShooterInput { Yaw = _yaw };
+        var input = new PlayerInput { Yaw = _yaw };
         if (k != null)
         {
             float x = (k.dKey.isPressed ? 1f : 0f) - (k.aKey.isPressed ? 1f : 0f);
             float y = (k.wKey.isPressed ? 1f : 0f) - (k.sKey.isPressed ? 1f : 0f);
             input.Move = Vector2.ClampMagnitude(new Vector2(x, y), 1f);
         }
-        if (_firePressed) input.Buttons |= ShooterInput.FireButton;
+        if (_firePressed) input.Buttons |= PlayerInput.FireButton;
         _firePressed = false;
         return input;
     }
 
-    protected override void Simulate(uint tick, in ShooterInput input, float dt)
+    protected override void Simulate(uint tick, in PlayerInput input, float dt)
     {
         transform.rotation = Quaternion.Euler(0f, input.Yaw, 0f);
         var velocity = (transform.forward * input.Move.y + transform.right * input.Move.x) * Speed;
         transform.position += velocity * dt;
         Identity.Velocity = velocity;
 
-        bool firePressed = input.Fire && (_previousButtons & ShooterInput.FireButton) == 0;
+        bool firePressed = input.Fire && (_previousButtons & PlayerInput.FireButton) == 0;
         _previousButtons = input.Buttons;
         if (firePressed && HasAuthority) ServerFire();
     }
@@ -135,7 +139,7 @@ public sealed class PlayerController : PredictedBehaviour<ShooterInput>
         if (Physics.Raycast(origin, transform.forward, out var hit, 100f) &&
             hit.collider.GetComponentInParent<PlayerController>() is { } victim && victim != this)
         {
-            // Runs on whichever worker owns the victim: a direct call if that is us, the lateral link if we only hold a ghost.
+            // Runs on the worker that controls the victim. Nebula routes the call when this worker holds only a ghost.
             victim.AuthorityRpc(victim.TakeDamage, Damage);
         }
     }
@@ -149,16 +153,22 @@ public sealed class PlayerController : PredictedBehaviour<ShooterInput>
 }
 ```
 
-Three things here are meshing-specific. `HasAuthority` is true only on the worker that owns this entity right now, so a ghost on a neighbouring worker never fires. `Identity.Velocity` is what remote copies extrapolate with and what a handover carries. And the `[AuthorityRpc]`: the raycast runs on the shooter's worker against its local world, which includes kinematic ghosts of players owned by neighbours, and the damage claim executes on whichever worker owns the victim.
+This example uses three Nebula features that matter during a handover:
 
-Everything else is what you would write against Mirror or NGO. The guides on [prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs) and [NetworkBehaviour](/docs/guides/network-behaviour) cover the details, including the sample's lag-compensated hit test.
+- `HasAuthority` is true only on the worker that controls the entity. This check prevents a ghost on a nearby worker from firing the weapon.
+- `Identity.Velocity` supplies the velocity used for remote movement and authority transfers.
+- `[AuthorityRpc]` runs `TakeDamage` on the worker that controls the target. The call works when the target is local or represented by a ghost.
+
+See [Prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs), and [NetworkBehaviour and NetworkVariable](/docs/guides/network-behaviour) for details.
 
 </Step>
 <Step>
 
 ### Make the player prefab
 
-Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Every networked prefab must be listed in `NebulaConfig.NetworkPrefabs`; the index in that list is the prefab id on the wire, so add the player prefab there. **Nebula > Network Prefabs > Register All Network Prefabs** does it for every prefab with a `NetworkIdentity` on its root; it only appends, so existing ids never change.
+Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Add the prefab to `NebulaConfig.NetworkPrefabs`. Its list position becomes the numeric prefab ID sent in network messages.
+
+To register all prefabs whose root has a `NetworkIdentity`, run **Nebula > Network Prefabs > Register All Network Prefabs**. The command appends new prefabs without changing existing IDs.
 
 Remote copies of the player (other clients, ghosts on other workers) get a `RemoteInterpolator` attached by the runtime and are moved from the identity's state stream; you do not have to add anything for that.
 
@@ -167,7 +177,9 @@ Remote copies of the player (other clients, ghosts on other workers) get a `Remo
 
 ### Add a game mode
 
-The game mode is the server hook that creates a player when the gateway asks for one, the equivalent of subclassing Mirror's `NetworkManager`. Put exactly one in the scene, on an empty `Game` object, and assign the prefab. When it is the only game mode in the project, **Nebula > Set Up Active Scene** adds the `Game` object for you:
+The game mode creates a player when the gateway asks a worker to accept a client. Add exactly one game mode to an empty `Game` object in the scene, then assign the player prefab.
+
+When your project contains only one game mode class, **Nebula > Set Up Active Scene** adds the `Game` object for you.
 
 ```csharp title="TutorialGameMode.cs"
 using Nebula;
@@ -188,7 +200,7 @@ public sealed class TutorialGameMode : NebulaGameMode
 }
 ```
 
-The gateway picks a container whose owning worker is connected and asks that worker to spawn the player. `worker.Spawn` mints the entity id, makes the entity live on this worker and starts replicating it. See [Spawning](/docs/guides/spawning).
+The gateway selects a container whose worker is connected. It then asks that worker to spawn the player. `worker.Spawn` creates the entity ID, gives the worker authority, and begins replication. See [Spawning](/docs/guides/spawning).
 
 </Step>
 <Step>
@@ -202,9 +214,11 @@ nebula build
 nebula start --open-ui
 ```
 
-`build` runs the Nebula build script in Unity batchmode (if the Editor has the project open, the CLI builds from a mirrored copy and copies the result back into `Builds/`). `start` launches a local SpacetimeDB if none is running, publishes the control-plane module, and starts the orchestrator, which starts the gateway and four workers. It prints how to join and opens the dashboard at `http://localhost:7080/`.
+The first command builds the Unity player. You can leave the project open in the Editor while it runs. The second command starts SpacetimeDB, publishes the control-plane module, and starts the orchestrator, gateway, and four workers. It also opens the dashboard at `http://localhost:7080/`.
 
-Press Play in the Editor. The title screen asks for a gateway (Local is `127.0.0.1:7000`) and a name; you are spawned into one of the quadrants. Walk across the middle of the room and watch the overlay: the container and the worker index change, and `handovers` ticks up. On the dashboard, the container-to-worker table and each worker's authoritative and ghost counts update as you move.
+Press Play in the Editor. On the title screen, select the local gateway at `127.0.0.1:7000` and enter a name.
+
+Walk across the middle of the room. The overlay shows the container and worker index changing, and its handover count increases. The dashboard also updates the container assignment and entity counts.
 
 To get a second player without a second machine:
 
@@ -212,14 +226,16 @@ To get a second player without a second machine:
 Builds\Win64\Nebula.exe -nebula-role client -nebula-name other
 ```
 
-Or start bots, which are full client processes that roam and shoot: `nebula start --bots 2`.
+To automate a client, implement bot input in your predicted behavior and start the mesh with `nebula start --bots 2`. Each bot runs a complete headless client process.
 
 </Step>
 <Step>
 
 ### Break something
 
-On the dashboard, press **Kill** on the worker that owns your quadrant. Its containers are reassigned to a survivor within a second and the worker is relaunched after a few seconds; your pawn dies with its worker and is respawned elsewhere. Now press **Remove** instead: the worker is drained, every entity it holds is handed over through the normal path, and you notice nothing more than a handover.
+On the dashboard, select **Kill** for the worker that owns your container. Nebula reassigns the worker's containers and starts a replacement worker. Because Nebula does not persist transient entities, your player entity is removed with the stopped worker and spawned again on another worker.
+
+Next, select **Remove** for a worker. The orchestrator first drains the worker by moving its containers and entities to other workers. It stops the worker after the drain finishes.
 
 ```bash
 nebula status

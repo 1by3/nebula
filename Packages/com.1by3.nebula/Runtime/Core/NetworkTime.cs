@@ -3,10 +3,9 @@ using System;
 namespace Nebula
 {
     /// <summary>
-    /// Tick model. Every worker derives the tick it should be simulating from the wall clock and a fixed
-    /// origin, so workers agree on tick numbers without a tick master (a restarted worker knows the
-    /// correct tick immediately, and the control plane is never on the hot path). Gameplay code should
-    /// only ever see tick numbers, never wall-clock time.
+    /// Provides the shared 60 Hz simulation tick. Each worker calculates its tick from the wall clock and a fixed
+    /// origin, so workers agree without a coordinating process. Use tick numbers rather than wall-clock timestamps
+    /// in gameplay simulation.
     /// </summary>
     public static class NetworkTime
     {

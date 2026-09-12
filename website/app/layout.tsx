@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: `%s | ${appName}`,
   },
   description:
-    'Nebula is Unity-first middleware for dynamically meshed multiplayer game servers: one world served by many workers, with entities crossing between them seamlessly.',
+    'Nebula is a Unity networking package that distributes one game world across multiple dedicated servers and transfers entities between them at runtime.',
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {

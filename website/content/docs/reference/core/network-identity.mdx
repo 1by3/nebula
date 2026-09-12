@@ -1,6 +1,6 @@
 ---
 title: "NetworkIdentity"
-description: "Marks a GameObject as a meshed entity."
+description: "Marks a GameObject as a networked entity."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs)</div>
@@ -10,7 +10,7 @@ description: "Marks a GameObject as a meshed entity."
 public sealed class NetworkIdentity : MonoBehaviour
 ```
 
-Marks a GameObject as a meshed entity. Holds the entity's network identity (a 64-bit id minted by the worker that spawned it, never by a central allocator), its current container, its authority epoch and which worker/client owns it. Every [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the object hangs off this.
+Marks a GameObject as a networked entity. Holds the entity's network identity (a 64-bit ID created by the worker that spawned it, never by a central allocator), its current container, its authority epoch and which worker/client owns it. Every [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the object hangs off this.
 
 ## Fields
 

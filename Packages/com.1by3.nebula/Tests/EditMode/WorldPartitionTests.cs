@@ -76,7 +76,7 @@ namespace Nebula.Tests
             Assert.AreEqual("Test", world);
             Assert.AreEqual(coord, parsed);
             Assert.AreEqual("Test_3_n1_n12", WorldDefinition.SceneNameOf("Assets/Scenes/World/Test_3_n1_n12.unity"));
-            Assert.IsFalse(WorldDefinition.TryParseSceneName("Corporation", out _, out _));
+            Assert.IsFalse(WorldDefinition.TryParseSceneName("NotACell", out _, out _));
         }
 
         [Test]

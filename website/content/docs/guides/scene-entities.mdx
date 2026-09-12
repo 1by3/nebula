@@ -1,17 +1,21 @@
 ---
 title: Scene entities
-description: Networking objects that are authored into a scene (doors, lifts, turrets) instead of spawned from a prefab.
+description: Replicate a door, lift, turret, or other networked object that already exists in a scene.
 ---
 
-Most entities are spawned from a prefab: a worker instantiates it, mints an id and announces it, and every other process instantiates the same prefab when the announcement arrives (see [Spawning](/docs/guides/spawning)). A door built into the map is different. It already exists in every process that has the scene loaded, it never moves between containers, and nobody should instantiate a second copy of it. Nebula calls such an object a **scene entity**: a `NetworkIdentity` authored into a scene, which the network *binds* rather than creates.
+Use a **scene entity** for a networked GameObject that already exists in a scene, such as a door, lift, or turret. Nebula connects replicated state to that existing object instead of instantiating a prefab.
+
+Use a spawned entity when workers must create and destroy copies from a registered prefab. See [Spawning](/docs/guides/spawning).
 
 ## Authoring
 
-Put a `NetworkIdentity` and your `NetworkBehaviour`s on the scene object, exactly as you would on a prefab. When the scene is saved, the editor gives the identity a `SceneId`: a random non-zero number, unique within the scene and across every scene open at the time, that stays with the object for good. Prefab assets keep `SceneId` 0; an instance placed in a scene gets its id as an override, so the same prefab can be both spawnable and placed.
+Add `NetworkIdentity` and your `NetworkBehaviour` components to the scene object. When you save the scene, the Editor assigns a nonzero random `SceneId`. The ID is unique across the scenes open at that time and remains on the object.
 
-The object must be active when its scene loads (an inactive object never runs `Awake`, so it never registers). Anything on it works as on a spawned entity: NetworkVariables, RPCs, `NetworkTick`, sync behaviours, handover state.
+A prefab asset keeps `SceneId` 0. A prefab instance placed in a scene receives an overridden ID, so you can both register the prefab for spawning and place instances in scenes.
 
-```csharp title="ProximityDoor.cs (from the sample)"
+Keep the object active when its scene loads so `Awake` can register it. You can use `NetworkVariable`, RPCs, `NetworkTick`, sync behaviors, and handover state as you would on a spawned entity.
+
+```csharp title="ProximityDoor.cs"
 [RequireComponent(typeof(NetworkIdentity))]
 public sealed class ProximityDoor : NetworkBehaviour
 {
@@ -34,7 +38,7 @@ public sealed class ProximityDoor : NetworkBehaviour
 | Moment | What happens |
 | --- | --- |
 | Scene loads (any role) | The identity initialises itself and registers in [`SceneEntities`](/docs/reference/core/scene-entities). It is *resident* but not spawned: `IsSpawned` is false, `NetId` is 0, no hooks have run. |
-| Worker owns the container it stands in | After `NebulaConfig.SceneEntityGraceSeconds` (default 2 s) of holding the lease, the worker spawns it like any entity: id minted, `OnNetworkSpawn` and `OnGainedAuthority` run, the gateway is told. |
+| Worker owns the container it stands in | After holding the lease for `NebulaConfig.SceneEntityGraceSeconds`, the worker creates its entity ID, runs `OnNetworkSpawn` and `OnGainedAuthority`, and tells the gateway. |
 | Spawn reaches a client or a neighbouring worker | Instead of instantiating a prefab, the process binds its own copy: the message names the scene id, the registry finds the object, and it takes the net id, epoch, container and variables. If that process has not loaded the cell yet, the spawn waits and binds the moment the cell streams in; variable updates that arrive meanwhile are folded into the waiting record. |
 | Lease moves to another worker | An ordinary handover. The new owner's copy is bound by the transfer (or was already a ghost); the old owner's copy becomes a ghost and is eventually forgotten. The grace period exists so the new owner does not spawn a second life before the handover lands. |
 | Despawn, ghost expiry, disconnect | The object is **unbound**: `OnNetworkDespawn` runs and it returns to the unspawned state it loaded in, keeping the last replicated values. The GameObject is never destroyed by the network. |
@@ -44,6 +48,6 @@ Because the object stays in its scene's hierarchy, it is never re-parented under
 
 ## What it is not
 
-A scene entity is not a way to reach an object across workers without spawning it: the whole point is that exactly one worker simulates it, chosen by the container it stands in, and everyone else receives its state. Nor is it a static id for prefabs; a spawned entity keeps its worker-minted id.
+Exactly one worker simulates a scene entity, based on the container that contains it. Other workers and clients receive its replicated state. A scene entity ID is not a reusable prefab ID; the controlling worker creates it when the entity enters the mesh.
 
-There is no interest management on the spawn itself (the gateway announces every entity to every client), so a map with thousands of scene entities sends thousands of small spawns to a joining client. Variables and RPCs follow the usual rules.
+The gateway announces every scene entity to every client. A map with thousands of scene entities therefore sends thousands of small spawn messages to a joining client. After the spawn, the gateway reduces state update frequency for entities farther from the client's pawn. Variables and RPCs follow their usual delivery rules.

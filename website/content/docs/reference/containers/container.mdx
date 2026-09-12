@@ -1,6 +1,6 @@
 ---
 title: "Container"
-description: "A unit of authority: a box volume with its own local coordinate space."
+description: "Defines a box-shaped authority area with its own local coordinate space."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/Container.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/Container.cs)</div>
@@ -10,9 +10,9 @@ description: "A unit of authority: a box volume with its own local coordinate sp
 public sealed class Container : MonoBehaviour
 ```
 
-A unit of authority: a box volume with its own local coordinate space. Entities inside it are parented under its transform and replicated in its local space. A **static** container is authored into the scene (or baked into the world manifest) and leased to a worker by the orchestrator; a **dynamic** one is carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): it moves with the entity, exists wherever the entity does and is owned by whoever is authoritative for the entity. Either way, the contents never see the difference.
+Defines a box-shaped authority area with its own local coordinate space. Nebula parents contained entities under its transform and replicates their local positions. The orchestrator assigns a static container from a scene or world manifest to a worker. A dynamic container created by [`DynamicContainer`](/docs/reference/containers/dynamic-container) moves with its carrier and normally follows that entity's authoritative worker.
 
-There are no separate seam volumes in this prototype. Instead every container boundary carries an automatic ghost band ([`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin)) and an entry hysteresis ([`NebulaConfig.HandoverHysteresis`](/docs/reference/core/nebula-config#handoverhysteresis)), which gives the same pre-warm-then-flip behaviour with nothing extra to author.
+Nebula uses [`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin) to send nearby entities to a neighboring worker before they cross the boundary. It uses [`NebulaConfig.HandoverHysteresis`](/docs/reference/core/nebula-config#handoverhysteresis) to prevent an entity near a boundary from repeatedly changing workers.
 
 ## Fields
 

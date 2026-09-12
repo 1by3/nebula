@@ -3,25 +3,19 @@ title: "nebula setup"
 description: "Install the prerequisites for running Nebula locally"
 ---
 
-Install the prerequisites for running Nebula locally.
+To install the prerequisites for running Nebula locally, run:
 
 ```bash
 nebula setup [--check]
 ```
 
-```text
-Installs what is missing and reports what it finds:
-  spacetime   the SpacetimeDB CLI (control-plane server + module publishing), via its official installer
-  dotnet      the .NET 10 SDK the control-plane module is compiled with, via dotnet-install into ~/.dotnet
-  git, ssh    needed by `nebula init` (fetching the SDK) and `nebula deploy` (reaching the VMs)
-  Unity       reports the editors Unity Hub has installed and whether they have Linux Dedicated Server support
-```
+Installs what is missing and reports what it finds:   spacetime   the SpacetimeDB CLI (control-plane server + module publishing), via its official installer   dotnet      the .NET 10 SDK the control-plane module is compiled with, via dotnet-install into ~/.dotnet   git, ssh    needed by `nebula init` (fetching the SDK) and `nebula deploy` (reaching the VMs)   Unity       reports the editors Unity Hub has installed and whether they have Linux Dedicated Server support
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `--check` | only report; install nothing |
+| `--check` | Only report; install nothing. |
 
 ## Global options
 
@@ -29,9 +23,9 @@ These work with every command and may appear before or after it.
 
 | Option | Description |
 | --- | --- |
-| `--project <path>` | run against another Nebula project instead of the current folder |
-| `-v, --verbose` | print stack traces and the commands the CLI runs |
-| `-y, --yes` | answer every confirmation with yes |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
 
 ## Examples
 

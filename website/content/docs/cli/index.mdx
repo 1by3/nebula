@@ -1,9 +1,9 @@
 ---
 title: CLI reference
-description: Every nebula command, generated from the CLI (version 0.1.0-alpha.5).
+description: Find the syntax and options for each nebula command (version 0.1.0-alpha.5).
 ---
 
-The `nebula` command-line tool installs Nebula into a Unity project, runs the mesh locally and deploys it. This reference is generated from the CLI itself (`nebula help --json`) by `website/scripts/gen-cli.mjs`; `nebula --help` and `nebula <command> --help` print the same information in the terminal. See [Install the CLI](/docs/getting-started/install) for how to get it.
+Use the `nebula` command-line tool to add Nebula to a Unity project, run a local mesh, and deploy it. To read the same help in a terminal, run `nebula --help` or `nebula <command> --help`. See [Install the CLI](/docs/getting-started/install) before you begin.
 
 ```bash
 nebula <command> [options]
@@ -20,19 +20,19 @@ nebula <command> [options]
 
 | Command | Summary |
 | --- | --- |
-| [nebula build](/docs/cli/build) | Build the game executable every role runs from (orchestrator, gateway, workers, client) |
-| [nebula start](/docs/cli/start) | Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers |
+| [nebula build](/docs/cli/build) | Build the Unity player used by every Nebula role |
+| [nebula start](/docs/cli/start) | Start SpacetimeDB, the orchestrator, gateway, and workers on this computer |
 | [nebula stop](/docs/cli/stop) | Stop the local mesh (every process of the build, and SpacetimeDB if `nebula start` started it) |
-| [nebula status](/docs/cli/status) | Show the mesh: workers, containers, players, bots, NPCs and recent events |
-| [nebula logs](/docs/cli/logs) | Show a role's log: orchestrator, gateway, w1..wN, bot1.. |
+| [nebula status](/docs/cli/status) | Show workers, containers, entity counts, and recent events |
+| [nebula logs](/docs/cli/logs) | Read the log for the orchestrator, gateway, a worker, or a bot client |
 
-## Deploying
+## Deploy
 
 | Command | Summary |
 | --- | --- |
 | [nebula config](/docs/cli/config) | Configure a deploy target, Spacetime Maincloud, or the Unity editor path |
-| [nebula deploy](/docs/cli/deploy) | Build, publish the control plane and run the mesh on the configured deploy target |
-| [nebula destroy](/docs/cli/destroy) | Delete every cloud server of the mesh so nothing keeps billing |
+| [nebula deploy](/docs/cli/deploy) | Build and deploy the mesh to the configured cloud target |
+| [nebula destroy](/docs/cli/destroy) | Delete the mesh's cloud servers |
 
 ## Other
 
@@ -45,6 +45,6 @@ nebula <command> [options]
 
 | Option | Description |
 | --- | --- |
-| `--project <path>` | run against another Nebula project instead of the current folder |
-| `-v, --verbose` | print stack traces and the commands the CLI runs |
-| `-y, --yes` | answer every confirmation with yes |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |

@@ -8,7 +8,7 @@ namespace Nebula
     /// Decides, per role, which cells this process keeps loaded and where the floating origin sits:
     /// <list type="bullet">
     /// <item><b>worker</b>: the cells of every container it leases plus <see cref="NebulaConfig.WorkerLoadRingCells"/>
-    /// rings around them (seam physics and ghosts need the neighbours' geometry). The origin follows the centroid of
+    /// rings around them so ghosts and boundary physics have the neighboring geometry. The origin follows the center of
     /// the owned cells.</item>
     /// <item><b>client</b> (players and bots): <see cref="NebulaConfig.ClientLoadRadiusCells"/> around the local pawn,
     /// the origin follows the pawn. Before a pawn exists, the cells around the origin cell.</item>

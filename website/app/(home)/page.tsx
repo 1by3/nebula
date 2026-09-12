@@ -1,61 +1,60 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Boxes, Layers3, Radar, TerminalSquare, Gauge, Globe } from 'lucide-react';
 import { DynamicCodeBlock } from 'fumadocs-ui/components/dynamic-codeblock';
 import { installers, tagline } from '@/lib/shared';
 
-const sample = `public sealed class PlayerController : PredictedBehaviour<ShooterInput>
+const sample = `public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 {
+    private const float Damage = 10f;
     public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
 
-    // Owning client: sample the keyboard once per tick.
-    protected override ShooterInput GatherInput() { /* ... */ }
+    // Read local input once per tick on the owning client.
+    protected override PlayerInput GatherInput() { /* ... */ }
 
-    // Runs on the worker, on the predicting client, and again during a replay.
-    protected override void Simulate(uint tick, in ShooterInput input, float dt)
+    // Move the player on the worker and the predicting client.
+    protected override void Simulate(uint tick, in PlayerInput input, float dt)
     {
         Move(input, dt);
         if (input.Fire && HasAuthority && TraceShot(out var victim))
         {
-            // Runs on whichever worker owns the victim: local call, or the lateral link.
-            victim.AuthorityRpc(victim.TakeDamage, Damage, NetId, PlayerName.Value);
+            // Run TakeDamage on the worker that controls the victim.
+            victim.AuthorityRpc(victim.TakeDamage, Damage);
         }
     }
 
-    [AuthorityRpc] void TakeDamage(float amount, ulong attacker, string name) => Health.Value -= amount;
-    [ClientRpc]    void RpcShotFired(Vector3 from, Vector3 to, bool hit) { /* laser bolt */ }
+    [AuthorityRpc] void TakeDamage(float amount) => Health.Value -= amount;
 }`;
 
 const pillars = [
   {
     icon: Layers3,
-    title: 'Containers, not grids',
-    body: 'Authority is assigned per designer-authored volume with its own local space: a room, a ship, a district. The container tree is static; which worker simulates each one is decided at runtime.',
+    title: 'Divide the world into containers',
+    body: 'Create box-shaped containers for rooms, ships, or sections of a level. Nebula assigns each container to a worker at runtime.',
   },
   {
     icon: Radar,
-    title: 'Pre-warmed handover',
-    body: 'Entities approaching a boundary are ghosted to the neighbouring worker ahead of time. The flip hands over the exact final state, the new epoch and the not-yet-simulated inputs, so the input stream never breaks.',
+    title: 'Transfer entities between workers',
+    body: 'Nebula creates a non-authoritative copy on the next worker before an entity crosses a boundary. It then transfers the current state and any pending player input.',
   },
   {
     icon: Boxes,
-    title: 'The API you already know',
-    body: 'NetworkBehaviour, NetworkVariable, ClientRpc, ServerRpc, NetworkTransform, NetworkAnimator, NetworkRigidbody. The meshing-specific additions fit on one line: HasAuthority, IsGhost, AuthorityRpc.',
+    title: 'Build networked gameplay',
+    body: 'Use NetworkBehaviour, NetworkVariable, remote calls, NetworkTransform, NetworkAnimator, and NetworkRigidbody. Check HasAuthority and IsGhost when worker ownership matters.',
   },
   {
     icon: Gauge,
-    title: 'Disposable workers',
-    body: 'Workers are stateless compute leased authority over containers. Kill one and its containers are reassigned within a second; scale from four workers to two mid-match and players see a handover, nothing more.',
+    title: 'Add and remove workers',
+    body: 'Change the worker count while the game runs. The orchestrator moves containers away from a worker before it stops that worker.',
   },
   {
     icon: TerminalSquare,
-    title: 'One CLI, local to cloud',
-    body: 'nebula init installs it into your Unity project, nebula start runs the whole mesh on your machine, nebula deploy puts the same build on real VMs with a dashboard you can watch.',
+    title: 'Use one command-line tool',
+    body: 'Run nebula init to add the package, nebula start to run locally, and nebula deploy to deploy the build to configured virtual machines.',
   },
   {
     icon: Globe,
-    title: 'Streamed worlds',
-    body: 'Partition a large world into cell scenes. Every cell is a container; workers load only the cells they own plus a ring around them, clients only what is near, and the origin shifts with the player.',
+    title: 'Stream partitioned worlds',
+    body: 'Split a large world into cell scenes. Workers and clients load the cells they need, and Nebula shifts the Unity origin as the player moves.',
   },
 ];
 
@@ -71,7 +70,7 @@ export default function HomePage() {
           </p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">{tagline}</h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-fd-muted-foreground">
-            One world, many dedicated servers. Nebula leases each container of your level to a worker, ghosts entities across the seams before they cross, and hands authority over mid-firefight without the player noticing. Written against a Mirror and NGO-shaped API, run from one command-line tool.
+            Divide a Unity world into containers and run those containers on multiple dedicated servers. Nebula routes clients through one gateway and transfers entities when they move between workers.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -97,31 +96,16 @@ export default function HomePage() {
       {/* Dashboard */}
       <section className="mx-auto w-full max-w-6xl px-6 py-12">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="text-2xl font-semibold">Watch the mesh while it runs</h2>
+          <h2 className="text-2xl font-semibold">Inspect a running mesh</h2>
           <p className="mt-3 text-fd-muted-foreground">
-            The orchestrator serves the Nebula Dashboard. Its World map draws your level from above: every container in the colour of the worker that owns it, the players, bots and NPCs inside, and ships moving with their crews, straight from telemetry the workers post. The overview scales workers up and down, drains or kills one, edits mesh settings and pins a ship&apos;s interior to a worker of its own.
+            Open the Nebula Dashboard to see which worker controls each container and entity. Use it to change the worker count, drain or stop a worker, edit shared settings, and assign a carried container such as a ship interior to its own worker.
           </p>
         </div>
-        <Screenshot
-          className="mt-8"
-          src="/screenshots/dashboard-world-map.png"
-          url="localhost:7080/map"
-          alt="The Nebula Dashboard World map: the Corporation level's containers coloured by the four workers that own them, NPC dots inside them, and a selected Starhopper whose inspector shows its hull on worker w3 and its pinned interior on w4."
-          caption="World map: 64 NPCs across four workers, and a Starhopper whose hull is simulated by w3 while its interior and pilot are pinned to w4."
-        />
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          <Screenshot
-            src="/screenshots/dashboard-overview.png"
-            url="localhost:7080"
-            alt="The Nebula Dashboard overview: mesh totals, four worker cards with their leased containers, entity counts and tick times, mesh settings and the container tables."
-            caption="Overview: every worker, the containers it leases, entity counts, tick time and heartbeat; add, drain or kill workers."
-          />
-          <Screenshot
-            src="/screenshots/dashboard-world-map-container.png"
-            url="localhost:7080/map"
-            alt="The World map with the landing-tower container selected: its owner, lease, the entities it holds and the ghosts other workers keep of them."
-            caption="Inspecting a container: owner and lease, what it holds per worker, and the ghosts its neighbours keep."
-          />
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <DashboardFeature title="Check workers" body="Compare tick time, heartbeat age, entity counts, and assigned containers." />
+          <DashboardFeature title="Resize the mesh" body="Add a worker or retire one after it transfers its containers and entities." />
+          <DashboardFeature title="Inspect the world" body="Use the map to see containers, dynamic interiors, entities, and ghost copies." />
+          <DashboardFeature title="Test a failure" body="Stop a worker and watch the orchestrator reassign its containers and start a replacement." />
         </div>
         <div className="mt-6 text-center">
           <Link href="/docs/guides/orchestrator-and-dashboard#world-map" className="inline-flex items-center gap-1 text-sm font-medium text-fd-primary">
@@ -134,16 +118,16 @@ export default function HomePage() {
       <section className="mx-auto w-full max-w-5xl px-6 py-12">
         <div className="grid gap-8 md:grid-cols-2 md:items-center">
           <div>
-            <h2 className="text-2xl font-semibold">Five roles, one build</h2>
+            <h2 className="text-2xl font-semibold">Run each role from the same build</h2>
             <p className="mt-3 text-fd-muted-foreground">
-              Every box below is the same Unity player started with a different <code className="text-fd-foreground">-nebula-role</code>. Workers simulate the containers they lease and peer directly over UDP for ghosts and authority transfers. The gateway is the one address clients connect to. The orchestrator deals containers to workers through a SpacetimeDB control plane that is never on the per-tick path.
+              Start the Unity player with a different <code className="text-fd-foreground">-nebula-role</code> for each process. Workers exchange entity copies and transfers directly over UDP. Clients connect to the gateway. The orchestrator uses SpacetimeDB to register workers and assign containers.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-fd-muted-foreground">
-              <li><b className="text-fd-foreground">Worker</b>: headless Unity, 60 Hz, ticks derived from the wall clock so nobody is the tick master.</li>
-              <li><b className="text-fd-foreground">Gateway</b>: routes inputs to the current owner, drops stale epochs, caches keyframes for late joiners.</li>
-              <li><b className="text-fd-foreground">Orchestrator</b>: keeps N workers alive, reassigns leases, serves the dashboard and its HTTP API.</li>
-              <li><b className="text-fd-foreground">Control plane</b>: leases and heartbeats in SpacetimeDB; if it goes away the mesh keeps simulating.</li>
-              <li><b className="text-fd-foreground">Client</b>: predicts, reconciles, and is never a party to the handover protocol.</li>
+              <li><b className="text-fd-foreground">Worker</b>: simulates assigned containers in a headless Unity process at 60 ticks per second.</li>
+              <li><b className="text-fd-foreground">Gateway</b>: routes player input and sends worker snapshots to clients.</li>
+              <li><b className="text-fd-foreground">Orchestrator</b>: maintains the requested worker count, assigns containers, and serves the dashboard.</li>
+              <li><b className="text-fd-foreground">Control plane</b>: stores registrations, assignments, heartbeats, and shared settings in SpacetimeDB.</li>
+              <li><b className="text-fd-foreground">Client</b>: predicts the local player and corrects that prediction from worker snapshots.</li>
             </ul>
           </div>
           <Topology />
@@ -167,12 +151,12 @@ export default function HomePage() {
       <section className="mx-auto w-full max-w-5xl px-6 py-12">
         <div className="grid gap-8 lg:grid-cols-5 lg:items-start">
           <div className="lg:col-span-2">
-            <h2 className="text-2xl font-semibold">Gameplay code that does not know it is meshed</h2>
+            <h2 className="text-2xl font-semibold">Write predicted gameplay code</h2>
             <p className="mt-3 text-fd-muted-foreground">
-              A predicted controller is a struct of input and a pure <code className="text-fd-foreground">Simulate</code>. The worker runs it with the client&apos;s inputs; the client runs it ahead and replays after a correction. When the pawn walks into a container owned by another worker, the buffered inputs travel with it.
+              Define a serializable input struct and implement <code className="text-fd-foreground">Simulate</code>. The worker runs the method with client input. The client runs it ahead of the worker and repeats it after a correction. Nebula transfers pending input when the player moves to another worker.
             </p>
             <p className="mt-3 text-fd-muted-foreground">
-              The one meshing-specific line is the <code className="text-fd-foreground">AuthorityRpc</code>: it runs on whichever worker owns the victim, as a direct call when that is you and over the lateral link when you only hold a ghost.
+              Use <code className="text-fd-foreground">AuthorityRpc</code> to run a method on the worker that controls the target entity. Nebula sends the call to another worker when the local process only has a ghost of the target.
             </p>
             <Link href="/docs/guides/prediction" className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-fd-primary">
               Prediction guide <ArrowRight className="size-4" />
@@ -187,9 +171,9 @@ export default function HomePage() {
       {/* CTA */}
       <section className="mx-auto w-full max-w-5xl px-6 pb-20 pt-6">
         <div className="grid gap-4 sm:grid-cols-3">
-          <Cta href="/docs/getting-started/tutorial" title="Tutorial" body="From an empty Unity project to a four-container mesh you can walk across." />
-          <Cta href="/docs/cli" title="CLI reference" body="Every nebula command, generated from the CLI itself." />
-          <Cta href="/docs/reference" title="API reference" body="Every public type in the runtime, generated from the C# sources." />
+          <Cta href="/docs/getting-started/tutorial" title="Follow the tutorial" body="Add Nebula to a Unity project and run a four-container mesh." />
+          <Cta href="/docs/cli" title="Use the CLI" body="Find the syntax and options for every nebula command." />
+          <Cta href="/docs/reference" title="Use the C# API" body="Find signatures and descriptions for Nebula's public types." />
         </div>
       </section>
     </main>
@@ -205,21 +189,12 @@ function InstallBox({ label, command }: { label: string; command: string }) {
   );
 }
 
-/** A 1920x1080 dashboard capture in a minimal browser frame. */
-function Screenshot({ src, url, alt, caption, className }: { src: string; url: string; alt: string; caption: string; className?: string }) {
+function DashboardFeature({ title, body }: { title: string; body: string }) {
   return (
-    <figure className={`overflow-hidden rounded-xl border border-fd-border bg-fd-card shadow-lg ${className ?? ''}`}>
-      <div className="flex items-center gap-1.5 border-b border-fd-border px-3 py-2">
-        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
-        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
-        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
-        <span className="ml-2 truncate font-mono text-xs text-fd-muted-foreground">{url}</span>
-      </div>
-      <a href={src} target="_blank" rel="noreferrer" className="block">
-        <Image src={src} alt={alt} width={1920} height={1080} sizes="(min-width: 1152px) 1104px, 100vw" className="block h-auto w-full" />
-      </a>
-      <figcaption className="border-t border-fd-border px-4 py-3 text-sm text-fd-muted-foreground">{caption}</figcaption>
-    </figure>
+    <div className="rounded-xl border border-fd-border bg-fd-card p-5">
+      <h3 className="font-semibold">{title}</h3>
+      <p className="mt-2 text-sm text-fd-muted-foreground">{body}</p>
+    </div>
   );
 }
 
@@ -246,7 +221,7 @@ function Topology() {
       {/* control plane */}
       <rect x="20" y="16" width="380" height="40" rx="8" className={box} />
       <text x="210" y="34" textAnchor="middle" className={text}>SpacetimeDB control plane</text>
-      <text x="210" y="48" textAnchor="middle" className={muted}>workers · leases · gateways · settings</text>
+      <text x="210" y="48" textAnchor="middle" className={muted}>workers · container assignments · gateways · settings</text>
 
       {/* orchestrator, gateway, workers */}
       {[
@@ -262,9 +237,9 @@ function Topology() {
           <text x={x + 40} y="146" textAnchor="middle" className={muted}>{sub}</text>
         </g>
       ))}
-      {/* lateral link */}
+      {/* direct worker connection */}
       <line x1="300" y1="134" x2="320" y2="134" className="stroke-fd-primary" strokeWidth="2" />
-      <text x="310" y="176" textAnchor="middle" className={muted}>lateral link: ghosts + authority transfers</text>
+      <text x="310" y="176" textAnchor="middle" className={muted}>worker connection: ghost copies + handovers</text>
       {/* gateway to workers */}
       <path d="M200 134 H220" className={line} />
       <path d="M200 126 C 230 96, 300 96, 320 126" className={line} fill="none" />
@@ -282,13 +257,13 @@ function Topology() {
             <text x={x + 28} y="32" textAnchor="middle" className={text}>{l}</text>
           </g>
         ))}
-        <text x="120" y="76" textAnchor="middle" className={muted}>containers, leased to workers; entities cross with a handover</text>
+        <text x="120" y="76" textAnchor="middle" className={muted}>containers assigned to workers; entities cross with a handover</text>
       </g>
 
       {/* client */}
       <rect x="300" y="210" width="100" height="44" rx="8" className={box} />
       <text x="350" y="228" textAnchor="middle" className={text}>Client</text>
-      <text x="350" y="244" textAnchor="middle" className={muted}>inputs up, snapshots down</text>
+      <text x="350" y="244" textAnchor="middle" className={muted}>sends input, receives state</text>
       <path d="M350 210 V 170 H 160 V 158" className={line} fill="none" />
     </svg>
   );

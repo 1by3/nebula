@@ -1,6 +1,6 @@
 ---
 title: "NetworkVariable<T>"
-description: "Replicated field, NGO-style: declare it on a NetworkBehaviour and Nebula discovers it."
+description: "A field replicated from the authoritative worker to clients and ghost workers."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkVariable.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkVariable.cs)</div>
@@ -9,7 +9,7 @@ description: "Replicated field, NGO-style: declare it on a NetworkBehaviour and 
 public sealed class NetworkVariable<T> : NetworkVariableBase
 ```
 
-Replicated field, NGO-style: declare it on a [`NetworkBehaviour`](/docs/reference/core/network-behaviour) and Nebula discovers it. Only the authoritative worker may assign [`Value`](#value); every other copy (ghosts on neighbouring workers, clients) receives it and raises [`OnValueChanged`](#onvaluechanged).
+A field replicated from the authoritative worker to clients and ghost workers. Declare it on a [`NetworkBehaviour`](/docs/reference/core/network-behaviour) and Nebula discovers it. Only the authoritative worker may assign [`Value`](#value); every other copy (ghosts on neighbouring workers, clients) receives it and raises [`OnValueChanged`](#onvaluechanged).
 
 ```csharp
 public NetworkVariable<float> Health = new NetworkVariable<float>(100f);

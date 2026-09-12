@@ -1,15 +1,15 @@
 // Nebula control plane module.
 //
-// This SpacetimeDB module is the *control plane* only: node registry, container
-// ownership leases and authority epochs. It is deliberately tiny and low-write.
-// It must never carry per-tick game state - that flows over the lateral links
-// (worker<->worker) and through the gateway (worker<->client). See docs/architecture.md.
+// This SpacetimeDB module stores process registrations, container leases, authority epochs,
+// and game-defined settings. It does not carry per-tick game state. Workers exchange that
+// state directly, and the gateway routes it between workers and clients.
 //
 // Tables are written by the orchestrator (leases) and by workers/gateways
 // (registration + heartbeat). Everybody else only subscribes.
 
 using SpacetimeDB;
 
+/// <summary>Defines the SpacetimeDB tables and reducers used by the Nebula control plane.</summary>
 public static partial class Module
 {
     // ---------------------------------------------------------------- tables
@@ -21,7 +21,7 @@ public static partial class Module
         [SpacetimeDB.PrimaryKey]
         public string WorkerId;
         /// Small dense index handed out by the orchestrator. Used for entity id
-        /// allocation (high bits) and debug colouring.
+        /// allocation (high bits) and debug colors.
         public uint WorkerIndex;
         public string Address;
         public ushort Port;
@@ -79,8 +79,8 @@ public static partial class Module
 
     /// A mesh-wide live setting, written by whoever is allowed to change the mesh at
     /// runtime (game code through a worker, the dashboard) and seeded by the orchestrator
-    /// at start (-nebula-settings). Nebula gives them no meaning: they are the game's
-    /// low-volume coordination channel (e.g. ShooterGame keeps its NPC total here).
+    /// at start (-nebula-settings). Nebula stores the values without interpreting them. Use
+    /// them for low-frequency coordination between workers, not for per-tick entity state.
     [SpacetimeDB.Table(Accessor = "game_setting", Public = true)]
     public partial struct GameSetting
     {

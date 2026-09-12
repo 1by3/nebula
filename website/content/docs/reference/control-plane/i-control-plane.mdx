@@ -1,6 +1,6 @@
 ---
 title: "IControlPlane"
-description: "Everything the mesh needs from the control plane: a node registry and container leases with epochs."
+description: "Provides process registration, container assignments with epochs, and game-defined settings."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs)</div>
@@ -9,7 +9,7 @@ description: "Everything the mesh needs from the control plane: a node registry 
 public interface IControlPlane : IDisposable
 ```
 
-Everything the mesh needs from the control plane: a node registry and container leases with epochs. Low write volume, subscription push, never on the per-tick hot path. [`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) is the real implementation; [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) is in-process for tests and single-process runs. All callbacks fire on the main thread from [`Tick`](#tick).
+Provides process registration, container assignments with epochs, and game-defined settings. Use [`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) for a mesh. Use [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) for tests and single-process runs. Call [`Tick`](#tick) to receive callbacks on the main thread. Do not use the control plane for per-tick entity state.
 
 ## Properties
 

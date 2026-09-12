@@ -12,12 +12,10 @@ using Object = UnityEngine.Object;
 namespace Nebula.Editor
 {
     /// <summary>
-    /// One-click setup from the Nebula menu. <b>Set Up Active Scene</b> turns the open scene into a working Nebula
-    /// game scene: the <c>Resources/NebulaConfig</c> asset, a <c>Nebula</c> object with <see cref="NebulaBootstrap"/>
-    /// and <see cref="NebulaDebugOverlay"/>, <see cref="NebulaConfig.GameScene"/>, the build settings (the scene is the
-    /// boot scene), the project's <see cref="NebulaGameMode"/>, starter <see cref="Container"/> volumes around the
-    /// level, and every networked prefab in <see cref="NebulaConfig.NetworkPrefabs"/>. Every step is idempotent, so
-    /// running it again on a configured scene changes nothing and it doubles as a repair.
+    /// Adds the components and settings required to use Nebula in the active scene. The setup creates the
+    /// <c>Resources/NebulaConfig</c> asset and a <c>Nebula</c> object with <see cref="NebulaBootstrap"/> and
+    /// <see cref="NebulaDebugOverlay"/>. It also configures the game scene, build settings, game mode, starter
+    /// <see cref="Container"/> volumes, and networked prefabs. Run the setup again to restore missing configuration.
     /// </summary>
     public static class NebulaSetup
     {

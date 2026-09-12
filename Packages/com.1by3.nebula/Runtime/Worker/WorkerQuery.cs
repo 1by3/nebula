@@ -5,8 +5,8 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// The part of <see cref="NebulaWorker"/> a <see cref="WorkerQuery"/> talks to. A test can implement it with an
-    /// in-memory loop between two fakes; the worker implements it over the lateral link.
+    /// Defines the worker messaging operations used by <see cref="WorkerQuery"/>. <see cref="NebulaWorker"/>
+    /// implements these operations over direct worker connections. Tests can provide an in-memory implementation.
     /// </summary>
     public interface IWorkerMessaging
     {
@@ -17,10 +17,9 @@ namespace Nebula
     }
 
     /// <summary>
-    /// A question fanned out to several workers over worker messages, with the bookkeeping every such question
-    /// needs: a request id, a table of what is still unanswered, a deadline, and a callback when every reply is in
-    /// or time is up. The pair of kinds is the game's; the request handler on the receiving side reads the payload
-    /// and writes its reply, and the helper carries the id on both legs so the game never sees it.
+    /// Sends one game-defined request to several workers and collects their replies. Tracks the request id, workers
+    /// that have not replied, deadline, and completion callback. The receiving handler reads the request payload
+    /// and writes a reply. WorkerQuery adds the request id to both messages.
     /// <para>
     /// A target that is not connected is skipped (it never counts as awaited). Sending to this worker's own index
     /// answers synchronously, like any worker message to oneself. A reply for an unknown or already completed
@@ -57,7 +56,7 @@ namespace Nebula
         private uint _nextId = 1;
         private bool _disposed;
 
-        /// <summary>Requests fanned out (one per <see cref="Send"/> that reached at least one worker).</summary>
+        /// <summary>Requests sent to at least one worker.</summary>
         public int RequestsSent { get; private set; }
         /// <summary>Requests answered on this side.</summary>
         public int RequestsAnswered { get; private set; }

@@ -1,30 +1,26 @@
 ---
 title: "nebula start"
-description: "Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers"
+description: "Start SpacetimeDB, the orchestrator, gateway, and workers on this computer"
 ---
 
-Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers.
+To start SpacetimeDB, the orchestrator, gateway, and workers on this computer, run:
 
 ```bash
 nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui]
 ```
 
-```text
-Starts a local SpacetimeDB if none answers on the configured address, publishes the control-plane module with
-fresh data, then launches the orchestrator from the last build; the orchestrator starts the gateway and the
-workers. Join from the Editor (Play) or with the client build. Defaults come from nebula.json (mesh section).
-```
+Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module, then start the orchestrator from the latest build. The orchestrator starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `--build` | build first (nebula build) |
-| `--workers <N>` | worker processes (default from nebula.json, 4) |
-| `--npcs <N>` | worker-simulated NPCs spread across the mesh (default 0) |
-| `--bots <N>` | headless bot clients that roam and shoot (default 0; each is a full client process) |
-| `--open-ui` | open the Nebula Dashboard in the browser once it is up |
-| `--skip-publish` | do not re-publish the control-plane module |
+| `--build` | Build first (nebula build). |
+| `--workers <N>` | Worker processes (default from nebula.json, 4). |
+| `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default 0). |
+| `--bots <N>` | Start headless clients with the bot flag; the game supplies their behavior (default 0). |
+| `--open-ui` | Open the Nebula Dashboard in the browser once it is up. |
+| `--skip-publish` | Do not re-publish the control-plane module. |
 
 ## Global options
 
@@ -32,14 +28,14 @@ These work with every command and may appear before or after it.
 
 | Option | Description |
 | --- | --- |
-| `--project <path>` | run against another Nebula project instead of the current folder |
-| `-v, --verbose` | print stack traces and the commands the CLI runs |
-| `-y, --yes` | answer every confirmation with yes |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
 
 ## Examples
 
 ```bash
 nebula start --open-ui
 nebula start --build --workers 2
-nebula start --workers 4 --npcs 128
+nebula start --workers 4 --skip-publish
 ```

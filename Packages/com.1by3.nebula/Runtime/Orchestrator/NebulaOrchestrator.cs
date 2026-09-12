@@ -221,8 +221,8 @@ namespace Nebula
         public void AddWorker() => SetDesiredWorkers(DesiredWorkers + 1);
 
         /// <summary>
-        /// Seed the mesh-wide settings from <c>-nebula-settings key=value,key=value</c>. Nebula attaches no meaning
-        /// to them; the game reads them on every worker (ShooterGame keeps its NPC total in <c>npcs</c>).
+        /// Seed game-defined, mesh-wide settings from <c>-nebula-settings key=value,key=value</c>. Nebula stores
+        /// the values without interpreting them. Game code reads them from the control plane on each worker.
         /// </summary>
         private void SeedSettings()
         {

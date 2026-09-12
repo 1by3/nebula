@@ -13,9 +13,9 @@ namespace Nebula
     public sealed class ServerRpcAttribute : Attribute { }
 
     /// <summary>
-    /// Runs on whichever worker has authority over the entity, no matter which worker calls it. If the caller is
-    /// authoritative it is a direct call; if the caller only holds a ghost, it crosses the lateral link. This is
-    /// the primitive behind cross-container interactions such as damage claims.
+    /// Runs on the worker that has authority over the entity. If the caller has authority, Nebula runs the method
+    /// directly. If the caller holds only a ghost, Nebula sends the call to the authoritative worker. Use it for
+    /// cross-container interactions such as damage requests.
     /// </summary>
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class AuthorityRpcAttribute : Attribute { }

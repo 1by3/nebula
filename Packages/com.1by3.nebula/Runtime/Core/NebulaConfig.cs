@@ -19,7 +19,7 @@ namespace Nebula
         public WorldContainerManifest WorldManifest;
         [Tooltip("Clients keep this many cells around the local pawn loaded (1 = the 3x3x3 block).")]
         public int ClientLoadRadiusCells = 1;
-        [Tooltip("Workers keep this many rings of cells around every cell they lease loaded (seam physics and ghosts need the neighbours' geometry).")]
+        [Tooltip("Workers keep this many rings of neighboring cells loaded around every cell they control. Ghosts and boundary physics need this geometry.")]
         public int WorkerLoadRingCells = 1;
         [Tooltip("The floating origin moves once the pawn (client) or the centroid of the leased cells (worker) is more than this many cells from the origin cell.")]
         public int OriginShiftThresholdCells = 4;
@@ -60,7 +60,7 @@ namespace Nebula
         [Header("Meshing")]
         [Tooltip("Entities within this many metres of a neighbouring container are ghosted to its worker ahead of time.")]
         public float GhostBandMargin = 4f;
-        [Tooltip("An entity must be this far inside a new container before authority flips (anti-thrash).")]
+        [Tooltip("An entity must be this far inside a new container before authority transfers. This prevents repeated transfers near a boundary.")]
         public float HandoverHysteresis = 0.35f;
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;

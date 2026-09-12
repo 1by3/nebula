@@ -2,25 +2,25 @@ using UnityEngine;
 
 namespace Nebula
 {
-    /// <summary>Who is the source of truth for a synced component (NGO's <c>AuthorityModes</c>).</summary>
+    /// <summary>Lists which process produces state for a synchronized component.</summary>
     public enum AuthorityMode : byte
     {
         /// <summary>The authoritative worker writes the state; every client (the owner included) follows it.</summary>
         Server = 0,
         /// <summary>
         /// The owning client writes the state and sends it to the worker, which applies it and re-broadcasts it to
-        /// everyone else (NGO's <c>ClientNetworkTransform</c>/<c>OwnerNetworkAnimator</c>). The worker still hands the
+        /// everyone else. The worker still hands the
         /// entity over between containers as usual; the owner's stream simply follows it to the new worker. Entities
-        /// with no owning client (NPCs) fall back to server authority.
+        /// with no owning client fall back to server authority.
         /// </summary>
         Owner = 1,
     }
 
     /// <summary>
-    /// Base for components that replicate through the per-tick sync channel and support NGO's server/owner authority
-    /// choice: <see cref="NetworkTransform"/> and <see cref="NetworkAnimator"/>. Derived classes detect changes in
-    /// <see cref="AuthorityTick"/> (called on whichever copy is the source of truth, once per tick) and implement the
-    /// write/read pair; this class decides who is authoritative and pumps the owner -> worker leg over a ServerRpc.
+    /// Base for components that replicate through the per-tick sync channel and support server or owner authority.
+    /// <see cref="NetworkTransform"/> and <see cref="NetworkAnimator"/> use this base. Derived classes detect changes in
+    /// <see cref="AuthorityTick"/> (called once per tick on the copy that produces state) and implement the
+    /// write/read pair. This class selects the source of state and sends owner state to the worker through a ServerRpc.
     /// </summary>
     public abstract class NetworkSyncBehaviour : NetworkBehaviour
     {
@@ -42,13 +42,13 @@ namespace Nebula
         /// <summary>Whether owner authority is in effect (the mode is Owner and a client owns the entity).</summary>
         public bool IsOwnerAuthoritative => _authority == AuthorityMode.Owner && OwnerClientId != 0;
 
-        /// <summary>This copy is the source of truth for the synced state right now.</summary>
+        /// <summary>Whether this copy currently produces the synchronized state.</summary>
         public bool IsSyncAuthority => IsOwnerAuthoritative ? IsOwner : HasAuthority;
 
         /// <summary>This worker holds the entity but the owner drives the state: apply what arrives and re-broadcast it.</summary>
         protected bool IsRelayingWorker => IsOwnerAuthoritative && HasAuthority;
 
-        /// <summary>Once per tick on the source of truth: compare against what was last sent and <see cref="NetworkBehaviour.MarkSyncDirty"/> as needed.</summary>
+        /// <summary>Called once per tick on the state producer. Compare with the last sent state and call <see cref="NetworkBehaviour.MarkSyncDirty"/> when needed.</summary>
         protected abstract void AuthorityTick(uint tick, float deltaTime);
 
         /// <summary>

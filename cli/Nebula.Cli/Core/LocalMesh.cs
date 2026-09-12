@@ -57,7 +57,7 @@ public static class LocalMesh
         }
 
         // --- orchestrator (launches the gateway and the workers) ----------------------------------------------
-        Ui.Step($"starting the orchestrator with {o.Workers} worker(s), {o.Npcs} NPC(s)");
+        Ui.Step($"starting the orchestrator with {o.Workers} worker(s) and the game-defined 'npcs' setting at {o.Npcs}");
         var orch = new List<string>
         {
             "-batchmode", "-nographics",

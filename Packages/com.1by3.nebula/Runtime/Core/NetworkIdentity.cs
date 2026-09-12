@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Marks a GameObject as a meshed entity. Holds the entity's network identity (a 64-bit id minted by the
+    /// Marks a GameObject as a networked entity. Holds the entity's network identity (a 64-bit ID created by the
     /// worker that spawned it, never by a central allocator), its current container, its authority epoch and
     /// which worker/client owns it. Every <see cref="NetworkBehaviour"/> on the object hangs off this.
     /// </summary>

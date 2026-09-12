@@ -22,21 +22,21 @@ public static class Program
 {
     private static readonly (string Folder, string Title, string Slug, string Blurb)[] Groups =
     {
-        ("Core", "Core", "core", "Gameplay API: identities, behaviours, variables, RPCs, prediction, the sync components and project configuration."),
-        ("Containers", "Containers", "containers", "The designer-authored authority volumes and their registry."),
-        ("World", "World partition", "world", "Cell grid, additive streaming and the floating origin (usable without Nebula), plus the baked container manifest and per-role cell streaming."),
-        ("Worker", "Worker", "worker", "The simulation process: spawning, ghosting, handover, the per-tick loop."),
-        ("Client", "Client", "client", "The game client: gateway connection, prediction driver, title screen."),
-        ("Gateway", "Gateway", "gateway", "The one address clients connect to; routes inputs and re-emits replication."),
-        ("Orchestrator", "Orchestrator", "orchestrator", "Worker lifecycle, container assignment, the dashboard and worker hosts."),
-        ("ControlPlane", "Control plane", "control-plane", "The IControlPlane abstraction and its SpacetimeDB and in-process implementations."),
-        ("Bootstrap", "Bootstrap", "bootstrap", "Process entry point and role selection."),
-        ("Serialization", "Serialization", "serialization", "NetworkWriter, NetworkReader and type-driven serialization."),
-        ("Transport", "Transport", "transport", "The ITransport seam and the LiteNetLib implementation."),
-        ("Protocol", "Protocol", "protocol", "Wire messages exchanged between workers, gateway and clients."),
-        ("Debug", "Debug", "debug", "The in-game status overlay."),
-        ("Editor", "Editor", "editor", "Unity Editor tooling: builds, local mesh, control-plane helpers, the World window."),
-        ("SpacetimeModule", "SpacetimeDB module", "spacetime-module", "Tables and reducers of the control-plane module."),
+        ("Core", "Core", "core", "Build replicated gameplay with identities, behaviors, variables, RPCs, prediction, sync components, and project settings."),
+        ("Containers", "Containers", "containers", "Define container volumes and look up their current worker assignments."),
+        ("World", "World partition", "world", "Split a large world into cell scenes, stream them by role, and keep coordinates near a floating origin."),
+        ("Worker", "Worker", "worker", "Spawn and simulate authoritative entities, manage ghosts, and transfer entities between workers."),
+        ("Client", "Client", "client", "Connect a player to the gateway, predict the local entity, and display replicated state."),
+        ("Gateway", "Gateway", "gateway", "Accept client connections, route input to workers, and send replicated state to clients."),
+        ("Orchestrator", "Orchestrator", "orchestrator", "Start and stop workers, assign containers, and serve the dashboard."),
+        ("ControlPlane", "Control plane", "control-plane", "Register processes and share container assignments and settings through SpacetimeDB or an in-process test implementation."),
+        ("Bootstrap", "Bootstrap", "bootstrap", "Choose a process role and start its Nebula components."),
+        ("Serialization", "Serialization", "serialization", "Write and read values used by messages, variables, inputs, and RPCs."),
+        ("Transport", "Transport", "transport", "Send reliable ordered or unreliable sequenced messages through LiteNetLib."),
+        ("Protocol", "Protocol", "protocol", "Inspect messages exchanged by clients, the gateway, and workers."),
+        ("Debug", "Debug", "debug", "Display mesh status and measure worker tick sections."),
+        ("Editor", "Editor", "editor", "Build players, start a local mesh, validate a project, and author partitioned worlds in the Unity Editor."),
+        ("SpacetimeModule", "SpacetimeDB module", "spacetime-module", "Inspect the tables and reducers used by the control plane."),
     };
 
     private static readonly HashSet<string> StrippedMemberAttributes = new() { "Tooltip", "Header", "SerializeField", "Space", "TextArea" };
@@ -111,10 +111,10 @@ public static class Program
         var indexPage = new StringBuilder();
         indexPage.AppendLine("---");
         indexPage.AppendLine("title: API reference");
-        indexPage.AppendLine("description: Every public type in the Nebula runtime, generated from the source.");
+        indexPage.AppendLine("description: Find signatures and usage details for Nebula's public C# types.");
         indexPage.AppendLine("---");
         indexPage.AppendLine();
-        indexPage.AppendLine("This section is generated from the XML documentation comments in `Packages/com.1by3.nebula` by `website/tools/ApiGen` (run `npm run gen:api` in `website/`). It covers the runtime assembly, the Editor tooling and the SpacetimeDB control-plane module. Hand-written explanations of how the pieces fit together live in the [guides](/docs/guides/network-behaviour).");
+        indexPage.AppendLine("Use this reference to look up a public C# type or member. For instructions and complete examples, start with the [guides](/docs/guides/network-behaviour).");
         indexPage.AppendLine();
 
         var rootMeta = new List<string> { "index" };
@@ -144,7 +144,7 @@ public static class Program
             rootMeta.Add(slug);
         }
         File.WriteAllText(Path.Combine(outDir, "index.mdx"), Lf(indexPage.ToString()), new UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(outDir, "meta.json"), Lf(Json(new Dictionary<string, object> { ["title"] = "API reference", ["description"] = "Generated from the C# sources", ["root"] = true, ["pages"] = rootMeta })), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(outDir, "meta.json"), Lf(Json(new Dictionary<string, object> { ["title"] = "API reference", ["description"] = "Nebula C# types and members", ["root"] = true, ["pages"] = rootMeta })), new UTF8Encoding(false));
         Console.WriteLine($"apigen: {types.Count} types in {groupOrder.Count} groups -> {outDir}");
         return 0;
     }
@@ -528,11 +528,29 @@ public sealed class Renderer
             else text = RenderInline(doc.Content.Where(c => c is XmlTextSyntax), plain: true);
         }
         if (text.Length == 0) text = Tooltip(node) ?? "";
+        if (text.Length == 0) text = FallbackDescription(node);
         text = Regex.Replace(text, @"\s+", " ").Trim();
         int end = text.IndexOf(". ", StringComparison.Ordinal);
         if (end > 0) text = text[..(end + 1)];
         if (text.Length > 240) text = text[..237] + "...";
         return text;
+    }
+
+    private static string FallbackDescription(SyntaxNode node)
+    {
+        if (node is not BaseTypeDeclarationSyntax type) return "";
+        string name = type.Identifier.ValueText;
+        string words = Regex.Replace(name, @"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").ToLowerInvariant();
+
+        if (name.EndsWith("Msg", StringComparison.Ordinal))
+            return $"Carries the {words[..^4]} protocol message.";
+        if (type is EnumDeclarationSyntax)
+            return $"Lists the supported {words} values.";
+        if (type is StructDeclarationSyntax or RecordDeclarationSyntax)
+            return $"Stores the values used by {words}.";
+        if (type is InterfaceDeclarationSyntax)
+            return $"Defines the operations provided by {words}.";
+        return $"Provides the {words} API.";
     }
 
     private string InlineDoc(SyntaxNode node)
@@ -550,6 +568,11 @@ public sealed class Renderer
         if (doc == null)
         {
             if (Tooltip(node) is { } tip) { sb.AppendLine(Program.Escape(tip)); sb.AppendLine(); }
+            else if (node is BaseTypeDeclarationSyntax && Description(node) is { Length: > 0 } fallback)
+            {
+                sb.AppendLine(Program.Escape(fallback));
+                sb.AppendLine();
+            }
             return;
         }
         var summary = Elements(doc, "summary").FirstOrDefault();

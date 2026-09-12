@@ -1,6 +1,6 @@
 ---
 title: "IWorkerMessaging"
-description: "The part of NebulaWorker a WorkerQuery talks to."
+description: "Defines the worker messaging operations used by WorkerQuery."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerQuery.cs)</div>
@@ -9,7 +9,7 @@ description: "The part of NebulaWorker a WorkerQuery talks to."
 public interface IWorkerMessaging
 ```
 
-The part of [`NebulaWorker`](/docs/reference/worker/nebula-worker) a [`WorkerQuery`](/docs/reference/worker/worker-query) talks to. A test can implement it with an in-memory loop between two fakes; the worker implements it over the lateral link.
+Defines the worker messaging operations used by [`WorkerQuery`](/docs/reference/worker/worker-query). [`NebulaWorker`](/docs/reference/worker/nebula-worker) implements these operations over direct worker connections. Tests can provide an in-memory implementation.
 
 ## Properties
 

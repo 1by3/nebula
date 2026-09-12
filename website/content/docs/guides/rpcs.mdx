@@ -1,245 +1,272 @@
 ---
-title: RPCs
-description: How to declare and call ClientRpc, ServerRpc, AuthorityRpc and OwnerRpc methods, who may send each, and the constraints of the reflection-based binding.
+title: RPCs and worker messages
+description: Run methods on clients or authoritative workers, and exchange game-defined messages between workers.
 ---
 
-An RPC is a method on a `NetworkBehaviour` marked with an attribute and invoked through a sender method of the same name. Three attributes exist. Two of them are the ones every Unity networking library has; the third, `[AuthorityRpc]`, is the one meshing needs: it runs on whichever worker currently owns the entity, whether that is the caller or a neighbour across the lateral link.
+Use a remote procedure call (RPC) to run a `NetworkBehaviour` method on another Nebula process. Mark the receiving method with an RPC attribute, then pass that method and its arguments to the matching sender method.
 
-Binding is reflection-based (`RpcRegistry`).
+Nebula finds RPC methods through reflection when it initializes the behavior.
 
-## The four kinds
+## Choose an RPC
 
-| Kind | Declared with | Sent by | Runs on |
+| Sender | Attribute | Call from | Runs on |
 | --- | --- | --- | --- |
-| ClientRpc | `[ClientRpc]` | The authoritative worker | Every client that knows the entity |
-| OwnerRpc | `[ClientRpc]` | The authoritative worker | Only the entity's owning client |
-| ServerRpc | `[ServerRpc]` | The owning client | Whichever worker currently has authority |
-| AuthorityRpc | `[AuthorityRpc]` | Any worker that knows the entity | Whichever worker currently has authority |
+| `ClientRpc` | `[ClientRpc]` | The worker with authority | Every connected client that knows the entity |
+| `OwnerRpc` | `[ClientRpc]` | The worker with authority | Only the client that owns the entity |
+| `ServerRpc` | `[ServerRpc]` | The client that owns the entity | The worker with authority |
+| `AuthorityRpc` | `[AuthorityRpc]` | Any worker with an authoritative or ghost copy | The worker with authority |
 
-OwnerRpc is not a separate attribute: it is a `[ClientRpc]` method sent with the `OwnerRpc(...)` sender, which addresses it to `OwnerClientId` instead of broadcasting.
+`OwnerRpc` uses `[ClientRpc]`; it is a targeted form of the same message.
 
-## Calling convention
+## Declare and send a call
 
-You do not call the method directly. You pass it as a method group to the sender named after the kind, followed by the arguments:
-
-```csharp title="PlayerController.cs"
-// worker, after resolving a hit
-victim.AuthorityRpc(victim.TakeDamage, Damage, NetId, PlayerName.Value);
-ClientRpc(RpcShotFired, MuzzlePosition, end, victim != null);
-
-// owning client, from a console command
-ServerRpc(RpcSetNpcTotal, Mathf.Clamp(count, 0, NpcDirector.MaxNpcs));
-
-// worker, back to the one client that asked
-OwnerRpc(RpcNpcTotalSet, count);
-```
-
-The senders are generic over the argument types, so the compiler checks that the arguments match the method's parameters. The overloads available:
-
-| Sender | Argument counts |
-| --- | --- |
-| `ClientRpc(...)` | 0 to 4 |
-| `OwnerRpc(...)` | 0 to 3 |
-| `ServerRpc(...)` | 0 to 3 |
-| `AuthorityRpc(...)` | 0 to 4 |
-
-An RPC that needs more arguments than that takes a struct implementing `INetworkSerializable` as one argument (see [/docs/guides/serialization](/docs/guides/serialization)).
-
-The sender you use must match the attribute on the method. `ClientRpc(TakeDamage, ...)` on an `[AuthorityRpc]` method throws `InvalidOperationException` at the call site, as does passing a method with no RPC attribute at all.
-
-## Who may send what
-
-The sender checks the process role and the entity's state before anything goes on the wire. Violations are logged as warnings and the call is dropped; nothing throws.
-
-| Sender | Refused when | Warning |
-| --- | --- | --- |
-| `ClientRpc` / `OwnerRpc` | Not a worker | `ClientRpc X can only be sent from a worker` |
-| `ClientRpc` / `OwnerRpc` | Worker holds only a ghost | `ClientRpc X sent from a ghost of N; ignored` |
-| `ServerRpc` | Not a client | `ServerRpc X can only be sent from a client` |
-| `ServerRpc` | Client does not own the entity | `ServerRpc X requires ownership of N` |
-| `AuthorityRpc` | Not a worker | `AuthorityRpc X can only be sent from a worker` |
-| Any | Entity is not spawned | `RPC X on unspawned T ignored` |
-
-A ServerRpc is also validated on the way in. The gateway stamps the sender's client id onto the message and drops it unless that client owns the entity; the receiving worker checks again and warns with `ServerRpc on E from client C which does not own it`. RPC handlers receive no sender parameter, so the only client a `[ServerRpc]` can have come from is `OwnerClientId`.
-
-## ClientRpc and OwnerRpc
-
-The authoritative worker sends the message to the gateway, which fans it out to every connected client (ClientRpc) or to the one client whose id matches (OwnerRpc). Clients drop messages carrying an epoch older than the one they hold for the entity, so an RPC sent by a worker that has just lost authority does not arrive.
-
-The pattern in the sample: the worker resolves a shot and tells everyone where the bolt went; the owning client uses the same RPC as its hit confirmation.
+Do not call an RPC method directly when you want to send a network message. Pass its method group to the matching sender:
 
 ```csharp title="PlayerController.cs"
-[ClientRpc]
-private void RpcShotFired(Vector3 origin, Vector3 end, bool hit)
-{
-    if (IsOwner)
-    {
-        // The owner already drew its predicted bolt; what it wants from the server is the hit confirmation.
-        if (hit) HitConfirmed?.Invoke(this, false);
-        return;
-    }
-    ShotFired?.Invoke(this, origin, end, hit);
-}
-
-[ClientRpc]
-private void RpcDied(string killer)
-{
-    if (IsOwner) Died?.Invoke(this, killer);
-}
-```
-
-`RpcDied` is only ever sent with `OwnerRpc`, so the `IsOwner` check inside it is belt and braces.
-
-<Callout type="warn" title="OwnerRpc on a server-driven entity broadcasts">
-`OwnerRpc` addresses the message to `OwnerClientId`. A server-driven entity (an NPC) has `OwnerClientId == 0`, and client id 0 means "everyone" to the gateway. Guard with `Identity.IsServerDriven` as the sample does: `if (!Identity.IsServerDriven) OwnerRpc(RpcDied, killer);`.
-</Callout>
-
-## ServerRpc
-
-The owning client sends the message to the gateway, which forwards it to the worker it currently believes owns the entity. If that worker has already handed the entity to a neighbour, it forwards the message over the lateral link to the new owner, exactly as it forwards late inputs. The handler runs on whichever worker has authority; check `HasAuthority` anyway, since the entity may have moved again between arrival and dispatch of a queued message.
-
-```csharp title="PlayerController.cs"
-public void RequestNpcTotal(int count)
+public void RequestUse()
 {
     if (!IsOwner) return;
-    ServerRpc(RpcSetNpcTotal, Mathf.Clamp(count, 0, NpcDirector.MaxNpcs));
+    ServerRpc(RpcRequestUse);
 }
 
 [ServerRpc]
-private void RpcSetNpcTotal(int count)
+private void RpcRequestUse()
 {
     if (!HasAuthority) return;
-    var worker = NebulaBootstrap.Instance.Worker;
-    worker.ControlPlane.SetSetting(NpcDirector.TotalSetting, count.ToString());
-    OwnerRpc(RpcNpcTotalSet, count);
+    ClientRpc(RpcPlayedUseEffect, transform.position);
+}
+
+[ClientRpc]
+private void RpcPlayedUseEffect(Vector3 position)
+{
+    PlayUseEffect(position);
 }
 ```
 
-There is one ServerRpc per client-to-worker request; the worker cannot send a ServerRpc (`ServerRpc sent from a worker; ignored`).
+The sender's generic arguments let the compiler check argument types against the method signature. Current overloads support these argument counts:
 
-## AuthorityRpc
+| Sender | Arguments |
+| --- | --- |
+| `ClientRpc` | 0 to 4 |
+| `OwnerRpc` | 0 to 3 |
+| `ServerRpc` | 0 to 3 |
+| `AuthorityRpc` | 0 to 4 |
 
-`[AuthorityRpc]` runs on whichever worker has authority over the entity, no matter which worker calls it:
+If you need more values, put them in one struct that implements `INetworkSerializable`. See [Serialization](/docs/guides/serialization).
 
-- If the calling worker is authoritative, the method runs immediately as a direct call (the arguments are still serialised and deserialised, so the same constraints apply).
-- If the calling worker only holds a ghost, the message crosses the lateral link to the owning worker (the worker this entity was last handed to, or the one at `OwnerWorkerIndex`) and runs there. If the entity has moved on again, the receiver forwards it once more.
-- If the owning worker is not connected, the call is dropped with `AuthorityRpc on E: owner worker W not connected`.
+Use a sender that matches the method attribute. For example, passing an `[AuthorityRpc]` method to `ClientRpc` throws `InvalidOperationException` at the call site.
 
-This is the primitive for anything one entity does to another entity this worker can see. The sample's damage claim is the canonical shape: the shooter's worker decides a hit and the victim's worker applies it, wherever that is.
+## Follow ownership rules
 
-```csharp title="PlayerController.cs"
-/// <summary>A damage claim for a pawn this worker does not own: runs on whichever worker does.</summary>
-internal void ClaimDamage(float amount, ulong attackerNetId, string attackerName, Vector3 from)
-{
-    AuthorityRpc(TakeDamage, amount, attackerNetId, attackerName, from);
-}
+Nebula checks the caller before it sends an RPC:
 
-[AuthorityRpc]
-private void TakeDamage(float amount, ulong attackerNetId, string attackerName, Vector3 from)
-{
-    ApplyDamage(amount, attackerNetId, attackerName, from);   // checks HasAuthority, IsDead, spawn protection
-}
+- Send `ClientRpc` and `OwnerRpc` only from the worker that has authority.
+- Send `ServerRpc` only from the client that owns the entity.
+- Send `AuthorityRpc` only from a worker with an authoritative or ghost copy.
+- Send an RPC only while the entity is spawned.
 
-/// <summary>Runs on the shooter's authority: a shot of ours hurt someone.</summary>
-[AuthorityRpc]
-private void CreditShot(bool kill)
-{
-    if (!HasAuthority) return;
-    if (kill) Kills.Value += 1;
-    if (!Identity.IsServerDriven) OwnerRpc(RpcHitConfirmed, kill);
-}
-```
+Nebula logs a warning and discards a call that violates these rules.
 
-Three things about this example are worth copying:
+The gateway adds the sending client ID to a `ServerRpc` and verifies that the client owns the entity. The receiving worker verifies ownership again. Because the handler has no sender argument, use `OwnerClientId` when it needs the caller's client ID.
 
-1. The attacker's name and the shot's origin travel with the claim. The victim's worker may hold only a ghost of the attacker, or nothing at all if the attacker just left the seam, so anything the handler needs about the caller goes in the arguments (the sample's NPCs use the origin to turn towards whoever shot them).
-2. The credit goes back the same way: `CreditShot` is an `AuthorityRpc` on the shooter, so it runs wherever the shooter lives even if the shooter was handed to another worker while the shot was being resolved.
-3. The handler still checks `HasAuthority`. The message is reliable and forwarded, but the receiving side dispatches it whenever it arrives, and the target may be mid-handover.
+## Send an event to clients
 
-The victim's worker applies the claim as-is: there is no rewind or validation of the claim on the receiving side. The shooter's worker is trusted, which is fine because every worker is in the same trusted datacenter network.
-
-An `AuthorityRpc` needs a local copy of the target, authoritative or ghost. A worker only ghosts its neighbours' entities within the ghost band, so for something further away (a pawn ten metres inside a building another worker owns) there is nothing to call it on. That is what worker messages are for.
-
-## Worker messages
-
-A worker message is the raw lateral channel: a game-defined `kind`, a payload the sender writes itself, and a handler on the receiving worker. It is addressed to a worker, not an entity, so it works for questions about things this worker cannot see: "does this ray hit anything you own", "is anyone in that room", "spawn this over there".
+Use `ClientRpc` for an event that only connected clients need, such as a visual or audio effect.
 
 ```csharp
-// Both sides, once (a MonoBehaviour the game mode creates on workers, say):
-worker.RegisterMessageHandler(ShotQueryKind, OnShotQuery);
-
-// Sender: by worker id or index. False, and nothing sent, when that worker is not connected.
-bool sent = worker.SendToWorker(container.OwnerWorkerIndex, ShotQueryKind, w =>
+private void PublishDoorSound(Vector3 position)
 {
-    w.WriteUInt(shotId);
-    w.WriteVector3(origin);
-    w.WriteVector3(dir);
-    w.WriteFloat(maxDistance);
+    if (!HasAuthority) return;
+    ClientRpc(RpcPlayDoorSound, position);
+}
+
+[ClientRpc]
+private void RpcPlayDoorSound(Vector3 position)
+{
+    AudioSource.PlayClipAtPoint(DoorSound, position);
+}
+```
+
+Use `OwnerRpc` when only the owning client needs the result:
+
+```csharp
+private void ConfirmPurchase(int itemId)
+{
+    if (!HasAuthority || Identity.OwnerClientId == 0) return;
+    OwnerRpc(RpcPurchaseConfirmed, itemId);
+}
+
+[ClientRpc]
+private void RpcPurchaseConfirmed(int itemId)
+{
+    ShowPurchaseConfirmation(itemId);
+}
+```
+
+Do not call `OwnerRpc` for an entity with `OwnerClientId == 0`. Client ID 0 means broadcast at the gateway, so an owner call on a server-driven entity reaches every client.
+
+Clients reject an RPC with an older authority epoch than the entity state they already hold.
+
+## Send a request from the owning client
+
+Use `ServerRpc` when the client that owns an entity asks its worker to perform an action.
+
+```csharp
+public void RequestRename(string requestedName)
+{
+    if (!IsOwner) return;
+    ServerRpc(RpcRequestRename, requestedName);
+}
+
+[ServerRpc]
+private void RpcRequestRename(string requestedName)
+{
+    if (!HasAuthority) return;
+    DisplayName.Value = ValidateName(requestedName);
+}
+```
+
+The gateway routes the request to the worker that it believes has authority. If that worker has already transferred the entity, it forwards the request to the new worker.
+
+Treat values from a `ServerRpc` as untrusted client input. Check ranges, permissions, cooldowns, and relevant game state on the worker before you apply them.
+
+## Call the worker that controls another entity
+
+Use `AuthorityRpc` when one worker must change an entity that another worker may control. The local worker must have an authoritative or ghost copy of the target.
+
+```csharp
+internal void ClaimDamage(float amount, ulong attackerNetworkId)
+{
+    AuthorityRpc(RpcApplyDamage, amount, attackerNetworkId);
+}
+
+[AuthorityRpc]
+private void RpcApplyDamage(float amount, ulong attackerNetworkId)
+{
+    if (!HasAuthority) return;
+    Health.Value = Mathf.Max(0f, Health.Value - ValidateDamage(amount));
+}
+```
+
+When the calling worker controls the target, Nebula serializes the arguments and calls the method locally. When the local copy is a ghost, Nebula sends the call over the worker-to-worker link. If the entity moves again before the call arrives, the receiving worker can forward it to the latest owner.
+
+Include every value the receiver needs in the arguments. It may not have a copy of the calling entity. Check `HasAuthority` again in the handler because the target can move during message delivery.
+
+`AuthorityRpc` delivers a claim; it does not decide whether the claim is valid. Validate game-specific results on the receiving worker when necessary.
+
+## Send a worker message
+
+Use a worker message when you need to address a worker rather than an entity. A message has a game-defined integer kind and a payload written with `NetworkWriter`.
+
+Register one handler for each kind:
+
+```csharp
+private const ushort AreaQuery = 100;
+private const ushort AreaResult = 101;
+
+private void Register(NebulaWorker worker)
+{
+    worker.RegisterMessageHandler(AreaQuery, OnAreaQuery);
+}
+
+private void OnAreaQuery(
+    string fromWorkerId,
+    ushort fromWorkerIndex,
+    NetworkReader reader)
+{
+    var center = reader.ReadVector3();
+    var radius = reader.ReadFloat();
+    // Inspect authoritative entities, then send a reply if needed.
+}
+```
+
+Send by worker ID or index:
+
+```csharp
+bool sent = worker.SendToWorker(targetWorkerIndex, AreaQuery, writer =>
+{
+    writer.WriteVector3(center);
+    writer.WriteFloat(radius);
 });
-
-// Receiver: the reader is positioned at the payload.
-void OnShotQuery(string fromWorkerId, ushort fromWorkerIndex, NetworkReader r)
-{
-    uint shotId = r.ReadUInt();
-    // ... test our own authoritative entities, apply the damage here, reply with SendToWorker(fromWorkerIndex, ...)
-}
 ```
 
-`ContainerRegistry.Along(a, b, margin, result)` answers "which containers does this segment cross" (nested boxes included), so the owners of those containers are the workers to ask. `NebulaWorker.ConnectedWorkerIndices` lists every worker this one has a lateral link to, for questions that go to all neighbours.
+`SendToWorker` returns `false` when the target is not connected. It calls the handler directly when the target is the current worker. Messages use `ReliableOrdered` delivery unless you pass `Delivery.Sequenced`.
 
-Rules: one handler per kind (registering again replaces it); delivery is reliable-ordered unless you pass `Delivery.Sequenced`; sending to this worker's own id invokes the handler directly; a message for a kind with no handler is logged and dropped; handler exceptions are logged, not propagated. Worker messages are never forwarded: if the entity you asked about was handed over between the question and the answer, that is the receiver's problem to notice (its `HasAuthority` check) and yours to time out.
+Nebula does not forward worker messages. Include an authority check in a handler that acts on an entity, and design for the entity to move before the message arrives.
 
-### Queries
+Use `ContainerRegistry.Along(a, b, margin, result)` to find the containers crossed by a line segment. You can then send a query to the workers that own those containers. Use `ConnectedWorkerIndices` to inspect connected peers.
 
-Most worker messages are questions that expect an answer from each worker asked, and every such question needs the same bookkeeping: a request id, the set of workers still owed a reply, a deadline, and a callback once every reply is in or the deadline passes. `WorkerQuery` is that bookkeeping. It takes a pair of kinds (question and answer), a handler that answers on the receiving side, and sends with a per-request timeout; the request id rides on both legs, so the payloads you write and read are only your own.
+## Collect replies with WorkerQuery
+
+Use `WorkerQuery` when you expect one response from each target worker. It manages request IDs, pending workers, timeouts, and completion.
 
 ```csharp
-// Both sides, once. The handler reads the question and writes the answer; the reply is sent when it returns.
-_query = new WorkerQuery(worker, ShotQueryKind, ShotResultKind, OnShotQuery);
+private WorkerQuery _query;
 
-void OnShotQuery(string fromWorkerId, ushort fromWorkerIndex, NetworkReader request, NetworkWriter reply)
+private void RegisterQuery(NebulaWorker worker)
 {
-    var origin = request.ReadVector3();
-    var dir = request.ReadVector3();
-    // ... test our own authoritative entities ...
-    reply.WriteBool(hit);
-    reply.WriteFloat(distance);
+    _query = new WorkerQuery(worker, AreaQuery, AreaResult, OnAreaQuery);
 }
 
-// Asking: fan out to a set of worker indices, collect each reply, act once when all are in or time is up.
-_query.Send(ownersAlongTheRay, w => { w.WriteVector3(origin); w.WriteVector3(dir); },
-    onReply: (fromWorkerId, fromWorkerIndex, r) => { if (r.ReadBool()) nearest = Mathf.Min(nearest, r.ReadFloat()); },
-    onComplete: allAnswered => Resolve(nearest),
-    timeoutSeconds: 0.3f);
+private void OnAreaQuery(
+    string fromWorkerId,
+    ushort fromWorkerIndex,
+    NetworkReader request,
+    NetworkWriter reply)
+{
+    var center = request.ReadVector3();
+    var radius = request.ReadFloat();
+    reply.WriteInt(CountAuthoritativeEntities(center, radius));
+}
 
-// Once a frame: expire requests whose deadline passed (their onComplete runs with false).
-_query.Update();
+private void CountAcrossWorkers(IReadOnlyList<ushort> targets)
+{
+    int total = 0;
+    _query.Send(
+        targets,
+        writer =>
+        {
+            writer.WriteVector3(transform.position);
+            writer.WriteFloat(10f);
+        },
+        onReply: (_, _, reader) => total += reader.ReadInt(),
+        onComplete: allAnswered => ShowCount(total, allAnswered),
+        timeoutSeconds: 0.3f);
+}
+
+private void Update()
+{
+    _query?.Update();
+}
 ```
 
-Workers that are not connected are skipped, and when nobody could be asked `onComplete` runs immediately with `true`, so the caller has one code path whether or not the question had to travel. Asking this worker's own index answers before `Send` returns. A reply for a request that already completed or timed out is counted in `RepliesLate` and dropped; `RepliesTimedOut`, `RequestsSent`, `RequestsAnswered` and `PendingCount` are there for overlays. `Cancel(id)` forgets a request, `Dispose()` unregisters both kinds. The pending and timeout logic is plain C# over the `IWorkerMessaging` interface `NebulaWorker` implements, so it is unit-tested with an in-memory mesh and you can do the same for code built on it.
+Call `Update` regularly so the query can expire requests. `onComplete` receives `false` when the timeout passes before every connected target replies. A late reply is counted and discarded.
 
-The sample uses it twice:
+Dispose the query when its owner is destroyed. This unregisters its request and response message kinds.
 
-- `ShotRelay` sends every hitscan shot as a `ShotQuery` to the workers owning containers along the ray: it tests the level and its own pawns, asks each of them to test its pawns (rewound to the shooter's aim tick, see [lag compensation](/docs/guides/prediction#lag-compensated-hit-tests)), and only hurts its own candidate once nobody nearer answered. Per-shot cost instead of ghosting everything within weapon range.
-- `PresenceRelay` lets NPCs see across seams. Every 15 ticks each worker sends every connected neighbour one `PresenceQuery` listing the eye positions of the NPCs it drives; the neighbour answers with the live pawns it owns within sight range of each eye (the eight nearest per NPC, with position, velocity, net id and name). The brain considers those snapshots alongside the pawns the worker holds, with the same view cone and line-of-sight test, aims at a snapshot extrapolated by its velocity, and shoots through `ShotRelay` like at anything else. One message per worker pair per 15 ticks whatever the pawn count, and nothing is ghosted. See [NPCs across workers](/docs/guides/prediction#npcs-across-workers).
+## Follow RPC constraints
 
-## Constraints
+- Use only types supported by `NetworkSerialization` for parameters.
+- Do not overload RPC method names in one inheritance chain. Nebula identifies a method by a 32-bit hash of its name.
+- Declare handlers with any C# visibility, including `private`.
+- Return `void`; RPC return values are not supported.
+- Expect handler exceptions to be logged on the receiving process, not thrown on the sender.
+- Expect reliable ordered delivery, but do not use an RPC as persistent state or predicted tick input.
 
-- **Parameters must be network-serialisable.** Each parameter type must be one `NetworkSerialization.CanSerialize` accepts: the built-in primitives and Unity types, enums, `INetworkSerializable` implementations, or types registered with `NetworkSerialization.Register<T>`. Anything else throws `InvalidOperationException` the first time the class's RPC table is built, naming the method and parameter.
-- **No overloads.** Methods are identified on the wire by a 32-bit FNV-1a hash of the method name, so two RPC methods with the same name on one class (or across its base classes) throw `RPC name collision on T: X (overloads are not supported)` at table build time.
-- **Any visibility.** Private methods work; the sample keeps every handler private and exposes events instead.
-- **Inherited RPCs work.** The table is built walking from the concrete class up to `NetworkBehaviour`, so a base class's RPCs are callable on derived instances.
-- **No return values, no sender parameter.** Handlers are `void` and receive only what was sent.
-- **Unspawned entities are ignored.** Sending before `OnNetworkSpawn` or after `OnNetworkDespawn` logs a warning and drops the call.
-- **Handler exceptions are logged, not propagated.** A throwing handler logs `RPC T.X threw: ...` as an error and the process continues.
-- **Delivery is reliable-ordered** on every hop (worker to gateway, gateway to client, client to gateway, worker to worker). RPCs are not tick-stamped and are not replayed on the client; do not use them for state that prediction depends on.
+## Choose an RPC or replicated state
 
-## Choosing between an RPC and a NetworkVariable
+Use a `NetworkVariable` for state that a late client or new ghost must receive, such as health, a display name, or whether a door is open.
 
-Use a `NetworkVariable` for state a late joiner or a fresh ghost must see (health, name, a door being open). Use a ClientRpc for one-shot events that only matter to clients present at the time (a muzzle flash, a kill feed line). Use an AuthorityRpc for anything one entity does to another on a worker: if the two entities are on the same worker it costs a direct call, and if they are not it is the only correct way to mutate the other one, because writing its variables from a ghost is refused.
+Use `ClientRpc` or `OwnerRpc` for a one-time client event that does not need to be reconstructed later.
+
+Use `ServerRpc` for an owner request that the authoritative worker must validate.
+
+Use `AuthorityRpc` for an interaction with an entity that the local worker can see but may not control.
+
+Use a worker message or `WorkerQuery` when the target is a worker or when the local worker has no copy of the relevant entity.
 
 <Cards>
-  <Card title="NetworkBehaviour and NetworkVariable" href="/docs/guides/network-behaviour" description="Role flags, lifecycle hooks and replicated fields." />
-  <Card title="Serialization" href="/docs/guides/serialization" description="What can be an RPC argument and how to add your own types." />
-  <Card title="Prediction and reconciliation" href="/docs/guides/prediction" description="Where ServerFire's aim tick comes from." />
+  <Card title="Replicate state" href="/docs/guides/network-behaviour" description="Use NetworkVariable for durable entity state." />
+  <Card title="Serialize values" href="/docs/guides/serialization" description="Add your own RPC and message payload types." />
+  <Card title="Predict input" href="/docs/guides/prediction" description="Keep tick input out of RPCs." />
 </Cards>

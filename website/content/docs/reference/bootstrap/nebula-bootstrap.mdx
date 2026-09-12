@@ -16,10 +16,10 @@ Entry point for every Nebula process. Put one in the boot scene. Reads the role 
 - `-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101`
 - `-nebula-gateway 127.0.0.1:7000`
 - `-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula`
-- `-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings npcs=64` (orchestrator; settings are game-defined key/values seeded on the control plane, editable on the dashboard)
+- `-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600` (orchestrator; settings are game-defined key/values seeded on the control plane, editable on the dashboard)
 - `-nebula-name Jesse` (client display name)
 - `-nebula-advertise 10.0.1.2|auto` (address this worker/gateway advertises to peers)
-- `-nebula-host process|hetzner -nebula-build-dir /opt/nebula/artifacts` (orchestrator: where workers run; cloud hosts also read `-nebula-cloud-location/-type/-image/-network/-sshkey/-firewall`, `-nebula-build-url` and the provider token from `-nebula-cloud-token` or `HCLOUD_TOKEN`)
+- `-nebula-host process|hetzner -nebula-build-dir /opt/nebula/artifacts` (orchestrator: where workers run; cloud hosts also read `-nebula-cloud-location`, `-nebula-cloud-type`, `-nebula-cloud-image`, `-nebula-cloud-network`, `-nebula-cloud-sshkey`, `-nebula-cloud-firewall`, `-nebula-build-url`, and the provider token from `-nebula-cloud-token` or `HCLOUD_TOKEN`)
 
 ## Fields
 

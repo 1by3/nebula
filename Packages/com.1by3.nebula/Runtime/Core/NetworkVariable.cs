@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace Nebula
 {
+    /// <summary>Defines the serialization and change tracking used by every <see cref="NetworkVariable{T}"/>.</summary>
     public abstract class NetworkVariableBase
     {
         internal NetworkBehaviour Owner;
@@ -14,7 +15,8 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Replicated field, NGO-style: declare it on a <see cref="NetworkBehaviour"/> and Nebula discovers it.
+    /// A field replicated from the authoritative worker to clients and ghost workers. Declare it on a
+    /// <see cref="NetworkBehaviour"/> and Nebula discovers it.
     /// Only the authoritative worker may assign <see cref="Value"/>; every other copy (ghosts on neighbouring
     /// workers, clients) receives it and raises <see cref="OnValueChanged"/>.
     /// <code>

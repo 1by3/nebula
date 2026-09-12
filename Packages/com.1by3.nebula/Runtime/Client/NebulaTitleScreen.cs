@@ -3,10 +3,9 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// The human client's front door: a small IMGUI panel to type the gateway address and a display name before
-    /// connecting, and a way back when the connection drops. Shown only when the client was not told where to go
-    /// on the command line (<c>-nebula-gateway</c>, <c>-nebula-bot</c>,
-    /// <c>-nebula-connect</c> skip it), so scripted clients behave as before. Choices persist in PlayerPrefs.
+    /// Displays an IMGUI panel where a player can enter the gateway address and a display name before connecting.
+    /// Nebula skips the panel when <c>-nebula-gateway</c>, <c>-nebula-bot</c>, or <c>-nebula-connect</c> supplies the
+    /// connection. The selected values persist in PlayerPrefs.
     /// </summary>
     public sealed class NebulaTitleScreen : MonoBehaviour
     {

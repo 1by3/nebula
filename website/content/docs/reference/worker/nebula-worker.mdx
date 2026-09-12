@@ -1,6 +1,6 @@
 ---
 title: "NebulaWorker"
-description: "The sim worker: a headless Unity process leased authority over a set of containers."
+description: "Runs authoritative game simulation for the containers assigned to this worker."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs)</div>
@@ -9,7 +9,7 @@ description: "The sim worker: a headless Unity process leased authority over a s
 public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
 ```
 
-The sim worker: a headless Unity process leased authority over a set of containers. It simulates the entities in those containers at the tick rate, ghosts entities approaching a neighbouring container to that container's worker over the lateral link, hands authority over when they cross, and streams its authoritative entities to the gateway. One process can own any number of containers; adjacent containers on the same worker hand over locally with no network traffic at all.
+Runs authoritative game simulation for the containers assigned to this worker. It creates ghost copies near boundaries, transfers entities when they cross into another worker's container, and sends entity state to the gateway. One worker can control any number of containers. A transfer between two containers on the same worker does not use the network.
 
 ## Fields
 
@@ -181,7 +181,7 @@ public IReadOnlyList<NetworkIdentity> Authoritative { get; }
 public IEnumerable<string> ConnectedWorkerIds { get; }
 ```
 
-Ids of every worker this one currently has a lateral link to.
+IDs of the workers that currently have a direct connection to this worker.
 
 ### ConnectedWorkerIndices [#connectedworkerindices]
 
@@ -189,7 +189,7 @@ Ids of every worker this one currently has a lateral link to.
 public IEnumerable<ushort> ConnectedWorkerIndices { get; }
 ```
 
-Indices of every worker this one currently has a lateral link to (the addresses [`WorkerQuery`](/docs/reference/worker/worker-query) takes).
+Indices of the workers that currently have a direct connection to this worker.
 
 ### MeshReady [#meshready]
 
@@ -255,7 +255,7 @@ public void UnregisterMessageHandler(ushort kind);
 public bool IsWorkerConnected(string workerId);
 ```
 
-Whether the lateral link to `workerId` is up (both sides have said hello).
+Whether the direct connection to `workerId` is ready.
 
 ### SendToWorker [#sendtoworker]
 

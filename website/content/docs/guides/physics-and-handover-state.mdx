@@ -1,15 +1,20 @@
 ---
 title: Physics, handover state and the sync channel
-description: NetworkRigidbody, the handover-only state hook every behaviour gets, and how to write your own per-tick replicated component on the sync channel.
+description: Replicate rigidbody motion, transfer worker-only state, and create a custom per-tick sync component.
 ---
 
-Nebula replicates an entity through three channels. The identity stream carries the root pose and velocity every tick. `NetworkVariable` fields carry low-rate state as a full blob whenever one changes (see [NetworkBehaviour](/docs/guides/network-behaviour)). The **sync channel** carries per-tick deltas from any behaviour that opts in; `NetworkTransform` and `NetworkAnimator` are built on it, and so can your own components. Separate from all three, the **handover state** hook lets a behaviour send state that only the next simulating worker needs, once, inside the authority transfer.
+Choose a replication path based on how other processes use the state:
 
-This page covers `NetworkRigidbody`, which uses the identity stream and the handover hook; the handover hook itself; and how to write a sync-channel behaviour.
+- The identity stream sends the root pose and velocity every tick.
+- `NetworkVariable` sends state that changes occasionally. When one variable changes, Nebula sends all variables for that entity.
+- The **sync channel** sends component data by tick. `NetworkTransform` and `NetworkAnimator` use this channel.
+- The **handover-state** methods send worker-only state once during an authority transfer.
+
+Use this page to configure `NetworkRigidbody`, transfer custom state between workers, or create a component based on `NetworkSyncBehaviour`.
 
 ## NetworkRigidbody
 
-[`NetworkRigidbody`](/docs/reference/core/network-rigidbody) puts a Unity `Rigidbody` under the mesh's authority model. Add it next to the `NetworkIdentity` of any physics prop; it requires a `Rigidbody` on the same GameObject.
+Add [`NetworkRigidbody`](/docs/reference/core/network-rigidbody) to a physics entity controlled by a worker. Add it to the same GameObject as its `NetworkIdentity` and Unity `Rigidbody`.
 
 | Copy | Body state |
 | --- | --- |
@@ -17,7 +22,7 @@ This page covers `NetworkRigidbody`, which uses the identity stream and the hand
 | Ghost on a neighbouring worker | Kinematic. The worker moves it to the pose the owner streamed, one tick behind, before physics syncs. Other dynamic bodies on that worker collide with it as a moving kinematic. |
 | Every client | Kinematic. Follows the identity stream through `RemoteInterpolator`. |
 
-The switches happen in the lifecycle hooks: `OnNetworkSpawn` sets `isKinematic = !HasAuthority`, `OnLostAuthority` makes the body kinematic, `OnGainedAuthority` makes it dynamic and restores `linearVelocity` from `Identity.Velocity` and `angularVelocity` from the handover state.
+When a worker gains authority, `NetworkRigidbody` makes the body dynamic and restores its linear and angular velocity. When the worker loses authority, the component makes the body kinematic.
 
 Angular velocity does not go in the per-tick stream. Nothing but the next simulating worker needs it (ghosts and clients are kinematic and rotate to the streamed pose), so it rides the handover only:
 
@@ -33,18 +38,16 @@ public override void ReadHandoverState(NetworkReader reader)
 }
 ```
 
-`SetVelocity(Vector3 linear, Vector3 angular = default)` is the authority-only way to launch a freshly spawned prop: it writes `Identity.Velocity` and, when the body is dynamic, the Rigidbody's velocities. The box gun in the sample calls it right after `SpawnPrefab`:
+Call `SetVelocity(Vector3 linear, Vector3 angular = default)` on the authoritative worker to launch a newly spawned rigidbody. The method updates `Identity.Velocity` and the dynamic `Rigidbody`:
 
 ```csharp title="PlayerController.cs"
-var identity = worker.SpawnPrefab(mode.BoxPrefab, origin, Quaternion.LookRotation(dir), Container);
+var identity = worker.SpawnPrefab(projectilePrefab, origin, Quaternion.LookRotation(direction), Container);
 var body = identity.GetComponent<NetworkRigidbody>();
-if (body != null) body.SetVelocity(dir * BoxLaunchSpeed);
+if (body != null) body.SetVelocity(direction * launchSpeed);
 ```
 
-The sample's `PhysicsBox` component adds nothing to the meshing; it only tints the box by the worker that owns it so a seam crossing is visible.
-
 <Callout type="info" title="Prediction and rigidbodies do not mix">
-The predicted player controller in the sample resolves its collisions with physics queries against static level geometry and ignores rigidbodies and other pawns: their state differs between the predicting client and the worker and would break reconciliation. A `NetworkRigidbody` is worker-simulated only.
+Do not use `NetworkRigidbody` as the physics body for a client-predicted controller. Dynamic rigidbody state differs between the client and worker and cannot replay deterministically with this component. Use `NetworkRigidbody` for worker-simulated physics entities.
 </Callout>
 
 ## Handover state
@@ -58,11 +61,15 @@ public virtual void ReadHandoverState(NetworkReader reader) { }
 
 `WriteHandoverState` is called on the outgoing worker while it builds the `AuthorityTransfer`, before `OnLostAuthority`. `ReadHandoverState` is called on the incoming worker after the entity's pose, velocity, `NetworkVariable` values and sync-channel keyframes have been applied and before `OnGainedAuthority`. What you write in one you must read, exactly, in the other.
 
-What belongs there: state that only the next simulating worker needs and that is not already replicated. Angular velocity, cooldown and respawn timers, RNG state, an AI's current plan, the remaining ticks of a door's auto-close. What does not: anything a client or ghost must see (that is a `NetworkVariable` or the sync channel), and anything derivable from replicated state.
+Write state here only when the next simulating worker needs it and Nebula does not already replicate it. Examples include angular velocity, cooldown timers, random-number-generator state, and the remaining time before a door closes.
 
-The wire format is one length-prefixed chunk per behaviour, in behaviour order: `[count:byte]{[len:ushort][chunk]}`. On the receiving side each behaviour reads from a reader bounded to its own chunk. A behaviour that reads past its chunk throws, the error is logged with the behaviour's type and the entity's name, and the next behaviour still gets its own bytes; a behaviour that reads too little leaves no residue. A mismatch between what you write and read is therefore a logged bug on that behaviour, not a corrupted entity.
+Do not include state that a client or ghost must see. Use a `NetworkVariable` or the sync channel for that state. Do not include values you can calculate from other replicated state.
 
-Handover state travels only with `AuthorityTransfer`. It is not in the per-tick stream, not in the spawn message, not cached by the gateway, and a local handover between two containers on the same worker never serialises it at all.
+Nebula writes one length-prefixed chunk for each behavior, in component order: `[count:byte]{[len:ushort][chunk]}`. Each behavior reads only its own chunk.
+
+If a behavior reads past its chunk, Nebula logs the behavior type and entity name. The next behavior can still read its own bytes. Reading fewer bytes than the chunk contains does not affect the next behavior.
+
+Nebula sends handover state only in an `AuthorityTransfer` message between workers. It does not send this state every tick, include it in client spawn messages, or cache it at the gateway. A transfer between two containers on the same worker does not serialize it.
 
 ## The sync channel
 
@@ -80,13 +87,15 @@ Any `NetworkBehaviour` can replicate through the sync channel by overriding a sm
 
 ### Who sends what, when
 
-Each tick, after simulating, the worker walks its authoritative entities. For each one with sync behaviours it calls `NetworkIdentity.WriteSyncState` once per delivery class, which visits the behaviours of that class and writes a chunk for each that is due:
+After each simulation tick, the worker checks the sync behaviors on its authoritative entities. It writes a chunk when the behavior is due:
 
 - a behaviour is due when it is dirty;
 - on a keyframe tick (`tick % NetworkIdentity.SyncKeyframeInterval == 0`, every 30 ticks) or on a behaviour's first send since gaining authority, a chunk that is written is a keyframe (`full == true`);
 - an unreliable behaviour is also due on every keyframe tick whether or not it is dirty, so a lost delta is healed within half a second at 60 Hz. A reliable behaviour never loses a delta and only sends when dirty.
 
-The chunks of one delivery class become one `EntityState` message to the gateway and one `GhostSyncState` message to every worker that holds a ghost of the entity, both carrying `(netId, epoch, tick, containerIndex)` and a flag saying which delivery class they went out on so the gateway re-emits them on the same one. When the tick's sends are done, `NetworkIdentity.ClearDirty` calls `OnSyncStateSent` on every behaviour that was dirty and clears the flag.
+Nebula groups chunks by delivery class. It sends an `EntityState` message to the gateway and a `GhostSyncState` message to each worker with a ghost copy. Each message identifies the entity, epoch, tick, and container.
+
+After sending the tick, Nebula calls `OnSyncStateSent` on each dirty behavior and clears its dirty flag.
 
 Gaining authority (spawn or handover in) resets every sync behaviour to "never sent" and marks it dirty, so a new epoch always opens with keyframes. That is what the gateway's cache and a fresh ghost start from.
 
@@ -102,13 +111,17 @@ Gaining authority (spawn or handover in) resets every sync behaviour to "never s
 
 ### The receiving side
 
-`NetworkIdentity.ReadSyncState(reader, tick, container)` sets `SyncContainer` (the container the values were expressed in, for behaviours that send world-space positions container-local like `NetworkTransform`) and hands each chunk to its behaviour. On a client this happens for `EntityState` messages with the message's tick, and for the spawn message with tick 0. On a worker it happens for `GhostSyncState` on ghosts, and for the snapshot inside a `GhostSpawn` or `AuthorityTransfer` with tick 0.
+`NetworkIdentity.ReadSyncState(reader, tick, container)` records the container used to encode the values, then passes each chunk to its behavior. Client state messages use their simulation tick. Spawn snapshots, ghost spawns, and authority transfers use tick `0`.
 
-Presentation is separate from reception. `RemoteTick(renderTick)` is called on every non-authoritative copy: once per frame on a client, at `NetworkTime.RenderTick`, which sits `NebulaConfig.InterpolationDelayTicks` behind the newest snapshot; once per tick on a worker for each ghost, at `tick - 1`, before `Physics.SyncTransforms` so ghost colliders are placed before anything raycasts that tick. A buffering behaviour stores samples by tick in `ReadSyncState` and interpolates between the two that straddle `renderTick` here. A behaviour that does not need smoothing can apply the state directly in `ReadSyncState` and leave `RemoteTick` empty.
+Nebula separates receiving state from presenting it. It calls `RemoteTick(renderTick)` on every non-authoritative copy.
+
+On clients, `renderTick` is delayed by `NebulaConfig.InterpolationDelayTicks` so a component can interpolate between received samples. On workers, Nebula updates each ghost before physics synchronization and raycasts. Apply state directly in `ReadSyncState` when the component does not need smoothing.
 
 ### What the gateway caches
 
-The gateway never instantiates entities, but it keeps, per entity, the newest keyframe chunk per behaviour index: seeded from the spawn message's snapshot and replaced whenever an `EntityState` arrives with a `Full` chunk. When a client connects late, the gateway assembles those chunks into the spawn message it sends, so the joiner's copy reads them with tick 0 and starts from the current state rather than the prefab's. Deltas are not cached; between keyframes a late joiner is at most `SyncKeyframeInterval` ticks stale on each behaviour until the next keyframe arrives.
+The gateway caches the newest complete keyframe for each sync behavior. When a client joins, the gateway includes those keyframes in the entity's spawn message. The new client therefore starts from recent state instead of the prefab defaults.
+
+The gateway does not cache partial updates. A new client can remain behind until it receives the next keyframe, which takes at most `SyncKeyframeInterval` ticks.
 
 This is why a keyframe must be self-contained: write everything a fresh copy needs, not just what changed since the last keyframe.
 
@@ -275,7 +288,7 @@ Points worth noting in the example:
 - The handover carries only `_closeAtTick`. `_locked` is already on the sync channel: the `AuthorityTransfer` carries the same spawn data as a `GhostSpawn`, including a sync keyframe from every behaviour, and the incoming worker applies that (with tick 0) before `ReadHandoverState` runs, so even a worker that held no ghost of the entity has the current `_locked` by then. The angle needs no handover entry either: the hinge's rotation is on the object, and `OnGainedAuthority` reads it back.
 - Ghosts on a worker also run `RemoteTick`, so a door's collider on a neighbouring worker is at the same angle the owner's stream says. If you only need visuals you can early-out on `IsServer`.
 
-If your component also needs owner authority (the owning client drives it and the worker relays), derive from `NetworkSyncBehaviour` instead: it adds the `Authority` field, `IsSyncAuthority`, `IsRelayingWorker`, the owner-to-worker `ServerRpc` leg and a per-tick `AuthorityTick` to put your change detection in. `NetworkTransform` is the reference implementation.
+If the owning client must drive your component, derive from `NetworkSyncBehaviour`. It adds the authority setting, owner-to-worker relay, and `AuthorityTick` callback. Use `IsSyncAuthority` to check whether the current process should produce state. See `NetworkTransform` for a complete implementation.
 
 ## Related
 

@@ -5,17 +5,15 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Replicates an <see cref="Animator"/> the way NGO's NetworkAnimator does. The Animator keeps running on every
-    /// copy; what travels is what would otherwise diverge: parameter changes (int, float, bool; floats past a
-    /// threshold), triggers (only through <see cref="SetTrigger(string)"/>, exactly like NGO), and per-layer state
-    /// (state hash, normalized time, weight) plus in-progress transitions so a state entered on the authority is
-    /// entered everywhere. Keyframes carry all of it, so late joiners and fresh ghosts start in the right pose.
-    /// Parameters driven by animation curves are skipped (NGO does the same). Always reliable: a lost trigger would
-    /// never be recovered.
+    /// Replicates selected <see cref="Animator"/> parameters from the authoritative worker to clients and ghost workers.
+    /// Each copy continues to run its own Animator. Nebula sends changed integer, float, and Boolean parameters;
+    /// triggers set through <see cref="SetTrigger(string)"/>; layer state; and transitions. Keyframes give late joiners
+    /// and new ghosts a complete state. Nebula skips parameters controlled by animation curves and sends animation
+    /// changes reliably.
     /// <para>
-    /// Server authority (default): the worker drives the Animator; an owning client calling
-    /// <see cref="SetTrigger(string)"/> asks the worker over a ServerRpc and sees the result one round trip later,
-    /// as in NGO. Owner authority: the owning client drives it and the worker relays (NGO's OwnerNetworkAnimator).
+    /// With server authority, the worker drives the Animator. When an owning client calls
+    /// <see cref="SetTrigger(string)"/>, it asks the worker to set the trigger through a ServerRpc. With owner
+    /// authority, the owning client drives the Animator and the worker relays its changes.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -152,7 +150,7 @@ namespace Nebula
 
         /// <summary>
         /// Fire a trigger on every copy. On the authority it fires locally and is replicated; an owning client under
-        /// server authority forwards the request to the worker (one round trip of latency, as in NGO).
+        /// server authority forwards the request to the worker, which adds one network round trip of latency.
         /// </summary>
         public void SetTrigger(string name) => SetTrigger(Animator.StringToHash(name));
 

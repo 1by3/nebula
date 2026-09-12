@@ -1,48 +1,72 @@
 ---
-title: Roles and wire protocol
-description: The five processes of a mesh, what each one does, and the messages and delivery classes they exchange.
+title: Roles and network messages
+description: Understand each Nebula process, its connections, and the messages it exchanges.
 ---
 
-A Nebula deployment is one Unity player build started in different roles. `NebulaBootstrap` reads `-nebula-role` (or its `EditorRole` field when you press Play), loads the game scene, and adds the matching service components to its own GameObject. A process is a worker *or* a client, never both; the gateway and the orchestrator may share a process (`-nebula-role services`), though the CLI runs them separately.
+Build one Unity player for every Nebula role. `NebulaBootstrap` reads `-nebula-role`, loads the configured game scene, and starts the components for that role. In the Unity Editor, it uses `EditorRole` instead.
+
+A process cannot run both the worker and client roles. You can run the gateway and orchestrator together with `-nebula-role services`, although the CLI starts them as separate processes.
 
 ## Worker
 
-`NebulaWorker`, started with `-batchmode -nographics -nebula-role worker`. A headless Unity dedicated-server process that loads the same game scene as everyone else, so colliders, physics and NavMesh are all available to gameplay code. It registers with the control plane, listens on `WorkerBasePort + index` for the gateway and for peers, and every tick simulates its authoritative entities, moves its ghosts, maintains the ghost band, hands authority over, and streams state to the gateway. Its stats (tick time, entity counts, players, bots, server-driven entities) ride its heartbeat. See [Containers and handover](/docs/concepts/containers-and-handover) for the tick in detail and [Spawning](/docs/guides/spawning) for its API.
+To start a worker directly, pass `-batchmode -nographics -nebula-role worker`. A worker loads the game scene in a headless Unity process, so your server code can use colliders, physics, and NavMesh.
+
+The worker registers with the control plane and listens on `WorkerBasePort + index`. Each tick, it simulates authoritative entities, updates ghosts, performs handovers, and sends entity state to the gateway. Its heartbeat includes tick time and entity counts. See [Containers and handover](/docs/concepts/containers-and-handover) for the tick sequence and [Spawning](/docs/guides/spawning) for the gameplay API.
 
 ## Gateway
 
-`NebulaGateway`, `-nebula-role gateway`, udp/7000 by default. The one address clients connect to. It keeps a link to every worker, routes each client's inputs to the worker that currently owns that client's entity, re-emits the workers' replication streams to clients, and drops anything carrying a stale authority epoch or coming from a worker that is no longer the owner. When a client connects it picks a container whose owner is ready and asks that worker to spawn the player. It caches one keyframe per sync behaviour per entity so a late joiner starts in the right pose. It holds nothing authoritative: a dead worker's entities are dropped and its players are respawned elsewhere. There is no interest management yet; every client receives every entity.
+To start the gateway directly, pass `-nebula-role gateway`. It listens for clients on UDP port 7000 by default.
+
+The gateway connects to every worker. It routes each client's input to the worker that controls that client's entity and sends worker replication streams to clients. It rejects entity messages with an old authority epoch or an invalid sender.
+
+When a client connects, the gateway chooses a ready container and asks its worker to spawn the player's entity. It caches one keyframe for each sync behavior so a new client can create entities in the correct state.
+
+The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It announces every entity to every client, then reduces the update rate for entities farther from the client's pawn. Configure those distance bands in `NebulaConfig`.
 
 ## Orchestrator
 
-`NebulaOrchestrator`, `-nebula-role orchestrator`. Launches the gateway, keeps `DesiredWorkers` workers running through a worker host (child processes, or one cloud VM each), writes one lease per container and deals containers across live workers every 500 ms. It serves the Nebula Dashboard and its HTTP API on tcp/7080 and seeds mesh-wide settings from `-nebula-settings`. See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
+To start the orchestrator directly, pass `-nebula-role orchestrator`. It starts the gateway and keeps `DesiredWorkers` workers running. A worker host decides whether those workers run as child processes or on separate cloud virtual machines.
+
+The orchestrator creates one assignment for each container and distributes them across active workers every 500 milliseconds. It serves the dashboard and HTTP API on TCP port 7080 by default. It also reads initial shared settings from `-nebula-settings`. See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
 
 ## Control plane
 
-A SpacetimeDB module (`Packages/com.1by3.nebula/SpacetimeDB/Module~`) with `worker`, `container_lease`, `gateway`, `orchestrator` and `game_setting` tables and the reducers that register and heartbeat nodes, assign and release leases and set settings. Workers, the gateway and the orchestrator subscribe to it through `IControlPlane`; it is never on the per-tick path, and if it goes away the mesh keeps simulating with its last known topology. See [Control plane](/docs/guides/control-plane).
+The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~`. Its tables store workers, container assignments, gateways, orchestrators, and shared game settings. Its reducers register processes, record heartbeats, change assignments, and update settings.
+
+Workers, the gateway, and the orchestrator use `IControlPlane` to subscribe to these records. They do not send per-tick entity state through the control plane. If the connection fails, workers continue with the last topology they received. See [Control plane](/docs/guides/control-plane).
 
 ## Client
 
-`NebulaClient`, the default role. Talks only to the gateway. It sends one input per tick for its predicted player, ahead of the server by an adaptive input lead, receives snapshots tagged with tick, epoch and owning worker, predicts its own player and reconciles against the worker's reported state, and interpolates every other entity `InterpolationDelayTicks` behind the newest snapshot. Which worker produced a snapshot is metadata used for epoch filtering and the debug overlay, nothing else. A human gets a title screen (`NebulaTitleScreen`); bots and scripted clients connect at once. See [Prediction](/docs/guides/prediction).
+The client is the default role and connects only to the gateway. For a predicted player, it sends one input per tick and runs ahead of the worker by an adaptive input lead. It corrects its prediction from authoritative snapshots. It displays other entities `InterpolationDelayTicks` behind the newest snapshot so it can interpolate between states.
+
+Snapshots include the simulation tick, authority epoch, and worker index. Nebula uses the epoch to reject old state. It uses the worker index for diagnostics.
+
+Human clients see `NebulaTitleScreen` unless you provide connection arguments. Bots and scripted clients connect immediately. See [Prediction](/docs/guides/prediction).
 
 ## Time
 
-`NetworkTime.TickRate` is 60. Every worker derives the tick it should be simulating from the wall clock and a fixed origin, so all workers agree on tick numbers without a tick master and a restarted worker knows the correct tick immediately. On a client `NetworkTime.Tick` is the tick the local player is predicting, ahead of the server by the input lead, and `NetworkTime.RenderTick` is the fractional tick remote entities are being presented at. Gameplay code should only ever see tick numbers, never wall-clock time.
+`NetworkTime.TickRate` is 60. Each worker calculates its current tick from the wall clock and a fixed origin. This keeps workers on the same tick number without a coordinating process.
+
+On a client, `NetworkTime.Tick` is the tick being predicted for the local player. It runs ahead of the worker by the current input lead. `NetworkTime.RenderTick` is the fractional tick used to display remote entities.
+
+Use tick numbers, not wall-clock timestamps, in gameplay simulation.
 
 ## Transport
 
-All links use LiteNetLib over UDP behind the `ITransport` interface, which exposes exactly two delivery classes so that a QUIC transport could replace it later:
+All connections use LiteNetLib over User Datagram Protocol (UDP) through the `ITransport` interface. A **delivery class** determines whether Nebula retries a lost message and whether messages must arrive in order.
 
 | `Delivery` | Semantics | Used for |
 | --- | --- | --- |
-| `Sequenced` | Unreliable, newest wins, cannot fragment (packets are cut at 500 bytes) | Transform streams: `WorldState`, `GhostState`, `ClientInput`, `OwnerState`, and sync chunks that opt in |
+| `Sequenced` | Does not retry lost messages. Keeps only the newest message. Splits packets at 500 bytes. | Transform streams: `WorldState`, `GhostState`, `ClientInput`, `OwnerState`, and sync components that select it. |
 | `ReliableOrdered` | Reliable, ordered | Everything else |
 
-The transport is poll-driven: nothing is raised outside `Poll`, so nothing mutates the world behind the simulation loop's back.
+Nebula processes transport events only when it calls `Poll`. This keeps network callbacks on the simulation thread.
 
 ## Messages
 
-Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][sequence:48]`, minted locally by the spawning worker, never by a central allocator. Positions and rotations are sent in container-local space with a `ContainerRef` (the container's index, or its carrier's net id for a dynamic container) of the same tick. The message structs live in `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs` and are listed in the [Protocol reference](/docs/reference#protocol).
+Every entity message contains a network ID (`netId`) and authority epoch. The spawning worker creates the ID from its 16-bit worker index and a 48-bit local sequence number.
+
+Nebula sends positions and rotations in container-local space. Each message includes a `ContainerRef`, which identifies a static container by index or a dynamic container by its carrier's network ID. Find the message structs in `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs` or the [Protocol reference](/docs/reference#protocol).
 
 **Session**
 
@@ -59,9 +83,9 @@ Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][
 | --- | --- | --- |
 | `WorldState` | Sequenced | Pose and velocity of every authoritative entity, batched |
 | `OwnerState` | Sequenced | The predicted behaviour's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
-| `EntitySpawn`, `EntityDespawn` | Reliable | Prefab, container, pose, owner, flags, the NetworkVariable blob and a sync keyframe |
-| `EntityVars` | Reliable | The full NetworkVariable blob when any variable changed |
-| `EntityState` | either | The sync channel: one chunk per dirty behaviour, delta or keyframe |
+| `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
+| `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
+| `EntityState` | either | Sends state from sync components that have changed. |
 | `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast) |
 
 **Client to gateway to worker**
@@ -71,17 +95,19 @@ Every entity message carries `(netId, epoch)`. Entity ids are `[workerIndex:16][
 | `ClientInput` | Sequenced | One serialized input struct per tick, stamped with its tick |
 | `ServerRpc` | Reliable | A `ServerRpc` from the owning client |
 
-**Worker to worker (the lateral link)**
+**Worker to worker**
 
 | Message | Delivery | Purpose |
 | --- | --- | --- |
-| `GhostSpawn`, `GhostDespawn` | Reliable | Pre-warm and retire a ghost |
+| `GhostSpawn`, `GhostDespawn` | Reliable | Creates or removes a ghost copy. |
 | `GhostState` | Sequenced | Pose and velocity of ghosted entities at 60 Hz |
-| `GhostVars`, `GhostSyncState` | Reliable or Sequenced | NetworkVariable changes and sync chunks for ghosts |
-| `AuthorityTransfer` | Reliable | The flip: final state, new epoch, vars, pending inputs, sync keyframe, handover state, flags |
+| `GhostVars`, `GhostSyncState` | Reliable or Sequenced | Sends variable and sync-component changes to ghosts. |
+| `AuthorityTransfer` | Reliable | Transfers authority with the final state, new epoch, pending inputs, and handover state. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
 | `ForwardInput` | Reliable | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 
 ## Trust model
 
-The lateral link carries no encryption or authentication: it is designed for a private datacenter network where every worker is trusted. The client link is plain UDP as well; put it behind your own edge (a relay or a DDoS-protected ingress) when you need hardening. Messages are written whole (every variable change ships the entity's full variable blob; positions are full floats); see [Serialization](/docs/guides/serialization).
+Nebula does not encrypt or authenticate the worker-to-worker or client links. Run workers on a trusted private network. Put public client traffic behind a relay or protected ingress that meets your security requirements.
+
+Nebula sends a complete entity variable block when any `NetworkVariable` changes. It sends most positions as full floating-point values. See [Serialization](/docs/guides/serialization).

@@ -5,9 +5,8 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Growable little-endian byte writer used for every Nebula message. Deliberately plain:
-    /// no bit packing or quantisation yet - bandwidth is not the prototype's problem, correctness is.
-    /// Reuse instances; call <see cref="Reset"/> between messages.
+    /// Writes Nebula messages to a growable little-endian byte buffer. The writer does not apply bit packing or
+    /// quantization. Reuse an instance and call <see cref="Reset"/> between messages.
     /// </summary>
     public sealed class NetworkWriter
     {

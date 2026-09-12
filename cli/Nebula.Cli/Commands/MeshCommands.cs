@@ -6,23 +6,24 @@ namespace Nebula.Cli.Commands;
 public sealed class StartCommand : Command
 {
     public override string Name => "start";
-    public override string Summary => "Run the mesh locally: SpacetimeDB, the control-plane module, orchestrator, gateway and workers";
+    public override string Summary => "Start SpacetimeDB, the orchestrator, gateway, and workers on this computer";
     public override string Usage => "[--build] [--workers N] [--npcs N] [--bots N] [--open-ui]";
     public override string? Details => @"
-Starts a local SpacetimeDB if none answers on the configured address, publishes the control-plane module with
-fresh data, then launches the orchestrator from the last build; the orchestrator starts the gateway and the
-workers. Join from the Editor (Play) or with the client build. Defaults come from nebula.json (mesh section).
+Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module,
+then start the orchestrator from the latest build. The orchestrator starts the gateway and workers. To join,
+enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of
+nebula.json.
 ";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("build", false, "build first (nebula build)"),
         new OptionSpec("workers", true, "worker processes (default from nebula.json, 4)", "N"),
-        new OptionSpec("npcs", true, "worker-simulated NPCs spread across the mesh (default 0)", "N"),
-        new OptionSpec("bots", true, "headless bot clients that roam and shoot (default 0; each is a full client process)", "N"),
+        new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
+        new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
         new OptionSpec("skip-publish", false, "do not re-publish the control-plane module"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --npcs 128" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --skip-publish" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -57,7 +58,7 @@ public sealed class StopCommand : Command
 public sealed class StatusCommand : Command
 {
     public override string Name => "status";
-    public override string Summary => "Show the mesh: workers, containers, players, bots, NPCs and recent events";
+    public override string Summary => "Show workers, containers, entity counts, and recent events";
     public override string Usage => "[--cloud]";
     public override OptionSpec[] Options => new[]
     {
@@ -107,7 +108,7 @@ public sealed class StatusCommand : Command
 public sealed class LogsCommand : Command
 {
     public override string Name => "logs";
-    public override string Summary => "Show a role's log: orchestrator, gateway, w1..wN, bot1..";
+    public override string Summary => "Read the log for the orchestrator, gateway, a worker, or a bot client";
     public override string Usage => "[role] [--lines N] [--follow] [--cloud]";
     public override OptionSpec[] Options => new[]
     {

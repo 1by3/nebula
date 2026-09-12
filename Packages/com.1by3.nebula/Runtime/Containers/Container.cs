@@ -5,16 +5,14 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// A unit of authority: a box volume with its own local coordinate space. Entities inside it are parented under
-    /// its transform and replicated in its local space. A <b>static</b> container is authored into the scene (or
-    /// baked into the world manifest) and leased to a worker by the orchestrator; a <b>dynamic</b> one is carried by
-    /// an entity (<see cref="DynamicContainer"/>): it moves with the entity, exists wherever the entity does and is
-    /// owned by whoever is authoritative for the entity. Either way, the contents never see the difference.
+    /// Defines a box-shaped authority area with its own local coordinate space. Nebula parents contained entities
+    /// under its transform and replicates their local positions. The orchestrator assigns a static container from a
+    /// scene or world manifest to a worker. A dynamic container created by <see cref="DynamicContainer"/> moves with
+    /// its carrier and normally follows that entity's authoritative worker.
     /// <para>
-    /// There are no separate seam volumes in this prototype. Instead every container boundary carries an
-    /// automatic ghost band (<see cref="NebulaConfig.GhostBandMargin"/>) and an entry hysteresis
-    /// (<see cref="NebulaConfig.HandoverHysteresis"/>), which gives the same pre-warm-then-flip behaviour with
-    /// nothing extra to author.
+    /// Nebula uses <see cref="NebulaConfig.GhostBandMargin"/> to send nearby entities to a neighboring worker
+    /// before they cross the boundary. It uses <see cref="NebulaConfig.HandoverHysteresis"/> to prevent an entity
+    /// near a boundary from repeatedly changing workers.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]

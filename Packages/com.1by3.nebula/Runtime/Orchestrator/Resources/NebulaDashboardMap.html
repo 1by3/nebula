@@ -930,7 +930,7 @@
           <div class="meta">${c.interiorWorker ? esc(c.interiorWorker) : 'unowned'}${c.pinned && c.hullWorker && c.hullWorker !== c.interiorWorker ? ' · hull ' + esc(c.hullWorker) : ''} · ${c.counts.auth} aboard${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}</div></div>
         <div class="side">${c.pinned ? '<span class="tag accent">pinned</span>' : ''}${c.pose ? '' : '<span class="tag warn">no pose</span>'}
           <button class="small ${S.follow === c.id ? 'on' : ''}" data-follow="${esc(c.id)}" ${c.pose ? '' : 'disabled'}>${S.follow === c.id ? 'Following' : 'Follow'}</button></div></div>`;
-    }).join('') : '<div class="empty">No carried containers. Spawn a vehicle (ShooterGame: the <code>ship</code> console command) and it appears here.</div>');
+    }).join('') : '<div class="empty">No carried containers. Create a dynamic container in your game to see it here.</div>');
   }
 
   function setHtml(el, html) {

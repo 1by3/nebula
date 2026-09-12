@@ -4,11 +4,10 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Base class for meshed gameplay code. The surface is deliberately the one Mirror/NGO users know:
-    /// <see cref="IsServer"/>/<see cref="IsClient"/>/<see cref="IsOwner"/>, spawn/despawn hooks, NetworkVariables
-    /// and RPCs. The meshing-specific additions are small: <see cref="HasAuthority"/> (this worker owns the
-    /// entity right now), <see cref="IsGhost"/> (this worker holds a kinematic replica owned by a neighbour),
-    /// <see cref="OnGainedAuthority"/>/<see cref="OnLostAuthority"/>, and <see cref="AuthorityRpc"/>.
+    /// Base class for replicated gameplay components. Use <see cref="IsServer"/>, <see cref="IsClient"/>, and
+    /// <see cref="IsOwner"/> to inspect the current role. Use <see cref="HasAuthority"/> to check whether this
+    /// worker controls the entity, and <see cref="IsGhost"/> to check whether it holds a non-authoritative copy.
+    /// Override the lifecycle methods to respond to spawn, despawn, and authority changes.
     /// </summary>
     [RequireComponent(typeof(NetworkIdentity))]
     public abstract class NetworkBehaviour : MonoBehaviour

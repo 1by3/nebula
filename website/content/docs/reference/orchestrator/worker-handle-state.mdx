@@ -1,6 +1,6 @@
 ---
 title: "WorkerHandleState"
-description: ""
+description: "Lists the supported worker handle state values."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
@@ -9,12 +9,14 @@ description: ""
 public enum WorkerHandleState
 ```
 
+Lists the supported worker handle state values.
+
 ## Members
 
 | Name | Value | Description |
 | --- | --- | --- |
 | `Launching` |  | Requested; the machine is booting or the process is starting. Not yet on the control plane. |
-| `Running` |  | The host believes the worker is up (heartbeats are still the source of truth for liveness). |
+| `Running` |  | The host reports that the worker is running. The orchestrator still uses heartbeats to determine whether it is responsive. |
 | `Exited` |  | The process exited or the machine is gone. |
 | `Failed` |  | The host could not launch it at all (no executable, cloud API error, quota). |
 

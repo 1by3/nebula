@@ -1,6 +1,6 @@
 ---
 title: "Module"
-description: ""
+description: "Defines the SpacetimeDB tables and reducers used by the Nebula control plane."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in the global namespace · [Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs)</div>
@@ -8,6 +8,8 @@ description: ""
 ```csharp
 public static partial class Module
 ```
+
+Defines the SpacetimeDB tables and reducers used by the Nebula control plane.
 
 ## Methods
 
@@ -145,7 +147,7 @@ public string WorkerId;
 public uint WorkerIndex;
 ```
 
-Small dense index handed out by the orchestrator. Used for entity id allocation (high bits) and debug colouring.
+Small dense index handed out by the orchestrator. Used for entity id allocation (high bits) and debug colors.
 
 ##### Address [#address]
 
@@ -344,7 +346,7 @@ public uint DesiredWorkers;
 public partial struct GameSetting
 ```
 
-A mesh-wide live setting, written by whoever is allowed to change the mesh at runtime (game code through a worker, the dashboard) and seeded by the orchestrator at start (-nebula-settings). Nebula gives them no meaning: they are the game's low-volume coordination channel (e.g. ShooterGame keeps its NPC total here).
+A mesh-wide live setting, written by whoever is allowed to change the mesh at runtime (game code through a worker, the dashboard) and seeded by the orchestrator at start (-nebula-settings). Nebula stores the values without interpreting them. Use them for low-frequency coordination between workers, not for per-tick entity state.
 
 #### Fields
 

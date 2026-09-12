@@ -6,13 +6,15 @@ namespace Nebula.Cli.Commands;
 public sealed class DeployCommand : Command
 {
     public override string Name => "deploy";
-    public override string Summary => "Build, publish the control plane and run the mesh on the configured deploy target";
+    public override string Summary => "Build and deploy the mesh to the configured cloud target";
     public override string Usage => "[--target hetzner] [--workers N] [--npcs N] [--open-ui]";
     public override string? Details => @"
-Steps: build the Linux dedicated server (Builds/nebula-linux.tar.gz), publish the control-plane module to the
-configured SpacetimeDB server, create the cloud resources that are missing (ssh key, private network,
-firewalls, orchestrator VM), upload the build and (re)start the orchestrator service, which creates one VM per
-worker. Re-run after every code change; a redeploy restarts the orchestrator, which recreates its workers.
+Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane module to the
+configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and orchestrator VM.
+Upload the build and restart the orchestrator service. The orchestrator creates one VM per worker.
+
+Run this command again after you change game code. A deployment restarts the orchestrator and recreates its
+workers.
 
 Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spacetime`) must be configured.
 ";
@@ -20,14 +22,14 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
     {
         new OptionSpec("target", true, "deploy target (default from nebula.json: hetzner)", "name"),
         new OptionSpec("workers", true, "worker VMs the orchestrator keeps running (default from nebula.json, 4)", "N"),
-        new OptionSpec("npcs", true, "worker-simulated NPCs at start (default from nebula.json)", "N"),
+        new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default from nebula.json)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard once it answers"),
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
         new OptionSpec("skip-publish", false, "do not publish the control-plane module"),
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),
         new OptionSpec("reset-control-plane", false, "publish the module with --delete-data (wipes the control-plane tables)"),
     };
-    public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --npcs 128 --open-ui", "nebula deploy --skip-build" };
+    public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --open-ui", "nebula deploy --skip-build" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -90,11 +92,11 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
 public sealed class DestroyCommand : Command
 {
     public override string Name => "destroy";
-    public override string Summary => "Delete every cloud server of the mesh so nothing keeps billing";
+    public override string Summary => "Delete the mesh's cloud servers";
     public override string Usage => "[--all]";
     public override OptionSpec[] Options => new[]
     {
-        new OptionSpec("all", false, "also delete the firewalls, private network and ssh key (they cost nothing to keep)"),
+        new OptionSpec("all", false, "also delete the firewalls, private network, and SSH key"),
     };
 
     public override int Run(Context ctx, ParsedArgs args)

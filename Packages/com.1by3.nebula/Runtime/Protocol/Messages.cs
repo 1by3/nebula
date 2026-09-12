@@ -41,7 +41,7 @@ namespace Nebula
         SpawnPlayer = 30,
         DespawnPlayer = 31,
 
-        // Worker <-> worker (lateral link)
+        // Worker <-> worker
         GhostSpawn = 40,
         GhostState = 41,
         GhostVars = 42,

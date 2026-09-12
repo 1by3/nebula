@@ -4,22 +4,17 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Replicates a Transform the way NGO's NetworkTransform does: per-axis position/rotation/scale selection,
-    /// change thresholds, local or world space, server or owner authority, buffered tick interpolation or smooth
-    /// damping on the receiving side, teleport, half-float and smallest-three quaternion compression, and reliable
-    /// deltas or unreliable deltas healed by keyframes.
+    /// Replicates selected position, rotation, and scale axes from the authoritative worker to clients and ghost workers.
+    /// Configure change thresholds, transform space, authority, interpolation, compression, and delivery mode in the
+    /// Inspector.
     /// <para>
-    /// The entity root is a special case in Nebula: its position, rotation and velocity already ride the identity's
-    /// world-state stream at full rate to every ghost and client, so a NetworkTransform on the root does not send
-    /// them again. On the root it adds scale, <see cref="Teleport"/> (which snaps the identity interpolator too) and
-    /// owner authority (the owner's pose travels to the worker here, then to everyone through the identity stream).
-    /// On any child transform (turret, door, held item) it replicates everything selected.
+    /// The root of a networked entity already sends its position, rotation, and velocity through the entity state
+    /// stream. Add NetworkTransform to the root when you need scale replication, <see cref="Teleport"/>, or owner
+    /// authority. Add it to a child transform to replicate the selected transform values for that child.
     /// </para>
     /// <para>
-    /// NGO options with no counterpart here: <c>TickSyncChildren</c> (every behaviour's chunk already rides the same
-    /// per-entity per-tick message) and <c>SwitchTransformSpaceWhenParented</c> (an entity's parent only changes when
-    /// its container changes, and world-space values are carried in container space on the wire and resolved with the
-    /// container index of the same tick).
+    /// Nebula does not provide <c>TickSyncChildren</c> or <c>SwitchTransformSpaceWhenParented</c>. It sends every
+    /// behaviour's state in the same entity update. An entity changes its parent only when it changes containers.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -27,9 +22,9 @@ namespace Nebula
     {
         public enum InterpolationMode : byte
         {
-            /// <summary>Tick-buffered interpolation at <see cref="NetworkTime.RenderTick"/> (NGO's Lerp / Legacy lerp): exact, a few ticks behind.</summary>
+            /// <summary>Buffers states by tick and interpolates them at <see cref="NetworkTime.RenderTick"/>.</summary>
             Buffered = 0,
-            /// <summary>Smooth-damp towards the newest state (NGO's Smooth dampening): never behind, never exact.</summary>
+            /// <summary>Moves smoothly toward the newest received state without buffering by tick.</summary>
             SmoothDamp = 1,
         }
 
@@ -137,7 +132,7 @@ namespace Nebula
         /// </summary>
         private bool PoseGoesInChunk => !IsRoot || _teleportPending || (IsOwnerAuthoritative && IsOwner);
 
-        // ---- hooks (NGO names) -----------------------------------------------------------------------------
+        // ---- state hooks -----------------------------------------------------------------------------------
 
         /// <summary>Authority, just before a state is written. Modify it to send something other than the transform.</summary>
         protected virtual void OnAuthorityPushTransformState(ref TransformState state) { }

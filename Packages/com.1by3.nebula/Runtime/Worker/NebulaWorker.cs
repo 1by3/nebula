@@ -6,11 +6,10 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// The sim worker: a headless Unity process leased authority over a set of containers. It simulates the entities
-    /// in those containers at the tick rate, ghosts entities approaching a neighbouring container to that container's
-    /// worker over the lateral link, hands authority over when they cross, and streams its authoritative entities to
-    /// the gateway. One process can own any number of containers; adjacent containers on the same worker hand over
-    /// locally with no network traffic at all.
+    /// Runs authoritative game simulation for the containers assigned to this worker. It creates ghost copies near
+    /// boundaries, transfers entities when they cross into another worker's container, and sends entity state to the
+    /// gateway. One worker can control any number of containers. A transfer between two containers on the same worker
+    /// does not use the network.
     /// </summary>
     public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
     {
@@ -157,16 +156,16 @@ namespace Nebula
 
         public void UnregisterMessageHandler(ushort kind) => _messageHandlers.Remove(kind);
 
-        /// <summary>Whether the lateral link to <paramref name="workerId"/> is up (both sides have said hello).</summary>
+        /// <summary>Whether the direct connection to <paramref name="workerId"/> is ready.</summary>
         public bool IsWorkerConnected(string workerId) => !string.IsNullOrEmpty(workerId) && _workerPeersById.TryGetValue(workerId, out var p) && p.HelloReceived;
 
-        /// <summary>Ids of every worker this one currently has a lateral link to.</summary>
+        /// <summary>IDs of the workers that currently have a direct connection to this worker.</summary>
         public IEnumerable<string> ConnectedWorkerIds
         {
             get { foreach (var p in _workerPeersById.Values) if (p.HelloReceived) yield return p.Id; }
         }
 
-        /// <summary>Indices of every worker this one currently has a lateral link to (the addresses <see cref="WorkerQuery"/> takes).</summary>
+        /// <summary>Indices of the workers that currently have a direct connection to this worker.</summary>
         public IEnumerable<ushort> ConnectedWorkerIndices
         {
             get { foreach (var p in _workerPeersById.Values) if (p.HelloReceived) yield return (ushort)p.Index; }
@@ -644,7 +643,7 @@ namespace Nebula
             }
             ProfContainers.End();
 
-            // 4. Ghost band: pre-warm neighbours before anything can cross.
+            // 4. Ghost band: create neighboring copies before an entity can cross.
             ProfBand.Begin();
             UpdateGhostBand(tick);
             ProfBand.End();
@@ -921,7 +920,7 @@ namespace Nebula
 
         private void TransferAuthority(NetworkIdentity e, Peer target)
         {
-            // Pre-warm if the neighbour has never seen this entity (it normally has: the band did it).
+            // Create a ghost if the neighboring worker has not seen this entity yet.
             if (!_ghostTargets.TryGetValue(e.NetId, out var targets) || !targets.ContainsKey(target.Id))
             {
                 SendSpawn(target, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);

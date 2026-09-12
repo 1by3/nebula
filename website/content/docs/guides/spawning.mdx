@@ -3,11 +3,13 @@ title: Spawning, game modes and mesh settings
 description: How entities enter and leave the mesh, what a NebulaGameMode is for, and how workers coordinate through mesh-wide settings.
 ---
 
-Every entity in Nebula is spawned by a worker, into a container, from a prefab that every process knows. There is no central allocator: the worker that spawns an entity mints its id, takes authority, and hands the entity to whichever worker owns the container it landed in. This page covers the pieces involved: the game mode that the gateway calls to create players, the prefab table, the `NebulaWorker` spawning API and its events, and mesh settings, the one cross-worker coordination primitive Nebula ships.
+Spawn each networked entity from a worker. The worker creates its network ID, takes authority, and places it in a container. If another worker controls that container, Nebula transfers the entity on the next tick.
+
+Use the APIs on this page to create player entities, register prefabs, create server-driven entities, and coordinate low-frequency game rules across workers.
 
 ## NebulaGameMode
 
-[`NebulaGameMode`](/docs/reference/core/nebula-game-mode) is the worker-side equivalent of subclassing Mirror's `NetworkManager`. Put exactly one subclass in the game scene. The worker finds it with `FindFirstObjectByType` when it starts and warns if there is none (without one, players cannot be spawned).
+Create one [`NebulaGameMode`](/docs/reference/core/nebula-game-mode) subclass to define worker-side game startup and player spawning. Add exactly one instance to the game scene. Without one, workers cannot spawn players.
 
 | Hook | When |
 | --- | --- |
@@ -19,22 +21,22 @@ Every entity in Nebula is spawned by a worker, into a container, from a prefab t
 
 `NebulaGameMode.RandomPointIn(container, margin, y)` is a static helper: a uniform random point inside the container's floor footprint, `margin` metres in from the edge, at height `y`.
 
-The sample game's mode is short:
+Create a game mode like this:
 
-```csharp title="ShooterGameMode.cs"
-public sealed class ShooterGameMode : NebulaGameMode
+```csharp title="ExampleGameMode.cs"
+public sealed class ExampleGameMode : NebulaGameMode
 {
     public GameObject PlayerPrefab;
-    public GameObject NpcPrefab;
-    public GameObject BoxPrefab;
 
     public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
     {
-        FindSpawn(container, out var position, out var rotation);
-        var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(PlayerPrefab), position, rotation, container.transform);
+        var position = RandomPointIn(container, margin: 2f, y: 0f);
+        var identity = NetworkPrefabs.Instantiate(
+            NetworkPrefabs.IdOf(PlayerPrefab),
+            position,
+            Quaternion.identity,
+            container.transform);
         identity.name = $"Player {playerName} ({clientId})";
-        var controller = identity.GetComponent<PlayerController>();
-        controller.PlayerName.Value = string.IsNullOrEmpty(playerName) ? $"player{clientId}" : playerName;
         worker.Spawn(identity, container, clientId);
         return identity;
     }
@@ -48,7 +50,7 @@ public sealed class ShooterGameMode : NebulaGameMode
 
 Setting `NetworkVariable` values between `Instantiate` and `Spawn` is the normal way to give an entity its initial state: the spawn message carries the full variable blob, so late joiners and ghosts see the values from the first frame.
 
-`ShooterGameMode.FindSpawn` prefers an authored `SpawnPoint` inside the container (`SpawnPoint.PickIn(container)` reservoir-samples the ones whose position the container contains) and otherwise drops a `RandomPointIn` result onto the ground with a raycast. Both are game code; Nebula only provides the container geometry.
+If your game uses authored spawn points, find one inside the `container` passed to `OnSpawnPlayer`. Nebula provides container geometry, but it does not provide a spawn-point component or placement rules.
 
 ## Registering prefabs
 
@@ -77,31 +79,36 @@ All spawning happens on a worker through [`NebulaWorker`](/docs/reference/worker
 | `Entities` | Every resident entity (authoritative and ghosts). |
 | `Authoritative` | The entities this worker simulates right now. |
 
-Spawning is synchronous: when `Spawn` returns the entity has an id, is in `Authoritative`, and its behaviours have had their spawn hooks. The box gun in the sample uses this to launch a prop in one go:
+Spawning is synchronous. When `Spawn` returns, the entity has a network ID, appears in `Authoritative`, and has received its spawn and authority callbacks.
+
+To spawn and launch a networked prop, use:
 
 ```csharp title="PlayerController.cs"
-private void ServerShootBox()
+private void SpawnProjectile(GameObject projectilePrefab, Vector3 origin, Vector3 direction)
 {
-    var mode = ShooterGameMode.Instance;
     var worker = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Worker : null;
-    if (mode == null || mode.BoxPrefab == null || worker == null) return;
-    var dir = AimDirection;
-    var origin = EyePosition + dir * (Radius + 0.6f);
-    var identity = worker.SpawnPrefab(mode.BoxPrefab, origin, Quaternion.LookRotation(dir), Container);
-    identity.name = $"Box from {PlayerName.Value}";
+    if (worker == null || projectilePrefab == null) return;
+
+    var identity = worker.SpawnPrefab(
+        projectilePrefab,
+        origin,
+        Quaternion.LookRotation(direction),
+        Container);
     var body = identity.GetComponent<NetworkRigidbody>();
-    if (body != null) body.SetVelocity(dir * BoxLaunchSpeed);
-    else identity.Velocity = dir * BoxLaunchSpeed;
+    if (body != null) body.SetVelocity(direction * 20f);
+    else identity.Velocity = direction * 20f;
 }
 ```
 
 ### Entity ids
 
-Ids are 64-bit, minted locally by the spawning worker: `[workerIndex:16][sequence:48]`, that is `((ulong)WorkerIndex << 48) | ++sequence`. Two workers can never collide, and the id stays with the entity through every handover. The orchestrator reuses worker indices when it relaunches a worker, so a relaunched worker's sequence restarts at zero while entities it spawned earlier may still be alive elsewhere; the prefix identifies the spawner, not the current owner. Use `NetworkIdentity.OwnerWorkerIndex` for the latter.
+Each spawning worker creates a 64-bit entity ID: `[workerIndex:16][sequence:48]`. In code, this is `((ulong)WorkerIndex << 48) | ++sequence`.
+
+The ID stays with the entity through every handover. Its prefix identifies the worker that created it, not the worker that currently controls it. Use `NetworkIdentity.OwnerWorkerIndex` to find the current worker.
 
 ### Spawning into a container you do not own
 
-`Spawn` takes authority unconditionally, even when the container's lease belongs to another worker. On the next tick the worker's membership pass notices the entity sits in a container owned by someone else and sends an `AuthorityTransfer` to that worker, exactly like a crossing. The `NpcDirector` relies on this: any worker can spawn NPC *i* into container `i % containers` without caring who owns it.
+`Spawn` initially gives authority to the worker that called it, even when another worker controls the target container. On the next tick, the worker detects the assignment and sends an `AuthorityTransfer` to the container's worker.
 
 Two properties tell you whether that handover can happen yet:
 
@@ -110,8 +117,8 @@ Two properties tell you whether that handover can happen yet:
 | `IsRegistered` | The worker has registered with the control plane. Leases and settings are not visible before this. |
 | `MeshReady` | Every container has an owner, and every owner that is not this worker is a connected peer that has completed its hello. Spawning into a foreign container before this leaves the entity on the spawner, which keeps authority and logs a warning every five seconds until the owner connects. |
 
-<Callout type="info" title="Wait for MeshReady with a deadline">
-`NpcDirector` waits up to 10 seconds for `MeshReady` before its first spawn, then goes ahead regardless. A container whose owner is dead may never satisfy `MeshReady` until the orchestrator reassigns the lease.
+<Callout type="info" title="Wait for MeshReady">
+Before you spawn into containers controlled by other workers, wait for `MeshReady`. Add a timeout so your game can report a connection or assignment problem instead of waiting forever. A container without an active worker cannot satisfy `MeshReady` until the orchestrator assigns it again.
 </Callout>
 
 ## Worker events
@@ -140,64 +147,30 @@ Workers do not share memory and the control plane is never on the per-tick path,
 
 Settings come from three places:
 
-- The orchestrator seeds them at startup from `-nebula-settings key=value,key=value`. `nebula start --npcs N` (and `nebula deploy --npcs N`) passes `npcs=N` this way.
-- The Nebula Dashboard edits them (the settings fields on the page, or `POST /api/settings` with `{"key":"npcs","value":"128"}`). See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
-- Game code on a worker writes them with `SetSetting`. The sample's in-game `npcs 200` command reaches the pawn's worker as an ordinary `ServerRpc`, and that worker writes the setting.
+- Seed settings when the orchestrator starts with `-nebula-settings key=value,key=value`.
+- Edit settings in the Nebula Dashboard or send `POST /api/settings` with a key and value. See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
+- Call `SetSetting` from game code on a worker.
 
 Settings are a coordination channel, not a state store: never write them per tick, and never put anything in them that a specific entity owns.
 
-### The reconcile pattern
+### Coordinate work from a setting
 
-Because there is no single decision-maker, the pattern is "every worker reconciles against a shared value". Each worker reads the setting, works out its own share deterministically, and acts only on the difference between what it has already done and what the value asks for. Written that way, it does not matter that workers see the change at different moments, that a worker restarts, or that entities have wandered.
+Nebula does not provide a singleton gameplay worker. When every worker must respond to a shared setting, make each worker reconcile its local state with that value.
 
-`NpcDirector` is the worked example. It runs on every worker (`ShooterGameMode.Awake` adds it on servers) and keeps the NPC count at the `npcs` setting:
+Use this pattern:
 
-<Steps>
-<Step>
-**Wait until the worker can act.** Nothing happens before `IsRegistered`, and before `Settings` contains `npcs`.
-</Step>
-<Step>
-**Shrink first, on whatever this worker owns.** Every authoritative entity whose `NpcIndex` is at or above the new total is despawned. The index rides in `PlayerController.NpcIndex`, a `NetworkVariable<int>`, so it travels with the entity through ghosting and handover: whichever worker currently simulates NPC 250 is the one that removes it when the total drops to 200, wherever it has wandered.
-</Step>
-<Step>
-**Grow from the census.** Every worker's heartbeat already carries how many server-driven entities it simulates (`WorkerInfo.ServerDrivenCount`), so each worker can add up the mesh-wide NPC count (its own live, the others' from their last heartbeat). Once a second the live workers, sorted by index, each spawn their rank's share of the deficit with `SpawnServerDriven`, starting in container `i % containers`; the mesh hands each one to the container's owner on the next tick. After spawning, a worker waits a few seconds for the other heartbeats to catch up before trusting the census again.
-</Step>
-<Step>
-**Trim a sustained excess.** If the mesh stays above the target for three reconciles (a dead worker's NPCs survived elsewhere and its replacement refilled the gap), each worker despawns its share of the excess, highest index first. One stale heartbeat never culls anything.
-</Step>
-<Step>
-**Recheck on handover.** `AuthorityReceived` runs the shrink test again on the incoming entity, because the previous owner may have handed it over before it saw the new total.
-</Step>
-</Steps>
+1. Wait until `IsRegistered` is true and the setting exists.
+2. Read active worker information from `IControlPlane.Workers`.
+3. Divide the work deterministically by worker index.
+4. Change only entities for which the current worker has authority.
+5. Repeat the check at a low rate so workers can recover from a delayed update, handover, or restart.
 
-```csharp title="NpcDirector.cs"
-if (!TakeCensus(cp, out int rank, out int workers, out int mine)) return;   // live workers by index, mesh-wide count
-int deficit = total - MeshCount;
-if (deficit > 0)
-{
-    int share = Share(deficit, workers, rank);          // deficit / workers, remainder to the lowest ranks
-    SpawnShare(share, total, rank, workers);            // indices in this rank's residue class first, then any free one
-    _nextReconcile = Time.unscaledTime + SettleSeconds; // let the heartbeats catch up
-}
-else if (deficit < 0 && ++_excessStrikes >= ExcessStrikes)
-{
-    DespawnHighest(Mathf.Min(Share(-deficit, workers, rank), mine));
-}
-```
-
-The properties that make this safe:
-
-- **Idempotent under lag.** Running the reconcile twice with the same census does nothing the second time. A worker that sees the change late simply catches up.
-- **The target is met with whatever is alive.** Two workers spawn 250 each; when one dies, the survivors refill after its heartbeat times out. Nothing is tied to a configured worker count.
-- **State needed for the decision travels with the entity.** Because `NpcIndex` is replicated, the shrink pass works on the current owner, not the spawner.
-- **Over-counts heal, slowly.** Two workers acting on the same stale census can overshoot; the excess rule trims it a few seconds later. The code accepts that instead of trying to reach consensus.
-
-Indices are labels for the shrink rule and the pawn's name; after a refill two NPCs can share one, which is harmless.
+Make the operation idempotent, which means running it twice with the same inputs produces no additional change. Store any identifier needed for later reconciliation in a `NetworkVariable` so it moves with the entity during a handover.
 
 ## Rules
 
 - **Workers spawn; clients ask.** A client that wants something created sends a `ServerRpc` and the owning worker spawns it (see [RPCs](/docs/guides/rpcs)).
-- **Mesh-wide logic is a reconcile, not an election.** There is no singleton worker. Anything every worker must agree on (how many NPCs exist, where a boss is) is expressed as a shared mesh setting that each worker reconciles against, as `NpcDirector` does above.
+- **Reconcile mesh-wide logic.** There is no singleton worker. Store low-frequency targets in mesh settings, then let each worker reconcile its own authoritative entities.
 - **Entities live on workers.** A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`. Durable state belongs in your own persistence layer, written from `OnLostAuthority` or on your own schedule.
 
 <Cards>

@@ -3,7 +3,7 @@ title: Running locally
 description: Build the player, run the whole mesh on one machine, watch it on the dashboard, and stop it.
 ---
 
-Everything below goes through the `nebula` CLI, run from inside a project that has had `nebula init` (the Nebula repository is itself such a project). The Editor menu **Nebula** offers the same operations for people who prefer buttons.
+Run the commands on this page from a Unity project where you have already run `nebula init`. You can also run the same operations from the **Nebula** menu in the Unity Editor.
 
 ## Build
 
@@ -12,50 +12,59 @@ nebula build
 nebula build --linux
 ```
 
-`nebula build` runs `Nebula.Editor.NebulaBuild` in Unity batchmode, using the Unity version from `ProjectSettings/ProjectVersion.txt` found through Unity Hub's install folders, `NEBULA_UNITY`, or `nebula config unity`. It produces the executable every role runs: `Builds/Win64/Nebula.exe` on Windows (the base name comes from `executable` in `nebula.json`). `--linux` builds the Linux dedicated server into `Builds/Linux64` and packs `Builds/nebula-linux.tar.gz` for deployment.
+To build the game for your current platform, run `nebula build`. The command reads the required Unity version from `ProjectSettings/ProjectVersion.txt`. It finds that version through Unity Hub, `NEBULA_UNITY`, or the path saved by `nebula config unity`.
 
-If the Editor has the project open it holds an exclusive lock, so the build automatically runs from a mirrored copy under `~/.nebula-cli/scratch/<project>` and the result is copied back into `Builds/`. Lines tagged `[nebula]` and compiler errors are echoed while it runs; the full log is `Builds/unity-build.log`. A running mesh holds the previous build open; `nebula build --stop-mesh` stops it first.
+On Windows, the default output is `Builds/Win64/Nebula.exe`. Set `executable` in `nebula.json` to change the base name. To build a Linux dedicated server, run `nebula build --linux`. This command writes the server to `Builds/Linux64` and creates `Builds/nebula-linux.tar.gz` for deployment.
+
+You can keep the project open in the Unity Editor while you build. The CLI copies the project to `~/.nebula-cli/scratch/<project>`, builds the copy, and writes the result to your project's `Builds/` folder.
+
+The CLI prints compiler errors and lines tagged `[nebula]`. To read the complete build log, open `Builds/unity-build.log`. If a running mesh has locked the previous build, run `nebula build --stop-mesh` to stop it before building.
 
 ## Start
 
 ```bash
 nebula start --open-ui
 nebula start --workers 2 --bots 2
-nebula start --workers 4 --npcs 128
 ```
 
-`start` does, in order:
+When you run `nebula start`, the CLI:
 
 1. Starts a local SpacetimeDB if none answers on `mesh.spacetimeUri` from `nebula.json` (logs to `Builds/<platform>/Logs/spacetimedb.log`).
 2. Publishes the control-plane module with fresh data (`--skip-publish` to keep the tables).
-3. Launches the orchestrator from the last build. The orchestrator launches the gateway and `--workers` worker processes, writes one lease per container, and deals containers across the workers.
+3. Launches the orchestrator from the last build. The orchestrator launches the gateway and the number of workers set by `--workers`. It then assigns each container to a worker.
 4. Launches `--bots` bot clients.
 5. Waits for the dashboard and prints how to join.
 
-Defaults come from the `mesh` section of `nebula.json`. `--build` builds first.
+Set local defaults in the `mesh` section of `nebula.json`. To build before starting, add `--build`.
 
 ### Joining
 
-Press Play in the Editor (`NebulaBootstrap.EditorRole` is `Client` by default), or run the build as a client:
+To join from the Unity Editor, enter Play mode. `NebulaBootstrap.EditorRole` uses `Client` by default.
+
+To join from a standalone build on Windows, run:
 
 ```bash
-Builds\Win64\Nebula.exe -nebula-role client -nebula-name jesse
+Builds\Win64\Nebula.exe -nebula-role client -nebula-name Player
 ```
 
-Either way a title screen asks for the gateway (Local = `127.0.0.1:7000`, Hetzner = the last remote address you used, or anything typed in) and a name. Escape in game brings it back to disconnect or switch. Clients started with `-nebula-gateway <addr:port>` or `-nebula-connect`, and bots, skip the title screen and connect at once.
+On the title screen, select the gateway and enter a display name. Select **Local** to use `127.0.0.1:7000`. Press Escape during the game to disconnect or choose another gateway.
 
-### Bots and NPCs
+To connect without the title screen, pass `-nebula-gateway <address:port>` or `-nebula-connect`. Bot clients also connect without showing the title screen.
 
-Two different things drive a pawn without a human, and they cost very different amounts:
+### Test with bots and server-driven entities
 
-| | Bot (`--bots N`) | NPC (`--npcs N`) |
+Use bots to test the complete client path. Use server-driven entities to test worker simulation without starting more client processes.
+
+| | Bot | Server-driven entity |
 | --- | --- | --- |
-| What it is | A full client process (`-nebula-role client -nebula-bot`) that connects through the gateway, predicts and reconciles like a real player, with a bot brain in place of the keyboard | A server-driven entity: an ordinary entity with no owning client, driven by whichever worker owns it |
-| Cost | One headless Unity player each | One entity |
-| Use it for | Exercising the client path | Load |
-| How many | A handful. 128 of them on one machine starve the workers | Hundreds. 128 NPCs on 4 workers ran for 7 minutes at 0.25 to 0.35 ms per tick |
+| Start it with | `nebula start --bots N` | `NebulaWorker.SpawnServerDriven` in your game code |
+| What it is | A headless client that connects through the gateway, predicts, and corrects its state like a player | A networked entity with no owning client, simulated by its authoritative worker |
+| Runtime cost | One Unity player process | One simulated entity |
+| Use it for | Testing the complete client connection, prediction, and reconciliation path | Testing server-side entity load |
 
-The NPC total is a live mesh setting: change it on the dashboard, or type `npcs 300` in the in-game console (backquote key). The policy of who spawns which NPC is game code, described in [Spawning](/docs/guides/spawning).
+Your game must provide bot input and server-driven behavior. Nebula does not provide an NPC implementation. See [Spawning](/docs/guides/spawning) for the server-driven API.
+
+The legacy `--npcs N` option only sets a mesh setting named `npcs`. It does not spawn anything. Use it only when your game reads that setting.
 
 ## Watch
 
@@ -65,11 +74,15 @@ nebula logs w1 --follow
 nebula logs gateway -n 200
 ```
 
-`status` prints the workers with the containers they own, how many players, bots and NPCs each simulates, and the orchestrator's recent events. `logs` reads a role's log: `orchestrator`, `gateway`, `w1..wN` or `bot1..`. Logs live next to the build in `Logs/`.
+Run `nebula status` to list workers, their assigned containers, entity counts, and recent orchestrator events.
 
-The Nebula Dashboard at `http://localhost:7080/` shows the same and more: the gateway address clients connect to, with a copy button; every worker with its authoritative and ghost entity counts, tick time and heartbeat age; the container-to-worker table with lease epochs; mesh settings; and the event log. Its buttons add a worker, remove one gracefully, kill one (a simulated crash; it is relaunched) and force a rebalance. The same operations are an HTTP API, described in [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
+Run `nebula logs <role>` to read a log. Use `orchestrator`, `gateway`, `w1` through `wN`, or `bot1` and later bot numbers as the role. The CLI stores logs in the build's `Logs/` folder.
 
-In game, F3 toggles the technical overlay: tick, RTT and input lead, your container and its worker, handovers observed, and the container-to-worker table.
+To inspect a local mesh in a browser, open `http://localhost:7080/`. The dashboard shows the gateway address, workers, entity counts, tick times, heartbeat ages, container assignments, settings, and recent events.
+
+Use the dashboard controls to add a worker, drain and remove a worker, stop a worker to test recovery, or rebalance containers. You can also perform these operations through the [dashboard HTTP API](/docs/guides/orchestrator-and-dashboard).
+
+If your scene includes `NebulaDebugOverlay`, press F3 to show or hide it. The overlay displays the tick, round-trip time (RTT), input lead, current container, current worker, observed handovers, and container assignments.
 
 ## Stop
 
@@ -78,20 +91,12 @@ nebula stop
 nebula stop --spacetime
 ```
 
-`stop` kills every process of the build and the SpacetimeDB the CLI started. `--spacetime` also stops one that was already running before `nebula start`.
-
-## Unattended runs
-
-`Tools/smoke-test.ps1` drives the mesh through the CLI with bot clients that roam between quadrants and shoot at each other, then reads the logs and reports handovers, cross-worker hits, kills, errors and warnings:
-
-```powershell
-pwsh Tools/smoke-test.ps1
-pwsh Tools/smoke-test.ps1 -KillWorker w2 -KillAfter 30
-pwsh Tools/smoke-test.ps1 -ScaleTo 2 -ScaleAfter 25
-```
-
-`-KillWorker` kills a worker mid-run to check reassignment and relaunch; `-ScaleTo` shrinks the mesh through the dashboard API to check graceful drain. `Tools/typecheck.ps1` is a compile check without the Editor. Both are described in [Debugging](/docs/guides/debugging).
+Run `nebula stop` to stop every process from the build and any SpacetimeDB process that `nebula start` started. Add `--spacetime` to stop a SpacetimeDB process that was already running before you started the mesh.
 
 ## From the Editor
 
-The **Nebula** menu has **Control Plane** (start and stop a local SpacetimeDB, publish the module, regenerate the C# bindings), **Mesh** (start and stop a local mesh from the last build, open the dashboard, launch an extra client window) and **Build** (Windows player, Linux dedicated server). A game adds its own menus next to it; the ShooterGame demo, for example, has **ShooterGame > Generate Arena Scene + Prefabs**, which regenerates its scene, prefabs and config from code.
+Use the **Nebula** menu in the Unity Editor to run the same development tasks:
+
+- Use **Control Plane** to start or stop local SpacetimeDB, publish the module, or regenerate its C# bindings.
+- Use **Mesh** to start or stop a local mesh from the latest build, open the dashboard, or launch another client.
+- Use **Build** to create a Windows player or Linux dedicated server.

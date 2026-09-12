@@ -16,7 +16,7 @@ namespace Nebula.Hosting
     {
         /// <summary>Requested; the machine is booting or the process is starting. Not yet on the control plane.</summary>
         Launching,
-        /// <summary>The host believes the worker is up (heartbeats are still the source of truth for liveness).</summary>
+        /// <summary>The host reports that the worker is running. The orchestrator still uses heartbeats to determine whether it is responsive.</summary>
         Running,
         /// <summary>The process exited or the machine is gone.</summary>
         Exited,
