@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Boxes, Layers3, Radar, TerminalSquare, Gauge, Globe } from 'lucide-react';
 import { DynamicCodeBlock } from 'fumadocs-ui/components/dynamic-codeblock';
@@ -101,11 +102,26 @@ export default function HomePage() {
             Open the Nebula Dashboard to see which worker controls each container and entity. Use it to change the worker count, drain or stop a worker, edit shared settings, and assign a carried container such as a ship interior to its own worker.
           </p>
         </div>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DashboardFeature title="Check workers" body="Compare tick time, heartbeat age, entity counts, and assigned containers." />
-          <DashboardFeature title="Resize the mesh" body="Add a worker or retire one after it transfers its containers and entities." />
-          <DashboardFeature title="Inspect the world" body="Use the map to see containers, dynamic interiors, entities, and ghost copies." />
-          <DashboardFeature title="Test a failure" body="Stop a worker and watch the orchestrator reassign its containers and start a replacement." />
+        <Screenshot
+          className="mt-8"
+          src="/screenshots/dashboard-world-map.png"
+          url="localhost:7080/map"
+          alt="The Nebula Dashboard world map with containers colored by worker, entity markers, and a selected vehicle whose interior is assigned to another worker."
+          caption="World map: inspect containers and entities by worker, including a carried container assigned to a separate worker."
+        />
+        <div className="mt-6 grid gap-6 md:grid-cols-2">
+          <Screenshot
+            src="/screenshots/dashboard-overview.png"
+            url="localhost:7080"
+            alt="The Nebula Dashboard overview with mesh totals, four worker cards, assigned containers, entity counts, tick times, shared settings, and container tables."
+            caption="Overview: inspect workers, container assignments, entity counts, tick time, and heartbeat status."
+          />
+          <Screenshot
+            src="/screenshots/dashboard-world-map-container.png"
+            url="localhost:7080/map"
+            alt="The world map with a container selected, showing its assigned worker, resident entities, and ghost copies on nearby workers."
+            caption="Container details: inspect its assigned worker, resident entities, and non-authoritative copies on nearby workers."
+          />
         </div>
         <div className="mt-6 text-center">
           <Link href="/docs/guides/orchestrator-and-dashboard#world-map" className="inline-flex items-center gap-1 text-sm font-medium text-fd-primary">
@@ -189,12 +205,21 @@ function InstallBox({ label, command }: { label: string; command: string }) {
   );
 }
 
-function DashboardFeature({ title, body }: { title: string; body: string }) {
+/** A dashboard capture in a minimal browser frame. */
+function Screenshot({ src, url, alt, caption, className }: { src: string; url: string; alt: string; caption: string; className?: string }) {
   return (
-    <div className="rounded-xl border border-fd-border bg-fd-card p-5">
-      <h3 className="font-semibold">{title}</h3>
-      <p className="mt-2 text-sm text-fd-muted-foreground">{body}</p>
-    </div>
+    <figure className={`overflow-hidden rounded-xl border border-fd-border bg-fd-card shadow-lg ${className ?? ''}`}>
+      <div className="flex items-center gap-1.5 border-b border-fd-border px-3 py-2">
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="size-2.5 rounded-full bg-fd-muted-foreground/30" />
+        <span className="ml-2 truncate font-mono text-xs text-fd-muted-foreground">{url}</span>
+      </div>
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        <Image src={src} alt={alt} width={1920} height={1080} sizes="(min-width: 1152px) 1104px, 100vw" className="block h-auto w-full" />
+      </a>
+      <figcaption className="border-t border-fd-border px-4 py-3 text-sm text-fd-muted-foreground">{caption}</figcaption>
+    </figure>
   );
 }
 

@@ -106,7 +106,17 @@ Make code examples internally consistent:
 - Do not imply that sample bot, NPC, spawning, or game-mode behavior comes with Nebula.
 - Use placeholders such as `<address>` only when the reader must replace them. Explain what value belongs there.
 
-Audit screenshots and other images visually. A text search cannot find private names rendered inside an image. Do not publish captures containing private project names, map labels, entity names, credentials, account details, or internal infrastructure.
+Audit screenshots and other images visually. A text search cannot find private names rendered inside an image. Do not publish captures containing private project names, map labels, entity names, credentials, account details, or internal infrastructure unless the repository records an explicit exception.
+
+### Approved dashboard screenshot exception
+
+The following landing-page screenshots are approved for publication even though they contain ShooterGame names and data:
+
+- `website/public/screenshots/dashboard-overview.png`
+- `website/public/screenshots/dashboard-world-map.png`
+- `website/public/screenshots/dashboard-world-map-container.png`
+
+Keep these screenshots on the site unless the project owner withdraws the exception or provides replacements. This exception applies only to these three existing image files. Do not add their private names to surrounding prose, examples, alt text, or new assets.
 
 ## Make commands actionable
 
@@ -166,7 +176,7 @@ Before finishing a documentation change, check that:
 - Examples use generic public names and define their dependencies.
 - Claims match the current API and implementation.
 - Limitations, security concerns, and destructive effects are explicit.
-- No text or image exposes private demo data.
+- No text or image exposes private demo data outside a recorded exception.
 - Generated pages were changed at their source and regenerated.
 - Internal links point to an existing route and heading.
 
