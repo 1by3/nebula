@@ -183,7 +183,7 @@ Remote copies of the player (other clients, ghosts on other workers) get a `Remo
 
 The game mode creates a player when the gateway asks a worker to accept a client. Add exactly one game mode to an empty `Game` object in the scene, then assign the player prefab.
 
-When your project contains only one game mode class, **Nebula > Set Up Active Scene** adds the `Game` object for you.
+When your project contains only one game mode class, **Nebula > Set Up Active Scene** adds the `Game` object for you. It does not fill in the component's fields: select `Game` and drag the player prefab into `PlayerPrefab`, then save the scene. If you leave the field empty, every spawn request fails on the worker with an `ArgumentNullException` in `NetworkPrefabs.IdOf`, and the client stays on "in game, waiting for a pawn".
 
 ```csharp title="TutorialGameMode.cs"
 using Nebula;
