@@ -32,8 +32,14 @@ namespace Nebula
             if (!Visible) return;
             if (_style == null)
             {
-                _style = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 13, richText = true };
-                _style.normal.textColor = Color.white;
+                // A label style with every state's text color set: skins leave hover/focused/on* at their own
+                // (often black) colors, and a partially configured box style picked those up over the dark backing.
+                _style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, fontSize = 13, richText = true, wordWrap = false, padding = new RectOffset(8, 8, 6, 6) };
+                foreach (var state in new[] { _style.normal, _style.hover, _style.active, _style.focused, _style.onNormal, _style.onHover, _style.onActive, _style.onFocused })
+                {
+                    state.textColor = Color.white;
+                    state.background = null;
+                }
             }
             var boot = NebulaBootstrap.Instance;
             _sb.Clear();
@@ -77,11 +83,16 @@ namespace Nebula
             _sb.Append("<i>F3 toggles this overlay</i>");
             var rect = new Rect(10, 10, 620, 24 + 18 * CountLines(_sb));
             // A solid backing: the default box skin is nearly transparent and unreadable over a dark scene.
-            var saved = GUI.color;
+            // Game code can leave GUI.color/contentColor tinted (or black) from its own OnGUI; don't inherit that.
+            var savedColor = GUI.color;
+            var savedContent = GUI.contentColor;
             GUI.color = new Color(0f, 0f, 0f, 0.78f);
             GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = saved;
-            GUI.Box(rect, _sb.ToString(), _style);
+            GUI.color = Color.white;
+            GUI.contentColor = Color.white;
+            GUI.Label(rect, _sb.ToString(), _style);
+            GUI.color = savedColor;
+            GUI.contentColor = savedContent;
         }
 
         private static int CountLines(StringBuilder sb)
