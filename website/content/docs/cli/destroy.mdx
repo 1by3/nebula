@@ -1,19 +1,22 @@
 ---
 title: "nebula destroy"
-description: "Delete the mesh's cloud servers"
+description: "Delete the mesh's cloud servers and its SpacetimeDB databases"
 ---
 
-To delete the mesh's cloud servers, run:
+To delete the mesh's cloud servers and its SpacetimeDB databases, run:
 
 ```bash
-nebula destroy [--all]
+nebula destroy [--all] [--keep-data]
 ```
+
+Delete every server labelled with the mesh (orchestrator and workers), then delete the control-plane database and the persistence database from the configured SpacetimeDB server. Deleting the persistence database removes every saved entity; pass --keep-data to leave both databases in place.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `--all` | Also delete the firewalls, private network, and SSH key. |
+| `--keep-data` | Keep the control-plane and persistence databases (and the saved entities in them). |
 
 ## Global options
 

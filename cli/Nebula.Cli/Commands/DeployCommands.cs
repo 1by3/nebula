@@ -101,11 +101,17 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
 public sealed class DestroyCommand : Command
 {
     public override string Name => "destroy";
-    public override string Summary => "Delete the mesh's cloud servers";
-    public override string Usage => "[--all]";
+    public override string Summary => "Delete the mesh's cloud servers and its SpacetimeDB databases";
+    public override string Usage => "[--all] [--keep-data]";
+    public override string? Details => @"
+Delete every server labelled with the mesh (orchestrator and workers), then delete the control-plane database
+and the persistence database from the configured SpacetimeDB server. Deleting the persistence database removes
+every saved entity; pass --keep-data to leave both databases in place.
+";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("all", false, "also delete the firewalls, private network, and SSH key"),
+        new OptionSpec("keep-data", false, "keep the control-plane and persistence databases (and the saved entities in them)"),
     };
 
     public override int Run(Context ctx, ParsedArgs args)
@@ -113,12 +119,37 @@ public sealed class DestroyCommand : Command
         var project = ctx.RequireProject();
         var hz = ctx.Config.Hetzner;
         if (hz == null || !hz.IsConfigured) throw new CliError("Hetzner is not configured", "nebula config hetzner");
+        var st = ctx.Config.Spacetime;
+        bool deleteData = !args.Has("keep-data");
+        if (deleteData && (st == null || !st.IsConfigured))
+        {
+            Ui.Warn("Spacetime is not configured, so the SpacetimeDB databases will not be deleted (nebula config spacetime)");
+            deleteData = false;
+        }
+        string database = project.DeployDatabase(ctx.Config);
+        string persistenceDatabase = project.DeployPersistenceDatabase(ctx.Config);
+        if (deleteData && st!.Server == "maincloud" && !SpacetimeCli.IsLoggedIn(out _))
+            throw new CliError("not logged in to SpacetimeDB Maincloud (the login token may have expired)", "nebula config spacetime, or pass --keep-data");
+
         var mesh = new HetznerMesh(hz, project);
         var servers = mesh.Servers();
         if (servers.Count > 0) mesh.PrintServers(servers);
-        if (!Ui.Confirm($"delete {servers.Count} server(s) of mesh '{mesh.MeshName}'{(args.Has("all") ? " and its network, firewalls and ssh key" : "")}?", false, ctx.Yes))
+        var what = new List<string> { $"{servers.Count} server(s) of mesh '{mesh.MeshName}'" };
+        if (args.Has("all")) what.Add("its network, firewalls and ssh key");
+        if (deleteData) what.Add($"databases '{database}' and '{persistenceDatabase}' on {st!.Server} (every saved entity)");
+        if (!Ui.Confirm($"delete {string.Join(", ", what)}?", false, ctx.Yes))
             return 1;
         mesh.Destroy(args.Has("all"));
+
+        // After the servers: a still-running orchestrator would otherwise keep writing to the databases.
+        if (deleteData)
+        {
+            foreach (var db in new[] { database, persistenceDatabase })
+            {
+                Ui.Info($"deleting SpacetimeDB database {db} on {st!.Server}");
+                if (!SpacetimeCli.Delete(st.Server, db)) Ui.Info($"no database '{db}'");
+            }
+        }
         Ui.Ok("done");
         return 0;
     }
