@@ -19,7 +19,7 @@ public static class LocalMesh
         public string? Executable { get; set; }
     }
 
-    public sealed record StartOptions(int Workers, int Npcs, int Bots, bool SkipPublish, bool OpenUi);
+    public sealed record StartOptions(int Workers, int Npcs, int Bots, bool SkipPublish, bool OpenUi, bool ResetPersistence = false);
 
     public static void Start(Context ctx, NebulaProject project, StartOptions o)
     {
@@ -54,6 +54,10 @@ public static class LocalMesh
             Ui.Info($"publishing the control-plane module as '{mesh.Database}' (fresh data)");
             SpacetimeCli.Publish(project.ModuleDir, "local", mesh.Database, deleteData: true);
             Ui.Ok("module published");
+            // Persistence is a database of its own and keeps its rows across restarts: never --delete-data by accident.
+            Ui.Info($"publishing the persistence module as '{mesh.PersistenceDatabase}'{(o.ResetPersistence ? " (wiping saved entities)" : " (keeping saved entities)")}");
+            SpacetimeCli.Publish(project.PersistenceModuleDir, "local", mesh.PersistenceDatabase, deleteData: o.ResetPersistence);
+            Ui.Ok("persistence module published");
         }
 
         // --- orchestrator (launches the gateway and the workers) ----------------------------------------------
@@ -67,6 +71,8 @@ public static class LocalMesh
             "-nebula-dashboard-port", mesh.DashboardPort.ToString(),
             "-nebula-spacetime", mesh.SpacetimeUri,
             "-nebula-database", mesh.Database,
+            "-nebula-persistence", mesh.SpacetimeUri,
+            "-nebula-persistence-database", mesh.PersistenceDatabase,
             "-logFile", Path.Combine(logs, "orchestrator.log"),
         };
         if (ctx.Verbose) orch.Add("-nebula-verbose");
@@ -175,6 +181,9 @@ public static class LocalMesh
     {
         Ui.Info($"host={s["host"]} ready={s["hostReady"]} controlPlane={s["controlPlaneConnected"]} desired={s["desiredWorkers"]}");
         Ui.Info(Summary(s));
+        // Older builds have no persistence layer and report no "persistence" object at all.
+        if (s["persistence"] is { } p)
+            Ui.Info($"persistence mode={p["mode"]} backend={p["backend"]} connected={p["connected"]} entities={p["entities"] ?? 0}");
         Ui.Blank();
         var rows = new List<string[]>();
         foreach (var w in s["workers"]?.AsArray() ?? new JsonArray())

@@ -63,8 +63,8 @@ written to nebula.json so they travel with the project.
         {
             Ui.Blank();
             Ui.Title(p.FilePath);
-            Ui.Info($"mesh        workers={p.File.Mesh.Workers} npcs={p.File.Mesh.Npcs} dashboard={p.File.Mesh.DashboardPort} gateway={p.File.Mesh.GatewayPort} database={p.File.Mesh.Database}");
-            Ui.Info($"deploy      target={p.File.Deploy.Target} mesh={p.File.Deploy.MeshName} database={p.DeployDatabase(c)} workers={p.File.Deploy.Workers}");
+            Ui.Info($"mesh        workers={p.File.Mesh.Workers} npcs={p.File.Mesh.Npcs} dashboard={p.File.Mesh.DashboardPort} gateway={p.File.Mesh.GatewayPort} database={p.File.Mesh.Database} persistence={p.File.Mesh.PersistenceDatabase}");
+            Ui.Info($"deploy      target={p.File.Deploy.Target} mesh={p.File.Deploy.MeshName} database={p.DeployDatabase(c)} persistence={p.DeployPersistenceDatabase(c)} workers={p.File.Deploy.Workers}");
         }
         return 0;
     }

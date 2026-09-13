@@ -16,6 +16,7 @@ Entry point for every Nebula process. Put one in the boot scene. Reads the role 
 - `-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101`
 - `-nebula-gateway 127.0.0.1:7000`
 - `-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula`
+- `-nebula-persistence-mode auto|spacetime|local|off -nebula-persistence http://127.0.0.1:3000 -nebula-persistence-database nebula-persist -nebula-persistence-file saves/world.bin` (where persistent entities are stored)
 - `-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600` (orchestrator; settings are game-defined key/values seeded on the control plane, editable on the dashboard)
 - `-nebula-name Jesse` (client display name)
 - `-nebula-advertise 10.0.1.2|auto` (address this worker/gateway advertises to peers)
@@ -56,6 +57,14 @@ public NebulaRoles Roles { get; }
 ```csharp
 public IControlPlane ControlPlane { get; }
 ```
+
+### PersistenceStore [#persistencestore]
+
+```csharp
+public IPersistenceStore PersistenceStore { get; }
+```
+
+Where persistent entities are stored, created for the worker and orchestrator roles from [`NebulaConfig.PersistenceMode`](/docs/reference/core/nebula-config#persistencemode). Null when persistence is off.
 
 ### Worker [#worker]
 

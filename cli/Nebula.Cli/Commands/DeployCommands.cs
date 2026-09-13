@@ -7,11 +7,15 @@ public sealed class DeployCommand : Command
 {
     public override string Name => "deploy";
     public override string Summary => "Build and deploy the mesh to the configured cloud target";
-    public override string Usage => "[--target hetzner] [--workers N] [--npcs N] [--open-ui]";
+    public override string Usage => "[--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
-Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane module to the
-configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and orchestrator VM.
-Upload the build and restart the orchestrator service. The orchestrator creates one VM per worker.
+Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane and persistence
+modules to the configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and
+orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator creates one VM per
+worker.
+
+The persistence database (deploy.persistenceDatabase in nebula.json, by default the control-plane database with
+a `-persist` suffix) keeps its saved entities across deployments unless you pass --reset-persistence.
 
 Run this command again after you change game code. A deployment restarts the orchestrator and recreates its
 workers.
@@ -25,9 +29,10 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default from nebula.json)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard once it answers"),
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
-        new OptionSpec("skip-publish", false, "do not publish the control-plane module"),
+        new OptionSpec("skip-publish", false, "do not publish the control-plane and persistence modules"),
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),
-        new OptionSpec("reset-control-plane", false, "publish the module with --delete-data (wipes the control-plane tables)"),
+        new OptionSpec("reset-control-plane", false, "publish the control-plane module with --delete-data (wipes the registry tables)"),
+        new OptionSpec("reset-persistence", false, "publish the persistence module with --delete-data, deleting every saved entity"),
     };
     public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --open-ui", "nebula deploy --skip-build" };
 
@@ -49,6 +54,7 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
             throw new CliError("deploy needs both a deploy target and Spacetime configured", null, 2);
         }
         string database = project.DeployDatabase(ctx.Config);
+        string persistenceDatabase = project.DeployPersistenceDatabase(ctx.Config);
         string spacetimeUri = st!.Server == "maincloud" ? "https://maincloud.spacetimedb.com" : st.Server;
         int workers = args.GetInt("workers", project.File.Deploy.Workers);
         int npcs = args.GetInt("npcs", project.File.Deploy.Npcs);
@@ -70,12 +76,15 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
                 throw new CliError("not logged in to SpacetimeDB Maincloud (the login token may have expired)", "nebula config spacetime");
             SpacetimeCli.Publish(project.ModuleDir, st.Server, database, args.Has("reset-control-plane"));
             Ui.Ok("module published");
+            Ui.Step($"publishing the persistence module to {st.Server} as '{persistenceDatabase}'{(args.Has("reset-persistence") ? " (wiping saved entities)" : " (keeping saved entities)")}");
+            SpacetimeCli.Publish(project.PersistenceModuleDir, st.Server, persistenceDatabase, args.Has("reset-persistence"));
+            Ui.Ok("persistence module published");
         }
 
         // --- cloud -----------------------------------------------------------------------------------------
         var mesh = new HetznerMesh(hz!, project);
         var orch = mesh.Provision();
-        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(workers, npcs, spacetimeUri, database, skipUpload, ctx.Verbose));
+        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(workers, npcs, spacetimeUri, database, persistenceDatabase, skipUpload, ctx.Verbose));
 
         string ip = HetznerMesh.PublicIp(orch);
         Ui.Blank();

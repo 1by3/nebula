@@ -1,0 +1,319 @@
+---
+title: Persistence
+description: Save entities that must outlive the worker simulating them, and bring them back after a failure or a restart.
+---
+
+Use **persistence** to keep an entity after the process simulating it stops. A persistent entity is checkpointed into a store while a worker owns it, and brought back when a worker gains the lease of the container it was saved in.
+
+Entities opt in one at a time. Add a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) component to the prefab or scene object, then mark the state that must survive. Everything else in the mesh stays transient.
+
+## What persists and what does not
+
+A persistent entity is saved with:
+
+- Its prefab (by ID and by asset name) or its scene ID.
+- Its container and its pose in that container's local space, when `PersistPose` is on.
+- Its velocity, when `PersistVelocity` is on.
+- Every `NetworkVariable` field marked `[Persist]`.
+- Whatever each `NetworkBehaviour` writes in `WritePersistentState`.
+- Its authority epoch, whether it was server-driven, whether a client owned it, and the ID of the worker that wrote the record.
+
+Nothing else persists. An entity without a `PersistentEntity` is lost when its worker stops, and so is any state on a persistent entity that is neither a `[Persist]` variable nor written by `WritePersistentState`. Client connections, prediction state, ghosts, and in-flight RPCs are never saved.
+
+The control plane is a separate database and is not affected by any of this. It holds process registrations, container assignments, and shared settings, and it is wiped on every `nebula start`. Saved entities live in a database of their own.
+
+<Callout type="warn" title="Persistence is not a save-game system">
+Nebula saves entities, not worlds. It does not snapshot your scene, your game mode, or per-player accounts. Keep account data, matchmaking records, and anything you must query relationally in your own database.
+</Callout>
+
+## Opt an entity in
+
+Add `PersistentEntity` to a prefab or a scene object that already has `NetworkIdentity`. One component per entity.
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `Key` | empty | Identity of this entity in the store. Leave it empty to generate one at the first save. |
+| `CheckpointSeconds` | `0` | Seconds between checkpoints of this entity. `0` uses `NebulaConfig.PersistenceCheckpointSeconds`. |
+| `PersistPose` | `true` | Save the pose in the entity's container and put it back on restore. |
+| `PersistVelocity` | `false` | Save the velocity as well. Turn it on for something that should still be rolling or drifting when it comes back. |
+
+### Keys
+
+The key identifies the entity across runs, workers, and builds. The record in the store is keyed by it.
+
+- A generated key for a spawned entity is `<prefab>:<guid>`.
+- A generated key for a scene entity is `scene:<sceneId>`.
+- Set your own key from the Inspector, or from game code with the `Key` property, when the game must find the record by name later. `EnsureKey()` returns the key, generating one if there is none.
+
+A key can be changed until the entity is first saved. After that, `PersistentEntity` logs a warning and keeps the existing key, because the record already exists under it.
+
+The key travels with the entity through handover, so the next worker updates the same record instead of writing a second one. No wire-protocol change was needed for this: `PersistentEntity` writes the key in its own handover state.
+
+### Scene entities
+
+A [scene entity](/docs/guides/scene-entities) with `PersistentEntity` saves under `scene:<sceneId>` by default. Nebula never instantiates a scene object to restore it. Instead, the record waits until the worker spawns the object that is already resident in its scene, applies the saved state to it, and spawns it at the saved epoch plus one.
+
+That means a persistent door keeps its open state through a worker failure, and returns to the state its scene ships with only after you clear its record.
+
+### Carried entities
+
+An entity inside a [dynamic container](/docs/guides/dynamic-containers) is saved against its carrier, not against a static container. Its record stores `CarrierKey` — the persistence key of the carrier — and its pose in the carrier's local space.
+
+For this to work the carrier itself must carry a `PersistentEntity`. When it does, the pair comes back together: restoring or spawning the carrier on a worker with authority loads everything saved inside it. When it does not, Nebula logs a debug line and saves only the carried entity's pose, and the container's records are never restored automatically.
+
+## Opt variables and state in
+
+Mark a `NetworkVariable` field with `[Persist]`:
+
+```csharp title="SupplyCrate.cs"
+[RequireComponent(typeof(NetworkIdentity))]
+[RequireComponent(typeof(PersistentEntity))]
+public sealed class SupplyCrate : NetworkBehaviour
+{
+    [Persist] public NetworkVariable<int> Ammo = new NetworkVariable<int>(20);
+    [Persist] public NetworkVariable<bool> IsOpen = new NetworkVariable<bool>(false);
+
+    public NetworkVariable<float> GlowPulse = new NetworkVariable<float>(0f);   // cosmetic: not saved
+}
+```
+
+Each saved variable is stored under the name `<BehaviourTypeName>.<FieldName>`, here `SupplyCrate.Ammo`. Assigning a `[Persist]` variable also marks the entity dirty, so a change is saved at the next opportunity instead of waiting for the full checkpoint interval.
+
+`[Persist]` on an entity without a `PersistentEntity` component does nothing.
+
+### Write state a variable does not cover
+
+Override `WritePersistentState` and `ReadPersistentState` on a behaviour for state that is not in a `NetworkVariable`. The pair mirrors `WriteHandoverState` / `ReadHandoverState`. Both default to writing nothing.
+
+```csharp title="CrateContents.cs"
+public sealed class CrateContents : NetworkBehaviour
+{
+    private readonly List<ushort> _itemIds = new List<ushort>();
+
+    public void Add(ushort itemId)
+    {
+        _itemIds.Add(itemId);
+        MarkPersistDirty();                       // checkpoint this entity soon
+    }
+
+    public override void WritePersistentState(NetworkWriter writer)
+    {
+        writer.WriteUShort((ushort)_itemIds.Count);
+        for (int i = 0; i < _itemIds.Count; i++) writer.WriteUShort(_itemIds[i]);
+    }
+
+    public override void ReadPersistentState(NetworkReader reader)
+    {
+        _itemIds.Clear();
+        int count = reader.ReadUShort();
+        for (int i = 0; i < count; i++) _itemIds.Add(reader.ReadUShort());
+    }
+}
+```
+
+`MarkPersistDirty()` is a protected `NetworkBehaviour` method. It is a no-op on an entity with no `PersistentEntity`. `PersistentEntity.MarkDirty()` does the same thing from outside a behaviour.
+
+`ReadPersistentState` runs on a restored entity before it is spawned, so `OnNetworkSpawn` sees the restored values.
+
+### How the blob survives a schema change
+
+[`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec) writes named, length-prefixed entries rather than a positional layout:
+
+```
+[version:byte=1][count:ushort] { [name:string][length:ushort][bytes] }
+```
+
+Each `[Persist]` variable is one entry under its name, and each behaviour that writes more than zero bytes adds an entry named `<BehaviourTypeName>#state`.
+
+On read, entries are matched by name. A variable you removed is skipped, a variable you added keeps its default, and a renamed behaviour starts fresh. Each entry is read through a reader bounded to its own bytes, so a behaviour that reads more than it wrote fails inside its own chunk — the failure is logged and the next entry is still read correctly.
+
+## Checkpoint timing
+
+The worker's persistence service runs from the worker's `Update`, never from the tick loop. An entity is checkpointed when:
+
+- It has never been saved in this process.
+- `CheckpointSeconds` (or `NebulaConfig.PersistenceCheckpointSeconds`, default 5 s) has elapsed since its last save.
+- A `[Persist]` variable changed or something called `MarkPersistDirty()`.
+- It moved more than 0.25 m or turned more than 5 degrees since its last save, and `PersistPose` is on.
+- Authority is about to leave this worker. The final save happens while this worker is still the authority.
+- The worker is shutting down. Everything dirty is saved and the store is given a few ticks to flush.
+
+Call `worker.Persistence.SaveNow(identity)` at a moment the game knows is worth saving, such as a completed objective. It saves immediately, whatever the timer says, and warns if the worker does not own that entity.
+
+Two limits keep the pass cheap: at most one save per entity every 0.5 s (`NebulaPersistence.MinSaveIntervalSeconds`), and at most 64 saves per frame (`NebulaPersistence.MaxSavesPerFrame`). Neither the checkpoint nor an unreachable store can stall the simulation. If the store is down, the mesh keeps running and the saves are retried later.
+
+### The epoch rule
+
+Every record carries the entity's authority **epoch**: the number that increases when authority or a container assignment changes. The store keeps a save only when its epoch is at least the stored epoch. A worker that lost authority and does not know it yet cannot overwrite the new owner's state with older data.
+
+A restored entity comes back at `record.Epoch + 1`. Anything still holding the old epoch is stale everywhere in the mesh from that moment on.
+
+## Restore after a failure or a restart
+
+When a worker gains the lease of a static container, it does not restore that container's records straight away. Restoring an entity that is still alive somewhere else would create a second copy, so the service is deliberately cautious:
+
+1. **Grace period.** The worker waits `NebulaConfig.PersistenceRestoreGraceSeconds` (default 3 s) after the lease appears. A graceful handover from the previous owner arrives inside that window and wins.
+2. **Load the container.** The worker reads every record whose `ContainerId` is this container and that is not inside a carrier.
+3. **Judge each record.** A record is skipped when a client owned it, when an entity with that key is already alive in this process, or when it belongs inside a carrier. A record whose saving worker is still alive on the control plane and that is newer than twice the checkpoint interval waits one more grace period, in case that worker is about to hand the entity over.
+4. **Restore what is left.** The entity is instantiated from its prefab (by ID, falling back to the prefab name if the prefab list was reordered), placed in the container at its saved pose, given its saved state, and spawned with authority at the saved epoch plus one. The worker logs one line per container: `persistence: restored N persisted entities into <containerId>`.
+
+If a handover arrives for a key that was already restored, the incoming entity wins and the restored copy is despawned **without** deleting the record.
+
+After a whole-mesh restart, the same path runs for every container as its first lease lands, so the world comes back container by container rather than all at once.
+
+### Owned records and rejoining players
+
+A record saved while a client owned the entity is marked `Owned` and is never restored automatically — there is no client to own the result. Restore it on demand when the player comes back: spawn the pawn yourself, load the record, and apply it.
+
+```csharp title="ExampleGameMode.cs"
+private void OnPlayerJoined(NetworkIdentity pawn, string accountId)
+{
+    var persistence = _worker.Persistence;
+    if (persistence == null) return;                       // persistence is off
+
+    var persistent = pawn.GetComponent<PersistentEntity>();
+    persistent.Key = $"player:{accountId}";                // settable until the first save
+
+    persistence.Load(persistent.Key, record =>
+    {
+        if (record == null) return;                        // first time this player joins
+        persistence.Apply(record, pawn, applyPose: true);  // false keeps the pawn's spawn point
+    });
+}
+```
+
+`Load` answers on the main thread, with `null` when there is no record. `Apply` puts the state and pose back onto an entity you have instantiated but not yet spawned, and also works on an entity this worker already owns.
+
+The rest of the service is on `worker.Persistence` (a [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence), null when persistence is off):
+
+| Member | What it does |
+| --- | --- |
+| `Find(key)` | The live entity saving under that key in this process, or null. |
+| `Load(key, callback)` | Read one record. |
+| `Apply(record, identity, applyPose)` | Put a record's state, and optionally its pose, onto an entity. |
+| `Restore(record)` | Instantiate and spawn the entity a record describes, with authority. |
+| `SaveNow(identity)` | Checkpoint now. |
+| `Delete(key)` | Delete a record. The live entity, if any, keeps running unsaved. |
+| `BuildRecord(identity)` | The record for an entity as it is right now, without saving it. |
+| `Store` | The underlying [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store), for tools and directors. |
+| `EntityRestored` | Event raised for each entity brought back on this worker. |
+
+## Despawn or keep
+
+`NebulaWorker.Despawn(identity, keepPersisted = false)` decides whether the entity is also forgotten by the store:
+
+- `Despawn(entity)` deletes the record. Use it when the entity ceased to exist in the world — it was destroyed, consumed, or picked up.
+- `Despawn(entity, keepPersisted: true)` removes the entity from the mesh but keeps the record. Use it when the world should still contain the entity, such as a player disconnecting.
+
+Nebula's own paths that merely unload an entity never delete a record: a scene entity leaving with its streamed cell, a ghost being removed, a duplicate restore losing to a handover, and worker shutdown all keep what is saved. A disconnecting client's pawn is despawned with `keepPersisted: true` when it carries a `PersistentEntity`.
+
+To forget an entity without despawning it, call `worker.Persistence.Delete(key)`.
+
+## Configure it
+
+Set these on `NebulaConfig` under **Persistence**, or override them on the command line.
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `PersistenceMode` | `auto` | Which store to use. See the table below. |
+| `PersistenceUri` | empty | SpacetimeDB server holding the persistence database. Empty means the same server as the control plane. |
+| `PersistenceDatabase` | `nebula-persist` | Persistence database name. |
+| `PersistenceLocalFile` | empty | File the local store writes to. Empty means `<persistentDataPath>/nebula-persistence.bin`. |
+| `PersistenceCheckpointSeconds` | `5` | Seconds between checkpoints of an authoritative persistent entity. |
+| `PersistenceRestoreGraceSeconds` | `3` | How long a worker waits after gaining a lease before restoring that container's entities. |
+
+| `PersistenceMode` | Store | Use it for |
+| --- | --- | --- |
+| `auto` | `local` when `UseLocalControlPlane` is on, otherwise `spacetime` | The default. Leave it alone unless you need one specific store. |
+| `spacetime` | `SpacetimePersistenceStore` | A mesh. Every worker must see the same records, so this is the only correct choice for more than one process. |
+| `local` | `LocalPersistenceStore` with a file | A single-process run that should survive a restart. |
+| `memory` | `LocalPersistenceStore` with no file | Tests and throwaway runs. Everything is forgotten when the process ends. |
+| `off` | none | No persistence. `worker.Persistence` is null and `PersistentEntity` does nothing. |
+
+An unrecognized mode logs a warning and turns persistence off.
+
+| Option | Roles | Overrides |
+| --- | --- | --- |
+| `-nebula-persistence-mode auto\|spacetime\|local\|memory\|off` | worker, orchestrator | `PersistenceMode` |
+| `-nebula-persistence <url>` | worker, orchestrator | `PersistenceUri` |
+| `-nebula-persistence-database <name>` | worker, orchestrator | `PersistenceDatabase` |
+| `-nebula-persistence-file <path>` | worker, orchestrator | `PersistenceLocalFile` |
+| `-nebula-persistence-checkpoint <seconds>` | worker | `PersistenceCheckpointSeconds` |
+
+`NebulaBootstrap` creates the store for the worker and orchestrator roles only, connects it, ticks it once per frame, and disposes it on shutdown. The orchestrator forwards its persistence mode, database, and URI to every role it launches, so all of them store entities in the same place.
+
+## The persistence database
+
+The store is a SpacetimeDB module of its own, in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`, published as its own database next to the [control plane](/docs/guides/control-plane). Keeping them apart is the point: wiping the ephemeral registry never touches saved worlds.
+
+The module has one public table, `persisted_entity`, keyed by the persistence key. Its columns are the record fields: prefab ID and name, scene ID, `ContainerId` and `CarrierKey` (both B-tree indexed), pose and velocity, epoch, `ServerDriven`, `Owned`, name, the state blob, `Version`, `SavedAt`, and `SavedBy`.
+
+| Reducer | Effect |
+| --- | --- |
+| `SaveEntity` | Insert or update one record. Dropped when the stored row carries a newer epoch. Every accepted save bumps `Version` and stamps `SavedAt` and `SavedBy`. |
+| `DeleteEntity` | Delete one record by key. |
+| `ClearPersistence` | Delete every record. |
+
+To build and publish the module by hand:
+
+```bash
+cd Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~
+spacetime build
+spacetime generate --lang csharp --module-path . --out-dir ../GeneratedPersistence --namespace Nebula.Spacetime.Persistence -y
+spacetime publish -s local nebula-persist
+```
+
+<Callout type="warn" title="Never publish this module with --delete-data">
+`--delete-data` deletes every saved entity in that database. The control-plane module is published that way on purpose; this one must not be, unless you mean to wipe the saved world.
+</Callout>
+
+`SpacetimePersistenceStore` reconnects every two seconds and delivers every callback on the main thread from `Tick()`. Saves issued while it is disconnected are queued — the latest one per key — and flushed on connect.
+
+The [Editor menu](/docs/guides/control-plane#building-publishing-and-regenerating-bindings) entries **Nebula > Control Plane > Publish Module** and **Regenerate C# Bindings** handle both modules, publishing persistence without `--delete-data`.
+
+### Running and resetting it
+
+`nebula start` publishes the control-plane module with `--delete-data`, then publishes the persistence module **without** it, so saved entities survive every restart of the mesh. `--skip-publish` skips both.
+
+To start from an empty world, run:
+
+```bash
+nebula start --reset-persistence
+```
+
+That republishes the persistence module with `--delete-data` and deletes every saved entity. `nebula deploy --reset-persistence` does the same on a deployed mesh.
+
+Set the database names in `nebula.json`: `mesh.persistenceDatabase` (default `nebula-persist`) for local runs, and `deploy.persistenceDatabase` for a deployed mesh. Leave the deploy value out and the CLI uses the control-plane database name with a `-persist` suffix.
+
+To see the current state, run:
+
+```bash
+nebula status
+```
+
+It prints a persistence line with the mode, backend, connection state, and number of saved entities.
+
+### From the dashboard
+
+The dashboard shows a **persisted** tile with the number of records the orchestrator's store knows about, and a persistence line in the settings section reading `<backend> · connected` or `disconnected`. Both show `off` when persistence is disabled.
+
+The **Clear persistence** button deletes every saved entity through `POST /api/persistence/clear`. It asks for confirmation first.
+
+<Callout type="warn" title="Clearing persistence cannot be undone">
+The running mesh keeps simulating what it is holding, and its next checkpoints write fresh records. Everything that was not alive at that moment is gone.
+</Callout>
+
+## Current limitations
+
+- **Every worker mirrors the whole table.** `SpacetimePersistenceStore` subscribes to all of `persisted_entity` and answers loads from that in-memory mirror, so a restore never waits on a round trip. The cost is one copy of every saved entity in every worker. The scaling step — subscribing per leased container instead — is noted in the source.
+- **Live checkpoints overwrite dashboard edits.** Records the game is actively simulating are rewritten at the next checkpoint. Editing or deleting a record for an entity that is alive right now changes nothing lasting.
+- **No relational backend yet.** [`SpacetimePersistenceStore`](/docs/reference/persistence/spacetime-persistence-store) and [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) are the two implementations. `IPersistenceStore` is request/response, with no subscriptions, so a Postgres-backed or standalone persistence service fits behind the same interface without changing game code.
+- **Owned records need game code.** Nebula never restores a record saved under a client's ownership. Your game decides when a returning player's entity comes back.
+- **A record is only as good as its build.** A restore needs the prefab in the running build, found by ID or by asset name. A prefab that no longer exists logs a warning and the record stays in the store.
+
+<Cards>
+  <Card title="Control plane" href="/docs/guides/control-plane" description="The other SpacetimeDB database, and why it is wiped on every start." />
+  <Card title="Scene entities" href="/docs/guides/scene-entities" description="How a resident scene object is bound, and where a restore fits in." />
+  <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carriers, carried entities, and the containers that move." />
+  <Card title="Configuration" href="/docs/guides/configuration" description="Every NebulaConfig field and command-line override." />
+</Cards>

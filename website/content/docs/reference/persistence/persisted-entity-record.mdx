@@ -1,0 +1,159 @@
+---
+title: "PersistedEntityRecord"
+description: "One persisted entity as the store holds it: enough to bring the entity back on any worker (prefab or scene object, container and pose, authority epoch) plus the opaque state blob the entity itself wrote (PersistentStateCodec: opted-in Ne..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs)</div>
+
+```csharp
+public sealed class PersistedEntityRecord
+```
+
+One persisted entity as the store holds it: enough to bring the entity back on any worker (prefab or scene object, container and pose, authority epoch) plus the opaque state blob the entity itself wrote ([`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec): opted-in NetworkVariables and behaviour state, keyed by name). Plain data on purpose: nothing here depends on the storage backend.
+
+## Fields
+
+### Key [#key]
+
+```csharp
+public string Key = "";
+```
+
+Stable identity of the entity across runs and workers ([`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key)).
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId = ushort.MaxValue;
+```
+
+Prefab index at save time ([`NetworkPrefabs`](/docs/reference/core/network-prefabs)); `ushort.MaxValue` for a scene entity.
+
+### PrefabName [#prefabname]
+
+```csharp
+public string PrefabName = "";
+```
+
+Prefab asset name, so a restore can recover from a reordered prefab list.
+
+### SceneId [#sceneid]
+
+```csharp
+public uint SceneId;
+```
+
+Non-zero: the record belongs to a scene entity with this [`NetworkIdentity.SceneId`](/docs/reference/core/network-identity#sceneid).
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId = "";
+```
+
+Static container the entity was in (its [`Container.ContainerId`](/docs/reference/containers/container#containerid)), or "" when it was in none or inside a carrier.
+
+### CarrierKey [#carrierkey]
+
+```csharp
+public string CarrierKey = "";
+```
+
+When the entity was inside a dynamic container: the persistence key of the carrier. "" otherwise.
+
+### LocalPosition [#localposition]
+
+```csharp
+public Vector3 LocalPosition;
+```
+
+Pose in the container's local space (world space when there was no container).
+
+### LocalRotation [#localrotation]
+
+```csharp
+public Quaternion LocalRotation = Quaternion.identity;
+```
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+Authority epoch at save time. The store rejects a save whose epoch is older than what it holds.
+
+### ServerDriven [#serverdriven]
+
+```csharp
+public bool ServerDriven;
+```
+
+Spawned with [`NebulaWorker.SpawnServerDriven`](/docs/reference/worker/nebula-worker#spawnserverdriven).
+
+### Owned [#owned]
+
+```csharp
+public bool Owned;
+```
+
+A client owned the entity when it was saved. Such records are not restored automatically (there is no client to own the result); the game restores them on demand.
+
+### Name [#name]
+
+```csharp
+public string Name = "";
+```
+
+GameObject name at save time (cosmetic).
+
+### State [#state]
+
+```csharp
+public byte[] State = Array.Empty<byte>();
+```
+
+Opaque state blob written by [`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec).
+
+### Version [#version]
+
+```csharp
+public ulong Version;
+```
+
+Bumped by the store on every accepted save.
+
+### SavedAt [#savedat]
+
+```csharp
+public DateTime SavedAt;
+```
+
+### SavedBy [#savedby]
+
+```csharp
+public string SavedBy = "";
+```
+
+Id of the worker that wrote the record.
+
+## Methods
+
+### Clone [#clone]
+
+```csharp
+public PersistedEntityRecord Clone();
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

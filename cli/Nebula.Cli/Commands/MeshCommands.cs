@@ -7,12 +7,16 @@ public sealed class StartCommand : Command
 {
     public override string Name => "start";
     public override string Summary => "Start SpacetimeDB, the orchestrator, gateway, and workers on this computer";
-    public override string Usage => "[--build] [--workers N] [--npcs N] [--bots N] [--open-ui]";
+    public override string Usage => "[--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
 Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module,
-then start the orchestrator from the latest build. The orchestrator starts the gateway and workers. To join,
-enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of
-nebula.json.
+publish the persistence module next to it, then start the orchestrator from the latest build. The orchestrator
+starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client
+role. Set defaults in the mesh section of nebula.json.
+
+The control-plane database is republished with fresh data every time, because it only holds which processes are
+running. The persistence database (mesh.persistenceDatabase, `nebula-persist`) keeps its saved entities across
+restarts unless you pass --reset-persistence.
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -21,9 +25,10 @@ nebula.json.
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
-        new OptionSpec("skip-publish", false, "do not re-publish the control-plane module"),
+        new OptionSpec("skip-publish", false, "do not re-publish the control-plane and persistence modules"),
+        new OptionSpec("reset-persistence", false, "publish the persistence module with --delete-data, deleting every saved entity"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --skip-publish" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --skip-publish", "nebula start --reset-persistence" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -33,7 +38,7 @@ nebula.json.
         var mesh = project.File.Mesh;
         LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
             args.GetInt("workers", mesh.Workers), args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
-            args.Has("skip-publish"), args.Has("open-ui")));
+            args.Has("skip-publish"), args.Has("open-ui"), args.Has("reset-persistence")));
         return 0;
     }
 }
@@ -58,7 +63,7 @@ public sealed class StopCommand : Command
 public sealed class StatusCommand : Command
 {
     public override string Name => "status";
-    public override string Summary => "Show workers, containers, entity counts, and recent events";
+    public override string Summary => "Show workers, containers, entity counts, persistence, and recent events";
     public override string Usage => "[--cloud]";
     public override OptionSpec[] Options => new[]
     {

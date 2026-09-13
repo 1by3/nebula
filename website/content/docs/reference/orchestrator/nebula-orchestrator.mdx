@@ -81,6 +81,14 @@ public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
 
 The World map's data: static container geometry and the latest telemetry each worker posted (see [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)).
 
+### Persistence [#persistence]
+
+```csharp
+public IPersistenceStore Persistence { get; set; }
+```
+
+The mesh's persistence store, so the dashboard can report how many entities are saved and wipe them (`POST /api/persistence/clear`). Set by [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) before [`Initialize`](#initialize); null when persistence is off. The orchestrator never writes records itself.
+
 ### HostName [#hostname]
 
 ```csharp

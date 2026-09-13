@@ -53,6 +53,19 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
 
+### Persistence
+
+Entities carrying a `PersistentEntity` component are saved and restored. See [Persistence](/docs/guides/persistence).
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `PersistenceMode` | `auto` | Select the store: `auto` (local when `UseLocalControlPlane` is on, otherwise `spacetime`), `spacetime`, `local`, `memory`, or `off`. |
+| `PersistenceUri` | empty | Select the SpacetimeDB server holding the persistence database. Leave it empty to use the control-plane server. |
+| `PersistenceDatabase` | `nebula-persist` | Name the persistence database. It is separate from the control-plane database. |
+| `PersistenceLocalFile` | empty | Set the file the `local` store writes to. Empty uses `<persistentDataPath>/nebula-persistence.bin`. |
+| `PersistenceCheckpointSeconds` | `5` | Choose how often an authoritative persistent entity is checkpointed. A change or a move saves sooner. |
+| `PersistenceRestoreGraceSeconds` | `3` | Wait this long after gaining a container lease before restoring that container's saved entities. |
+
 ### Client update rates and prediction
 
 | Field | Default | What to set |
@@ -89,6 +102,11 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-spacetime <url>` | server roles | Override the SpacetimeDB server URL. |
 | `-nebula-database <name>` | server roles | Override the control-plane database name. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
+| `-nebula-persistence-mode auto\|spacetime\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |
+| `-nebula-persistence <url>` | worker, orchestrator | Override `PersistenceUri`. |
+| `-nebula-persistence-database <name>` | worker, orchestrator | Override `PersistenceDatabase`. |
+| `-nebula-persistence-file <path>` | worker, orchestrator | Override `PersistenceLocalFile`. |
+| `-nebula-persistence-checkpoint <seconds>` | worker | Override `PersistenceCheckpointSeconds`. |
 | `-nebula-workers <number>` | orchestrator | Set the initial worker count. |
 | `-nebula-settings key=value,key=value` | orchestrator | Add game-defined, mesh-wide settings to the control plane. |
 | `-nebula-dashboard-port <port>` | orchestrator | Set the dashboard port. |

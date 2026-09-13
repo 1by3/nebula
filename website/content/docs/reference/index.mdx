@@ -109,6 +109,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
+| [PersistenceEditor](/docs/reference/orchestrator/persistence-editor) | Class. Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence). |
 | [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs every worker as a child process of the orchestrator, from the same executable. |
 | [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum. Lists the supported worker handle state values. |
 | [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |
@@ -225,4 +226,17 @@ Inspect the tables and reducers used by the control plane.
 | Type | Summary |
 | --- | --- |
 | [Module](/docs/reference/spacetime-module/module) | Static class. Defines the SpacetimeDB tables and reducers used by the Nebula control plane. |
+
+## Persistence
+
+| Type | Summary |
+| --- | --- |
+| [IPersistenceStore](/docs/reference/persistence/i-persistence-store) | Interface. Long-term storage for entities that opted into persistence (PersistentEntity). |
+| [LocalPersistenceStore](/docs/reference/persistence/local-persistence-store) | Class. In-process IPersistenceStore with the exact write rules of the persistence module (epoch check, version bump), optionally backed by a file so a single-process run survives a restart. |
+| [NebulaPersistence](/docs/reference/persistence/nebula-persistence) | Class. The worker's persistence service: it checkpoints every authoritative entity carrying a PersistentEntity into an IPersistenceStore, and brings those entities back when this worker gains the lease of a container they were saved in. |
+| [PersistAttribute](/docs/reference/persistence/persist-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's saved state. |
+| [PersistedEntityRecord](/docs/reference/persistence/persisted-entity-record) | Class. One persisted entity as the store holds it: enough to bring the entity back on any worker (prefab or scene object, container and pose, authority epoch) plus the opaque state blob the entity itself wrote (PersistentStateCodec: opted-in Ne... |
+| [PersistentEntity](/docs/reference/persistence/persistent-entity) | Class. Put this on a prefab or a scene object to make the entity outlive the process that simulates it. |
+| [PersistentStateCodec](/docs/reference/persistence/persistent-state-codec) | Static class. The state blob of a PersistedEntityRecord: every PersistAttribute NetworkVariable and every behaviour's NetworkBehaviour.WritePersistentState chunk, each under a name. |
+| [SpacetimePersistenceStore](/docs/reference/persistence/spacetime-persistence-store) | Class. IPersistenceStore over the Nebula persistence SpacetimeDB module (SpacetimeDB/PersistenceModule~), a database of its own next to the control plane. |
 

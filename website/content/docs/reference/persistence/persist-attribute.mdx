@@ -1,0 +1,23 @@
+---
+title: "PersistAttribute"
+description: "Marks a NetworkVariable<T> field as part of the entity's saved state."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/PersistAttribute.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/PersistAttribute.cs)</div>
+
+```csharp
+[AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
+public sealed class PersistAttribute : Attribute
+```
+
+Marks a [`NetworkVariable<T>`](/docs/reference/core/network-variable) field as part of the entity's saved state. The variable is written into the persistence blob under its discovered name (`"<BehaviourTypeName>.<FieldName>"`) and assigning it also schedules the entity's next checkpoint, so a saved value is never more than a checkpoint behind what the simulation holds.
+
+```csharp
+public sealed class Door : NetworkBehaviour
+{
+    [Persist] public NetworkVariable<bool> IsOpen = new NetworkVariable<bool>();
+}
+```
+
+The entity itself opts in by carrying a [`PersistentEntity`](/docs/reference/persistence/persistent-entity); without one, a [`PersistAttribute`](/docs/reference/persistence/persist-attribute) has no effect.
+

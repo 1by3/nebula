@@ -51,6 +51,14 @@ public NebulaConfig Config { get; }
 public IControlPlane ControlPlane { get; }
 ```
 
+### Persistence [#persistence]
+
+```csharp
+public NebulaPersistence Persistence { get; }
+```
+
+Long-term storage for the entities that opted into it ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)): checkpoints of what this worker owns, and restores of what the containers it leases held. Null when persistence is off (`-nebula-persistence-mode off`, or no store handed to [`Initialize`](#initialize)).
+
 ### WorkerId [#workerid]
 
 ```csharp
@@ -270,7 +278,10 @@ Send a game-defined message to `workerId`. `write` serialises the payload; the h
 
 ```csharp
 public void Initialize(NebulaConfig config, IControlPlane controlPlane);
+public void Initialize(NebulaConfig config, IControlPlane controlPlane, IPersistenceStore persistenceStore);
 ```
+
+Start the worker with a persistence store: entities carrying a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) are checkpointed into it and restored from it (see [`Persistence`](#persistence)). A null store turns persistence off; an unreachable one only delays the saves, it never stops the simulation.
 
 ### Spawn [#spawn]
 
@@ -297,8 +308,10 @@ public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaterni
 ### Despawn [#despawn]
 
 ```csharp
-public void Despawn(NetworkIdentity identity);
+public void Despawn(NetworkIdentity identity, bool keepPersisted = false);
 ```
+
+Remove an entity from the mesh. A persistent entity ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)) is also forgotten by the store: this is the entity ceasing to exist, not merely leaving this process. Pass `keepPersisted` true when the world should keep it (a player disconnecting, a cell unloading): its record is checkpointed one last time and left in place.
 
 ### Find [#find]
 

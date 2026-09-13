@@ -1,0 +1,189 @@
+---
+title: "NebulaPersistence"
+description: "The worker's persistence service: it checkpoints every authoritative entity carrying a PersistentEntity into an IPersistenceStore, and brings those entities back when this worker gains the lease of a container they were saved in."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/NebulaPersistence.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/NebulaPersistence.cs)</div>
+
+```csharp
+public sealed class NebulaPersistence
+```
+
+The worker's persistence service: it checkpoints every authoritative entity carrying a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) into an [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store), and brings those entities back when this worker gains the lease of a container they were saved in. Owned by [`NebulaWorker`](/docs/reference/worker/nebula-worker) and reached as `worker.Persistence`; null when persistence is off.
+
+It is never on the per-tick path. Checkpoints run from the worker's `Update`, at most [`MaxSavesPerFrame`](#maxsavesperframe) of them per frame, and a store that is unreachable only means the saves are retried later: the mesh keeps simulating either way.
+
+Restores are deliberately timid, because a persisted entity coming back must never become a second copy of one that is still alive somewhere. A freshly leased container waits [`NebulaConfig.PersistenceRestoreGraceSeconds`](/docs/reference/core/nebula-config#persistencerestoregraceseconds) so the previous owner's handover wins; a record whose key is already alive here is skipped; a record written moments ago by a worker that is still alive waits another grace period, in case that worker is about to hand the entity over; and if a handover arrives after a restore anyway, the incoming entity wins and the restored duplicate is despawned *without* deleting the record.
+
+## Fields
+
+### MaxSavesPerFrame [#maxsavesperframe]
+
+```csharp
+public const int MaxSavesPerFrame = 64;
+```
+
+Most saves issued in one frame, so a container full of dirty entities cannot spike the frame.
+
+### MinSaveIntervalSeconds [#minsaveintervalseconds]
+
+```csharp
+public const float MinSaveIntervalSeconds = 0.5f;
+```
+
+An entity saves at most this often, however often it changes.
+
+### PoseMoveThreshold [#posemovethreshold]
+
+```csharp
+public const float PoseMoveThreshold = 0.25f;
+```
+
+Metres an entity must move since its last save before the move alone is worth a checkpoint.
+
+### PoseTurnThresholdDegrees [#poseturnthresholddegrees]
+
+```csharp
+public const float PoseTurnThresholdDegrees = 5f;
+```
+
+Degrees an entity must turn since its last save before the turn alone is worth a checkpoint.
+
+## Properties
+
+### Store [#store]
+
+```csharp
+public IPersistenceStore Store { get; }
+```
+
+The store behind the service, for game code that wants to read or write records directly.
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected { get; }
+```
+
+The store is reachable. When false the mesh keeps running and saves are retried.
+
+### TrackedCount [#trackedcount]
+
+```csharp
+public int TrackedCount { get; }
+```
+
+Persistent entities alive in this process (authoritative and ghosts).
+
+### SavedCount [#savedcount]
+
+```csharp
+public int SavedCount { get; }
+```
+
+Records this service has written since the process started.
+
+### RestoredCount [#restoredcount]
+
+```csharp
+public int RestoredCount { get; }
+```
+
+Entities this service has brought back since the process started.
+
+## Events
+
+### EntityRestored [#entityrestored]
+
+```csharp
+public event Action<NetworkIdentity> EntityRestored;
+```
+
+An entity was brought back from the store and spawned on this worker.
+
+## Methods
+
+### Find [#find]
+
+```csharp
+public NetworkIdentity Find(string key);
+```
+
+The live entity saving under `key` in this process, or null.
+
+### Load [#load]
+
+```csharp
+public void Load(string key, Action<PersistedEntityRecord> onLoaded);
+```
+
+Read one record. `onLoaded` runs on the main thread with null when there is none.
+
+### Delete [#delete]
+
+```csharp
+public void Delete(string key);
+```
+
+Delete the record for `key`. The live entity, if any, keeps running unsaved.
+
+### BuildRecord [#buildrecord]
+
+```csharp
+public PersistedEntityRecord BuildRecord(NetworkIdentity identity);
+```
+
+Build the record for `identity` as it is right now: prefab or scene id, container and pose, and the state blob ([`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec)). Null when the entity is not persistent.
+
+### SaveNow [#savenow]
+
+```csharp
+public void SaveNow(NetworkIdentity identity);
+```
+
+Checkpoint `identity` now, whatever its timer says. Use it at a moment the game knows is worth saving (a player logging out, a quest completed); the periodic checkpoint covers everything else.
+
+### Apply [#apply]
+
+```csharp
+public void Apply(PersistedEntityRecord record, NetworkIdentity identity, bool applyPose = true);
+```
+
+Put a record's state back onto `identity`. Works both before the entity is spawned (the restore path) and on an entity this worker already owns, which is what a rejoining player's pawn wants: the game spawns the pawn, asks for the record with [`Load`](#load) and applies it when the answer arrives. Pass `applyPose` false to keep the entity where it is and take only its state.
+
+### Restore [#restore]
+
+```csharp
+public NetworkIdentity Restore(PersistedEntityRecord record);
+```
+
+Instantiate and spawn the entity a record describes, on this worker, with authority. Null when the prefab is unknown to this build or the scene object is not resident. The entity comes back at `record.Epoch + 1`, so anything still holding the old epoch is stale everywhere.
+
+### Plan [#plan]
+
+```csharp
+public static RestorePlan Plan(PersistedEntityRecord record, bool aliveHere, bool saverAlive, double recordAgeSeconds, float checkpointSeconds);
+```
+
+Whether a record should be restored, given what is alive here and whether the worker that wrote it is still running. A pure decision, so the rule that keeps a persisted entity from becoming a second copy of a live one can be reasoned about (and tested) on its own.
+
+## Nested types
+
+### RestorePlan [#restoreplan]
+
+```csharp
+public enum RestorePlan
+```
+
+What the service decided to do with one record when a container's records came back.
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Restore` |  | Bring it back here and now. |
+| `SkipOwned` |  | A client owned it: there is no client to own the result, so the game restores it on demand. |
+| `SkipAlive` |  | An entity with that key is already alive in this process. |
+| `SkipCarried` |  | It lives inside a carrier and comes back with it, not with the container. |
+| `Wait` |  | Its saver is still alive and the record is fresh: it may yet arrive by handover. |
+

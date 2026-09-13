@@ -11,6 +11,32 @@ public abstract class NetworkVariableBase
 
 Defines the serialization and change tracking used by every [`NetworkVariable<T>`](/docs/reference/core/network-variable).
 
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; } = "";
+```
+
+Discovered name of this variable, `"<BehaviourTypeName>.<FieldName>"`. Set when the entity is initialised and used to key the variable in the persistence blob ([`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec)), so a save survives fields being added, removed or reordered. Replication never sends it.
+
+### Persist [#persist]
+
+```csharp
+public bool Persist { get; }
+```
+
+The field carries [`PersistAttribute`](/docs/reference/persistence/persist-attribute): its value is part of the entity's saved state.
+
+### PersistDirty [#persistdirty]
+
+```csharp
+public bool PersistDirty { get; }
+```
+
+Assigned since the last time this variable was written into a persistence blob.
+
 ## Methods
 
 ### Write [#write]

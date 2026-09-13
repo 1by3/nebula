@@ -25,6 +25,9 @@ namespace Nebula
     /// <item><c>-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101</c></item>
     /// <item><c>-nebula-gateway 127.0.0.1:7000</c></item>
     /// <item><c>-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula</c></item>
+    /// <item><c>-nebula-persistence-mode auto|spacetime|local|off -nebula-persistence http://127.0.0.1:3000
+    /// -nebula-persistence-database nebula-persist -nebula-persistence-file saves/world.bin</c> (where persistent
+    /// entities are stored)</item>
     /// <item><c>-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600</c> (orchestrator; settings are
     /// game-defined key/values seeded on the control plane, editable on the dashboard)</item>
     /// <item><c>-nebula-name Jesse</c> (client display name)</item>
@@ -46,6 +49,11 @@ namespace Nebula
 
         public NebulaRoles Roles { get; private set; }
         public IControlPlane ControlPlane { get; private set; }
+        /// <summary>
+        /// Where persistent entities are stored, created for the worker and orchestrator roles from
+        /// <see cref="NebulaConfig.PersistenceMode"/>. Null when persistence is off.
+        /// </summary>
+        public IPersistenceStore PersistenceStore { get; private set; }
         public NebulaWorker Worker { get; private set; }
         public NebulaGateway Gateway { get; private set; }
         public NebulaOrchestrator Orchestrator { get; private set; }
@@ -136,9 +144,17 @@ namespace Nebula
                 ControlPlane.Connect();
             }
 
+            bool needsPersistence = (Roles & (NebulaRoles.Worker | NebulaRoles.Orchestrator)) != 0;
+            if (needsPersistence)
+            {
+                PersistenceStore = CreatePersistenceStore();
+                PersistenceStore?.Connect();
+            }
+
             if ((Roles & NebulaRoles.Orchestrator) != 0)
             {
                 Orchestrator = gameObject.AddComponent<NebulaOrchestrator>();
+                Orchestrator.Persistence = PersistenceStore;
                 Orchestrator.Initialize(Config, ControlPlane);
             }
             if ((Roles & NebulaRoles.Gateway) != 0)
@@ -149,7 +165,7 @@ namespace Nebula
             if ((Roles & NebulaRoles.Worker) != 0)
             {
                 Worker = gameObject.AddComponent<NebulaWorker>();
-                Worker.Initialize(Config, ControlPlane);
+                Worker.Initialize(Config, ControlPlane, PersistenceStore);
             }
             if ((Roles & NebulaRoles.Client) != 0)
             {
@@ -173,13 +189,53 @@ namespace Nebula
         private void Update()
         {
             ControlPlane?.Tick();
+            // The store's callbacks land here, on the main thread, once per frame.
+            PersistenceStore?.Tick();
         }
 
         private void OnDestroy()
         {
             if (Instance != this) return;
             ControlPlane?.Dispose();
+            PersistenceStore?.Dispose();
+            PersistenceStore = null;
             Instance = null;
+        }
+
+        /// <summary>
+        /// The persistence store this process talks to, from <see cref="NebulaConfig.PersistenceMode"/>
+        /// (<c>-nebula-persistence-mode</c>): <c>spacetime</c> for a mesh, <c>local</c> for a file next to the
+        /// process, <c>off</c> for none, and <c>auto</c> (the default) meaning local when the control plane is local
+        /// and spacetime otherwise. Null when persistence is off.
+        /// </summary>
+        private IPersistenceStore CreatePersistenceStore()
+        {
+            string mode = (Config.PersistenceMode ?? "auto").Trim().ToLowerInvariant();
+            if (mode == "" || mode == "auto") mode = Config.UseLocalControlPlane ? "local" : "spacetime";
+            switch (mode)
+            {
+                case "off":
+                case "none":
+                    NebulaLog.Info("persistence: off");
+                    return null;
+                case "memory":
+                    return new LocalPersistenceStore();
+                case "local":
+                case "file":
+                {
+                    string path = Config.PersistenceLocalFile;
+                    if (string.IsNullOrEmpty(path)) path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-persistence.bin");
+                    return new LocalPersistenceStore(path);
+                }
+                case "spacetime":
+                {
+                    string uri = string.IsNullOrEmpty(Config.PersistenceUri) ? Config.SpacetimeUri : Config.PersistenceUri;
+                    return new SpacetimePersistenceStore(uri, Config.PersistenceDatabase);
+                }
+                default:
+                    NebulaLog.Warn($"unknown persistence mode '{mode}'; persistence is off");
+                    return null;
+            }
         }
 
         private NebulaRoles ResolveRoles()
@@ -229,6 +285,11 @@ namespace Nebula
             cfg.DashboardPort = (ushort)CommandLine.GetInt("nebula-dashboard-port", cfg.DashboardPort);
             cfg.UseLocalControlPlane = CommandLine.GetBool("nebula-local-control-plane", cfg.UseLocalControlPlane);
             cfg.GameScene = CommandLine.Get("nebula-scene", cfg.GameScene);
+            cfg.PersistenceMode = CommandLine.Get("nebula-persistence-mode", cfg.PersistenceMode);
+            cfg.PersistenceUri = CommandLine.Get("nebula-persistence", cfg.PersistenceUri);
+            cfg.PersistenceDatabase = CommandLine.Get("nebula-persistence-database", cfg.PersistenceDatabase);
+            cfg.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", cfg.PersistenceLocalFile);
+            cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
             return cfg;

@@ -74,12 +74,14 @@ Nebula does not automatically validate a remote damage claim on the target's wor
 
 Design your game around the current failure behavior:
 
-- If a **worker** stops, the orchestrator reassigns its containers and starts a replacement. Nebula does not persist transient entities, so entities on the stopped worker are lost. The gateway requests new player entities for affected clients.
+- If a **worker** stops, the orchestrator reassigns its containers and starts a replacement. Entities that opted into [persistence](/docs/guides/persistence) come back from their last checkpoint when a worker gains the lease of their container. Every other entity on the stopped worker is lost. The gateway requests new player entities for affected clients.
 - If the **gateway** stops, clients lose their connection. The gateway does not own authoritative entity state, but automatic client reconnection and gateway failover are not provided.
 - If the **control plane** becomes unavailable, connected workers continue simulating with their last known assignments. The orchestrator cannot safely change assignments until the control plane returns.
 - If the **orchestrator** stops, existing workers and the gateway continue running. Automatic worker replacement, reassignment, and dashboard controls remain unavailable until you restart it.
 
-Store durable player and world data in your own persistence system. Nebula's control plane does not store inventories, placed objects, or checkpoints.
+Give an entity a `PersistentEntity` component when it must outlive the worker simulating it. Nebula checkpoints it into a separate persistence database and restores it with its container. See [Persistence](/docs/guides/persistence).
+
+The control plane stores none of this. Keep accounts, matchmaking records, and anything you must query relationally in your own database.
 
 ## Account for current network limits
 

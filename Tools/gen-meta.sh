@@ -89,7 +89,7 @@ for root in "$@"; do
     case "$f" in
       *.cs) emit_cs "$f" "$g" ;;
       *.asmdef) emit_asmdef "$f" "$g" ;;
-      *.txt|*.md|*.json|*.xml) emit_text "$f" "$g" ;;
+      *.txt|*.md|*.json|*.xml|*.html) emit_text "$f" "$g" ;;
       *) emit_default "$f" "$g" ;;
     esac
     count=$((count+1))

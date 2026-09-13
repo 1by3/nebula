@@ -81,6 +81,20 @@ Drag to pan, scroll to zoom, and select an item to inspect it. Use the side cont
 
 Workers send summary telemetry once per second. While someone has the map open, workers send detailed entity positions every half second, up to 4,096 authoritative entities per worker. Pass `-nebula-telemetry off` to a manually started worker to disable this telemetry.
 
+## Edit persisted records
+
+Open `/persistence` from the dashboard to see everything the persistence store holds. The tab is empty when persistence is off. It groups records as a tree: containers first, then the entities saved in each container, with entities carried inside another entity nested under their carrier. Badges mark a record that a client owned, a server-driven entity, a scene object, and a record this build cannot decode.
+
+Select a record to inspect it. The editor shows its identity as read-only text (key, prefab or scene ID, epoch, version, and when and by which worker it was saved), then editable fields for its name, container ID, position, rotation, and velocity, then one row per saved state entry.
+
+The orchestrator runs the same build as the workers, so it can decode the saved state. It resolves the record's prefab or scene object, matches each entry against that object's `NetworkVariable` fields by name, and reads the bytes with the field's type. Booleans, numbers, strings, enumerations, vectors, quaternions, and colors get a matching control. Anything else appears as hexadecimal bytes that you can still replace: the state a behavior writes in `WritePersistentState`, an entry whose variable this build no longer has, and a value type Nebula cannot edit. Saving rewrites only the entries you changed and keeps the other bytes as they were.
+
+Use **Duplicate as…** with a new key to copy a record, for example to place a second object. Use **Delete** to remove one record, or **Clear persistence** on the overview to remove every record.
+
+<Callout type="warn" title="Edit records of entities that are not running">
+An edit is written to the store, not to a running worker. A worker that is currently simulating the entity overwrites your edit at its next checkpoint. Edit a record while the mesh is stopped, after the entity was deleted, or restrict your edit to fields the entity never writes back.
+</Callout>
+
 ## Use the HTTP API
 
 The dashboard and API use the same port. Read `/api/state` to get the latest orchestrator snapshot.
@@ -107,6 +121,11 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `POST /api/rebalance` | none | Runs a container-assignment pass immediately. |
 | `POST /api/containers/pin` | `{"containerId": "interior#…", "workerId": "w2"}` | Assigns a dynamic container to a live worker. |
 | `POST /api/containers/unpin` | `{"containerId": "interior#…"}` | Returns a dynamic container to its carrier's worker. |
+| `GET /api/persistence/records` | none | Returns every persisted record with its state decoded into named entries. |
+| `POST /api/persistence/record` | `{"key": "…", "position": [x, y, z], "entries": {"Box.Stack": "9"}}` | Saves one record. Send only the fields and entries you change. |
+| `POST /api/persistence/duplicate` | `{"key": "…", "newKey": "…"}` | Copies one record under a new key. |
+| `POST /api/persistence/delete` | `{"key": "…"}` | Deletes one record. |
+| `POST /api/persistence/clear` | none | Deletes every persisted record. |
 | `GET /api/map/geometry` | none | Returns static world and container geometry. |
 | `GET /api/map` | none | Returns the latest worker telemetry. |
 

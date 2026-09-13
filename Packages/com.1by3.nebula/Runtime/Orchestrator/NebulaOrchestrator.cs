@@ -61,6 +61,29 @@ namespace Nebula
         /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
         public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
 
+        /// <summary>
+        /// The mesh's persistence store, so the dashboard can report how many entities are saved and wipe them
+        /// (<c>POST /api/persistence/clear</c>). Set by <see cref="NebulaBootstrap"/> before <see cref="Initialize"/>;
+        /// null when persistence is off. The orchestrator never writes records itself.
+        /// </summary>
+        public IPersistenceStore Persistence { get; set; }
+
+        /// <summary>
+        /// Decodes and rewrites persisted records for the dashboard's Persistence tab; created on the first request
+        /// and dropped when <see cref="Persistence"/> is replaced. Null while persistence is off.
+        /// </summary>
+        private PersistenceEditor PersistenceTab
+        {
+            get
+            {
+                if (Persistence == null) return null;
+                if (_persistenceEditor == null || !ReferenceEquals(_persistenceEditor.Store, Persistence)) _persistenceEditor = new PersistenceEditor(Persistence);
+                return _persistenceEditor;
+            }
+        }
+
+        private PersistenceEditor _persistenceEditor;
+
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
         private readonly List<OrchestratorEvent> _events = new List<OrchestratorEvent>();
@@ -132,6 +155,8 @@ namespace Nebula
                 _http = new OrchestratorHttpServer(bind, Config.DashboardPort, page != null ? page.text : null, artifacts);
                 var map = Resources.Load<TextAsset>("NebulaDashboardMap");
                 if (map != null) _http.AddPage("/map", map.text);
+                var persistence = Resources.Load<TextAsset>("NebulaDashboardPersistence");
+                if (persistence != null) _http.AddPage("/persistence", persistence.text);
                 // Telemetry and the map document are served on the listener thread: workers post several times a
                 // second, and nothing here touches Unity.
                 _http.MapDirect("POST", "/api/telemetry", req =>
@@ -301,6 +326,9 @@ namespace Nebula
         private string CommonArgs()
         {
             string args = $"-nebula-spacetime {Config.SpacetimeUri} -nebula-database {Config.SpacetimeDatabase} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
+            // Every role stores persistent entities in the same place this orchestrator was pointed at.
+            args += $" -nebula-persistence-mode {Config.PersistenceMode} -nebula-persistence-database {Config.PersistenceDatabase}";
+            if (!string.IsNullOrEmpty(Config.PersistenceUri)) args += $" -nebula-persistence {Config.PersistenceUri}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";
             return args;
         }
@@ -635,6 +663,11 @@ namespace Nebula
             {
                 return OrchestratorHttpServer.Response.Json(200, BuildStateJson());
             }
+            if (req.Method == "GET" && path == "/api/persistence/records")
+            {
+                var editor = PersistenceTab;
+                return editor == null ? OrchestratorHttpServer.Response.Error(409, "persistence is off") : editor.Records();
+            }
             if (req.Method != "POST") return OrchestratorHttpServer.Response.Error(405, "method not allowed");
             switch (path)
             {
@@ -670,6 +703,38 @@ namespace Nebula
                 case "/api/rebalance":
                     RequestRebalance();
                     break;
+                case "/api/persistence/clear":
+                {
+                    if (Persistence == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");
+                    Persistence.Clear();
+                    Log("warn", "persistence cleared from the dashboard: every saved entity is gone");
+                    break;
+                }
+                // The Persistence tab answers with the record it wrote, so these return the editor's document as is.
+                case "/api/persistence/record":
+                {
+                    var editor = PersistenceTab;
+                    if (editor == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");
+                    var response = editor.Update(req.Body);
+                    if (response.Status == 200) Log("info", $"persisted record edited from the dashboard: {OrchestratorHttpServer.GetString(req.Body, "key")}");
+                    return response;
+                }
+                case "/api/persistence/delete":
+                {
+                    var editor = PersistenceTab;
+                    if (editor == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");
+                    var response = editor.Delete(req.Body);
+                    if (response.Status == 200) Log("warn", $"persisted record deleted from the dashboard: {OrchestratorHttpServer.GetString(req.Body, "key")}");
+                    return response;
+                }
+                case "/api/persistence/duplicate":
+                {
+                    var editor = PersistenceTab;
+                    if (editor == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");
+                    var response = editor.Duplicate(req.Body);
+                    if (response.Status == 200) Log("info", $"persisted record duplicated from the dashboard: {OrchestratorHttpServer.GetString(req.Body, "newKey")}");
+                    return response;
+                }
                 case "/api/containers/pin":
                 {
                     string id = OrchestratorHttpServer.GetString(req.Body, "containerId");
@@ -878,6 +943,14 @@ namespace Nebula
             w.Prop("entities", totalEntities);
             w.Prop("authoritative", totalAuth);
             w.Prop("containers", ContainerRegistry.Count);
+            w.EndObject();
+
+            w.Key("persistence");
+            w.BeginObject();
+            w.Prop("mode", Config.PersistenceMode ?? "auto");
+            w.Prop("backend", Persistence != null ? Persistence.Backend : "off");
+            w.Prop("connected", Persistence != null && Persistence.IsConnected);
+            w.Prop("entities", Persistence != null ? Persistence.KnownCount : 0);
             w.EndObject();
 
             w.Key("settings");

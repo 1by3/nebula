@@ -20,6 +20,8 @@ public sealed class ProjectFile
         public int GatewayPort { get; set; } = 7000;
         public string SpacetimeUri { get; set; } = "http://127.0.0.1:3000";
         public string Database { get; set; } = "nebula";
+        /// <summary>SpacetimeDB database the persistence module is published as, next to the control plane one.</summary>
+        public string PersistenceDatabase { get; set; } = "nebula-persist";
     }
 
     public sealed class DeploySettings
@@ -29,6 +31,8 @@ public sealed class ProjectFile
         public string MeshName { get; set; } = "nebula";
         /// <summary>SpacetimeDB database on the configured server. Null = the CLI config default.</summary>
         public string? Database { get; set; }
+        /// <summary>Persistence database on the configured server. Null = the control-plane database with a "-persist" suffix.</summary>
+        public string? PersistenceDatabase { get; set; }
         public int Workers { get; set; } = 4;
         public int Npcs { get; set; } = 0;
         public string? WorkerType { get; set; }
@@ -53,6 +57,8 @@ public sealed class NebulaProject
     /// <summary>The Nebula package as Unity sees it: embedded, a file: reference, or the git checkout in Library/PackageCache.</summary>
     public string PackageDir => FindPackageDir() ?? throw new CliError("the Nebula package is not resolved in this project", "open the project in Unity once so it fetches com.1by3.nebula, or run `nebula init --embed`");
     public string ModuleDir => Path.Combine(PackageDir, "SpacetimeDB", "Module~");
+    /// <summary>The persistence module (saved entities), published as its own database next to the control plane.</summary>
+    public string PersistenceModuleDir => Path.Combine(PackageDir, "SpacetimeDB", "PersistenceModule~");
     public string BuildsDir => Path.Combine(Root, "Builds");
     public string LinuxBuildDir => Path.Combine(BuildsDir, "Linux64");
     public string LinuxExecutable => Path.Combine(LinuxBuildDir, File.Executable + ".x86_64");
@@ -186,4 +192,8 @@ public sealed class NebulaProject
 
     public string DeployDatabase(CliConfig config) =>
         File.Deploy.Database ?? config.Spacetime?.Database ?? $"{File.Deploy.MeshName}-{Path.GetFileName(Root).ToLowerInvariant()}";
+
+    /// <summary>Persistence database of the deployed mesh: the configured one, else the control-plane database + "-persist".</summary>
+    public string DeployPersistenceDatabase(CliConfig config) =>
+        File.Deploy.PersistenceDatabase ?? DeployDatabase(config) + "-persist";
 }

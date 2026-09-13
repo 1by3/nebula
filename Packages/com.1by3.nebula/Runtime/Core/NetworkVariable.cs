@@ -10,6 +10,19 @@ namespace Nebula
         internal int Index;
         internal bool Dirty;
 
+        /// <summary>
+        /// Discovered name of this variable, <c>"&lt;BehaviourTypeName&gt;.&lt;FieldName&gt;"</c>. Set when the entity
+        /// is initialised and used to key the variable in the persistence blob (<see cref="PersistentStateCodec"/>),
+        /// so a save survives fields being added, removed or reordered. Replication never sends it.
+        /// </summary>
+        public string Name { get; internal set; } = "";
+
+        /// <summary>The field carries <see cref="PersistAttribute"/>: its value is part of the entity's saved state.</summary>
+        public bool Persist { get; internal set; }
+
+        /// <summary>Assigned since the last time this variable was written into a persistence blob.</summary>
+        public bool PersistDirty { get; internal set; }
+
         public abstract void Write(NetworkWriter writer);
         public abstract void Read(NetworkReader reader);
     }
@@ -51,6 +64,12 @@ namespace Nebula
                 _value = value;
                 Dirty = true;
                 Owner?.Identity?.MarkVarsDirty();
+                if (Persist)
+                {
+                    // Opted into persistence: the entity is due a checkpoint sooner than its timer would have asked.
+                    PersistDirty = true;
+                    Owner?.Identity?.Persistent?.MarkDirty();
+                }
                 OnValueChanged?.Invoke(old, value);
             }
         }
