@@ -19,6 +19,16 @@ Developer loop: start SpacetimeDB, publish the control-plane module, launch a lo
 public static string ModuleDir { get; }
 ```
 
+The control-plane module sources inside the Nebula package (wherever Unity resolved it).
+
+### PersistenceModuleDir [#persistencemoduledir]
+
+```csharp
+public static string PersistenceModuleDir { get; }
+```
+
+The persistence module sources inside the Nebula package.
+
 ## Methods
 
 ### StartSpacetime [#startspacetime]
@@ -31,14 +41,14 @@ public static void StartSpacetime();
 ### PublishModule [#publishmodule]
 
 ```csharp
-[MenuItem("Nebula/Control Plane/Publish Module", priority = 21)]
+[MenuItem("Nebula/Control Plane/Publish Modules (control plane + persistence)", priority = 21)]
 public static void PublishModule();
 ```
 
 ### RegenerateBindings [#regeneratebindings]
 
 ```csharp
-[MenuItem("Nebula/Control Plane/Regenerate C# Bindings", priority = 22)]
+[MenuItem("Nebula/Control Plane/Regenerate C# Bindings (both modules)", priority = 22)]
 public static void RegenerateBindings();
 ```
 

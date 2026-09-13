@@ -65,6 +65,20 @@ namespace Nebula
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;
 
+        [Header("Persistence")]
+        [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (local when the control plane is local, otherwise spacetime), 'spacetime', 'local' (a file next to the process) or 'off'. -nebula-persistence-mode overrides.")]
+        public string PersistenceMode = "auto";
+        [Tooltip("SpacetimeDB instance holding the persistence database. Empty = the same one as the control plane. -nebula-persistence overrides.")]
+        public string PersistenceUri = "";
+        [Tooltip("Persistence database name; a database of its own next to the control plane. -nebula-persistence-database overrides.")]
+        public string PersistenceDatabase = "nebula-persist";
+        [Tooltip("File the local store writes to. Empty = <persistentDataPath>/nebula-persistence.bin. -nebula-persistence-file overrides.")]
+        public string PersistenceLocalFile = "";
+        [Tooltip("Seconds between checkpoints of an authoritative persistent entity. A change or a move saves sooner; PersistentEntity.CheckpointSeconds overrides it per prefab.")]
+        public float PersistenceCheckpointSeconds = 5f;
+        [Tooltip("After gaining a container lease, how long a worker waits before restoring that container's persisted entities. Gives the previous owner's handover time to arrive so nothing comes back twice.")]
+        public float PersistenceRestoreGraceSeconds = 3f;
+
         [Header("Scene entities")]
         [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]
         public float SceneEntityGraceSeconds = 2f;

@@ -1,0 +1,122 @@
+---
+title: "PersistentEntity"
+description: "Put this on a prefab or a scene object to make the entity outlive the process that simulates it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/PersistentEntity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/PersistentEntity.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class PersistentEntity : NetworkBehaviour
+```
+
+Put this on a prefab or a scene object to make the entity outlive the process that simulates it. The worker's [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) checkpoints every authoritative entity that carries one, and brings it back when a worker gains the lease of the container it was saved in.
+
+What is saved: the entity's prefab (or scene id), its pose in its container, every [`PersistAttribute`](/docs/reference/persistence/persist-attribute) NetworkVariable and whatever each behaviour writes in [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate) (see [`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec)). What identifies it across runs and workers is [`Key`](#key), which travels with the entity through handover, so a save written by one worker is the same record the next worker updates.
+
+## Fields
+
+### CheckpointSeconds [#checkpointseconds]
+
+```csharp
+public float CheckpointSeconds;
+```
+
+Seconds between checkpoints of this entity. 0 = NebulaConfig.PersistenceCheckpointSeconds.
+
+### PersistPose [#persistpose]
+
+```csharp
+public bool PersistPose = true;
+```
+
+Save the entity's pose in its container, and put it back there on restore.
+
+### PersistVelocity [#persistvelocity]
+
+```csharp
+public bool PersistVelocity;
+```
+
+Save the entity's velocity as well (a rolling barrel, a drifting ship).
+
+## Properties
+
+### Key [#key]
+
+```csharp
+public string Key { get; set; }
+```
+
+Stable identity of this entity in the store. Settable by game code until the first save (a player's inventory chest, a record the game restores by name); after that it is fixed, because the record in the store is keyed by it.
+
+### LastSavedAt [#lastsavedat]
+
+```csharp
+public float LastSavedAt { get; }
+```
+
+`Time.unscaledTime` of the last accepted checkpoint, 0 when never saved in this process.
+
+### IsDirty [#isdirty]
+
+```csharp
+public bool IsDirty { get; }
+```
+
+Something changed since the last checkpoint: the entity is due a save at the next opportunity.
+
+### HasBeenSaved [#hasbeensaved]
+
+```csharp
+public bool HasBeenSaved { get; }
+```
+
+A record for this entity has been written (here or by the worker that handed it over).
+
+### LastSavedVersion [#lastsavedversion]
+
+```csharp
+public ulong LastSavedVersion { get; }
+```
+
+Store version of the last record this process wrote or received with the handover. Informational.
+
+## Methods
+
+### MarkDirty [#markdirty]
+
+```csharp
+public void MarkDirty();
+```
+
+Ask for a checkpoint soon (coalesced with every other change since the last save).
+
+### EnsureKey [#ensurekey]
+
+```csharp
+public string EnsureKey();
+```
+
+The key this entity saves under, generating one the first time it is needed: `scene:<sceneId>` for a scene object, `<prefab>:<guid>` for anything spawned from a prefab.
+
+### WriteHandoverState [#writehandoverstate]
+
+```csharp
+public override void WriteHandoverState(NetworkWriter writer);
+```
+
+The identity travels with authority: the next worker updates the same record instead of writing a second one.
+
+### ReadHandoverState [#readhandoverstate]
+
+```csharp
+public override void ReadHandoverState(NetworkReader reader);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

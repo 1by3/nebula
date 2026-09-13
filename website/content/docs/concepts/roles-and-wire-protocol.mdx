@@ -11,6 +11,8 @@ A process cannot run both the worker and client roles. You can run the gateway a
 
 To start a worker directly, pass `-batchmode -nographics -nebula-role worker`. A worker loads the game scene in a headless Unity process, so your server code can use colliders, physics, and NavMesh.
 
+A worker also holds the mesh's persistence service. It checkpoints the entities it controls that carry a `PersistentEntity` and restores them when it gains a container lease. See [Persistence](/docs/guides/persistence).
+
 The worker registers with the control plane and listens on `WorkerBasePort + index`. Each tick, it simulates authoritative entities, updates ghosts, performs handovers, and sends entity state to the gateway. Its heartbeat includes tick time and entity counts. See [Containers and handover](/docs/concepts/containers-and-handover) for the tick sequence and [Spawning](/docs/guides/spawning) for the gameplay API.
 
 ## Gateway
@@ -34,6 +36,8 @@ The orchestrator creates one assignment for each container and distributes them 
 The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~`. Its tables store workers, container assignments, gateways, orchestrators, and shared game settings. Its reducers register processes, record heartbeats, change assignments, and update settings.
 
 Workers, the gateway, and the orchestrator use `IControlPlane` to subscribe to these records. They do not send per-tick entity state through the control plane. If the connection fails, workers continue with the last topology they received. See [Control plane](/docs/guides/control-plane).
+
+The control plane holds no entity state and is wiped on every start. Saved entities live in a second SpacetimeDB database, `nebula-persist`, written by the module in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`. Workers and the orchestrator reach it through `IPersistenceStore`, not through `IControlPlane`. Nothing about it is on the per-tick path, and it adds no network messages.
 
 ## Client
 

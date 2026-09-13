@@ -70,6 +70,12 @@ namespace Nebula
         public PredictedBehaviourBase Predicted { get; private set; }
         public RemoteInterpolator Interpolator { get; internal set; }
 
+        /// <summary>
+        /// The <see cref="PersistentEntity"/> on this entity, or null when it is transient. Cached by
+        /// <see cref="Initialize"/>; everything about persistence hangs off it (see <see cref="NebulaPersistence"/>).
+        /// </summary>
+        public PersistentEntity Persistent { get; private set; }
+
         // ---- pose history (worker side): what this entity looked like N ticks ago, for lag-compensated hit tests.
         // A shooter aims at what its screen showed, which is interpolation delay + transit + input lead in the past;
         // the worker records every entity's pose per tick (authoritative and ghost alike) so game code can test a
@@ -208,6 +214,7 @@ namespace Nebula
                     if (Predicted != null) NebulaLog.Warn($"{name}: more than one PredictedBehaviour; only the first drives input");
                     else Predicted = p;
                 }
+                if (b is PersistentEntity pe && Persistent == null) Persistent = pe;
             }
             AllVars = vars.ToArray();
             var sync = new List<NetworkBehaviour>();
@@ -217,7 +224,8 @@ namespace Nebula
 
         private static NetworkVariableBase[] DiscoverVars(NetworkBehaviour b)
         {
-            var list = new List<(int token, NetworkVariableBase v)>();
+            var list = new List<(int token, NetworkVariableBase v, string name, bool persist)>();
+            string typeName = b.GetType().Name;
             for (var t = b.GetType(); t != null && t != typeof(NetworkBehaviour); t = t.BaseType)
             {
                 foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
@@ -229,16 +237,22 @@ namespace Nebula
                         v = (NetworkVariableBase)Activator.CreateInstance(f.FieldType);
                         f.SetValue(b, v);
                     }
-                    list.Add((f.MetadataToken, v));
+                    // The name is what a persisted value is keyed by; it is cheap, so every variable gets one.
+                    list.Add((f.MetadataToken, v, $"{typeName}.{f.Name}", f.IsDefined(typeof(PersistAttribute), true)));
                 }
             }
-            var ordered = list.OrderBy(x => x.token).Select(x => x.v).ToArray();
+            var ordered = list.OrderBy(x => x.token).ToArray();
+            var vars = new NetworkVariableBase[ordered.Length];
             for (int i = 0; i < ordered.Length; i++)
             {
-                ordered[i].Owner = b;
-                ordered[i].Index = i;
+                var v = ordered[i].v;
+                v.Owner = b;
+                v.Index = i;
+                v.Name = ordered[i].name;
+                v.Persist = ordered[i].persist;
+                vars[i] = v;
             }
-            return ordered;
+            return vars;
         }
 
         internal void MarkVarsDirty() => VarsDirty = true;

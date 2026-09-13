@@ -72,6 +72,38 @@ namespace Nebula
         /// </summary>
         public virtual void ReadHandoverState(NetworkReader reader) { }
 
+        // ---- persistent state ---------------------------------------------------------------------------
+        //
+        // State that outlives the process: written into the entity's record whenever the worker checkpoints it (see
+        // PersistentEntity and NebulaPersistence) and read back when the entity is restored, possibly on another
+        // worker, in another run, from another build. [Persist] NetworkVariables are saved without any of this; the
+        // pair below is for whatever else a behaviour needs in order to come back the same (a timer, an inventory).
+
+        /// <summary>
+        /// Called while the worker builds this entity's persistence record. Write what the entity needs to come back
+        /// as it was and that no <see cref="PersistAttribute"/> variable already covers. Must be mirrored exactly by
+        /// <see cref="ReadPersistentState"/>. Writing nothing (the default) costs nothing: an entry is only added when
+        /// bytes were written.
+        /// <para>
+        /// Unlike <see cref="WriteHandoverState"/>, this is read back by a later run and possibly a later build, so
+        /// treat it as a save format and version it yourself if you expect it to change.
+        /// </para>
+        /// </summary>
+        public virtual void WritePersistentState(NetworkWriter writer) { }
+
+        /// <summary>
+        /// Called on a restored entity before it is spawned, with exactly what <see cref="WritePersistentState"/>
+        /// wrote. The reader is bounded to this behaviour's own chunk, so reading too much fails here (and is logged)
+        /// instead of corrupting the rest of the record.
+        /// </summary>
+        public virtual void ReadPersistentState(NetworkReader reader) { }
+
+        /// <summary>
+        /// Ask for a checkpoint soon: something worth saving changed that Nebula cannot see by itself (state written
+        /// by <see cref="WritePersistentState"/>). A no-op on an entity with no <see cref="PersistentEntity"/>.
+        /// </summary>
+        protected void MarkPersistDirty() => Identity?.Persistent?.MarkDirty();
+
         // ---- per-tick sync state ------------------------------------------------------------------------
         //
         // A second replication channel next to NetworkVariables, for state that changes every tick and is better

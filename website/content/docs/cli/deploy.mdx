@@ -6,10 +6,12 @@ description: "Build and deploy the mesh to the configured cloud target"
 To build and deploy the mesh to the configured cloud target, run:
 
 ```bash
-nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui]
+nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]
 ```
 
-Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane module to the configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator creates one VM per worker.
+Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane and persistence modules to the configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator creates one VM per worker.
+
+The persistence database (deploy.persistenceDatabase in nebula.json, by default the control-plane database with a `-persist` suffix) keeps its saved entities across deployments unless you pass --reset-persistence.
 
 Run this command again after you change game code. A deployment restarts the orchestrator and recreates its workers.
 
@@ -24,9 +26,10 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
 | `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default from nebula.json). |
 | `--open-ui` | Open the Nebula Dashboard once it answers. |
 | `--skip-build` | Use the existing Builds/nebula-linux.tar.gz. |
-| `--skip-publish` | Do not publish the control-plane module. |
+| `--skip-publish` | Do not publish the control-plane and persistence modules. |
 | `--skip-upload` | Only rewrite the service and restart (no build, no upload). |
-| `--reset-control-plane` | Publish the module with --delete-data (wipes the control-plane tables). |
+| `--reset-control-plane` | Publish the control-plane module with --delete-data (wipes the registry tables). |
+| `--reset-persistence` | Publish the persistence module with --delete-data, deleting every saved entity. |
 
 ## Global options
 

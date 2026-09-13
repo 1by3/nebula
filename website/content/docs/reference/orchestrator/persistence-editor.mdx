@@ -1,0 +1,109 @@
+---
+title: "PersistenceEditor"
+description: "Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/PersistenceEditor.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/PersistenceEditor.cs)</div>
+
+```csharp
+public sealed class PersistenceEditor
+```
+
+Reads and rewrites persisted records for the dashboard's Persistence tab (`/persistence`).
+
+The orchestrator runs the same build as the workers, so it can give an opaque state blob a shape: the record names its prefab (or its scene entity), the prefab's [`NetworkBehaviour`](/docs/reference/core/network-behaviour) components name their [`NetworkVariable<T>`](/docs/reference/core/network-variable) fields exactly the way [`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec) keyed them (`"<BehaviourTypeName>.<FieldName>"`), and the field's type argument says how to decode the bytes. Nothing is ever instantiated: this reflects on the prefab asset's components only. An entry whose name this build does not know, a behaviour's own `#state` chunk, or a value type that has no editor is shown and edited as hex.
+
+Loads are asynchronous (the store answers from [`IPersistenceStore.Tick`](/docs/reference/persistence/i-persistence-store#tick)), so the editor keeps a snapshot of every record and refreshes it at most every [`SnapshotMaxAgeSeconds`](#snapshotmaxageseconds) seconds while the page polls. Every method here must run on the main thread, from the orchestrator's command pump.
+
+**Caveat.** An edit lands in the store, not in a running worker. While an entity is alive and authoritative somewhere, its next checkpoint overwrites whatever you saved here. Edit records of entities that are not alive (the mesh is stopped, or the entity was deleted), or fields the entity never writes back.
+
+## Constructors
+
+### PersistenceEditor [#persistenceeditor]
+
+```csharp
+public PersistenceEditor(IPersistenceStore store);
+```
+
+## Fields
+
+### SnapshotMaxAgeSeconds [#snapshotmaxageseconds]
+
+```csharp
+public const float SnapshotMaxAgeSeconds = 2f;
+```
+
+How long a snapshot of the store is served before the next GET triggers a reload.
+
+### EditorSavedBy [#editorsavedby]
+
+```csharp
+public const string EditorSavedBy = "dashboard";
+```
+
+Written into [`PersistedEntityRecord.SavedBy`](/docs/reference/persistence/persisted-entity-record#savedby) so an edit is never mistaken for a live worker's save.
+
+## Properties
+
+### Store [#store]
+
+```csharp
+public IPersistenceStore Store { get; }
+```
+
+The store this editor was built for, so the orchestrator can notice the store being swapped.
+
+## Methods
+
+### Records [#records]
+
+```csharp
+public OrchestratorHttpServer.Response Records();
+```
+
+GET /api/persistence/records: every record, decoded.
+
+### Update [#update]
+
+```csharp
+public OrchestratorHttpServer.Response Update(string body);
+```
+
+POST /api/persistence/record: apply an edit and save it under the record's current epoch. Body: `{key, position?, rotationEuler?|rotation?, velocity?, containerId?, carrierKey?, name?, entries?}`.
+
+### Delete [#delete]
+
+```csharp
+public OrchestratorHttpServer.Response Delete(string body);
+```
+
+POST /api/persistence/delete: `{key}`.
+
+### Duplicate [#duplicate]
+
+```csharp
+public OrchestratorHttpServer.Response Duplicate(string body);
+```
+
+POST /api/persistence/duplicate: `{key, newKey, ...}`. Copies the record under a new key, optionally with the same edits [`Update`](#update) accepts (a second crate three metres to the left).
+
+### Refresh [#refresh]
+
+```csharp
+public void Refresh(bool force);
+```
+
+Reload the snapshot when it is older than [`SnapshotMaxAgeSeconds`](#snapshotmaxageseconds) (or always, when `force`). Both stores answer a load from memory through their callback queue, so one [`IPersistenceStore.Tick`](/docs/reference/persistence/i-persistence-store#tick) hands the result back inside this call whenever the store is ready.
+
+### ToHex [#tohex]
+
+```csharp
+public static string ToHex(byte[] bytes);
+```
+
+### TryFromHex [#tryfromhex]
+
+```csharp
+public static bool TryFromHex(string hex, out byte[] bytes);
+```
+

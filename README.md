@@ -24,7 +24,8 @@ This repository is itself a Unity project (6000.x) with the package embedded, so
 compiled, tested and built on its own.
 
 - `Packages/com.1by3.nebula` - the package: runtime, editor tooling (menus, `NebulaBuild`, world authoring),
-  `World/` cell streaming, `SpacetimeDB/` control-plane module (`Module~`) and generated bindings, vendored
+  `World/` cell streaming, `Runtime/Persistence/` entity persistence, `SpacetimeDB/` control-plane module
+  (`Module~`) and persistence module (`PersistenceModule~`) with their generated bindings, vendored
   LiteNetLib, EditMode tests. Consumers reference it from `Packages/manifest.json`
   (`nebula init` does this) or embed a copy (`nebula init --embed`).
 - `Assets/Resources/NebulaConfig.asset` - this project's config; every consuming project has its own.

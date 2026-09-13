@@ -88,7 +88,7 @@
 <body>
 <header>
   <h1>Nebula Dashboard</h1>
-  <nav class="tabs"><a href="/" class="on">Overview</a><a href="/map">World map</a></nav>
+  <nav class="tabs"><a href="/" class="on">Overview</a><a href="/map">World map</a><a href="/persistence">Persistence</a></nav>
   <span class="sub" id="orchId">—</span>
   <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
   <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
@@ -114,6 +114,7 @@
         <div class="stat"><div class="v" id="sNpcs">–</div><div class="l">server-driven</div></div>
         <div class="stat"><div class="v" id="sEntities">–</div><div class="l">entities (auth + ghosts)</div></div>
         <div class="stat"><div class="v" id="sRebalances">–</div><div class="l">rebalances</div></div>
+        <div class="stat" id="persistTile" title="Entities saved in the persistence store"><div class="v" id="sPersisted">–</div><div class="l">persisted</div></div>
       </div>
     </section>
   </div>
@@ -143,6 +144,8 @@
       <input id="newKey" placeholder="key" style="width:140px">
       <input id="newValue" placeholder="value" style="width:200px">
       <button id="btnNewSetting">Set</button>
+      <span class="muted" id="persistState" style="margin-left:auto; font-size:12px"></span>
+      <button id="btnClearPersistence" class="danger" title="Delete every saved entity. The running mesh keeps what it is simulating; nothing comes back after a restart.">Clear persistence</button>
     </div>
   </section>
 
@@ -221,6 +224,12 @@
     $('sNpcs').textContent = s.totals.serverDriven;
     $('sEntities').textContent = s.totals.authoritative + ' + ' + (s.totals.entities - s.totals.authoritative);
     $('sRebalances').textContent = s.rebalances;
+    const p = s.persistence || { backend: 'off', connected: false, entities: 0, mode: 'off' };
+    const persistOff = p.backend === 'off';
+    $('sPersisted').textContent = persistOff ? '—' : (p.entities < 0 ? '?' : p.entities);
+    $('persistTile').title = persistOff ? 'Persistence is off (-nebula-persistence-mode)' : `${p.backend} store (mode ${p.mode}), ${p.connected ? 'connected' : 'disconnected'}`;
+    $('persistState').textContent = persistOff ? 'persistence off' : `persistence: ${p.backend} · ${p.connected ? 'connected' : 'disconnected'}`;
+    $('btnClearPersistence').disabled = busy || persistOff;
     $('desiredN').textContent = s.desiredWorkers;
     $('btnMinus').disabled = busy || s.desiredWorkers <= 0;
     $('btnPlus').disabled = busy || s.desiredWorkers >= s.maxWorkers;
@@ -353,6 +362,7 @@
   $('btnAdd').onclick = () => post('/api/workers/add');
   $('btnMinus').onclick = () => post('/api/workers/remove');
   $('btnRebalance').onclick = () => post('/api/rebalance');
+  $('btnClearPersistence').onclick = () => { if (confirm('Delete every saved entity? This cannot be undone.')) post('/api/persistence/clear'); };
   $('workers').addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-act]');
     if (!b || b.disabled) return;

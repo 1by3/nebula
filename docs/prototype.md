@@ -1,12 +1,13 @@
 # Nebula prototype: dynamic server meshing, end to end
 
 This is what is actually built in this repository as of 2026-09-08. It is a deliberately small implementation of
-`architecture.md`: four containers, N workers, one gateway, one orchestrator, one control plane, and a shooter that
-exists to make crossing a container boundary mid-firefight visible.
+`architecture.md`: four containers, N workers, one gateway, one orchestrator, one control plane, one persistence
+database, and a shooter that exists to make crossing a container boundary mid-firefight visible.
 
 ```
                  ┌──────────────────────────────────────────────────────────┐
-                 │  SpacetimeDB  (control plane: workers, leases, gateways)  │
+                 │  SpacetimeDB  (control plane: workers, leases, gateways;  │
+                 │   persistence: saved entities, a database of its own)     │
                  └──────▲──────────────▲──────────────▲──────────────▲──────┘
                         │ reducers     │ subscribe    │              │
                  ┌──────┴──────┐  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
@@ -198,12 +199,19 @@ that currently owns that client's entity, re-emits the workers' replication stre
 carrying a stale authority epoch or coming from a worker that is no longer the owner. It holds nothing
 authoritative; a dead worker's entities are dropped and its players are respawned elsewhere.
 
-### Control plane (`Packages/com.1by3.nebula/SpacetimeDB`)
+### Control plane and persistence (`Packages/com.1by3.nebula/SpacetimeDB`)
 A tiny SpacetimeDB module (`Module~/Lib.cs`): `worker`, `container_lease`, `gateway`, `orchestrator` tables and the
 reducers that register/heartbeat nodes and assign/release leases. Generated C# bindings live in `Generated/`.
 All sim code talks to `IControlPlane`; `SpacetimeControlPlane` is the real one, `LocalControlPlane` an in-process
 double with identical semantics. The control plane is never on the per-tick path: if it goes away the mesh keeps
 simulating with its last known topology.
+
+Next to it, a second SpacetimeDB module (`PersistenceModule~/Lib.cs`, database `nebula-persist`, bindings in
+`GeneratedPersistence/`) is the long-term store: one `persisted_entity` row per entity that carries a
+`PersistentEntity`, with `SaveEntity`/`DeleteEntity`/`ClearPersistence` reducers and the epoch write rule. All sim
+code talks to `IPersistenceStore` (`SpacetimePersistenceStore`, `LocalPersistenceStore`); the worker's
+`NebulaPersistence` checkpoints what it owns and restores a container's entities when it gains the lease. The
+control plane is republished with `--delete-data` on every start; this database is not.
 
 ## Seams
 There are no authored seam volumes in this prototype. Each container boundary carries an automatic ghost band
@@ -328,6 +336,7 @@ the local control plane, RPC binding, NetworkVariable discovery and the interpol
 - No delta compression or quantisation; every var change ships the entity's full var blob.
 - Ghost interpolation on workers is one tick behind; the client interpolates 3 ticks behind.
 - Container reassignment reuses the per-entity handover path (drain = transfer every entity), which is correct but
-  not staged; there is no persistence, so a dead worker loses its transient entities (players respawn).
+  not staged; only entities carrying a `PersistentEntity` are saved, so a dead worker loses every transient entity it
+  owned (players respawn).
 - RPCs and NetworkVariables are reflection-bound; a source generator would replace `RpcRegistry` without touching
   gameplay code.

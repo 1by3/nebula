@@ -94,11 +94,11 @@ Nebula does not automatically validate the claim on the receiving worker. Implem
 
 ## Container reassignment
 
-When a container assignment changes, the previous worker sends one `AuthorityTransfer` for each authoritative entity in that container. Nebula does not currently prepare the new worker or load persisted entity state before changing the assignment.
+When a container assignment changes, the previous worker sends one `AuthorityTransfer` for each authoritative entity in that container. Nebula does not currently prepare the new worker before changing the assignment. Persisted entities are read only after the new owner has held the lease for a grace period, so a handover always wins over a restore.
 
 When you remove a worker, the orchestrator keeps it running until it has no assignments and reports no authoritative entities. It stops waiting when `WorkerDrainTimeoutSeconds` expires.
 
-If a worker stops unexpectedly, its transient entities are lost because Nebula does not provide persistence. The orchestrator reassigns its containers, and the gateway requests replacement player entities from another worker.
+If a worker stops unexpectedly, its transient entities are lost. Entities carrying a `PersistentEntity` come back from their last checkpoint once another worker has held the container's lease for `NebulaConfig.PersistenceRestoreGraceSeconds`; see [Persistence](/docs/guides/persistence). The orchestrator reassigns its containers, and the gateway requests replacement player entities from another worker.
 
 ## Tuning
 

@@ -17,7 +17,32 @@ namespace Nebula.Editor
         private const string SpacetimeProcessKey = "Nebula.SpacetimePid";
         private const string OrchestratorProcessKey = "Nebula.OrchestratorPid";
 
-        public static string ModuleDir => Path.Combine(Application.dataPath, "Nebula", "SpacetimeDB", "Module~");
+        /// <summary>The control-plane module sources inside the Nebula package (wherever Unity resolved it).</summary>
+        public static string ModuleDir => PackagePath("SpacetimeDB", "Module~");
+        /// <summary>The persistence module sources inside the Nebula package.</summary>
+        public static string PersistenceModuleDir => PackagePath("SpacetimeDB", "PersistenceModule~");
+        /// <summary>Generated client bindings for the control-plane module.</summary>
+        private static string GeneratedDir => PackagePath("SpacetimeDB", "Generated");
+        /// <summary>Generated client bindings for the persistence module.</summary>
+        private static string GeneratedPersistenceDir => PackagePath("SpacetimeDB", "GeneratedPersistence");
+
+        /// <summary>Absolute path of a folder inside the com.1by3.nebula package, embedded or resolved elsewhere.</summary>
+        private static string PackagePath(params string[] parts)
+        {
+            string rel = Path.Combine("Packages", PackageName);
+            foreach (var part in parts) rel = Path.Combine(rel, part);
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + PackageName + "/package.json");
+            if (info != null && !string.IsNullOrEmpty(info.resolvedPath))
+            {
+                string p = info.resolvedPath;
+                foreach (var part in parts) p = Path.Combine(p, part);
+                return p;
+            }
+            // Embedded package: "Packages/..." is a real folder next to Assets.
+            return Path.GetFullPath(rel);
+        }
+
+        private const string PackageName = "com.1by3.nebula";
 
         [MenuItem("Nebula/Control Plane/Start SpacetimeDB (local)", priority = 20)]
         public static void StartSpacetime()
@@ -42,7 +67,7 @@ namespace Nebula.Editor
             }
         }
 
-        [MenuItem("Nebula/Control Plane/Publish Module", priority = 21)]
+        [MenuItem("Nebula/Control Plane/Publish Modules (control plane + persistence)", priority = 21)]
         public static void PublishModule()
         {
             var cfg = NebulaConfig.Load();
@@ -53,6 +78,8 @@ namespace Nebula.Editor
             }
             // --delete-data: the control plane holds only ephemeral registry state.
             RunAndLog("spacetime", $"publish -s local {cfg.SpacetimeDatabase} --delete-data -y", ModuleDir);
+            // Persistence is a database of its own and keeps the saved entities: never --delete-data here.
+            RunAndLog("spacetime", $"publish -s local {cfg.PersistenceDatabase} -y", PersistenceModuleDir);
         }
 
         private static bool WaitForSpacetime(string uri, int seconds)
@@ -75,11 +102,11 @@ namespace Nebula.Editor
             return false;
         }
 
-        [MenuItem("Nebula/Control Plane/Regenerate C# Bindings", priority = 22)]
+        [MenuItem("Nebula/Control Plane/Regenerate C# Bindings (both modules)", priority = 22)]
         public static void RegenerateBindings()
         {
-            var outDir = Path.Combine(Application.dataPath, "Nebula", "SpacetimeDB", "Generated");
-            RunAndLog("spacetime", $"generate --lang csharp --module-path . --out-dir \"{outDir}\" --namespace Nebula.Spacetime -y", ModuleDir);
+            RunAndLog("spacetime", $"generate --lang csharp --module-path . --out-dir \"{GeneratedDir}\" --namespace Nebula.Spacetime -y", ModuleDir);
+            RunAndLog("spacetime", $"generate --lang csharp --module-path . --out-dir \"{GeneratedPersistenceDir}\" --namespace Nebula.Spacetime.Persistence -y", PersistenceModuleDir);
             AssetDatabase.Refresh();
         }
 
@@ -101,7 +128,7 @@ namespace Nebula.Editor
             PublishModule();
             string logs = Path.Combine(NebulaBuild.BuildDir, "Logs");
             Directory.CreateDirectory(logs);
-            string args = $"-batchmode -nographics -nebula-role orchestrator -nebula-workers {cfg.WorkerCount} -nebula-spacetime {cfg.SpacetimeUri} -nebula-database {cfg.SpacetimeDatabase} -logFile \"{Path.Combine(logs, "orchestrator.log")}\"";
+            string args = $"-batchmode -nographics -nebula-role orchestrator -nebula-workers {cfg.WorkerCount} -nebula-spacetime {cfg.SpacetimeUri} -nebula-database {cfg.SpacetimeDatabase} -nebula-persistence {cfg.SpacetimeUri} -nebula-persistence-database {cfg.PersistenceDatabase} -logFile \"{Path.Combine(logs, "orchestrator.log")}\"";
             var p = Run(NebulaBuild.ExecutablePath, args, NebulaBuild.BuildDir, detached: true);
             if (p != null)
             {

@@ -77,7 +77,7 @@ public static class SpacetimeCli
 
     public static void Publish(string moduleDir, string server, string database, bool deleteData)
     {
-        if (!Directory.Exists(moduleDir)) throw new CliError($"control-plane module not found at {moduleDir}");
+        if (!Directory.Exists(moduleDir)) throw new CliError($"module not found at {moduleDir}");
         var args = new List<string> { "publish", "-s", server, database, "-y" };
         if (deleteData) args.Add("--delete-data");
         int code = Shell.Stream(Require(), args, moduleDir, Env());

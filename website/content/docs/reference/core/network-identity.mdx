@@ -178,6 +178,14 @@ public PredictedBehaviourBase Predicted { get; }
 public RemoteInterpolator Interpolator { get; }
 ```
 
+### Persistent [#persistent]
+
+```csharp
+public PersistentEntity Persistent { get; }
+```
+
+The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached by [`Initialize`](#initialize); everything about persistence hangs off it (see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence)).
+
 ### HasSyncState [#hassyncstate]
 
 ```csharp

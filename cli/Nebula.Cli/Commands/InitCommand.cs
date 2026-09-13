@@ -120,6 +120,7 @@ NebulaConfig.asset and nebula.json are always kept.
         }
         var pf = new ProjectFile();
         pf.Deploy.Database = $"nebula-{Slug(Path.GetFileName(root))}";
+        pf.Deploy.PersistenceDatabase = pf.Deploy.Database + "-persist";
         NebulaProject.Create(root, pf);
         Ui.Ok($"{NebulaProject.FileName} written");
     }

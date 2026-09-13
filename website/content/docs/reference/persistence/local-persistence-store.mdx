@@ -1,0 +1,134 @@
+---
+title: "LocalPersistenceStore"
+description: "In-process IPersistenceStore with the exact write rules of the persistence module (epoch check, version bump), optionally backed by a file so a single-process run survives a restart."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/LocalPersistenceStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/LocalPersistenceStore.cs)</div>
+
+```csharp
+public sealed class LocalPersistenceStore : IPersistenceStore
+```
+
+In-process [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) with the exact write rules of the persistence module (epoch check, version bump), optionally backed by a file so a single-process run survives a restart. This is what `-nebula-persistence-mode local` uses (and what the tests use); a mesh wants [`SpacetimePersistenceStore`](/docs/reference/persistence/spacetime-persistence-store) instead, because every worker needs to see the same records.
+
+Writes land in memory at once and the file is rewritten at most once per [`WriteIntervalSeconds`](#writeintervalseconds) from [`Tick`](#tick), so a busy checkpoint pass costs no disk I/O. Callbacks are queued and delivered from [`Tick`](#tick) like the remote stores, so game code sees the same ordering whichever store it runs on.
+
+## Constructors
+
+### LocalPersistenceStore [#localpersistencestore]
+
+```csharp
+public LocalPersistenceStore();
+public LocalPersistenceStore(string filePath);
+```
+
+An in-memory store that forgets everything when the process ends.
+
+## Fields
+
+### WriteIntervalSeconds [#writeintervalseconds]
+
+```csharp
+public float WriteIntervalSeconds = 1f;
+```
+
+Seconds between rewrites of the backing file while records keep changing.
+
+## Properties
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected { get; }
+```
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+### KnownCount [#knowncount]
+
+```csharp
+public int KnownCount { get; }
+```
+
+### FilePath [#filepath]
+
+```csharp
+public string FilePath { get; }
+```
+
+Where the records are written, or "" for an in-memory store.
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+public void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### Save [#save]
+
+```csharp
+public void Save(PersistedEntityRecord record);
+```
+
+### Delete [#delete]
+
+```csharp
+public void Delete(string key);
+```
+
+### Load [#load]
+
+```csharp
+public void Load(string key, Action<PersistedEntityRecord> onLoaded);
+```
+
+### LoadContainer [#loadcontainer]
+
+```csharp
+public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+### LoadCarried [#loadcarried]
+
+```csharp
+public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+### LoadWhere [#loadwhere]
+
+```csharp
+public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### Flush [#flush]
+
+```csharp
+public void Flush();
+```
+
+Write the backing file now instead of waiting for the debounce (shutdown, tests).
+

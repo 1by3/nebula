@@ -1,0 +1,75 @@
+---
+title: "PersistentStateCodec"
+description: "The state blob of a PersistedEntityRecord: every PersistAttribute NetworkVariable and every behaviour's NetworkBehaviour.WritePersistentState chunk, each under a name."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/PersistentStateCodec.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/PersistentStateCodec.cs)</div>
+
+```csharp
+public static class PersistentStateCodec
+```
+
+The state blob of a [`PersistedEntityRecord`](/docs/reference/persistence/persisted-entity-record): every [`PersistAttribute`](/docs/reference/persistence/persist-attribute) NetworkVariable and every behaviour's [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate) chunk, each under a name.
+
+Named entries rather than a positional layout, because a save outlives the build that wrote it: a variable that was removed is skipped on read, one that was added keeps its default, and a renamed behaviour simply starts fresh. Each entry is length-prefixed and read through a reader bounded to its own bytes, so a behaviour that reads too much fails inside its chunk (logged) instead of corrupting the next entry.
+
+```csharp
+[version:byte=1][count:ushort] { [name:string][length:ushort][bytes] }
+```
+
+Pure functions over a [`NetworkIdentity`](/docs/reference/core/network-identity): no worker, no store, no scene.
+
+## Fields
+
+### Version [#version]
+
+```csharp
+public const byte Version = 1;
+```
+
+Format version written at the head of every blob. A blob with a newer version is ignored on read.
+
+### BehaviourStateSuffix [#behaviourstatesuffix]
+
+```csharp
+public const string BehaviourStateSuffix = "#state";
+```
+
+Suffix of the entry holding a behaviour's own [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate) bytes.
+
+## Methods
+
+### StateNameOf [#statenameof]
+
+```csharp
+public static string StateNameOf(NetworkBehaviour behaviour);
+```
+
+The entry name of a behaviour's own state chunk.
+
+### Write [#write]
+
+```csharp
+public static void Write(NetworkWriter writer, NetworkIdentity identity);
+public static byte[] Write(NetworkIdentity identity);
+```
+
+Write `identity`'s persistent state. Also clears the per-variable dirty flags: what is in the blob has been captured, whatever the store then does with the record.
+
+### Read [#read]
+
+```csharp
+public static void Read(NetworkReader reader, NetworkIdentity identity);
+public static void Read(byte[] state, NetworkIdentity identity);
+```
+
+Apply a blob to `identity`. Entries are matched by name: unknown ones are skipped and missing ones leave the entity's own defaults. Reading a variable fires its `OnValueChanged`, which is what a restored entity wants.
+
+### HasDirtyVars [#hasdirtyvars]
+
+```csharp
+public static bool HasDirtyVars(NetworkIdentity identity);
+```
+
+True when any [`PersistAttribute`](/docs/reference/persistence/persist-attribute) variable of `identity` changed since the last [`Write`](#write).
+

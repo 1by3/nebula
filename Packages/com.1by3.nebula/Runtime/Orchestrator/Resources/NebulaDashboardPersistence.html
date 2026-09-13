@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula Persistence</title>
+<style>
+  :root {
+    --bg: #12141a; --panel: #1a1d26; --panel-2: #21252f; --line: #2c313d;
+    --ink: #e8eaf0; --ink-2: #a8adbb; --ink-3: #6f7585;
+    --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a; --accent: #7aa2ff;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .sub { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); white-space: nowrap; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .pill.ok .dot { background: var(--ok); } .pill.warn .dot { background: var(--warn); } .pill.bad .dot { background: var(--bad); }
+  nav.tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+  nav.tabs a { color: var(--ink-2); text-decoration: none; font-size: 13px; padding: 4px 11px; border-radius: 6px; }
+  nav.tabs a.on { background: var(--bg); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  nav.tabs a:hover:not(.on) { color: var(--ink); }
+  main { padding: 18px 22px 40px; display: grid; gap: 18px; grid-template-columns: minmax(320px, 460px) 1fr; align-items: start; max-width: 1600px; margin: 0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); font-weight: 600; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 8px 12px; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button.small { padding: 5px 9px; font-size: 12px; }
+  input, select, textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  input::placeholder, textarea::placeholder { color: var(--ink-3); }
+  textarea { font-family: var(--mono); font-size: 12px; width: 100%; resize: vertical; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--ink-3); }
+  .caveat { grid-column: 1 / -1; background: #2c2412; border: 1px solid #4a3a14; color: #f3d79a; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+  #banner { display: none; background: #3a1f22; color: #ffb4b7; border-bottom: 1px solid #5a2a2e; padding: 8px 22px; font-size: 13px; }
+  #banner.show { display: block; }
+  #toast { position: fixed; right: 20px; bottom: 20px; background: #3a1f22; color: #ffb4b7; border: 1px solid #5a2a2e; padding: 10px 14px; border-radius: 8px; display: none; max-width: 480px; }
+  #toast.show { display: block; }
+  #toast.ok { background: #1c3a2b; color: #b4f0cf; border-color: #2a5a40; }
+
+  /* tree */
+  #tree { max-height: calc(100vh - 210px); overflow: auto; font-size: 13px; }
+  .node { border-radius: 6px; }
+  .node > .row { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .node > .row:hover { background: var(--panel-2); }
+  .node.sel > .row { background: #24304d; box-shadow: inset 0 0 0 1px var(--accent); }
+  .twist { width: 12px; flex: 0 0 12px; color: var(--ink-3); text-align: center; }
+  .twist.leaf { visibility: hidden; }
+  .label { overflow: hidden; text-overflow: ellipsis; }
+  .kids { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
+  .kids.hide { display: none; }
+  .badge { font-size: 10px; letter-spacing: .4px; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); }
+  .badge.owned { color: #cdb4ff; border-color: #4a3d6b; }
+  .badge.server { color: #b4f0cf; border-color: #2a5a40; }
+  .badge.scene { color: #9fd0ff; border-color: #2c4a6b; }
+  .badge.carried { color: #f3d79a; border-color: #4a3a14; }
+  .badge.raw { color: #ffb4b7; border-color: #5a2a2e; }
+
+  /* editor */
+  .ident { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 14px; margin-bottom: 14px; }
+  .ident .f .l { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .ident .f .v { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .field { display: grid; grid-template-columns: 220px 1fr; gap: 10px; align-items: start; padding: 5px 0; border-bottom: 1px solid #1f232d; }
+  .field > .n { color: var(--ink-2); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; padding-top: 6px; }
+  .field > .n .t { color: var(--ink-3); }
+  .field .c { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .field .c input[type=number] { width: 92px; }
+  .field .c input.wide { width: 100%; max-width: 420px; }
+  .field.dirty > .n { color: var(--accent); }
+  .field .note { color: var(--ink-3); font-size: 12px; }
+  .hexbox { width: 100%; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .acts .spacer { flex: 1; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); margin: 16px 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Nebula Dashboard</h1>
+  <nav class="tabs"><a href="/">Overview</a><a href="/map">World map</a><a href="/persistence" class="on">Persistence</a></nav>
+  <span class="pill" id="storePill"><span class="dot"></span><span>store</span></span>
+  <span class="pill" id="countPill"><span class="dot"></span><span>— records</span></span>
+  <input id="search" type="search" placeholder="filter by key, name, prefab or container" style="width:300px">
+  <span class="sub" id="updated" style="margin-left:auto"></span>
+</header>
+<div id="banner">Lost contact with the orchestrator. Retrying…</div>
+
+<main>
+  <div class="caveat">
+    Edits are written straight to the persistence store. A worker that is currently simulating this entity overwrites
+    them at its next checkpoint, so edit records of entities that are not alive right now (the mesh is stopped, or the
+    entity was deleted), or fields the entity never writes back.
+  </div>
+
+  <section class="card">
+    <h2>Records</h2>
+    <div id="tree"><div class="muted">Loading…</div></div>
+  </section>
+
+  <section class="card" id="editorCard">
+    <h2>Record</h2>
+    <div id="editor"><div class="muted">Select a record on the left.</div></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  let records = [];            // latest snapshot from the server
+  let byKey = new Map();
+  let carried = new Map();     // carrierKey -> [record]
+  let containers = new Map();  // containerId -> [record]
+  let collapsed = new Set();
+  let selected = null;         // key
+  let edits = {};              // entry name -> value to send
+  let poseEdits = new Set();   // 'position' | 'rotationEuler' | 'velocity' | 'containerId' | 'name'
+  let pose = {};               // current values of the pose inputs
+  let busy = false;
+  let query = '';
+
+  const dirty = () => Object.keys(edits).length > 0 || poseEdits.size > 0;
+  const editing = () => dirty() || $('editor').contains(document.activeElement);
+
+  // ------------------------------------------------------------------------------------------------- data plumbing
+
+  function index() {
+    byKey = new Map();
+    carried = new Map();
+    containers = new Map();
+    for (const r of records) byKey.set(r.key, r);
+    for (const r of records) {
+      if (r.carrierKey && byKey.has(r.carrierKey)) push(carried, r.carrierKey, r);
+      else push(containers, r.containerId || '', r);
+    }
+    for (const list of containers.values()) list.sort(cmp);
+    for (const list of carried.values()) list.sort(cmp);
+  }
+  function push(map, k, v) { const l = map.get(k); if (l) l.push(v); else map.set(k, [v]); }
+  function cmp(a, b) { return (a.name || a.key).localeCompare(b.name || b.key) || a.key.localeCompare(b.key); }
+
+  function hit(r) {
+    if (!query) return true;
+    return (r.key + ' ' + r.name + ' ' + r.prefabName + ' ' + r.template + ' ' + r.containerId).toLowerCase().includes(query);
+  }
+  function subtreeHit(r) {
+    if (hit(r)) return true;
+    return (carried.get(r.key) || []).some(subtreeHit);
+  }
+
+  // -------------------------------------------------------------------------------------------------------- render
+
+  function renderTree() {
+    const ids = Array.from(containers.keys()).sort();
+    let html = '';
+    let shown = 0;
+    for (const id of ids) {
+      const kids = (containers.get(id) || []).filter(subtreeHit);
+      if (!kids.length) continue;
+      shown += kids.length;
+      const nid = 'c:' + id;
+      const open = !collapsed.has(nid);
+      html += `<div class="node"><div class="row" data-node="${esc(nid)}">` +
+        `<span class="twist">${open ? '▾' : '▸'}</span>` +
+        `<span class="label"><b>${esc(id === '' ? '(no container)' : id)}</b> <span class="muted">${kids.length}</span></span></div>` +
+        `<div class="kids${open ? '' : ' hide'}">${kids.map(r => entityNode(r, false)).join('')}</div></div>`;
+    }
+    if (!html) html = `<div class="muted">${records.length ? 'Nothing matches the filter.' : 'No persisted records.'}</div>`;
+    $('tree').innerHTML = html;
+  }
+
+  // `forced`: an ancestor matched the filter, so this whole subtree is shown.
+  function entityNode(r, forced) {
+    const all = carried.get(r.key) || [];
+    const keep = forced || hit(r);
+    const kids = keep ? all : all.filter(subtreeHit);
+    const nid = 'e:' + r.key;
+    const open = !collapsed.has(nid);
+    const badges =
+      (r.owned ? '<span class="badge owned">owned</span> ' : '') +
+      (r.serverDriven ? '<span class="badge server">server</span> ' : '') +
+      (r.scene ? '<span class="badge scene">scene</span> ' : '') +
+      (r.carrierKey ? '<span class="badge carried">carried</span> ' : '') +
+      (r.resolved ? '' : '<span class="badge raw">raw</span> ');
+    const what = r.scene ? 'scene ' + r.sceneId : (r.prefabName || 'prefab ' + r.prefabId);
+    return `<div class="node${selected === r.key ? ' sel' : ''}"><div class="row" data-node="${esc(nid)}" data-key="${esc(r.key)}">` +
+      `<span class="twist${kids.length ? '' : ' leaf'}" data-twist="${esc(nid)}">${open ? '▾' : '▸'}</span>` +
+      `<span class="label">${badges}${esc(r.name || '(unnamed)')} <span class="muted mono">${esc(r.key)}</span> ` +
+      `<span class="muted">[${esc(what)}] e${r.epoch} v${r.version}</span></span></div>` +
+      `<div class="kids${open ? '' : ' hide'}">${kids.map(k => entityNode(k, keep)).join('')}</div></div>`;
+  }
+
+  function renderEditor() {
+    const box = $('editor');
+    if (!selected || !byKey.has(selected)) {
+      box.innerHTML = '<div class="muted">Select a record on the left.</div>';
+      return;
+    }
+    const r = byKey.get(selected);
+    if (!poseEdits.size) pose = {
+      position: r.position.slice(), rotationEuler: r.rotationEuler.slice(), velocity: r.velocity.slice(),
+      containerId: r.containerId, name: r.name
+    };
+
+    const ident = [
+      ['key', r.key], ['prefab', r.scene ? '—' : (r.prefabName || '') + ' (#' + r.prefabId + ')'],
+      ['scene id', r.scene ? String(r.sceneId) : '—'], ['carrier', r.carrierKey || '—'],
+      ['epoch', String(r.epoch)], ['version', String(r.version)],
+      ['saved at', r.savedAt ? new Date(r.savedAt).toLocaleString() : '—'], ['saved by', r.savedBy || '—'],
+      ['state', r.stateBytes + ' bytes, ' + r.entries.length + ' entries'],
+      ['decoded from', r.resolved ? r.template : 'not in this build — state shown as hex']
+    ].map(([l, v]) => `<div class="f"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join('');
+
+    let html = `<div class="ident">${ident}</div>`;
+    html += '<h3>Placement</h3>';
+    html += vecField('name', 'name', 'text', [pose.name]);
+    html += vecField('containerId', 'container id', 'text', [pose.containerId]);
+    html += vecField('position', 'position x y z', 'number', pose.position);
+    html += vecField('rotationEuler', 'rotation x y z (degrees)', 'number', pose.rotationEuler);
+    html += vecField('velocity', 'velocity x y z', 'number', pose.velocity);
+
+    html += '<h3>State</h3>';
+    html += r.entries.length ? r.entries.map(entryField).join('') : '<div class="muted">This record has no state entries.</div>';
+
+    html += `<div class="acts">
+      <button id="btnSave" class="primary" ${dirty() && !busy ? '' : 'disabled'}>Save</button>
+      <button id="btnRevert" ${dirty() && !busy ? '' : 'disabled'}>Revert</button>
+      <span class="spacer"></span>
+      <input id="dupKey" type="text" placeholder="new key" style="width:220px">
+      <button id="btnDup" ${busy ? 'disabled' : ''}>Duplicate as…</button>
+      <button id="btnDel" class="danger" ${busy ? 'disabled' : ''}>Delete</button>
+    </div>`;
+    box.innerHTML = html;
+  }
+
+  function vecField(field, label, type, values) {
+    const d = poseEdits.has(field) ? ' dirty' : '';
+    const inputs = values.map((v, i) =>
+      `<input type="${type}" ${type === 'number' ? 'step="any"' : ''} class="${type === 'text' ? 'wide' : ''}" data-pose="${field}" data-i="${i}" value="${esc(v)}">`).join('');
+    return `<div class="field${d}"><div class="n">${esc(label)}</div><div class="c">${inputs}</div></div>`;
+  }
+
+  function entryField(e) {
+    const name = e.name;
+    const has = Object.prototype.hasOwnProperty.call(edits, name);
+    const v = has ? edits[name] : e.value;
+    const d = has ? ' dirty' : '';
+    const a = `data-entry="${esc(name)}"`;
+    let c;
+    switch (e.kind) {
+      case 'bool':
+        c = `<input type="checkbox" ${a} ${v ? 'checked' : ''}>`; break;
+      case 'int':
+        c = `<input type="text" inputmode="numeric" ${a} value="${esc(v)}">`; break;
+      case 'float':
+        c = `<input type="number" step="any" ${a} value="${esc(v)}">`; break;
+      case 'string':
+        c = `<input type="text" class="wide" ${a} value="${esc(v)}">`; break;
+      case 'enum':
+        c = `<select ${a}>${(e.enumNames || []).map(n => `<option ${n === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}` +
+            ((e.enumNames || []).includes(v) ? '' : `<option selected>${esc(v)}</option>`) + '</select>'; break;
+      case 'vector2': c = comps(a, v, ['x', 'y']); break;
+      case 'vector3': c = comps(a, v, ['x', 'y', 'z']); break;
+      case 'quaternion': c = comps(a, v, ['x', 'y', 'z', 'w']); break;
+      case 'color': c = comps(a, v, ['r', 'g', 'b', 'a']); break;
+      case 'readonly':
+        c = `<span class="mono">${esc(v)}</span><span class="note">read-only value; edit the bytes below</span>` +
+            `<textarea class="hexbox" rows="2" ${a} data-hex="1" placeholder="hex">${esc(has ? v : e.hex)}</textarea>`; break;
+      default:
+        c = `<textarea class="hexbox" rows="2" ${a} data-hex="1" placeholder="hex">${esc(has ? v : e.hex)}</textarea>`; break;
+    }
+    const type = e.typeName ? e.typeName : e.kind;
+    const note = e.note ? `<div class="note">${esc(e.note)}</div>` : '';
+    return `<div class="field${d}"><div class="n">${esc(name)}<br><span class="t">${esc(type)}</span></div><div class="c">${c}${note}</div></div>`;
+  }
+
+  function comps(attr, values, labels) {
+    const v = Array.isArray(values) ? values : [0, 0, 0, 0];
+    return labels.map((l, i) => `<label class="muted" style="font-size:12px">${l}<input type="number" step="any" ${attr} data-i="${i}" value="${esc(v[i])}"></label>`).join('');
+  }
+
+  // ------------------------------------------------------------------------------------------------------- events
+
+  document.addEventListener('click', ev => {
+    const twist = ev.target.closest('[data-twist]');
+    const row = ev.target.closest('[data-node]');
+    if (twist && row) {
+      const id = twist.getAttribute('data-twist');
+      collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+      renderTree();
+      return;
+    }
+    if (row) {
+      const id = row.getAttribute('data-node');
+      const key = row.getAttribute('data-key');
+      if (key) {
+        if (key !== selected) { selected = key; edits = {}; poseEdits.clear(); renderEditor(); }
+        renderTree();
+      } else {
+        collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+        renderTree();
+      }
+      return;
+    }
+    if (ev.target.id === 'btnSave') save();
+    else if (ev.target.id === 'btnRevert') { edits = {}; poseEdits.clear(); renderEditor(); }
+    else if (ev.target.id === 'btnDel') remove();
+    else if (ev.target.id === 'btnDup') duplicate();
+  });
+
+  document.addEventListener('input', ev => {
+    const t = ev.target;
+    if (t.id === 'search') { query = t.value.trim().toLowerCase(); renderTree(); return; }
+    if (t.hasAttribute('data-pose')) { readPose(t.getAttribute('data-pose')); return; }
+    if (t.hasAttribute('data-entry')) { readEntry(t.getAttribute('data-entry')); return; }
+  });
+  document.addEventListener('change', ev => {
+    const t = ev.target;
+    if (t.hasAttribute('data-entry')) readEntry(t.getAttribute('data-entry'));
+  });
+
+  function readPose(field) {
+    const inputs = Array.from(document.querySelectorAll(`[data-pose="${cssEscape(field)}"]`));
+    if (field === 'name' || field === 'containerId') pose[field] = inputs[0].value;
+    else pose[field] = inputs.map(i => parseFloat(i.value) || 0);
+    poseEdits.add(field);
+    inputs[0].closest('.field').classList.add('dirty');
+    syncButtons();
+  }
+
+  function readEntry(name) {
+    const r = byKey.get(selected);
+    const e = r && r.entries.find(x => x.name === name);
+    if (!e) return;
+    const nodes = Array.from(document.querySelectorAll(`[data-entry="${cssEscape(name)}"]`));
+    const hex = nodes.find(n => n.hasAttribute('data-hex'));
+    let value;
+    if (hex) value = hex.value.trim();
+    else if (e.kind === 'bool') value = nodes[0].checked;
+    else if (e.kind === 'int' || e.kind === 'string' || e.kind === 'enum') value = nodes[0].value;
+    else if (e.kind === 'float') value = parseFloat(nodes[0].value) || 0;
+    else value = nodes.filter(n => n.hasAttribute('data-i')).map(n => parseFloat(n.value) || 0);
+    edits[name] = value;
+    nodes[0].closest('.field').classList.add('dirty');
+    syncButtons();
+  }
+
+  function cssEscape(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+
+  function syncButtons() {
+    const on = dirty() && !busy;
+    if ($('btnSave')) $('btnSave').disabled = !on;
+    if ($('btnRevert')) $('btnRevert').disabled = !on;
+  }
+
+  // ------------------------------------------------------------------------------------------------------ requests
+
+  let toastTimer = 0;
+  function toast(msg, ok) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show'); t.classList.toggle('ok', !!ok);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
+  }
+
+  function setOnline(ok, message) {
+    $('banner').classList.toggle('show', !ok);
+    if (message) $('banner').textContent = message;
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch('/api/persistence/records', { cache: 'no-store' });
+      const doc = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setOnline(false, doc.error === 'persistence is off'
+          ? 'Persistence is off in this mesh. Start it with -nebula-persistence-mode local or spacetime.'
+          : 'The orchestrator refused the request: ' + (doc.error || res.status));
+        return;
+      }
+      apply(doc);
+      setOnline(true);
+    } catch (e) {
+      setOnline(false, 'Lost contact with the orchestrator. Retrying…');
+    }
+  }
+
+  function apply(doc) {
+    records = doc.records || [];
+    index();
+    const sp = $('storePill');
+    sp.className = 'pill ' + (doc.connected ? 'ok' : 'bad');
+    sp.lastElementChild.textContent = doc.backend + (doc.connected ? ' · connected' : ' · disconnected');
+    const cp = $('countPill');
+    cp.className = 'pill ' + (doc.loaded ? 'ok' : 'warn');
+    cp.lastElementChild.textContent = doc.loaded ? records.length + ' records' : 'loading…';
+    $('updated').textContent = 'updated ' + new Date(doc.generatedAt).toLocaleTimeString();
+    renderTree();
+    if (!editing()) renderEditor();
+  }
+
+  async function send(path, body, okMessage) {
+    if (busy) return null;
+    busy = true;
+    syncButtons();
+    try {
+      const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const doc = await res.json().catch(() => ({}));
+      if (!res.ok || doc.ok === false) { toast(doc.error || ('request failed: ' + res.status)); return null; }
+      if (okMessage) toast(okMessage, true);
+      return doc;
+    } catch (e) {
+      toast('request failed: ' + e.message);
+      return null;
+    } finally {
+      busy = false;
+      await refresh();
+    }
+  }
+
+  async function save() {
+    if (!selected || !dirty()) return;
+    const body = { key: selected };
+    for (const f of poseEdits) body[f] = pose[f];
+    if (Object.keys(edits).length) body.entries = edits;
+    const doc = await send('/api/persistence/record', body, 'saved');
+    if (doc) { edits = {}; poseEdits.clear(); renderEditor(); }
+  }
+
+  async function remove() {
+    if (!selected) return;
+    if (!confirm('Delete the persisted record "' + selected + '"? This cannot be undone.')) return;
+    const gone = selected;
+    const doc = await send('/api/persistence/delete', { key: gone }, 'deleted ' + gone);
+    if (doc) { selected = null; edits = {}; poseEdits.clear(); renderEditor(); }
+  }
+
+  async function duplicate() {
+    if (!selected) return;
+    const input = $('dupKey');
+    const newKey = input ? input.value.trim() : '';
+    if (!newKey) { toast('Type the new key first.'); return; }
+    const doc = await send('/api/persistence/duplicate', { key: selected, newKey: newKey }, 'duplicated as ' + newKey);
+    if (doc && doc.record) { selected = doc.record.key; edits = {}; poseEdits.clear(); renderEditor(); renderTree(); }
+  }
+
+  // Poll while nobody is editing, so a field being typed into is never replaced under the cursor.
+  setInterval(() => { if (!editing() && !busy) refresh(); }, 2000);
+  refresh();
+})();
+</script>
+</body>
+</html>

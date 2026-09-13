@@ -26,6 +26,7 @@
     "guides/configuration",
     "guides/orchestrator-and-dashboard",
     "guides/control-plane",
+    "guides/persistence",
     "guides/debugging",
     "---Deploying---",
     "deploy/hetzner",

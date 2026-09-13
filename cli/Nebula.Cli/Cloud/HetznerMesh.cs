@@ -138,7 +138,7 @@ public sealed class HetznerMesh
 
     // --- deploy ------------------------------------------------------------------------------------------
 
-    public sealed record DeployOptions(int Workers, int Npcs, string SpacetimeUri, string Database, bool SkipUpload, bool Verbose);
+    public sealed record DeployOptions(int Workers, int Npcs, string SpacetimeUri, string Database, string PersistenceDatabase, bool SkipUpload, bool Verbose);
 
     /// <summary>Ship the tarball and (re)start the orchestrator service. Returns the dashboard URL.</summary>
     public string Deploy(JsonNode orch, string tarball, DeployOptions o)
@@ -183,6 +183,8 @@ public sealed class HetznerMesh
             "-nebula-gateway", $"{publicIp}:{GatewayPort}",
             "-nebula-spacetime", o.SpacetimeUri,
             "-nebula-database", o.Database,
+            "-nebula-persistence", o.SpacetimeUri,
+            "-nebula-persistence-database", o.PersistenceDatabase,
             "-nebula-cloud-mesh", MeshName,
             "-nebula-cloud-location", location,
             "-nebula-cloud-type", WorkerType,

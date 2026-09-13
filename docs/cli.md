@@ -39,12 +39,12 @@ into `cli/dist`.
 nebula setup                 install SpacetimeDB and the .NET 10 SDK, check git/ssh and the Unity editors
 nebula init                  install Nebula into the Unity project you are in (Packages/com.1by3.nebula, manifest, nebula.json)
 nebula build [--linux]       build the executable every role runs (host player, or the Linux server + tarball)
-nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui]
+nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
 nebula stop
-nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, recent events
+nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, persistence, recent events
 nebula logs [role] [-n N] [--follow] [--cloud]
 nebula config hetzner|spacetime|unity|source|show
-nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui]
+nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]
 nebula destroy [--all]
 ```
 
@@ -76,14 +76,20 @@ Per-project settings that travel with the project:
   "nebula": "0.1.0",
   "executable": "Nebula",
   "mesh":   { "workers": 4, "npcs": 0, "dashboardPort": 7080, "gatewayPort": 7000,
-              "spacetimeUri": "http://127.0.0.1:3000", "database": "nebula" },
-  "deploy": { "target": "hetzner", "meshName": "nebula", "database": "nebula-mygame", "workers": 4, "npcs": 0 }
+              "spacetimeUri": "http://127.0.0.1:3000", "database": "nebula",
+              "persistenceDatabase": "nebula-persist" },
+  "deploy": { "target": "hetzner", "meshName": "nebula", "database": "nebula-mygame",
+              "persistenceDatabase": "nebula-mygame-persist", "workers": 4, "npcs": 0 }
 }
 ```
 
 `mesh` holds the local defaults `nebula start` uses; `deploy` the cloud ones (`workerType`,
 `orchestratorType` and `location` may be added to override the values in the CLI config). `executable` is the
 base name NebulaBuild gives the player (`Nebula.exe`, `Nebula.x86_64`, `Nebula.app`).
+
+`database` names the control-plane database, `persistenceDatabase` the separate database that holds saved
+entities. Leave `deploy.persistenceDatabase` out and the CLI uses the control-plane database name with a
+`-persist` suffix.
 
 ## Building and running locally
 
@@ -96,10 +102,16 @@ Lines tagged `[nebula]` and compiler errors from the Unity log are echoed while 
 
 `nebula start` runs the whole local mesh: it starts a local SpacetimeDB if none answers on the
 configured address (logs to `Builds/<platform>/Logs/spacetimedb.log`), publishes the control-plane module with
-fresh data, launches the orchestrator (which launches the gateway and the workers), waits for the dashboard and
+fresh data, publishes the persistence module without touching its rows, launches the orchestrator (which launches the gateway and the workers), waits for the dashboard and
 prints how to join. Logs live next to the build in `Logs/` (`orchestrator`, `gateway`, `w1..wN`, `bot1..`).
 `nebula stop` kills every process of the build and the SpacetimeDB the CLI started (`--spacetime` to stop one
 that was already running).
+
+The control plane only records which processes are running, so `nebula start` republishes it with fresh data
+every time. Saved entities live in their own database and survive restarts. To throw them away, run
+`nebula start --reset-persistence`, which republishes the persistence module with `--delete-data`.
+`nebula status` prints a persistence line (mode, backend, connection, number of saved entities) when the mesh
+reports one.
 
 ## Deploying
 
@@ -111,7 +123,8 @@ nebula deploy --open-ui
 
 `deploy` refuses to run until both are configured, and then: builds the Linux dedicated server and packs
 `Builds/nebula-linux.tar.gz`; publishes the control-plane module to the configured server (`--reset-control-plane`
-adds `--delete-data`); creates the ssh key (`~/.ssh/nebula_hetzner`), private network, firewalls and orchestrator
+adds `--delete-data`) and the persistence module next to it, keeping its saved entities unless you pass
+`--reset-persistence`; creates the ssh key (`~/.ssh/nebula_hetzner`), private network, firewalls and orchestrator
 VM that are missing; uploads the tarball over scp, writes `/etc/nebula/env` (root-only, the token) and the
 `nebula-orchestrator` systemd unit over ssh, restarts it and waits for the dashboard. The orchestrator creates
 one VM per worker. `nebula status --cloud` and `nebula logs --cloud orchestrator|gateway|w1` read the deployed

@@ -170,6 +170,32 @@ public virtual void ReadHandoverState(NetworkReader reader);
 
 Called on the incoming worker after the entity's pose, velocity and NetworkVariables have been applied and before [`OnGainedAuthority`](#ongainedauthority). Read exactly what [`WriteHandoverState`](#writehandoverstate) wrote.
 
+### WritePersistentState [#writepersistentstate]
+
+```csharp
+public virtual void WritePersistentState(NetworkWriter writer);
+```
+
+Called while the worker builds this entity's persistence record. Write what the entity needs to come back as it was and that no [`PersistAttribute`](/docs/reference/persistence/persist-attribute) variable already covers. Must be mirrored exactly by [`ReadPersistentState`](#readpersistentstate). Writing nothing (the default) costs nothing: an entry is only added when bytes were written.
+
+Unlike [`WriteHandoverState`](#writehandoverstate), this is read back by a later run and possibly a later build, so treat it as a save format and version it yourself if you expect it to change.
+
+### ReadPersistentState [#readpersistentstate]
+
+```csharp
+public virtual void ReadPersistentState(NetworkReader reader);
+```
+
+Called on a restored entity before it is spawned, with exactly what [`WritePersistentState`](#writepersistentstate) wrote. The reader is bounded to this behaviour's own chunk, so reading too much fails here (and is logged) instead of corrupting the rest of the record.
+
+### MarkPersistDirty [#markpersistdirty]
+
+```csharp
+protected void MarkPersistDirty();
+```
+
+Ask for a checkpoint soon: something worth saving changed that Nebula cannot see by itself (state written by [`WritePersistentState`](#writepersistentstate)). A no-op on an entity with no [`PersistentEntity`](/docs/reference/persistence/persistent-entity).
+
 ### MarkSyncDirty [#marksyncdirty]
 
 ```csharp

@@ -32,6 +32,12 @@ namespace Nebula
 
         public NebulaConfig Config { get; private set; }
         public IControlPlane ControlPlane { get; private set; }
+        /// <summary>
+        /// Long-term storage for the entities that opted into it (<see cref="PersistentEntity"/>): checkpoints of
+        /// what this worker owns, and restores of what the containers it leases held. Null when persistence is off
+        /// (<c>-nebula-persistence-mode off</c>, or no store handed to <see cref="Initialize"/>).
+        /// </summary>
+        public NebulaPersistence Persistence { get; private set; }
         public string WorkerId { get; private set; }
         public ushort WorkerIndex { get; private set; }
         public ushort Port { get; private set; }
@@ -221,6 +227,16 @@ namespace Nebula
 
         public void Initialize(NebulaConfig config, IControlPlane controlPlane)
         {
+            Initialize(config, controlPlane, null);
+        }
+
+        /// <summary>
+        /// Start the worker with a persistence store: entities carrying a <see cref="PersistentEntity"/> are
+        /// checkpointed into it and restored from it (see <see cref="Persistence"/>). A null store turns persistence
+        /// off; an unreachable one only delays the saves, it never stops the simulation.
+        /// </summary>
+        public void Initialize(NebulaConfig config, IControlPlane controlPlane, IPersistenceStore persistenceStore)
+        {
             Config = config;
             ControlPlane = controlPlane;
             WorkerIndex = (ushort)CommandLine.GetInt("nebula-worker-index", 1);
@@ -243,6 +259,11 @@ namespace Nebula
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             OnLeasesChanged();
+            if (persistenceStore != null)
+            {
+                Persistence = new NebulaPersistence(this, config, persistenceStore);
+                NebulaLog.Info($"persistence: {persistenceStore.Backend} store, checkpoint every {config.PersistenceCheckpointSeconds:0.#}s");
+            }
             var boot = NebulaBootstrap.Instance;
             _telemetry = WorkerTelemetry.Create(boot != null && boot.Orchestrator != null ? boot.Orchestrator.Telemetry : null);
             NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port}; telemetry {(_telemetry == null ? "off" : _telemetry.Url == "" ? "to the orchestrator in this process" : "to " + _telemetry.Url)}");
@@ -278,6 +299,8 @@ namespace Nebula
 
         private void OnDestroy()
         {
+            // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
+            Persistence?.Shutdown();
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
             ContainerRegistry.DynamicRegistered -= OnDynamicContainerRegistered;
             SceneEntities.Registered -= OnSceneEntityRegistered;
@@ -324,6 +347,8 @@ namespace Nebula
                 _nextScenePass = Time.unscaledTime + ScenePassSeconds;
                 SpawnSceneEntities();
             }
+            // Checkpoints and restores run here, off the tick, bounded per frame.
+            Persistence?.Update();
         }
 
         // ---------------------------------------------------------------------------------------- scene entities
@@ -355,7 +380,10 @@ namespace Nebula
                 var c = ContainerRegistry.Find(e.transform.position);
                 if (c == null || !c.IsOwnedBy(WorkerId)) continue;
                 if (!_ownedSince.TryGetValue(c.Index, out float since) || now - since < Config.SceneEntityGraceSeconds) continue;
-                Spawn(e, c);
+                // A persistent scene object comes back as it was saved, at the epoch after the one that saved it.
+                uint epoch = Persistence != null ? Persistence.PrepareSceneEntity(e) : 0;
+                if (epoch != 0) Spawn(e, c, 0, false, epoch);
+                else Spawn(e, c);
             }
         }
 
@@ -386,7 +414,7 @@ namespace Nebula
             if (e.HasAuthority)
             {
                 NebulaLog.Info($"scene entity {e} unloaded with its cell; despawning");
-                Despawn(e);
+                Despawn(e, keepPersisted: true); // the cell left, the object did not cease to exist
             }
             else RemoveLocal(e);
         }
@@ -676,6 +704,24 @@ namespace Nebula
 
         private void Spawn(NetworkIdentity identity, Container container, uint ownerClientId, bool serverDriven)
         {
+            Spawn(identity, container, ownerClientId, serverDriven, 1);
+        }
+
+        /// <summary>
+        /// Spawn an entity being brought back from the persistence store, at the epoch that follows the one the
+        /// record was saved with, so anything still holding the old epoch is stale everywhere.
+        /// </summary>
+        internal void SpawnRestored(NetworkIdentity identity, Container container, PersistedEntityRecord record)
+        {
+            Spawn(identity, container, 0, record.ServerDriven, record.Epoch + 1);
+        }
+
+        /// <summary>
+        /// The one spawn path. <paramref name="epoch"/> is 1 for a new entity and <c>record.Epoch + 1</c> for one
+        /// restored from the store.
+        /// </summary>
+        private void Spawn(NetworkIdentity identity, Container container, uint ownerClientId, bool serverDriven, uint epoch)
+        {
             if (identity == null) throw new ArgumentNullException(nameof(identity));
             if (identity.IsSpawned) throw new InvalidOperationException($"{identity} is already spawned");
             if (identity.PrefabId == ushort.MaxValue && !identity.IsSceneEntity)
@@ -684,7 +730,7 @@ namespace Nebula
             }
             identity.Initialize();
             identity.NetId = ((ulong)WorkerIndex << 48) | (++_nextSequence);
-            identity.Epoch = 1;
+            identity.Epoch = epoch == 0 ? 1 : epoch;
             identity.OwnerClientId = ownerClientId;
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
             identity.IsServerDriven = serverDriven && ownerClientId == 0;
@@ -715,7 +761,13 @@ namespace Nebula
             return identity;
         }
 
-        public void Despawn(NetworkIdentity identity)
+        /// <summary>
+        /// Remove an entity from the mesh. A persistent entity (<see cref="PersistentEntity"/>) is also forgotten by
+        /// the store: this is the entity ceasing to exist, not merely leaving this process. Pass
+        /// <paramref name="keepPersisted"/> true when the world should keep it (a player disconnecting, a cell
+        /// unloading): its record is checkpointed one last time and left in place.
+        /// </summary>
+        public void Despawn(NetworkIdentity identity, bool keepPersisted = false)
         {
             if (identity == null || !_entities.ContainsKey(identity.NetId)) return;
             if (!identity.HasAuthority)
@@ -723,6 +775,7 @@ namespace Nebula
                 NebulaLog.Warn($"Despawn({identity}) called on a ghost; only the authority can despawn");
                 return;
             }
+            Persistence?.OnDespawning(identity, keepPersisted);
             var despawn = new EntityDespawnMsg { NetId = identity.NetId, Epoch = identity.Epoch };
             foreach (var g in _gateways) { _writer.Reset(); despawn.Write(_writer, MsgId.EntityDespawn); Send(g, Delivery.ReliableOrdered); }
             var carried = identity.Carried;
@@ -920,6 +973,8 @@ namespace Nebula
 
         private void TransferAuthority(NetworkIdentity e, Peer target)
         {
+            // A persistent entity is checkpointed one last time while this worker is still its authority.
+            Persistence?.OnHandoverOut(e);
             // Create a ghost if the neighboring worker has not seen this entity yet.
             if (!_ghostTargets.TryGetValue(e.NetId, out var targets) || !targets.ContainsKey(target.Id))
             {
@@ -1311,7 +1366,9 @@ namespace Nebula
             if (e.HasAuthority)
             {
                 _gameMode?.OnPlayerDespawn(this, e);
-                Despawn(e);
+                // A client disconnecting is not the entity ceasing to exist: a persistent pawn keeps its record so
+                // the player finds it again on the next connection.
+                Despawn(e, keepPersisted: e.Persistent != null);
             }
             else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
             {

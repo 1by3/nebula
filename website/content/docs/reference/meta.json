@@ -2,5 +2,5 @@
   "title": "API reference",
   "description": "Nebula C# types and members",
   "root": true,
-  "pages": ["index", "core", "containers", "world", "worker", "client", "gateway", "orchestrator", "control-plane", "bootstrap", "serialization", "transport", "protocol", "debug", "editor", "spacetime-module"]
+  "pages": ["index", "core", "containers", "world", "worker", "client", "gateway", "orchestrator", "control-plane", "bootstrap", "serialization", "transport", "protocol", "debug", "editor", "spacetime-module", "persistence"]
 }

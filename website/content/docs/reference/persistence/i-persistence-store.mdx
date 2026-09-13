@@ -1,0 +1,113 @@
+---
+title: "IPersistenceStore"
+description: "Long-term storage for entities that opted into persistence (PersistentEntity)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs)</div>
+
+```csharp
+public interface IPersistenceStore : IDisposable
+```
+
+Long-term storage for entities that opted into persistence ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)). One store per process; the worker's [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) writes checkpoints through it and reads containers back when it gains a lease. Use [`SpacetimePersistenceStore`](/docs/reference/persistence/spacetime-persistence-store) for a mesh (a SpacetimeDB database of its own next to the control plane), [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) for single-process runs and tests.
+
+The contract is request/response on purpose (no subscriptions), so a relational backend fits behind it. Every callback lands on the main thread from [`Tick`](#tick). Writes are fire-and-forget: a save is accepted by the backend when its epoch is not older than the stored one, otherwise dropped, and the caller never waits. The store is never on the per-tick path: if it is unreachable the mesh keeps simulating and saves are retried on the next checkpoint.
+
+## Properties
+
+### IsConnected [#isconnected]
+
+```csharp
+bool IsConnected { get; }
+```
+
+Connected and ready to answer loads. Saves issued before this are queued until it is true.
+
+### Backend [#backend]
+
+```csharp
+string Backend { get; }
+```
+
+Short backend name for logs and the dashboard ("spacetime", "local", "memory").
+
+### KnownCount [#knowncount]
+
+```csharp
+int KnownCount { get; }
+```
+
+How many records the store holds as far as this process knows (-1 when unknown).
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+void Tick();
+```
+
+Pump the backend and deliver callbacks on the main thread. Call once per frame.
+
+### Save [#save]
+
+```csharp
+void Save(PersistedEntityRecord record);
+```
+
+Insert or update. The backend keeps the record only when [`PersistedEntityRecord.Epoch`](/docs/reference/persistence/persisted-entity-record#epoch) is at least the stored epoch.
+
+### Delete [#delete]
+
+```csharp
+void Delete(string key);
+```
+
+Delete the record for `key`, if any.
+
+### Load [#load]
+
+```csharp
+void Load(string key, Action<PersistedEntityRecord> onLoaded);
+```
+
+The record for `key` (null when there is none).
+
+### LoadContainer [#loadcontainer]
+
+```csharp
+void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+Every record whose [`PersistedEntityRecord.ContainerId`](/docs/reference/persistence/persisted-entity-record#containerid) is `containerId` and that is not inside a carrier.
+
+### LoadCarried [#loadcarried]
+
+```csharp
+void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+Every record whose [`PersistedEntityRecord.CarrierKey`](/docs/reference/persistence/persisted-entity-record#carrierkey) is `carrierKey`.
+
+### LoadWhere [#loadwhere]
+
+```csharp
+void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+```
+
+Every record that matches `predicate`. For tools and game directors, not for the per-lease restore path.
+
+### Clear [#clear]
+
+```csharp
+void Clear();
+```
+
+Delete every record (dashboard / dev reset).
+

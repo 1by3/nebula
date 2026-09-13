@@ -9,6 +9,8 @@ Use the control plane to share process registrations, container assignments, and
 
 Use it for process registration, heartbeats, container assignments, authority epochs, and shared settings. The orchestrator writes assignments. Workers and gateways register themselves and update their heartbeats. Each process subscribes to the records it needs.
 
+Do not use it for saved entities either. Entities that opt into [persistence](/docs/guides/persistence) are written to a separate SpacetimeDB database, `nebula-persist`, by the module in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`. The two databases are kept apart so that wiping the control plane's registry never touches a saved world.
+
 Do not use the control plane for per-tick state. Workers exchange transforms, input, RPCs, and ghost state over their direct links and through the gateway. Simulation ticks do not wait for database operations.
 
 If the control-plane connection fails, workers continue with the last assignments they received. `SpacetimeControlPlane` attempts to reconnect every two seconds and discards writes while disconnected.
@@ -152,11 +154,15 @@ The Editor menu runs the same commands: **Nebula > Control Plane > Start Spaceti
 
 The control plane holds only ephemeral registry state, so wiping it is always safe while the mesh is down. The orchestrator's `ResetControlPlane` at startup covers the case where the module was not republished.
 
+`nebula start` then publishes the persistence module as `mesh.persistenceDatabase` *without* `--delete-data`, so saved entities survive the restart. Use `nebula start --reset-persistence` when you want an empty world as well. See [Persistence](/docs/guides/persistence).
+
 ### Maincloud for deployment
 
 For deployment, configure a SpacetimeDB server that every virtual machine can reach. Run `nebula config spacetime` to sign in to Maincloud at `https://maincloud.spacetimedb.com` or record another server URL. Set a unique database name in `deploy.database` in `nebula.json`.
 
 When you run `nebula deploy`, the CLI publishes the module before it creates virtual machines. It passes the server and database to the orchestrator, which passes them to the workers and gateway. Add `--reset-control-plane` to publish with `--delete-data`.
+
+The CLI publishes the persistence module to the same server as `deploy.persistenceDatabase` in `nebula.json`, which defaults to the control-plane database name with a `-persist` suffix. It keeps its rows unless you add `--reset-persistence`.
 
 <Callout type="warn" title="Reducers accept any caller">
 The module does not authenticate reducer callers. Anyone who can connect to the database can register a worker, change a container assignment, or rewrite a setting. Do not treat the database name as a security boundary. Restrict access with deployment infrastructure until you add authentication that meets your game's requirements.
@@ -165,5 +171,6 @@ The module does not authenticate reducer callers. Anyone who can connect to the 
 <Cards>
   <Card title="Orchestrator and Nebula Dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Who writes the leases and when." />
   <Card title="Deploying to Hetzner" href="/docs/deploy/hetzner" description="Maincloud plus one VM per worker." />
+  <Card title="Persistence" href="/docs/guides/persistence" description="The second database, and the entities that outlive a worker." />
   <Card title="Architecture" href="/docs/concepts/architecture" description="Why the control plane must never be a hot-path dependency." />
 </Cards>
