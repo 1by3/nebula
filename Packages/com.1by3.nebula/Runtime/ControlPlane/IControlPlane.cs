@@ -123,7 +123,14 @@ namespace Nebula
         void SetSetting(string key, string value);
 
         void EnsureContainer(string containerId);
+        /// <summary>Assign a container to a worker (epoch + 1, state active). Leaves a pinned lease alone.</summary>
         void AssignContainer(string containerId, string workerId);
+        /// <summary>
+        /// Pin a carried container to <paramref name="workerId"/>: worker, epoch and <see cref="LeaseState.Pinned"/>
+        /// in one change, so no subscriber ever sees the lease assigned but not yet pinned (the carrier's worker
+        /// would reclaim it). Unpin with <see cref="SetLeaseState"/>.
+        /// </summary>
+        void PinContainer(string containerId, string workerId);
         void SetLeaseState(string containerId, string state);
         void ReleaseContainer(string containerId);
         /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>

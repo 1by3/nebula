@@ -631,6 +631,7 @@ namespace Nebula.Spacetime
                 Reducer.HeartbeatGateway args => Reducers.InvokeHeartbeatGateway(eventContext, args),
                 Reducer.HeartbeatOrchestrator args => Reducers.InvokeHeartbeatOrchestrator(eventContext, args),
                 Reducer.HeartbeatWorker args => Reducers.InvokeHeartbeatWorker(eventContext, args),
+                Reducer.PinContainer args => Reducers.InvokePinContainer(eventContext, args),
                 Reducer.RegisterGateway args => Reducers.InvokeRegisterGateway(eventContext, args),
                 Reducer.RegisterWorker args => Reducers.InvokeRegisterWorker(eventContext, args),
                 Reducer.ReleaseContainer args => Reducers.InvokeReleaseContainer(eventContext, args),

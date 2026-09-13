@@ -235,6 +235,11 @@ namespace Nebula
             if (Ready("AssignContainer")) _conn.Reducers.AssignContainer(containerId, workerId);
         }
 
+        public void PinContainer(string containerId, string workerId)
+        {
+            if (Ready("PinContainer")) _conn.Reducers.PinContainer(containerId, workerId);
+        }
+
         public void SetLeaseState(string containerId, string state)
         {
             if (Ready("SetLeaseState")) _conn.Reducers.SetLeaseState(containerId, state);

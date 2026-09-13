@@ -129,10 +129,22 @@ namespace Nebula
                 Touch();
                 return;
             }
+            if (l.State == LeaseState.Pinned) return; // only PinContainer moves a pinned lease
             if (l.WorkerId == workerId && l.State == LeaseState.Active) return;
             l.WorkerId = workerId;
             l.Epoch += 1;
             l.State = LeaseState.Active;
+            l.UpdatedAt = Now;
+            Touch();
+        }
+
+        public void PinContainer(string containerId, string workerId)
+        {
+            var l = this.FindLease(containerId);
+            if (l == null || (l.WorkerId == workerId && l.State == LeaseState.Pinned)) return;
+            l.WorkerId = workerId;
+            l.Epoch += 1;
+            l.State = LeaseState.Pinned;
             l.UpdatedAt = Now;
             Touch();
         }

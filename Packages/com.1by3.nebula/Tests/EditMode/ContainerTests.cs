@@ -99,9 +99,25 @@ namespace Nebula.Tests
             // Entering the room from the enclosing box honours hysteresis, then flips.
             Assert.AreSame(east, ContainerRegistry.Resolve(new Vector3(11.9f, 1, 0), east, 0.35f));
             Assert.AreSame(room, ContainerRegistry.Resolve(new Vector3(11.5f, 1, 0), east, 0.35f));
-            // Leaving the room falls straight back to the enclosing box.
+            // Leaving the room past the band falls back to the enclosing box.
             Assert.AreSame(east, ContainerRegistry.Resolve(new Vector3(12.5f, 1, 0), room, 0.35f));
             CollectionAssert.Contains(room.Neighbors, east);
+        }
+
+        [Test]
+        public void ResolveKeepsAHysteresisBandAtANestedBoxsFloor()
+        {
+            // A raised deck inside the east box, like a ship's interior entered up a ramp through its floor.
+            var deck = Make("c-deck", new Vector3(10, 4, 0), new Vector3(6, 4, 6));
+            ContainerRegistry.Rebuild();
+            var east = ContainerRegistry.FindById("a-east");
+            float floor = deck.WorldBounds.min.y;
+            // Depth ignores the floor, so a point just above it and well inside the walls is already in the deck.
+            Assert.AreSame(deck, ContainerRegistry.Resolve(new Vector3(10, floor + 0.01f, 0), east, 0.35f));
+            // Dipping just below the floor does not flip it straight back out...
+            Assert.AreSame(deck, ContainerRegistry.Resolve(new Vector3(10, floor - 0.1f, 0), deck, 0.35f));
+            // ...clearly below it does.
+            Assert.AreSame(east, ContainerRegistry.Resolve(new Vector3(10, floor - 0.5f, 0), deck, 0.35f));
         }
 
         [Test]
