@@ -19,7 +19,7 @@ Create one [`NebulaGameMode`](/docs/reference/core/nebula-game-mode) subclass to
 
 `OnSpawnPlayer` is called on whichever worker the gateway picked, with the container the gateway chose. If the hook returns an identity that is not yet spawned, the worker spawns it for that client; if it returns null, the worker logs an error and the client gets no pawn.
 
-`NebulaGameMode.RandomPointIn(container, margin, y)` is a static helper: a uniform random point inside the container's floor footprint, `margin` metres in from the edge, at height `y`.
+`NebulaContainerHelpers.RandomPointIn(container, margin, y)` is a static helper: a uniform random point inside the container's floor footprint, `margin` metres in from the edge, at height `y`.
 
 Create a game mode like this:
 
@@ -30,7 +30,7 @@ public sealed class ExampleGameMode : NebulaGameMode
 
     public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
     {
-        var position = RandomPointIn(container, margin: 2f, y: 0f);
+        var position = NebulaContainerHelpers.RandomPointIn(container, margin: 2f, y: 0f);
         var identity = NetworkPrefabs.Instantiate(
             NetworkPrefabs.IdOf(PlayerPrefab),
             position,
