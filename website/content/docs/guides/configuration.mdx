@@ -92,7 +92,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-role client\|worker\|gateway\|orchestrator` | all roles | Select one or more comma-separated roles. Do not combine the client and worker roles. Use `services` as an alias for gateway and orchestrator. |
 | `-nebula-scene <name>` | all roles | Override `GameScene`. |
 | `-nebula-gateway <address:port>` | client, worker, orchestrator | Set the gateway address. A client connects immediately when you supply this option. |
-| `-nebula-connect` | client | Connect to the configured gateway without showing the title screen. |
+| `-nebula-connect` | client | Connect to the configured gateway at startup. `NebulaTitleScreen` stays hidden. |
 | `-nebula-name <name>` | client | Set the player's display name. |
 | `-nebula-bot` | client | Mark this headless client as a bot. Your game must provide its input behavior. |
 | `-nebula-worker-id <id>` | worker | Set the worker ID. The orchestrator normally supplies it. |

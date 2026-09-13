@@ -1,6 +1,6 @@
 ---
 title: "NebulaTitleScreen"
-description: "Displays an IMGUI panel where a player can enter the gateway address and a display name before connecting."
+description: "Optional IMGUI panel where a player enters the gateway address and a display name before connecting."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/NebulaTitleScreen.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/NebulaTitleScreen.cs)</div>
@@ -9,7 +9,7 @@ description: "Displays an IMGUI panel where a player can enter the gateway addre
 public sealed class NebulaTitleScreen : MonoBehaviour
 ```
 
-Displays an IMGUI panel where a player can enter the gateway address and a display name before connecting. Nebula skips the panel when `-nebula-gateway`, `-nebula-bot`, or `-nebula-connect` supplies the connection. The selected values persist in PlayerPrefs.
+Optional IMGUI panel where a player enters the gateway address and a display name before connecting. Add it to the same GameObject as [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap); Nebula \> Set Up Active Scene adds it for you. Without it, a client started with no connection arguments stays idle until your own UI calls [`NebulaClient.ConnectTo`](/docs/reference/client/nebula-client#connectto). The panel stays hidden in processes without the client role and when `-nebula-gateway`, `-nebula-bot`, or `-nebula-connect` supplies the connection ([`NebulaClient.ConnectsAutomatically`](/docs/reference/client/nebula-client#connectsautomatically)). It hides once the local player spawns; press Escape to show it again. The entered values persist in PlayerPrefs.
 
 ## Fields
 
@@ -18,6 +18,8 @@ Displays an IMGUI panel where a player can enter the gateway address and a displ
 ```csharp
 public NebulaClient Client;
 ```
+
+The client to connect. Leave empty to use [`NebulaBootstrap.Client`](/docs/reference/bootstrap/nebula-bootstrap#client) once the bootstrap creates it.
 
 ## Methods
 

@@ -243,9 +243,10 @@ nebula start --workers 4 --npcs 128             # load: 128 worker-simulated NPC
 
 # 3. join: press Play in the Editor (NebulaBootstrap.EditorRole = Client) or
 Builds\Win64\Nebula.exe -nebula-role client -nebula-name jesse
-#    Either way a title screen asks for the gateway (Local = 127.0.0.1:7000, Hetzner = the last remote address you
-#    used, or anything typed in) and a name; Escape in game brings it back to disconnect or switch. Bots and clients
-#    started with -nebula-gateway <addr:port> (or -nebula-connect) skip it and connect at once.
+#    Either way, if the scene has a NebulaTitleScreen (Set Up Active Scene adds one) it asks for the gateway
+#    (127.0.0.1:7000 locally, or the last address used) and a name; Escape in game brings it back to disconnect or
+#    switch. Without it the client idles until game code calls NebulaClient.ConnectTo. Bots and clients started with
+#    -nebula-gateway <addr:port> (or -nebula-connect) connect at once.
 
 nebula status                                   # workers, containers, players/bots/NPCs, events
 nebula logs w1 --follow                         # orchestrator | gateway | w1..wN | bot1..

@@ -47,9 +47,11 @@ To join from a standalone build on Windows, run:
 Builds\Win64\Nebula.exe -nebula-role client -nebula-name Player
 ```
 
-On the title screen, select the gateway and enter a display name. Select **Local** to use `127.0.0.1:7000`. Press Escape during the game to disconnect or choose another gateway.
+If your scene includes `NebulaTitleScreen`, enter the gateway address and a display name on the title screen, then select **Connect**. Use `127.0.0.1:7000` for a local mesh. Press Escape during the game to disconnect or choose another gateway. **Nebula > Set Up Active Scene** adds the title screen for you.
 
-To connect without the title screen, pass `-nebula-gateway <address:port>` or `-nebula-connect`. Bot clients also connect without showing the title screen.
+Without `NebulaTitleScreen`, a client started without connection arguments stays idle until your code calls `NebulaClient.ConnectTo`. See [Connecting clients](/docs/guides/connecting-clients).
+
+To connect without any UI, pass `-nebula-gateway <address:port>` or `-nebula-connect`. Bot clients also connect at startup. The title screen stays hidden for these clients.
 
 ### Test with bots and server-driven entities
 

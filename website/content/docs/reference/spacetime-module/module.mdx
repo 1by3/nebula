@@ -78,7 +78,16 @@ Make sure a lease row exists for a container from the manifest.
 public static void AssignContainer(ReducerContext ctx, string containerId, string workerId);
 ```
 
-Orchestrator: authoritatively assign a container to a worker. Bumps the container epoch so stale owners can be rejected.
+Orchestrator: authoritatively assign a container to a worker. Bumps the container epoch so stale owners can be rejected. A pinned row is left alone: only PinContainer moves it and SetLeaseState releases it, so a carrier's worker reclaiming the lease with a call already in flight cannot undo a pin.
+
+### PinContainer [#pincontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void PinContainer(ReducerContext ctx, string containerId, string workerId);
+```
+
+Orchestrator: give a carried container a worker of its own. Worker, epoch and the pinned state change in one transaction; as two calls (assign, then set the state) the carrier's worker sees the in-between "active" row, reclaims it, and wins.
 
 ### SetLeaseState [#setleasestate]
 

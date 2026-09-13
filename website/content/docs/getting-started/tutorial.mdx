@@ -49,9 +49,13 @@ You do not need to create separate boundary objects. Nebula uses `GhostBandMargi
 
 ### Add the bootstrap
 
-With `Arena` open, run **Nebula > Set Up Active Scene**. The command creates a `Nebula` object and adds `NebulaBootstrap` and `NebulaDebugOverlay`. It also selects `Arena` as the game and boot scene. If the scene has no containers, the command adds a starter set around the level.
+With `Arena` open, run **Nebula > Set Up Active Scene**. The command creates a `Nebula` object and adds `NebulaBootstrap`, `NebulaDebugOverlay`, and `NebulaTitleScreen`. It also selects `Arena` as the game and boot scene. If the scene has no containers, the command adds a starter set around the level.
 
 The overlay shows the network tick, round-trip time (RTT), container, and worker while the game runs.
+
+The title screen asks the player for a gateway address and a display name, then connects. Nebula does not show a connection screen on its own. If you remove `NebulaTitleScreen`, a client started without connection arguments waits until your code calls `NebulaClient.ConnectTo`. Keep the title screen for this tutorial. See [Connecting clients](/docs/guides/connecting-clients) to build your own.
+
+If you already have a `Nebula` object, check that it has all three components. To add the title screen by hand, select the object and choose **Add Component > NebulaTitleScreen**.
 
 The setup only fills in what is missing, so it is safe to run again at any point. Run it after the next steps too: it adds your game mode to the scene and registers your network prefabs.
 
@@ -220,7 +224,7 @@ nebula start --open-ui
 
 The first command builds the Unity player. You can leave the project open in the Editor while it runs. The second command starts SpacetimeDB, publishes the control-plane module, and starts the orchestrator, gateway, and four workers. It also opens the dashboard at `http://localhost:7080/`.
 
-Press Play in the Editor. On the title screen, select the local gateway at `127.0.0.1:7000` and enter a name.
+Press Play in the Editor. On the title screen that `NebulaTitleScreen` shows, enter the local gateway address `127.0.0.1:7000` and a name, then select **Connect**. If no title screen appears, add `NebulaTitleScreen` to the `Nebula` object as described in [Add the bootstrap](#add-the-bootstrap).
 
 Walk across the middle of the room. The overlay shows the container and worker index changing, and its handover count increases. The dashboard also updates the container assignment and entity counts.
 

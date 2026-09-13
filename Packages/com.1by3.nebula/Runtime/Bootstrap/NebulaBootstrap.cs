@@ -176,11 +176,10 @@ namespace Nebula
             if ((Roles & NebulaRoles.Client) != 0)
             {
                 Client = gameObject.AddComponent<NebulaClient>();
-                // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in; a human gets the
-                // title screen to pick the gateway (local mesh or the Hetzner deployment) and a name.
+                // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in. Otherwise the
+                // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
                 bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", false);
                 Client.Initialize(Config, autoConnect);
-                if (!autoConnect) gameObject.AddComponent<NebulaTitleScreen>().Client = Client;
             }
             if (NebulaWorld.IsActive)
             {

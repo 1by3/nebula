@@ -113,7 +113,7 @@ public int AuthorityChangesSeen { get; }
 public string LastError { get; } = "";
 ```
 
-Last connection failure or disconnect reason, for the title screen. Empty while healthy.
+Last connection failure or disconnect reason, for connection UI. Empty while healthy.
 
 ### WantsConnection [#wantsconnection]
 
@@ -122,6 +122,14 @@ public bool WantsConnection { get; }
 ```
 
 Whether the client is trying to be connected (set by [`Connect`](#connect)/[`ConnectTo`](#connectto), cleared by [`Disconnect`](#disconnect)).
+
+### ConnectsAutomatically [#connectsautomatically]
+
+```csharp
+public bool ConnectsAutomatically { get; }
+```
+
+Whether the client connected on its own at startup because the command line supplied the connection (`-nebula-gateway`, `-nebula-bot`, or `-nebula-connect`). Connection UI such as [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen) stays hidden when this is true.
 
 ## Events
 
@@ -171,7 +179,7 @@ public void Initialize(NebulaConfig config, bool autoConnect = true);
 
 | Parameter | Description |
 | --- | --- |
-| `autoConnect` | Connect to [`NebulaConfig.GatewayAddress`](/docs/reference/core/nebula-config#gatewayaddress) at once (bots, scripted clients); false leaves the client idle until [`ConnectTo`](#connectto) is called from the title screen. |
+| `autoConnect` | Connect to [`NebulaConfig.GatewayAddress`](/docs/reference/core/nebula-config#gatewayaddress) at once (bots, scripted clients); false leaves the client idle until game code, or [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen), calls [`ConnectTo`](#connectto). |
 
 ### ConnectTo [#connectto]
 
@@ -179,7 +187,7 @@ public void Initialize(NebulaConfig config, bool autoConnect = true);
 public void ConnectTo(string address, ushort port, string playerName);
 ```
 
-Connect to a gateway chosen at runtime (title screen). Replaces the configured address for reconnects.
+Connect to a gateway chosen at runtime, for example from your own connection UI. Replaces the configured address for reconnects. A blank `playerName` keeps the current [`PlayerName`](#playername).
 
 ### Connect [#connect]
 
@@ -193,7 +201,7 @@ public void Connect();
 public void Disconnect();
 ```
 
-Leave the gateway and stop reconnecting; the title screen comes back.
+Leave the gateway and stop reconnecting. The client stays idle until the next [`Connect`](#connect) or [`ConnectTo`](#connectto).
 
 ### Find [#find]
 

@@ -30,7 +30,7 @@ Entry point for every Nebula process. Put one in the boot scene. Reads the role 
 public NebulaRoles EditorRole = NebulaRoles.Client;
 ```
 
-Roles started when pressing Play in the Editor, in place of `-nebula-role`. It does not replace a build: the orchestrator launches workers and the gateway from a player executable, and a process is never both a client and a worker, so whichever half the Editor does not run comes from a build. `Client` (the default) joins a mesh started with `nebula start`; `Worker` joins one started with `nebula start --workers 0`. See [Choosing the Editor's role](/docs/getting-started/running-locally#choosing-the-editors-role).
+Roles started when pressing Play in the Editor, in place of `-nebula-role`. It does not replace a build: the orchestrator launches workers and the gateway from a player executable, and a process is never both a client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a mesh started with `nebula start`; Worker joins one started with `nebula start --workers 0`.
 
 ### Config [#config]
 
