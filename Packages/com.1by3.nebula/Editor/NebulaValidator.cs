@@ -11,7 +11,7 @@ namespace Nebula.Editor
     /// <summary>
     /// Nebula &gt; Validate Project: checks the things that otherwise only show up as a broken build or a silent
     /// mesh. The config asset, the boot and game scenes in the build settings, the game mode, containers, the network
-    /// prefab table, a partitioned world's manifest and cell scenes, static batching in cells and scene entities
+    /// prefab table (including prefabs that kept a scene entity id), a partitioned world's manifest and cell scenes, static batching in cells and scene entities
     /// waiting for an id. Each issue is logged with its object as context, so clicking the log line selects it.
     /// </summary>
     public static class NebulaValidator
@@ -130,7 +130,8 @@ namespace Nebula.Editor
             for (int i = 0; i < list.Count; i++)
             {
                 if (list[i] == null) issues.Add(new Issue(Severity.Warning, $"NetworkPrefabs[{i}] is empty", config));
-                else if (list[i].GetComponent<NetworkIdentity>() == null) issues.Add(new Issue(Severity.Error, $"NetworkPrefabs[{i}] '{list[i].name}' has no NetworkIdentity on its root", list[i]));
+                else if (list[i].GetComponent<NetworkIdentity>() is not { } identity) issues.Add(new Issue(Severity.Error, $"NetworkPrefabs[{i}] '{list[i].name}' has no NetworkIdentity on its root", list[i]));
+                else if (identity.SceneId != 0) issues.Add(new Issue(Severity.Warning, $"NetworkPrefabs[{i}] '{list[i].name}' has SceneId {identity.SceneId}, left over from the scene object it was made from; set it to 0 on the prefab asset (spawned copies ignore it)", list[i]));
             }
             foreach (var dup in list.Where(p => p != null).GroupBy(p => p).Where(g => g.Count() > 1))
                 issues.Add(new Issue(Severity.Warning, $"'{dup.Key.name}' is listed {dup.Count()} times in NetworkPrefabs; it spawns with the last id", dup.Key));

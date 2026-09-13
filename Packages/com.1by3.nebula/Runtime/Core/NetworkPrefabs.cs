@@ -46,8 +46,38 @@ namespace Nebula
                 NebulaLog.Error($"Unknown network prefab id {prefabId}");
                 return null;
             }
+            var source = prefab.GetComponent<NetworkIdentity>();
+            if (source != null && source.SceneId != 0) return InstantiateClearingSceneId(prefab, prefabId, source.SceneId, position, rotation, parent);
             var go = Object.Instantiate(prefab, position, rotation, parent);
             var identity = go.GetComponent<NetworkIdentity>();
+            identity.PrefabId = prefabId;
+            identity.Initialize();
+            return identity;
+        }
+
+        private static readonly HashSet<ushort> WarnedSceneId = new HashSet<ushort>();
+        private static Transform _inactiveHolder;
+
+        /// <summary>
+        /// A prefab made by dragging a saved scene object keeps that object's <see cref="NetworkIdentity.SceneId"/>.
+        /// Every copy would then claim to be that scene object: clients and neighbours wait for it forever and the
+        /// owner never gets its player. A copy of a prefab is never a scene entity, so the id is dropped. The copy is
+        /// made under an inactive holder so its Awake cannot register the stale id before it is cleared.
+        /// </summary>
+        private static NetworkIdentity InstantiateClearingSceneId(GameObject prefab, ushort prefabId, uint sceneId, Vector3 position, Quaternion rotation, Transform parent)
+        {
+            if (WarnedSceneId.Add(prefabId))
+                NebulaLog.Warn($"Network prefab '{prefab.name}' has SceneId {sceneId}; spawned copies ignore it. Set SceneId to 0 on the prefab asset (Nebula > Validate Project reports this)");
+            if (_inactiveHolder == null)
+            {
+                var holder = new GameObject("Nebula prefab holder") { hideFlags = HideFlags.HideAndDontSave };
+                holder.SetActive(false);
+                _inactiveHolder = holder.transform;
+            }
+            var go = Object.Instantiate(prefab, position, rotation, _inactiveHolder);
+            var identity = go.GetComponent<NetworkIdentity>();
+            identity.SceneId = 0;
+            go.transform.SetParent(parent, true);
             identity.PrefabId = prefabId;
             identity.Initialize();
             return identity;

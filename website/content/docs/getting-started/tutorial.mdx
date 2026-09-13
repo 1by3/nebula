@@ -166,7 +166,11 @@ See [Prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs), and [Netwo
 
 ### Make the player prefab
 
-Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Add the prefab to `NebulaConfig.NetworkPrefabs`. Its list position becomes the numeric prefab ID sent in network messages.
+Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Then delete the capsule from the scene: the game mode spawns players, so the scene must not contain one. Add the prefab to `NebulaConfig.NetworkPrefabs`. Its list position becomes the numeric prefab ID sent in network messages.
+
+<Callout type="warn" title="Keep SceneId at 0 on the prefab">
+Open the prefab asset and check that `NetworkIdentity.SceneId` is `0`. If you saved the scene while the capsule was in it, the Editor gave the capsule a scene entity ID. Dragging the capsule into a prefab copies that ID into the prefab asset. Nebula ignores the ID on spawned copies and logs a warning, and **Nebula > Validate Project** reports it. Set the field to `0` in the prefab asset to clear both.
+</Callout>
 
 To register all prefabs whose root has a `NetworkIdentity`, run **Nebula > Network Prefabs > Register All Network Prefabs**. The command appends new prefabs without changing existing IDs.
 
@@ -207,7 +211,7 @@ The gateway selects a container whose worker is connected. It then asks that wor
 
 ### Build and run the mesh
 
-**Nebula > Validate Project** checks the setup first: the boot and game scenes in the build settings, the game mode, duplicate container ids and prefabs missing from `NetworkPrefabs`. Each problem is logged with its object, so clicking the Console line selects it.
+**Nebula > Validate Project** checks the setup first: the boot and game scenes in the build settings, the game mode, duplicate container ids, prefabs missing from `NetworkPrefabs`, and network prefabs that kept a `SceneId`. Each problem is logged with its object, so clicking the Console line selects it.
 
 ```bash
 nebula build

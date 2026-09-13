@@ -11,7 +11,9 @@ Use a spawned entity when workers must create and destroy copies from a register
 
 Add `NetworkIdentity` and your `NetworkBehaviour` components to the scene object. When you save the scene, the Editor assigns a nonzero random `SceneId`. The ID is unique across the scenes open at that time and remains on the object.
 
-A prefab asset keeps `SceneId` 0. A prefab instance placed in a scene receives an overridden ID, so you can both register the prefab for spawning and place instances in scenes.
+A prefab asset should keep `SceneId` 0. A prefab instance placed in a scene receives an overridden ID, so you can both register the prefab for spawning and place instances in scenes.
+
+The Editor does not clear the ID when you create a prefab. If you drag an object that already has a `SceneId` into the Project window, the new prefab asset keeps that ID. `NetworkPrefabs.Instantiate` clears the ID on every copy it creates and logs a warning the first time. **Nebula > Validate Project** reports the prefab. Set `SceneId` to 0 on the prefab asset to clear the warning.
 
 Keep the object active when its scene loads so `Awake` can register it. You can use `NetworkVariable`, RPCs, `NetworkTick`, sync behaviors, and handover state as you would on a spawned entity.
 
