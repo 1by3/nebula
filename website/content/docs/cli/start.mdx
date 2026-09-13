@@ -11,6 +11,8 @@ nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-
 
 Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module, publish the persistence module next to it, then start the orchestrator from the latest build. The orchestrator starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
 
+Only one local mesh can run at a time. When a mesh from this or another project is already running, list it and offer to stop it first (--yes stops it without asking). The start fails when the gateway or dashboard port is still held by another program.
+
 The control-plane database is republished with fresh data every time, because it only holds which processes are running. The persistence database (mesh.persistenceDatabase, `nebula-persist`) keeps its saved entities across restarts unless you pass --reset-persistence.
 
 ## Options

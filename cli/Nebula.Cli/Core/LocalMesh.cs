@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -29,6 +32,7 @@ public static class LocalMesh
             throw new CliError($"no build at {exe}", "run `nebula build` first, or `nebula start --build`");
         string spacetime = SpacetimeCli.Require();
         string logs = project.HostLogsDir;
+        StopRunningMeshes(ctx, mesh.GatewayPort, mesh.DashboardPort);
         Directory.CreateDirectory(logs);
 
         // --- SpacetimeDB ----------------------------------------------------------------------------
@@ -136,6 +140,104 @@ public static class LocalMesh
             state.StartedAt = null;
             File.WriteAllText(project.MeshStateFile, JsonSerializer.Serialize(state, CliConfig.Json));
         }
+    }
+
+    /// <summary>The processes of one local mesh, grouped by the build folder they run from.</summary>
+    public sealed record RunningMesh(string BuildDir, int Processes)
+    {
+        /// <summary>The project folder when the build sits at the usual Builds/&lt;platform&gt;, else the build folder.</summary>
+        public string Project
+        {
+            get
+            {
+                var parent = Directory.GetParent(BuildDir);
+                return parent != null && parent.Name == "Builds" && parent.Parent != null ? parent.Parent.FullName : BuildDir;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every mesh running on this computer, from this project's build or another's. A process counts when it runs
+    /// from a build folder holding the orchestrator or gateway log that <c>nebula start</c> writes there.
+    /// </summary>
+    public static List<RunningMesh> FindRunningMeshes()
+    {
+        var byDir = new Dictionary<string, int>(Platform.IsWindows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        int self = Environment.ProcessId;
+        foreach (var p in Process.GetProcesses())
+        {
+            try
+            {
+                // Every Unity player starts a crash handler from its folder; it goes with the player, so do not count it.
+                if (p.Id == self || p.ProcessName.StartsWith("UnityCrashHandler", StringComparison.OrdinalIgnoreCase)) continue;
+                string? file = null;
+                try { file = p.MainModule?.FileName; } catch { }
+                if (file == null || BuildDirOf(file) is not { } dir) continue;
+                byDir[dir] = byDir.GetValueOrDefault(dir) + 1;
+            }
+            finally { p.Dispose(); }
+        }
+        return byDir.Select(kv => new RunningMesh(kv.Key, kv.Value)).OrderBy(m => m.BuildDir).ToList();
+    }
+
+    /// <summary>The mesh build folder an executable runs from, or null when it is not part of a local mesh.</summary>
+    internal static string? BuildDirOf(string executable)
+    {
+        string? dir = Path.GetDirectoryName(executable);
+        if (dir == null) return null;
+        // macOS players run from Builds/MacOS/<Name>.app/Contents/MacOS/<Name>; the logs sit next to the .app.
+        var app = Directory.GetParent(dir)?.Parent;
+        if (Path.GetFileName(dir) == "MacOS" && app != null && app.Name.EndsWith(".app", StringComparison.Ordinal) && app.Parent != null)
+            dir = app.Parent.FullName;
+        string logs = Path.Combine(dir, "Logs");
+        return File.Exists(Path.Combine(logs, "orchestrator.log")) || File.Exists(Path.Combine(logs, "gateway.log")) ? dir : null;
+    }
+
+    /// <summary>
+    /// A second mesh cannot bind the gateway, worker and dashboard ports, and republishing the control plane wipes
+    /// the state the running one depends on. Offer to stop whatever is running, then make sure the ports are free.
+    /// </summary>
+    private static void StopRunningMeshes(Context ctx, int gatewayPort, int dashboardPort)
+    {
+        var running = FindRunningMeshes();
+        if (running.Count > 0)
+        {
+            Ui.Warn(running.Count == 1 ? "a local mesh is already running:" : $"{running.Count} local meshes are already running:");
+            foreach (var m in running) Ui.Info($"{m.Project}  ({m.Processes} process(es) from {m.BuildDir})");
+            Ui.Info("only one mesh can hold the gateway, worker and dashboard ports, and starting another resets the control plane it uses");
+            string stopIt = running.Count == 1 ? "stop it" : "stop them";
+            if (Console.IsInputRedirected && !ctx.Yes)
+                throw new CliError("another local mesh is running", $"pass --yes to {stopIt}, or run `nebula stop` in its project folder");
+            if (!Ui.Confirm($"{stopIt} and start this project's mesh?", true, ctx.Yes))
+                throw new CliError("another local mesh is running", "run `nebula stop` in its project folder, then start again");
+            foreach (var m in running)
+            {
+                int killed = Shell.KillProcesses(m.BuildDir);
+                Ui.Ok($"stopped {m.Project} ({killed} process(es))");
+            }
+            var dirs = running.Select(m => m.BuildDir).ToList();
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < deadline && dirs.Any(d => Shell.RunningUnder(d).Any())) Thread.Sleep(250);
+        }
+
+        if (!UdpPortFree(gatewayPort))
+            throw new CliError($"UDP port {gatewayPort} (the gateway) is in use by another program", "stop it, or change mesh.gatewayPort in nebula.json");
+        if (!TcpPortFree(dashboardPort))
+            throw new CliError($"TCP port {dashboardPort} (the dashboard) is in use by another program", "stop it, or change mesh.dashboardPort in nebula.json");
+    }
+
+    private static bool UdpPortFree(int port)
+    {
+        try { using var socket = new UdpClient(new IPEndPoint(IPAddress.Any, port)); return true; }
+        catch (SocketException) { return false; }
+    }
+
+    private static bool TcpPortFree(int port)
+    {
+        var listener = new TcpListener(IPAddress.Loopback, port);
+        try { listener.Start(); return true; }
+        catch (SocketException) { return false; }
+        finally { listener.Stop(); }
     }
 
     public static State? LoadState(NebulaProject project)
