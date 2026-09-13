@@ -341,7 +341,8 @@ namespace Nebula
 
         /// <summary>
         /// The container the entity should belong to after applying hysteresis: it must be at least
-        /// <paramref name="hysteresis"/> metres inside a different container before we consider it moved.
+        /// <paramref name="hysteresis"/> metres inside a different container, and more than
+        /// <paramref name="hysteresis"/> metres outside its current one, before we consider it moved.
         /// <paramref name="exclude"/> as in <see cref="Find"/>.
         /// </summary>
         public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null)
@@ -352,10 +353,14 @@ namespace Nebula
             if (current.Contains(worldPosition))
             {
                 // Still inside the current box but a nested (smaller) container now claims the point: enter it once
-                // we are past the hysteresis band. Leaving a nested box back into its enclosing box happens below
-                // as soon as the nested box no longer contains us.
+                // we are past the hysteresis band.
                 return candidate.SignedDistance(worldPosition) <= -hysteresis ? candidate : current;
             }
+            // Outside the current box: stay until clearly out of it, through any face. Depth inside a box ignores the
+            // floor (see Container.SignedDistance), so entering a nested box through its floor - a pawn at the top of
+            // a ship's ramp - has no band on that side; without this one on the way out, an entity standing at the
+            // floor would flip every tick, and every flip is a handover when the box belongs to another worker.
+            if (current.SignedDistance(worldPosition) <= hysteresis) return current;
             return candidate.SignedDistance(worldPosition) <= -hysteresis ? candidate : current;
         }
 

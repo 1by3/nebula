@@ -769,8 +769,7 @@ namespace Nebula
             if (ControlPlane.FindLease(containerId) == null) return $"unknown container '{containerId}'";
             var w = ControlPlane.FindWorker(workerId);
             if (w == null || !ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds) || _retiring.ContainsKey(workerId)) return $"worker '{workerId}' is not live";
-            ControlPlane.AssignContainer(containerId, workerId);
-            ControlPlane.SetLeaseState(containerId, LeaseState.Pinned);
+            ControlPlane.PinContainer(containerId, workerId);
             Log("info", $"pinned {containerId} -> {workerId}");
             return null;
         }

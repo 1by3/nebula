@@ -109,5 +109,36 @@ namespace Nebula.Tests
             Assert.IsTrue(LeaseState.IsOwning(LeaseState.Pinned));
             Assert.IsFalse(LeaseState.IsOwning(LeaseState.Orphaned));
         }
+
+        [Test]
+        public void APinIsOneChangeAndTheCarriersWorkerCannotReclaimIt()
+        {
+            var cp = new LocalControlPlane();
+            cp.Connect();
+            cp.EnsureContainer("ship#42");
+            cp.AssignContainer("ship#42", "w3"); // following the carrier on w3
+            var lease = cp.FindLease("ship#42");
+            ulong epoch = lease.Epoch;
+
+            cp.PinContainer("ship#42", "w1");
+            Assert.AreEqual("w1", lease.WorkerId);
+            Assert.AreEqual(LeaseState.Pinned, lease.State);
+            Assert.AreEqual(epoch + 1, lease.Epoch);
+
+            // The carrier's worker reclaiming with a call already in flight must not undo the pin.
+            cp.AssignContainer("ship#42", "w3");
+            Assert.AreEqual("w1", lease.WorkerId);
+            Assert.AreEqual(LeaseState.Pinned, lease.State);
+            Assert.AreEqual(epoch + 1, lease.Epoch);
+
+            cp.PinContainer("ship#42", "w1");
+            Assert.AreEqual(epoch + 1, lease.Epoch, "pinning again to the same worker does not burn an epoch");
+
+            // Unpinned, the carrier's worker takes it back.
+            cp.SetLeaseState("ship#42", LeaseState.Active);
+            cp.AssignContainer("ship#42", "w3");
+            Assert.AreEqual("w3", lease.WorkerId);
+            Assert.AreEqual(LeaseState.Active, lease.State);
+        }
     }
 }

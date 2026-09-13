@@ -242,12 +242,15 @@ public static partial class Module
     }
 
     /// Orchestrator: authoritatively assign a container to a worker. Bumps the
-    /// container epoch so stale owners can be rejected.
+    /// container epoch so stale owners can be rejected. A pinned row is left alone:
+    /// only PinContainer moves it and SetLeaseState releases it, so a carrier's worker
+    /// reclaiming the lease with a call already in flight cannot undo a pin.
     [SpacetimeDB.Reducer]
     public static void AssignContainer(ReducerContext ctx, string containerId, string workerId)
     {
         if (ctx.Db.container_lease.ContainerId.Find(containerId) is { } row)
         {
+            if (row.State == "pinned") return;
             if (row.WorkerId == workerId && row.State == "active")
             {
                 return; // no-op, do not burn an epoch
@@ -268,6 +271,23 @@ public static partial class Module
                 State = "active",
                 UpdatedAt = ctx.Timestamp,
             });
+        }
+    }
+
+    /// Orchestrator: give a carried container a worker of its own. Worker, epoch and the
+    /// pinned state change in one transaction; as two calls (assign, then set the state)
+    /// the carrier's worker sees the in-between "active" row, reclaims it, and wins.
+    [SpacetimeDB.Reducer]
+    public static void PinContainer(ReducerContext ctx, string containerId, string workerId)
+    {
+        if (ctx.Db.container_lease.ContainerId.Find(containerId) is { } row)
+        {
+            if (row.WorkerId == workerId && row.State == "pinned") return;
+            row.WorkerId = workerId;
+            row.Epoch += 1;
+            row.State = "pinned";
+            row.UpdatedAt = ctx.Timestamp;
+            ctx.Db.container_lease.ContainerId.Update(row);
         }
     }
 
