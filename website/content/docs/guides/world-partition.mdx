@@ -26,7 +26,7 @@ Open the level and run **Nebula > Set Up World Partition**. It:
 3. moves the level's root objects into cell scenes by position. Cameras, directional lights, post-processing volumes, UI, the game mode, the Nebula objects and any roots you selected beforehand stay in the hub;
 4. clears Batching Static on the moved content, saves the hub and the cell scenes, bakes the manifest and sets `NebulaConfig.WorldManifest`.
 
-Running it again on a partitioned hub only rebakes. The rest of this page describes what it sets up and how to author from there. **Nebula > Validate Project** reports cell scenes saved after the last bake, cells missing from the build settings and Batching Static objects in open cells.
+Running it again on a partitioned hub only rebakes. The rest of this page describes what it sets up and how to author from there. To partition the scene from the [tutorial](/docs/getting-started/tutorial) step by step, see [Partitioning the tutorial arena](#partitioning-the-tutorial-arena). **Nebula > Validate Project** reports cell scenes saved after the last bake, cells missing from the build settings and Batching Static objects in open cells.
 
 ## Authoring cells
 
@@ -81,6 +81,115 @@ The origin shifts only when the player or worker centroid is more than `OriginSh
 If your component caches a position in the current Unity coordinate frame, override `NetworkBehaviour.OnOriginShifted(delta)` and add `delta` to the cached value.
 
 The orchestrator deals containers in manifest order, so each worker's share is a contiguous run of spatially neighbouring cells: a compact region it loads as a block. The dashboard shows each container's cell.
+
+## Partitioning the tutorial arena
+
+This section converts the `Arena` scene from the [tutorial](/docs/getting-started/tutorial): the four quadrant containers, the `PlayerController` prefab and `TutorialGameMode`. The arena stays small, so everything lands in one cell. Adding more cells works the same way afterwards.
+
+<Steps>
+<Step>
+
+### Partition the scene
+
+Open `Arena` and run **Nebula > Set Up World Partition**. Confirm **Partition and save**.
+
+- `Nebula`, `Game`, the camera and the directional light stay in the hub scene.
+- The floor, the walls and the `Containers` parent move into cell `(0, 0, 0)`. With the default 256 m cells, that cell covers 128 m in each direction from the origin, which contains the entire 40 × 40 m arena.
+- The four quadrant `Container` components are now inside a cell scene. The bake records them as nested containers of the cell container `cell_0_0_0`.
+
+If the report warns that containers were left in the hub scene, you selected their objects before running the command, so they stayed in the hub. Move them into the cell scene and run the command again to rebake.
+
+</Step>
+<Step>
+
+### Keep the player prefab as it is
+
+The player prefab needs no changes:
+
+- The client streams cells around its local player (`NebulaClient.LocalPlayer`) automatically. Do not add a `WorldAnchor` to the prefab. `WorldAnchor` is for using world partition without Nebula networking.
+- When the origin shifts, Nebula moves entities with their containers and updates remote interpolation and the prediction history.
+- `PlayerController` stores no position values between frames. It keeps only `_yaw`, which does not depend on the origin.
+- The prefab stays in `NebulaConfig.NetworkPrefabs` with `SceneId` at `0`. Prefab assets do not belong to any cell.
+
+If you later add a field that stores a Unity-frame position, such as a last hit point or a patrol target, correct it after an origin shift. On a `PredictedBehaviour`, call the base method:
+
+```csharp title="PlayerController.cs"
+private Vector3 _lastHitPoint;
+
+public override void OnOriginShifted(Vector3 delta)
+{
+    base.OnOriginShifted(delta);
+    _lastHitPoint += delta;
+}
+```
+
+</Step>
+<Step>
+
+### Update the game mode
+
+The gateway can choose any container with an active lease, and each cell container is now one of them. `NebulaContainerHelpers.RandomPointIn(container)` spreads points over the container's whole volume. For `cell_0_0_0`, a point can be up to 126 m from the center, well outside the 40 m floor. When the gateway selects a cell container, spawn inside one of the containers authored in that cell instead:
+
+```csharp title="TutorialGameMode.cs"
+using System.Linq;
+using Nebula;
+using UnityEngine;
+
+public sealed class TutorialGameMode : NebulaGameMode
+{
+    public GameObject PlayerPrefab;
+
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+    {
+        var area = SpawnArea(container);
+        var position = NebulaContainerHelpers.RandomPointIn(area, margin: 2f, y: 0f);
+        var identity = NetworkPrefabs.Instantiate(NetworkPrefabs.IdOf(PlayerPrefab), position, Quaternion.identity, area.transform);
+        identity.name = $"Player {playerName} ({clientId})";
+        worker.Spawn(identity, area, clientId);
+        return identity;
+    }
+
+    // A cell container spans its whole cell. Spawn inside one of the containers authored in that cell instead.
+    private static Container SpawnArea(Container container)
+    {
+        if (!container.IsCell) return container;
+        var nested = ContainerRegistry.InCell(container.Cell).Where(c => !c.IsCell).ToList();
+        return nested.Count > 0 ? nested[Random.Range(0, nested.Count)] : container;
+    }
+}
+```
+
+`ContainerRegistry.InCell` returns an empty list when the world is not partitioned, so this game mode also works in a single-scene project. The chosen quadrant can belong to a different worker. In that case the entity is handed over to the owning worker, just as when a player walks across a boundary.
+
+`y: 0f` is a height in Unity coordinates. That is correct while the world has a single Y layer, because the origin cell's Y coordinate is always 0. In a world with vertical layers, compute the height in the container's local space with `area.ToWorld` instead.
+
+</Step>
+<Step>
+
+### Build and run
+
+```bash
+nebula build
+nebula start --open-ui
+```
+
+Run **Nebula > Validate Project** first. It reports cells missing from the build settings and cell scenes saved after the last bake.
+
+Each worker log now includes `containers: 5 (partitioned world)` and `cell (0,0,0) loaded`. The orchestrator distributes five containers across four workers in manifest order, with the cell container first, so `w1` controls `cell_0_0_0` and one quadrant. Walking between quadrants behaves as it did in the tutorial. The dashboard also shows each container's cell.
+
+</Step>
+<Step>
+
+### Grow the world
+
+In the **World Window**, click cell `(1, 0, 0)` to create its scene. The cell is centered 256 m along X. Build its content around the cell scene's origin, add `Container` objects for its rooms or regions, then select **Bake** or run **Nebula > Set Up World Partition** again. Connect the new area with floor that crosses from the arena, because the arena's edge is at x = 20 m and the new cell begins at x = 128 m.
+
+Players in cell `(0, 0, 0)` load cell `(1, 0, 0)` when `ClientLoadRadiusCells` reaches it. Workers load it when it is within `WorkerLoadRingCells` of a cell they control.
+
+To make cells smaller than 256 m, also reduce the gateway's interest radii. A cell should be several times larger than `InterestFarRadius`, which defaults to 80 m.
+
+</Step>
+</Steps>
 
 ## Settings
 

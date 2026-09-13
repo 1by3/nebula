@@ -43,6 +43,12 @@ namespace Nebula
     {
         public static NebulaBootstrap Instance { get; private set; }
 
+        /// <summary>
+        /// Roles started when pressing Play in the Editor, in place of <c>-nebula-role</c>. It does not replace a build:
+        /// the orchestrator launches workers and the gateway from a player executable, and a process is never both a
+        /// client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a
+        /// mesh started with <c>nebula start</c>; Worker joins one started with <c>nebula start --workers 0</c>.
+        /// </summary>
         [Tooltip("Role used when pressing Play in the Editor (builds read -nebula-role instead).")]
         public NebulaRoles EditorRole = NebulaRoles.Client;
         public NebulaConfig Config;

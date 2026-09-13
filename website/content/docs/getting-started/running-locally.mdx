@@ -39,7 +39,7 @@ Set local defaults in the `mesh` section of `nebula.json`. To build before start
 
 ### Joining
 
-To join from the Unity Editor, enter Play mode. `NebulaBootstrap.EditorRole` uses `Client` by default.
+To join from the Unity Editor, enter Play mode. `NebulaBootstrap.EditorRole` uses `Client` by default. See [Choosing the Editor's role](#choosing-the-editors-role) to run a worker in the Editor instead.
 
 To join from a standalone build on Windows, run:
 
@@ -65,6 +65,43 @@ Use bots to test the complete client path. Use server-driven entities to test wo
 Your game must provide bot input and server-driven behavior. Nebula does not provide an NPC implementation. See [Spawning](/docs/guides/spawning) for the server-driven API.
 
 The legacy `--npcs N` option only sets a mesh setting named `npcs`. It does not spawn anything. Use it only when your game reads that setting.
+
+## Choosing the Editor's role
+
+`NebulaBootstrap.EditorRole` sets the roles the Editor starts when you press Play. The Editor has no command line, so this field takes the place of `-nebula-role`. It does **not** let you skip `nebula build` and `nebula start`:
+
+- **A process is a client or a worker, never both.** If `EditorRole` includes both, Nebula drops the worker role and logs an error. Whichever half the Editor does not run must come from a build.
+- **The orchestrator launches processes from a build.** It starts the gateway and every worker as a separate player process. In the Editor there is no player executable to reuse, so an Editor orchestrator logs `executable not found` unless `NebulaConfig.WorkerExecutable` points at a build.
+- **Server roles need a control plane.** The worker, gateway and orchestrator roles connect to the SpacetimeDB at `NebulaConfig.SpacetimeUri`. `nebula start` is what starts it and publishes the module.
+
+| `EditorRole` | Start first | Use it for |
+| --- | --- | --- |
+| `Client` (default) | `nebula build`, then `nebula start` | Playing and debugging client code: input, prediction, UI. |
+| `Worker` | `nebula build`, then `nebula start --workers 0` | Debugging worker code (the game mode, `Simulate` on the authority, RPC handlers) with breakpoints. Join with a client build. |
+| `Worker`, `Gateway`, `Orchestrator` with `UseLocalControlPlane` | `nebula build` for the client only | A one-worker server in a single process, without SpacetimeDB. |
+
+### The Editor as a worker
+
+```bash
+nebula build
+nebula start --workers 0
+```
+
+With `EditorRole` set to `Worker`, press Play. The Editor worker uses the defaults for a worker without command-line switches: ID `w1`, index 1, port `WorkerBasePort + 1` (7101). Starting the mesh with `--workers 0` keeps a launched worker from already using that ID and port. The orchestrator sees the Editor worker register and gives it every container.
+
+Join with **Nebula > Mesh > Launch Extra Client Window** or `Builds\Win64\Nebula.exe -nebula-role client -nebula-name Player`. To test handovers, select **Add worker** on the dashboard: the orchestrator launches `w2` from the build, and the containers are split between the two.
+
+When you exit Play mode, the Editor worker stops sending heartbeats. After `WorkerTimeoutSeconds` the orchestrator treats it as dead and releases its containers to any remaining worker. It does not relaunch the Editor worker; press Play again.
+
+### Everything server-side in the Editor
+
+Set `EditorRole` to `Worker`, `Gateway` and `Orchestrator`, and enable `UseLocalControlPlane` on `NebulaConfig`. The three roles share an in-process [`LocalControlPlane`](/docs/guides/control-plane#localcontrolplane), so nothing needs SpacetimeDB. Because nothing outside the process can see that control plane, the orchestrator does not launch the gateway or workers. The in-process worker gets every container and the in-process gateway listens on `GatewayPort`. Join from a client build as above.
+
+This mode has limits:
+
+- There is exactly one worker, so there are no handovers, ghosts or cross-worker RPCs to test.
+- Persistence in `auto` mode writes to a local file under `Application.persistentDataPath`.
+- `UseLocalControlPlane` is saved in the config asset that builds also load. Turn it off again before running `nebula build` for `nebula start` or a deployment. Otherwise, the built orchestrator also uses a local control plane and never launches the gateway or workers.
 
 ## Watch
 
