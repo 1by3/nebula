@@ -7,7 +7,7 @@ Use containers to decide which worker controls each entity. When an entity appro
 
 ## Containers
 
-Add the `Container` MonoBehaviour to a scene object to create a box volume. Set `Size`, `Center`, and a stable `ContainerId`. The object's transform defines the container's local coordinate space.
+Add the `Container` MonoBehaviour to a scene object to create a box volume. The object's transform defines the container's local coordinate space. When you add the component in the Editor, Nebula gives it a random `ContainerId` and sets `Size` and `Center` to the bounds of the object's renderers, or its colliders when it has no renderers. To wrap the box around the object again after you change it, select **Fit Size and Center to Bounds** in the Inspector. You can also call `FitToBounds()` from code. Keep the ID stable after the scene is in use.
 
 Nebula parents contained entities under the container transform and sends positions in that local space. Moving the container therefore does not change the local coordinates of its contents.
 

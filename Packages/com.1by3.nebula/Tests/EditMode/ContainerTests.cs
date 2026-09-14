@@ -37,6 +37,46 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void FitToBoundsWrapsChildRenderersInLocalSpace()
+        {
+            var go = new GameObject("fit");
+            _objects.Add(go);
+            go.transform.SetPositionAndRotation(new Vector3(100, 0, 0), Quaternion.Euler(0, 45, 0));
+            var c = go.AddComponent<Container>();
+            var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cube.transform.SetParent(go.transform, false);
+            cube.transform.localPosition = new Vector3(2, 1, 0);
+            cube.transform.localScale = new Vector3(4, 2, 6);
+            Object.DestroyImmediate(cube.GetComponent<Collider>());
+
+            Assert.IsTrue(c.FitToBounds());
+            AssertNear(new Vector3(2, 1, 0), c.Center);
+            AssertNear(new Vector3(4, 2, 6), c.Size);
+        }
+
+        [Test]
+        public void FitToBoundsLeavesAnEmptyObjectUnchanged()
+        {
+            var c = Make("empty", new Vector3(0, 100, 0), new Vector3(7, 8, 9));
+            var center = c.Center;
+            Assert.IsFalse(c.FitToBounds());
+            Assert.AreEqual(new Vector3(7, 8, 9), c.Size);
+            Assert.AreEqual(center, c.Center);
+        }
+
+        [Test]
+        public void NewContainerIdsAreRandom()
+        {
+            StringAssert.StartsWith("container-", Container.NewContainerId());
+            Assert.AreNotEqual(Container.NewContainerId(), Container.NewContainerId());
+        }
+
+        private static void AssertNear(Vector3 expected, Vector3 actual)
+        {
+            Assert.Less(Vector3.Distance(expected, actual), 1e-3f, $"expected {expected} but was {actual}");
+        }
+
+        [Test]
         public void IndicesAreAssignedInIdOrder()
         {
             Assert.AreEqual(2, ContainerRegistry.Count);

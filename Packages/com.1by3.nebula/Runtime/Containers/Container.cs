@@ -271,6 +271,55 @@ namespace Nebula
 
         public override string ToString() => $"{ContainerId}[{(IsDynamic || IsRuntime ? Ref.ToString() : Index.ToString())}]->{(string.IsNullOrEmpty(OwnerWorkerId) ? "unassigned" : OwnerWorkerId)}";
 
+        /// <summary>A fresh random container id, e.g. "container-3f9a1c07".</summary>
+        public static string NewContainerId() => "container-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+
+        /// <summary>
+        /// Set <see cref="Size"/> and <see cref="Center"/> to the local-space box around this object's enabled
+        /// renderers and those of its children, falling back to their colliders when there are no renderers. Returns
+        /// false and leaves the box unchanged when neither is found (an empty object keeps its authored box).
+        /// </summary>
+        public bool FitToBounds()
+        {
+            var worldToLocal = transform.worldToLocalMatrix;
+            bool any = false;
+            Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
+
+            void Encapsulate(Bounds b, Matrix4x4 toLocal)
+            {
+                var c = b.center;
+                var e = b.extents;
+                for (int i = 0; i < 8; i++)
+                {
+                    var p = toLocal.MultiplyPoint3x4(c + new Vector3((i & 1) == 0 ? -e.x : e.x, (i & 2) == 0 ? -e.y : e.y, (i & 4) == 0 ? -e.z : e.z));
+                    min = Vector3.Min(min, p);
+                    max = Vector3.Max(max, p);
+                }
+                any = true;
+            }
+
+            // Renderer.localBounds is in the renderer's own space, so a child rotated with the container stays tight.
+            foreach (var r in GetComponentsInChildren<Renderer>())
+                if (r.enabled) Encapsulate(r.localBounds, worldToLocal * r.localToWorldMatrix);
+            if (!any)
+                foreach (var col in GetComponentsInChildren<Collider>())
+                    if (col.enabled) Encapsulate(col.bounds, worldToLocal);
+            if (!any) return false;
+
+            Center = (min + max) * 0.5f;
+            Size = max - min;
+            _cached = false;
+            return true;
+        }
+
+        // Called by the Editor when the component is added (or reset from its context menu): give it a unique id and
+        // wrap the box around whatever the object already looks like.
+        private void Reset()
+        {
+            ContainerId = NewContainerId();
+            FitToBounds();
+        }
+
         private void OnDrawGizmos()
         {
             Gizmos.matrix = transform.localToWorldMatrix;

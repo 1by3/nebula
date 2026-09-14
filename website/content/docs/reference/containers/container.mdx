@@ -284,3 +284,19 @@ public bool IsOwnedBy(string workerId);
 public override string ToString();
 ```
 
+### NewContainerId [#newcontainerid]
+
+```csharp
+public static string NewContainerId();
+```
+
+A fresh random container id, e.g. "container-3f9a1c07".
+
+### FitToBounds [#fittobounds]
+
+```csharp
+public bool FitToBounds();
+```
+
+Set [`Size`](#size) and [`Center`](#center) to the local-space box around this object's enabled renderers and those of its children, falling back to their colliders when there are no renderers. Returns false and leaves the box unchanged when neither is found (an empty object keeps its authored box).
+
