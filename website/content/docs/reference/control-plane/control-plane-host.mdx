@@ -1,0 +1,274 @@
+---
+title: "ControlPlaneHost"
+description: "The control plane as the orchestrator hosts it: a LocalControlPlane that is the source of truth, served to workers and gateways over the orchestrator's HTTP server and kept in an IControlPlaneStorage between runs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneHost.cs)</div>
+
+```csharp
+public sealed class ControlPlaneHost : IControlPlane
+```
+
+The control plane as the orchestrator hosts it: a [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) that is the source of truth, served to workers and gateways over the orchestrator's HTTP server and kept in an [`IControlPlaneStorage`](/docs/reference/control-plane/i-control-plane-storage) between runs.
+
+- `GET /api/control-plane?since=<version>&wait=<seconds>` answers with the current document ([`ControlPlaneJson`](/docs/reference/control-plane/control-plane-json)) as soon as its version is above `since`, or when `wait` seconds pass. Subscribers ([`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane)) keep one such request open.
+- `POST /api/control-plane` with `{"ops":[...]}` applies writes in order on the main thread (through [`TryHandle`](#tryhandle), from the orchestrator's command pump), so the orchestrator sees them in the same tick it would see its own.
+
+With a mesh token every request carries it in the `X-Nebula-Token` header; without one the API is open, which is fine on a private network or a development machine. Reads are answered on the listener thread from the last published document, so the orchestrator's main thread never waits on a subscriber.
+
+## Constructors
+
+### ControlPlaneHost [#controlplanehost]
+
+```csharp
+public ControlPlaneHost(IControlPlaneStorage storage, string token, bool restore = true);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `storage` | Where the document is kept between runs; null keeps it in memory only. |
+| `token` | Shared secret subscribers must present; null or empty for none. |
+| `restore` | Read the stored document at [`Connect`](#connect). The orchestrator resets the plane at its first tick unless `-nebula-reset false`, so this only matters then. |
+
+## Fields
+
+### Path [#path]
+
+```csharp
+public const string Path = "/api/control-plane";
+```
+
+### TokenHeader [#tokenheader]
+
+```csharp
+public const string TokenHeader = "X-Nebula-Token";
+```
+
+### MaxWaitSeconds [#maxwaitseconds]
+
+```csharp
+public const int MaxWaitSeconds = 30;
+```
+
+Longest a subscriber may ask a read to wait for a change.
+
+### SaveIntervalSeconds [#saveintervalseconds]
+
+```csharp
+public float SaveIntervalSeconds = 1f;
+```
+
+Seconds between writes to storage while the control plane keeps changing.
+
+## Properties
+
+### Plane [#plane]
+
+```csharp
+public LocalControlPlane Plane { get; }
+```
+
+The state machine itself, for tests.
+
+### StorageBackend [#storagebackend]
+
+```csharp
+public string StorageBackend { get; }
+```
+
+### HasToken [#hastoken]
+
+```csharp
+public bool HasToken { get; }
+```
+
+### PublishedVersion [#publishedversion]
+
+```csharp
+public long PublishedVersion { get; }
+```
+
+Version of the document subscribers currently receive.
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected { get; }
+```
+
+### Now [#now]
+
+```csharp
+public DateTime Now { get; }
+```
+
+### Workers [#workers]
+
+```csharp
+public IReadOnlyList<WorkerInfo> Workers { get; }
+```
+
+### Leases [#leases]
+
+```csharp
+public IReadOnlyList<LeaseInfo> Leases { get; }
+```
+
+### Gateways [#gateways]
+
+```csharp
+public IReadOnlyList<GatewayInfo> Gateways { get; }
+```
+
+### Settings [#settings]
+
+```csharp
+public IReadOnlyDictionary<string, string> Settings { get; }
+```
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+public event Action Changed;
+```
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+public void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### RegisterWorker [#registerworker]
+
+```csharp
+public void RegisterWorker(string workerId, uint workerIndex, string address, ushort port);
+```
+
+### HeartbeatWorker [#heartbeatworker]
+
+```csharp
+public void HeartbeatWorker(string workerId, string status, in WorkerStats stats);
+```
+
+### UnregisterWorker [#unregisterworker]
+
+```csharp
+public void UnregisterWorker(string workerId);
+```
+
+### RegisterGateway [#registergateway]
+
+```csharp
+public void RegisterGateway(string gatewayId, string address, ushort port);
+```
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+public void HeartbeatGateway(string gatewayId);
+```
+
+### UnregisterGateway [#unregistergateway]
+
+```csharp
+public void UnregisterGateway(string gatewayId);
+```
+
+### HeartbeatOrchestrator [#heartbeatorchestrator]
+
+```csharp
+public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
+```
+
+### SetSetting [#setsetting]
+
+```csharp
+public void SetSetting(string key, string value);
+```
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+public void EnsureContainer(string containerId);
+```
+
+### EnsureRuntimeContainer [#ensureruntimecontainer]
+
+```csharp
+public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+```
+
+### TouchContainer [#touchcontainer]
+
+```csharp
+public void TouchContainer(string containerId);
+```
+
+### AssignContainer [#assigncontainer]
+
+```csharp
+public void AssignContainer(string containerId, string workerId);
+```
+
+### PinContainer [#pincontainer]
+
+```csharp
+public void PinContainer(string containerId, string workerId);
+```
+
+### SetLeaseState [#setleasestate]
+
+```csharp
+public void SetLeaseState(string containerId, string state);
+```
+
+### ReleaseContainer [#releasecontainer]
+
+```csharp
+public void ReleaseContainer(string containerId);
+```
+
+### RemoveContainer [#removecontainer]
+
+```csharp
+public void RemoveContainer(string containerId);
+```
+
+### ResetControlPlane [#resetcontrolplane]
+
+```csharp
+public void ResetControlPlane();
+```
+
+### Attach [#attach]
+
+```csharp
+public void Attach(OrchestratorHttpServer http);
+```
+
+Serve reads from `http`. Writes go through [`TryHandle`](#tryhandle) from the command pump.
+
+### TryHandle [#tryhandle]
+
+```csharp
+public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpServer.Response response);
+```
+
+Main thread: apply a batch of writes when `req` is one. Returns false for any other request so the caller can handle it.
+

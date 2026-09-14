@@ -1,0 +1,65 @@
+---
+title: "DatabaseUrl"
+description: "Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/DatabaseUrl.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/DatabaseUrl.cs)</div>
+
+```csharp
+public readonly struct DatabaseUrl
+```
+
+Where the orchestrator keeps the control plane and saved entities, as one string ([`NebulaConfig.DatabaseUrl`](/docs/reference/core/nebula-config#databaseurl), `-nebula-database`).
+
+- `sqlite:<file>`: a SQLite database file (standalone orchestrator; the default for a local mesh).
+- `postgres://user:password@host:port/database` (or `postgresql://`, or a `Host=...;` connection string): a PostgreSQL database (standalone orchestrator; for a deployed mesh).
+- `file:<folder>`: plain files in a folder (the Unity orchestrator, which carries no database driver).
+- `memory`: nothing survives the process.
+
+## Fields
+
+### Scheme [#scheme]
+
+```csharp
+public readonly string Scheme;
+```
+
+`sqlite`, `postgres`, `file` or `memory`.
+
+### Target [#target]
+
+```csharp
+public readonly string Target;
+```
+
+The file, folder or connection string the scheme applies to ("" for memory).
+
+### Display [#display]
+
+```csharp
+public readonly string Display;
+```
+
+What was parsed, for logs, with a password masked.
+
+## Methods
+
+### Parse [#parse]
+
+```csharp
+public static DatabaseUrl Parse(string url, string fallback);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `url` | The configured value; empty or null means `fallback`. |
+| `fallback` | What an empty value means for this process, e.g. `sqlite:/opt/nebula/data/nebula.db`. |
+
+**Throws** `ArgumentException`: The value has no scheme this build understands.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+

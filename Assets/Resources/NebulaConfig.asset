@@ -21,9 +21,10 @@ MonoBehaviour:
   GatewayPort: 7000
   WorkerBasePort: 7100
   WorkerAdvertiseAddress: 127.0.0.1
-  SpacetimeUri: http://127.0.0.1:3000
-  SpacetimeDatabase: nebula
+  ControlPlaneUrl: http://127.0.0.1:7080/
+  MeshToken:
   UseLocalControlPlane: 0
+  DatabaseUrl: 
   WorkerCount: 4
   WorkerExecutable: 
   WorkerHost: process

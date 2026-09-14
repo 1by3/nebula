@@ -6,13 +6,6 @@
       "source": "embedded",
       "dependencies": {}
     },
-    "com.clockworklabs.spacetimedbsdk": {
-      "version": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#v2.10.0",
-      "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "33ac3e97b9d1461414a8918a5fceb32c1f56c428"
-    },
     "com.unity.ext.nunit": {
       "version": "2.1.0",
       "depth": 1,

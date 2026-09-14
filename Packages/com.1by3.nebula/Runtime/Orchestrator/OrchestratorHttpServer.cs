@@ -23,8 +23,23 @@ namespace Nebula
             public string Method;
             public string Path;
             public string Body;
+            /// <summary>The query string without its leading '?' ("" when there is none).</summary>
+            public string Query = "";
+            /// <summary>Value of the <c>X-Nebula-Token</c> header, or "" (the mesh token workers and gateways present).</summary>
+            public string Token = "";
             internal Response Result;
             internal readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
+
+            /// <summary>One query parameter, URL-decoded; "" when absent.</summary>
+            public string GetQuery(string name) => QueryValue(Query, name);
+
+            /// <summary>Answer a request whose handler returned <see cref="Response.Pending"/>. Main thread, any later tick.</summary>
+            public void Complete(Response response)
+            {
+                if (Done.IsSet) return;
+                Result = response;
+                Done.Set();
+            }
         }
 
         public struct Response
@@ -35,6 +50,23 @@ namespace Nebula
 
             public static Response Json(int status, string body) => new Response { Status = status, ContentType = "application/json", Body = body };
             public static Response Error(int status, string message) => Json(status, $"{{\"ok\":false,\"error\":{JsonWriter.Quote(message)}}}");
+            /// <summary>Returned by a pumped handler that answers later through <see cref="Request.Complete"/> (a store lookup that lands on the next tick).</summary>
+            public static Response Pending => new Response { Status = 0 };
+            public bool IsPending => Status == 0;
+        }
+
+        /// <summary>One parameter of a query string, URL-decoded; "" when absent.</summary>
+        public static string QueryValue(string query, string name)
+        {
+            if (string.IsNullOrEmpty(query)) return "";
+            foreach (var pair in query.Split('&'))
+            {
+                int eq = pair.IndexOf('=');
+                string key = eq < 0 ? pair : pair.Substring(0, eq);
+                if (Uri.UnescapeDataString(key.Replace('+', ' ')) != name) continue;
+                return eq < 0 ? "" : Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
+            }
+            return "";
         }
 
         private const string FallbackPage = "<!doctype html><title>Nebula</title><body style='font-family:sans-serif;padding:2em'><h1>Nebula Dashboard</h1><p>The dashboard page (Resources/NebulaDashboard.html) is missing from this build. The API still works: GET <a href='/api/state'>/api/state</a>.</p></body>";
@@ -109,9 +141,10 @@ namespace Nebula
         {
             while (_commands.TryDequeue(out var req))
             {
-                try { req.Result = handler(req); }
-                catch (Exception e) { req.Result = Response.Error(500, e.Message); }
-                req.Done.Set();
+                Response result;
+                try { result = handler(req); }
+                catch (Exception e) { result = Response.Error(500, e.Message); }
+                if (!result.IsPending) req.Complete(result);
             }
         }
 
@@ -149,7 +182,7 @@ namespace Nebula
                     {
                         using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8)) body = reader.ReadToEnd();
                     }
-                    resp = direct(new Request { Method = req.HttpMethod, Path = trimmed, Body = body });
+                    resp = direct(new Request { Method = req.HttpMethod, Path = trimmed, Body = body, Query = req.Url.Query.TrimStart('?'), Token = req.Headers["X-Nebula-Token"] ?? "" });
                 }
                 else if (req.HttpMethod == "GET" && path.TrimEnd('/') == "/api/state")
                 {
@@ -164,7 +197,7 @@ namespace Nebula
                 {
                     string body;
                     using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8)) body = reader.ReadToEnd();
-                    var cmd = new Request { Method = req.HttpMethod, Path = path, Body = body };
+                    var cmd = new Request { Method = req.HttpMethod, Path = path, Body = body, Query = req.Url.Query.TrimStart('?'), Token = req.Headers["X-Nebula-Token"] ?? "" };
                     _commands.Enqueue(cmd);
                     resp = cmd.Done.Wait(TimeSpan.FromSeconds(3)) ? cmd.Result : Response.Error(503, "orchestrator did not answer in time");
                 }
@@ -221,11 +254,7 @@ namespace Nebula
             _running = false;
             try { _listener.Stop(); } catch { }
             try { _listener.Close(); } catch { }
-            while (_commands.TryDequeue(out var req))
-            {
-                req.Result = Response.Error(503, "orchestrator shutting down");
-                req.Done.Set();
-            }
+            while (_commands.TryDequeue(out var req)) req.Complete(Response.Error(503, "orchestrator shutting down"));
         }
 
         // ---------------------------------------------------------------------------------------- minimal body parsing

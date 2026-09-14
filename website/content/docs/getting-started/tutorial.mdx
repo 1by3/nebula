@@ -18,7 +18,7 @@ Create a Unity project (any 3D template), then from a terminal inside it:
 nebula init
 ```
 
-The command copies the Nebula package into `Packages/com.1by3.nebula`, adds the SpacetimeDB SDK to `Packages/manifest.json`, creates `Assets/Resources/NebulaConfig.asset`, and creates `nebula.json` in the project root. To choose a local Nebula checkout as the source, pass its path to `--source`. See [`nebula init`](/docs/cli/init) for all source options.
+The command copies the Nebula package into `Packages/com.1by3.nebula`, creates `Assets/Resources/NebulaConfig.asset`, and creates `nebula.json` in the project root. To choose a local Nebula checkout as the source, pass its path to `--source`. See [`nebula init`](/docs/cli/init) for all source options.
 
 Open the project in Unity once so it imports the assets and resolves the package.
 
@@ -228,7 +228,7 @@ nebula build
 nebula start --open-ui
 ```
 
-The first command builds the Unity player. You can leave the project open in the Editor while it runs. The second command starts SpacetimeDB, publishes the control-plane module, and starts the orchestrator, gateway, and four workers. It also opens the dashboard at `http://localhost:7080/`.
+The first command builds the Unity player. You can leave the project open in the Editor while it runs. The second command starts the orchestrator, which hosts the control plane and starts the gateway and four workers. It also opens the dashboard at `http://localhost:7080/`.
 
 Press Play in the Editor. On the title screen that `NebulaTitleScreen` shows, enter the local gateway address `127.0.0.1:7000` and a name, then select **Connect**. If no title screen appears, add `NebulaTitleScreen` to the `Nebula` object as described in [Add the bootstrap](#add-the-bootstrap).
 

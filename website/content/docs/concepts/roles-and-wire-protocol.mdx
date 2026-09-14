@@ -33,11 +33,11 @@ The orchestrator creates one assignment for each container and distributes them 
 
 ## Control plane
 
-The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~`. Its tables store workers, container assignments, gateways, orchestrators, and shared game settings. Its reducers register processes, record heartbeats, change assignments, and update settings.
+The control plane is one document the orchestrator hosts over HTTP on its dashboard port (`/api/control-plane`). It lists workers, container assignments, gateways, and shared game settings. Its writes register processes, record heartbeats, change assignments, and update settings.
 
-Workers, the gateway, and the orchestrator use `IControlPlane` to subscribe to these records. They do not send per-tick entity state through the control plane. If the connection fails, workers continue with the last topology they received. See [Control plane](/docs/guides/control-plane).
+Workers, the gateway, and the orchestrator use `IControlPlane` to read these records. They do not send per-tick entity state through the control plane. If the connection fails, workers continue with the last topology they received. See [Control plane](/docs/guides/control-plane).
 
-The control plane holds no entity state and is wiped on every start. Saved entities live in a second SpacetimeDB database, `nebula-persist`, written by the module in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`. Workers and the orchestrator reach it through `IPersistenceStore`, not through `IControlPlane`. Nothing about it is on the per-tick path, and it adds no network messages.
+The control plane holds no entity state and starts empty on every run. Saved entities live in the orchestrator's database (SQLite or PostgreSQL), in a table of their own. Workers reach it through `IPersistenceStore`, over the same HTTP server (`/api/store`), not through `IControlPlane`. Nothing about it is on the per-tick path, and it adds no UDP messages.
 
 ## Client
 

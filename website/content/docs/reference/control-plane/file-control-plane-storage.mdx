@@ -1,0 +1,55 @@
+---
+title: "FileControlPlaneStorage"
+description: "The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs)</div>
+
+```csharp
+public sealed class FileControlPlaneStorage : IControlPlaneStorage
+```
+
+The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy.
+
+## Constructors
+
+### FileControlPlaneStorage [#filecontrolplanestorage]
+
+```csharp
+public FileControlPlaneStorage(string filePath);
+```
+
+## Properties
+
+### FilePath [#filepath]
+
+```csharp
+public string FilePath { get; }
+```
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+## Methods
+
+### Load [#load]
+
+```csharp
+public string Load();
+```
+
+### Save [#save]
+
+```csharp
+public void Save(string json);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

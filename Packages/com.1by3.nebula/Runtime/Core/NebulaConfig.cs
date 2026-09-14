@@ -32,11 +32,15 @@ namespace Nebula
         [Tooltip("Address workers advertise to peers and the gateway.")]
         public string WorkerAdvertiseAddress = "127.0.0.1";
 
-        [Header("Control plane (SpacetimeDB)")]
-        public string SpacetimeUri = "http://127.0.0.1:3000";
-        public string SpacetimeDatabase = "nebula";
-        [Tooltip("Use an in-process control plane instead of SpacetimeDB. Only meaningful when orchestrator, gateway and worker share a process.")]
+        [Header("Control plane")]
+        [Tooltip("Address of the orchestrator that hosts the control plane (its dashboard, e.g. http://127.0.0.1:7080/), for a worker or gateway started by hand. Processes the orchestrator launches get it on the command line (-nebula-control-plane).")]
+        public string ControlPlaneUrl = "http://127.0.0.1:7080/";
+        [Tooltip("Shared secret every worker and gateway presents to the orchestrator. Empty = none (fine on a development machine or a private network). -nebula-token overrides.")]
+        public string MeshToken = "";
+        [Tooltip("Keep the control plane in this process instead of talking to an orchestrator. Only meaningful when orchestrator, gateway and worker share a process (tests, single-process runs).")]
         public bool UseLocalControlPlane = false;
+        [Tooltip("Where the orchestrator keeps the control plane and saved entities: sqlite:<file> or postgres://user:password@host/db (standalone orchestrator), file:<folder> (Unity orchestrator), or memory. Empty = a default next to the process. -nebula-database overrides.")]
+        public string DatabaseUrl = "";
 
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator keeps running.")]
@@ -80,12 +84,8 @@ namespace Nebula
         public float GhostLingerSeconds = 2f;
 
         [Header("Persistence")]
-        [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (local when the control plane is local, otherwise spacetime), 'spacetime', 'local' (a file next to the process) or 'off'. -nebula-persistence-mode overrides.")]
+        [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.")]
         public string PersistenceMode = "auto";
-        [Tooltip("SpacetimeDB instance holding the persistence database. Empty = the same one as the control plane. -nebula-persistence overrides.")]
-        public string PersistenceUri = "";
-        [Tooltip("Persistence database name; a database of its own next to the control plane. -nebula-persistence-database overrides.")]
-        public string PersistenceDatabase = "nebula-persist";
         [Tooltip("File the local store writes to. Empty = <persistentDataPath>/nebula-persistence.bin. -nebula-persistence-file overrides.")]
         public string PersistenceLocalFile = "";
         [Tooltip("Seconds between checkpoints of an authoritative persistent entity. A change or a move saves sooner; PersistentEntity.CheckpointSeconds overrides it per prefab.")]

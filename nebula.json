@@ -5,14 +5,11 @@
     "workers": 4,
     "npcs": 0,
     "dashboardPort": 7080,
-    "gatewayPort": 7000,
-    "spacetimeUri": "http://127.0.0.1:3000",
-    "database": "nebula"
+    "gatewayPort": 7000
   },
   "deploy": {
     "target": "hetzner",
     "meshName": "nebula-playground",
-    "database": "nebula-playground",
     "workers": 4,
     "npcs": 0
   }

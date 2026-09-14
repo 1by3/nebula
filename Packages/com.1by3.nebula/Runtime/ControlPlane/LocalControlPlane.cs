@@ -9,9 +9,10 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// In-process control plane with the exact semantics of the SpacetimeDB module (see Module~/Lib.cs), for
-    /// single-process runs and tests. Changes are applied synchronously and <see cref="Changed"/> fires on the next
-    /// <see cref="Tick"/>, mirroring the subscription push of the real thing.
+    /// The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain
+    /// lists in this process. Changes are applied synchronously and <see cref="Changed"/> fires on the next
+    /// <see cref="Tick"/>. On its own it serves single-process runs and tests; <see cref="ControlPlaneHost"/> wraps
+    /// it on the orchestrator, where it is the source of truth every <see cref="RemoteControlPlane"/> mirrors.
     /// </summary>
     public sealed class LocalControlPlane : IControlPlane
     {
@@ -28,6 +29,8 @@ namespace Nebula
         public IReadOnlyList<GatewayInfo> Gateways => _gateways;
         private readonly Dictionary<string, string> _settings = new Dictionary<string, string>();
         public IReadOnlyDictionary<string, string> Settings => _settings;
+        /// <summary>Bumped by every change, so a mirror can tell whether it is behind.</summary>
+        public long Version { get; private set; }
 
         public void Connect()
         {
@@ -44,7 +47,32 @@ namespace Nebula
 
         public void Dispose() => IsConnected = false;
 
-        private void Touch() => _dirty = true;
+        private void Touch()
+        {
+            _dirty = true;
+            Version++;
+        }
+
+        /// <summary>The whole state as one document (see <see cref="ControlPlaneJson"/>).</summary>
+        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings);
+
+        /// <summary>Replace the whole state with <paramref name="snapshot"/> (a stored document coming back at startup).</summary>
+        public void Import(ControlPlaneJson.Snapshot snapshot)
+        {
+            _workers.Clear();
+            _leases.Clear();
+            _gateways.Clear();
+            _settings.Clear();
+            if (snapshot != null)
+            {
+                _workers.AddRange(snapshot.Workers);
+                _leases.AddRange(snapshot.Leases);
+                _gateways.AddRange(snapshot.Gateways);
+                foreach (var kv in snapshot.Settings) _settings[kv.Key] = kv.Value;
+                if (snapshot.Version > Version) Version = snapshot.Version;
+            }
+            Touch();
+        }
 
         public void RegisterWorker(string workerId, uint workerIndex, string address, ushort port)
         {

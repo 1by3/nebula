@@ -5,6 +5,8 @@
     <AssemblyName>nebula-gateway</AssemblyName>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
+    <!-- SQLite ships a native library; a single-file publish unpacks it beside the executable at first run. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Nebula.Services/Nebula.Services.csproj" /></ItemGroup>
 </Project>

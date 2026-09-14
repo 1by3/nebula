@@ -15,8 +15,9 @@ Entry point for Unity workers and clients. Put one in the boot scene. Reads the 
 - `-nebula-role client|worker|gateway|orchestrator` (comma separated)
 - `-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101`
 - `-nebula-gateway 127.0.0.1:7000`
-- `-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula`
-- `-nebula-persistence-mode auto|spacetime|local|off -nebula-persistence http://127.0.0.1:3000 -nebula-persistence-database nebula-persist -nebula-persistence-file saves/world.bin` (where persistent entities are stored)
+- `-nebula-control-plane http://10.0.1.2:7080/ -nebula-token secret` (worker, gateway: the orchestrator that hosts the control plane)
+- `-nebula-database file:saves|memory` (Unity orchestrator: where the control plane and saved entities are kept; the standalone orchestrator also takes `sqlite:` and `postgres://`)
+- `-nebula-persistence-mode auto|database|remote|local|memory|off -nebula-persistence-file saves/world.bin` (where persistent entities are stored)
 - `-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600` (orchestrator; settings are game-defined key/values seeded on the control plane, editable on the dashboard)
 - `-nebula-name Jesse` (client display name)
 - `-nebula-advertise 10.0.1.2|auto` (address this worker/gateway advertises to peers)

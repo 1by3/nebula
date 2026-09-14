@@ -21,7 +21,7 @@ public sealed class CliConfig
     public string? SetupCompletedAt { get; set; }
     public UnitySettings Unity { get; set; } = new();
     public HetznerSettings? Hetzner { get; set; }
-    public SpacetimeSettings? Spacetime { get; set; }
+    public DatabaseSettings? Database { get; set; }
 
     public sealed class UnitySettings
     {
@@ -49,15 +49,19 @@ public sealed class CliConfig
         }
     }
 
-    public sealed class SpacetimeSettings
+    /// <summary>The database a deployed orchestrator stores the control plane and saved entities in.</summary>
+    public sealed class DatabaseSettings
     {
-        /// <summary>Server nickname or URL passed to `spacetime -s`, e.g. maincloud.</summary>
-        public string Server { get; set; } = "maincloud";
-        /// <summary>Default database name for deploys; nebula.json can override per project.</summary>
-        public string? Database { get; set; }
+        /// <summary>postgres://user:password@host/db for a PostgreSQL server the orchestrator VM can reach, or sqlite:&lt;file on the VM&gt;. Null = SQLite on the orchestrator VM.</summary>
+        public string? Url { get; set; }
         public string? ConfiguredAt { get; set; }
 
-        public bool IsConfigured => ConfiguredAt != null;
+        /// <summary>NEBULA_DATABASE_URL in the environment wins over the stored URL.</summary>
+        public static string? ResolveUrl(DatabaseSettings? settings)
+        {
+            var env = Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL");
+            return !string.IsNullOrEmpty(env) ? env : settings?.Url;
+        }
     }
 
     public static CliConfig Load()

@@ -7,19 +7,21 @@ Use Nebula to run one Unity game world across multiple dedicated server processe
 
 When an entity enters a container assigned to another worker, Nebula transfers control of that entity to the new worker. Nebula calls this transfer a **handover**.
 
-All Nebula processes use the same Unity player build. Start each process with a different role: worker, gateway, orchestrator, or client. Nebula also uses SpacetimeDB as a control plane. The control plane stores worker registrations, container assignments, and settings that apply to the whole group of processes. Nebula calls this group a **mesh**.
+All Nebula processes use the same Unity player build. Start each process with a different role: worker, gateway, orchestrator, or client. The orchestrator also hosts a control plane. The control plane stores worker registrations, container assignments, and settings that apply to the whole group of processes. Nebula calls this group a **mesh**.
 
 ## How the pieces fit
 
 ```
                  ┌──────────────────────────────────────────────────────────┐
-                 │ SpacetimeDB (process records and container assignments)   │
-                 └──────▲──────────────▲──────────────▲──────────────▲──────┘
-                        │ reads and writes shared records             │
-                 ┌──────┴──────┐  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
-                 │ Orchestrator│  │ Gateway │   │ Worker w1 │◄─►│ Worker w2 │ ... direct UDP connection
-                 │starts workers│ │ UDP 7000│◄─►│ UDP 7101  │   │ UDP 7102  │     ghost copies + handovers
-                 └─────────────┘  └────▲────┘   └───────────┘  └───────────┘
+                 │ Orchestrator: starts workers, hosts the control plane     │
+                 │ (process records, container assignments) and the store   │
+                 │ of saved entities in SQLite or PostgreSQL                 │
+                 └─────────────────────▲──────────────▲──────────────▲──────┘
+                                       │ HTTP: reads and writes shared records
+                                  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
+                                  │ Gateway │   │ Worker w1 │◄─►│ Worker w2 │ ... direct UDP connection
+                                  │ UDP 7000│◄─►│ UDP 7101  │   │ UDP 7102  │     ghost copies + handovers
+                                  └────▲────┘   └───────────┘  └───────────┘
                                        │ one connection per client
                                   ┌────┴────┐
                                   │ Client  │  sends input and receives entity state
@@ -31,7 +33,7 @@ Start each process with `-nebula-role <role>`. When you enter Play mode in the U
 - A **worker** simulates the entities in its assigned containers at 60 ticks per second. Before an entity crosses a container boundary, the current worker creates a non-authoritative copy, called a **ghost**, on the next worker. The next worker can then take control without loading the entity from scratch.
 - The **gateway** accepts client connections. It routes player input to the worker that controls the player's entity and sends replicated state from workers to clients.
 - The **orchestrator** starts workers and assigns containers to them. Use the Nebula Dashboard to add, remove, or stop workers while the game runs.
-- The **control plane** stores the current workers, container assignments, and shared settings in SpacetimeDB. Workers do not use it to exchange state during a simulation tick.
+- The **control plane** stores the current workers, container assignments, and shared settings. The orchestrator hosts it and keeps it in its database. Workers do not use it to exchange state during a simulation tick.
 - A **client** predicts the local player's movement and corrects that prediction from worker snapshots. Clients connect only to the gateway.
 
 ## The API

@@ -104,4 +104,4 @@ if (-not $NoPath) {
 
 & $exe version
 Write-Host ''
-Write-Host 'next: nebula setup   (installs SpacetimeDB and checks Unity), then cd into a Unity project and nebula init' -ForegroundColor Green
+Write-Host 'next: nebula setup   (checks the .NET SDK and Unity), then cd into a Unity project and nebula init' -ForegroundColor Green

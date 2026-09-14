@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  End-to-end smoke test of the mesh with no human in the loop: starts SpacetimeDB + orchestrator (gateway, N workers)
+  End-to-end smoke test of the mesh with no human in the loop: starts the orchestrator (gateway, N workers)
   + M bot clients from the last build, lets them roam across the container quadrants for a while, then reports what
   happened from the logs: workers registered, leases assigned, players spawned, authority handovers, cross-worker hits.
 

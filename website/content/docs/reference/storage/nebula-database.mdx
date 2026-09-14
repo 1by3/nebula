@@ -1,0 +1,80 @@
+---
+title: "NebulaDatabase"
+description: "The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/NebulaDatabase.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/NebulaDatabase.cs)</div>
+
+```csharp
+public sealed class NebulaDatabase : IDisposable
+```
+
+The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. It holds two tables: `nebula_control_plane` (the control plane document, see [`SqlControlPlaneStorage`](/docs/reference/storage/sql-control-plane-storage)) and `nebula_entity` (saved entities, see [`SqlPersistenceStore`](/docs/reference/storage/sql-persistence-store)). [`EnsureSchema`](#ensureschema) creates both if they are missing; every SQL statement is written once and differs only in the few type names the two engines disagree on.
+
+## Properties
+
+### Provider [#provider]
+
+```csharp
+public string Provider { get; }
+```
+
+"sqlite" or "postgres".
+
+### Display [#display]
+
+```csharp
+public string Display { get; }
+```
+
+The URL as configured, password masked.
+
+### Blob [#blob]
+
+```csharp
+public string Blob { get; }
+```
+
+Type names where the engines differ.
+
+### Double [#double]
+
+```csharp
+public string Double { get; }
+```
+
+## Methods
+
+### Open [#open]
+
+```csharp
+public static NebulaDatabase Open(DatabaseUrl url);
+public DbConnection Open();
+```
+
+Prepare the database behind `url`. Nothing is connected yet; [`Open`](#open) does that.
+
+### EnsureSchema [#ensureschema]
+
+```csharp
+public void EnsureSchema(DbConnection c);
+```
+
+### Execute [#execute]
+
+```csharp
+public static int Execute(DbConnection c, string sql, params (string name, object value)[] args);
+```
+
+### Command [#command]
+
+```csharp
+public static DbCommand Command(DbConnection c, string sql, params (string name, object value)[] args);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

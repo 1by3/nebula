@@ -35,8 +35,10 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `GatewayAddress`, `GatewayPort` | `127.0.0.1`, `7000` | Set the address and port clients use to reach the gateway. |
 | `WorkerBasePort` | `7100` | Set the base for worker ports. Worker 1 uses `7101`, worker 2 uses `7102`, and so on. |
 | `WorkerAdvertiseAddress` | `127.0.0.1` | Set the address workers advertise to peers and the gateway. |
-| `SpacetimeUri`, `SpacetimeDatabase` | local server, `nebula` | Select the SpacetimeDB server and database used as the control plane. |
+| `ControlPlaneUrl` | `http://127.0.0.1:7080/` | Set the orchestrator's dashboard address for a worker or gateway you start by hand. The orchestrator passes it to the processes it launches. |
+| `MeshToken` | empty | Set a shared secret that workers and gateways present to the orchestrator. Empty means no token. `nebula deploy` generates one per deployment. |
 | `UseLocalControlPlane` | `false` | Enable the in-process control plane only when all server roles run in one process, such as in a test. |
+| `DatabaseUrl` | empty | Select where the orchestrator keeps the control plane and saved entities: `sqlite:<file>`, `postgres://...`, `file:<folder>`, or `memory`. Empty means a default next to the process. |
 | `WorkerCount` | `4` | Set the initial number of workers. |
 | `WorkerHost` | `process` | Use `process` for child processes or `hetzner` for one Hetzner Cloud VM per worker. |
 | `DashboardPort` | `7080` | Set the dashboard port. Use `0` to disable the dashboard. |
@@ -59,9 +61,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 
 | Field | Default | What it does |
 | --- | --- | --- |
-| `PersistenceMode` | `auto` | Select the store: `auto` (local when `UseLocalControlPlane` is on, otherwise `spacetime`), `spacetime`, `local`, `memory`, or `off`. |
-| `PersistenceUri` | empty | Select the SpacetimeDB server holding the persistence database. Leave it empty to use the control-plane server. |
-| `PersistenceDatabase` | `nebula-persist` | Name the persistence database. It is separate from the control-plane database. |
+| `PersistenceMode` | `auto` | Select the store: `auto` (the orchestrator's database, a worker's `remote` store, or `local` when `UseLocalControlPlane` is on), `database`, `remote`, `local`, `memory`, or `off`. |
 | `PersistenceLocalFile` | empty | Set the file the `local` store writes to. Empty uses `<persistentDataPath>/nebula-persistence.bin`. |
 | `PersistenceCheckpointSeconds` | `5` | Choose how often an authoritative persistent entity is checkpointed. A change or a move saves sooner. |
 | `PersistenceRestoreGraceSeconds` | `3` | Wait this long after gaining a container lease before restoring that container's saved entities. |
@@ -101,12 +101,12 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-worker-index <number>` | worker | Set the worker index. The orchestrator normally supplies it. |
 | `-nebula-port <port>` | worker | Set the worker's listening port. |
 | `-nebula-advertise <address\|auto>` | worker, gateway, orchestrator | Set the address advertised to other processes. Use `auto` to select the first private IPv4 address. |
-| `-nebula-spacetime <url>` | server roles | Override the SpacetimeDB server URL. |
-| `-nebula-database <name>` | server roles | Override the control-plane database name. |
+| `-nebula-control-plane <url>` | worker, gateway | Override `ControlPlaneUrl`. |
+| `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. |
+| `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
-| `-nebula-persistence-mode auto\|spacetime\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |
-| `-nebula-persistence <url>` | worker, orchestrator | Override `PersistenceUri`. |
-| `-nebula-persistence-database <name>` | worker, orchestrator | Override `PersistenceDatabase`. |
+| `-nebula-persistence-mode auto\|database\|remote\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |
+| `-nebula-reset-persistence` | orchestrator | Delete every saved entity at startup. |
 | `-nebula-persistence-file <path>` | worker, orchestrator | Override `PersistenceLocalFile`. |
 | `-nebula-persistence-checkpoint <seconds>` | worker | Override `PersistenceCheckpointSeconds`. |
 | `-nebula-workers <number>` | orchestrator | Set the initial worker count. |
@@ -118,7 +118,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-build-dir <path>` | orchestrator | Serve worker build files from this directory at `/build/`. |
 | `-nebula-ghost-band <metres>` | worker | Override `GhostBandMargin`. |
 | `-nebula-hysteresis <metres>` | worker | Override `HandoverHysteresis`. |
-| `-nebula-reset false` | orchestrator | Keep existing control-plane rows. The default resets this temporary registry state. |
+| `-nebula-reset false` | orchestrator | Restore the stored control plane instead of starting empty. The default resets this temporary registry state. |
 | `-nebula-verbose` | all roles | Write debug-level logs. |
 
 Cloud deployments also use `-nebula-cloud-*` options. Let `nebula deploy` supply them unless you run the orchestrator yourself. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner) for the supported values.
@@ -137,14 +137,11 @@ Run `nebula init` to create `nebula.json` at the Unity project root. The CLI rea
     "workers": 4,
     "npcs": 0,
     "dashboardPort": 7080,
-    "gatewayPort": 7000,
-    "spacetimeUri": "http://127.0.0.1:3000",
-    "database": "nebula"
+    "gatewayPort": 7000
   },
   "deploy": {
     "target": "hetzner",
-    "meshName": "nebula",
-    "database": "my-game",
+    "meshName": "nebula-my-game",
     "workers": 4,
     "npcs": 0
   }
@@ -157,10 +154,10 @@ Run `nebula init` to create `nebula.json` at the Unity project root. The CLI rea
 | `executable` | Sets the base name of builds produced by `NebulaBuild`, such as `Nebula.exe` or `Nebula.x86_64`. |
 | `mesh.workers` | Sets the default worker count for `nebula start`. |
 | `mesh.dashboardPort`, `mesh.gatewayPort` | Set the ports used by a local mesh and by deployment firewalls. |
-| `mesh.spacetimeUri`, `mesh.database` | Select the local control-plane server and database. |
+| `mesh.database` | Select where the local orchestrator keeps the control plane and saved entities. Leave it out for `sqlite:Library/Nebula/nebula.db`. |
 | `deploy.target` | Selects the deployment provider. This release supports `hetzner`. |
 | `deploy.meshName` | Sets the label and name prefix used for cloud resources. |
-| `deploy.database` | Selects the deployed control-plane database. |
+| `deploy.database` | Selects the deployed orchestrator's database (`postgres://...` or `sqlite:<file on the VM>`). Leave it out to use `nebula config database`, else SQLite on the orchestrator VM. |
 | `deploy.workers` | Sets the default worker count for `nebula deploy`. |
 | `deploy.workerType`, `deploy.orchestratorType`, `deploy.location` | Override the machine types and region stored in the CLI's machine config. |
 
@@ -174,10 +171,10 @@ Run `nebula config` commands to store machine-specific paths and credentials in 
 nebula config source
 nebula config unity
 nebula config hetzner
-nebula config spacetime
+nebula config database
 nebula config show
 ```
 
-`nebula config show` masks the saved Hetzner token. On Unix, the CLI creates the file with permissions `0600`. Set `HCLOUD_TOKEN` to override the saved token.
+`nebula config show` masks the saved Hetzner token and the database password. On Unix, the CLI creates the file with permissions `0600`. Set `HCLOUD_TOKEN` to override the saved token and `NEBULA_DATABASE_URL` to override the saved database URL.
 
 Set `NEBULA_CLI_HOME` to move the entire `~/.nebula-cli` directory. The directory also contains the CLI binary, a downloaded SDK checkout when you have not configured a source checkout, and temporary project copies used during builds.

@@ -9,7 +9,7 @@ To install Nebula into the Unity project in the current folder, run:
 nebula init [--ref <tag|branch>] [--embed [--source <path>]] [--force]
 ```
 
-Run inside a Unity project. It adds the Nebula package (com.1by3.nebula, fetched by Unity from the Nebula repository on GitHub and pinned to this CLI's release) and the SpacetimeDB SDK to Packages/manifest.json, lists the package in `testables` so its tests show in the Test Runner, creates Assets/Resources/NebulaConfig.asset with the defaults and writes nebula.json at the project root.
+Run inside a Unity project. It adds the Nebula package (com.1by3.nebula, fetched by Unity from the Nebula repository on GitHub and pinned to this CLI's release) to Packages/manifest.json, lists the package in `testables` so its tests show in the Test Runner, creates Assets/Resources/NebulaConfig.asset with the defaults and writes nebula.json at the project root.
 
 --embed copies the package's sources into Packages/com.1by3.nebula instead, so you can read and modify the middleware in place. The sources come from --source, $NEBULA\_SOURCE, the sdkSource in the CLI config (set when the CLI was installed from a checkout), or a shallow git clone of the repository into ~/.nebula-cli/sdk.
 

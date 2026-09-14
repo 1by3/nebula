@@ -20,7 +20,7 @@ A persistent entity is saved with:
 
 Nothing else persists. An entity without a `PersistentEntity` is lost when its worker stops, and so is any state on a persistent entity that is neither a `[Persist]` variable nor written by `WritePersistentState`. Client connections, prediction state, ghosts, and in-flight RPCs are never saved.
 
-The control plane is a separate database and is not affected by any of this. It holds process registrations, container assignments, and shared settings, and it is wiped on every `nebula start`. Saved entities live in a database of their own.
+The control plane is not affected by any of this. It holds process registrations, container assignments, and shared settings, and it starts empty on every `nebula start`. Saved entities sit next to it in the orchestrator's database, in a table of their own.
 
 <Callout type="warn" title="Persistence is not a save-game system">
 Nebula saves entities, not worlds. It does not snapshot your scene, your game mode, or per-player accounts. Keep account data, matchmaking records, and anything you must query relationally in your own database.
@@ -211,22 +211,22 @@ To forget an entity without despawning it, call `worker.Persistence.Delete(key)`
 
 ## Configure it
 
-Set these on `NebulaConfig` under **Persistence**, or override them on the command line.
+Set these on `NebulaConfig` under **Persistence** and **Control plane**, or override them on the command line.
 
 | Field | Default | What it does |
 | --- | --- | --- |
 | `PersistenceMode` | `auto` | Which store to use. See the table below. |
-| `PersistenceUri` | empty | SpacetimeDB server holding the persistence database. Empty means the same server as the control plane. |
-| `PersistenceDatabase` | `nebula-persist` | Persistence database name. |
-| `PersistenceLocalFile` | empty | File the local store writes to. Empty means `<persistentDataPath>/nebula-persistence.bin`. |
+| `DatabaseUrl` | empty | Where the orchestrator keeps saved entities (and the control plane): `sqlite:<file>`, `postgres://...`, `file:<folder>`, or `memory`. Empty means a default next to the process. |
+| `PersistenceLocalFile` | empty | File the `local` store writes to. Empty means `<persistentDataPath>/nebula-persistence.bin`. |
 | `PersistenceCheckpointSeconds` | `5` | Seconds between checkpoints of an authoritative persistent entity. |
 | `PersistenceRestoreGraceSeconds` | `3` | How long a worker waits after gaining a lease before restoring that container's entities. |
 
 | `PersistenceMode` | Store | Use it for |
 | --- | --- | --- |
-| `auto` | `local` when `UseLocalControlPlane` is on, otherwise `spacetime` | The default. Leave it alone unless you need one specific store. |
-| `spacetime` | `SpacetimePersistenceStore` | A mesh. Every worker must see the same records, so this is the only correct choice for more than one process. |
-| `local` | `LocalPersistenceStore` with a file | A single-process run that should survive a restart. |
+| `auto` | `database` on an orchestrator, `remote` on a worker of a mesh, `local` when `UseLocalControlPlane` is on | The default. Leave it alone unless you need one specific store. |
+| `database` | The store behind `DatabaseUrl`: [`SqlPersistenceStore`](/docs/reference/storage/sql-persistence-store) for SQLite or PostgreSQL, a file for `file:`, memory for `memory` | The orchestrator. It owns the mesh's records. |
+| `remote` | [`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store) | A worker. Every save and load goes to the orchestrator over HTTP, so a worker needs no database driver and every worker sees the same records. |
+| `local` | [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) with a file | A single-process run that should survive a restart. |
 | `memory` | `LocalPersistenceStore` with no file | Tests and throwaway runs. Everything is forgotten when the process ends. |
 | `off` | none | No persistence. `worker.Persistence` is null and `PersistentEntity` does nothing. |
 
@@ -234,56 +234,54 @@ An unrecognized mode logs a warning and turns persistence off.
 
 | Option | Roles | Overrides |
 | --- | --- | --- |
-| `-nebula-persistence-mode auto\|spacetime\|local\|memory\|off` | worker, orchestrator | `PersistenceMode` |
-| `-nebula-persistence <url>` | worker, orchestrator | `PersistenceUri` |
-| `-nebula-persistence-database <name>` | worker, orchestrator | `PersistenceDatabase` |
+| `-nebula-persistence-mode auto\|database\|remote\|local\|memory\|off` | worker, orchestrator | `PersistenceMode` |
+| `-nebula-database <url>` | orchestrator | `DatabaseUrl` (the standalone orchestrator also reads `NEBULA_DATABASE_URL`) |
 | `-nebula-persistence-file <path>` | worker, orchestrator | `PersistenceLocalFile` |
 | `-nebula-persistence-checkpoint <seconds>` | worker | `PersistenceCheckpointSeconds` |
+| `-nebula-reset-persistence` | orchestrator | Delete every saved entity at startup. |
 
-`NebulaBootstrap` creates the worker's store. The standalone orchestrator creates its own connection for the dashboard. Both pump store callbacks and dispose their connections on shutdown. The orchestrator forwards its persistence mode, database, and URI to the workers it launches so they use the same storage backend.
+`NebulaBootstrap` creates the worker's store and the standalone orchestrator creates its own; both pump store callbacks and dispose their stores on shutdown. The orchestrator tells the workers it launches to use `remote` (or `off` when it has no store itself), so every worker writes to the orchestrator's database through it.
 
-## The persistence database
+## The orchestrator's database
 
-The store is a SpacetimeDB module of its own, in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`, published as its own database next to the [control plane](/docs/guides/control-plane). Keeping them apart is the point: wiping the ephemeral registry never touches saved worlds.
+Saved entities live in the `nebula_entity` table of the orchestrator's database, next to the control-plane document. `DatabaseUrl` names the engine: `sqlite:<file>` (the default for `nebula start`, at `Library/Nebula/nebula.db`) or `postgres://user:password@host:port/database` for a deployed mesh whose world must outlive its VMs. Both use the same statements; the orchestrator creates the table and its two indexes (`container_id`, `carrier_key`) when it starts.
 
-The module has one public table, `persisted_entity`, keyed by the persistence key. Its columns are the record fields: prefab ID and name, scene ID, `ContainerId` and `CarrierKey` (both B-tree indexed), pose and velocity, epoch, `ServerDriven`, `Owned`, name, the state blob, `Version`, `SavedAt`, and `SavedBy`.
+The table's columns are the record fields: `entity_key`, prefab ID and name, scene ID, `container_id` and `carrier_key`, pose and velocity, `epoch`, `server_driven`, `owned`, `name`, the `state` blob, `version`, `saved_at`, and `saved_by`.
 
-| Reducer | Effect |
+| Operation | Effect |
 | --- | --- |
-| `SaveEntity` | Insert or update one record. Dropped when the stored row carries a newer epoch. Every accepted save bumps `Version` and stamps `SavedAt` and `SavedBy`. |
-| `DeleteEntity` | Delete one record by key. |
-| `ClearPersistence` | Delete every record. |
+| Save | Insert or update one record. Dropped when the stored row carries a newer epoch. Every accepted save bumps `version` and stamps `saved_at` and `saved_by`. |
+| Delete | Delete one record by key. |
+| Clear | Delete every record. |
 
-To build and publish the module by hand:
+One writer thread on the orchestrator runs every save, delete, and query in order, so the epoch rule is one conditional upsert and a later save never overtakes an earlier one. If the database is unreachable the queue waits, the connection is retried every two seconds, and the mesh keeps simulating; a job that still fails after three attempts is dropped with an error in the orchestrator log.
 
-```bash
-cd Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~
-spacetime build
-spacetime generate --lang csharp --module-path . --out-dir ../GeneratedPersistence --namespace Nebula.Spacetime.Persistence -y
-spacetime publish -s local nebula-persist
-```
+A Unity orchestrator (the compatibility role, not the standalone service) carries no database driver: give it `file:<folder>` or `memory`.
 
-<Callout type="warn" title="Never publish this module with --delete-data">
-`--delete-data` deletes every saved entity in that database. The control-plane module is published that way on purpose; this one must not be, unless you mean to wipe the saved world.
-</Callout>
+### How workers reach it
 
-`SpacetimePersistenceStore` reconnects every two seconds and delivers every callback on the main thread from `Tick()`. Saves issued while it is disconnected are queued — the latest one per key — and flushed on connect.
+A worker's `remote` store talks to the orchestrator's dashboard address, the same one it mirrors the control plane from, at these endpoints (with the mesh token in `X-Nebula-Token` when the mesh has one):
 
-The [Editor menu](/docs/guides/control-plane#building-publishing-and-regenerating-bindings) entries **Nebula > Control Plane > Publish Module** and **Regenerate C# Bindings** handle both modules, publishing persistence without `--delete-data`.
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/store/save` `{"records":[...]}` | Save a batch. A worker gathers its checkpoints for a quarter of a second and coalesces them per key, so a checkpoint pass is one request. |
+| `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear` | Delete records. |
+| `GET /api/store/record?key=`, `.../container?id=`, `.../carried?key=`, `.../all` | Load one record, a container's records, a carrier's records, or everything. |
+| `GET /api/store/status` | Backend, whether it is connected, and how many records it holds. The worker probes it every five seconds for `IsConnected` and `KnownCount`. |
+
+Records travel as JSON with the state blob base64-encoded. A batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away; a load is retried until it succeeds.
 
 ### Running and resetting it
 
-`nebula start` publishes the control-plane module with `--delete-data`, then publishes the persistence module **without** it, so saved entities survive every restart of the mesh. `--skip-publish` skips both.
-
-To start from an empty world, run:
+Saved entities survive every restart of the mesh: `nebula start` leaves the database alone. To start from an empty world, run:
 
 ```bash
 nebula start --reset-persistence
 ```
 
-That republishes the persistence module with `--delete-data` and deletes every saved entity. `nebula deploy --reset-persistence` does the same on a deployed mesh.
+That passes `-nebula-reset-persistence` to the orchestrator, which deletes every saved entity as it starts. `nebula deploy --reset-persistence` does the same on a deployed mesh.
 
-Set the database names in `nebula.json`: `mesh.persistenceDatabase` (default `nebula-persist`) for local runs, and `deploy.persistenceDatabase` for a deployed mesh. Leave the deploy value out and the CLI uses the control-plane database name with a `-persist` suffix.
+Set the database in `nebula.json`: `mesh.database` for local runs (default `sqlite:Library/Nebula/nebula.db`), `deploy.database` for a deployed mesh (default SQLite on the orchestrator VM; `nebula config database` stores a PostgreSQL URL for every project instead).
 
 To see the current state, run:
 
@@ -295,7 +293,7 @@ It prints a persistence line with the mode, backend, connection state, and numbe
 
 ### From the dashboard
 
-The dashboard shows a **persisted** tile with the number of records the orchestrator's store knows about, and a persistence line in the settings section reading `<backend> · connected` or `disconnected`. Both show `off` when persistence is disabled.
+The dashboard shows a **persisted** tile with the number of records the orchestrator's store holds, and a persistence line in the settings section reading `<backend> · connected` or `disconnected`. Both show `off` when persistence is disabled.
 
 The **Clear persistence** button deletes every saved entity through `POST /api/persistence/clear`. It asks for confirmation first.
 
@@ -305,14 +303,14 @@ The running mesh keeps simulating what it is holding, and its next checkpoints w
 
 ## Current limitations
 
-- **Every worker mirrors the whole table.** `SpacetimePersistenceStore` subscribes to all of `persisted_entity` and answers loads from that in-memory mirror, so a restore never waits on a round trip. The cost is one copy of every saved entity in every worker. The scaling step — subscribing per leased container instead — is noted in the source.
+- **Every load is a round trip to the orchestrator.** A worker's `remote` store keeps no mirror, so restoring a container waits for one request (retried until it succeeds). The orchestrator is the only process that opens the database.
 - **Live checkpoints overwrite dashboard edits.** Records the game is actively simulating are rewritten at the next checkpoint. Editing or deleting a record for an entity that is alive right now changes nothing lasting.
-- **No relational backend yet.** [`SpacetimePersistenceStore`](/docs/reference/persistence/spacetime-persistence-store) and [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) are the two implementations. `IPersistenceStore` is request/response, with no subscriptions, so a Postgres-backed or standalone persistence service fits behind the same interface without changing game code.
+- **One orchestrator, one database.** There is no orchestrator failover: while the orchestrator is down, workers queue their checkpoints and cannot restore containers. `IPersistenceStore` is request/response, with no subscriptions, so another backend fits behind the same interface without changing game code.
 - **Owned records need game code.** Nebula never restores a record saved under a client's ownership. Your game decides when a returning player's entity comes back.
 - **A record is only as good as its build.** A restore needs the prefab in the running build, found by ID or by asset name. A prefab that no longer exists logs a warning and the record stays in the store.
 
 <Cards>
-  <Card title="Control plane" href="/docs/guides/control-plane" description="The other SpacetimeDB database, and why it is wiped on every start." />
+  <Card title="Control plane" href="/docs/guides/control-plane" description="What else the orchestrator's database holds, and why that part starts empty." />
   <Card title="Scene entities" href="/docs/guides/scene-entities" description="How a resident scene object is bound, and where a restore fits in." />
   <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carriers, carried entities, and the containers that move." />
   <Card title="Configuration" href="/docs/guides/configuration" description="Every NebulaConfig field and command-line override." />

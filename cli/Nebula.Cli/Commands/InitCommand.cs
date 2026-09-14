@@ -11,9 +11,9 @@ public sealed class InitCommand : Command
     public override string Usage => "[--ref <tag|branch>] [--embed [--source <path>]] [--force]";
     public override string? Details => @"
 Run inside a Unity project. It adds the Nebula package (com.1by3.nebula, fetched by Unity from the Nebula
-repository on GitHub and pinned to this CLI's release) and the SpacetimeDB SDK to Packages/manifest.json, lists the
-package in `testables` so its tests show in the Test Runner, creates Assets/Resources/NebulaConfig.asset with the
-defaults and writes nebula.json at the project root.
+repository on GitHub and pinned to this CLI's release) to Packages/manifest.json, lists the package in `testables`
+so its tests show in the Test Runner, creates Assets/Resources/NebulaConfig.asset with the defaults and writes
+nebula.json at the project root.
 
 --embed copies the package's sources into Packages/com.1by3.nebula instead, so you can read and modify the middleware
 in place. The sources come from --source, $NEBULA_SOURCE, the sdkSource in the CLI config (set when the CLI was
@@ -31,10 +31,8 @@ NebulaConfig.asset and nebula.json are always kept.
     };
     public override string[] Examples => new[] { "nebula init", "nebula init --ref main", "nebula init --embed --source C:\\Dev\\nebula", "nebula init --force" };
 
-    /// <summary>The SpacetimeDB Unity SDK the package's runtime is built against. Unity cannot resolve git dependencies
-    /// declared by a package, so the CLI adds it to the project manifest itself.</summary>
+    /// <summary>The SpacetimeDB SDK older releases added to the project manifest; Nebula no longer uses it, so init removes the entry.</summary>
     public const string SpacetimeSdkPackage = "com.clockworklabs.spacetimedbsdk";
-    public const string SpacetimeSdkVersion = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#v2.10.0";
 
     /// <summary>GUID of Runtime/Core/NebulaConfig.cs.meta; the same in every copy of the package.</summary>
     private const string ConfigScriptGuid = "f8639aa5b9a960fe84b71286ec12a096";
@@ -100,7 +98,7 @@ NebulaConfig.asset and nebula.json are always kept.
 
         Ui.Blank();
         Ui.Ok("done. Next steps:");
-        Ui.Info("1. open the project in Unity once so it resolves the Nebula and SpacetimeDB packages");
+        Ui.Info("1. open the project in Unity once so it resolves the Nebula package");
         Ui.Info("2. add your game scene to Build Settings and set it as GameScene in Assets/Resources/NebulaConfig.asset;");
         Ui.Info("   list every networked prefab in NetworkPrefabs and add a NebulaGameMode to the scene");
         Ui.Info("3. nebula build, then nebula start --open-ui");
@@ -119,8 +117,7 @@ NebulaConfig.asset and nebula.json are always kept.
             return;
         }
         var pf = new ProjectFile();
-        pf.Deploy.Database = $"nebula-{Slug(Path.GetFileName(root))}";
-        pf.Deploy.PersistenceDatabase = pf.Deploy.Database + "-persist";
+        pf.Deploy.MeshName = $"nebula-{Slug(Path.GetFileName(root))}";
         NebulaProject.Create(root, pf);
         Ui.Ok($"{NebulaProject.FileName} written");
     }
@@ -131,8 +128,8 @@ NebulaConfig.asset and nebula.json are always kept.
         return slug.Length > 0 ? slug : "game";
     }
 
-    /// <summary>Applies <paramref name="edit"/> to the manifest's dependencies, makes sure the SpacetimeDB SDK is
-    /// listed, and adds the package to `testables`. Writes only when something changed.</summary>
+    /// <summary>Applies <paramref name="edit"/> to the manifest's dependencies, drops the SpacetimeDB SDK an older
+    /// release added, and adds the package to `testables`. Writes only when something changed.</summary>
     private static void EditManifest(string root, Action<JsonObject> edit)
     {
         string path = Path.Combine(root, "Packages", "manifest.json");
@@ -144,10 +141,10 @@ NebulaConfig.asset and nebula.json are always kept.
 
         edit(deps);
 
-        if (deps[SpacetimeSdkPackage]?.ToString() != SpacetimeSdkVersion)
+        if (deps.ContainsKey(SpacetimeSdkPackage))
         {
-            deps[SpacetimeSdkPackage] = SpacetimeSdkVersion;
-            Ui.Ok($"Packages/manifest.json: {SpacetimeSdkPackage} = {SpacetimeSdkVersion}");
+            deps.Remove(SpacetimeSdkPackage);
+            Ui.Ok($"Packages/manifest.json: removed {SpacetimeSdkPackage} (Nebula no longer needs it)");
         }
         var testables = manifest["testables"]?.AsArray();
         if (testables == null) { testables = new JsonArray(); manifest["testables"] = testables; }
@@ -191,9 +188,10 @@ MonoBehaviour:
   GatewayPort: 7000
   WorkerBasePort: 7100
   WorkerAdvertiseAddress: 127.0.0.1
-  SpacetimeUri: http://127.0.0.1:3000
-  SpacetimeDatabase: nebula
+  ControlPlaneUrl: http://127.0.0.1:7080/
+  MeshToken:
   UseLocalControlPlane: 0
+  DatabaseUrl: 
   WorkerCount: 4
   WorkerExecutable:
   WorkerHost: process

@@ -138,7 +138,9 @@ public sealed class HetznerMesh
 
     // --- deploy ------------------------------------------------------------------------------------------
 
-    public sealed record DeployOptions(int Workers, int Npcs, string SpacetimeUri, string Database, string PersistenceDatabase, bool SkipUpload, bool Verbose);
+    /// <param name="Database">Database URL the orchestrator stores the control plane and saved entities in (sqlite:&lt;file on the VM&gt; or postgres://...).</param>
+    /// <param name="MeshToken">Shared secret workers and the gateway present to the orchestrator.</param>
+    public sealed record DeployOptions(int Workers, int Npcs, string Database, string MeshToken, bool ResetPersistence, bool SkipUpload, bool Verbose);
 
     /// <summary>Ship the tarball and (re)start the orchestrator service. Returns the dashboard URL.</summary>
     public string Deploy(JsonNode orch, string tarball, DeployOptions o)
@@ -150,7 +152,7 @@ public sealed class HetznerMesh
 
         Ui.Step($"deploying to {OrchestratorName} ({publicIp})");
         _ssh.Wait(publicIp, 60);
-        _ssh.RunOrThrow(publicIp, "mkdir -p /opt/nebula/bin /opt/nebula/artifacts /etc/nebula /var/log/nebula");
+        _ssh.RunOrThrow(publicIp, "mkdir -p /opt/nebula/bin /opt/nebula/artifacts /opt/nebula/data /etc/nebula /var/log/nebula");
 
         if (!o.SkipUpload)
         {
@@ -166,8 +168,9 @@ public sealed class HetznerMesh
             Ui.Ok("build installed");
         }
 
-        // The provider token goes over stdin into a root-only file, never onto a command line.
-        _ssh.SendFile(publicIp, $"HCLOUD_TOKEN={_settings.ResolveToken()}\n", "/etc/nebula/env", "0600");
+        // Secrets go over stdin into a root-only file, never onto a command line: the provider token, the database
+        // URL (it may carry a password) and the mesh token the orchestrator hands to its workers.
+        _ssh.SendFile(publicIp, $"HCLOUD_TOKEN={_settings.ResolveToken()}\nNEBULA_DATABASE_URL={o.Database}\nNEBULA_MESH_TOKEN={o.MeshToken}\n", "/etc/nebula/env", "0600");
 
         var args = new List<string>
         {
@@ -181,10 +184,6 @@ public sealed class HetznerMesh
             "-nebula-build-dir", "/opt/nebula/artifacts",
             "-nebula-advertise", privateIp,
             "-nebula-gateway", $"{publicIp}:{GatewayPort}",
-            "-nebula-spacetime", o.SpacetimeUri,
-            "-nebula-database", o.Database,
-            "-nebula-persistence", o.SpacetimeUri,
-            "-nebula-persistence-database", o.PersistenceDatabase,
             "-nebula-cloud-mesh", MeshName,
             "-nebula-cloud-location", location,
             "-nebula-cloud-type", WorkerType,
@@ -194,6 +193,7 @@ public sealed class HetznerMesh
             "-nebula-cloud-firewall", WorkerFirewall,
             "-logFile", "/var/log/nebula/orchestrator.log",
         };
+        if (o.ResetPersistence) args.Add("-nebula-reset-persistence");
         if (o.Verbose) args.Add("-nebula-verbose");
         string unit = $@"[Unit]
 Description=Nebula orchestrator (Nebula Dashboard + gateway + Hetzner worker host)

@@ -53,7 +53,7 @@ Use these meanings consistently:
 | **handover** | The transfer of entity authority and state from one worker to another. |
 | **gateway** | The process that accepts client connections and routes input and replicated state. |
 | **orchestrator** | The process that maintains the worker count and assigns containers. |
-| **control plane** | The SpacetimeDB module that stores process registrations, container assignments, and shared settings. It does not carry per-tick entity state. |
+| **control plane** | The document the orchestrator hosts that stores process registrations, container assignments, and shared settings. It does not carry per-tick entity state. |
 | **lease** | A control-plane record that assigns a container to a worker. |
 | **epoch** | A number that increases when authority or a container assignment changes. Nebula uses it to reject older messages. |
 | **tick** | One fixed simulation step. Nebula runs at 60 ticks per second. |

@@ -44,6 +44,14 @@ public string Url { get; }
 
 ## Methods
 
+### QueryValue [#queryvalue]
+
+```csharp
+public static string QueryValue(string query, string name);
+```
+
+One parameter of a query string, URL-decoded; "" when absent.
+
 ### Start [#start]
 
 ```csharp
@@ -134,6 +142,40 @@ public string Path;
 public string Body;
 ```
 
+##### Query [#query]
+
+```csharp
+public string Query = "";
+```
+
+The query string without its leading '?' ("" when there is none).
+
+##### Token [#token]
+
+```csharp
+public string Token = "";
+```
+
+Value of the `X-Nebula-Token` header, or "" (the mesh token workers and gateways present).
+
+#### Methods
+
+##### GetQuery [#getquery]
+
+```csharp
+public string GetQuery(string name);
+```
+
+One query parameter, URL-decoded; "" when absent.
+
+##### Complete [#complete]
+
+```csharp
+public void Complete(Response response);
+```
+
+Answer a request whose handler returned `Response.Pending`. Main thread, any later tick.
+
 ### Response [#response]
 
 ```csharp
@@ -160,6 +202,22 @@ public string ContentType;
 
 ```csharp
 public string Body;
+```
+
+#### Properties
+
+##### Pending [#pending]
+
+```csharp
+public static Response Pending { get; }
+```
+
+Returned by a pumped handler that answers later through `Request.Complete` (a store lookup that lands on the next tick).
+
+##### IsPending [#ispending]
+
+```csharp
+public bool IsPending { get; }
 ```
 
 #### Methods

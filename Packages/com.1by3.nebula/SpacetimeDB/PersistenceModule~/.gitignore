@@ -1,4 +1,0 @@
-bin/
-obj/
-# The module project is part of the package (the repository ignores *.csproj for Unity-generated ones).
-!*.csproj

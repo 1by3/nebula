@@ -1,0 +1,180 @@
+---
+title: "ControlPlaneJson"
+description: "The control plane as one JSON document, and one control-plane write as one JSON object."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneJson.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneJson.cs)</div>
+
+```csharp
+public static class ControlPlaneJson
+```
+
+The control plane as one JSON document, and one control-plane write as one JSON object. This is the wire format between [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) (workers, gateways) and [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) (the orchestrator), and the format the host stores through [`IControlPlaneStorage`](/docs/reference/control-plane/i-control-plane-storage).
+
+Snapshot: `{"version":N,"now":unixMs,"workers":[...],"leases":[...],"gateways":[...],"settings":{...}}`. Write: `{"op":"RegisterWorker","workerId":"w1",...}`; a request carries a list of them under `"ops"`, applied in order. Times are Unix milliseconds; vectors are `[x, y, z]`.
+
+## Fields
+
+### RegisterWorker, HeartbeatWorker, UnregisterWorker, RegisterGateway, HeartbeatGateway, UnregisterGateway, HeartbeatOrchestrator, SetSetting, EnsureContainer, EnsureRuntimeContainer, TouchContainer, AssignContainer, PinContainer, SetLeaseState, ReleaseContainer, RemoveContainer, ResetControlPlane [#registerworker-heartbeatworker-unregisterworker-registergateway-heartbeatgateway-unregistergateway-heartbeatorchestrator-setsetting-ensurecontainer-ensureruntimecontainer-touchcontainer-assigncontainer-pincontainer-setleasestate-releasecontainer-removecontainer-resetcontrolplane]
+
+```csharp
+public const string RegisterWorker = "RegisterWorker", HeartbeatWorker = "HeartbeatWorker", UnregisterWorker = "UnregisterWorker", RegisterGateway = "RegisterGateway", HeartbeatGateway = "HeartbeatGateway", UnregisterGateway = "UnregisterGateway", HeartbeatOrchestrator = "HeartbeatOrchestrator", SetSetting = "SetSetting", EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer", AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState", ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane";
+```
+
+Names of the writes, as they travel on the wire.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings);
+```
+
+### Parse [#parse]
+
+```csharp
+public static Snapshot Parse(string json);
+```
+
+Read a snapshot written by [`Write`](#write). Throws `FormatException` on malformed input.
+
+### WriteBatch [#writebatch]
+
+```csharp
+public static string WriteBatch(IReadOnlyList<string> ops);
+```
+
+Wrap a batch of writes in the request body [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) reads.
+
+### ApplyBatch [#applybatch]
+
+```csharp
+public static string ApplyBatch(string body, IControlPlane target);
+```
+
+Apply every write in `body` (`{"ops":[...]}`) to `target`, in order. Returns null, or the reason the body was rejected (nothing is applied then).
+
+### ToUnixMs [#tounixms]
+
+```csharp
+public static long ToUnixMs(DateTime t);
+```
+
+### FromUnixMs [#fromunixms]
+
+```csharp
+public static DateTime FromUnixMs(double ms);
+```
+
+### Num [#num]
+
+```csharp
+public static void Num(JsonWriter w, float f);
+public static double Num(Dictionary<string, object> o, string key);
+```
+
+A float at full precision ([`JsonWriter.Value`](/docs/reference/orchestrator/json-writer#value) rounds to three decimals).
+
+### Vec [#vec]
+
+```csharp
+public static void Vec(JsonWriter w, Vector3 v);
+public static Vector3 Vec(Dictionary<string, object> o, string key);
+```
+
+### Str [#str]
+
+```csharp
+public static string Str(Dictionary<string, object> o, string key);
+```
+
+### Bool [#bool]
+
+```csharp
+public static bool Bool(Dictionary<string, object> o, string key);
+```
+
+## Nested types
+
+### Snapshot [#snapshot]
+
+```csharp
+public sealed class Snapshot
+```
+
+Everything a subscriber needs, as plain lists (see [`Parse`](#parse)).
+
+#### Fields
+
+##### Version [#version]
+
+```csharp
+public long Version;
+```
+
+##### Now [#now]
+
+```csharp
+public DateTime Now;
+```
+
+##### Workers [#workers]
+
+```csharp
+public List<WorkerInfo> Workers = new List<WorkerInfo>();
+```
+
+##### Leases [#leases]
+
+```csharp
+public List<LeaseInfo> Leases = new List<LeaseInfo>();
+```
+
+##### Gateways [#gateways]
+
+```csharp
+public List<GatewayInfo> Gateways = new List<GatewayInfo>();
+```
+
+##### Settings [#settings]
+
+```csharp
+public Dictionary<string, string> Settings = new Dictionary<string, string>();
+```
+
+### OpWriter [#opwriter]
+
+```csharp
+public sealed class OpWriter
+```
+
+Builds one write object. Call `Op` then the `Arg` overloads, then `End`.
+
+#### Methods
+
+##### Op [#op]
+
+```csharp
+public OpWriter Op(string name);
+```
+
+A fresh writer per object: the previous one still thinks a comma is due after its closing brace.
+
+##### Arg [#arg]
+
+```csharp
+public OpWriter Arg(string name, string value);
+public OpWriter Arg(string name, long value);
+public OpWriter Arg(string name, ulong value);
+public OpWriter Arg(string name, uint value);
+public OpWriter Arg(string name, float value);
+public OpWriter Arg(string name, Vector3 value);
+```
+
+##### End [#end]
+
+```csharp
+public string End();
+```
+

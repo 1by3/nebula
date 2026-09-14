@@ -1,8 +1,9 @@
 # Nebula
 
 Middleware for dynamically meshed multiplayer game servers, Unity-first: Unity dedicated-server workers that hand
-entities to each other, an orchestrator that assigns world containers to workers through a SpacetimeDB control
-plane, and a gateway clients connect to. One player build runs every role.
+entities to each other, an orchestrator that assigns world containers to workers and hosts the control plane, and a
+gateway clients connect to. One player build runs every role; the orchestrator keeps the control plane and every
+saved entity in SQLite or PostgreSQL.
 
 Nebula ships as a Unity package, `com.1by3.nebula`, and a command-line tool, `nebula`, that installs the package
 into a Unity project, runs the mesh locally and deploys it to a cloud provider.
@@ -24,9 +25,9 @@ This repository is itself a Unity project (6000.x) with the package embedded, so
 compiled, tested and built on its own.
 
 - `Packages/com.1by3.nebula` - the package: runtime, editor tooling (menus, `NebulaBuild`, world authoring),
-  `World/` cell streaming, `Runtime/Persistence/` entity persistence, `SpacetimeDB/` control-plane module
-  (`Module~`) and persistence module (`PersistenceModule~`) with their generated bindings, vendored
-  LiteNetLib, EditMode tests. Consumers reference it from `Packages/manifest.json`
+  `World/` cell streaming, `Runtime/ControlPlane/` the hosted control plane and its mirrors,
+  `Runtime/Persistence/` entity persistence, `Services~/` the standalone .NET orchestrator and gateway (with the
+  SQLite/PostgreSQL storage), vendored LiteNetLib, EditMode tests. Consumers reference it from `Packages/manifest.json`
   (`nebula init` does this) or embed a copy (`nebula init --embed`).
 - `Assets/Resources/NebulaConfig.asset` - this project's config; every consuming project has its own.
 - `cli/` - the CLI's sources (.NET 10, one self-contained executable per platform), its install scripts and the

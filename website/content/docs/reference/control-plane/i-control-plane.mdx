@@ -9,7 +9,7 @@ description: "Provides process registration, container assignments with epochs, 
 public interface IControlPlane : IDisposable
 ```
 
-Provides process registration, container assignments with epochs, and game-defined settings. Use [`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) for a mesh. Use [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) for tests and single-process runs. Call [`Tick`](#tick) to receive callbacks on the main thread. Do not use the control plane for per-tick entity state.
+Provides process registration, container assignments with epochs, and game-defined settings. Use [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) on the orchestrator and [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) on workers and gateways of a mesh. Use [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) for tests and single-process runs. Call [`Tick`](#tick) to receive callbacks on the main thread. Do not use the control plane for per-tick entity state.
 
 ## Properties
 

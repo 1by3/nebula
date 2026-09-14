@@ -383,7 +383,7 @@
       const doc = await res.json().catch(() => ({}));
       if (!res.ok) {
         setOnline(false, doc.error === 'persistence is off'
-          ? 'Persistence is off in this mesh. Start it with -nebula-persistence-mode local or spacetime.'
+          ? 'Persistence is off in this mesh. Start the orchestrator with -nebula-persistence-mode database (or local).'
           : 'The orchestrator refused the request: ' + (doc.error || res.status));
         return;
       }

@@ -112,6 +112,19 @@ namespace Nebula
 
         private PersistenceEditor _persistenceEditor;
 
+        /// <summary>Serves <see cref="Persistence"/> to workers (<see cref="PersistenceHost"/>); created on the first request, like the tab.</summary>
+        private PersistenceHost StoreHost
+        {
+            get
+            {
+                if (Persistence == null) return null;
+                if (_storeHost == null || !ReferenceEquals(_storeHost.Store, Persistence)) _storeHost = new PersistenceHost(Persistence, Config != null ? Config.MeshToken : null);
+                return _storeHost;
+            }
+        }
+
+        private PersistenceHost _storeHost;
+
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
         private readonly List<OrchestratorEvent> _events = new List<OrchestratorEvent>();
@@ -208,8 +221,12 @@ namespace Nebula
                 });
                 _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
                 _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
+                // The control plane this orchestrator hosts: reads are served on the listener thread, writes come
+                // through the command pump (HandleCommand) so they land on the main thread.
+                if (ControlPlane is ControlPlaneHost host) host.Attach(_http);
                 _http.Start();
                 Log("info", $"dashboard at {_http.Url} (bind {bind}); World map at {_http.Url}map; workers post telemetry to {TelemetryUrl()}; artifacts from {artifacts ?? "(none)"}");
+                if (ControlPlane is ControlPlaneHost h) Log("info", $"control plane hosted at {ControlPlaneUrl()} (stored in {h.StorageBackend}{(h.HasToken ? ", token required" : "")})");
             }
             catch (Exception e)
             {
@@ -380,12 +397,22 @@ namespace Nebula
         /// <summary>Switches every launched role inherits from the orchestrator.</summary>
         private string CommonArgs()
         {
-            string args = $"-nebula-spacetime {Config.SpacetimeUri} -nebula-database {Config.SpacetimeDatabase} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
-            // Every role stores persistent entities in the same place this orchestrator was pointed at.
-            args += $" -nebula-persistence-mode {Config.PersistenceMode} -nebula-persistence-database {Config.PersistenceDatabase}";
-            if (!string.IsNullOrEmpty(Config.PersistenceUri)) args += $" -nebula-persistence {Config.PersistenceUri}";
+            string args = $"-nebula-control-plane {ControlPlaneUrl()} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
+            if (!string.IsNullOrEmpty(Config.MeshToken)) args += $" -nebula-token {Config.MeshToken}";
+            // Workers keep their persistent entities through this orchestrator's store, or not at all.
+            args += $" -nebula-persistence-mode {(Persistence != null ? "remote" : "off")}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";
             return args;
+        }
+
+        /// <summary>
+        /// Where launched workers and gateways reach the control plane this orchestrator hosts: its dashboard at the
+        /// address it advertises (<c>-nebula-advertise</c>), the same way worker VMs fetch the build.
+        /// </summary>
+        private string ControlPlaneUrl()
+        {
+            string host = string.IsNullOrEmpty(Config.WorkerAdvertiseAddress) ? "127.0.0.1" : Config.WorkerAdvertiseAddress;
+            return $"http://{host}:{Config.DashboardPort}/";
         }
 
         /// <summary>
@@ -841,6 +868,14 @@ namespace Nebula
         private OrchestratorHttpServer.Response HandleCommand(OrchestratorHttpServer.Request req)
         {
             string path = req.Path.TrimEnd('/');
+            // Workers and gateways: control-plane writes and the persistence store.
+            if (ControlPlane is ControlPlaneHost host && host.TryHandle(req, out var hosted)) return hosted;
+            if (path.StartsWith(PersistenceHost.Prefix + "/", StringComparison.Ordinal))
+            {
+                var store = StoreHost;
+                if (store == null) return OrchestratorHttpServer.Response.Error(409, "persistence is off");
+                return store.TryHandle(req, out var answer) ? answer : OrchestratorHttpServer.Response.Error(404, "not found");
+            }
             if (req.Method == "GET" && path == "/api/state")
             {
                 return OrchestratorHttpServer.Response.Json(200, BuildStateJson());
@@ -1031,6 +1066,7 @@ namespace Nebula
             w.Prop("serverTimeUtc", DateTime.UtcNow.ToString("o"));
             w.Prop("controlPlaneConnected", ControlPlane.IsConnected);
             w.Prop("localControlPlane", Config.UseLocalControlPlane);
+            w.Prop("controlPlaneStorage", ControlPlane is ControlPlaneHost cph ? cph.StorageBackend : Config.UseLocalControlPlane ? "memory" : "");
             w.Prop("host", _host.Name);
             w.Prop("hostReady", _host.IsReady);
             w.Prop("hostError", _host.InitializationError ?? "");

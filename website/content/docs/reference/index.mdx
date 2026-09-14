@@ -15,6 +15,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
+| [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
@@ -124,17 +125,22 @@ Start and stop workers, assign containers, and serve the dashboard.
 
 ## Control plane
 
-Register processes and share container assignments and settings through SpacetimeDB or an in-process test implementation.
+Register processes and share container assignments and settings through the control plane the orchestrator hosts, or an in-process test implementation.
 
 | Type | Summary |
 | --- | --- |
 | [ControlPlaneExtensions](/docs/reference/control-plane/control-plane-extensions) | Static class. Provides the control plane extensions API. |
+| [ControlPlaneHost](/docs/reference/control-plane/control-plane-host) | Class. The control plane as the orchestrator hosts it: a LocalControlPlane that is the source of truth, served to workers and gateways over the orchestrator's HTTP server and kept in an IControlPlaneStorage between runs. |
+| [ControlPlaneJson](/docs/reference/control-plane/control-plane-json) | Static class. The control plane as one JSON document, and one control-plane write as one JSON object. |
+| [FileControlPlaneStorage](/docs/reference/control-plane/file-control-plane-storage) | Class. The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy. |
 | [GatewayInfo](/docs/reference/control-plane/gateway-info) | Class. Describes a gateway registered with the control plane. |
 | [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Provides process registration, container assignments with epochs, and game-defined settings. |
+| [IControlPlaneStorage](/docs/reference/control-plane/i-control-plane-storage) | Interface. Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup. |
 | [LeaseInfo](/docs/reference/control-plane/lease-info) | Class. Describes the current worker assignment for one container. |
 | [LeaseState](/docs/reference/control-plane/lease-state) | Static class. Provides the states used by a container lease. |
-| [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. In-process control plane with the exact semantics of the SpacetimeDB module (see Module~/Lib.cs), for single-process runs and tests. |
-| [SpacetimeControlPlane](/docs/reference/control-plane/spacetime-control-plane) | Class. IControlPlane over the SpacetimeDB module in Assets/Nebula/SpacetimeDB/Module~. |
+| [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. |
+| [MemoryControlPlaneStorage](/docs/reference/control-plane/memory-control-plane-storage) | Class. Keeps nothing: the control plane starts empty on every orchestrator run. |
+| [RemoteControlPlane](/docs/reference/control-plane/remote-control-plane) | Class. IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
 | [WorkerStatus](/docs/reference/control-plane/worker-status) | Static class. Provides the lifecycle states reported by a worker. |
@@ -218,7 +224,7 @@ Build players, start a local mesh, validate a project, and author partitioned wo
 | --- | --- |
 | [ContainerEditor](/docs/reference/editor/container-editor) | Class. Inspector for Container: the default fields plus a button that refits the box to the object's bounds. |
 | [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it. |
-| [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client. |
+| [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: launch a local mesh from the last build (the standalone orchestrator, which hosts the control plane and starts the gateway and N workers), then press Play in the Editor as a client. |
 | [NebulaSetup](/docs/reference/editor/nebula-setup) | Static class. Adds the components and settings required to use Nebula in the active scene. |
 | [NebulaValidator](/docs/reference/editor/nebula-validator) | Static class. Nebula \> Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh. |
 | [SceneEntityIds](/docs/reference/editor/scene-entity-ids) | Static class. Gives every NetworkIdentity authored into a scene its NetworkIdentity.SceneId when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good. |
@@ -229,13 +235,15 @@ Build players, start a local mesh, validate a project, and author partitioned wo
 | [WorldEditorWindow](/docs/reference/editor/world-editor-window) | Class. The World window (Nebula \> World): a map of the cell grid, one vertical layer at a time. |
 | [WorldSetup](/docs/reference/editor/world-setup) | Static class. Nebula \> Set Up World Partition: makes the active scene the hub of a partitioned world in one pass. |
 
-## SpacetimeDB module
+## Storage
 
-Inspect the tables and reducers used by the control plane.
+Keep the control plane and saved entities in SQLite or PostgreSQL from the standalone orchestrator.
 
 | Type | Summary |
 | --- | --- |
-| [Module](/docs/reference/spacetime-module/module) | Static class. Defines the SpacetimeDB tables and reducers used by the Nebula control plane. |
+| [NebulaDatabase](/docs/reference/storage/nebula-database) | Class. The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. |
+| [SqlControlPlaneStorage](/docs/reference/storage/sql-control-plane-storage) | Class. IControlPlaneStorage in the orchestrator's database: the document sits in the single row of nebula\_control\_plane, replaced on every save. |
+| [SqlPersistenceStore](/docs/reference/storage/sql-persistence-store) | Class. IPersistenceStore in the orchestrator's database (NebulaDatabase: SQLite or PostgreSQL), table nebula\_entity. |
 
 ## Persistence
 
@@ -246,7 +254,9 @@ Inspect the tables and reducers used by the control plane.
 | [NebulaPersistence](/docs/reference/persistence/nebula-persistence) | Class. The worker's persistence service: it checkpoints every authoritative entity carrying a PersistentEntity into an IPersistenceStore, and brings those entities back when this worker gains the lease of a container they were saved in. |
 | [PersistAttribute](/docs/reference/persistence/persist-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's saved state. |
 | [PersistedEntityRecord](/docs/reference/persistence/persisted-entity-record) | Class. One persisted entity as the store holds it: enough to bring the entity back on any worker (prefab or scene object, container and pose, authority epoch) plus the opaque state blob the entity itself wrote (PersistentStateCodec: opted-in Ne... |
+| [PersistedRecordJson](/docs/reference/persistence/persisted-record-json) | Static class. PersistedEntityRecord as JSON, the wire format between RemotePersistenceStore (workers) and PersistenceHost (the orchestrator). |
+| [PersistenceHost](/docs/reference/persistence/persistence-host) | Class. Serves the orchestrator's IPersistenceStore to workers over the orchestrator's HTTP server, so a worker needs no database driver of its own (RemotePersistenceStore is its client). |
 | [PersistentEntity](/docs/reference/persistence/persistent-entity) | Class. Put this on a prefab or a scene object to make the entity outlive the process that simulates it. |
 | [PersistentStateCodec](/docs/reference/persistence/persistent-state-codec) | Static class. The state blob of a PersistedEntityRecord: every PersistAttribute NetworkVariable and every behaviour's NetworkBehaviour.WritePersistentState chunk, each under a name. |
-| [SpacetimePersistenceStore](/docs/reference/persistence/spacetime-persistence-store) | Class. IPersistenceStore over the Nebula persistence SpacetimeDB module (SpacetimeDB/PersistenceModule~), a database of its own next to the control plane. |
+| [RemotePersistenceStore](/docs/reference/persistence/remote-persistence-store) | Class. IPersistenceStore for a worker: every save and load goes to the orchestrator, which owns the real store (PersistenceHost over the dashboard address, the same one the control plane uses). |
 

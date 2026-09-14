@@ -1,70 +1,108 @@
 ---
-title: Control plane (SpacetimeDB)
-description: Use the SpacetimeDB control plane to register processes, assign containers, and share low-frequency settings.
+title: Control plane
+description: Use the control plane the orchestrator hosts to register processes, assign containers, and share low-frequency settings.
 ---
 
-Use the control plane to share process registrations, container assignments, and low-frequency settings across the mesh. The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs`. Nebula processes access it through [`IControlPlane`](/docs/reference/control-plane/i-control-plane).
+Use the control plane to share process registrations, container assignments, and low-frequency settings across the mesh. The orchestrator hosts it: the state lives in the orchestrator process, workers and gateways mirror it over HTTP from the orchestrator's dashboard address, and the orchestrator keeps a copy in its database between runs. Nebula processes access it through [`IControlPlane`](/docs/reference/control-plane/i-control-plane).
 
-For the exact public schema, reducer arguments, state transitions, and failure semantics, see the [control-plane contract](/docs/specifications/control-plane).
+For the exact document format, write operations, state transitions, and failure semantics, see the [control-plane contract](/docs/specifications/control-plane).
 
 ## What it is for, and what it is not
 
-Use it for process registration, heartbeats, container assignments, authority epochs, and shared settings. The orchestrator writes assignments. Workers and gateways register themselves and update their heartbeats. Each process subscribes to the records it needs.
+Use it for process registration, heartbeats, container assignments, authority epochs, and shared settings. The orchestrator writes assignments. Workers and gateways register themselves and update their heartbeats. Every process reads the same document.
 
-Do not use it for saved entities either. Entities that opt into [persistence](/docs/guides/persistence) are written to a separate SpacetimeDB database, `nebula-persist`, by the module in `Packages/com.1by3.nebula/SpacetimeDB/PersistenceModule~`. The two databases are kept apart so that wiping the control plane's registry never touches a saved world.
+Do not use it for saved entities. Entities that opt into [persistence](/docs/guides/persistence) go through [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) into the orchestrator's database, next to the control plane but never mixed with it: the control plane starts empty on every run, and a saved world does not.
 
-Do not use the control plane for per-tick state. Workers exchange transforms, input, RPCs, and ghost state over their direct links and through the gateway. Simulation ticks do not wait for database operations.
+Do not use the control plane for per-tick state. Workers exchange transforms, input, RPCs, and ghost state over their direct links and through the gateway. Simulation ticks do not wait on it.
 
-If the control-plane connection fails, workers continue with the last assignments they received. `SpacetimeControlPlane` attempts to reconnect every two seconds and discards writes while disconnected.
+If the orchestrator becomes unreachable, workers and gateways continue with the last assignments they received. [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) retries every second and queues its writes until the orchestrator answers again. During the outage nobody reassigns containers, declares workers dead, or starts replacements. Handovers continue between connected workers because they use the last known assignments.
 
-During the outage, the orchestrator does not reassign containers, declare workers dead, or start replacements. Handovers can continue between connected workers because they use the last known assignments.
+## The three implementations
 
-## The module
-
-The module exposes five public tables. Reducers use `ctx.Timestamp` for each SpacetimeDB `Timestamp`, so the records use one clock.
-
-| Table | Primary key | Columns |
+| Class | Runs in | Use |
 | --- | --- | --- |
-| `worker` | `WorkerId` | `WorkerIndex`, `Address`, `Port`, `Status`, `LastHeartbeat`, `TickCount`, `TickMs`, `EntityCount`, `AuthoritativeCount`, `GhostCount`, `PlayerCount`, `BotCount`, `ServerDrivenCount` |
-| `container_lease` | `ContainerId` | `WorkerId` (`""` = unassigned), `Epoch`, `State`, `UpdatedAt`, `HasBounds`, `BoundsCenterX/Y/Z`, `BoundsSizeX/Y/Z` |
-| `gateway` | `GatewayId` | `Address`, `Port`, `LastHeartbeat` |
-| `orchestrator` | `OrchestratorId` | `LastHeartbeat`, `DesiredWorkers` |
-| `game_setting` | `Key` | `Value`, `Version` (bumped on every change), `UpdatedAt` |
+| [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) | The orchestrator | The source of truth. Applies every write on the orchestrator's main thread, serves the document to subscribers, and saves it through an [`IControlPlaneStorage`](/docs/reference/control-plane/i-control-plane-storage). |
+| [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) | Workers and gateways | A mirror of the hosted document, kept current by one long-poll request, with writes posted in order from a sender thread. |
+| [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) | Tests and single-process runs | The state machine on its own. The host wraps it; a process with `UseLocalControlPlane` uses it directly and nothing outside the process can see it. |
 
-The orchestrator assigns each worker a `WorkerIndex`. This value becomes the high 16 bits of network IDs created by that worker and selects its diagnostic color.
+`NebulaBootstrap` and the standalone services pick the implementation from the role: an orchestrator hosts, a worker or gateway mirrors, and `UseLocalControlPlane` (or `-nebula-local-control-plane`) keeps everything in one process. In the local mode the orchestrator skips launching the gateway, reconciling the worker count, and relaunching workers, because no other process could reach its control plane. It is a test harness, not a way to run a mesh.
 
-Each container has an `Epoch` that increases on an accepted assignment or pin operation. A repeated active assignment to the same worker is a no-op; release and unregister operations do not increment it. Workers and the gateway also inspect the lease state and worker ID when deciding who owns a container.
+## Reaching the orchestrator
 
-### Reducers
+Workers and gateways need the orchestrator's dashboard address. The orchestrator passes it to every process it launches as `-nebula-control-plane http://<advertised address>:<dashboard port>/`, together with `-nebula-token` when the mesh has a token. A worker or gateway you start by hand reads `NebulaConfig.ControlPlaneUrl` (default `http://127.0.0.1:7080/`) unless you pass the option.
 
-| Reducer | Arguments | Effect |
+The dashboard port therefore cannot be `0` on an orchestrator that runs a mesh. The standalone orchestrator refuses to start that way.
+
+### The mesh token
+
+`NebulaConfig.MeshToken` (or `-nebula-token`, or `NEBULA_MESH_TOKEN` in the standalone services' environment) is a shared secret. When it is set, every control-plane and persistence request must carry it in the `X-Nebula-Token` header, and the orchestrator answers `401` otherwise. When it is empty the API is open, which is fine on a development machine or a private network. `nebula deploy` generates a fresh token for every deployment and passes it to the orchestrator through its environment file; the orchestrator hands it to the workers and gateway it launches.
+
+<Callout type="warn" title="The token protects the mesh's API, not the dashboard">
+The dashboard's own endpoints (`/api/state`, `/api/desired`, `/api/settings`, and the rest) do not take the token. Anyone who can reach the dashboard port can read the state and resize the mesh. Restrict that port with your deployment's firewall.
+</Callout>
+
+## Storage between runs
+
+The host writes the whole document to its storage a second after every change, and reads it back at startup. Where it goes follows `NebulaConfig.DatabaseUrl` (`-nebula-database`, or `NEBULA_DATABASE_URL` for the standalone services), the same setting that places saved entities:
+
+| `DatabaseUrl` | Control plane | Saved entities | Available in |
+| --- | --- | --- | --- |
+| `sqlite:<file>` | The `nebula_control_plane` table | The `nebula_entity` table | The standalone orchestrator. The default for `nebula start`, at `Library/Nebula/nebula.db`. |
+| `postgres://user:password@host:port/database` | Same tables in PostgreSQL | Same | The standalone orchestrator. For a deployed mesh whose world must outlive its VMs. |
+| `file:<folder>` | `control-plane.json` in the folder | `entities.bin` in the folder | A Unity orchestrator, which carries no database driver. |
+| `memory` | Nothing | Nothing | Anywhere. Everything is forgotten when the orchestrator exits. |
+
+The orchestrator resets the control plane at its first tick regardless (`-nebula-reset`, default on), because registrations and leases describe processes that are no longer running. Pass `-nebula-reset false` to bring the stored document back instead. Saved entities are never touched by the reset.
+
+Every SQL statement is written once for both engines. A PostgreSQL URL may carry `?sslmode=require`; a `Host=...;Username=...;` connection string works too. See [Persistence](/docs/guides/persistence#the-orchestrators-database) for the entity table.
+
+## The document
+
+The control plane is one JSON document with a version number that grows on every change:
+
+| Section | One entry per | Fields |
 | --- | --- | --- |
-| `RegisterWorker` | `workerId, workerIndex, address, port` | Insert or update the row with status `starting` and a fresh heartbeat; counters reset to 0 on insert. |
-| `HeartbeatWorker` | `workerId, status, tickCount, tickMs, entityCount, authoritativeCount, ghostCount, playerCount, botCount, serverDrivenCount` | Update status, heartbeat and every counter. No-op for an unknown id. |
-| `UnregisterWorker` | `workerId` | Delete the row and set every lease it held to `WorkerId = ""`, state `orphaned`. |
+| `workers` | Registered worker | `workerId`, `workerIndex`, `address`, `port`, `status`, `lastHeartbeat`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount` |
+| `leases` | Container | `containerId`, `workerId` (`""` = unassigned), `epoch`, `state`, `updatedAt`, `hasBounds`, `center`, `size` |
+| `gateways` | Registered gateway | `gatewayId`, `address`, `port`, `lastHeartbeat` |
+| `settings` | Setting | key and value, both strings |
+
+The orchestrator assigns each worker a `workerIndex`. This value becomes the high 16 bits of network IDs created by that worker and selects its diagnostic color.
+
+Each container has an `epoch` that increases on an accepted assignment or pin operation. A repeated active assignment to the same worker is a no-op; release and unregister operations do not increment it. Workers and the gateway also inspect the lease state and worker ID when deciding who owns a container.
+
+### Writes
+
+Every `IControlPlane` method except the reads is one write. A mirror posts them in order; the host applies them one at a time on its main thread.
+
+| Write | Arguments | Effect |
+| --- | --- | --- |
+| `RegisterWorker` | `workerId, workerIndex, address, port` | Insert or update the worker with status `starting` and a fresh heartbeat. |
+| `HeartbeatWorker` | `workerId, status, stats` | Update status, heartbeat and every counter. No-op for an unknown id. |
+| `UnregisterWorker` | `workerId` | Remove the worker and set every lease it held to `workerId = ""`, state `orphaned`. |
 | `RegisterGateway` | `gatewayId, address, port` | Insert or update. |
 | `HeartbeatGateway` | `gatewayId` | Refresh the heartbeat. |
-| `UnregisterGateway` | `gatewayId` | Delete the row. |
-| `HeartbeatOrchestrator` | `orchestratorId, desiredWorkers` | Insert or update; lets workers and gateways tell whether somebody is driving the mesh. |
+| `UnregisterGateway` | `gatewayId` | Remove the gateway. |
+| `HeartbeatOrchestrator` | `orchestratorId, desiredWorkers` | Accepted and ignored by the host, which is the orchestrator. |
+| `SetSetting` | `key, value` | Insert or update. No-op when the value is unchanged. |
 | `EnsureContainer` | `containerId` | Insert an `orphaned` lease at epoch 0 if none exists. |
-| `EnsureRuntimeContainer` | `containerId, workerId, centerX, centerY, centerZ, sizeX, sizeY, sizeZ` | Insert a bounded runtime lease if none exists. A nonempty worker owns it at epoch 1; otherwise it starts orphaned at epoch 0. |
-| `TouchContainer` | `containerId` | Refresh `UpdatedAt` without changing the assignment. |
-| `AssignContainer` | `containerId, workerId` | Set the owner, bump the epoch, state `active`. A no-op when the same worker already holds it active, so no epoch is burned. Inserts at epoch 1 if the row is missing. |
-| `PinContainer` | `containerId, workerId` | Atomically set the owner, bump the epoch, and set state `pinned`. A no-op when that worker already holds it pinned. |
+| `EnsureRuntimeContainer` | `containerId, bounds, workerId` | Insert a bounded runtime lease if none exists. A nonempty worker owns it at epoch 1; otherwise it starts orphaned at epoch 0. |
+| `TouchContainer` | `containerId` | Refresh `updatedAt` without changing the assignment. |
+| `AssignContainer` | `containerId, workerId` | Set the owner, bump the epoch, state `active`. A no-op when the same worker already holds it active. Inserts at epoch 1 if the lease is missing. Leaves a pinned lease alone. |
+| `PinContainer` | `containerId, workerId` | Set the owner, bump the epoch, and set state `pinned` in one change. A no-op when that worker already holds it pinned. |
 | `SetLeaseState` | `containerId, state` | Overwrite the state string. |
-| `ReleaseContainer` | `containerId` | `WorkerId = ""`, state `orphaned`. |
-| `RemoveContainer` | `containerId` | Delete the lease row. Workers call it when the carrier of a [dynamic container](/docs/guides/dynamic-containers) despawns. |
-| `SetGameSetting` | `key, value` | Insert at version 1, or update and bump the version. No-op when the value is unchanged. |
-| `ResetControlPlane` | none | Delete every row of every table. The orchestrator calls it at startup (`-nebula-reset`, default on). |
+| `ReleaseContainer` | `containerId` | `workerId = ""`, state `orphaned`. |
+| `RemoveContainer` | `containerId` | Delete the lease. Workers call it when the carrier of a [dynamic container](/docs/guides/dynamic-containers) despawns. |
+| `ResetControlPlane` | none | Delete everything. The orchestrator calls it at startup (`-nebula-reset`, default on). |
 
 ### Lease states and worker statuses
 
-`LeaseState` and `WorkerStatus` in `IControlPlane.cs` are the string constants the module uses:
+`LeaseState` and `WorkerStatus` in `IControlPlane.cs` are the string constants the document uses:
 
 | Lease state | Meaning |
 | --- | --- |
 | `assigning` | Reserved for a staged transfer. Not produced by the current orchestrator; `AssignContainer` goes straight to `active`. |
-| `active` | The worker in `WorkerId` owns the container at `Epoch`. |
+| `active` | The worker in `workerId` owns the container at `epoch`. |
 | `draining` | Reserved. Not produced; retirement reuses the per-entity handover path with the lease staying `active` until it moves. |
 | `orphaned` | No owner. Set by `EnsureContainer`, `ReleaseContainer` and `UnregisterWorker`; the next assignment pass deals it out. |
 | `pinned` | Dynamic containers only: the orchestrator gave this carried container a worker of its own, so it no longer follows its carrier. Set through the dashboard or `POST /api/containers/pin`. |
@@ -76,11 +114,11 @@ Each container has an `Epoch` that increases on an accepted assignment or pin op
 | `draining` | Reserved for a worker that is handing everything over. Not reported; the orchestrator tracks retirement on its own side. |
 | `dead` | Reserved. `IsWorkerAlive` returns false for it regardless of heartbeat age, but nothing writes it: the orchestrator unregisters a dead worker instead. |
 
-Liveness is `now - LastHeartbeat <= WorkerTimeoutSeconds` (default 5 s), evaluated by the orchestrator against `IControlPlane.Now`, which `SpacetimeControlPlane` estimates from the newest timestamp it has seen plus local elapsed time.
+Liveness is `now - lastHeartbeat <= WorkerTimeoutSeconds` (default 5 s), evaluated by the orchestrator against `IControlPlane.Now`. On the host that is the orchestrator's own clock; a mirror uses the clock the orchestrator sent with the last document plus the time since.
 
 ## IControlPlane
 
-Every sim process holds one `IControlPlane`. It exposes mirrored lists (`Workers`, `Leases`, `Gateways`, `Settings`), a `Changed` event, and one method per reducer. All callbacks fire on the main thread from `Tick()`.
+Every sim process holds one `IControlPlane`. It exposes mirrored lists (`Workers`, `Leases`, `Gateways`, `Settings`), a `Changed` event, and one method per write. All callbacks fire on the main thread from `Tick()`.
 
 ```csharp
 public interface IControlPlane : IDisposable
@@ -119,23 +157,15 @@ public interface IControlPlane : IDisposable
 
 `ControlPlaneExtensions` adds `FindWorker`, `FindLease`, `GetSetting`, `GetSettingInt` and `IsWorkerAlive`.
 
-### SpacetimeControlPlane
+### How a mirror stays current
 
-[`SpacetimeControlPlane`](/docs/reference/control-plane/spacetime-control-plane) connects Nebula to SpacetimeDB. It subscribes to the control-plane tables and refreshes its local lists after a row changes. It raises `Changed` once on the next `Tick()`.
+`RemoteControlPlane` keeps one `GET /api/control-plane?since=<version>&wait=10` request open. The orchestrator answers as soon as the document's version passes `since`, or after ten seconds with the unchanged document and a fresh clock. The mirror parses the answer on its reader thread and swaps the lists in from `Tick()`, where it raises `Changed` once. `IsConnected` turns false after fifteen seconds without an answer.
 
-Write operations call the generated reducer methods in `Nebula.Spacetime`. Nebula logs a reducer failure as `control plane reducer failed: ...`.
-
-The URI and database come from `NebulaConfig.SpacetimeUri` / `SpacetimeDatabase` (defaults `http://127.0.0.1:3000` and `nebula`), overridden by `-nebula-spacetime <uri>` and `-nebula-database <name>`; the orchestrator passes both to every role it launches.
-
-### LocalControlPlane
-
-[`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) keeps control-plane state inside one process. It follows the same lease and epoch rules as the SpacetimeDB implementation. Use it for automated tests or other single-process runs.
-
-Select it with `NebulaConfig.UseLocalControlPlane` or `-nebula-local-control-plane`. Because it is in-process, nothing outside the process can see it: the orchestrator skips launching the gateway, reconciling the worker count and relaunching workers when it is on. It is a test harness, not a way to run a mesh without SpacetimeDB.
+Writes go into a queue; a sender thread posts them as `POST /api/control-plane` with `{"ops":[...]}`, up to 64 per request, and retries a request the orchestrator could not take. A request the orchestrator rejects (`400`, `401`) is dropped with a warning, because retrying it would block every later one. Nebula logs `control plane: reading ... failed` and `control plane: writing ... failed` once per distinct error.
 
 ## Mesh settings
 
-Use `game_setting` rows for values that every worker needs but that do not change every tick. Nebula stores each setting as a string key and value. Your game defines what it means.
+Use settings for values that every worker needs but that do not change every tick. Nebula stores each setting as a string key and value. Your game defines what it means.
 
 - Seed settings when the orchestrator starts with `-nebula-settings key=value,key=value`.
 - Edit settings from the dashboard or with `POST /api/settings`.
@@ -144,42 +174,15 @@ Use `game_setting` rows for values that every worker needs but that do not chang
 
 Nebula does not provide a singleton gameplay worker. If each worker must respond to a shared value, make the operation idempotent and let each worker reconcile its authoritative entities. See [Spawning and mesh settings](/docs/guides/spawning#coordinate-work-from-a-setting).
 
-## Building, publishing and regenerating bindings
+## What `nebula start` and `nebula deploy` do with it
 
-`Module~/` is the module source (C#, .NET 10, compiled to WASM). The trailing `~` hides it from Unity's asset pipeline so its sources are not compiled into the game. `Generated/` holds the client bindings in the `Nebula.Spacetime` namespace, produced by `spacetime generate`. Regenerate them whenever `Lib.cs` changes; the runtime will not compile against stale bindings.
+`nebula start` launches the standalone orchestrator with `-nebula-database sqlite:<project>/Library/Nebula/nebula.db` (`mesh.database` in `nebula.json` changes it). The orchestrator hosts the control plane on the dashboard port and passes its address to the gateway and every worker. Nothing else needs to run first.
 
-```bash
-cd Packages/com.1by3.nebula/SpacetimeDB/Module~
-spacetime build
-spacetime generate --lang csharp --module-path . --out-dir ../Generated --namespace Nebula.Spacetime -y
-spacetime publish -s local nebula
-```
-
-The Editor menu runs the same commands: **Nebula > Control Plane > Start SpacetimeDB (local)** (`spacetime start --data-dir Temp/spacetimedb --listen-addr 127.0.0.1:3000`), **Publish Module** (`spacetime publish -s local <database> --delete-data -y`), **Regenerate C# Bindings** and **Stop SpacetimeDB**.
-
-### What `nebula start` does with it
-
-`nebula start` pings `mesh.spacetimeUri` from `nebula.json`; if nothing answers it starts a local SpacetimeDB (data in `Temp/spacetimedb`, log in `Builds/<platform>/Logs/spacetimedb.log`) and remembers that it did so `nebula stop` can stop it again. It then publishes the module as `mesh.database` with `--delete-data`, so every run starts from empty tables. `--skip-publish` keeps the published module and data.
-
-The control plane holds only ephemeral registry state, so wiping it is always safe while the mesh is down. The orchestrator's `ResetControlPlane` at startup covers the case where the module was not republished.
-
-`nebula start` then publishes the persistence module as `mesh.persistenceDatabase` *without* `--delete-data`, so saved entities survive the restart. Use `nebula start --reset-persistence` when you want an empty world as well. See [Persistence](/docs/guides/persistence).
-
-### Maincloud for deployment
-
-For deployment, configure a SpacetimeDB server that every virtual machine can reach. Run `nebula config spacetime` to sign in to Maincloud at `https://maincloud.spacetimedb.com` or record another server URL. Set a unique database name in `deploy.database` in `nebula.json`.
-
-When you run `nebula deploy`, the CLI publishes the module before it creates virtual machines. It passes the server and database to the orchestrator, which passes them to the workers and gateway. Add `--reset-control-plane` to publish with `--delete-data`.
-
-The CLI publishes the persistence module to the same server as `deploy.persistenceDatabase` in `nebula.json`, which defaults to the control-plane database name with a `-persist` suffix. It keeps its rows unless you add `--reset-persistence`.
-
-<Callout type="warn" title="Reducers accept any caller">
-The module does not authenticate reducer callers. Anyone who can connect to the database can register a worker, change a container assignment, or rewrite a setting. Do not treat the database name as a security boundary. Restrict access with deployment infrastructure until you add authentication that meets your game's requirements.
-</Callout>
+`nebula deploy` does the same on the orchestrator VM with `NEBULA_DATABASE_URL` and a fresh `NEBULA_MESH_TOKEN` in `/etc/nebula/env`. The database defaults to `sqlite:/opt/nebula/data/nebula.db` on the VM; run `nebula config database` to point the deployed mesh at PostgreSQL. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
 
 <Cards>
+  <Card title="Control-plane contract" href="/docs/specifications/control-plane" description="The HTTP endpoints, the document, and every transition." />
   <Card title="Orchestrator and Nebula Dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Who writes the leases and when." />
-  <Card title="Deploying to Hetzner" href="/docs/deploy/hetzner" description="Maincloud plus one VM per worker." />
-  <Card title="Persistence" href="/docs/guides/persistence" description="The second database, and the entities that outlive a worker." />
+  <Card title="Persistence" href="/docs/guides/persistence" description="The entities that outlive a worker, in the same database." />
   <Card title="Architecture" href="/docs/concepts/architecture" description="Why the control plane must never be a hot-path dependency." />
 </Cards>

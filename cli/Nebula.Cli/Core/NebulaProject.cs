@@ -18,10 +18,8 @@ public sealed class ProjectFile
         public int Npcs { get; set; } = 0;
         public int DashboardPort { get; set; } = 7080;
         public int GatewayPort { get; set; } = 7000;
-        public string SpacetimeUri { get; set; } = "http://127.0.0.1:3000";
-        public string Database { get; set; } = "nebula";
-        /// <summary>SpacetimeDB database the persistence module is published as, next to the control plane one.</summary>
-        public string PersistenceDatabase { get; set; } = "nebula-persist";
+        /// <summary>Where the local orchestrator keeps the control plane and saved entities (sqlite:&lt;file&gt;, postgres://..., memory). Null = Library/Nebula/nebula.db.</summary>
+        public string? Database { get; set; }
     }
 
     public sealed class DeploySettings
@@ -29,10 +27,8 @@ public sealed class ProjectFile
         public string Target { get; set; } = "hetzner";
         /// <summary>Label every cloud resource of this mesh carries; one mesh per provider project.</summary>
         public string MeshName { get; set; } = "nebula";
-        /// <summary>SpacetimeDB database on the configured server. Null = the CLI config default.</summary>
+        /// <summary>Where the deployed orchestrator keeps the control plane and saved entities: postgres://... or sqlite:&lt;file on the VM&gt;. Null = the CLI config (`nebula config database`), else SQLite on the orchestrator VM.</summary>
         public string? Database { get; set; }
-        /// <summary>Persistence database on the configured server. Null = the control-plane database with a "-persist" suffix.</summary>
-        public string? PersistenceDatabase { get; set; }
         public int Workers { get; set; } = 4;
         public int Npcs { get; set; } = 0;
         public string? WorkerType { get; set; }
@@ -56,9 +52,6 @@ public sealed class NebulaProject
     public string EmbeddedPackageDir => Path.Combine(PackagesDir, Platform.PackageName);
     /// <summary>The Nebula package as Unity sees it: embedded, a file: reference, or the git checkout in Library/PackageCache.</summary>
     public string PackageDir => FindPackageDir() ?? throw new CliError("the Nebula package is not resolved in this project", "open the project in Unity once so it fetches com.1by3.nebula, or run `nebula init --embed`");
-    public string ModuleDir => Path.Combine(PackageDir, "SpacetimeDB", "Module~");
-    /// <summary>The persistence module (saved entities), published as its own database next to the control plane.</summary>
-    public string PersistenceModuleDir => Path.Combine(PackageDir, "SpacetimeDB", "PersistenceModule~");
     public string BuildsDir => Path.Combine(Root, "Builds");
     public string LinuxBuildDir => Path.Combine(BuildsDir, "Linux64");
     public string LinuxExecutable => Path.Combine(LinuxBuildDir, File.Executable + ".x86_64");
@@ -190,10 +183,26 @@ public sealed class NebulaProject
         return scenes.ToArray();
     }
 
-    public string DeployDatabase(CliConfig config) =>
-        File.Deploy.Database ?? config.Spacetime?.Database ?? $"{File.Deploy.MeshName}-{Path.GetFileName(Root).ToLowerInvariant()}";
+    /// <summary>Default database of a deployed mesh: a SQLite file on the orchestrator VM.</summary>
+    public const string DefaultDeployDatabase = "sqlite:/opt/nebula/data/nebula.db";
 
-    /// <summary>Persistence database of the deployed mesh: the configured one, else the control-plane database + "-persist".</summary>
-    public string DeployPersistenceDatabase(CliConfig config) =>
-        File.Deploy.PersistenceDatabase ?? DeployDatabase(config) + "-persist";
+    /// <summary>Database URL of the deployed mesh: NEBULA_DATABASE_URL, else nebula.json deploy.database, else the CLI config, else SQLite on the VM.</summary>
+    public string DeployDatabase(CliConfig config) =>
+        Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL") is { Length: > 0 } env ? env
+        : DatabaseOrNull(File.Deploy.Database, "deploy") ?? CliConfig.DatabaseSettings.ResolveUrl(config.Database) ?? DefaultDeployDatabase;
+
+    /// <summary>Database URL of the local mesh: nebula.json mesh.database, else a SQLite file under Library (kept across builds).</summary>
+    public string LocalDatabase => DatabaseOrNull(File.Mesh.Database, "mesh") ?? "sqlite:" + Path.Combine(Root, "Library", "Nebula", "nebula.db");
+
+    /// <summary>
+    /// Releases before 0.1.0-alpha.15 kept a SpacetimeDB database <i>name</i> under the same key. A value without a
+    /// scheme is one of those: it is ignored, with a hint, so an old nebula.json keeps working.
+    /// </summary>
+    private string? DatabaseOrNull(string? value, string section)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (value.Contains(':') || value.Equals("memory", StringComparison.OrdinalIgnoreCase)) return value;
+        Ui.Warn($"{FilePath}: {section}.database = \"{value}\" is a database name from an older release and is ignored (use sqlite:<file> or postgres://...; delete the key to silence this)");
+        return null;
+    }
 }

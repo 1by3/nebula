@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 
 namespace Nebula.Cli.Core;
 
-/// <summary>The local mesh: SpacetimeDB + control-plane module + standalone orchestrator and gateway, plus Unity workers from the host build.</summary>
+/// <summary>The local mesh: the standalone orchestrator (which hosts the control plane and keeps the world in a SQLite file), the gateway it starts, and Unity workers from the host build.</summary>
 public static class LocalMesh
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
@@ -17,12 +17,11 @@ public static class LocalMesh
         public string? StartedAt { get; set; }
         public int DashboardPort { get; set; }
         public int GatewayPort { get; set; }
-        public string? SpacetimeUri { get; set; }
-        public bool SpacetimeStartedByCli { get; set; }
+        public string? Database { get; set; }
         public string? Executable { get; set; }
     }
 
-    public sealed record StartOptions(int Workers, int Npcs, int Bots, bool SkipPublish, bool OpenUi, bool ResetPersistence = false);
+    public sealed record StartOptions(int Workers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false);
 
     public static void Start(Context ctx, NebulaProject project, StartOptions o)
     {
@@ -31,39 +30,16 @@ public static class LocalMesh
         if (!File.Exists(exe))
             throw new CliError($"no build at {exe}", "run `nebula build` first, or `nebula start --build`");
         ServiceBuild.Require(project.HostBuildDir);
-        string spacetime = SpacetimeCli.Require();
         string logs = project.HostLogsDir;
         StopRunningMeshes(ctx, mesh.GatewayPort, mesh.DashboardPort);
         Directory.CreateDirectory(logs);
 
-        // --- SpacetimeDB ----------------------------------------------------------------------------
-        bool startedSpacetime = false;
-        Ui.Step($"control plane at {mesh.SpacetimeUri}");
-        if (SpacetimeCli.Ping(mesh.SpacetimeUri))
-        {
-            Ui.Ok("SpacetimeDB is already running");
-        }
-        else
-        {
-            var uri = new Uri(mesh.SpacetimeUri);
-            Ui.Info("starting SpacetimeDB...");
-            SpacetimeCli.StartLocal(Path.Combine(project.TempDir, "spacetimedb"), $"{uri.Host}:{uri.Port}", logs);
-            if (!SpacetimeCli.WaitForPing(mesh.SpacetimeUri, 30))
-                throw new CliError($"SpacetimeDB did not answer on {mesh.SpacetimeUri} within 30s", $"see {Path.Combine(logs, "spacetimedb.log")}");
-            startedSpacetime = true;
-            Ui.Ok("SpacetimeDB started");
-        }
-
-        if (!o.SkipPublish)
-        {
-            Ui.Info($"publishing the control-plane module as '{mesh.Database}' (fresh data)");
-            SpacetimeCli.Publish(project.ModuleDir, "local", mesh.Database, deleteData: true);
-            Ui.Ok("module published");
-            // Persistence is a database of its own and keeps its rows across restarts: never --delete-data by accident.
-            Ui.Info($"publishing the persistence module as '{mesh.PersistenceDatabase}'{(o.ResetPersistence ? " (wiping saved entities)" : " (keeping saved entities)")}");
-            SpacetimeCli.Publish(project.PersistenceModuleDir, "local", mesh.PersistenceDatabase, deleteData: o.ResetPersistence);
-            Ui.Ok("persistence module published");
-        }
+        // --- database ------------------------------------------------------------------------------------
+        string database = project.LocalDatabase;
+        Ui.Step($"control plane and saved entities in {database}");
+        if (database.StartsWith("sqlite:", StringComparison.OrdinalIgnoreCase))
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(database.Substring("sqlite:".Length)))!);
+        if (o.ResetPersistence) Ui.Warn("--reset-persistence: every saved entity is deleted when the orchestrator starts");
 
         // --- orchestrator (launches the gateway and the workers) ----------------------------------------------
         Ui.Step($"starting the orchestrator with {o.Workers} worker(s) and the game-defined 'npcs' setting at {o.Npcs}");
@@ -75,12 +51,10 @@ public static class LocalMesh
             "-nebula-workers", o.Workers.ToString(),
             "-nebula-settings", $"npcs={o.Npcs}",
             "-nebula-dashboard-port", mesh.DashboardPort.ToString(),
-            "-nebula-spacetime", mesh.SpacetimeUri,
-            "-nebula-database", mesh.Database,
-            "-nebula-persistence", mesh.SpacetimeUri,
-            "-nebula-persistence-database", mesh.PersistenceDatabase,
+            "-nebula-database", database,
             "-logFile", Path.Combine(logs, "orchestrator.log"),
         };
+        if (o.ResetPersistence) orch.Add("-nebula-reset-persistence");
         if (ctx.Verbose) orch.Add("-nebula-verbose");
         Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null);
 
@@ -101,8 +75,7 @@ public static class LocalMesh
             StartedAt = DateTime.UtcNow.ToString("o"),
             DashboardPort = mesh.DashboardPort,
             GatewayPort = mesh.GatewayPort,
-            SpacetimeUri = mesh.SpacetimeUri,
-            SpacetimeStartedByCli = startedSpacetime || (LoadState(project)?.SpacetimeStartedByCli ?? false),
+            Database = database,
             Executable = exe,
         };
         File.WriteAllText(project.MeshStateFile, JsonSerializer.Serialize(state, CliConfig.Json));
@@ -126,17 +99,11 @@ public static class LocalMesh
         if (o.OpenUi) Platform.OpenBrowser(dashboard);
     }
 
-    public static void Stop(NebulaProject project, bool stopSpacetime)
+    public static void Stop(NebulaProject project)
     {
         var state = LoadState(project);
         int killed = Shell.KillProcesses(project.HostBuildDir);
         Ui.Ok(killed > 0 ? $"stopped {killed} {project.File.Executable} process(es)" : $"no {project.File.Executable} processes were running");
-        if (stopSpacetime || (state?.SpacetimeStartedByCli ?? false))
-        {
-            int s = Shell.KillProcesses(null, "spacetime", "spacetimedb-cli", "spacetimedb-standalone");
-            if (s > 0) Ui.Ok($"stopped SpacetimeDB ({s} process(es))");
-            if (state != null) state.SpacetimeStartedByCli = false;
-        }
         if (state != null)
         {
             state.StartedAt = null;
@@ -206,7 +173,7 @@ public static class LocalMesh
         {
             Ui.Warn(running.Count == 1 ? "a local mesh is already running:" : $"{running.Count} local meshes are already running:");
             foreach (var m in running) Ui.Info($"{m.Project}  ({m.Processes} process(es) from {m.BuildDir})");
-            Ui.Info("only one mesh can hold the gateway, worker and dashboard ports, and starting another resets the control plane it uses");
+            Ui.Info("only one mesh can hold the gateway, worker and dashboard ports");
             string stopIt = running.Count == 1 ? "stop it" : "stop them";
             if (Console.IsInputRedirected && !ctx.Yes)
                 throw new CliError("another local mesh is running", $"pass --yes to {stopIt}, or run `nebula stop` in its project folder");
@@ -283,7 +250,7 @@ public static class LocalMesh
     /// <summary>Print the dashboard snapshot the way `nebula status` shows it.</summary>
     public static void PrintState(JsonNode s)
     {
-        Ui.Info($"host={s["host"]} ready={s["hostReady"]} controlPlane={s["controlPlaneConnected"]} desired={s["desiredWorkers"]}");
+        Ui.Info($"host={s["host"]} ready={s["hostReady"]} controlPlane={s["controlPlaneConnected"]}{(s["controlPlaneStorage"] is { } cps && cps.ToString().Length > 0 ? " stored in " + cps : "")} desired={s["desiredWorkers"]}");
         Ui.Info(Summary(s));
         // Older builds have no persistence layer and report no "persistence" object at all.
         if (s["persistence"] is { } p)

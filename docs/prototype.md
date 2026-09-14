@@ -6,8 +6,8 @@ database, and a shooter that exists to make crossing a container boundary mid-fi
 
 ```
                  ┌──────────────────────────────────────────────────────────┐
-                 │  SpacetimeDB  (control plane: workers, leases, gateways;  │
-                 │   persistence: saved entities, a database of its own)     │
+                 │  Orchestrator hosts the control plane (workers, leases,    │
+                 │  gateways) and the store of saved entities (SQLite/Postgres)│
                  └──────▲──────────────▲──────────────▲──────────────▲──────┘
                         │ reducers     │ subscribe    │              │
                  ┌──────┴──────┐  ┌────┴────┐   ┌─────┴─────┐  ┌─────┴─────┐
@@ -199,19 +199,19 @@ that currently owns that client's entity, re-emits the workers' replication stre
 carrying a stale authority epoch or coming from a worker that is no longer the owner. It holds nothing
 authoritative; a dead worker's entities are dropped and its players are respawned elsewhere.
 
-### Control plane and persistence (`Packages/com.1by3.nebula/SpacetimeDB`)
-A tiny SpacetimeDB module (`Module~/Lib.cs`): `worker`, `container_lease`, `gateway`, `orchestrator` tables and the
-reducers that register/heartbeat nodes and assign/release leases. Generated C# bindings live in `Generated/`.
-All sim code talks to `IControlPlane`; `SpacetimeControlPlane` is the real one, `LocalControlPlane` an in-process
-double with identical semantics. The control plane is never on the per-tick path: if it goes away the mesh keeps
-simulating with its last known topology.
+### Control plane and persistence (`Runtime/ControlPlane`, `Runtime/Persistence`, `Services~/Nebula.Services/Storage`)
+The control plane is one small document (workers, container leases, gateways, settings) that the orchestrator hosts
+(`ControlPlaneHost` over the dashboard's HTTP server) and workers/gateways mirror (`RemoteControlPlane`, one
+long-poll read plus ordered write batches). All sim code talks to `IControlPlane`; `LocalControlPlane` is the state
+machine itself and doubles as the in-process test double. The control plane is never on the per-tick path: if the
+orchestrator goes away the mesh keeps running on its last known topology and writes queue until it is back.
 
-Next to it, a second SpacetimeDB module (`PersistenceModule~/Lib.cs`, database `nebula-persist`, bindings in
-`GeneratedPersistence/`) is the long-term store: one `persisted_entity` row per entity that carries a
-`PersistentEntity`, with `SaveEntity`/`DeleteEntity`/`ClearPersistence` reducers and the epoch write rule. All sim
-code talks to `IPersistenceStore` (`SpacetimePersistenceStore`, `LocalPersistenceStore`); the worker's
-`NebulaPersistence` checkpoints what it owns and restores a container's entities when it gains the lease. The
-control plane is republished with `--delete-data` on every start; this database is not.
+Saved entities (one record per entity that carries a `PersistentEntity`, with the epoch write rule) go through
+`IPersistenceStore`: workers use `RemotePersistenceStore` (HTTP to the orchestrator), the orchestrator uses
+`SqlPersistenceStore` over `NebulaDatabase` (SQLite for `nebula start`, PostgreSQL for a deployed mesh) or
+`LocalPersistenceStore` (a file). The worker's `NebulaPersistence` checkpoints what it owns and restores a
+container's entities when it gains the lease. The orchestrator's database also keeps the control-plane document
+between runs (`SqlControlPlaneStorage`).
 
 ## Seams
 There are no authored seam volumes in this prototype. Each container boundary carries an automatic ghost band
@@ -236,7 +236,7 @@ Everything below goes through the `nebula` CLI (`docs/cli.md`; install it from t
 # 1. build the player once (or Editor: Nebula > Build > Windows Player)
 nebula build                                    # mirrors the project if the Editor has it open
 
-# 2. start SpacetimeDB, publish the module, launch orchestrator (+ gateway + 4 workers) and 2 bots
+# 2. launch the orchestrator (hosts the control plane; + gateway + 4 workers) and 2 bots
 nebula start --workers 4 --bots 2 --open-ui     # dashboard: http://localhost:7080/
 nebula start --workers 4 --npcs 128             # load: 128 worker-simulated NPCs, no extra processes
 #    (change the total while it runs: `npcs 300` in the in-game console, or the NPCs field on the dashboard)
@@ -262,8 +262,8 @@ Fast compile check without the Editor: `powershell -File Tools/typecheck.ps1`.
 
 ## Running it on Hetzner
 
-The same build, on real machines: the control plane on SpacetimeDB maincloud (`nebula-shootergame`), one Hetzner
-Cloud VM for the orchestrator (dashboard + gateway), and one VM per worker that the orchestrator creates and deletes
+The same build, on real machines: one Hetzner Cloud VM for the orchestrator (dashboard + gateway + the control
+plane, with the world in SQLite on its disk or in PostgreSQL), and one VM per worker that the orchestrator creates and deletes
 itself as the desired count changes. Workers peer over a Hetzner private network (10.0.0.0/16); only the gateway
 (udp/7000), the dashboard (tcp/7080) and ssh face the internet.
 
@@ -276,7 +276,7 @@ itself as the desired count changes. Workers peer over a Hetzner private network
   └───────────────────────────────┘                │     dashboard :7080, serves /build/nebula-linux.tar.gz│
                                                    │   gateway process  udp/7000                          │
   ┌───────────────────────────────┐                └───────────────▲───────────────▲─────────────────────┘
-  │ maincloud.spacetimedb.com     │  reducers/subscriptions        │ private net   │ 10.0.1.0/24
+  │ PostgreSQL (optional)         │  NEBULA_DATABASE_URL           │ private net   │ 10.0.1.0/24
   │ nebula-shootergame            │◄──────────────────────┬────────┴───────┬───────┴─────────┐
   └───────────────────────────────┘                       │ orch1-w1-1 VM  │ orch1-w2-2 VM   │ ...
                                                           │ worker udp/7101│ worker udp/7102 │
@@ -293,7 +293,7 @@ before launching fresh ones, so a crashed orchestrator cannot leave machines bil
 ```powershell
 # once
 nebula config hetzner                           # Read & Write API token (or HCLOUD_TOKEN in the environment), region, VM types
-nebula config spacetime                         # `spacetime login` for maincloud + the database name (nebula-shootergame)
+nebula config database                          # optional: PostgreSQL URL (default: SQLite on the orchestrator VM)
 
 # every code change
 nebula deploy --workers 4 --npcs 128 --open-ui  # Linux server build + tarball, publish the module, provision what is

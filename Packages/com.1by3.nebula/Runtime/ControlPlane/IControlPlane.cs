@@ -99,7 +99,8 @@ namespace Nebula
 
     /// <summary>
     /// Provides process registration, container assignments with epochs, and game-defined settings. Use
-    /// <see cref="SpacetimeControlPlane"/> for a mesh. Use <see cref="LocalControlPlane"/> for tests and
+    /// <see cref="ControlPlaneHost"/> on the orchestrator and <see cref="RemoteControlPlane"/> on workers and
+    /// gateways of a mesh. Use <see cref="LocalControlPlane"/> for tests and
     /// single-process runs. Call <see cref="Tick"/> to receive callbacks on the main thread. Do not use the control
     /// plane for per-tick entity state.
     /// </summary>

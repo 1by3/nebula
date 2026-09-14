@@ -25,10 +25,9 @@ namespace Nebula
     /// <item><c>-nebula-role client|worker|gateway|orchestrator</c> (comma separated)</item>
     /// <item><c>-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101</c></item>
     /// <item><c>-nebula-gateway 127.0.0.1:7000</c></item>
-    /// <item><c>-nebula-spacetime http://127.0.0.1:3000 -nebula-database nebula</c></item>
-    /// <item><c>-nebula-persistence-mode auto|spacetime|local|off -nebula-persistence http://127.0.0.1:3000
-    /// -nebula-persistence-database nebula-persist -nebula-persistence-file saves/world.bin</c> (where persistent
-    /// entities are stored)</item>
+    /// <item><c>-nebula-control-plane http://10.0.1.2:7080/ -nebula-token secret</c> (worker, gateway: the orchestrator that hosts the control plane)</item>
+    /// <item><c>-nebula-database file:saves|memory</c> (Unity orchestrator: where the control plane and saved entities are kept; the standalone orchestrator also takes <c>sqlite:</c> and <c>postgres://</c>)</item>
+    /// <item><c>-nebula-persistence-mode auto|database|remote|local|memory|off -nebula-persistence-file saves/world.bin</c> (where persistent entities are stored)</item>
     /// <item><c>-nebula-workers 4 -nebula-dashboard-port 7080 -nebula-settings round-time=600</c> (orchestrator; settings are
     /// game-defined key/values seeded on the control plane, editable on the dashboard)</item>
     /// <item><c>-nebula-name Jesse</c> (client display name)</item>
@@ -144,9 +143,14 @@ namespace Nebula
                 {
                     ControlPlane = new LocalControlPlane();
                 }
+                else if ((Roles & NebulaRoles.Orchestrator) != 0)
+                {
+                    // This process hosts the control plane; workers and gateways reach it through the dashboard port.
+                    ControlPlane = new ControlPlaneHost(CreateControlPlaneStorage(), Config.MeshToken, !CommandLine.GetBool("nebula-reset", true));
+                }
                 else
                 {
-                    ControlPlane = new SpacetimeControlPlane(Config.SpacetimeUri, Config.SpacetimeDatabase);
+                    ControlPlane = new RemoteControlPlane(Config.ControlPlaneUrl, Config.MeshToken);
                 }
                 ControlPlane.Connect();
             }
@@ -156,6 +160,11 @@ namespace Nebula
             {
                 PersistenceStore = CreatePersistenceStore();
                 PersistenceStore?.Connect();
+                if (PersistenceStore != null && (Roles & NebulaRoles.Orchestrator) != 0 && CommandLine.GetBool("nebula-reset-persistence", false))
+                {
+                    NebulaLog.Warn("persistence: -nebula-reset-persistence: deleting every saved entity");
+                    PersistenceStore.Clear();
+                }
             }
 
             if ((Roles & NebulaRoles.Orchestrator) != 0)
@@ -210,14 +219,17 @@ namespace Nebula
 
         /// <summary>
         /// The persistence store this process talks to, from <see cref="NebulaConfig.PersistenceMode"/>
-        /// (<c>-nebula-persistence-mode</c>): <c>spacetime</c> for a mesh, <c>local</c> for a file next to the
-        /// process, <c>off</c> for none, and <c>auto</c> (the default) meaning local when the control plane is local
-        /// and spacetime otherwise. Null when persistence is off.
+        /// (<c>-nebula-persistence-mode</c>): <c>database</c> for the orchestrator's own store (from
+        /// <see cref="NebulaConfig.DatabaseUrl"/>), <c>remote</c> for a worker that asks the orchestrator,
+        /// <c>local</c> for a file next to the process, <c>memory</c>, <c>off</c>, and <c>auto</c> (the default):
+        /// database on an orchestrator, remote on a worker of a mesh, local in a single-process run. Null when
+        /// persistence is off.
         /// </summary>
         private IPersistenceStore CreatePersistenceStore()
         {
             string mode = (Config.PersistenceMode ?? "auto").Trim().ToLowerInvariant();
-            if (mode == "" || mode == "auto") mode = Config.UseLocalControlPlane ? "local" : "spacetime";
+            bool orchestrator = (Roles & NebulaRoles.Orchestrator) != 0;
+            if (mode == "" || mode == "auto") mode = Config.UseLocalControlPlane ? "local" : orchestrator ? "database" : "remote";
             switch (mode)
             {
                 case "off":
@@ -233,14 +245,41 @@ namespace Nebula
                     if (string.IsNullOrEmpty(path)) path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-persistence.bin");
                     return new LocalPersistenceStore(path);
                 }
-                case "spacetime":
+                case "remote":
+                    return new RemotePersistenceStore(Config.ControlPlaneUrl, Config.MeshToken);
+                case "database":
                 {
-                    string uri = string.IsNullOrEmpty(Config.PersistenceUri) ? Config.SpacetimeUri : Config.PersistenceUri;
-                    return new SpacetimePersistenceStore(uri, Config.PersistenceDatabase);
+                    // A Unity orchestrator keeps its data in files; sqlite: and postgres: need the standalone orchestrator.
+                    var url = DatabaseUrl.Parse(Config.DatabaseUrl, "file:" + DefaultDataDir);
+                    switch (url.Scheme)
+                    {
+                        case "memory": return new LocalPersistenceStore();
+                        case "file": return new LocalPersistenceStore(System.IO.Path.Combine(url.Target, "entities.bin"));
+                        default:
+                            NebulaLog.Error($"persistence: a Unity orchestrator cannot open '{url.Scheme}:' databases (use file: or memory here, or run the standalone orchestrator); persistence is off");
+                            return null;
+                    }
                 }
                 default:
                     NebulaLog.Warn($"unknown persistence mode '{mode}'; persistence is off");
                     return null;
+            }
+        }
+
+        /// <summary>Folder a Unity orchestrator keeps its data in when <see cref="NebulaConfig.DatabaseUrl"/> is empty.</summary>
+        private static string DefaultDataDir => System.IO.Path.Combine(Application.persistentDataPath, "nebula");
+
+        /// <summary>Where a Unity orchestrator keeps the control plane between runs (see <see cref="NebulaConfig.DatabaseUrl"/>).</summary>
+        private IControlPlaneStorage CreateControlPlaneStorage()
+        {
+            var url = DatabaseUrl.Parse(Config.DatabaseUrl, "file:" + DefaultDataDir);
+            switch (url.Scheme)
+            {
+                case "memory": return new MemoryControlPlaneStorage();
+                case "file": return new FileControlPlaneStorage(System.IO.Path.Combine(url.Target, "control-plane.json"));
+                default:
+                    NebulaLog.Error($"control plane: a Unity orchestrator cannot open '{url.Scheme}:' databases (use file: or memory here, or run the standalone orchestrator); keeping it in memory");
+                    return new MemoryControlPlaneStorage();
             }
         }
 
@@ -279,8 +318,9 @@ namespace Nebula
                 cfg.GatewayAddress = parts[0];
                 if (parts.Length > 1 && ushort.TryParse(parts[1], out var p)) cfg.GatewayPort = p;
             }
-            cfg.SpacetimeUri = CommandLine.Get("nebula-spacetime", cfg.SpacetimeUri);
-            cfg.SpacetimeDatabase = CommandLine.Get("nebula-database", cfg.SpacetimeDatabase);
+            cfg.ControlPlaneUrl = CommandLine.Get("nebula-control-plane", cfg.ControlPlaneUrl);
+            cfg.MeshToken = CommandLine.Get("nebula-token", cfg.MeshToken);
+            cfg.DatabaseUrl = CommandLine.Get("nebula-database", cfg.DatabaseUrl);
             cfg.WorkerCount = CommandLine.GetInt("nebula-workers", cfg.WorkerCount);
             cfg.WorkerExecutable = CommandLine.Get("nebula-worker-exe", cfg.WorkerExecutable);
             cfg.WorkerHost = CommandLine.Get("nebula-host", cfg.WorkerHost);
@@ -292,8 +332,6 @@ namespace Nebula
             cfg.UseLocalControlPlane = CommandLine.GetBool("nebula-local-control-plane", cfg.UseLocalControlPlane);
             cfg.GameScene = CommandLine.Get("nebula-scene", cfg.GameScene);
             cfg.PersistenceMode = CommandLine.Get("nebula-persistence-mode", cfg.PersistenceMode);
-            cfg.PersistenceUri = CommandLine.Get("nebula-persistence", cfg.PersistenceUri);
-            cfg.PersistenceDatabase = CommandLine.Get("nebula-persistence-database", cfg.PersistenceDatabase);
             cfg.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", cfg.PersistenceLocalFile);
             cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);

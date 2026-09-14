@@ -6,28 +6,27 @@ namespace Nebula.Cli.Commands;
 public sealed class ConfigCommand : Command
 {
     public override string Name => "config";
-    public override string Summary => "Configure a deploy target, Spacetime Maincloud, or the Unity editor path";
-    public override string Usage => "<hetzner|spacetime|unity|source|show>";
+    public override string Summary => "Configure a deploy target, the deployed mesh's database, or the Unity editor path";
+    public override string Usage => "<hetzner|database|unity|source|show>";
     public override string? Details => @"
   hetzner    API token, project, region and machine types for `nebula deploy --target hetzner`
-  spacetime  log in to SpacetimeDB Maincloud (or another server) and pick the control-plane database name
+  database   where a deployed orchestrator keeps the control plane and saved entities: a PostgreSQL URL, or SQLite on the VM
   unity      the Unity editor to build with, when it is not where Unity Hub puts it
   source     the Nebula checkout `nebula init --embed` copies the package from (--path; 'none' to clone on demand)
   show       print the current configuration (secrets masked)
 
-Settings live in ~/.nebula-cli/config.json. Inside a project, the database name and the mesh defaults are also
-written to nebula.json so they travel with the project.
+Settings live in ~/.nebula-cli/config.json (private to you: it holds tokens and the database password). A database
+URL in nebula.json (deploy.database) or NEBULA_DATABASE_URL in the environment takes precedence over it.
 ";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("token", true, "hetzner: API token (else prompted; HCLOUD_TOKEN in the environment always wins)", "token"),
         new OptionSpec("location", true, "hetzner: region (ash, hil, sin, nbg1, fsn1, hel1)", "name"),
-        new OptionSpec("server", true, "spacetime: server nickname or URL (default maincloud)", "name"),
-        new OptionSpec("database", true, "spacetime: control-plane database name", "name"),
+        new OptionSpec("url", true, "database: postgres://user:password@host/db, sqlite:<file on the VM>, or 'default' for SQLite on the orchestrator VM", "url"),
         new OptionSpec("editor", true, "unity: path to the editor executable or the Hub's Editor folder", "path"),
         new OptionSpec("path", true, "source: a Nebula checkout for `nebula init` to copy from ('none' to clone on demand)", "path"),
     };
-    public override string[] Examples => new[] { "nebula config hetzner", "nebula config spacetime", "nebula config unity --editor \"C:\\Program Files\\Unity\\Hub\\Editor\"", "nebula config show" };
+    public override string[] Examples => new[] { "nebula config hetzner", "nebula config database --url postgres://nebula:secret@db.example.com/nebula", "nebula config unity --editor \"C:\\Program Files\\Unity\\Hub\\Editor\"", "nebula config show" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -35,11 +34,11 @@ written to nebula.json so they travel with the project.
         return what switch
         {
             "hetzner" => Hetzner(ctx, args),
-            "spacetime" => Spacetime(ctx, args),
+            "database" => Database(ctx, args),
             "unity" => Unity(ctx, args),
             "source" => Source(ctx, args),
             "show" => Show(ctx),
-            _ => throw new CliError($"unknown config target '{what}'", "nebula config <hetzner|spacetime|unity|source|show>"),
+            _ => throw new CliError($"unknown config target '{what}'", "nebula config <hetzner|database|unity|source|show>"),
         };
     }
 
@@ -56,15 +55,15 @@ written to nebula.json so they travel with the project.
             Ui.Info($"hetzner     project={c.Hetzner.Project} location={c.Hetzner.Location} worker={c.Hetzner.WorkerType} orchestrator={c.Hetzner.OrchestratorType} token={(t == null ? "none" : t.Length > 8 ? "..." + t[^4..] : "set")}{(Environment.GetEnvironmentVariable("HCLOUD_TOKEN") != null ? " (from HCLOUD_TOKEN)" : "")}");
         }
         else Ui.Info("hetzner     not configured");
-        if (c.Spacetime != null) Ui.Info($"spacetime   server={c.Spacetime.Server} database={c.Spacetime.Database ?? "(per project)"}");
-        else Ui.Info("spacetime   not configured");
+        var dbUrl = CliConfig.DatabaseSettings.ResolveUrl(c.Database);
+        Ui.Info($"database    {(dbUrl != null ? DatabaseUrl.Parse(dbUrl, NebulaProject.DefaultDeployDatabase).Display : "SQLite on the orchestrator VM (default)")}{(Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL") != null ? " (from NEBULA_DATABASE_URL)" : "")}");
         var p = NebulaProject.Find(ctx.ProjectOverride ?? Directory.GetCurrentDirectory());
         if (p != null)
         {
             Ui.Blank();
             Ui.Title(p.FilePath);
-            Ui.Info($"mesh        workers={p.File.Mesh.Workers} npcs={p.File.Mesh.Npcs} dashboard={p.File.Mesh.DashboardPort} gateway={p.File.Mesh.GatewayPort} database={p.File.Mesh.Database} persistence={p.File.Mesh.PersistenceDatabase}");
-            Ui.Info($"deploy      target={p.File.Deploy.Target} mesh={p.File.Deploy.MeshName} database={p.DeployDatabase(c)} persistence={p.DeployPersistenceDatabase(c)} workers={p.File.Deploy.Workers}");
+            Ui.Info($"mesh        workers={p.File.Mesh.Workers} npcs={p.File.Mesh.Npcs} dashboard={p.File.Mesh.DashboardPort} gateway={p.File.Mesh.GatewayPort} database={p.LocalDatabase}");
+            Ui.Info($"deploy      target={p.File.Deploy.Target} mesh={p.File.Deploy.MeshName} database={DatabaseUrl.Parse(p.DeployDatabase(c), NebulaProject.DefaultDeployDatabase).Display} workers={p.File.Deploy.Workers}");
         }
         return 0;
     }
@@ -118,57 +117,36 @@ written to nebula.json so they travel with the project.
             p.Save();
             Ui.Ok($"{p.FilePath}: deploy target = hetzner");
         }
-        Ui.Info(ctx.Config.Spacetime?.IsConfigured == true ? "next: nebula deploy" : "next: nebula config spacetime, then nebula deploy");
+        Ui.Info("next: nebula deploy (SQLite on the orchestrator VM), or `nebula config database` first to use PostgreSQL");
         return 0;
     }
 
-    private static int Spacetime(Context ctx, ParsedArgs args)
+    private static int Database(Context ctx, ParsedArgs args)
     {
-        var st = ctx.Config.Spacetime ?? new CliConfig.SpacetimeSettings();
-        Ui.Title("SpacetimeDB for deployment");
-        Ui.Info("A deployed mesh keeps its control plane (workers, leases, gateways) in a SpacetimeDB database that the");
-        Ui.Info("cloud VMs can reach. Maincloud (maincloud.spacetimedb.com) is the hosted option and needs a login.");
+        var db = ctx.Config.Database ?? new CliConfig.DatabaseSettings();
+        Ui.Title("Database of the deployed mesh");
+        Ui.Info("The orchestrator keeps the control plane and every saved entity in one database. By default that is a");
+        Ui.Info("SQLite file on the orchestrator VM, which disappears with the VM. For a mesh whose world must outlive");
+        Ui.Info("its VMs, point it at a PostgreSQL server the orchestrator VM can reach.");
         Ui.Blank();
-        SpacetimeCli.Require();
 
-        string? server = args.Get("server");
-        if (server == null)
+        string? url = args.Get("url") ?? Ui.Ask("database URL (postgres://user:password@host:5432/nebula, or 'default' for SQLite on the VM)", db.Url ?? "default");
+        if (url.Length == 0 || url == "default") db.Url = null;
+        else
         {
-            int choice = Ui.Choose("server:", new[] { "maincloud (hosted by Clockwork Labs)", "another server nickname or URL known to the spacetime CLI" }, st.Server == "maincloud" ? 0 : 1);
-            server = choice == 0 ? "maincloud" : Ui.Ask("server nickname or URL", st.Server == "maincloud" ? null : st.Server);
+            DatabaseUrl parsed;
+            try { parsed = DatabaseUrl.Parse(url, NebulaProject.DefaultDeployDatabase); }
+            catch (ArgumentException e) { throw new CliError(e.Message); }
+            if (parsed.Scheme is "file" or "memory") throw new CliError($"a deployed orchestrator needs sqlite: or postgres:, not '{parsed.Scheme}:'");
+            if (parsed.Scheme == "sqlite" && !url.Contains('/')) throw new CliError("give the SQLite file an absolute path on the orchestrator VM, e.g. sqlite:/opt/nebula/data/nebula.db");
+            db.Url = url;
         }
-        st.Server = server;
-
-        if (server == "maincloud")
-        {
-            if (SpacetimeCli.IsLoggedIn(out var identity))
-            {
-                Ui.Ok($"logged in ({identity})");
-                if (Ui.Confirm("log in again as a different user?", false, false)) SpacetimeCli.Login();
-            }
-            else
-            {
-                Ui.Info("opening the SpacetimeDB login in your browser (`spacetime login`)...");
-                SpacetimeCli.Login();
-                if (!SpacetimeCli.IsLoggedIn(out identity)) throw new CliError("still not logged in after `spacetime login`");
-                Ui.Ok($"logged in ({identity})");
-            }
-        }
-
-        var p = NebulaProject.Find(ctx.ProjectOverride ?? Directory.GetCurrentDirectory());
-        string fallback = args.Get("database") ?? p?.DeployDatabase(ctx.Config) ?? st.Database ?? "nebula-game";
-        string database = args.Get("database") ?? Ui.Ask("control-plane database name (unique on the server)", fallback);
-        if (p != null)
-        {
-            p.File.Deploy.Database = database;
-            p.Save();
-            Ui.Ok($"{p.FilePath}: deploy database = {database}");
-        }
-        else st.Database = database;
-        st.ConfiguredAt = DateTime.UtcNow.ToString("o");
-        ctx.Config.Spacetime = st;
+        db.ConfiguredAt = DateTime.UtcNow.ToString("o");
+        ctx.Config.Database = db;
         ctx.SaveConfig();
-        Ui.Ok($"saved to {Platform.ConfigPath}");
+        Ui.Ok($"saved to {Platform.ConfigPath}: {(db.Url != null ? DatabaseUrl.Parse(db.Url, NebulaProject.DefaultDeployDatabase).Display : "SQLite on the orchestrator VM")}");
+        var p = NebulaProject.Find(ctx.ProjectOverride ?? Directory.GetCurrentDirectory());
+        if (p?.File.Deploy.Database != null) Ui.Warn($"{p.FilePath} sets deploy.database = {p.File.Deploy.Database}, which takes precedence for this project");
         Ui.Info(ctx.Config.Hetzner?.IsConfigured == true ? "next: nebula deploy" : "next: nebula config hetzner, then nebula deploy");
         return 0;
     }

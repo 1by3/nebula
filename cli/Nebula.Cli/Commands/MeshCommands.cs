@@ -6,11 +6,10 @@ namespace Nebula.Cli.Commands;
 public sealed class StartCommand : Command
 {
     public override string Name => "start";
-    public override string Summary => "Start SpacetimeDB, the orchestrator, gateway, and workers on this computer";
+    public override string Summary => "Start the orchestrator, gateway, and workers on this computer";
     public override string Usage => "[--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
-Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module,
-publish the persistence module next to it, then start the orchestrator from the latest build. The orchestrator
+Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and
 starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client
 role. Set defaults in the mesh section of nebula.json.
 
@@ -18,9 +17,10 @@ Only one local mesh can run at a time. When a mesh from this or another project 
 offer to stop it first (--yes stops it without asking). The start fails when the gateway or dashboard port is still
 held by another program.
 
-The control-plane database is republished with fresh data every time, because it only holds which processes are
-running. The persistence database (mesh.persistenceDatabase, `nebula-persist`) keeps its saved entities across
-restarts unless you pass --reset-persistence.
+The orchestrator keeps the control plane and every saved entity in one database, by default a SQLite file at
+Library/Nebula/nebula.db (mesh.database in nebula.json changes it: `sqlite:<file>`, `postgres://...` or `memory`).
+The control plane starts empty on every run because it only holds which processes are running; saved entities
+stay across restarts unless you pass --reset-persistence.
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -29,10 +29,9 @@ restarts unless you pass --reset-persistence.
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
-        new OptionSpec("skip-publish", false, "do not re-publish the control-plane and persistence modules"),
-        new OptionSpec("reset-persistence", false, "publish the persistence module with --delete-data, deleting every saved entity"),
+        new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --workers 4 --skip-publish", "nebula start --reset-persistence" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --reset-persistence" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -42,7 +41,7 @@ restarts unless you pass --reset-persistence.
         var mesh = project.File.Mesh;
         LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
             args.GetInt("workers", mesh.Workers), args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
-            args.Has("skip-publish"), args.Has("open-ui"), args.Has("reset-persistence")));
+            args.Has("open-ui"), args.Has("reset-persistence")));
         return 0;
     }
 }
@@ -50,16 +49,12 @@ restarts unless you pass --reset-persistence.
 public sealed class StopCommand : Command
 {
     public override string Name => "stop";
-    public override string Summary => "Stop the local mesh (every process of the build, and SpacetimeDB if `nebula start` started it)";
-    public override OptionSpec[] Options => new[]
-    {
-        new OptionSpec("spacetime", false, "also stop SpacetimeDB even if it was already running before `nebula start`"),
-    };
+    public override string Summary => "Stop the local mesh (every process of the build)";
 
     public override int Run(Context ctx, ParsedArgs args)
     {
         var project = ctx.RequireProject();
-        LocalMesh.Stop(project, args.Has("spacetime"));
+        LocalMesh.Stop(project);
         return 0;
     }
 }

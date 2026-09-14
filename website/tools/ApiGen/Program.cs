@@ -1,8 +1,8 @@
 // ApiGen: generates the Nebula API reference (MDX pages for the Fumadocs site) straight from the C# sources.
 //
 // It is syntax-only (Roslyn parses the files, nothing is compiled), so it needs neither Unity nor the
-// SpacetimeDB SDK on the machine that runs it. Every public or protected type and member under
-// Packages/com.1by3.nebula/{Runtime,World,Editor} and the SpacetimeDB control-plane module gets a signature and
+// Unity or database driver on the machine that runs it. Every public or protected type and member under
+// Packages/com.1by3.nebula/{Runtime,World,Editor} and the services' Storage folder gets a signature and
 // its XML documentation comment rendered to Markdown. Unity [Tooltip] text stands in for missing docs.
 //
 //   dotnet run --project website/tools/ApiGen -- <repo root> <output dir> [--source-url <base>]
@@ -29,14 +29,14 @@ public static class Program
         ("Client", "Client", "client", "Connect a player to the gateway, predict the local entity, and display replicated state."),
         ("Gateway", "Gateway", "gateway", "Accept client connections, route input to workers, and send replicated state to clients."),
         ("Orchestrator", "Orchestrator", "orchestrator", "Start and stop workers, assign containers, and serve the dashboard."),
-        ("ControlPlane", "Control plane", "control-plane", "Register processes and share container assignments and settings through SpacetimeDB or an in-process test implementation."),
+        ("ControlPlane", "Control plane", "control-plane", "Register processes and share container assignments and settings through the control plane the orchestrator hosts, or an in-process test implementation."),
         ("Bootstrap", "Bootstrap", "bootstrap", "Choose a process role and start its Nebula components."),
         ("Serialization", "Serialization", "serialization", "Write and read values used by messages, variables, inputs, and RPCs."),
         ("Transport", "Transport", "transport", "Send reliable ordered or unreliable sequenced messages through LiteNetLib."),
         ("Protocol", "Protocol", "protocol", "Inspect messages exchanged by clients, the gateway, and workers."),
         ("Debug", "Debug", "debug", "Display mesh status and measure worker tick sections."),
         ("Editor", "Editor", "editor", "Build players, start a local mesh, validate a project, and author partitioned worlds in the Unity Editor."),
-        ("SpacetimeModule", "SpacetimeDB module", "spacetime-module", "Inspect the tables and reducers used by the control plane."),
+        ("Storage", "Storage", "storage", "Keep the control plane and saved entities in SQLite or PostgreSQL from the standalone orchestrator."),
     };
 
     private static readonly HashSet<string> StrippedMemberAttributes = new() { "Tooltip", "Header", "SerializeField", "Space", "TextArea" };
@@ -71,8 +71,10 @@ public static class Program
         if (Directory.Exists(editor))
             foreach (var file in Directory.EnumerateFiles(editor, "*.cs", SearchOption.AllDirectories))
                 files.Add((file, "Editor"));
-        string module = Path.Combine(root, "Packages", "com.1by3.nebula", "SpacetimeDB", "Module~", "Lib.cs");
-        if (File.Exists(module)) files.Add((module, "SpacetimeModule"));
+        string storage = Path.Combine(root, "Packages", "com.1by3.nebula", "Services~", "Nebula.Services", "Storage");
+        if (Directory.Exists(storage))
+            foreach (var file in Directory.EnumerateFiles(storage, "*.cs", SearchOption.AllDirectories))
+                files.Add((file, "Storage"));
 
         var types = new List<TypeInfo>();
         foreach (var (path, group) in files)
@@ -622,7 +624,7 @@ public sealed class Renderer
         }
     }
 
-    /// <summary>Content of a doc comment written without a summary tag (plain `///` lines, as in the SpacetimeDB module).</summary>
+    /// <summary>Content of a doc comment written without a summary tag (plain `///` lines).</summary>
     private static bool IsLooseSummaryContent(XmlNodeSyntax node)
     {
         if (node is XmlTextSyntax) return true;

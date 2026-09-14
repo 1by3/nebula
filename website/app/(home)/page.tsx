@@ -159,8 +159,9 @@ export default function HomePage() {
               Start the Unity player with a different{" "}
               <code className="text-fd-foreground">-nebula-role</code> for each
               process. Workers exchange entity copies and transfers directly
-              over UDP. Clients connect to the gateway. The orchestrator uses
-              SpacetimeDB to register workers and assign containers.
+              over UDP. Clients connect to the gateway. The orchestrator
+              registers workers, assigns containers, and keeps the world in
+              SQLite or PostgreSQL.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-fd-muted-foreground">
               <li>
@@ -178,8 +179,8 @@ export default function HomePage() {
               </li>
               <li>
                 <b className="text-fd-foreground">Control plane</b>: stores
-                registrations, assignments, heartbeats, and shared settings in
-                SpacetimeDB.
+                registrations, assignments, heartbeats, and shared settings,
+                hosted by the orchestrator.
               </li>
               <li>
                 <b className="text-fd-foreground">Client</b>: predicts the local
@@ -356,7 +357,7 @@ function Topology() {
       {/* control plane */}
       <rect x="20" y="16" width="380" height="40" rx="8" className={box} />
       <text x="210" y="34" textAnchor="middle" className={text}>
-        SpacetimeDB control plane
+        Control plane (hosted by the orchestrator)
       </text>
       <text x="210" y="48" textAnchor="middle" className={muted}>
         workers · container assignments · gateways · settings

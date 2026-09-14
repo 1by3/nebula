@@ -1,6 +1,6 @@
 ---
 title: "LocalControlPlane"
-description: "In-process control plane with the exact semantics of the SpacetimeDB module (see Module~/Lib.cs), for single-process runs and tests."
+description: "The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/LocalControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/LocalControlPlane.cs)</div>
@@ -9,7 +9,7 @@ description: "In-process control plane with the exact semantics of the Spacetime
 public sealed class LocalControlPlane : IControlPlane
 ```
 
-In-process control plane with the exact semantics of the SpacetimeDB module (see Module~/Lib.cs), for single-process runs and tests. Changes are applied synchronously and [`Changed`](#changed) fires on the next [`Tick`](#tick), mirroring the subscription push of the real thing.
+The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. Changes are applied synchronously and [`Changed`](#changed) fires on the next [`Tick`](#tick). On its own it serves single-process runs and tests; [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) wraps it on the orchestrator, where it is the source of truth every [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) mirrors.
 
 ## Properties
 
@@ -49,6 +49,14 @@ public IReadOnlyList<GatewayInfo> Gateways { get; }
 public IReadOnlyDictionary<string, string> Settings { get; }
 ```
 
+### Version [#version]
+
+```csharp
+public long Version { get; }
+```
+
+Bumped by every change, so a mirror can tell whether it is behind.
+
 ## Events
 
 ### Changed [#changed]
@@ -76,6 +84,22 @@ public void Tick();
 ```csharp
 public void Dispose();
 ```
+
+### ToJson [#tojson]
+
+```csharp
+public string ToJson();
+```
+
+The whole state as one document (see [`ControlPlaneJson`](/docs/reference/control-plane/control-plane-json)).
+
+### Import [#import]
+
+```csharp
+public void Import(ControlPlaneJson.Snapshot snapshot);
+```
+
+Replace the whole state with `snapshot` (a stored document coming back at startup).
 
 ### RegisterWorker [#registerworker]
 

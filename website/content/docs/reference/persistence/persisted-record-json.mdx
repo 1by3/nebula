@@ -1,0 +1,61 @@
+---
+title: "PersistedRecordJson"
+description: "PersistedEntityRecord as JSON, the wire format between RemotePersistenceStore (workers) and PersistenceHost (the orchestrator)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/PersistedRecordJson.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/PersistedRecordJson.cs)</div>
+
+```csharp
+public static class PersistedRecordJson
+```
+
+[`PersistedEntityRecord`](/docs/reference/persistence/persisted-entity-record) as JSON, the wire format between [`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store) (workers) and [`PersistenceHost`](/docs/reference/persistence/persistence-host) (the orchestrator). The state blob travels base64-encoded; vectors are `[x, y, z]`, the rotation `[x, y, z, w]`, times Unix milliseconds.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public static void Write(JsonWriter w, PersistedEntityRecord r);
+```
+
+### WriteList [#writelist]
+
+```csharp
+public static string WriteList(IReadOnlyList<PersistedEntityRecord> records);
+```
+
+`{"records":[...]}`
+
+### WriteOne [#writeone]
+
+```csharp
+public static string WriteOne(PersistedEntityRecord record);
+```
+
+`{"record":{...}}`, or `{"record":null}`.
+
+### Parse [#parse]
+
+```csharp
+public static PersistedEntityRecord Parse(Dictionary<string, object> o);
+```
+
+### ParseList [#parselist]
+
+```csharp
+public static List<PersistedEntityRecord> ParseList(Dictionary<string, object> root, string key = "records");
+public static List<PersistedEntityRecord> ParseList(string json);
+```
+
+The records under `key` in a parsed body (an empty list when absent).
+
+### ParseOne [#parseone]
+
+```csharp
+public static PersistedEntityRecord ParseOne(Dictionary<string, object> root, string key = "record");
+public static PersistedEntityRecord ParseOne(string json);
+```
+
+The record under `key` in a parsed body, or null.
+

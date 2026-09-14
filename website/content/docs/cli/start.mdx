@@ -1,19 +1,19 @@
 ---
 title: "nebula start"
-description: "Start SpacetimeDB, the orchestrator, gateway, and workers on this computer"
+description: "Start the orchestrator, gateway, and workers on this computer"
 ---
 
-To start SpacetimeDB, the orchestrator, gateway, and workers on this computer, run:
+To start the orchestrator, gateway, and workers on this computer, run:
 
 ```bash
 nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
 ```
 
-Start SpacetimeDB when the configured address is unavailable. Publish a new copy of the control-plane module, publish the persistence module next to it, then start the orchestrator from the latest build. The orchestrator starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
+Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
 
 Only one local mesh can run at a time. When a mesh from this or another project is already running, list it and offer to stop it first (--yes stops it without asking). The start fails when the gateway or dashboard port is still held by another program.
 
-The control-plane database is republished with fresh data every time, because it only holds which processes are running. The persistence database (mesh.persistenceDatabase, `nebula-persist`) keeps its saved entities across restarts unless you pass --reset-persistence.
+The orchestrator keeps the control plane and every saved entity in one database, by default a SQLite file at Library/Nebula/nebula.db (mesh.database in nebula.json changes it: `sqlite:\<file\>`, `postgres://...` or `memory`). The control plane starts empty on every run because it only holds which processes are running; saved entities stay across restarts unless you pass --reset-persistence.
 
 ## Options
 
@@ -24,8 +24,7 @@ The control-plane database is republished with fresh data every time, because it
 | `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default 0). |
 | `--bots <N>` | Start headless clients with the bot flag; the game supplies their behavior (default 0). |
 | `--open-ui` | Open the Nebula Dashboard in the browser once it is up. |
-| `--skip-publish` | Do not re-publish the control-plane and persistence modules. |
-| `--reset-persistence` | Publish the persistence module with --delete-data, deleting every saved entity. |
+| `--reset-persistence` | Delete every saved entity when the orchestrator starts. |
 
 ## Global options
 
@@ -42,6 +41,5 @@ These work with every command and may appear before or after it.
 ```bash
 nebula start --open-ui
 nebula start --build --workers 2
-nebula start --workers 4 --skip-publish
 nebula start --reset-persistence
 ```

@@ -32,20 +32,20 @@ public sealed class HelpCommand : Command
         Console.WriteLine("usage: nebula <command> [options]");
         Ui.Blank();
         Console.WriteLine("getting started");
-        PrintRow("setup", "install prerequisites (SpacetimeDB CLI, .NET SDK) and check Unity");
+        PrintRow("setup", "install prerequisites (.NET SDK) and check Unity");
         PrintRow("init", "install Nebula into the Unity project in the current folder");
         Ui.Blank();
         Console.WriteLine("running locally");
         PrintRow("build", "build the player/worker executable with Unity");
-        PrintRow("start", "run the mesh locally: SpacetimeDB, control plane, orchestrator, gateway, workers");
+        PrintRow("start", "run the mesh locally: orchestrator (with the control plane), gateway, workers");
         PrintRow("stop", "stop the local mesh");
         PrintRow("status", "show the mesh (local, or --cloud)");
         PrintRow("logs", "show a role's log (orchestrator, gateway, w1, ...)");
         Ui.Blank();
         Console.WriteLine("deploying");
-        PrintRow("config", "configure a deploy target (hetzner), Spacetime Maincloud, or the Unity editor path");
-        PrintRow("deploy", "build, publish the control plane and run the mesh in the cloud");
-        PrintRow("destroy", "delete the mesh's cloud servers and its SpacetimeDB databases");
+        PrintRow("config", "configure a deploy target (hetzner), the deployed database, or the Unity editor path");
+        PrintRow("deploy", "build and run the mesh in the cloud");
+        PrintRow("destroy", "delete the mesh's cloud servers");
         Ui.Blank();
         Console.WriteLine("other");
         PrintRow("version", "print the CLI version");
@@ -92,8 +92,8 @@ public sealed class HelpCommand : Command
         try
         {
             string cwd = Directory.GetCurrentDirectory();
-            if (SpacetimeCli.Path == null)
-                Ui.Hint("SpacetimeDB is not installed yet: start with `nebula setup`");
+            if (ctx.Config.SetupCompletedAt == null && NebulaProject.Find(cwd) == null)
+                Ui.Hint("start with `nebula setup` to check the prerequisites");
             else if (NebulaProject.Find(cwd) is { } p)
                 Ui.Hint(File.Exists(p.HostExecutable) ? $"project {Path.GetFileName(p.Root)}: `nebula start --open-ui` runs the mesh" : $"project {Path.GetFileName(p.Root)}: `nebula build` then `nebula start`");
             else if (NebulaProject.FindUnityRoot(cwd) != null)

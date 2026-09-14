@@ -9,7 +9,8 @@ namespace Nebula
     /// In-process <see cref="IPersistenceStore"/> with the exact write rules of the persistence module (epoch check,
     /// version bump), optionally backed by a file so a single-process run survives a restart. This is what
     /// <c>-nebula-persistence-mode local</c> uses (and what the tests use); a mesh wants
-    /// <see cref="SpacetimePersistenceStore"/> instead, because every worker needs to see the same records.
+    /// the orchestrator's database instead (<see cref="RemotePersistenceStore"/> on every worker), because every
+    /// worker needs to see the same records.
     /// <para>
     /// Writes land in memory at once and the file is rewritten at most once per <see cref="WriteIntervalSeconds"/>
     /// from <see cref="Tick"/>, so a busy checkpoint pass costs no disk I/O. Callbacks are queued and delivered from

@@ -36,16 +36,16 @@ into `cli/dist`.
 ## Commands
 
 ```
-nebula setup                 install SpacetimeDB and the .NET 10 SDK, check git/ssh and the Unity editors
+nebula setup                 install the .NET 10 SDK, check git/ssh and the Unity editors
 nebula init                  install Nebula into the Unity project you are in (Packages/com.1by3.nebula, manifest, nebula.json)
 nebula build [--linux]       build the executable every role runs (host player, or the Linux server + tarball)
 nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
 nebula stop
 nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, persistence, recent events
 nebula logs [role] [-n N] [--follow] [--cloud]
-nebula config hetzner|spacetime|unity|source|show
+nebula config hetzner|database|unity|source|show
 nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]
-nebula destroy [--all] [--keep-data]
+nebula destroy [--all]
 ```
 
 `nebula --help` and `nebula <command> --help` describe every option. Global options: `--project <path>`
@@ -53,10 +53,10 @@ nebula destroy [--all] [--keep-data]
 
 ## What `init` does
 
-Run inside a Unity project. Nebula is a Unity package (`com.1by3.nebula`: runtime, editor tooling, the SpacetimeDB
-control-plane module and generated bindings, vendored LiteNetLib, EditMode tests) that Unity fetches from the
-repository on GitHub. `init` adds it to `Packages/manifest.json` pinned to the tag matching the CLI version
-(`--ref <tag|branch>` picks another), adds the SpacetimeDB SDK package next to it, lists the package in
+Run inside a Unity project. Nebula is a Unity package (`com.1by3.nebula`: runtime, editor tooling, the standalone
+service sources, vendored LiteNetLib, EditMode tests) that Unity fetches from the repository on GitHub. `init` adds
+it to `Packages/manifest.json` pinned to the tag matching the CLI version (`--ref <tag|branch>` picks another),
+removes the SpacetimeDB SDK entry older releases added, lists the package in
 `testables` so its tests show in the Test Runner, writes a default `Assets/Resources/NebulaConfig.asset` (empty
 prefab list; set `GameScene` and `NetworkPrefabs` in the Inspector) and creates `nebula.json` at the project root.
 `--force` moves an existing entry to this CLI's release; the config asset and `nebula.json` are always kept.
@@ -76,9 +76,8 @@ Per-project settings that travel with the project:
   "nebula": "0.1.0",
   "executable": "Nebula",
   "mesh":   { "workers": 4, "npcs": 0, "dashboardPort": 7080, "gatewayPort": 7000,
-              "spacetimeUri": "http://127.0.0.1:3000", "database": "nebula",
-              "persistenceDatabase": "nebula-persist" },
-  "deploy": { "target": "hetzner", "meshName": "nebula", "database": "nebula-mygame",
+              "database": "sqlite:Library/Nebula/nebula.db" },
+  "deploy": { "target": "hetzner", "meshName": "nebula-mygame", "database": "postgres://user:pw@host/db",
               "persistenceDatabase": "nebula-mygame-persist", "workers": 4, "npcs": 0 }
 }
 ```
@@ -100,12 +99,11 @@ runs from a mirrored copy under `~/.nebula-cli/scratch/<project>` and the result
 Lines tagged `[nebula]` and compiler errors from the Unity log are echoed while it runs; the full log is
 `Builds/unity-build.log`.
 
-`nebula start` runs the whole local mesh: it starts a local SpacetimeDB if none answers on the
-configured address (logs to `Builds/<platform>/Logs/spacetimedb.log`), publishes the control-plane module with
-fresh data, publishes the persistence module without touching its rows, launches the orchestrator (which launches the gateway and the workers), waits for the dashboard and
-prints how to join. Logs live next to the build in `Logs/` (`orchestrator`, `gateway`, `w1..wN`, `bot1..`).
-`nebula stop` kills every process of the build and the SpacetimeDB the CLI started (`--spacetime` to stop one
-that was already running).
+`nebula start` runs the whole local mesh: it launches the orchestrator from the build with its database at
+`Library/Nebula/nebula.db` (the orchestrator hosts the control plane and launches the gateway and the workers),
+waits for the dashboard and prints how to join. Saved entities stay across restarts (`--reset-persistence` wipes
+them). Logs live next to the build in `Logs/` (`orchestrator`, `gateway`, `w1..wN`, `bot1..`).
+`nebula stop` kills every process of the build.
 
 The control plane only records which processes are running, so `nebula start` republishes it with fresh data
 every time. Saved entities live in their own database and survive restarts. To throw them away, run
@@ -117,7 +115,7 @@ reports one.
 
 ```
 nebula config hetzner        API token (checked against the API), project label, region, VM types
-nebula config spacetime      `spacetime login` for Maincloud (or another server) and the database name
+nebula config database       optional: a PostgreSQL URL for deployed meshes (default: SQLite on the orchestrator VM)
 nebula deploy --open-ui
 ```
 
@@ -128,8 +126,8 @@ adds `--delete-data`) and the persistence module next to it, keeping its saved e
 VM that are missing; uploads the tarball over scp, writes `/etc/nebula/env` (root-only, the token) and the
 `nebula-orchestrator` systemd unit over ssh, restarts it and waits for the dashboard. The orchestrator creates
 one VM per worker. `nebula status --cloud` and `nebula logs --cloud orchestrator|gateway|w1` read the deployed
-mesh; `nebula destroy` deletes the servers and then the control-plane and persistence databases on the configured
-Spacetime server (`--all` also the network, firewalls and key; `--keep-data` keeps both databases).
+mesh; `nebula destroy` deletes the servers (`--all` also the network, firewalls and key). A SQLite database goes
+with the orchestrator VM; a PostgreSQL database is left in place.
 
 The Hetzner token is stored in `~/.nebula-cli/config.json` (0600 on Unix); `HCLOUD_TOKEN` in the environment
 always takes precedence, so CI can run without the file. The CLI replaced the earlier `Tools/run-mesh.ps1`,

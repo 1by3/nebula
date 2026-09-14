@@ -1,0 +1,305 @@
+using System;
+using System.Collections.Generic;
+using System.Data.Common;
+using System.Diagnostics;
+using System.Threading;
+using Nebula.ServicePrimitives;
+
+namespace Nebula
+{
+    /// <summary>
+    /// <see cref="IPersistenceStore"/> in the orchestrator's database (<see cref="NebulaDatabase"/>: SQLite or
+    /// PostgreSQL), table <c>nebula_entity</c>. One writer thread runs every save, delete and query in order on one
+    /// connection, so the epoch rule (a save older than what is stored is dropped) is one conditional upsert and a
+    /// later save never overtakes an earlier one. Answers are handed back from <see cref="Tick"/> on the main
+    /// thread. When the database is unreachable the queue waits and the connection is retried; the mesh keeps
+    /// simulating meanwhile, and workers keep their own queues (<see cref="RemotePersistenceStore"/>).
+    /// </summary>
+    public sealed class SqlPersistenceStore : IPersistenceStore
+    {
+        public const float RetrySeconds = 2f;
+        /// <summary>Seconds between refreshes of <see cref="KnownCount"/> while writes keep coming.</summary>
+        public const float CountIntervalSeconds = 2f;
+        /// <summary>Times a job that throws is retried (after a reconnect) before it is dropped with an error.</summary>
+        private const int MaxAttempts = 3;
+
+        private sealed class Job
+        {
+            public string Name;
+            public Action<DbConnection> Run;
+            public int Attempts;
+        }
+
+        private readonly NebulaDatabase _db;
+        private readonly object _gate = new object();
+        private readonly LinkedList<Job> _jobs = new LinkedList<Job>();
+        private readonly List<Action> _callbacks = new List<Action>();
+        private readonly List<Action> _draining = new List<Action>();
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private Thread _thread;
+        private volatile bool _running;
+        private volatile bool _connected;
+        private volatile int _count = -1;
+        private volatile string _error;
+        private string _loggedError;
+        private bool _loggedConnected;
+        private bool _countDirty = true;
+        private double _nextCount;
+
+        public SqlPersistenceStore(NebulaDatabase db)
+        {
+            _db = db ?? throw new ArgumentNullException(nameof(db));
+        }
+
+        public bool IsConnected => _running && _connected;
+        public string Backend => _db.Provider;
+        public int KnownCount => _count;
+        /// <summary>Jobs waiting for the writer thread.</summary>
+        public int PendingJobs { get { lock (_gate) return _jobs.Count; } }
+
+        public void Connect()
+        {
+            if (_running) return;
+            _running = true;
+            _thread = new Thread(Loop) { IsBackground = true, Name = "nebula-persistence-sql" };
+            _thread.Start();
+            NebulaLog.Info($"persistence: {_db.Provider} store at {_db.Display}");
+        }
+
+        public void Tick()
+        {
+            string error = _error;
+            if (error != _loggedError)
+            {
+                _loggedError = error;
+                if (error != null) NebulaLog.Warn($"persistence: {_db.Display}: {error}");
+            }
+            if (_connected && !_loggedConnected)
+            {
+                _loggedConnected = true;
+                NebulaLog.Info($"persistence: {_db.Provider} store ready ({_count} record(s))");
+            }
+            lock (_gate)
+            {
+                if (_callbacks.Count == 0) return;
+                _draining.AddRange(_callbacks);
+                _callbacks.Clear();
+            }
+            for (int i = 0; i < _draining.Count; i++)
+            {
+                try { _draining[i](); }
+                catch (Exception e) { NebulaLog.Error($"persistence callback: {e}"); }
+            }
+            _draining.Clear();
+        }
+
+        public void Dispose()
+        {
+            if (!_running) return;
+            // Let queued checkpoints land before the process goes.
+            lock (_gate)
+            {
+                _running = false;
+                Monitor.PulseAll(_gate);
+            }
+            _thread?.Join(TimeSpan.FromSeconds(5));
+            lock (_gate) _callbacks.Clear();
+        }
+
+        // ---------------------------------------------------------------------------------------- writes
+
+        public void Save(PersistedEntityRecord record)
+        {
+            if (record == null || string.IsNullOrEmpty(record.Key)) return;
+            var r = record.Clone();
+            r.SavedAt = DateTime.UtcNow;
+            Enqueue("save " + r.Key, c =>
+            {
+                NebulaDatabase.Execute(c, @"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
+                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by)
+                    VALUES (@key, @prefab_id, @prefab_name, @scene_id, @container_id, @carrier_key,
+                    @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by)
+                    ON CONFLICT (entity_key) DO UPDATE SET
+                    prefab_id = excluded.prefab_id, prefab_name = excluded.prefab_name, scene_id = excluded.scene_id,
+                    container_id = excluded.container_id, carrier_key = excluded.carrier_key,
+                    pos_x = excluded.pos_x, pos_y = excluded.pos_y, pos_z = excluded.pos_z,
+                    rot_x = excluded.rot_x, rot_y = excluded.rot_y, rot_z = excluded.rot_z, rot_w = excluded.rot_w,
+                    vel_x = excluded.vel_x, vel_y = excluded.vel_y, vel_z = excluded.vel_z,
+                    epoch = excluded.epoch, server_driven = excluded.server_driven, owned = excluded.owned, name = excluded.name,
+                    state = excluded.state, version = nebula_entity.version + 1, saved_at = excluded.saved_at, saved_by = excluded.saved_by
+                    WHERE excluded.epoch >= nebula_entity.epoch",
+                    ("@key", r.Key), ("@prefab_id", (int)r.PrefabId), ("@prefab_name", r.PrefabName ?? ""), ("@scene_id", (long)r.SceneId),
+                    ("@container_id", r.ContainerId ?? ""), ("@carrier_key", r.CarrierKey ?? ""),
+                    ("@pos_x", (double)r.LocalPosition.x), ("@pos_y", (double)r.LocalPosition.y), ("@pos_z", (double)r.LocalPosition.z),
+                    ("@rot_x", (double)r.LocalRotation.x), ("@rot_y", (double)r.LocalRotation.y), ("@rot_z", (double)r.LocalRotation.z), ("@rot_w", (double)r.LocalRotation.w),
+                    ("@vel_x", (double)r.Velocity.x), ("@vel_y", (double)r.Velocity.y), ("@vel_z", (double)r.Velocity.z),
+                    ("@epoch", (long)r.Epoch), ("@server_driven", r.ServerDriven), ("@owned", r.Owned), ("@name", r.Name ?? ""),
+                    ("@state", r.State != null && r.State.Length > 0 ? r.State : Array.Empty<byte>()),
+                    ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""));
+                _countDirty = true;
+            });
+        }
+
+        public void Delete(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            Enqueue("delete " + key, c =>
+            {
+                NebulaDatabase.Execute(c, "DELETE FROM nebula_entity WHERE entity_key = @key", ("@key", key));
+                _countDirty = true;
+            });
+        }
+
+        public void Clear()
+        {
+            Enqueue("clear", c =>
+            {
+                NebulaDatabase.Execute(c, "DELETE FROM nebula_entity");
+                _countDirty = true;
+            });
+        }
+
+        // ---------------------------------------------------------------------------------------- reads
+
+        private const string Columns = "entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by";
+
+        public void Load(string key, Action<PersistedEntityRecord> onLoaded)
+        {
+            if (onLoaded == null) return;
+            string k = key ?? "";
+            Enqueue("load " + k, c =>
+            {
+                PersistedEntityRecord record = null;
+                using (var cmd = NebulaDatabase.Command(c, $"SELECT {Columns} FROM nebula_entity WHERE entity_key = @key", ("@key", k)))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read()) record = Read(reader);
+                }
+                Deliver(() => onLoaded(record));
+            });
+        }
+
+        public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
+            Query("container " + containerId, $"SELECT {Columns} FROM nebula_entity WHERE container_id = @c AND carrier_key = ''", new[] { ("@c", (object)(containerId ?? "")) }, null, onLoaded);
+
+        public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
+            Query("carried " + carrierKey, $"SELECT {Columns} FROM nebula_entity WHERE carrier_key = @k", new[] { ("@k", (object)(carrierKey ?? "")) }, null, onLoaded);
+
+        public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
+            Query("all", $"SELECT {Columns} FROM nebula_entity", Array.Empty<(string, object)>(), predicate, onLoaded);
+
+        private void Query(string name, string sql, (string, object)[] args, Func<PersistedEntityRecord, bool> filter, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
+        {
+            if (onLoaded == null) return;
+            Enqueue(name, c =>
+            {
+                var hits = new List<PersistedEntityRecord>();
+                using (var cmd = NebulaDatabase.Command(c, sql, args))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var r = Read(reader);
+                        if (filter == null || filter(r)) hits.Add(r);
+                    }
+                }
+                Deliver(() => onLoaded(hits));
+            });
+        }
+
+        private static PersistedEntityRecord Read(DbDataReader r)
+        {
+            var record = new PersistedEntityRecord
+            {
+                Key = r.GetString(0),
+                PrefabId = (ushort)r.GetInt32(1),
+                PrefabName = r.GetString(2),
+                SceneId = (uint)r.GetInt64(3),
+                ContainerId = r.GetString(4),
+                CarrierKey = r.GetString(5),
+                LocalPosition = new Vector3((float)r.GetDouble(6), (float)r.GetDouble(7), (float)r.GetDouble(8)),
+                LocalRotation = new Quaternion((float)r.GetDouble(9), (float)r.GetDouble(10), (float)r.GetDouble(11), (float)r.GetDouble(12)),
+                Velocity = new Vector3((float)r.GetDouble(13), (float)r.GetDouble(14), (float)r.GetDouble(15)),
+                Epoch = (uint)r.GetInt64(16),
+                ServerDriven = r.GetBoolean(17),
+                Owned = r.GetBoolean(18),
+                Name = r.GetString(19),
+                State = r.IsDBNull(20) ? Array.Empty<byte>() : (byte[])r.GetValue(20),
+                Version = (ulong)r.GetInt64(21),
+                SavedAt = ControlPlaneJson.FromUnixMs(r.GetInt64(22)),
+                SavedBy = r.GetString(23),
+            };
+            return record;
+        }
+
+        // ---------------------------------------------------------------------------------------- writer thread
+
+        private void Enqueue(string name, Action<DbConnection> run)
+        {
+            lock (_gate)
+            {
+                _jobs.AddLast(new Job { Name = name, Run = run });
+                Monitor.PulseAll(_gate);
+            }
+        }
+
+        private void Deliver(Action callback)
+        {
+            lock (_gate) _callbacks.Add(callback);
+        }
+
+        private void Loop()
+        {
+            DbConnection conn = null;
+            while (true)
+            {
+                Job job;
+                lock (_gate)
+                {
+                    // One bounded wait, not a loop: an idle pass still refreshes the count below.
+                    if (_jobs.Count == 0 && _running) Monitor.Wait(_gate, TimeSpan.FromSeconds(CountIntervalSeconds));
+                    if (_jobs.Count == 0 && !_running) break;
+                    job = _jobs.Count > 0 ? _jobs.First.Value : null;
+                    if (job != null) _jobs.RemoveFirst();
+                }
+                try
+                {
+                    if (conn == null)
+                    {
+                        conn = _db.Open();
+                        _connected = true;
+                        _error = null;
+                        _countDirty = true;
+                    }
+                    if (job != null) job.Run(conn);
+                    if (_countDirty && _clock.Elapsed.TotalSeconds >= _nextCount)
+                    {
+                        _nextCount = _clock.Elapsed.TotalSeconds + CountIntervalSeconds;
+                        _countDirty = false;
+                        using var cmd = NebulaDatabase.Command(conn, "SELECT COUNT(*) FROM nebula_entity");
+                        _count = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+                }
+                catch (Exception e)
+                {
+                    _connected = false;
+                    try { conn?.Dispose(); } catch { }
+                    conn = null;
+                    if (job != null)
+                    {
+                        job.Attempts++;
+                        if (job.Attempts < MaxAttempts)
+                        {
+                            _error = $"{job.Name} failed ({e.Message}); reconnecting";
+                            lock (_gate) _jobs.AddFirst(job);
+                        }
+                        else _error = $"{job.Name} dropped after {job.Attempts} attempts: {e.Message}";
+                    }
+                    else _error = e.Message;
+                    lock (_gate) { if (_running) Monitor.Wait(_gate, TimeSpan.FromSeconds(RetrySeconds)); }
+                }
+            }
+            try { conn?.Dispose(); } catch { }
+        }
+    }
+}

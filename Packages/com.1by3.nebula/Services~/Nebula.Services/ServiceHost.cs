@@ -16,9 +16,9 @@ namespace Nebula
         {
             if (CommandLine.Has("help"))
             {
-                Console.WriteLine($"nebula-{role} -nebula-service-manifest <nebula-services.json> [-nebula-spacetime <url>] [-nebula-database <name>] [-logFile <path>]");
-                Console.WriteLine("Orchestrator: -nebula-worker-exe <Unity player> -nebula-workers <count> -nebula-dashboard-port <port>");
-                Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port>");
+                Console.WriteLine($"nebula-{role} -nebula-service-manifest <nebula-services.json> [-nebula-token <secret>] [-logFile <path>]");
+                Console.WriteLine("Orchestrator: -nebula-worker-exe <Unity player> -nebula-workers <count> -nebula-dashboard-port <port> [-nebula-database sqlite:<file>|postgres://...|memory] [-nebula-reset-persistence]");
+                Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port> -nebula-control-plane <orchestrator url>");
                 return 0;
             }
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -29,6 +29,7 @@ namespace Nebula
             NebulaGateway gateway = null;
             IControlPlane control = null;
             IPersistenceStore persistence = null;
+            NebulaDatabase database = null;
             StreamWriter log = null;
             var originalOut = Console.Out;
             var originalError = Console.Error;
@@ -47,20 +48,36 @@ namespace Nebula
                 var config = manifest.Config;
                 ApplyOverrides(config);
                 if (config.UseLocalControlPlane && !CommandLine.Has("nebula-local-control-plane"))
-                    throw new InvalidOperationException("A standalone mesh requires SpacetimeDB; disable UseLocalControlPlane in the exported configuration.");
-                // Explicit local mode supports isolated service diagnostics; it cannot connect separate processes.
-                control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new SpacetimeControlPlane(config.SpacetimeUri, config.SpacetimeDatabase);
-                control.Connect();
+                    throw new InvalidOperationException("A standalone service cannot use an in-process control plane; disable UseLocalControlPlane in the exported configuration.");
                 if (role == "orchestrator")
                 {
                     if (config.WorkerHost == "process" && !config.UseLocalControlPlane && !File.Exists(config.WorkerExecutable))
                         throw new FileNotFoundException("Set -nebula-worker-exe to the Unity worker executable", config.WorkerExecutable);
-                    persistence = CreatePersistence(config);
+                    if (config.DashboardPort == 0 && !config.UseLocalControlPlane)
+                        throw new InvalidOperationException("The orchestrator hosts the control plane on its dashboard port; -nebula-dashboard-port cannot be 0");
+                    // The orchestrator's database holds the control plane between runs and every saved entity.
+                    var url = DatabaseUrl.Parse(config.DatabaseUrl, "sqlite:" + Path.Combine(AppContext.BaseDirectory, "nebula.db"));
+                    if (url.Scheme == "sqlite" || url.Scheme == "postgres") database = NebulaDatabase.Open(url);
+                    // Explicit local mode supports isolated service diagnostics; it cannot connect separate processes.
+                    control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new ControlPlaneHost(CreateControlPlaneStorage(url, database), config.MeshToken, !CommandLine.GetBool("nebula-reset", true));
+                    control.Connect();
+                    persistence = CreatePersistence(config, url, database);
                     persistence?.Connect();
+                    if (persistence != null && CommandLine.GetBool("nebula-reset-persistence", false))
+                    {
+                        NebulaLog.Warn("persistence: -nebula-reset-persistence: deleting every saved entity");
+                        persistence.Clear();
+                    }
                     orchestrator = new NebulaOrchestrator { Persistence = persistence };
                     orchestrator.Initialize(config, control);
                 }
-                else if (role == "gateway") { gateway = new NebulaGateway(); gateway.Initialize(config, control); }
+                else if (role == "gateway")
+                {
+                    control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new RemoteControlPlane(config.ControlPlaneUrl, config.MeshToken);
+                    control.Connect();
+                    gateway = new NebulaGateway();
+                    gateway.Initialize(config, control);
+                }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
                 var clock = Stopwatch.StartNew();
@@ -78,14 +95,16 @@ namespace Nebula
             catch (Exception e) { NebulaLog.Error(e.ToString()); return 1; }
             finally
             {
-                try { gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); }
+                try { gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
                 finally { Console.CancelKeyPress -= cancel; Console.SetOut(originalOut); Console.SetError(originalError); log?.Dispose(); }
             }
         }
         public static void ApplyOverrides(NebulaConfig c)
         {
-            c.SpacetimeUri = CommandLine.Get("nebula-spacetime", c.SpacetimeUri);
-            c.SpacetimeDatabase = CommandLine.Get("nebula-database", c.SpacetimeDatabase);
+            // Secrets may come from the environment (a systemd EnvironmentFile) instead of the command line.
+            c.ControlPlaneUrl = CommandLine.Get("nebula-control-plane", c.ControlPlaneUrl);
+            c.MeshToken = CommandLine.Get("nebula-token", Environment.GetEnvironmentVariable("NEBULA_MESH_TOKEN") is { Length: > 0 } token ? token : c.MeshToken);
+            c.DatabaseUrl = CommandLine.Get("nebula-database", Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL") is { Length: > 0 } db ? db : c.DatabaseUrl);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);
             c.WorkerExecutable = CommandLine.Get("nebula-worker-exe", c.WorkerExecutable);
             c.WorkerHost = CommandLine.Get("nebula-host", c.WorkerHost);
@@ -95,8 +114,6 @@ namespace Nebula
             c.UseLocalControlPlane = CommandLine.GetBool("nebula-local-control-plane", c.UseLocalControlPlane);
             c.OrchestratorSpawnsGateway = CommandLine.GetBool("nebula-spawn-gateway", c.OrchestratorSpawnsGateway);
             c.PersistenceMode = CommandLine.Get("nebula-persistence-mode", c.PersistenceMode);
-            c.PersistenceUri = CommandLine.Get("nebula-persistence", c.PersistenceUri);
-            c.PersistenceDatabase = CommandLine.Get("nebula-persistence-database", c.PersistenceDatabase);
             c.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", c.PersistenceLocalFile);
             var gateway = CommandLine.Get("nebula-gateway");
             if (!string.IsNullOrEmpty(gateway))
@@ -125,17 +142,33 @@ namespace Nebula
                         { var b = a.Address.GetAddressBytes(); if (b[0] == 10 || b[0] == 172 && b[1] >= 16 && b[1] < 32 || b[0] == 192 && b[1] == 168) return a.Address.ToString(); }
             return "127.0.0.1";
         }
-        private static IPersistenceStore CreatePersistence(NebulaConfig c)
+        /// <summary>The orchestrator's store, from <c>-nebula-persistence-mode</c>: <c>auto</c> and <c>database</c> use the database the orchestrator was pointed at.</summary>
+        private static IPersistenceStore CreatePersistence(NebulaConfig c, DatabaseUrl url, NebulaDatabase database)
         {
             string mode = (c.PersistenceMode ?? "auto").ToLowerInvariant();
-            if (mode == "auto" || mode == "") mode = c.UseLocalControlPlane ? "local" : "spacetime";
+            if (mode == "auto" || mode == "") mode = c.UseLocalControlPlane ? "local" : "database";
             return mode switch
             {
                 "off" or "none" => null,
                 "memory" => new LocalPersistenceStore(),
                 "local" or "file" => new LocalPersistenceStore(string.IsNullOrEmpty(c.PersistenceLocalFile) ? Path.Combine(AppContext.BaseDirectory, "nebula-persistence.bin") : c.PersistenceLocalFile),
-                "spacetime" => new SpacetimePersistenceStore(string.IsNullOrEmpty(c.PersistenceUri) ? c.SpacetimeUri : c.PersistenceUri, c.PersistenceDatabase),
+                "database" => url.Scheme switch
+                {
+                    "memory" => new LocalPersistenceStore(),
+                    "file" => new LocalPersistenceStore(Path.Combine(url.Target, "entities.bin")),
+                    _ => new SqlPersistenceStore(database),
+                },
+                "remote" => throw new ArgumentException("The orchestrator owns the store; 'remote' is for workers"),
                 _ => throw new ArgumentException("Unknown persistence mode: " + mode)
+            };
+        }
+        private static IControlPlaneStorage CreateControlPlaneStorage(DatabaseUrl url, NebulaDatabase database)
+        {
+            return url.Scheme switch
+            {
+                "memory" => new MemoryControlPlaneStorage(),
+                "file" => new FileControlPlaneStorage(Path.Combine(url.Target, "control-plane.json")),
+                _ => new SqlControlPlaneStorage(database),
             };
         }
         internal static Process LaunchGateway(string commonArgs, Action<string, string> log)

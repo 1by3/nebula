@@ -11,9 +11,10 @@ namespace Nebula
         public ushort GatewayPort = 7000;
         public ushort WorkerBasePort = 7100;
         public string WorkerAdvertiseAddress = "127.0.0.1";
-        public string SpacetimeUri = "http://127.0.0.1:3000";
-        public string SpacetimeDatabase = "nebula";
+        public string ControlPlaneUrl = "http://127.0.0.1:7080/";
+        public string MeshToken = "";
         public bool UseLocalControlPlane = false;
+        public string DatabaseUrl = "";
         public int WorkerCount = 4;
         public int MaxWorkers = 32;
         public string AssignmentPolicy = "auto";
@@ -37,8 +38,6 @@ namespace Nebula
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;
         public string PersistenceMode = "auto";
-        public string PersistenceUri = "";
-        public string PersistenceDatabase = "nebula-persist";
         public string PersistenceLocalFile = "";
         public float PersistenceCheckpointSeconds = 5f;
         public float PersistenceRestoreGraceSeconds = 3f;

@@ -61,8 +61,10 @@ namespace Nebula
     /// <summary>
     /// Long-term storage for entities that opted into persistence (<see cref="PersistentEntity"/>). One store per
     /// process; the worker's <see cref="NebulaPersistence"/> writes checkpoints through it and reads containers back
-    /// when it gains a lease. Use <see cref="SpacetimePersistenceStore"/> for a mesh (a SpacetimeDB database of its
-    /// own next to the control plane), <see cref="LocalPersistenceStore"/> for single-process runs and tests.
+    /// when it gains a lease. In a mesh the orchestrator owns the store (SQLite or PostgreSQL through the standalone
+    /// services' <c>SqlPersistenceStore</c>, next to the control plane in the same database) and workers reach it
+    /// through <see cref="RemotePersistenceStore"/>; <see cref="LocalPersistenceStore"/> serves single-process runs
+    /// and tests.
     /// <para>
     /// The contract is request/response on purpose (no subscriptions), so a relational backend fits behind it. Every
     /// callback lands on the main thread from <see cref="Tick"/>. Writes are fire-and-forget: a save is accepted by
@@ -75,7 +77,7 @@ namespace Nebula
     {
         /// <summary>Connected and ready to answer loads. Saves issued before this are queued until it is true.</summary>
         bool IsConnected { get; }
-        /// <summary>Short backend name for logs and the dashboard ("spacetime", "local", "memory").</summary>
+        /// <summary>Short backend name for logs and the dashboard ("sqlite", "postgres", "remote", "local", "memory").</summary>
         string Backend { get; }
         /// <summary>How many records the store holds as far as this process knows (-1 when unknown).</summary>
         int KnownCount { get; }

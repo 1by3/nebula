@@ -29,11 +29,11 @@ nebula start --workers 2 --bots 2
 
 When you run `nebula start`, the CLI:
 
-1. Starts a local SpacetimeDB if none answers on `mesh.spacetimeUri` from `nebula.json` (logs to `Builds/<platform>/Logs/spacetimedb.log`).
-2. Publishes the control-plane module with fresh data (`--skip-publish` to keep the tables).
-3. Launches the orchestrator from the last build. The orchestrator launches the gateway and the number of workers set by `--workers`. It then assigns each container to a worker.
-4. Launches `--bots` bot clients.
-5. Waits for the dashboard and prints how to join.
+1. Launches the orchestrator from the last build with its database at `Library/Nebula/nebula.db` (`mesh.database` in `nebula.json` changes it). The orchestrator hosts the control plane on the dashboard port, launches the gateway and the number of workers set by `--workers`, and assigns each container to a worker.
+2. Launches `--bots` bot clients.
+3. Waits for the dashboard and prints how to join.
+
+Saved entities stay in the database across restarts; add `--reset-persistence` to start from an empty world.
 
 Set local defaults in the `mesh` section of `nebula.json`. To build before starting, add `--build`.
 
@@ -74,13 +74,13 @@ The legacy `--npcs N` option only sets a mesh setting named `npcs`. It does not 
 
 - **A process is a client or a worker, never both.** If `EditorRole` includes both, Nebula drops the worker role and logs an error. Whichever half the Editor does not run must come from a build.
 - **The orchestrator launches processes from a build.** It starts the gateway and every worker as a separate player process. In the Editor there is no player executable to reuse, so an Editor orchestrator logs `executable not found` unless `NebulaConfig.WorkerExecutable` points at a build.
-- **Server roles need a control plane.** The worker, gateway and orchestrator roles connect to the SpacetimeDB at `NebulaConfig.SpacetimeUri`. `nebula start` is what starts it and publishes the module.
+- **Workers and the gateway need an orchestrator.** They mirror the control plane from the orchestrator at `NebulaConfig.ControlPlaneUrl` (default `http://127.0.0.1:7080/`). `nebula start` is what starts it.
 
 | `EditorRole` | Start first | Use it for |
 | --- | --- | --- |
 | `Client` (default) | `nebula build`, then `nebula start` | Playing and debugging client code: input, prediction, UI. |
 | `Worker` | `nebula build`, then `nebula start --workers 0` | Debugging worker code (the game mode, `Simulate` on the authority, RPC handlers) with breakpoints. Join with a client build. |
-| `Worker`, `Gateway`, `Orchestrator` with `UseLocalControlPlane` | `nebula build` for the client only | A one-worker server in a single process, without SpacetimeDB. |
+| `Worker`, `Gateway`, `Orchestrator` with `UseLocalControlPlane` | `nebula build` for the client only | A one-worker server in a single process, without a standalone orchestrator. |
 
 ### The Editor as a worker
 
@@ -97,7 +97,7 @@ When you exit Play mode, the Editor worker stops sending heartbeats. After `Work
 
 ### Everything server-side in the Editor
 
-Set `EditorRole` to `Worker`, `Gateway` and `Orchestrator`, and enable `UseLocalControlPlane` on `NebulaConfig`. The three roles share an in-process [`LocalControlPlane`](/docs/guides/control-plane#localcontrolplane), so nothing needs SpacetimeDB. Because nothing outside the process can see that control plane, the orchestrator does not launch the gateway or workers. The in-process worker gets every container and the in-process gateway listens on `GatewayPort`. Join from a client build as above.
+Set `EditorRole` to `Worker`, `Gateway` and `Orchestrator`, and enable `UseLocalControlPlane` on `NebulaConfig`. The three roles share an in-process [`LocalControlPlane`](/docs/guides/control-plane#the-three-implementations), so nothing else needs to run. Because nothing outside the process can see that control plane, the orchestrator does not launch the gateway or workers. The in-process worker gets every container and the in-process gateway listens on `GatewayPort`. Join from a client build as above.
 
 This mode has limits:
 
@@ -127,15 +127,13 @@ If your scene includes `NebulaDebugOverlay`, press F3 to show or hide it. The ov
 
 ```bash
 nebula stop
-nebula stop --spacetime
 ```
 
-Run `nebula stop` to stop every process from the build and any SpacetimeDB process that `nebula start` started. Add `--spacetime` to stop a SpacetimeDB process that was already running before you started the mesh.
+Run `nebula stop` to stop every process from the build: the orchestrator, the gateway, the workers, and any bots. The database file stays where it is.
 
 ## From the Editor
 
 Use the **Nebula** menu in the Unity Editor to run the same development tasks:
 
-- Use **Control Plane** to start or stop local SpacetimeDB, publish the module, or regenerate its C# bindings.
 - Use **Mesh** to start or stop a local mesh from the latest build, open the dashboard, or launch another client.
 - Use **Build** to create a Windows player or Linux dedicated server.

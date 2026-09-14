@@ -20,7 +20,15 @@ namespace Nebula
         public sealed class Request
         {
             public string Method, Path, Body;
+            /// <summary>The query string without its leading '?' ("" when there is none).</summary>
+            public string Query = "";
+            /// <summary>Value of the <c>X-Nebula-Token</c> header, or "" (the mesh token workers and gateways present).</summary>
+            public string Token = "";
             internal readonly TaskCompletionSource<Response> Completion = new TaskCompletionSource<Response>(TaskCreationOptions.RunContinuationsAsynchronously);
+            /// <summary>One query parameter, URL-decoded; "" when absent.</summary>
+            public string GetQuery(string name) => QueryValue(Query, name);
+            /// <summary>Answer a request whose handler returned <see cref="Response.Pending"/>. Main thread, any later tick.</summary>
+            public void Complete(Response response) => Completion.TrySetResult(response);
         }
         public struct Response
         {
@@ -28,6 +36,22 @@ namespace Nebula
             public string ContentType, Body;
             public static Response Json(int status, string body) => new Response { Status = status, ContentType = "application/json", Body = body };
             public static Response Error(int status, string message) => Json(status, $"{{\"ok\":false,\"error\":{JsonWriter.Quote(message)}}}");
+            /// <summary>Returned by a pumped handler that answers later through <see cref="Request.Complete"/> (a store lookup that lands on the next tick).</summary>
+            public static Response Pending => new Response { Status = 0 };
+            public bool IsPending => Status == 0;
+        }
+        /// <summary>One parameter of a query string, URL-decoded; "" when absent.</summary>
+        public static string QueryValue(string query, string name)
+        {
+            if (string.IsNullOrEmpty(query)) return "";
+            foreach (var pair in query.Split('&'))
+            {
+                int eq = pair.IndexOf('=');
+                string key = eq < 0 ? pair : pair.Substring(0, eq);
+                if (Uri.UnescapeDataString(key.Replace('+', ' ')) != name) continue;
+                return eq < 0 ? "" : Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
+            }
+            return "";
         }
         public const long MaxBodyBytes = 8L * 1024 * 1024;
         public string Url { get; }
@@ -69,8 +93,10 @@ namespace Nebula
             while (commands.TryDequeue(out var req))
             {
                 if (req.Completion.Task.IsCompleted) continue;
-                try { req.Completion.TrySetResult(handler(req)); }
-                catch (Exception e) { req.Completion.TrySetResult(Response.Error(500, e.Message)); }
+                Response result;
+                try { result = handler(req); }
+                catch (Exception e) { result = Response.Error(500, e.Message); }
+                if (!result.IsPending) req.Complete(result);
             }
         }
         private async Task Handle(HttpContext context)
@@ -106,7 +132,7 @@ namespace Nebula
                 {
                     using var reader = new StreamReader(req.Body, Encoding.UTF8);
                     string body = await reader.ReadToEndAsync(context.RequestAborted);
-                    var request = new Request { Method = req.Method, Path = path, Body = body };
+                    var request = new Request { Method = req.Method, Path = path, Body = body, Query = req.QueryString.HasValue ? req.QueryString.Value.TrimStart('?') : "", Token = req.Headers["X-Nebula-Token"].ToString() };
                     if (direct.TryGetValue(req.Method + " " + trimmed, out var handler)) response = handler(request);
                     else if (path.StartsWith("/api/", StringComparison.Ordinal))
                     {

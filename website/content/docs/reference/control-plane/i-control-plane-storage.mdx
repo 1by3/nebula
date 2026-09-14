@@ -1,0 +1,41 @@
+---
+title: "IControlPlaneStorage"
+description: "Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs)</div>
+
+```csharp
+public interface IControlPlaneStorage : IDisposable
+```
+
+Where [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) keeps the control plane between orchestrator runs: one JSON document ([`ControlPlaneJson`](/docs/reference/control-plane/control-plane-json)), written a little after every change and read once at startup. The document is small and changes at most a few times a second, so the contract is whole-document replace. A store that throws is logged and retried on the next change; the mesh keeps running on the in-memory state.
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+string Backend { get; }
+```
+
+Short backend name for logs and the dashboard ("memory", "file", "sqlite", "postgres").
+
+## Methods
+
+### Load [#load]
+
+```csharp
+string Load();
+```
+
+The stored document, or null when there is none.
+
+### Save [#save]
+
+```csharp
+void Save(string json);
+```
+
+Replace the stored document.
+

@@ -43,7 +43,7 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
             {
                 if (!args.Has("stop-mesh")) throw new CliError("the mesh holds the service executables open", "run `nebula stop` first, or pass --stop-mesh");
                 if (directory != project.HostBuildDir) throw new CliError("stop processes running from the Linux build before publishing services");
-                LocalMesh.Stop(project, stopSpacetime: false);
+                LocalMesh.Stop(project);
             }
             ServiceBuild.Publish(project, target == BuildTarget.Linux);
             if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball);

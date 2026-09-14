@@ -3,8 +3,6 @@
     "rootNamespace": "Nebula",
     "references": [
         "LiteNetLib",
-        "Nebula.Spacetime",
-        "com.clockworklabs.spacetimedbsdk",
         "Nebula.World"
     ],
     "includePlatforms": [],

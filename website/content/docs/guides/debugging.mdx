@@ -71,7 +71,6 @@ For a local mesh, find logs in `Builds/<platform>/Logs/`, where `<platform>` is 
 | `w1.log` through `wN.log` | Worker simulation, spawning, peer connections, and handovers. |
 | `bot1.log` and later numbers | Bot clients started with `nebula start --bots`. |
 | `client123.log` | Extra clients started from the Unity Editor menu. |
-| `spacetimedb.log` | Local SpacetimeDB started by the CLI. |
 | `Builds/unity-build.log` | Latest `nebula build` output. |
 
 For a Hetzner deployment, use `nebula logs --cloud <role>`. The CLI reads the appropriate remote path over SSH. See [Deploy to Hetzner](/docs/deploy/hetzner#operate-the-deployment).
@@ -120,7 +119,6 @@ Click a validation message in the Unity Console to select the related asset or G
 Use the **Nebula** menu for local development:
 
 - Use **Build** to create a Windows player or Linux dedicated server.
-- Use **Control Plane** to start or stop local SpacetimeDB, publish the module, or regenerate C# bindings.
 - Use **Mesh** to start or stop the local mesh, launch another client, or open the dashboard.
 - Use **World** to author and validate a partitioned world.
 
@@ -133,9 +131,9 @@ For repeatable commands and continuous integration, use the [`nebula` CLI](/docs
 | `nebula build` reports that the project is locked | The Unity Editor has the project open. | Let the CLI build from its mirror. If you passed `--force`, close the Editor and run the command again. |
 | Build reports no scenes | The Build Profiles scene list is empty. | Add the boot scene and game scene to **File > Build Profiles**. |
 | A remote player does not respond to input | The client's input lead may be too small for the network path. | Open the overlay and compare `lead` with `worker sees`. Increase `InputLeadMarginTicks` or `InputLeadMaxAdjustTicks` if the adaptive lead reaches its limit. |
-| Workers remain in `launching` and then disappear | A worker cannot connect to SpacetimeDB or the module uses a different database name. | Read `w1.log` for a connection or subscription error. Confirm the SpacetimeDB server and database in `nebula config show`. |
+| Workers remain in `launching` and then disappear | A worker cannot reach the orchestrator's control plane, or presents the wrong mesh token. | Read `w1.log` for `control plane: reading ... failed`. Check the address in `-nebula-control-plane` and that the dashboard port is reachable from the worker. |
 | The dashboard is empty | The orchestrator is stopped, uses another port, or cannot bind the dashboard address. | Run `nebula logs orchestrator` and check the reported dashboard URL and bind error. |
-| The dashboard shows a control-plane error | The orchestrator lost its SpacetimeDB connection. | Check `orchestrator.log`. Container assignment resumes after the connection returns. |
+| The dashboard reports the control plane stored in `memory` or a storage warning | The orchestrator cannot open its database (`-nebula-database`). | Check `orchestrator.log` for `control plane: saving ... failed` or `persistence: ... failed`. The mesh keeps running; saves resume when the database is back. |
 | A worker virtual machine starts but never registers | Its bootstrap could not download the build or discover its private address. | Run `nebula logs --cloud w1` and inspect the bootstrap messages before the worker log. |
 | An entity freezes or snaps after `handover IN` | `ReadHandoverState` may not match `WriteHandoverState`. | Search the receiving worker log for a handover-state exception. Read fields in the same order and with the same types used to write them. |
 | A worker drains until the timeout | An entity could not transfer or still belongs to an unassigned container. | Compare the worker's `auth` count with its handover lines. Search for transfer and `WriteHandoverState` errors. |

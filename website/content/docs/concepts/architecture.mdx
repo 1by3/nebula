@@ -28,9 +28,9 @@ Run `nebula build` to build the Unity player and the standalone .NET services, t
 - The **gateway** is a standalone .NET service that accepts client connections, routes input to workers, and sends worker state to clients.
 - The **orchestrator** is a standalone .NET service that starts workers, assigns containers, and serves the Nebula Dashboard and its HTTP API.
 - A **client** sends input to the gateway, predicts its local player, and displays replicated entities.
-- The **control plane** is a SpacetimeDB module. It stores registrations, heartbeats, container assignments, and settings shared by the mesh.
+- The **control plane** is hosted by the orchestrator. It stores registrations, heartbeats, container assignments, and settings shared by the mesh, and the orchestrator keeps it in its database (SQLite or PostgreSQL) together with saved entities.
 
-Workers and the gateway subscribe to the control plane, but they do not send per-tick entity state through it. Workers exchange nearby entity state and authority transfers directly over UDP. See [Roles and wire protocol](/docs/concepts/roles-and-wire-protocol) for the connections and messages.
+Workers and the gateway mirror the control plane from the orchestrator, but they do not send per-tick entity state through it. Workers exchange nearby entity state and authority transfers directly over UDP. See [Roles and wire protocol](/docs/concepts/roles-and-wire-protocol) for the connections and messages.
 
 ## Assign containers to workers
 

@@ -9,18 +9,19 @@ public sealed class DeployCommand : Command
     public override string Summary => "Build and deploy the mesh to the configured cloud target";
     public override string Usage => "[--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
-Build the Linux dedicated server at Builds/nebula-linux.tar.gz and publish the control-plane and persistence
-modules to the configured SpacetimeDB server. Create any missing SSH key, private network, firewall, and
-orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator creates one VM per
-worker.
+Build the Linux dedicated server at Builds/nebula-linux.tar.gz. Create any missing SSH key, private network,
+firewall, and orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator hosts the
+control plane, creates one VM per worker, and keeps the control plane and every saved entity in its database.
 
-The persistence database (deploy.persistenceDatabase in nebula.json, by default the control-plane database with
-a `-persist` suffix) keeps its saved entities across deployments unless you pass --reset-persistence.
+The database is a SQLite file on the orchestrator VM (/opt/nebula/data/nebula.db) unless you point the mesh at a
+PostgreSQL server with `nebula config database`, deploy.database in nebula.json, or NEBULA_DATABASE_URL. Saved
+entities stay across deployments unless you pass --reset-persistence. Every deployment generates a new mesh token
+that workers and the gateway present to the orchestrator.
 
 Run this command again after you change game code. A deployment restarts the orchestrator and recreates its
 workers.
 
-Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spacetime`) must be configured.
+A deploy target must be configured (`nebula config hetzner`).
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -31,8 +32,7 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
         new OptionSpec("skip-publish", false, "do not publish the control-plane and persistence modules"),
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),
-        new OptionSpec("reset-control-plane", false, "publish the control-plane module with --delete-data (wipes the registry tables)"),
-        new OptionSpec("reset-persistence", false, "publish the persistence module with --delete-data, deleting every saved entity"),
+        new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
     };
     public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --open-ui", "nebula deploy --skip-build" };
 
@@ -43,24 +43,18 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
         if (target != "hetzner") throw new CliError($"deploy target '{target}' is not supported yet", "hetzner is the only target in this version");
 
         // --- configuration gate -------------------------------------------------------------------------
-        var missing = new List<string>();
         var hz = ctx.Config.Hetzner;
-        if (hz == null || !hz.IsConfigured) missing.Add("Hetzner is not configured: nebula config hetzner");
-        var st = ctx.Config.Spacetime;
-        if (st == null || !st.IsConfigured) missing.Add("Spacetime is not configured: nebula config spacetime");
-        if (missing.Count > 0)
-        {
-            foreach (var m in missing) Ui.Fail(m);
-            throw new CliError("deploy needs both a deploy target and Spacetime configured", null, 2);
-        }
+        if (hz == null || !hz.IsConfigured) throw new CliError("Hetzner is not configured", "nebula config hetzner", 2);
         string database = project.DeployDatabase(ctx.Config);
-        string persistenceDatabase = project.DeployPersistenceDatabase(ctx.Config);
-        string spacetimeUri = st!.Server == "maincloud" ? "https://maincloud.spacetimedb.com" : st.Server;
+        DatabaseUrl parsed;
+        try { parsed = DatabaseUrl.Parse(database, NebulaProject.DefaultDeployDatabase); }
+        catch (ArgumentException e) { throw new CliError(e.Message, "nebula config database"); }
+        if (parsed.Scheme is "file" or "memory") throw new CliError($"a deployed orchestrator needs sqlite: or postgres:, not '{parsed.Scheme}:'", "nebula config database");
         int workers = args.GetInt("workers", project.File.Deploy.Workers);
         int npcs = args.GetInt("npcs", project.File.Deploy.Npcs);
         bool skipUpload = args.Has("skip-upload");
 
-        Ui.Title($"deploying {Path.GetFileName(project.Root)} to Hetzner: {workers} worker(s), control plane {st.Server}/{database}");
+        Ui.Title($"deploying {Path.GetFileName(project.Root)} to Hetzner: {workers} worker(s), database {parsed.Display}");
 
         // --- build --------------------------------------------------------------------------------------
         if (!skipUpload && !args.Has("skip-build"))
@@ -68,23 +62,12 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
         else if (!skipUpload && !File.Exists(project.LinuxTarball))
             throw new CliError($"no {project.LinuxTarball}", "drop --skip-build, or run `nebula build --linux`");
 
-        // --- control plane -------------------------------------------------------------------------------
-        if (!args.Has("skip-publish"))
-        {
-            Ui.Step($"publishing the control-plane module to {st.Server} as '{database}'");
-            if (st.Server == "maincloud" && !SpacetimeCli.IsLoggedIn(out _))
-                throw new CliError("not logged in to SpacetimeDB Maincloud (the login token may have expired)", "nebula config spacetime");
-            SpacetimeCli.Publish(project.ModuleDir, st.Server, database, args.Has("reset-control-plane"));
-            Ui.Ok("module published");
-            Ui.Step($"publishing the persistence module to {st.Server} as '{persistenceDatabase}'{(args.Has("reset-persistence") ? " (wiping saved entities)" : " (keeping saved entities)")}");
-            SpacetimeCli.Publish(project.PersistenceModuleDir, st.Server, persistenceDatabase, args.Has("reset-persistence"));
-            Ui.Ok("persistence module published");
-        }
-
         // --- cloud -----------------------------------------------------------------------------------------
-        var mesh = new HetznerMesh(hz!, project);
+        var mesh = new HetznerMesh(hz, project);
         var orch = mesh.Provision();
-        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(workers, npcs, spacetimeUri, database, persistenceDatabase, skipUpload, ctx.Verbose));
+        // A fresh shared secret per deployment: it never leaves the VMs and the CLI has no reason to keep it.
+        string token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(workers, npcs, database, token, args.Has("reset-persistence"), skipUpload, ctx.Verbose));
 
         string ip = HetznerMesh.PublicIp(orch);
         Ui.Blank();
@@ -101,17 +84,15 @@ Both a deploy target (`nebula config hetzner`) and Spacetime (`nebula config spa
 public sealed class DestroyCommand : Command
 {
     public override string Name => "destroy";
-    public override string Summary => "Delete the mesh's cloud servers and its SpacetimeDB databases";
-    public override string Usage => "[--all] [--keep-data]";
+    public override string Summary => "Delete the mesh's cloud servers";
+    public override string Usage => "[--all]";
     public override string? Details => @"
-Delete every server labelled with the mesh (orchestrator and workers), then delete the control-plane database
-and the persistence database from the configured SpacetimeDB server. Deleting the persistence database removes
-every saved entity; pass --keep-data to leave both databases in place.
+Delete every server labelled with the mesh (orchestrator and workers). A SQLite database on the orchestrator VM
+goes with it, and with it every saved entity; a PostgreSQL database is left untouched.
 ";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("all", false, "also delete the firewalls, private network, and SSH key"),
-        new OptionSpec("keep-data", false, "keep the control-plane and persistence databases (and the saved entities in them)"),
     };
 
     public override int Run(Context ctx, ParsedArgs args)
@@ -119,37 +100,18 @@ every saved entity; pass --keep-data to leave both databases in place.
         var project = ctx.RequireProject();
         var hz = ctx.Config.Hetzner;
         if (hz == null || !hz.IsConfigured) throw new CliError("Hetzner is not configured", "nebula config hetzner");
-        var st = ctx.Config.Spacetime;
-        bool deleteData = !args.Has("keep-data");
-        if (deleteData && (st == null || !st.IsConfigured))
-        {
-            Ui.Warn("Spacetime is not configured, so the SpacetimeDB databases will not be deleted (nebula config spacetime)");
-            deleteData = false;
-        }
         string database = project.DeployDatabase(ctx.Config);
-        string persistenceDatabase = project.DeployPersistenceDatabase(ctx.Config);
-        if (deleteData && st!.Server == "maincloud" && !SpacetimeCli.IsLoggedIn(out _))
-            throw new CliError("not logged in to SpacetimeDB Maincloud (the login token may have expired)", "nebula config spacetime, or pass --keep-data");
 
         var mesh = new HetznerMesh(hz, project);
         var servers = mesh.Servers();
         if (servers.Count > 0) mesh.PrintServers(servers);
         var what = new List<string> { $"{servers.Count} server(s) of mesh '{mesh.MeshName}'" };
         if (args.Has("all")) what.Add("its network, firewalls and ssh key");
-        if (deleteData) what.Add($"databases '{database}' and '{persistenceDatabase}' on {st!.Server} (every saved entity)");
+        if (database.StartsWith("sqlite:", StringComparison.OrdinalIgnoreCase)) what.Add("the SQLite database on the orchestrator VM (every saved entity)");
         if (!Ui.Confirm($"delete {string.Join(", ", what)}?", false, ctx.Yes))
             return 1;
         mesh.Destroy(args.Has("all"));
-
-        // After the servers: a still-running orchestrator would otherwise keep writing to the databases.
-        if (deleteData)
-        {
-            foreach (var db in new[] { database, persistenceDatabase })
-            {
-                Ui.Info($"deleting SpacetimeDB database {db} on {st!.Server}");
-                if (!SpacetimeCli.Delete(st.Server, db)) Ui.Info($"no database '{db}'");
-            }
-        }
+        if (!database.StartsWith("sqlite:", StringComparison.OrdinalIgnoreCase)) Ui.Info($"the database at {DatabaseUrl.Parse(database, NebulaProject.DefaultDeployDatabase).Display} was left in place");
         Ui.Ok("done");
         return 0;
     }

@@ -1,0 +1,41 @@
+---
+title: "MemoryControlPlaneStorage"
+description: "Keeps nothing: the control plane starts empty on every orchestrator run."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs)</div>
+
+```csharp
+public sealed class MemoryControlPlaneStorage : IControlPlaneStorage
+```
+
+Keeps nothing: the control plane starts empty on every orchestrator run.
+
+## Properties
+
+### Backend [#backend]
+
+```csharp
+public string Backend { get; }
+```
+
+## Methods
+
+### Load [#load]
+
+```csharp
+public string Load();
+```
+
+### Save [#save]
+
+```csharp
+public void Save(string json);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

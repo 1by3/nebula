@@ -112,4 +112,4 @@ fi
 
 "$EXE" version
 echo
-printf '\033[32mnext: nebula setup   (installs SpacetimeDB and checks Unity), then cd into a Unity project and nebula init\033[0m\n'
+printf '\033[32mnext: nebula setup   (checks the .NET SDK and Unity), then cd into a Unity project and nebula init\033[0m\n'

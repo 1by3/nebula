@@ -82,17 +82,21 @@ public string WorkerAdvertiseAddress = "127.0.0.1";
 
 Address workers advertise to peers and the gateway.
 
-### SpacetimeUri [#spacetimeuri]
+### ControlPlaneUrl [#controlplaneurl]
 
 ```csharp
-public string SpacetimeUri = "http://127.0.0.1:3000";
+public string ControlPlaneUrl = "http://127.0.0.1:7080/";
 ```
 
-### SpacetimeDatabase [#spacetimedatabase]
+Address of the orchestrator that hosts the control plane (its dashboard, e.g. `http://127.0.0.1:7080/),` for a worker or gateway started by hand. Processes the orchestrator launches get it on the command line (-nebula-control-plane).
+
+### MeshToken [#meshtoken]
 
 ```csharp
-public string SpacetimeDatabase = "nebula";
+public string MeshToken = "";
 ```
+
+Shared secret every worker and gateway presents to the orchestrator. Empty = none (fine on a development machine or a private network). -nebula-token overrides.
 
 ### UseLocalControlPlane [#uselocalcontrolplane]
 
@@ -100,7 +104,15 @@ public string SpacetimeDatabase = "nebula";
 public bool UseLocalControlPlane = false;
 ```
 
-Use an in-process control plane instead of SpacetimeDB. Only meaningful when orchestrator, gateway and worker share a process.
+Keep the control plane in this process instead of talking to an orchestrator. Only meaningful when orchestrator, gateway and worker share a process (tests, single-process runs).
+
+### DatabaseUrl [#databaseurl]
+
+```csharp
+public string DatabaseUrl = "";
+```
+
+Where the orchestrator keeps the control plane and saved entities: sqlite:\<file\> or `postgres://user:password@host/db` (standalone orchestrator), file:\<folder\> (Unity orchestrator), or memory. Empty = a default next to the process. -nebula-database overrides.
 
 ### WorkerCount [#workercount]
 
@@ -270,23 +282,7 @@ Ghosts stay resident this long after leaving the band.
 public string PersistenceMode = "auto";
 ```
 
-Where entities carrying a PersistentEntity are stored: 'auto' (local when the control plane is local, otherwise spacetime), 'spacetime', 'local' (a file next to the process) or 'off'. -nebula-persistence-mode overrides.
-
-### PersistenceUri [#persistenceuri]
-
-```csharp
-public string PersistenceUri = "";
-```
-
-SpacetimeDB instance holding the persistence database. Empty = the same one as the control plane. -nebula-persistence overrides.
-
-### PersistenceDatabase [#persistencedatabase]
-
-```csharp
-public string PersistenceDatabase = "nebula-persist";
-```
-
-Persistence database name; a database of its own next to the control plane. -nebula-persistence-database overrides.
+Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.
 
 ### PersistenceLocalFile [#persistencelocalfile]
 

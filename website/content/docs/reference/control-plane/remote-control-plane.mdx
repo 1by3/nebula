@@ -1,0 +1,248 @@
+---
+title: "RemoteControlPlane"
+description: "IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/RemoteControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/RemoteControlPlane.cs)</div>
+
+```csharp
+public sealed class RemoteControlPlane : IControlPlane
+```
+
+[`IControlPlane`](/docs/reference/control-plane/i-control-plane) for a worker or gateway: a mirror of the control plane the orchestrator hosts ([`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host)), reached over HTTP at the orchestrator's dashboard address.
+
+A reader thread keeps one long-poll request open (`GET /api/control-plane?since=<version>`) and parses each document it gets; [`Tick`](#tick) swaps the parsed lists in on the main thread and raises [`Changed`](#changed), so callers see the same threading as with any other control plane. Writes are queued and a sender thread posts them in order, batched when several are waiting; a write is never dropped while the orchestrator is unreachable, only delayed (up to [`MaxQueuedWrites`](#maxqueuedwrites), after which the oldest go). [`Now`](#now) is the orchestrator's clock as of the last document plus the time since.
+
+## Constructors
+
+### RemoteControlPlane [#remotecontrolplane]
+
+```csharp
+public RemoteControlPlane(string url, string token = null);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `url` | The orchestrator's dashboard address, e.g. `http://10.0.1.2:7080/`. |
+| `token` | Mesh token to present, or null. |
+
+## Fields
+
+### LongPollSeconds [#longpollseconds]
+
+```csharp
+public const int LongPollSeconds = 10;
+```
+
+Seconds a read waits on the orchestrator for a change before it returns the unchanged document.
+
+### DisconnectAfterSeconds [#disconnectafterseconds]
+
+```csharp
+public const float DisconnectAfterSeconds = LongPollSeconds + 5f;
+```
+
+Seconds without a successful read after which the mirror reports itself disconnected.
+
+### RetrySeconds [#retryseconds]
+
+```csharp
+public const float RetrySeconds = 1f;
+```
+
+### MaxQueuedWrites [#maxqueuedwrites]
+
+```csharp
+public const int MaxQueuedWrites = 10000;
+```
+
+## Properties
+
+### Url [#url]
+
+```csharp
+public string Url { get; }
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected { get; }
+```
+
+### Now [#now]
+
+```csharp
+public DateTime Now { get; }
+```
+
+### Workers [#workers]
+
+```csharp
+public IReadOnlyList<WorkerInfo> Workers { get; }
+```
+
+### Leases [#leases]
+
+```csharp
+public IReadOnlyList<LeaseInfo> Leases { get; }
+```
+
+### Gateways [#gateways]
+
+```csharp
+public IReadOnlyList<GatewayInfo> Gateways { get; }
+```
+
+### Settings [#settings]
+
+```csharp
+public IReadOnlyDictionary<string, string> Settings { get; }
+```
+
+### Version [#version]
+
+```csharp
+public long Version { get; }
+```
+
+Version of the document currently mirrored (-1 before the first).
+
+### PendingWrites [#pendingwrites]
+
+```csharp
+public int PendingWrites { get; }
+```
+
+Writes waiting to be sent.
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+public event Action Changed;
+```
+
+## Methods
+
+### Connect [#connect]
+
+```csharp
+public void Connect();
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### RegisterWorker [#registerworker]
+
+```csharp
+public void RegisterWorker(string workerId, uint workerIndex, string address, ushort port);
+```
+
+### HeartbeatWorker [#heartbeatworker]
+
+```csharp
+public void HeartbeatWorker(string workerId, string status, in WorkerStats s);
+```
+
+### UnregisterWorker [#unregisterworker]
+
+```csharp
+public void UnregisterWorker(string workerId);
+```
+
+### RegisterGateway [#registergateway]
+
+```csharp
+public void RegisterGateway(string gatewayId, string address, ushort port);
+```
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+public void HeartbeatGateway(string gatewayId);
+```
+
+### UnregisterGateway [#unregistergateway]
+
+```csharp
+public void UnregisterGateway(string gatewayId);
+```
+
+### HeartbeatOrchestrator [#heartbeatorchestrator]
+
+```csharp
+public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
+```
+
+### SetSetting [#setsetting]
+
+```csharp
+public void SetSetting(string key, string value);
+```
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+public void EnsureContainer(string containerId);
+```
+
+### EnsureRuntimeContainer [#ensureruntimecontainer]
+
+```csharp
+public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+```
+
+### TouchContainer [#touchcontainer]
+
+```csharp
+public void TouchContainer(string containerId);
+```
+
+### AssignContainer [#assigncontainer]
+
+```csharp
+public void AssignContainer(string containerId, string workerId);
+```
+
+### PinContainer [#pincontainer]
+
+```csharp
+public void PinContainer(string containerId, string workerId);
+```
+
+### SetLeaseState [#setleasestate]
+
+```csharp
+public void SetLeaseState(string containerId, string state);
+```
+
+### ReleaseContainer [#releasecontainer]
+
+```csharp
+public void ReleaseContainer(string containerId);
+```
+
+### RemoveContainer [#removecontainer]
+
+```csharp
+public void RemoveContainer(string containerId);
+```
+
+### ResetControlPlane [#resetcontrolplane]
+
+```csharp
+public void ResetControlPlane();
+```
+

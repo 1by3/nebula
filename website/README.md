@@ -32,7 +32,7 @@ Open `http://localhost:3000` after the development server starts. Run `npm run b
 
 Commit the generated folders so the site can build without .NET or the CLI.
 
-- Run `npm run gen:api` to read `Packages/com.1by3.nebula/Runtime`, `Packages/com.1by3.nebula/Editor`, and the SpacetimeDB module. The generator creates one page per public type and groups pages by source folder.
+- Run `npm run gen:api` to read `Packages/com.1by3.nebula/Runtime`, `Packages/com.1by3.nebula/Editor`, and the standalone services' storage classes. The generator creates one page per public type and groups pages by source folder.
 - Run `npm run gen:cli` to build the CLI and create one page per command. Set `NEBULA_BIN=nebula` to use an installed CLI instead.
 
 ## Write documentation

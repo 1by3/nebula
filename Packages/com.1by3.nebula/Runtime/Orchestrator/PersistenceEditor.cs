@@ -155,7 +155,7 @@ namespace Nebula
 
         /// <summary>
         /// What to answer a write with: the record the store now holds when the write has been observed, otherwise
-        /// the one we wrote. A backend that answers from a subscription (<see cref="SpacetimePersistenceStore"/>)
+        /// the one we wrote. A backend that answers from a mirror or a remote store (<see cref="RemotePersistenceStore"/>)
         /// only mirrors the new row a round trip later, and showing the caller the pre-write snapshot would read as
         /// "your edit was dropped". The store's own Version and SavedAt land with the page's next poll.
         /// </summary>

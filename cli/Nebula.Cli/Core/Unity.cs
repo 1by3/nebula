@@ -160,7 +160,7 @@ public static class UnityBuild
                 if (!options.StopMesh)
                     throw new CliError($"{running.Count} {project.File.Executable} process(es) are running and hold the previous build open", "run `nebula stop` first, or pass --stop-mesh");
                 Ui.Info($"stopping {running.Count} running {project.File.Executable} process(es)");
-                LocalMesh.Stop(project, stopSpacetime: false);
+                LocalMesh.Stop(project);
             }
         }
 
