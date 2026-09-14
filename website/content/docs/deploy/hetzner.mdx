@@ -97,7 +97,7 @@ nebula logs --cloud w1
 Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway <orchestrator public ip>:7000 -nebula-name Player
 ```
 
-Or start the client without `-nebula-gateway` and type the address on the title screen; it remembers the last remote address you used. Bots work the same way with `-nebula-bot`.
+If your scene includes `NebulaTitleScreen`, you can start the client without `-nebula-gateway` and type the address on the title screen. The title screen remembers the last address you used. Bots work the same way with `-nebula-bot`.
 </Step>
 <Step>
 ### Redeploy after a code change
@@ -195,7 +195,7 @@ nebula destroy
 nebula destroy --all
 ```
 
-`destroy` lists the servers labelled with the mesh, asks for confirmation (`--yes` skips it) and deletes them all, workers and orchestrator. `--all` also deletes the firewalls, the private network and the ssh key after a short wait for the servers to detach. The ssh key file in `~/.ssh` and the Maincloud database are left alone.
+`destroy` lists the servers labelled with the mesh, asks for confirmation (`--yes` skips it) and deletes them all, workers and orchestrator. `--all` also deletes the firewalls, the private network and the ssh key after a short wait for the servers to detach. Once the servers are gone it runs `spacetime delete` for `deploy.database` and `deploy.persistenceDatabase` on the configured Spacetime server, which removes every saved entity; `--keep-data` keeps both databases. The ssh key file in `~/.ssh` is left alone.
 
 <Callout type="warn" title="Stray workers">
 The orchestrator deletes worker VMs when it stops cleanly and sweeps leftovers when it starts. If it is killed hard and never restarted, its workers keep running. `nebula status --cloud` shows them; `nebula destroy` removes them.

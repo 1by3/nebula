@@ -90,16 +90,23 @@ namespace Nebula
         private float _leadHoldUntil;
         private float _leadRelaxAt;
 
-        /// <summary>Last connection failure or disconnect reason, for the title screen. Empty while healthy.</summary>
+        /// <summary>Last connection failure or disconnect reason, for connection UI. Empty while healthy.</summary>
         public string LastError { get; private set; } = "";
         /// <summary>Whether the client is trying to be connected (set by <see cref="Connect"/>/<see cref="ConnectTo"/>, cleared by <see cref="Disconnect"/>).</summary>
         public bool WantsConnection { get; private set; }
+        /// <summary>
+        /// Whether the client connected on its own at startup because the command line supplied the connection
+        /// (<c>-nebula-gateway</c>, <c>-nebula-bot</c>, or <c>-nebula-connect</c>). Connection UI such as
+        /// <see cref="NebulaTitleScreen"/> stays hidden when this is true.
+        /// </summary>
+        public bool ConnectsAutomatically { get; private set; }
 
         /// <param name="autoConnect">Connect to <see cref="NebulaConfig.GatewayAddress"/> at once (bots, scripted clients);
-        /// false leaves the client idle until <see cref="ConnectTo"/> is called from the title screen.</param>
+        /// false leaves the client idle until game code, or <see cref="NebulaTitleScreen"/>, calls <see cref="ConnectTo"/>.</param>
         public void Initialize(NebulaConfig config, bool autoConnect = true)
         {
             Config = config;
+            ConnectsAutomatically = autoConnect;
             PlayerName = CommandLine.Get("nebula-name", Environment.UserName);
             NebulaRuntime.RpcSink = this;
             _transport = new LiteNetTransport("client");
@@ -111,7 +118,10 @@ namespace Nebula
             if (autoConnect) Connect();
         }
 
-        /// <summary>Connect to a gateway chosen at runtime (title screen). Replaces the configured address for reconnects.</summary>
+        /// <summary>
+        /// Connect to a gateway chosen at runtime, for example from your own connection UI. Replaces the configured
+        /// address for reconnects. A blank <paramref name="playerName"/> keeps the current <see cref="PlayerName"/>.
+        /// </summary>
         public void ConnectTo(string address, ushort port, string playerName)
         {
             if (!string.IsNullOrWhiteSpace(playerName)) PlayerName = playerName.Trim();
@@ -131,7 +141,7 @@ namespace Nebula
             NebulaLog.Info($"connecting to gateway {Config.GatewayAddress}:{Config.GatewayPort} as '{PlayerName}'");
         }
 
-        /// <summary>Leave the gateway and stop reconnecting; the title screen comes back.</summary>
+        /// <summary>Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or <see cref="ConnectTo"/>.</summary>
         public void Disconnect()
         {
             WantsConnection = false;

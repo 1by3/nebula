@@ -13,8 +13,8 @@ namespace Nebula.Editor
 {
     /// <summary>
     /// Adds the components and settings required to use Nebula in the active scene. The setup creates the
-    /// <c>Resources/NebulaConfig</c> asset and a <c>Nebula</c> object with <see cref="NebulaBootstrap"/> and
-    /// <see cref="NebulaDebugOverlay"/>. It also configures the game scene, build settings, game mode, starter
+    /// <c>Resources/NebulaConfig</c> asset and a <c>Nebula</c> object with <see cref="NebulaBootstrap"/>,
+    /// <see cref="NebulaDebugOverlay"/>, and <see cref="NebulaTitleScreen"/>. It also configures the game scene, build settings, game mode, starter
     /// <see cref="Container"/> volumes, and networked prefabs. Run the setup again to restore missing configuration.
     /// </summary>
     public static class NebulaSetup
@@ -152,7 +152,7 @@ namespace Nebula.Editor
         /// <summary>The asset <see cref="NebulaConfig.Load"/> returns at runtime, or null.</summary>
         public static NebulaConfig FindConfig() => Resources.Load<NebulaConfig>("NebulaConfig");
 
-        /// <summary>The scene's <see cref="NebulaBootstrap"/> (created on a root <c>Nebula</c> object if missing), wired to <paramref name="config"/>, with a debug overlay.</summary>
+        /// <summary>The scene's <see cref="NebulaBootstrap"/> (created on a root <c>Nebula</c> object if missing), wired to <paramref name="config"/>, with a debug overlay and a title screen.</summary>
         public static NebulaBootstrap EnsureBootstrap(Scene scene, NebulaConfig config, Report report)
         {
             var all = FindInScene<NebulaBootstrap>(scene);
@@ -184,6 +184,11 @@ namespace Nebula.Editor
             {
                 Undo.AddComponent<NebulaDebugOverlay>(bootstrap.gameObject);
                 report.Did("added NebulaDebugOverlay (tick, RTT, container and worker readout)");
+            }
+            if (bootstrap.GetComponent<NebulaTitleScreen>() == null && FindInScene<NebulaTitleScreen>(scene).Count == 0)
+            {
+                Undo.AddComponent<NebulaTitleScreen>(bootstrap.gameObject);
+                report.Did("added NebulaTitleScreen (gateway address and player name prompt; remove it to use your own connection UI)");
             }
             if (report.Done.Count > before) EditorSceneManager.MarkSceneDirty(scene);
             return bootstrap;

@@ -45,7 +45,7 @@ The client is the default role and connects only to the gateway. For a predicted
 
 Snapshots include the simulation tick, authority epoch, and worker index. Nebula uses the epoch to reject old state. It uses the worker index for diagnostics.
 
-Human clients see `NebulaTitleScreen` unless you provide connection arguments. Bots and scripted clients connect immediately. See [Prediction](/docs/guides/prediction).
+Bots and clients started with connection arguments connect immediately. Any other client waits until game code calls `NebulaClient.ConnectTo`, or until the player connects from the optional `NebulaTitleScreen`. See [Connecting clients](/docs/guides/connecting-clients) and [Prediction](/docs/guides/prediction).
 
 ## Time
 

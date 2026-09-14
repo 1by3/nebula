@@ -1,0 +1,83 @@
+---
+title: Connecting clients
+description: Let players choose a gateway with the optional NebulaTitleScreen, or connect from your own UI with NebulaClient.ConnectTo.
+---
+
+To let a player join a mesh, connect the client to the gateway. The gateway is the process that accepts client connections. Nebula does not show a connection screen unless you add one. Choose one of these options:
+
+| Option | Use it when |
+| --- | --- |
+| Add `NebulaTitleScreen` | You want a working connection screen during development. |
+| Call `NebulaClient.ConnectTo` from your own UI | You want the connection flow to match your game. |
+| Pass connection arguments on the command line | You start bots, test clients, or clients from a launcher. |
+
+## Use the title screen
+
+Add [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen) to the same GameObject as `NebulaBootstrap`. **Nebula > Set Up Active Scene** adds it for you.
+
+The title screen asks for the gateway address and a display name. It saves both values in `PlayerPrefs` and fills them in the next time the game starts. After the local player spawns, the title screen hides. Press Escape to show it again, disconnect, or choose another gateway.
+
+The title screen stays hidden in processes without the client role. It also stays hidden when the client connects on its own at startup.
+
+<Callout type="warn" title="Keep the title screen on the bootstrap object">
+The bootstrap keeps its GameObject when it loads the game scene. If your boot scene differs from `NebulaConfig.GameScene`, a title screen on another object in the boot scene is destroyed when the game scene loads.
+</Callout>
+
+## Connect from your own UI
+
+Remove `NebulaTitleScreen` or leave it out of the scene. A client started without connection arguments then stays idle until your code connects it.
+
+Get the client from `NebulaBootstrap.Instance.Client`. The bootstrap creates the client after the game scene loads, so check for `null` before you use it.
+
+```csharp title="ConnectMenu.cs"
+using Nebula;
+using UnityEngine;
+
+public sealed class ConnectMenu : MonoBehaviour
+{
+    public string GatewayAddress = "127.0.0.1";
+    public ushort GatewayPort = 7000;
+    public string PlayerName = "Player";
+
+    // Call this from your Connect button.
+    public void Connect()
+    {
+        var client = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Client : null;
+        if (client == null) return; // The client role has not started yet.
+        client.ConnectTo(GatewayAddress, GatewayPort, PlayerName);
+    }
+}
+```
+
+`ConnectTo` replaces the configured gateway address and keeps retrying every 2 seconds until the connection succeeds or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name.
+
+Use these `NebulaClient` members to drive your UI:
+
+| Member | Use it to |
+| --- | --- |
+| `ConnectionState` and `ConnectionStateChanged` | Show `Disconnected`, `Connecting`, `Connected`, or `InGame`. |
+| `LocalPlayer` and `LocalPlayerSpawned` | Hide your menu when the player's entity arrives. |
+| `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
+| `WantsConnection` | Tell whether the client is connecting or will retry. |
+| `ConnectsAutomatically` | Hide your menu when the command line already supplied the connection. |
+| `Disconnect()` | Leave the gateway and stop retrying. |
+
+`NebulaTitleScreen.TryParse` splits text such as `127.0.0.1:7000` into an address and port. You can use it to validate a single address field.
+
+## Connect from the command line
+
+A client connects to the gateway at startup when you pass one of these options:
+
+- `-nebula-gateway <address:port>` connects to that gateway. Replace `<address:port>` with the gateway's address, such as `127.0.0.1:7000`.
+- `-nebula-connect` connects to `NebulaConfig.GatewayAddress` and `GatewayPort`.
+- `-nebula-bot` starts a bot client, which connects to the configured gateway.
+
+```bash
+Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway 127.0.0.1:7000 -nebula-name Player
+```
+
+For these clients, `ConnectsAutomatically` is `true`. See [Configuration](/docs/guides/configuration#override-runtime-values-on-the-command-line) for every runtime option.
+
+<Callout type="warn" title="Connections are not authenticated">
+Nebula does not encrypt or authenticate client connections. Anyone who can reach the gateway address can connect.
+</Callout>

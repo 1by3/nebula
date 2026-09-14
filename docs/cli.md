@@ -45,7 +45,7 @@ nebula status [--cloud]      dashboard + gateway addresses, workers, containers,
 nebula logs [role] [-n N] [--follow] [--cloud]
 nebula config hetzner|spacetime|unity|source|show
 nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]
-nebula destroy [--all]
+nebula destroy [--all] [--keep-data]
 ```
 
 `nebula --help` and `nebula <command> --help` describe every option. Global options: `--project <path>`
@@ -128,7 +128,8 @@ adds `--delete-data`) and the persistence module next to it, keeping its saved e
 VM that are missing; uploads the tarball over scp, writes `/etc/nebula/env` (root-only, the token) and the
 `nebula-orchestrator` systemd unit over ssh, restarts it and waits for the dashboard. The orchestrator creates
 one VM per worker. `nebula status --cloud` and `nebula logs --cloud orchestrator|gateway|w1` read the deployed
-mesh; `nebula destroy` deletes the servers (`--all` also the network, firewalls and key).
+mesh; `nebula destroy` deletes the servers and then the control-plane and persistence databases on the configured
+Spacetime server (`--all` also the network, firewalls and key; `--keep-data` keeps both databases).
 
 The Hetzner token is stored in `~/.nebula-cli/config.json` (0600 on Unix); `HCLOUD_TOKEN` in the environment
 always takes precedence, so CI can run without the file. The CLI replaced the earlier `Tools/run-mesh.ps1`,

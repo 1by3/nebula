@@ -3,43 +3,56 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Displays an IMGUI panel where a player can enter the gateway address and a display name before connecting.
-    /// Nebula skips the panel when <c>-nebula-gateway</c>, <c>-nebula-bot</c>, or <c>-nebula-connect</c> supplies the
-    /// connection. The selected values persist in PlayerPrefs.
+    /// Optional IMGUI panel where a player enters the gateway address and a display name before connecting. Add it
+    /// to the same GameObject as <see cref="NebulaBootstrap"/>; Nebula &gt; Set Up Active Scene adds it for you.
+    /// Without it, a client started with no connection arguments stays idle until your own UI calls
+    /// <see cref="NebulaClient.ConnectTo"/>. The panel stays hidden in processes without the client role and when
+    /// <c>-nebula-gateway</c>, <c>-nebula-bot</c>, or <c>-nebula-connect</c> supplies the connection
+    /// (<see cref="NebulaClient.ConnectsAutomatically"/>). It hides once the local player spawns; press Escape to show
+    /// it again. The entered values persist in PlayerPrefs.
     /// </summary>
     public sealed class NebulaTitleScreen : MonoBehaviour
     {
         private const string PrefGateway = "nebula.gateway";
         private const string PrefName = "nebula.name";
 
+        /// <summary>The client to connect. Leave empty to use <see cref="NebulaBootstrap.Client"/> once the bootstrap creates it.</summary>
         public NebulaClient Client;
 
         private string _gateway = "";
         private string _name = "";
         private string _validation = "";
+        private bool _bound;
         private bool _hideInGame;
         private GUIStyle _title, _label, _field, _button, _box, _small;
 
-        private void Start()
+        /// <summary>
+        /// The bootstrap creates the client after the game scene loads, which can be after this component starts, so
+        /// look for it every frame until it exists. Loads the saved gateway and name the first time.
+        /// </summary>
+        private bool TryBind()
         {
+            if (_bound) return true;
             if (Client == null) Client = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Client : null;
-            var cfg = Client != null ? Client.Config : NebulaRuntime.Config;
-            string configured = cfg != null ? $"{cfg.GatewayAddress}:{cfg.GatewayPort}" : "127.0.0.1:7000";
-            _gateway = PlayerPrefs.GetString(PrefGateway, configured);
-            _name = PlayerPrefs.GetString(PrefName, Client != null ? Client.PlayerName : System.Environment.UserName);
+            if (Client == null || Client.Config == null) return false;
+            var cfg = Client.Config;
+            _gateway = PlayerPrefs.GetString(PrefGateway, $"{cfg.GatewayAddress}:{cfg.GatewayPort}");
+            _name = PlayerPrefs.GetString(PrefName, Client.PlayerName);
+            _bound = true;
+            return true;
         }
 
         private void Update()
         {
             // The panel hides itself once the player has a pawn; Escape (see OnGUI) brings it back.
-            if (Client == null) return;
+            if (!TryBind() || Client.ConnectsAutomatically) return;
             if (Client.ConnectionState == NebulaClient.State.InGame && !_hideInGame && Client.LocalPlayer != null) _hideInGame = true;
             if (Client.ConnectionState != NebulaClient.State.InGame) _hideInGame = false;
         }
 
         private void OnGUI()
         {
-            if (Client == null) return;
+            if (!TryBind() || Client.ConnectsAutomatically) return;
             // IMGUI sees the keyboard whichever input backend the project uses, so Escape is handled here.
             if (_hideInGame && Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape) _hideInGame = false;
             if (_hideInGame) return;

@@ -137,6 +137,16 @@ void EnsureContainer(string containerId);
 void AssignContainer(string containerId, string workerId);
 ```
 
+Assign a container to a worker (epoch + 1, state active). Leaves a pinned lease alone.
+
+### PinContainer [#pincontainer]
+
+```csharp
+void PinContainer(string containerId, string workerId);
+```
+
+Pin a carried container to `workerId`: worker, epoch and [`LeaseState.Pinned`](/docs/reference/control-plane/lease-state#pinned) in one change, so no subscriber ever sees the lease assigned but not yet pinned (the carrier's worker would reclaim it). Unpin with [`SetLeaseState`](#setleasestate).
+
 ### SetLeaseState [#setleasestate]
 
 ```csharp

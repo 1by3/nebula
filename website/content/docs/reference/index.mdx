@@ -48,6 +48,7 @@ Define container volumes and look up their current worker assignments.
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
+| [NebulaContainerHelpers](/docs/reference/containers/nebula-container-helpers) | Static class. Geometry helpers for placing things inside a Container. |
 
 ## World partition
 
@@ -84,7 +85,7 @@ Connect a player to the gateway, predict the local entity, and display replicate
 | Type | Summary |
 | --- | --- |
 | [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
-| [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Displays an IMGUI panel where a player can enter the gateway address and a display name before connecting. |
+| [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Optional IMGUI panel where a player enters the gateway address and a display name before connecting. |
 
 ## Gateway
 

@@ -9,7 +9,7 @@ description: "Adds the components and settings required to use Nebula in the act
 public static class NebulaSetup
 ```
 
-Adds the components and settings required to use Nebula in the active scene. The setup creates the `Resources/NebulaConfig` asset and a `Nebula` object with [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) and [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay). It also configures the game scene, build settings, game mode, starter [`Container`](/docs/reference/containers/container) volumes, and networked prefabs. Run the setup again to restore missing configuration.
+Adds the components and settings required to use Nebula in the active scene. The setup creates the `Resources/NebulaConfig` asset and a `Nebula` object with [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap), [`NebulaDebugOverlay`](/docs/reference/debug/nebula-debug-overlay), and [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen). It also configures the game scene, build settings, game mode, starter [`Container`](/docs/reference/containers/container) volumes, and networked prefabs. Run the setup again to restore missing configuration.
 
 ## Fields
 
@@ -114,7 +114,7 @@ The asset [`NebulaConfig.Load`](/docs/reference/core/nebula-config#load) returns
 public static NebulaBootstrap EnsureBootstrap(Scene scene, NebulaConfig config, Report report);
 ```
 
-The scene's [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) (created on a root `Nebula` object if missing), wired to `config`, with a debug overlay.
+The scene's [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) (created on a root `Nebula` object if missing), wired to `config`, with a debug overlay and a title screen.
 
 ### GameModeTypes [#gamemodetypes]
 

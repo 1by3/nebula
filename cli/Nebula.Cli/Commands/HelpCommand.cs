@@ -45,7 +45,7 @@ public sealed class HelpCommand : Command
         Console.WriteLine("deploying");
         PrintRow("config", "configure a deploy target (hetzner), Spacetime Maincloud, or the Unity editor path");
         PrintRow("deploy", "build, publish the control plane and run the mesh in the cloud");
-        PrintRow("destroy", "delete the mesh's cloud servers");
+        PrintRow("destroy", "delete the mesh's cloud servers and its SpacetimeDB databases");
         Ui.Blank();
         Console.WriteLine("other");
         PrintRow("version", "print the CLI version");

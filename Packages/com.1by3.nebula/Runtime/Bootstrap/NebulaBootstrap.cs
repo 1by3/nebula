@@ -43,6 +43,12 @@ namespace Nebula
     {
         public static NebulaBootstrap Instance { get; private set; }
 
+        /// <summary>
+        /// Roles started when pressing Play in the Editor, in place of <c>-nebula-role</c>. It does not replace a build:
+        /// the orchestrator launches workers and the gateway from a player executable, and a process is never both a
+        /// client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a
+        /// mesh started with <c>nebula start</c>; Worker joins one started with <c>nebula start --workers 0</c>.
+        /// </summary>
         [Tooltip("Role used when pressing Play in the Editor (builds read -nebula-role instead).")]
         public NebulaRoles EditorRole = NebulaRoles.Client;
         public NebulaConfig Config;
@@ -170,11 +176,10 @@ namespace Nebula
             if ((Roles & NebulaRoles.Client) != 0)
             {
                 Client = gameObject.AddComponent<NebulaClient>();
-                // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in; a human gets the
-                // title screen to pick the gateway (local mesh or the Hetzner deployment) and a name.
+                // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in. Otherwise the
+                // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
                 bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", false);
                 Client.Initialize(Config, autoConnect);
-                if (!autoConnect) gameObject.AddComponent<NebulaTitleScreen>().Client = Client;
             }
             if (NebulaWorld.IsActive)
             {

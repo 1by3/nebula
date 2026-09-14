@@ -85,6 +85,19 @@ public static class SpacetimeCli
             "the module builds with the .NET 10 SDK and the NativeAOT-LLVM toolchain (downloaded on first build); `nebula setup` checks both");
     }
 
+    /// <summary>Delete a database and its data. Returns false when the server has no database by that name.</summary>
+    public static bool Delete(string server, string database)
+    {
+        var r = Shell.Capture(Require(), new[] { "delete", "-s", server, database, "-y" }, null, Env());
+        if (r.Ok) return true;
+        string output = r.Output;
+        // spacetime 2.x: "Error: failed to find database `name`."
+        if (output.Contains("failed to find database", StringComparison.OrdinalIgnoreCase) || output.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            return false;
+        throw new CliError($"spacetime delete {database} failed (exit {r.ExitCode}): {output}",
+            server == "maincloud" ? "only the identity that published a database can delete it; check `spacetime login show`" : null);
+    }
+
     /// <summary>Is there a login token for the given server? Runs `spacetime login show`.</summary>
     public static bool IsLoggedIn(out string identity)
     {
