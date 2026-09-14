@@ -5,7 +5,7 @@ using System.IO;
 namespace Nebula.Hosting
 {
     /// <summary>
-    /// Runs every worker as a child process of the orchestrator, from the same executable. This is the local mesh
+    /// Runs each worker as a child Unity process using the configured worker executable. This is the local mesh
     /// (<c>nebula start</c>) and the reference implementation of <see cref="IWorkerHost"/>. The orchestrator
     /// also uses it to start co-located services (the gateway) whatever host the workers use.
     /// </summary>
@@ -26,7 +26,7 @@ namespace Nebula.Hosting
         private readonly System.Collections.Generic.List<Handle> _handles = new System.Collections.Generic.List<Handle>();
         private Action<string, string> _log = (l, m) => { };
 
-        /// <param name="executable">Player executable to run; empty = the orchestrator's own.</param>
+        /// <param name="executable">Unity player executable to run. Required by the standalone orchestrator.</param>
         /// <param name="advertiseAddress">Address child workers advertise to peers (127.0.0.1 on one machine).</param>
         public ProcessWorkerHost(string executable, string advertiseAddress)
         {
@@ -54,7 +54,11 @@ namespace Nebula.Hosting
         /// <summary>Start a non-worker role (the gateway) next to the orchestrator. Returns null on failure.</summary>
         public Process LaunchService(string role, string roleArgs, string logName, string commonArgs)
         {
+#if NEBULA_SERVICE
+            return ServiceHost.LaunchGateway(commonArgs, _log);
+#else
             return Start(role, $"-nebula-role {role} {roleArgs} {commonArgs}", logName, out _);
+#endif
         }
 
         private Process Start(string kind, string roleArgs, string logName, out string error)
@@ -67,7 +71,11 @@ namespace Nebula.Hosting
                 _log("error", $"cannot launch {kind}: {error}");
                 return null;
             }
+#if NEBULA_SERVICE
+            string logDir = ServiceHost.LogDirectory;
+#else
             string logDir = Path.Combine(Path.GetDirectoryName(exe) ?? ".", "Logs");
+#endif
             Directory.CreateDirectory(logDir);
             string args = $"-batchmode -nographics {roleArgs} -logFile \"{Path.Combine(logDir, logName + ".log")}\"";
             var psi = new ProcessStartInfo(exe, args)
@@ -94,9 +102,13 @@ namespace Nebula.Hosting
         private string ResolveExecutable()
         {
             if (!string.IsNullOrEmpty(_executable)) return Path.GetFullPath(_executable);
+#if NEBULA_SERVICE
+            return "";
+#else
             if (UnityEngine.Application.isEditor) return "";
             try { return Process.GetCurrentProcess().MainModule?.FileName; }
             catch { return ""; }
+#endif
         }
 
         public void Kill(IWorkerHandle handle)

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Nebula.Services/Nebula.Services.csproj" />
+  <Project Path="Nebula.Orchestrator/Nebula.Orchestrator.csproj" />
+  <Project Path="Nebula.Gateway/Nebula.Gateway.csproj" />
+  <Project Path="Nebula.Services.Tests/Nebula.Services.Tests.csproj" />
+</Solution>

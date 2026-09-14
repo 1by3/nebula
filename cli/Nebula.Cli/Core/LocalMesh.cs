@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 
 namespace Nebula.Cli.Core;
 
-/// <summary>The local mesh: SpacetimeDB + control-plane module + orchestrator (gateway and workers) from the host build.</summary>
+/// <summary>The local mesh: SpacetimeDB + control-plane module + standalone orchestrator and gateway, plus Unity workers from the host build.</summary>
 public static class LocalMesh
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
@@ -30,6 +30,7 @@ public static class LocalMesh
         string exe = project.HostExecutable;
         if (!File.Exists(exe))
             throw new CliError($"no build at {exe}", "run `nebula build` first, or `nebula start --build`");
+        ServiceBuild.Require(project.HostBuildDir);
         string spacetime = SpacetimeCli.Require();
         string logs = project.HostLogsDir;
         StopRunningMeshes(ctx, mesh.GatewayPort, mesh.DashboardPort);
@@ -68,8 +69,9 @@ public static class LocalMesh
         Ui.Step($"starting the orchestrator with {o.Workers} worker(s) and the game-defined 'npcs' setting at {o.Npcs}");
         var orch = new List<string>
         {
-            "-batchmode", "-nographics",
-            "-nebula-role", "orchestrator",
+            "-nebula-worker-exe", exe,
+            "-nebula-service-manifest", Path.Combine(project.HostBuildDir, ServiceBuild.ManifestName),
+            "-nebula-gateway", $"127.0.0.1:{mesh.GatewayPort}",
             "-nebula-workers", o.Workers.ToString(),
             "-nebula-settings", $"npcs={o.Npcs}",
             "-nebula-dashboard-port", mesh.DashboardPort.ToString(),
@@ -80,7 +82,7 @@ public static class LocalMesh
             "-logFile", Path.Combine(logs, "orchestrator.log"),
         };
         if (ctx.Verbose) orch.Add("-nebula-verbose");
-        Shell.Detach(exe, orch, project.HostBuildDir, null);
+        Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null);
 
         for (int b = 1; b <= o.Bots; b++)
         {

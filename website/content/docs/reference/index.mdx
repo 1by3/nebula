@@ -118,7 +118,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
 | [PersistenceEditor](/docs/reference/orchestrator/persistence-editor) | Class. Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence). |
-| [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs every worker as a child process of the orchestrator, from the same executable. |
+| [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs each worker as a child Unity process using the configured worker executable. |
 | [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum. Lists the supported worker handle state values. |
 | [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |
 
@@ -145,7 +145,7 @@ Choose a process role and start its Nebula components.
 
 | Type | Summary |
 | --- | --- |
-| [NebulaBootstrap](/docs/reference/bootstrap/nebula-bootstrap) | Class. Entry point for every Nebula process. |
+| [NebulaBootstrap](/docs/reference/bootstrap/nebula-bootstrap) | Class. Entry point for Unity workers and clients. |
 | [NebulaRoles](/docs/reference/bootstrap/nebula-roles) | Enum. Lists the process roles that NebulaBootstrap can start. |
 
 ## Serialization
@@ -216,7 +216,7 @@ Build players, start a local mesh, validate a project, and author partitioned wo
 
 | Type | Summary |
 | --- | --- |
-| [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the executables every Nebula role runs from. |
+| [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it. |
 | [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: start SpacetimeDB, publish the control-plane module, launch a local mesh (orchestrator + gateway + N workers, all from the last build), then press Play in the Editor as a client. |
 | [NebulaSetup](/docs/reference/editor/nebula-setup) | Static class. Adds the components and settings required to use Nebula in the active scene. |
 | [NebulaValidator](/docs/reference/editor/nebula-validator) | Static class. Nebula \> Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh. |

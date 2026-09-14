@@ -240,7 +240,7 @@ An unrecognized mode logs a warning and turns persistence off.
 | `-nebula-persistence-file <path>` | worker, orchestrator | `PersistenceLocalFile` |
 | `-nebula-persistence-checkpoint <seconds>` | worker | `PersistenceCheckpointSeconds` |
 
-`NebulaBootstrap` creates the store for the worker and orchestrator roles only, connects it, ticks it once per frame, and disposes it on shutdown. The orchestrator forwards its persistence mode, database, and URI to every role it launches, so all of them store entities in the same place.
+`NebulaBootstrap` creates the worker's store. The standalone orchestrator creates its own connection for the dashboard. Both pump store callbacks and dispose their connections on shutdown. The orchestrator forwards its persistence mode, database, and URI to the workers it launches so they use the same storage backend.
 
 ## The persistence database
 

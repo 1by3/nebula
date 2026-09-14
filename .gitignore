@@ -75,3 +75,6 @@ website/next-env.d.ts
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Standalone service projects
+!/Packages/com.1by3.nebula/Services~/**/*.csproj

@@ -5,7 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Nebula.Hosting;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {
@@ -19,6 +23,7 @@ namespace Nebula
 
     /// <summary>
     /// Spins worker processes up and down and authoritatively assigns containers to them through the control plane.
+    /// The CLI runs this loop in a standalone .NET executable. The Unity component remains available for compatibility.
     /// The number of workers is a live setting: <see cref="SetDesiredWorkers"/> (from the web dashboard, see
     /// <see cref="OrchestratorHttpServer"/>) launches new processes or retires existing ones on the fly.
     /// <para>
@@ -34,7 +39,10 @@ namespace Nebula
     /// is launched after a short delay.
     /// </para>
     /// </summary>
-    public sealed class NebulaOrchestrator : MonoBehaviour
+    public sealed class NebulaOrchestrator
+#if !NEBULA_SERVICE
+        : MonoBehaviour
+#endif
     {
         private sealed class ManagedWorker
         {
@@ -206,11 +214,19 @@ namespace Nebula
             catch (Exception e)
             {
                 Log("error", $"dashboard failed to start on port {Config.DashboardPort}: {e.Message}");
+                _http?.Dispose();
                 _http = null;
+#if NEBULA_SERVICE
+                throw;
+#endif
             }
         }
 
+#if NEBULA_SERVICE
+        public void Tick()
+#else
         private void Update()
+#endif
         {
             // Dashboard commands run here so every mutation happens on the main thread; the response waits for us.
             _http?.Pump(HandleCommand);
@@ -255,7 +271,11 @@ namespace Nebula
             PublishState();
         }
 
+#if NEBULA_SERVICE
+        public void Dispose()
+#else
         private void OnDestroy()
+#endif
         {
             ContainerRegistry.RuntimeRegistered -= OnRuntimeContainersChanged;
             ContainerRegistry.RuntimeUnregistering -= OnRuntimeContainersChanged;

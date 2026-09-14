@@ -4,14 +4,14 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Project-wide Nebula settings. Lives at Resources/NebulaConfig so every role (worker, gateway, orchestrator,
-    /// client) loads the same asset. Command-line switches override individual fields at runtime.
+    /// Project-wide Nebula settings. Workers and clients load Resources/NebulaConfig. Builds export its settings
+    /// to nebula-services.json for the standalone orchestrator and gateway. Command-line switches override fields at runtime.
     /// </summary>
     [CreateAssetMenu(menuName = "Nebula/Config", fileName = "NebulaConfig")]
     public sealed class NebulaConfig : ScriptableObject
     {
         [Header("Scene")]
-        [Tooltip("Scene containing the Container volumes and gameplay. Loaded by every role.")]
+        [Tooltip("Scene containing the Container volumes and gameplay. Loaded by workers and clients; builds export its containers for the services.")]
         public string GameScene = "Arena";
 
         [Header("World partition (optional)")]
@@ -55,7 +55,7 @@ namespace Nebula
         public float ScaleOutCostPerWorker = 200f;
         public float ScaleInCostPerWorker = 50f;
         public float ScaleHoldSeconds = 30f;
-        [Tooltip("Executable used to spawn workers/gateway. Empty = this process's own executable.")]
+        [Tooltip("Unity executable used to spawn workers. nebula start supplies this path to the standalone orchestrator with -nebula-worker-exe.")]
         public string WorkerExecutable = "";
         [Tooltip("Where workers run: 'process' (child processes of the orchestrator) or 'hetzner' (one cloud VM per worker). -nebula-host overrides.")]
         public string WorkerHost = "process";

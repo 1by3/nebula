@@ -10,7 +10,7 @@ description: "Project-wide Nebula settings."
 public sealed class NebulaConfig : ScriptableObject
 ```
 
-Project-wide Nebula settings. Lives at Resources/NebulaConfig so every role (worker, gateway, orchestrator, client) loads the same asset. Command-line switches override individual fields at runtime.
+Project-wide Nebula settings. Workers and clients load Resources/NebulaConfig. Builds export its settings to nebula-services.json for the standalone orchestrator and gateway. Command-line switches override fields at runtime.
 
 ## Fields
 
@@ -20,7 +20,7 @@ Project-wide Nebula settings. Lives at Resources/NebulaConfig so every role (wor
 public string GameScene = "Arena";
 ```
 
-Scene containing the Container volumes and gameplay. Loaded by every role.
+Scene containing the Container volumes and gameplay. Loaded by workers and clients; builds export its containers for the services.
 
 ### WorldManifest [#worldmanifest]
 
@@ -180,7 +180,7 @@ public float ScaleHoldSeconds = 30f;
 public string WorkerExecutable = "";
 ```
 
-Executable used to spawn workers/gateway. Empty = this process's own executable.
+Unity executable used to spawn workers. nebula start supplies this path to the standalone orchestrator with -nebula-worker-exe.
 
 ### WorkerHost [#workerhost]
 

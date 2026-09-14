@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using Nebula.Spacetime.Persistence;
 using SpacetimeDB;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {

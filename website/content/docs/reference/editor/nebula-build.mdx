@@ -1,6 +1,6 @@
 ---
 title: "NebulaBuild"
-description: "Builds the executables every Nebula role runs from."
+description: "Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaBuild.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaBuild.cs)</div>
@@ -9,10 +9,10 @@ description: "Builds the executables every Nebula role runs from."
 public static class NebulaBuild
 ```
 
-Builds the executables every Nebula role runs from. Workers and services run them with `-batchmode -nographics -nebula-role ...`; players run the Windows build as-is. Menu: Nebula \> Build.
+Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it. Requires the .NET 10 SDK. Menu: Nebula \> Build.
 
 - Windows player: `Builds/Win64/Nebula.exe` - the local mesh, bots and the human client.
-- Linux dedicated server: `Builds/Linux64/Nebula.x86_64` - what runs on cloud VMs (orchestrator, gateway, workers). No graphics subsystem at all, so it needs no display libraries on the machine.
+- Linux dedicated server: `Builds/Linux64/Nebula.x86_64` - the worker simulation on cloud VMs.
 
 Batchmode: `Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch` or `...NebulaBuild.BuildLinuxServerBatch`.
 

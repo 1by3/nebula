@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);NEBULA_SERVICE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS0649;CS0169</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="SpacetimeDB.ClientSDK" Version="2.10.0" />
+    <Compile Include="../../Runtime/Orchestrator/**/*.cs" />
+    <Compile Include="../../Runtime/Gateway/**/*.cs" />
+    <Compile Include="../../Runtime/ControlPlane/**/*.cs" />
+    <Compile Include="../../Runtime/Protocol/**/*.cs" />
+    <Compile Include="../../Runtime/Transport/**/*.cs" />
+    <Compile Include="../../Runtime/Serialization/**/*.cs" />
+    <Compile Include="../../Runtime/Core/CommandLine.cs;../../Runtime/Core/NetworkTime.cs;../../Runtime/Core/SyncState.cs" />
+    <Compile Include="../../Runtime/Containers/ContainerRef.cs" />
+    <Compile Include="../../Runtime/Persistence/IPersistenceStore.cs;../../Runtime/Persistence/LocalPersistenceStore.cs;../../Runtime/Persistence/SpacetimePersistenceStore.cs" />
+    <Compile Include="../../SpacetimeDB/Generated/**/*.cs;../../SpacetimeDB/GeneratedPersistence/**/*.cs" />
+    <Compile Include="../../ThirdParty/LiteNetLib/**/*.cs" />
+    <Compile Include="../../World/WorldGrid.cs" />
+    <EmbeddedResource Include="../../Runtime/Orchestrator/Resources/*.html" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

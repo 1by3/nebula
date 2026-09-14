@@ -1,6 +1,6 @@
 ---
 title: "NebulaBootstrap"
-description: "Entry point for every Nebula process."
+description: "Entry point for Unity workers and clients."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/NebulaBootstrap.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/NebulaBootstrap.cs)</div>
@@ -10,7 +10,7 @@ description: "Entry point for every Nebula process."
 public sealed class NebulaBootstrap : MonoBehaviour
 ```
 
-Entry point for every Nebula process. Put one in the boot scene. Reads the role from the command line (`-nebula-role worker,gateway`) or from [`EditorRole`](#editorrole) when running in the Editor, loads the game scene, and starts the matching services. A process is a worker *or* a client, never both.
+Entry point for Unity workers and clients. Put one in the boot scene. Reads the role from the command line (`-nebula-role worker,gateway`) or from [`EditorRole`](#editorrole) when running in the Editor, loads the game scene, and starts the matching components. A process is a worker *or* a client, never both. The CLI launches standalone .NET orchestrator and gateway executables; Unity service roles remain available for compatibility and in-process tests.
 
 - `-nebula-role client|worker|gateway|orchestrator` (comma separated)
 - `-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101`
@@ -30,7 +30,7 @@ Entry point for every Nebula process. Put one in the boot scene. Reads the role 
 public NebulaRoles EditorRole = NebulaRoles.Client;
 ```
 
-Roles started when pressing Play in the Editor, in place of `-nebula-role`. It does not replace a build: the orchestrator launches workers and the gateway from a player executable, and a process is never both a client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a mesh started with `nebula start`; Worker joins one started with `nebula start --workers 0`.
+Roles started when pressing Play in the Editor, in place of `-nebula-role`. It does not replace a build: the standalone orchestrator launches Unity workers and a .NET gateway, and a Unity process is never both a client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a mesh started with `nebula start`; Worker joins one started with `nebula start --workers 0`.
 
 ### Config [#config]
 

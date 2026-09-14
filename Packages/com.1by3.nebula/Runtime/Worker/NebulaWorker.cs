@@ -28,7 +28,7 @@ namespace Nebula
         /// MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather
         /// than by entry count. Entry size depends on the transform's selected axes and precision.
         /// </summary>
-        public const int StateBatchBytes = 500;
+        public const int StateBatchBytes = WorldStateMsg.BatchBytes;
 
         public NebulaConfig Config { get; private set; }
         public IControlPlane ControlPlane { get; private set; }

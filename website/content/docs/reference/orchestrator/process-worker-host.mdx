@@ -1,6 +1,6 @@
 ---
 title: "ProcessWorkerHost"
-description: "Runs every worker as a child process of the orchestrator, from the same executable."
+description: "Runs each worker as a child Unity process using the configured worker executable."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/ProcessWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/ProcessWorkerHost.cs)</div>
@@ -9,7 +9,7 @@ description: "Runs every worker as a child process of the orchestrator, from the
 public sealed class ProcessWorkerHost : IWorkerHost
 ```
 
-Runs every worker as a child process of the orchestrator, from the same executable. This is the local mesh (`nebula start`) and the reference implementation of [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host). The orchestrator also uses it to start co-located services (the gateway) whatever host the workers use.
+Runs each worker as a child Unity process using the configured worker executable. This is the local mesh (`nebula start`) and the reference implementation of [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host). The orchestrator also uses it to start co-located services (the gateway) whatever host the workers use.
 
 ## Constructors
 
@@ -21,7 +21,7 @@ public ProcessWorkerHost(string executable, string advertiseAddress);
 
 | Parameter | Description |
 | --- | --- |
-| `executable` | Player executable to run; empty = the orchestrator's own. |
+| `executable` | Unity player executable to run. Required by the standalone orchestrator. |
 | `advertiseAddress` | Address child workers advertise to peers (127.0.0.1 on one machine). |
 
 ## Properties

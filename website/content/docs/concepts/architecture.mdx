@@ -22,11 +22,11 @@ For a large world, use [world partition](/docs/guides/world-partition). Each cel
 
 ## Run the process roles
 
-Build one Unity player, then start copies of that build with different roles:
+Run `nebula build` to build the Unity player and the standalone .NET services, then `nebula start` to launch the mesh:
 
 - A **worker** is a headless Unity process. It simulates the entities in its assigned containers at 60 ticks per second.
-- The **gateway** accepts client connections. It routes input to workers and sends worker state to clients.
-- The **orchestrator** starts workers, assigns containers, and serves the Nebula Dashboard and its HTTP API.
+- The **gateway** is a standalone .NET service that accepts client connections, routes input to workers, and sends worker state to clients.
+- The **orchestrator** is a standalone .NET service that starts workers, assigns containers, and serves the Nebula Dashboard and its HTTP API.
 - A **client** sends input to the gateway, predicts its local player, and displays replicated entities.
 - The **control plane** is a SpacetimeDB module. It stores registrations, heartbeats, container assignments, and settings shared by the mesh.
 

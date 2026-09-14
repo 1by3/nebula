@@ -6,7 +6,11 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula.Hosting
 {

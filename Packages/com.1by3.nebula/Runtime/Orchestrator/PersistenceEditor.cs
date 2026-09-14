@@ -3,20 +3,21 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {
     /// <summary>
     /// Reads and rewrites persisted records for the dashboard's Persistence tab (<c>/persistence</c>).
     /// <para>
-    /// The orchestrator runs the same build as the workers, so it can give an opaque state blob a shape: the record
-    /// names its prefab (or its scene entity), the prefab's <see cref="NetworkBehaviour"/> components name their
-    /// <see cref="NetworkVariable{T}"/> fields exactly the way <see cref="PersistentStateCodec"/> keyed them
-    /// (<c>"&lt;BehaviourTypeName&gt;.&lt;FieldName&gt;"</c>), and the field's type argument says how to decode the
-    /// bytes. Nothing is ever instantiated: this reflects on the prefab asset's components only. An entry whose name
-    /// this build does not know, a behaviour's own <c>#state</c> chunk, or a value type that has no editor is shown
-    /// and edited as hex.
+    /// The standalone orchestrator reads field schemas exported from game prefabs and scene entities at build time.
+    /// Fields use the same names as <see cref="PersistentStateCodec"/> (<c>"&lt;BehaviourTypeName&gt;.&lt;FieldName&gt;"</c>).
+    /// Built-in types and exported enumerations have typed controls. Custom types, unknown fields, and a behavior's
+    /// own <c>#state</c> chunk are shown and edited as hex. The legacy Unity host discovers these schemas from assets.
     /// </para><para>
     /// Loads are asynchronous (the store answers from <see cref="IPersistenceStore.Tick"/>), so the editor keeps a
     /// snapshot of every record and refreshes it at most every <see cref="SnapshotMaxAgeSeconds"/> seconds while the
@@ -42,7 +43,9 @@ namespace Nebula
         private readonly List<PersistedEntityRecord> _snapshot = new List<PersistedEntityRecord>();
         private readonly Dictionary<string, PersistedEntityRecord> _byKey = new Dictionary<string, PersistedEntityRecord>(StringComparer.Ordinal);
         /// <summary>Decoded schema per template GameObject: entry name -> NetworkVariable value type (null = untyped entry).</summary>
+#if !NEBULA_SERVICE
         private readonly Dictionary<GameObject, Dictionary<string, Type>> _schemas = new Dictionary<GameObject, Dictionary<string, Type>>();
+#endif
         private readonly StringBuilder _json = new StringBuilder(4096);
 
         private float _requestedAt = float.NegativeInfinity;
@@ -212,6 +215,10 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------------- decoding
 
         /// <summary>The prefab asset (or resident scene object) a record was written from, null when this build cannot find it.</summary>
+#if NEBULA_SERVICE
+        private static string ResolveTemplate(PersistedEntityRecord record) => ServiceManifest.TemplateOf(record);
+        private Dictionary<string, Type> SchemaOf(string template) => ServiceManifest.SchemaOf(template);
+#else
         private static GameObject ResolveTemplate(PersistedEntityRecord record)
         {
             if (record.SceneId != 0)
@@ -270,6 +277,7 @@ namespace Nebula
         }
 
         /// <summary>One entry of a state blob as it lies in the bytes.</summary>
+#endif
         private struct RawEntry
         {
             public string Name;
@@ -345,7 +353,11 @@ namespace Nebula
             w.Prop("owned", r.Owned);
             w.Prop("scene", r.SceneId != 0);
             w.Prop("resolved", template != null);
-            w.Prop("template", template != null ? template.name : "");
+#if NEBULA_SERVICE
+            w.Prop("template", ServiceManifest.TemplateDisplayName(template));
+#else
+            w.Prop("template", template != null ? template.name : "" );
+#endif
             w.Prop("stateBytes", r.State != null ? r.State.Length : 0);
             WriteVector(w, "position", r.LocalPosition.x, r.LocalPosition.y, r.LocalPosition.z);
             w.Key("rotation");

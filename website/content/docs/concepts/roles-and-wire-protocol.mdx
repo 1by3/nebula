@@ -3,7 +3,7 @@ title: Roles and network messages
 description: Understand each Nebula process, its connections, and the messages it exchanges.
 ---
 
-Build one Unity player for every Nebula role. `NebulaBootstrap` reads `-nebula-role`, loads the configured game scene, and starts the components for that role. In the Unity Editor, it uses `EditorRole` instead.
+Build the Unity player and standalone .NET services with `nebula build`. Workers and clients use `NebulaBootstrap`, which reads `-nebula-role`, loads the configured game scene, and starts the matching components. In the Unity Editor, it uses `EditorRole` instead. The orchestrator and gateway read the game data exported during the build and run without Unity.
 
 A process cannot run both the worker and client roles. You can run the gateway and orchestrator together with `-nebula-role services`, although the CLI starts them as separate processes.
 
@@ -17,7 +17,7 @@ The worker registers with the control plane and listens on `WorkerBasePort + ind
 
 ## Gateway
 
-To start the gateway directly, pass `-nebula-role gateway`. It listens for clients on UDP port 7000 by default.
+The standalone `nebula-gateway` executable listens for clients on UDP port 7000 by default. `nebula start` launches it for you. When starting it directly, keep `nebula-services.json` beside the executable or select an export with `-nebula-service-manifest <path>`.
 
 The gateway connects to every worker. It routes each client's input to the worker that controls that client's entity and sends worker replication streams to clients. It rejects entity messages with an old authority epoch or an invalid sender.
 
@@ -27,7 +27,7 @@ The gateway does not hold authoritative state. If a worker stops, the gateway re
 
 ## Orchestrator
 
-To start the orchestrator directly, pass `-nebula-role orchestrator`. It starts the gateway and keeps `DesiredWorkers` workers running. A worker host decides whether those workers run as child processes or on separate cloud virtual machines.
+The standalone `nebula-orchestrator` executable starts the gateway and keeps `DesiredWorkers` workers running. `nebula start` supplies the exported service data and Unity worker executable path. A worker host decides whether workers run as child processes or on separate cloud virtual machines.
 
 The orchestrator creates one assignment for each container and distributes them across active workers every 500 milliseconds. It serves the dashboard and HTTP API on TCP port 7080 by default. It also reads initial shared settings from `-nebula-settings`. See [Orchestrator and Nebula Dashboard](/docs/guides/orchestrator-and-dashboard).
 

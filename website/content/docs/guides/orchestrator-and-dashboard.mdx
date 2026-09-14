@@ -5,7 +5,23 @@ description: Use the orchestrator, Nebula Dashboard, and HTTP API to inspect and
 
 Use the **orchestrator** to keep the requested number of workers running and distribute containers between them. The orchestrator does not simulate gameplay. Workers communicate directly with the gateway and with each other during normal simulation.
 
-Start the orchestrator with `-nebula-role orchestrator`. The `nebula start` and `nebula deploy` commands supply this option for you.
+Run `nebula start` to launch the standalone .NET orchestrator and gateway alongside Unity workers. `nebula deploy` uses the same service executables on Linux. Neither service loads the game scene or runs Unity.
+
+## Build and start during development
+
+Keep using the same commands from your game project:
+
+```bash
+nebula build
+nebula start --open-ui
+nebula stop
+```
+
+`nebula build` builds the Unity player, exports configuration, container geometry, and persistence field schemas into `nebula-services.json`, and publishes `nebula-orchestrator` and `nebula-gateway` beside the player. Windows executables have an `.exe` suffix. Building the services requires the .NET 10 SDK; the published executables include the runtime.
+
+After changing only service code, run `nebula build services` to reuse the last export and skip Unity. Rebuild the full project after changing scenes, containers, settings, or persistence fields. `nebula start --build` performs the full build before starting. `nebula build --linux` includes the services and export in the deployment archive.
+
+The CLI supplies the worker executable path to the orchestrator. When launching it directly, pass `-nebula-worker-exe <path>` with the path to your Unity player. The services read `nebula-services.json` beside their executables by default; use `-nebula-service-manifest <path>` to select a different export. Use the same export and protocol version across the mesh.
 
 ## Understand container assignment
 
@@ -25,7 +41,7 @@ For example, four workers and four containers results in one container per worke
 
 ## Change the worker count
 
-Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. Nebula supports up to 32 workers.
+Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. `NebulaConfig.MaxWorkers` sets the limit and defaults to 32.
 
 When you add a worker, the orchestrator starts it on the lowest available worker index and rebalances containers.
 
@@ -40,7 +56,7 @@ Each worker writes a heartbeat to the control plane. When a heartbeat is older t
 After `DeadWorkerReplaceDelaySeconds`, the orchestrator starts a replacement on the same worker index. It can react sooner when the worker process exits or its cloud VM disappears.
 
 <Callout type="warn" title="Transient state is not restored">
-Nebula does not persist entity state. Entities controlled only by a failed worker are lost. The gateway asks the new container owner to spawn affected players again.
+Entities without `PersistentEntity` lose their state when their worker fails. Persistent entities restore their saved checkpoint after reassignment; changes since that checkpoint and fields that were not saved are lost. The gateway asks the new container owner to spawn affected players again. See [Persistence](/docs/guides/persistence).
 </Callout>
 
 ## Open the Nebula Dashboard
@@ -87,7 +103,7 @@ Open `/persistence` from the dashboard to see everything the persistence store h
 
 Select a record to inspect it. The editor shows its identity as read-only text (key, prefab or scene ID, epoch, version, and when and by which worker it was saved), then editable fields for its name, container ID, position, rotation, and velocity, then one row per saved state entry.
 
-The orchestrator runs the same build as the workers, so it can decode the saved state. It resolves the record's prefab or scene object, matches each entry against that object's `NetworkVariable` fields by name, and reads the bytes with the field's type. Booleans, numbers, strings, enumerations, vectors, quaternions, and colors get a matching control. Anything else appears as hexadecimal bytes that you can still replace: the state a behavior writes in `WritePersistentState`, an entry whose variable this build no longer has, and a value type Nebula cannot edit. Saving rewrites only the entries you changed and keeps the other bytes as they were.
+The orchestrator uses the persistence field schemas exported during the Unity build to decode saved state. It matches each record's prefab name or scene ID and each `NetworkVariable` field name to its exported type. Booleans, numbers, strings, enumerations, vectors, quaternions, and colors get a matching control. Custom types, unknown fields, and state written by `WritePersistentState` appear as hexadecimal bytes that you can replace. Saving rewrites only the entries you changed and keeps the other bytes as they were. Rebuild after changing persistence fields so the dashboard has the current schema.
 
 Use **Duplicate as…** with a new key to copy a record, for example to place a second object. Use **Delete** to remove one record, or **Clear persistence** on the overview to remove every record.
 

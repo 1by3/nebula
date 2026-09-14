@@ -1,5 +1,9 @@
 using System.Collections.Generic;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula.World
 {

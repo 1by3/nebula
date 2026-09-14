@@ -195,7 +195,7 @@ public static class UnityBuild
         Directory.CreateDirectory(project.BuildsDir);
         File.Delete(log);
         Ui.Info($"log: {log}");
-        var args = new[] { "-batchmode", "-nographics", "-quit", "-projectPath", projectDir, "-executeMethod", method, "-logFile", log };
+        var args = new[] { "-batchmode", "-nographics", "-quit", "-projectPath", projectDir, "-executeMethod", method, "-nebula-skip-service-publish", "-logFile", log };
         var psi = new ProcessStartInfo(unity) { UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         var timer = Stopwatch.StartNew();
@@ -217,6 +217,8 @@ public static class UnityBuild
         }
         if (!File.Exists(exe)) throw new CliError($"the build reported success but {exe} is missing");
         Ui.Ok($"built {exe} in {timer.Elapsed.TotalSeconds:F0}s");
+
+        ServiceBuild.Publish(project, linux);
 
         if (linux)
         {

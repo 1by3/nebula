@@ -9,7 +9,7 @@ description: "Accepts client connections and maintains a connection to every wor
 public sealed class NebulaGateway : MonoBehaviour
 ```
 
-Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities.
+Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities. The CLI runs this routing loop in a standalone .NET executable using exported container geometry. The Unity component remains available for compatibility and in-process tests.
 
 ## Properties
 

@@ -11,7 +11,7 @@ public sealed class PersistenceEditor
 
 Reads and rewrites persisted records for the dashboard's Persistence tab (`/persistence`).
 
-The orchestrator runs the same build as the workers, so it can give an opaque state blob a shape: the record names its prefab (or its scene entity), the prefab's [`NetworkBehaviour`](/docs/reference/core/network-behaviour) components name their [`NetworkVariable<T>`](/docs/reference/core/network-variable) fields exactly the way [`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec) keyed them (`"<BehaviourTypeName>.<FieldName>"`), and the field's type argument says how to decode the bytes. Nothing is ever instantiated: this reflects on the prefab asset's components only. An entry whose name this build does not know, a behaviour's own `#state` chunk, or a value type that has no editor is shown and edited as hex.
+The standalone orchestrator reads field schemas exported from game prefabs and scene entities at build time. Fields use the same names as [`PersistentStateCodec`](/docs/reference/persistence/persistent-state-codec) (`"<BehaviourTypeName>.<FieldName>"`). Built-in types and exported enumerations have typed controls. Custom types, unknown fields, and a behavior's own `#state` chunk are shown and edited as hex. The legacy Unity host discovers these schemas from assets.
 
 Loads are asynchronous (the store answers from [`IPersistenceStore.Tick`](/docs/reference/persistence/i-persistence-store#tick)), so the editor keeps a snapshot of every record and refreshes it at most every [`SnapshotMaxAgeSeconds`](#snapshotmaxageseconds) seconds while the page polls. Every method here must run on the main thread, from the orchestrator's command pump.
 

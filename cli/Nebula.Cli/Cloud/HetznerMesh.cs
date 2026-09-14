@@ -171,8 +171,8 @@ public sealed class HetznerMesh
 
         var args = new List<string>
         {
-            "-batchmode", "-nographics",
-            "-nebula-role", "orchestrator",
+            "-nebula-worker-exe", $"/opt/nebula/bin/{_project.File.Executable}.x86_64",
+            "-nebula-service-manifest", "/opt/nebula/bin/nebula-services.json",
             "-nebula-host", "hetzner",
             "-nebula-workers", o.Workers.ToString(),
             "-nebula-settings", $"npcs={o.Npcs}",
@@ -203,7 +203,7 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=/opt/nebula/bin
 EnvironmentFile=/etc/nebula/env
-ExecStart=/opt/nebula/bin/{_project.File.Executable}.x86_64 {string.Join(" ", args)}
+ExecStart=/opt/nebula/bin/nebula-orchestrator {string.Join(" ", args)}
 Restart=on-failure
 RestartSec=5
 KillMode=mixed

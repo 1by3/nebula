@@ -9,7 +9,7 @@ description: "Spins worker processes up and down and authoritatively assigns con
 public sealed class NebulaOrchestrator : MonoBehaviour
 ```
 
-Spins worker processes up and down and authoritatively assigns containers to them through the control plane. The number of workers is a live setting: [`SetDesiredWorkers`](#setdesiredworkers) (from the web dashboard, see [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server)) launches new processes or retires existing ones on the fly.
+Spins worker processes up and down and authoritatively assigns containers to them through the control plane. The CLI runs this loop in a standalone .NET executable. The Unity component remains available for compatibility. The number of workers is a live setting: [`SetDesiredWorkers`](#setdesiredworkers) (from the web dashboard, see [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server)) launches new processes or retires existing ones on the fly.
 
 Assignment is a pluggable [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy) ([`Policy`](#policy)). The baked policy deals containers as evenly as possible across live workers by count, sticky to their current owner so a rebalance moves as few containers as possible. The cost policy deals by the load workers report per container, along a space-filling curve, and is the default once the game registers runtime containers.
 

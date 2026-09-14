@@ -5,7 +5,11 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Nebula.World;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {

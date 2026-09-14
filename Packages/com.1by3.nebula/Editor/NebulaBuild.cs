@@ -9,12 +9,11 @@ using UnityEngine;
 namespace Nebula.Editor
 {
     /// <summary>
-    /// Builds the executables every Nebula role runs from. Workers and services run them with
-    /// <c>-batchmode -nographics -nebula-role ...</c>; players run the Windows build as-is. Menu: Nebula > Build.
+    /// Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET
+    /// orchestrator and gateway beside it. Requires the .NET 10 SDK. Menu: Nebula > Build.
     /// <list type="bullet">
     /// <item>Windows player: <c>Builds/Win64/Nebula.exe</c> - the local mesh, bots and the human client.</item>
-    /// <item>Linux dedicated server: <c>Builds/Linux64/Nebula.x86_64</c> - what runs on cloud VMs (orchestrator,
-    /// gateway, workers). No graphics subsystem at all, so it needs no display libraries on the machine.</item>
+    /// <item>Linux dedicated server: <c>Builds/Linux64/Nebula.x86_64</c> - the worker simulation on cloud VMs.</item>
     /// </list>
     /// Batchmode: <c>Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch</c>
     /// or <c>...NebulaBuild.BuildLinuxServerBatch</c>.
@@ -86,8 +85,11 @@ namespace Nebula.Editor
                 options = BuildOptions.Development,
             };
             Debug.Log($"[nebula] building {location} ({target}/{subtarget}) with scenes: {string.Join(", ", scenes)}");
+            ServiceExport.Write(Path.GetDirectoryName(location), scenes);
             var report = BuildPipeline.BuildPlayer(options);
             Debug.Log($"[nebula] build {report.summary.result} in {report.summary.totalTime.TotalSeconds:F0}s, {report.summary.totalErrors} errors");
+            if (report.summary.result == BuildResult.Succeeded && !CommandLine.Has("nebula-skip-service-publish"))
+                ServiceExport.Publish(Path.GetDirectoryName(location), target);
             return report;
         }
 

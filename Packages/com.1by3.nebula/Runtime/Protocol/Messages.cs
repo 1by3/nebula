@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {
@@ -185,6 +189,7 @@ namespace Nebula
         /// <summary>Keyframe from every sync behaviour (<see cref="NetworkIdentity.WriteSyncSnapshot"/>); empty when the prefab has none.</summary>
         public byte[] State;
 
+#if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
         {
             scratch.Reset();
@@ -216,6 +221,7 @@ namespace Nebula
             };
         }
 
+#endif
         public void Write(NetworkWriter w, MsgId id)
         {
             w.WriteByte((byte)id);
@@ -401,6 +407,7 @@ namespace Nebula
         public TransformFields Fields;
         public bool Reliable => (Fields & TransformFields.Reliable) != 0;
 
+#if !NEBULA_SERVICE
         public static EntityStateEntry Snapshot(NetworkIdentity e) => new EntityStateEntry
         {
             NetId = e.NetId, Epoch = e.Epoch, Container = e.ContainerRef,
@@ -409,6 +416,7 @@ namespace Nebula
             Fields = TransformFields.Axes | TransformFields.Quaternion | TransformFields.Compressed | TransformFields.Velocity,
         };
 
+#endif
         private void WriteVector(NetworkWriter w, Vector3 v, int shift)
         {
             for (int i = 0; i < 3; i++)
@@ -438,7 +446,7 @@ namespace Nebula
             position = MergeVector(position, LocalPosition, Fields, 0);
             if ((Fields & TransformFields.Rotation) != 0)
                 rotation = (Fields & TransformFields.Quaternion) != 0 ? LocalRotation :
-                    UnityEngine.Quaternion.Euler(MergeVector(rotation.eulerAngles, LocalRotation.eulerAngles, Fields, 3));
+                    Quaternion.Euler(MergeVector(rotation.eulerAngles, LocalRotation.eulerAngles, Fields, 3));
             scale = MergeVector(scale, LocalScale, Fields, 6);
             velocity = (Fields & TransformFields.Velocity) != 0 ? Velocity : Vector3.zero;
         }
@@ -485,6 +493,8 @@ namespace Nebula
     /// <summary>Batched transforms for one tick from one worker. Unreliable/sequenced.</summary>
     public static class WorldStateMsg
     {
+        public const int BatchBytes = 500;
+
         public static int Begin(NetworkWriter w, MsgId id, uint tick, ushort workerIndex)
         {
             w.WriteByte((byte)id);

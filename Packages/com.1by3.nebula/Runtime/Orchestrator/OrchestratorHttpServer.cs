@@ -15,6 +15,7 @@ namespace Nebula
     /// external dependencies. Reads are answered from the listener thread with the last published state; writes are
     /// queued and executed by <see cref="Pump"/> from the orchestrator's Update, and the HTTP response waits for that.
     /// </summary>
+#if !NEBULA_SERVICE
     public sealed class OrchestratorHttpServer : IDisposable
     {
         public sealed class Request
@@ -247,6 +248,7 @@ namespace Nebula
         }
     }
 
+#endif
     /// <summary>Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime.</summary>
     public sealed class JsonWriter
     {

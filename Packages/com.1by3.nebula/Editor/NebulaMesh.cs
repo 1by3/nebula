@@ -118,6 +118,12 @@ namespace Nebula.Editor
                 Debug.LogError($"[nebula] no build at {NebulaBuild.ExecutablePath}. Run Nebula > Build first.");
                 return;
             }
+            string orchestrator = Path.Combine(NebulaBuild.BuildDir, "nebula-orchestrator.exe");
+            if (!File.Exists(orchestrator) || !File.Exists(Path.Combine(NebulaBuild.BuildDir, "nebula-gateway.exe")) || !File.Exists(Path.Combine(NebulaBuild.BuildDir, "nebula-services.json")))
+            {
+                Debug.LogError("[nebula] standalone services are missing. Run Nebula > Build or nebula build first.");
+                return;
+            }
             if (IsAlive(OrchestratorProcessKey))
             {
                 Debug.LogWarning("[nebula] a local mesh is already running; stop it first");
@@ -128,8 +134,8 @@ namespace Nebula.Editor
             PublishModule();
             string logs = Path.Combine(NebulaBuild.BuildDir, "Logs");
             Directory.CreateDirectory(logs);
-            string args = $"-batchmode -nographics -nebula-role orchestrator -nebula-workers {cfg.WorkerCount} -nebula-spacetime {cfg.SpacetimeUri} -nebula-database {cfg.SpacetimeDatabase} -nebula-persistence {cfg.SpacetimeUri} -nebula-persistence-database {cfg.PersistenceDatabase} -logFile \"{Path.Combine(logs, "orchestrator.log")}\"";
-            var p = Run(NebulaBuild.ExecutablePath, args, NebulaBuild.BuildDir, detached: true);
+            string args = $"-nebula-worker-exe \"{NebulaBuild.ExecutablePath}\" -nebula-workers {cfg.WorkerCount} -nebula-spacetime {cfg.SpacetimeUri} -nebula-database {cfg.SpacetimeDatabase} -nebula-persistence {cfg.SpacetimeUri} -nebula-persistence-database {cfg.PersistenceDatabase} -logFile \"{Path.Combine(logs, "orchestrator.log")}\"";
+            var p = Run(orchestrator, args, NebulaBuild.BuildDir, detached: true);
             if (p != null)
             {
                 EditorPrefs.SetInt(OrchestratorProcessKey, p.Id);
@@ -142,9 +148,15 @@ namespace Nebula.Editor
         {
             KillTracked(OrchestratorProcessKey);
             // The orchestrator kills its children on exit, but a hard kill skips that: sweep any stragglers.
-            foreach (var p in Process.GetProcessesByName("Nebula"))
+            foreach (string name in new[] { "Nebula", "nebula-orchestrator", "nebula-gateway" })
+            foreach (var p in Process.GetProcessesByName(name))
             {
-                try { p.Kill(); } catch { }
+                try
+                {
+                    if (string.Equals(Path.GetDirectoryName(p.MainModule.FileName), NebulaBuild.BuildDir, StringComparison.OrdinalIgnoreCase)) p.Kill();
+                }
+                catch { }
+                finally { p.Dispose(); }
             }
             Debug.Log("[nebula] local mesh stopped");
         }

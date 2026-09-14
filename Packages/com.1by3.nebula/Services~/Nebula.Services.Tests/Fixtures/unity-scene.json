@@ -1,0 +1,191 @@
+{
+    "Version": 1,
+    "Partitioned": false,
+    "Containers": [
+        {
+            "ContainerId": "a",
+            "Index": 0,
+            "Center": {
+                "x": 0.0,
+                "y": 5.0,
+                "z": 0.0
+            },
+            "Size": {
+                "x": 20.0,
+                "y": 10.0,
+                "z": 20.0
+            },
+            "Cell": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "IsCell": false,
+            "transform": {
+                "position": {
+                    "x": 4.0,
+                    "y": 8.0,
+                    "z": 12.0
+                },
+                "rotation": {
+                    "x": 0.21475669741630554,
+                    "y": 0.5414634943008423,
+                    "z": 0.006548017263412476,
+                    "w": 0.812806248664856
+                },
+                "lossyScale": {
+                    "x": 2.0,
+                    "y": 3.0,
+                    "z": 4.0
+                },
+                "Matrix": [
+                    0.8270976543426514,
+                    0.6657638549804688,
+                    3.5320889949798584,
+                    4.0,
+                    0.48642072081565857,
+                    2.723020076751709,
+                    -1.3680806159973145,
+                    8.0,
+                    -1.754794716835022,
+                    1.0686066150665283,
+                    1.2855749130249023,
+                    12.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ]
+            },
+            "NeighborIds": []
+        },
+        {
+            "ContainerId": "b",
+            "Index": 1,
+            "Center": {
+                "x": 0.0,
+                "y": 5.0,
+                "z": 0.0
+            },
+            "Size": {
+                "x": 20.0,
+                "y": 10.0,
+                "z": 20.0
+            },
+            "Cell": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "IsCell": false,
+            "transform": {
+                "position": {
+                    "x": 100.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                    "w": 1.0
+                },
+                "lossyScale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "Matrix": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    100.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ]
+            },
+            "NeighborIds": []
+        }
+    ],
+    "World": {
+        "WorldName": "",
+        "CellSize": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+        },
+        "Cells": []
+    },
+    "Schemas": []
+,
+"Config":{
+    "GameScene": "",
+    "WorldManifest": {
+        "instanceID": 0
+    },
+    "ClientLoadRadiusCells": 1,
+    "WorkerLoadRingCells": 1,
+    "OriginShiftThresholdCells": 4,
+    "GatewayAddress": "127.0.0.1",
+    "GatewayPort": 7000,
+    "WorkerBasePort": 7100,
+    "WorkerAdvertiseAddress": "127.0.0.1",
+    "SpacetimeUri": "http://127.0.0.1:3000",
+    "SpacetimeDatabase": "nebula",
+    "UseLocalControlPlane": false,
+    "WorkerCount": 4,
+    "MaxWorkers": 32,
+    "AssignmentPolicy": "auto",
+    "CostRebalanceThreshold": 0.30000001192092896,
+    "CostWeights": {
+        "Base": 1.0,
+        "Player": 4.0,
+        "Bot": 2.0,
+        "ServerDriven": 1.0,
+        "Other": 0.5
+    },
+    "AutoScale": false,
+    "MinWorkers": 1,
+    "ScaleOutCostPerWorker": 200.0,
+    "ScaleInCostPerWorker": 50.0,
+    "ScaleHoldSeconds": 30.0,
+    "WorkerExecutable": "",
+    "WorkerHost": "process",
+    "BuildArtifactDir": "",
+    "OrchestratorSpawnsGateway": true,
+    "WorkerHeartbeatSeconds": 1.0,
+    "WorkerTimeoutSeconds": 5.0,
+    "DeadWorkerReplaceDelaySeconds": 8.0,
+    "WorkerDrainTimeoutSeconds": 10.0,
+    "DashboardPort": 7080,
+    "GhostBandMargin": 4.0,
+    "HandoverHysteresis": 0.3499999940395355,
+    "GhostLingerSeconds": 2.0,
+    "PersistenceMode": "auto",
+    "PersistenceUri": "",
+    "PersistenceDatabase": "nebula-persist",
+    "PersistenceLocalFile": "",
+    "PersistenceCheckpointSeconds": 5.0,
+    "PersistenceRestoreGraceSeconds": 3.0,
+    "SceneEntityGraceSeconds": 2.0,
+    "InterestNearRadius": 30.0,
+    "InterestFarRadius": 80.0,
+    "InterestMidDivisor": 4,
+    "InterestFarDivisor": 17,
+    "InterpolationDelayTicks": 3,
+    "InputLeadMarginTicks": 2,
+    "InputLeadTargetTicks": 3,
+    "InputLeadMaxAdjustTicks": 30,
+    "NetworkPrefabs": []
+}
+}

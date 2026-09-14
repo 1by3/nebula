@@ -32,6 +32,7 @@ namespace Nebula
             w.Buffer[countAt] = count;
         }
 
+#if !NEBULA_SERVICE
         public static void WriteChunk(NetworkWriter w, byte behaviourIndex, ChunkFlags flags, NetworkBehaviour b, bool full)
         {
             w.WriteByte(behaviourIndex);
@@ -42,6 +43,7 @@ namespace Nebula
             w.PatchUShort(lenAt, (ushort)(w.Length - start));
         }
 
+#endif
         public static void WriteRawChunk(NetworkWriter w, byte behaviourIndex, ChunkFlags flags, ArraySegment<byte> chunk)
         {
             w.WriteByte(behaviourIndex);

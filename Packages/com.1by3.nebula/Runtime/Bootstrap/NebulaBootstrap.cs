@@ -17,9 +17,10 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Entry point for every Nebula process. Put one in the boot scene. Reads the role from the command line
+    /// Entry point for Unity workers and clients. Put one in the boot scene. Reads the role from the command line
     /// (<c>-nebula-role worker,gateway</c>) or from <see cref="EditorRole"/> when running in the Editor, loads the
-    /// game scene, and starts the matching services. A process is a worker <i>or</i> a client, never both.
+    /// game scene, and starts the matching components. A process is a worker <i>or</i> a client, never both.
+    /// The CLI launches standalone .NET orchestrator and gateway executables; Unity service roles remain available for compatibility and in-process tests.
     /// <list type="bullet">
     /// <item><c>-nebula-role client|worker|gateway|orchestrator</c> (comma separated)</item>
     /// <item><c>-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101</c></item>
@@ -45,7 +46,7 @@ namespace Nebula
 
         /// <summary>
         /// Roles started when pressing Play in the Editor, in place of <c>-nebula-role</c>. It does not replace a build:
-        /// the orchestrator launches workers and the gateway from a player executable, and a process is never both a
+        /// the standalone orchestrator launches Unity workers and a .NET gateway, and a Unity process is never both a
         /// client and a worker, so whichever half the Editor does not run comes from a build. Client (the default) joins a
         /// mesh started with <c>nebula start</c>; Worker joins one started with <c>nebula start --workers 0</c>.
         /// </summary>

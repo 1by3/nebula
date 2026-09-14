@@ -9,9 +9,9 @@ Install the `nebula` command-line interface (CLI) to add Nebula to a Unity proje
 
 | What | Why | Notes |
 | --- | --- | --- |
-| Unity 6 (6000.x) | Builds the player used by every Nebula role | Nebula is developed with 6000.6. To deploy Linux servers, add the **Linux Dedicated Server** module. |
+| Unity 6 (6000.x) | Builds workers and clients, and exports game data for the services | Nebula is developed with 6000.6. To deploy Linux servers, add the **Linux Dedicated Server** module. |
 | SpacetimeDB CLI | Runs the local control plane and publishes the module | `nebula setup` installs it with the official installer. |
-| .NET 10 SDK | Compiles the control-plane module (and the CLI itself, when built from source) | `nebula setup` installs it into `~/.dotnet` if missing. |
+| .NET 10 SDK | Builds the standalone orchestrator, gateway, and control-plane modules | `nebula setup` installs it into `~/.dotnet` if missing. Published services include their runtime. |
 | Git and SSH | `nebula init` fetches the package, and `nebula deploy` connects to virtual machines | Install these tools before you run either command. |
 
 ## Install

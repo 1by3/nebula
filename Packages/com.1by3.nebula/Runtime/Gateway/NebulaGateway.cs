@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
 using UnityEngine;
+#endif
 
 namespace Nebula
 {
@@ -9,8 +13,13 @@ namespace Nebula
     /// worker currently owns that client's entity, and fans the workers' replication streams out to the clients,
     /// de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative:
     /// if the gateway dies, clients reconnect and the workers re-announce their entities.
+    /// The CLI runs this routing loop in a standalone .NET executable using exported container geometry.
+    /// The Unity component remains available for compatibility and in-process tests.
     /// </summary>
-    public sealed class NebulaGateway : MonoBehaviour
+    public sealed class NebulaGateway
+#if !NEBULA_SERVICE
+        : MonoBehaviour
+#endif
     {
         private sealed class ClientConn
         {
@@ -128,7 +137,11 @@ namespace Nebula
             NebulaLog.Info($"gateway {GatewayId} listening on udp/{config.GatewayPort}");
         }
 
+#if NEBULA_SERVICE
+        public void Dispose()
+#else
         private void OnDestroy()
+#endif
         {
             if (ControlPlane != null)
             {
@@ -141,7 +154,11 @@ namespace Nebula
             _transport?.Dispose();
         }
 
+#if NEBULA_SERVICE
+        public void Tick()
+#else
         private void Update()
+#endif
         {
             _transport.Poll(HandleTransportEvent);
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
@@ -465,7 +482,7 @@ namespace Nebula
             if (c.PendingSlot >= 0 && (c.PendingTick != tick || c.PendingWorker != workerIndex)) FlushWorldState(c);
             if (c.PendingSlot < 0)
             {
-                c.Pending ??= new NetworkWriter(NebulaWorker.StateBatchBytes + 64);
+                c.Pending ??= new NetworkWriter(WorldStateMsg.BatchBytes + 64);
                 c.Pending.Reset();
                 c.PendingSlot = WorldStateMsg.Begin(c.Pending, MsgId.WorldState, tick, workerIndex);
                 c.PendingCount = 0;
@@ -474,7 +491,7 @@ namespace Nebula
             }
             entry.Write(c.Pending);
             c.PendingCount++;
-            if (c.Pending.Length + EntityStateEntry.WireSize > NebulaWorker.StateBatchBytes) FlushWorldState(c);
+            if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes) FlushWorldState(c);
         }
 
         private void FlushWorldState(ClientConn c)
@@ -706,7 +723,11 @@ namespace Nebula
                 NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet");
                 return;
             }
+            #if NEBULA_SERVICE
+            var pick = candidates[System.Random.Shared.Next(candidates.Count)];
+#else
             var pick = candidates[UnityEngine.Random.Range(0, candidates.Count)];
+#endif
             var worker = _workersById[pick.OwnerWorkerId];
             c.SpawnWorkerId = worker.WorkerId;
             _writer.Reset();
