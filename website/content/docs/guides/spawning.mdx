@@ -54,6 +54,8 @@ If your game uses authored spawn points, find one inside the `container` passed 
 
 ## Registering prefabs
 
+Add `NetworkTransform` to each moving prefab's root before registration. A bare `NetworkIdentity` receives its full initial placement, including scale, but does not send ongoing movement. Predicted controllers, `NetworkRigidbody`, and `DynamicContainer` require an enabled root transform component. Keep static entities opted out unless their transform must change remotely. See [NetworkTransform](/docs/guides/network-transform) for component choices.
+
 Every prefab that can be spawned over the network goes in `NebulaConfig.NetworkPrefabs`, the list on the `Resources/NebulaConfig` asset that every role loads. `NebulaBootstrap` passes that list to `NetworkPrefabs.Register` at startup on every process, so the table is identical everywhere.
 
 | Rule | Detail |

@@ -116,7 +116,7 @@ Disable this option when you want Nebula to leave `applyRootMotion` unchanged.
 
 ## Delivery
 
-`NetworkAnimator` is always reliable-ordered (`SyncDelivery` is `Delivery.ReliableOrdered`; there is no unreliable option). A lost trigger could never be recovered from a later keyframe because a trigger is an event, not a value. Its keyframes therefore go out only when the component is dirty on a keyframe tick, unlike an unreliable `NetworkTransform`, which sends a keyframe every interval regardless.
+`NetworkAnimator` is always reliable-ordered (`SyncDelivery` is `Delivery.ReliableOrdered`; there is no unreliable option). A lost trigger could never be recovered from a later keyframe because a trigger is an event, not a value. Its keyframes therefore go out only when the component is dirty on a keyframe tick. Unreliable child `NetworkTransform` components send periodic keyframes; root transforms use a separate stream with reliable recovery after movement.
 
 Because the worker sends one sync message per delivery class per entity per tick, an animator and an unreliable transform on the same entity travel in separate packets; a reliable transform shares the animator's packet.
 
@@ -143,6 +143,6 @@ Because the worker sends one sync message per delivery class per entity per tick
 ## Related
 
 <Cards>
-  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="The other sync-channel component; the same authority modes." />
+  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="Root and child transform replication with the same authority modes." />
   <Card title="RPCs" href="/docs/guides/rpcs" description="How the owner-to-worker trigger request travels." />
 </Cards>

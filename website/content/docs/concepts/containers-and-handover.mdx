@@ -46,7 +46,7 @@ Each worker calculates its current tick from the wall clock and a fixed origin w
 1. Moves the ghosts it holds to the pose their owners streamed (kinematic, no physics solve of their own; `RemoteTick` on their behaviours presents the sync channel).
 2. Runs `NetworkTick` (and therefore `Simulate` on predicted behaviours) on every entity it has authority over, then lets PhysX step.
 3. Re-evaluates container membership for its authoritative entities, with hysteresis, and transfers authority for entities that crossed into a container owned by another worker.
-4. Maintains the **ghost band**, which is the area within `GhostBandMargin` of a neighboring container. It sends `GhostSpawn` once, `GhostState` at 60 Hz, `GhostVars` when a `NetworkVariable` changes, and `GhostSyncState` for component sync data. It sends entities in a dynamic container to each worker that has a ghost of the carrier.
+4. Maintains the **ghost band**, which is the area within `GhostBandMargin` of a neighboring container. It sends `GhostSpawn` once, `GhostState` for changed root transforms and reliable placement or recovery updates, `GhostVars` when a `NetworkVariable` changes, and `GhostSyncState` for component sync data. It sends entities in a dynamic container to each worker that has a ghost of the carrier.
 5. Streams `WorldState`, `OwnerState`, `EntityVars` and `EntityState` for its authoritative entities to the gateway.
 6. Records every resident entity's pose for the lag-compensation history (`NetworkIdentity.TryGetPoseAt`).
 
@@ -58,7 +58,7 @@ On a worker that does not control it, an entity exists as a ghost. `GhostSpawn` 
 
 On a ghost, `IsGhost` is `true` and `HasAuthority` is `false`. Nebula does not call `NetworkTick`, allow `NetworkVariable` writes, or send RPCs from that copy. `NetworkRigidbody` makes its rigidbody kinematic.
 
-Nebula moves a ghost from state sent by its controlling worker. Local raycasts and dynamic entities can detect the ghost. A local entity can collide with and respond to a ghost, but the collision does not change the ghost on its controlling worker.
+An enabled `NetworkTransform` moves a ghost from state sent by its controlling worker. Without one, the ghost keeps its initial placement until a container change or new spawn snapshot. Local raycasts and dynamic entities can detect the ghost. A local entity can collide with and respond to a ghost, but the collision does not change the ghost on its controlling worker.
 
 The neighbour thus holds full warm state before the entity can cross. If the entity leaves the band without crossing, the ghost lingers for `GhostLingerSeconds` and is then despawned.
 
@@ -66,7 +66,7 @@ The neighbour thus holds full warm state before the entity can cross. If the ent
 
 When an entity moves farther than `HandoverHysteresis` into a container assigned to another worker, the current worker sends a reliable `AuthorityTransfer` message. It contains:
 
-- the entity's exact final pose and velocity, in the new container's local space,
+- the entity's complete final position and rotation in the new container's local space, local scale, and world-space velocity, even when ongoing transform synchronization omits those values,
 - the new epoch,
 - the full NetworkVariable blob,
 - the not-yet-simulated inputs buffered for a predicted behaviour, so the input stream never breaks,

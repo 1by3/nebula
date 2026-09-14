@@ -14,10 +14,13 @@ Add these components to the root of a spawnable prefab:
 | Component | Purpose |
 | --- | --- |
 | `NetworkIdentity` | Makes the carrier a networked entity that workers can spawn and transfer. |
+| `NetworkTransform` | Replicates the carrier's root pose to clients and ghost workers. |
 | `Container` | Defines the box in the carrier's local space with `Center` and `Size`. |
 | `DynamicContainer` | Registers the box as a container carried by the entity. |
 
-Keep all three components on the root. Nebula reconstructs positions from the carrier's root pose, so a container frame on a child transform is not supported.
+Keep all four components on the root. Nebula reconstructs positions from the carrier's root pose, so a container frame on a child transform is not supported.
+
+Keep `NetworkTransform` enabled, use `Authority = Server`, and enable every position and rotation axis. Enable scale synchronization if the carrier changes scale. Adding `DynamicContainer` adds the required transform component to a new object, but existing assets need to be checked. Run **Nebula > Validate Project** before building. Add `NetworkRigidbody` too when PhysX simulates the carrier; scripted movement does not require it.
 
 Set `ContainerId` to a readable label. At runtime, Nebula appends the carrier's network ID and produces an ID such as `interior#281474976710657`.
 
@@ -110,7 +113,7 @@ The gateway uses the carrier pose to reconstruct a passenger's world position fo
 
 ## Inspect dynamic containers
 
-Open the dashboard's [World map](/docs/guides/orchestrator-and-dashboard#world-map) to inspect:
+Open the dashboard's [World map](/docs/guides/orchestrator-and-dashboard#inspect-the-world-map) to inspect:
 
 - the worker that controls the carrier;
 - the worker that controls the dynamic container;

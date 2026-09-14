@@ -109,13 +109,15 @@ On clients, `renderTick` is delayed by `NebulaConfig.InterpolationDelayTicks` so
 
 The gateway caches the newest complete keyframe for each sync behavior. When a client joins, the gateway includes those keyframes in the entity's spawn message. The new client therefore starts from recent state instead of the prefab defaults.
 
-The gateway does not cache partial updates. A new client can remain behind until it receives the next keyframe, which takes at most `SyncKeyframeInterval` ticks.
+The gateway does not cache partial component updates. Unreliable behaviors send periodic keyframes, so a new client can wait up to `SyncKeyframeInterval` ticks for current state. Reliable child `NetworkTransform` updates always carry a complete selected snapshot. Custom reliable behaviors must supply complete snapshots when needed; a behavior that sends a partial update and then stops has no periodic keyframe guarantee.
 
 This is why a keyframe must be self-contained: write everything a fresh copy needs, not just what changed since the last keyframe.
 
 ## A complete example
 
 A door on a child transform of a larger entity. The hinge angle changes every tick while the door moves, so it goes on the sync channel unreliably with buffered interpolation; a locked flag changes rarely and rides the same chunk. The auto-close deadline is a tick number only the simulating worker cares about, so it travels as handover state.
+
+This custom behavior drives the hinge itself, so do not add a `NetworkTransform` to the same hinge. The entity root needs one only if the root moves. For a simpler door, replicate an open/closed `NetworkVariable` and animate the leaves locally on every copy.
 
 ```csharp title="NetworkDoor.cs"
 using Nebula;
@@ -184,7 +186,7 @@ public sealed class NetworkDoor : NetworkBehaviour
         if (locked) { writer.WriteBool(_locked); _lastSentLocked = _locked; }
     }
 
-    protected internal override void OnSyncStateSent()
+    protected override void OnSyncStateSent()
     {
         _angleDirty = false;
         _lockedDirty = false;
@@ -281,7 +283,7 @@ If the owning client must drive your component, derive from `NetworkSyncBehaviou
 ## Related
 
 <Cards>
-  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="The built-in sync-channel component for transforms." />
+  <Card title="NetworkTransform" href="/docs/guides/network-transform" description="Opt into root or child transform replication." />
   <Card title="NetworkAnimator" href="/docs/guides/network-animator" description="The built-in sync-channel component for animators." />
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="When and how an authority transfer happens." />
   <Card title="Serialization" href="/docs/guides/serialization" description="NetworkWriter and NetworkReader." />

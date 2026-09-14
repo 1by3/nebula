@@ -5,6 +5,8 @@ description: Predict an owned entity, reconcile it with worker state, drive serv
 
 Use `PredictedBehaviour<TInput>` for an entity that must respond to local input before a worker reply arrives. A player controller is the common example.
 
+Keep `NetworkIdentity` and an enabled `NetworkTransform` on the controller's root. A newly added predicted behavior requires and adds the transform component; check existing prefabs explicitly. Use worker authority (`Authority = Server`) so remote clients and ghost workers follow the worker's state. The owning client uses reconciliation. Do not combine this controller with `NetworkRigidbody`.
+
 The owning client collects one input value per tick and simulates it immediately. The controlling worker simulates the same input and sends its result back. If the two positions differ by more than `CorrectionThreshold`, the client applies the worker state and repeats its later inputs. Nebula calls this process **reconciliation**.
 
 ## Define the input

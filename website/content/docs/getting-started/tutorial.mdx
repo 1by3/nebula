@@ -130,7 +130,7 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
         transform.rotation = Quaternion.Euler(0f, input.Yaw, 0f);
         var velocity = (transform.forward * input.Move.y + transform.right * input.Move.x) * Speed;
         transform.position += velocity * dt;
-        Identity.Velocity = velocity;
+        Identity.Motion.Velocity = velocity;
 
         bool firePressed = input.Fire && (_previousButtons & PlayerInput.FireButton) == 0;
         _previousButtons = input.Buttons;
@@ -160,7 +160,7 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 This example uses three Nebula features that matter during a handover:
 
 - `HasAuthority` is true only on the worker that controls the entity. This check prevents a ghost on a nearby worker from firing the weapon.
-- `Identity.Velocity` supplies the velocity used for remote movement and authority transfers.
+- `Identity.Motion.Velocity` supplies velocity for prediction state and handover. The root `NetworkTransform` also sends it for remote extrapolation when `SyncVelocity` is enabled.
 - `[AuthorityRpc]` runs `TakeDamage` on the worker that controls the target. The call works when the target is local or represented by a ghost.
 
 See [Prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs), and [NetworkBehaviour and NetworkVariable](/docs/guides/network-behaviour) for details.
@@ -170,7 +170,11 @@ See [Prediction](/docs/guides/prediction), [RPCs](/docs/guides/rpcs), and [Netwo
 
 ### Make the player prefab
 
-Create a capsule, add `NetworkIdentity` and `PlayerController`, and save it as a prefab. Then delete the capsule from the scene: the game mode spawns players, so the scene must not contain one. Add the prefab to `NebulaConfig.NetworkPrefabs`. Its list position becomes the numeric prefab ID sent in network messages.
+Create a capsule and add `NetworkIdentity`, `NetworkTransform`, and `PlayerController` on its root. Adding a new predicted controller also adds its required `NetworkTransform` automatically; check that the component is present on existing prefabs too.
+
+On `NetworkTransform`, keep **Authority = Server**, all position and rotation axes enabled, and **SyncVelocity** enabled. Leave scale synchronization disabled because this player's scale does not change. Keep **Interpolate** and **UseUnreliableDeltas** enabled. Do not add `NetworkRigidbody` to this predicted controller; that component is for worker-simulated physics props.
+
+Save the capsule as a prefab, then delete it from the scene: the game mode spawns players, so the scene must not contain one. Add the prefab to `NebulaConfig.NetworkPrefabs`. Its list position becomes the numeric prefab ID sent in network messages.
 
 <Callout type="warn" title="Keep SceneId at 0 on the prefab">
 Open the prefab asset and check that `NetworkIdentity.SceneId` is `0`. If you saved the scene while the capsule was in it, the Editor gave the capsule a scene entity ID. Dragging the capsule into a prefab copies that ID into the prefab asset. Nebula ignores the ID on spawned copies and logs a warning, and **Nebula > Validate Project** reports it. Set the field to `0` in the prefab asset to clear both.
@@ -178,7 +182,9 @@ Open the prefab asset and check that `NetworkIdentity.SceneId` is `0`. If you sa
 
 To register all prefabs whose root has a `NetworkIdentity`, run **Nebula > Network Prefabs > Register All Network Prefabs**. The command appends new prefabs without changing existing IDs.
 
-Remote copies of the player (other clients, ghosts on other workers) get a `RemoteInterpolator` attached by the runtime and are moved from the identity's state stream; you do not have to add anything for that.
+`NetworkTransform` drives movement on remote clients and ghost workers through the batched transform stream. The runtime supplies its interpolation buffer; do not add `RemoteInterpolator` yourself. The owning client uses prediction and reconciliation instead of this remote interpolation.
+
+A static networked object only needs `NetworkIdentity` and its gameplay behavior. For example, a fixed door whose copies animate from a replicated open/closed value does not need `NetworkTransform`. Its initial placement, container changes, and scale survive scene unloading and reloading. Add transform synchronization when copies need ongoing position, rotation, or scale updates. See [NetworkTransform](/docs/guides/network-transform).
 
 </Step>
 <Step>
@@ -215,7 +221,7 @@ The gateway selects a container whose worker is connected. It then asks that wor
 
 ### Build and run the mesh
 
-**Nebula > Validate Project** checks the setup first: the boot and game scenes in the build settings, the game mode, duplicate container ids, prefabs missing from `NetworkPrefabs`, and network prefabs that kept a `SceneId`. Each problem is logged with its object, so clicking the Console line selects it.
+**Nebula > Validate Project** checks the setup first: the boot and game scenes in the build settings, the game mode, duplicate container ids, prefabs missing from `NetworkPrefabs`, and network prefabs that kept a `SceneId`. It also reports missing or disabled transforms on predicted entities, physics bodies, and moving containers, and incompatible authority settings. Each problem is logged with its object, so clicking the Console line selects it.
 
 ```bash
 nebula build
@@ -235,6 +241,10 @@ Builds\Win64\Nebula.exe -nebula-role client -nebula-name other
 ```
 
 To automate a client, implement bot input in your predicted behavior and start the mesh with `nebula start --bots 2`. Each bot runs a complete headless client process.
+
+With two clients connected, move one player while watching from the other. Check that movement remains visible when the player crosses a worker boundary. If only the owning client moves, verify that the player prefab has an enabled root `NetworkTransform` with position synchronization enabled. Stop moving and check that the remote player settles at the same position.
+
+When upgrading an existing project, rebuild clients, workers, and gateways together. The transform format introduced in `0.1.0-alpha.13` uses protocol version 8 and is incompatible with protocol version 7.
 
 </Step>
 <Step>

@@ -70,16 +70,18 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 
 | Field | Default | What to set |
 | --- | --- | --- |
-| `InterestNearRadius` | `30` m | Send entity state every tick inside this distance from the client's pawn. |
+| `InterestNearRadius` | `30` m | Forward each available unreliable root update inside this distance from the client's pawn. |
 | `InterestFarRadius` | `80` m | Use the middle update rate between the near and far distances. |
-| `InterestMidDivisor` | `4` | Send every fourth tick in the middle distance band. Use `1` to send every tick. |
-| `InterestFarDivisor` | `12` | Send every twelfth tick beyond the far distance. Clients without a pawn also receive this rate. |
+| `InterestMidDivisor` | `4` | Forward available unreliable root updates on every fourth tick in the middle band. Use `1` to forward each available update. |
+| `InterestFarDivisor` | `12` | Forward available unreliable root updates on every twelfth tick beyond the far distance. Clients without a pawn also use this filter. |
 | `InterpolationDelayTicks` | `3` | Render remote entities this many ticks behind the latest received state. |
 | `InputLeadMarginTicks` | `2` | Add this many ticks to half the measured round-trip time when scheduling input. |
 | `InputLeadTargetTicks` | `3` | Keep client input this many ticks ahead when it arrives at the worker. |
 | `InputLeadMaxAdjustTicks` | `30` | Limit how far the client can increase its input lead. |
 
 Nebula runs at 60 ticks per second. `NetworkTime.TickRate` is a constant, not a configuration field.
+
+These distance filters do not create updates for static entities or unchanged transforms. Reliable root recovery, teleports, and container changes bypass the filter so the last pose can arrive after movement stops. Child component state uses a separate channel. See [NetworkTransform](/docs/guides/network-transform).
 
 ## Override runtime values on the command line
 

@@ -23,11 +23,13 @@ Add [`NetworkIdentity`](/docs/reference/core/network-identity) to mark a GameObj
 | `HasAuthority` | `bool` | Worker side: this process simulates the entity right now. Always `false` on a client. |
 | `IsLocalPlayer` | `bool` | Client side: the local client owns this entity. |
 | `IsSpawned` | `bool` | True between `OnNetworkSpawn` and `OnNetworkDespawn`. |
-| `Velocity` | `Vector3` | Velocity as reported by the authority. Used for extrapolation and carried through handover. Authoritative code writes it; `NetworkRigidbody` mirrors its Rigidbody's linear velocity into it every tick. |
+| `Motion.Velocity` | `Vector3` | World-space velocity reported by the authority. Carried through handover and streamed for extrapolation when the root `NetworkTransform` enables `SyncVelocity`. `NetworkRigidbody` mirrors its body's linear velocity here. |
 | `OwnerWorkerIndex` | `ushort` | Index of the worker last heard to be authoritative. Debug and overlay only. |
 | `PrefabId` | `ushort` | Index into `NebulaConfig.NetworkPrefabs`. Set at spawn time. |
 
 `Behaviours` contains the `NetworkBehaviour` components in `GetComponentsInChildren` order. Nebula uses each component's position in this array as its network index. Use the same prefab and component order in every process.
+
+An identity synchronizes initial placement and container changes. Add `NetworkTransform` for ongoing movement and `NetworkRigidbody` for worker-simulated physics. `Identity.Velocity` remains an obsolete alias; use `Identity.Motion.Velocity` in new code.
 
 `NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). See [Prediction](/docs/guides/prediction#perform-a-lag-compensated-query).
 

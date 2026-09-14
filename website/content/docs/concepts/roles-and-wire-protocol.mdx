@@ -85,7 +85,7 @@ Nebula sends positions and rotations in container-local space. Each message incl
 
 | Message | Delivery | Purpose |
 | --- | --- | --- |
-| `WorldState` | Sequenced | Pose and velocity of every authoritative entity, batched |
+| `WorldState` | Sequenced or Reliable | Batched selected fields from opted-in root transforms. Reliable delivery carries container changes, teleports, recovery updates, and transforms configured for reliable delivery. |
 | `OwnerState` | Sequenced | The predicted behaviour's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
 | `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
@@ -104,9 +104,9 @@ Nebula sends positions and rotations in container-local space. Each message incl
 | Message | Delivery | Purpose |
 | --- | --- | --- |
 | `GhostSpawn`, `GhostDespawn` | Reliable | Creates or removes a ghost copy. |
-| `GhostState` | Sequenced | Pose and velocity of ghosted entities at 60 Hz |
+| `GhostState` | Sequenced or Reliable | Selected root transform updates for ghosts, with the same opt-in and recovery rules as `WorldState`. |
 | `GhostVars`, `GhostSyncState` | Reliable or Sequenced | Sends variable and sync-component changes to ghosts. |
-| `AuthorityTransfer` | Reliable | Transfers authority with the final state, new epoch, pending inputs, and handover state. |
+| `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, and existing ghost recipients. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
 | `ForwardInput` | Reliable | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 
