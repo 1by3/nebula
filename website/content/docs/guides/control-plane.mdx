@@ -5,6 +5,8 @@ description: Use the SpacetimeDB control plane to register processes, assign con
 
 Use the control plane to share process registrations, container assignments, and low-frequency settings across the mesh. The control plane is a SpacetimeDB module in `Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs`. Nebula processes access it through [`IControlPlane`](/docs/reference/control-plane/i-control-plane).
 
+For the exact public schema, reducer arguments, state transitions, and failure semantics, see the [control-plane contract](/docs/specifications/control-plane).
+
 ## What it is for, and what it is not
 
 Use it for process registration, heartbeats, container assignments, authority epochs, and shared settings. The orchestrator writes assignments. Workers and gateways register themselves and update their heartbeats. Each process subscribes to the records it needs.
@@ -24,14 +26,14 @@ The module exposes five public tables. Reducers use `ctx.Timestamp` for each Spa
 | Table | Primary key | Columns |
 | --- | --- | --- |
 | `worker` | `WorkerId` | `WorkerIndex`, `Address`, `Port`, `Status`, `LastHeartbeat`, `TickCount`, `TickMs`, `EntityCount`, `AuthoritativeCount`, `GhostCount`, `PlayerCount`, `BotCount`, `ServerDrivenCount` |
-| `container_lease` | `ContainerId` | `WorkerId` (`""` = unassigned), `Epoch`, `State`, `UpdatedAt` |
+| `container_lease` | `ContainerId` | `WorkerId` (`""` = unassigned), `Epoch`, `State`, `UpdatedAt`, `HasBounds`, `BoundsCenterX/Y/Z`, `BoundsSizeX/Y/Z` |
 | `gateway` | `GatewayId` | `Address`, `Port`, `LastHeartbeat` |
 | `orchestrator` | `OrchestratorId` | `LastHeartbeat`, `DesiredWorkers` |
 | `game_setting` | `Key` | `Value`, `Version` (bumped on every change), `UpdatedAt` |
 
 The orchestrator assigns each worker a `WorkerIndex`. This value becomes the high 16 bits of network IDs created by that worker and selects its diagnostic color.
 
-Each container has an `Epoch` that increases when its assigned worker changes. Workers and the gateway use it to reject state from a previous assignment.
+Each container has an `Epoch` that increases on an accepted assignment or pin operation. A repeated active assignment to the same worker is a no-op; release and unregister operations do not increment it. Workers and the gateway also inspect the lease state and worker ID when deciding who owns a container.
 
 ### Reducers
 
@@ -45,7 +47,10 @@ Each container has an `Epoch` that increases when its assigned worker changes. W
 | `UnregisterGateway` | `gatewayId` | Delete the row. |
 | `HeartbeatOrchestrator` | `orchestratorId, desiredWorkers` | Insert or update; lets workers and gateways tell whether somebody is driving the mesh. |
 | `EnsureContainer` | `containerId` | Insert an `orphaned` lease at epoch 0 if none exists. |
+| `EnsureRuntimeContainer` | `containerId, workerId, centerX, centerY, centerZ, sizeX, sizeY, sizeZ` | Insert a bounded runtime lease if none exists. A nonempty worker owns it at epoch 1; otherwise it starts orphaned at epoch 0. |
+| `TouchContainer` | `containerId` | Refresh `UpdatedAt` without changing the assignment. |
 | `AssignContainer` | `containerId, workerId` | Set the owner, bump the epoch, state `active`. A no-op when the same worker already holds it active, so no epoch is burned. Inserts at epoch 1 if the row is missing. |
+| `PinContainer` | `containerId, workerId` | Atomically set the owner, bump the epoch, and set state `pinned`. A no-op when that worker already holds it pinned. |
 | `SetLeaseState` | `containerId, state` | Overwrite the state string. |
 | `ReleaseContainer` | `containerId` | `WorkerId = ""`, state `orphaned`. |
 | `RemoveContainer` | `containerId` | Delete the lease row. Workers call it when the carrier of a [dynamic container](/docs/guides/dynamic-containers) despawns. |
@@ -101,9 +106,13 @@ public interface IControlPlane : IDisposable
     void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
     void SetSetting(string key, string value);
     void EnsureContainer(string containerId);
+    void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+    void TouchContainer(string containerId);
     void AssignContainer(string containerId, string workerId);
+    void PinContainer(string containerId, string workerId);
     void SetLeaseState(string containerId, string state);
     void ReleaseContainer(string containerId);
+    void RemoveContainer(string containerId);
     void ResetControlPlane();
 }
 ```

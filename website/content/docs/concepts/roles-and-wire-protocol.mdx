@@ -61,8 +61,8 @@ All connections use LiteNetLib over User Datagram Protocol (UDP) through the `IT
 
 | `Delivery` | Semantics | Used for |
 | --- | --- | --- |
-| `Sequenced` | Does not retry lost messages. Keeps only the newest message. Splits packets at 500 bytes. | Transform streams: `WorldState`, `GhostState`, `ClientInput`, `OwnerState`, and sync components that select it. |
-| `ReliableOrdered` | Reliable, ordered | Everything else |
+| `Sequenced` | Does not retry lost messages. Keeps only the newest message. Transform batches are split at about 500 bytes. | `ClientInput`, `ForwardInput`, `OwnerState`, and transform or sync-component updates that select sequenced delivery. |
+| `ReliableOrdered` | Reliable, ordered | Lifecycle, variables, RPCs, authority transfer, and transform or sync-component updates marked reliable. |
 
 Nebula processes transport events only when it calls `Poll`. This keeps network callbacks on the simulation thread.
 
@@ -72,14 +72,17 @@ Every entity message contains a network ID (`netId`) and authority epoch. The sp
 
 Nebula sends positions and rotations in container-local space. Each message includes a `ContainerRef`, which identifies a static container by index or a dynamic container by its carrier's network ID. Find the message structs in `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs` or the [Protocol reference](/docs/reference#protocol).
 
+For exact byte layouts, numeric message IDs, delivery requirements, and compatibility rules, see the [wire protocol specification](/docs/specifications/wire-protocol).
+
 **Session**
 
 | Message | Direction | Purpose |
 | --- | --- | --- |
-| `Hello`, `Welcome` | any peer to any peer | Identify the role, id and index; a client's `Hello` carries its name and bot flag |
-| `Ping`, `Pong` | client to gateway | RTT measurement for the input lead |
+| `Hello` | client to gateway; both sides of service links | Identify the role, id, index, protocol version, and flags. |
+| `Welcome` | gateway to client | Assign the client ID and report the tick rate and server tick. |
+| `Ping`, `Pong` | client to gateway and back | Round-trip time (RTT) measurement for the input lead. |
 | `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity |
-| `ContainerOwnership` | worker to gateway to client | The container-to-worker table with lease epochs, for routing and the overlay |
+| `ContainerOwnership` | gateway to client | The container-to-worker table with lease epochs, for routing and the overlay. |
 
 **Worker to gateway to client**
 
@@ -105,10 +108,11 @@ Nebula sends positions and rotations in container-local space. Each message incl
 | --- | --- | --- |
 | `GhostSpawn`, `GhostDespawn` | Reliable | Creates or removes a ghost copy. |
 | `GhostState` | Sequenced or Reliable | Selected root transform updates for ghosts, with the same opt-in and recovery rules as `WorldState`. |
-| `GhostVars`, `GhostSyncState` | Reliable or Sequenced | Sends variable and sync-component changes to ghosts. |
+| `GhostVars` | Reliable | Sends the complete variable block after one variable changes. |
+| `GhostSyncState` | Reliable or Sequenced | Sends sync-component changes to ghosts. |
 | `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, and existing ghost recipients. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
-| `ForwardInput` | Reliable | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
+| `ForwardInput` | Sequenced | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 
 ## Trust model
 

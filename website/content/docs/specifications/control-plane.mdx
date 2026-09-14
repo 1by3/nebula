@@ -1,0 +1,211 @@
+---
+title: Control plane contract
+description: Implement or integrate with Nebula's SpacetimeDB tables, reducers, lease transitions, and connection behavior.
+---
+
+Use this specification to integrate with Nebula's control plane or inspect its SpacetimeDB database. The control plane stores process registrations, container leases, and low-frequency game settings for one mesh. It does not carry per-tick entity state or saved entities.
+
+The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth is `Packages/com.1by3.nebula/SpacetimeDB/Module~/Lib.cs`.
+
+## Compatibility and scope
+
+The control-plane schema has no negotiated version. A process and the published SpacetimeDB module MUST use bindings generated from the same schema. Run the gateway, orchestrator, and workers from the same Nebula release, and regenerate `SpacetimeDB/Generated/` after changing the module.
+
+All five tables are public. Mutations occur through reducers and are atomic per reducer invocation. Table and reducer identifiers use `snake_case` at the SpacetimeDB boundary even though the C# module and generated client expose PascalCase members.
+
+This contract excludes the `nebula-persist` database and its persistence module. See [Persistence](/docs/guides/persistence) for that separate data model.
+
+<Callout type="warn" title="Every reducer is unauthenticated">
+The module does not inspect caller identity or authorize operations. Any caller that can reach the database can register processes, change leases, reset all control-plane data, or rewrite settings. Restrict database access with deployment infrastructure. Do not treat the database name as a security boundary.
+</Callout>
+
+## Scalar types and conventions
+
+Types below use SpacetimeDB's `string`, `bool`, `u16`, `u32`, `u64`, `f32`, and `timestamp` types. Reducers set every heartbeat or update timestamp from the transaction's `ctx.Timestamp`.
+
+The module treats process IDs, container IDs, addresses, statuses, states, and setting values as opaque strings. It does not enforce nonempty IDs, address syntax, worker-index uniqueness, worker existence, lease-state membership, or referential integrity.
+
+Nebula's runtime applies these conventions:
+
+- An empty `worker_id` means that a container is unassigned.
+- Static container IDs come from the authored or baked manifest.
+- A carried dynamic container ID contains `#` and normally ends with its carrier entity's network ID.
+- A runtime container ID is `rt_` followed by an invariant-culture `u64` decimal value.
+- Bounds are in absolute world coordinates. Only rows with `has_bounds = true` define a runtime-container box.
+
+## Public tables
+
+### `worker`
+
+One row describes one registered simulation worker.
+
+| Column | Type | Contract |
+| --- | --- | --- |
+| `worker_id` | `string` | Primary key. Process identifier. |
+| `worker_index` | `u32` | Dense index assigned by the orchestrator. The runtime narrows it to 16 bits for network IDs and protocol messages. |
+| `address` | `string` | Host or IP address advertised to gateways and peer workers. |
+| `port` | `u16` | UDP listen port. |
+| `status` | `string` | Runtime status, normally `starting` or `ready`. |
+| `last_heartbeat` | `timestamp` | Timestamp of registration or the newest heartbeat. |
+| `tick_count` | `u64` | Worker's current simulation tick counter. |
+| `tick_ms` | `f32` | Reported simulation time per tick in milliseconds. |
+| `entity_count` | `u32` | All resident authoritative and ghost entities. |
+| `authoritative_count` | `u32` | Authoritative resident entities. |
+| `ghost_count` | `u32` | Non-authoritative resident entities. |
+| `player_count` | `u32` | Authoritative entities owned by human clients. |
+| `bot_count` | `u32` | Authoritative entities owned by bot clients. |
+| `server_driven_count` | `u32` | Authoritative entities with no client owner. |
+
+### `container_lease`
+
+One row describes the worker assignment for one static, dynamic, or runtime container.
+
+| Column | Type | Contract |
+| --- | --- | --- |
+| `container_id` | `string` | Primary key. Opaque to the module. |
+| `worker_id` | `string` | Assigned worker; empty when unassigned. |
+| `epoch` | `u64` | Monotonic assignment generation. Only assignment and pin reducers increment it. |
+| `state` | `string` | Lease state. The module stores any supplied value. |
+| `updated_at` | `timestamp` | Newest reducer timestamp that touched or changed the row. |
+| `has_bounds` | `bool` | Whether the six bound fields define a runtime-container box. |
+| `bounds_center_x`, `bounds_center_y`, `bounds_center_z` | `f32` | Absolute center when `has_bounds` is true. |
+| `bounds_size_x`, `bounds_size_y`, `bounds_size_z` | `f32` | Absolute size when `has_bounds` is true. |
+
+The lease epoch is not an entity authority epoch. The wire protocol represents this lease epoch as a `u64` in `ContainerOwnership`, while per-entity messages carry a separate `u32` epoch.
+
+### `gateway`
+
+| Column | Type | Contract |
+| --- | --- | --- |
+| `gateway_id` | `string` | Primary key. Process identifier. |
+| `address` | `string` | Address advertised to the mesh. |
+| `port` | `u16` | Client-facing UDP port. |
+| `last_heartbeat` | `timestamp` | Timestamp of registration or the newest heartbeat. |
+
+### `orchestrator`
+
+| Column | Type | Contract |
+| --- | --- | --- |
+| `orchestrator_id` | `string` | Primary key. Deployments normally have one row, but the schema does not enforce that. |
+| `last_heartbeat` | `timestamp` | Timestamp of the newest heartbeat. |
+| `desired_workers` | `u32` | Worker count requested by that orchestrator. |
+
+### `game_setting`
+
+| Column | Type | Contract |
+| --- | --- | --- |
+| `key` | `string` | Primary key. Game-defined setting name. |
+| `value` | `string` | Game-defined value; Nebula does not interpret it. |
+| `version` | `u64` | Starts at 1 and increments only when the value changes. |
+| `updated_at` | `timestamp` | Timestamp of insertion or the newest value change. |
+
+Use game settings for low-frequency, idempotent coordination. Do not use them as a per-tick stream or as a singleton gameplay worker.
+
+## Reducer contract
+
+Arguments appear in SpacetimeDB boundary order. A reducer that finds no target row performs the no-op described below and still completes normally.
+
+### Process reducers
+
+| Reducer and arguments | Effect |
+| --- | --- |
+| `register_worker(worker_id: string, worker_index: u32, address: string, port: u16)` | If absent, insert a worker with status `starting`, the transaction timestamp, and all counters zero. If present, replace index, address, and port; set status to `starting`; refresh the heartbeat; preserve all counters. |
+| `heartbeat_worker(worker_id: string, status: string, tick_count: u64, tick_ms: f32, entity_count: u32, authoritative_count: u32, ghost_count: u32, player_count: u32, bot_count: u32, server_driven_count: u32)` | If present, replace status and all counters and refresh the heartbeat. If absent, no-op. |
+| `unregister_worker(worker_id: string)` | Delete that worker if present. For every lease naming it, clear `worker_id`, set state to `orphaned`, and refresh `updated_at`. Preserve each lease epoch and bounds. |
+| `register_gateway(gateway_id: string, address: string, port: u16)` | Insert or replace address and port and refresh the heartbeat. |
+| `heartbeat_gateway(gateway_id: string)` | Refresh the heartbeat if present; otherwise no-op. |
+| `unregister_gateway(gateway_id: string)` | Delete that gateway if present. |
+| `heartbeat_orchestrator(orchestrator_id: string, desired_workers: u32)` | Insert or replace `desired_workers` and refresh the heartbeat. |
+
+### Container reducers
+
+| Reducer and arguments | Effect |
+| --- | --- |
+| `ensure_container(container_id: string)` | If absent, insert an unassigned `orphaned` row at epoch 0 with `has_bounds = false`. If present, no-op. |
+| `ensure_runtime_container(container_id: string, worker_id: string, center_x: f32, center_y: f32, center_z: f32, size_x: f32, size_y: f32, size_z: f32)` | If present, no-op. If absent, insert the supplied bounds with `has_bounds = true`. A nonempty worker creates an `active` row at epoch 1; an empty worker creates an `orphaned` row at epoch 0. The first successful caller therefore fixes the initial bounds and owner. |
+| `touch_container(container_id: string)` | If present, refresh only `updated_at`; otherwise no-op. |
+| `assign_container(container_id: string, worker_id: string)` | If absent, insert an `active` row at epoch 1. If present and state is `pinned`, no-op. If the same worker already owns an `active` row, no-op. Otherwise replace the worker, increment epoch, set state to `active`, and refresh `updated_at`. Preserve bounds. |
+| `pin_container(container_id: string, worker_id: string)` | If absent, no-op. If the same worker already owns the row in `pinned`, no-op. Otherwise replace the worker, increment epoch, set state to `pinned`, and refresh `updated_at`. Preserve bounds. |
+| `set_lease_state(container_id: string, state: string)` | If present, replace only the state and refresh `updated_at`; otherwise no-op. It does not validate the state or change worker or epoch. |
+| `release_container(container_id: string)` | If present, clear `worker_id`, set state to `orphaned`, and refresh `updated_at`; otherwise no-op. It does not increment epoch. |
+| `remove_container(container_id: string)` | Delete the lease if present. |
+
+### Setting and reset reducers
+
+| Reducer and arguments | Effect |
+| --- | --- |
+| `set_game_setting(key: string, value: string)` | Insert at version 1, or replace the value and increment the version. If the value is unchanged, no-op and preserve `updated_at`. |
+| `reset_control_plane()` | Delete every row from `game_setting`, `worker`, `gateway`, `orchestrator`, and `container_lease`. It does not touch the separate persistence database. |
+
+## Lease states and transitions
+
+Nebula defines these state strings:
+
+| State | Ownership meaning | Current producer |
+| --- | --- | --- |
+| `assigning` | Non-owning reserved state. | Reserved; the current orchestrator does not write it. |
+| `active` | The named worker owns the container. | Assignment reducers. |
+| `draining` | The named worker still owns the container while draining. | Reserved; current retirement keeps a lease active until reassignment. |
+| `orphaned` | No worker owns the container. | Ensure, release, and worker removal. |
+| `pinned` | The named worker owns a carried dynamic container independently of its carrier. | `pin_container`. |
+
+The runtime treats `active`, `draining`, and `pinned` as owning states. The module does not enforce the state/worker combinations in this table.
+
+The implemented transition rules are:
+
+| Operation | Existing condition | Result | Epoch |
+| --- | --- | --- | ---: |
+| Ensure static | Missing | Unassigned, `orphaned`, no bounds | 0 |
+| Ensure runtime | Missing, empty worker | Unassigned, `orphaned`, supplied bounds | 0 |
+| Ensure runtime | Missing, nonempty worker | Supplied worker, `active`, supplied bounds | 1 |
+| Assign | Missing | Supplied worker, `active` | 1 |
+| Assign | Same worker and `active` | No change | Unchanged |
+| Assign | `pinned` | No change | Unchanged |
+| Assign | Any other existing row | Supplied worker, `active` | Incremented |
+| Pin | Existing row not already pinned to that worker | Supplied worker, `pinned` | Incremented |
+| Release | Existing row | Unassigned, `orphaned` | Unchanged |
+| Unregister owner | Lease names removed worker | Unassigned, `orphaned` | Unchanged |
+| Set state or touch | Existing row | As described by the reducer | Unchanged |
+| Remove | Existing row | Row deleted | Not applicable |
+
+`assign_container` and `pin_container` are the only epoch-incrementing operations. Consumers MUST therefore consider the state and worker ID as well as the epoch. Release and unregister operations invalidate ownership without burning an epoch.
+
+## Worker statuses and liveness
+
+Nebula defines `starting`, `ready`, `draining`, and `dead`. Registration writes `starting`; a running worker normally heartbeats `ready`. `draining` and `dead` are reserved in the current runtime. The module accepts any status string.
+
+Liveness is a consumer policy, not a database constraint:
+
+```text
+alive = status != "dead" && control_plane_now - last_heartbeat <= worker_timeout
+```
+
+`worker_timeout` defaults to 5 seconds. The orchestrator unregisters a worker after this test fails; that reducer orphans its leases. The module does not expire rows on its own.
+
+## Subscription and failure behavior
+
+`SpacetimeControlPlane` subscribes to all tables, mirrors workers, leases, gateways, and settings into `IControlPlane`, and raises one `Changed` callback from the next main-thread `Tick()` after observed row changes. It reads orchestrator timestamps to estimate control-plane time but does not expose orchestrator rows through `IControlPlane`.
+
+`IControlPlane.Now` is the newest observed server timestamp plus local monotonic elapsed time. It is an estimate used for heartbeat ages, not an authoritative simulation clock.
+
+When disconnected, `SpacetimeControlPlane` keeps its last mirrored topology, drops attempted reducer writes, and reconnects every two seconds. It does not queue writes for replay. Workers continue simulating from the last leases they received. During an outage, the orchestrator cannot observe liveness, assign containers, or start replacements from new control-plane data.
+
+After reconnection and subscription application, the current table snapshot replaces the mirror and triggers `Changed`.
+
+## Operational invariants
+
+An integrating process SHOULD preserve these runtime invariants even though the module does not enforce them:
+
+- Give every live worker a unique ID and an index that fits in `u16`.
+- Keep one orchestrator responsible for assignments.
+- Assign a lease only to a registered, live worker.
+- Use only the defined lease states and pair `orphaned` with an empty worker ID.
+- Treat `ensure_runtime_container` as first-writer-wins. Use a separate game-level authority when concurrent callers could propose different bounds.
+- Publish a schema and matching generated bindings together.
+- Keep per-tick entity state on direct service links described by the [wire protocol](/docs/specifications/wire-protocol).
+
+<Cards>
+  <Card title="Wire protocol specification" href="/docs/specifications/wire-protocol" description="Version 8 messages, encodings, and delivery classes." />
+  <Card title="Control plane guide" href="/docs/guides/control-plane" description="Configure, publish, and use the module from a Nebula project." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="How leases become simulation authority." />
+</Cards>

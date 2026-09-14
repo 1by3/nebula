@@ -1,0 +1,377 @@
+---
+title: Wire protocol specification
+description: Implement or inspect Nebula protocol version 8, including byte encodings, message layouts, delivery classes, and compatibility rules.
+---
+
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 8. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+
+The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
+
+## Compatibility
+
+The current protocol version is `8`. Every `Hello` carries that version.
+
+- A gateway disconnects a client whose version is not exactly `8`. There is no feature negotiation or backward-compatible field skipping.
+- Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
+- A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
+- The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
+
+Unsigned tick and entity-epoch comparisons do not include wraparound handling. A process that remains up across a `u32` wrap is outside the current compatibility contract.
+
+## Transport contract
+
+Nebula uses LiteNetLib over User Datagram Protocol (UDP). A connection request uses the plaintext key `nebula-v1`. This key is a protocol discriminator, not a credential.
+
+| Nebula delivery | LiteNetLib channel | LiteNetLib method | Contract |
+| --- | ---: | --- | --- |
+| `Sequenced` | 0 | `Sequenced` | Unreliable and newest-wins. A packet larger than the peer's maximum transmission unit cannot be fragmented and is dropped. |
+| `ReliableOrdered` | 1 | `ReliableOrdered` | Retried and delivered in order. LiteNetLib may fragment it. |
+
+Except for `Batch`, one LiteNetLib application payload contains one complete Nebula message. The first byte is always its `MsgId`. A sender MUST use the delivery class listed below; the receiver does not derive or verify the class from the payload.
+
+<Callout type="warn" title="The wire is not secure">
+Nebula does not encrypt or authenticate connections. A peer can claim any role, process identifier, worker index, or client name in `Hello`. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
+</Callout>
+
+## Primitive encodings
+
+All fixed-width numbers are little-endian. No field is naturally aligned and no padding bytes are inserted.
+
+| Type | Bytes | Encoding |
+| --- | ---: | --- |
+| `u8`, `s8` | 1 | Unsigned byte or two's-complement signed byte. |
+| `u16`, `s16` | 2 | Unsigned or two's-complement signed integer. |
+| `u32`, `s32` | 4 | Unsigned or two's-complement signed integer. |
+| `u64`, `s64` | 8 | Unsigned or two's-complement signed integer. |
+| `f16` | 2 | IEEE 754 binary16. |
+| `f32` | 4 | IEEE 754 binary32. |
+| `f64` | 8 | IEEE 754 binary64. |
+| `bool` | 1 | Writers emit `0` for false and `1` for true. Readers treat any nonzero value as true. |
+| `string` | variable | A `u16` prefix `n`, followed by `n - 1` UTF-8 bytes. `n = 0` is null and `n = 1` is empty. At most 65,534 UTF-8 bytes. |
+| `bytes` | variable | A `u16` byte count followed by that many bytes. Null and empty both encode as a zero count. At most 65,535 bytes. |
+| `vector2` | 8 | `f32 x`, then `f32 y`. |
+| `vector3` | 12 | `f32 x`, `f32 y`, then `f32 z`. |
+| `quaternion` | 16 | `f32 x`, `f32 y`, `f32 z`, then `f32 w`. |
+| `color` | 16 | `f32 r`, `f32 g`, `f32 b`, then `f32 a`. |
+
+An enum written through `NetworkSerialization` is an `s32`, but protocol enums and flags use the field width shown in each layout.
+
+### Compressed quaternion
+
+A compressed quaternion occupies one `u32`. Normalize the quaternion, find the component with the greatest absolute value, and negate all components when that component is negative. Ties select the earliest component in `x, y, z, w` order. Bits 31–30 contain the omitted component's index (`x = 0`, `y = 1`, `z = 2`, `w = 3`). The remaining components, in `x, y, z, w` order with the selected component omitted, occupy bits 29–20, 19–10, and 9–0.
+
+For each stored component `v`, encode:
+
+```text
+r = 1 / sqrt(2)
+q = clamp(round_to_nearest(((clamp(v, -r, r) + r) / (2 * r)) * 1023), 0, 1023)
+```
+
+Decode each ten-bit value with `(q / 1023) * (2 * r) - r`. Reconstruct the omitted, nonnegative component as `sqrt(max(0, 1 - a*a - b*b - c*c))`.
+
+## Shared identifiers and structures
+
+### Entity identifiers and epochs
+
+`net_id` is a `u64`. A worker allocates it as `(worker_index << 48) | sequence`, where `worker_index` supplies the high 16 bits and `sequence` increases from 1 in the low bits. Zero means that no entity is assigned.
+
+An entity authority epoch is a `u32` and starts at 1. It increases on every handover. Receivers ignore entity state whose epoch is older than the newest epoch they have accepted. This is separate from the `u64` lease epoch in the [control-plane contract](/docs/specifications/control-plane).
+
+`client_id` is a gateway-local `u32`. Zero means no owner in an entity record and broadcast in an `EntityRpc`. The gateway replaces the `client_id` supplied by a client in `ClientInput` and `ServerRpc` with the ID assigned to that connection.
+
+### Container reference
+
+A `ContainerRef` starts with a `u16 index`.
+
+| Index | Meaning | Following bytes |
+| ---: | --- | --- |
+| `0` through `65532` | Static container's dense registry index. | None. |
+| `65533` | Runtime container registered by the game. | `u64 runtime_id`. |
+| `65534` | Dynamic container carried by an entity. | `u64 carrier_net_id`. |
+| `65535` | No container. | None. |
+
+Positions and rotations are relative to this container unless a behavior's documented payload says otherwise. A peer may receive a dynamic or runtime reference before it can resolve the container; Nebula holds affected entity messages until that container arrives.
+
+### Role and entity flags
+
+| Field | Value | Meaning |
+| --- | ---: | --- |
+| `PeerRole.Unknown` | 0 | Unidentified peer. |
+| `PeerRole.Client` | 1 | Game client. |
+| `PeerRole.Gateway` | 2 | Gateway service. |
+| `PeerRole.Worker` | 3 | Simulation worker. |
+| `HelloFlags.Bot` | 1 | The client is a headless bot. |
+| `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
+| `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
+
+Unknown flag bits are reserved. A version 8 sender MUST write them as zero.
+
+## Message registry
+
+The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `W-W` means a worker-to-worker link. “Conditional” means the payload selects the channel as described by its layout.
+
+| ID | Name | Direction | Delivery | Body layout |
+| ---: | --- | --- | --- | --- |
+| 1 | `Hello` | `C-G`, `G-W`, `W-W` | Reliable ordered | [`Hello`](#hello-and-session-messages) |
+| 2 | `Welcome` | `G-C` | Reliable ordered | [`Welcome`](#hello-and-session-messages) |
+| 3 | `Ping` | `C-G` | Sequenced | [`Ping`](#hello-and-session-messages) |
+| 4 | `Pong` | `G-C` | Sequenced | [`Pong`](#hello-and-session-messages) |
+| 10 | `EntitySpawn` | `W-G-C` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
+| 11 | `EntityDespawn` | `W-G-C` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
+| 12 | `EntityVars` | `W-G-C` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
+| 13 | `EntityRpc` | `W-G-C` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 14 | `WorldState` | `W-G-C` | Conditional | [`StateBatchBody`](#batched-transform-state) |
+| 15 | `OwnerState` | `W-G-C` to owner | Sequenced | [`OwnerState`](#prediction-messages) |
+| 16 | `ContainerOwnership` | `G-C` | Reliable ordered | [`ContainerOwnership`](#container-ownership) |
+| 17 | `EntityState` | `W-G-C` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
+| 18 | `Batch` | `G-C` | Reliable ordered | [`Batch`](#reliable-message-batch) |
+| 20 | `ClientInput` | `C-G-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
+| 21 | `ServerRpc` | `C-G-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
+| 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
+| 40 | `GhostSpawn` | `W-W` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
+| 41 | `GhostState` | `W-W` | Conditional | [`StateBatchBody`](#batched-transform-state) |
+| 42 | `GhostVars` | `W-W` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
+| 43 | `GhostDespawn` | `W-W` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
+| 44 | `AuthorityTransfer` | `W-W` | Reliable ordered | [`AuthorityTransfer`](#authority-transfer) |
+| 45 | `ForwardInput` | `W-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
+| 46 | `AuthorityRpc` | `W-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
+| 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
+
+IDs not listed in this table are reserved. A version 8 sender MUST NOT use them.
+
+## Message layouts
+
+The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Repeated structures have no padding.
+
+### Hello and session messages
+
+```text
+Hello       := u16 protocol_version, u8 role, string id, u32 index, u8 flags
+Welcome     := u32 client_id, u8 tick_rate, u32 server_tick
+Ping        := f64 client_time
+Pong        := f64 client_time, u32 server_tick
+```
+
+For a client, `Hello.id` is the requested player name, `index` is zero, and `flags` may include `Bot`. For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. The gateway assigns a client ID and sends the fixed tick rate, currently `60`, in `Welcome`.
+
+`Pong.client_time` echoes `Ping.client_time`. `server_tick` is the gateway's current derived tick.
+
+### Entity lifecycle and variables
+
+```text
+EntitySpawnBody :=
+  u64 net_id,
+  u16 prefab_id,
+  u32 owner_client_id,
+  ContainerRef container,
+  u32 entity_epoch,
+  u16 owner_worker_index,
+  vector3 local_position,
+  quaternion local_rotation,
+  vector3 local_scale,
+  vector3 velocity,
+  u8 entity_flags,
+  u32 scene_id,
+  bytes vars,
+  bytes state
+
+EntityDespawnBody := u64 net_id, u32 entity_epoch
+EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
+```
+
+`EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate.
+
+The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
+
+### Behavior sync state
+
+```text
+EntitySyncBody :=
+  u64 net_id,
+  u32 entity_epoch,
+  u32 tick,
+  ContainerRef container,
+  bool reliable,
+  bytes chunks
+```
+
+`EntityState` and `GhostSyncState` share this body. A sender MUST use reliable ordered delivery when `reliable` is true and sequenced delivery when it is false. `chunks` contains a sync-state envelope.
+
+#### Sync-state envelope
+
+```text
+SyncStateEnvelope := u8 chunk_count, Chunk[chunk_count]
+Chunk             := u8 behavior_index, u8 flags, u16 byte_length, raw[byte_length]
+```
+
+Chunk flag bit 0 (`Full`) marks a keyframe. Bits 1–7 are reserved. The raw chunk is defined by that behavior's `WriteSyncState` and `ReadSyncState` pair. Receivers skip an unknown behavior index and bound each reader to `byte_length`.
+
+Spawn snapshots contain a full chunk for every sync behavior except the root `NetworkTransform`. Per-tick sequenced sync streams send a full keyframe every 30 ticks. The root transform uses `WorldState` and `GhostState` instead.
+
+### Remote procedure calls
+
+```text
+EntityRpcBody :=
+  u64 net_id,
+  u32 entity_epoch,
+  u8 behavior_index,
+  u32 method_hash,
+  u32 client_id,
+  bytes args
+```
+
+`EntityRpc`, `ServerRpc`, and `AuthorityRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
+
+Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. The gateway overwrites `ServerRpc.client_id` with the sending connection's assigned ID and only forwards a call for an entity that connection owns.
+
+### Batched transform state
+
+```text
+StateBatchBody   := u32 tick, u16 worker_index, u16 entry_count, EntityStateEntry[entry_count]
+EntityStateEntry := u64 net_id, u32 entity_epoch, ContainerRef container,
+                    u16 fields, conditional_transform_fields
+```
+
+`WorldState` and `GhostState` share this body. Writers group entries with the `Reliable` flag into reliable ordered packets and all other entries into sequenced packets. A packet MUST NOT mix the two classes.
+
+The `fields` mask controls the rest of each entry:
+
+| Bit | Hex | Name | Meaning |
+| ---: | ---: | --- | --- |
+| 0 | `0x0001` | `PositionX` | Include position X. |
+| 1 | `0x0002` | `PositionY` | Include position Y. |
+| 2 | `0x0004` | `PositionZ` | Include position Z. |
+| 3 | `0x0008` | `RotationX` | Include Euler X, or indicate that rotation is present in quaternion mode. |
+| 4 | `0x0010` | `RotationY` | Include Euler Y, or indicate that rotation is present in quaternion mode. |
+| 5 | `0x0020` | `RotationZ` | Include Euler Z, or indicate that rotation is present in quaternion mode. |
+| 6 | `0x0040` | `ScaleX` | Include scale X. |
+| 7 | `0x0080` | `ScaleY` | Include scale Y. |
+| 8 | `0x0100` | `ScaleZ` | Include scale Z. |
+| 9 | `0x0200` | `Velocity` | Include all three velocity axes as `f16`. |
+| 10 | `0x0400` | `Teleport` | Clear interpolation and snap. Adds no bytes. |
+| 11 | `0x0800` | `Half` | Encode selected position, Euler rotation, and scale axes as `f16` instead of `f32`. |
+| 12 | `0x1000` | `Quaternion` | Encode rotation as one quaternion rather than selected Euler axes. |
+| 13 | `0x2000` | `Compressed` | With `Quaternion`, use the compressed `u32` form. |
+| 14 | `0x4000` | `Reliable` | Send this entry on reliable ordered delivery. Adds no bytes. |
+| 15 | `0x8000` | `Location` | Complete location keyframe, including a container or epoch change. Snap and accept the supplied local pose. Adds no bytes. |
+
+After `fields`, write data in this order:
+
+1. Selected position axes, X then Y then Z, as `f16` when `Half` is set and `f32` otherwise.
+2. Rotation, only when at least one rotation bit is set. Without `Quaternion`, write the selected Euler axes in X/Y/Z order and honor `Half`. With `Quaternion | Compressed`, write one compressed `u32`. With `Quaternion | Half`, write four `f16` components. With `Quaternion` alone, write a normal quaternion.
+3. Selected scale axes, X then Y then Z, honoring `Half`.
+4. When `Velocity` is set, write X, Y, and Z as three `f16` values regardless of `Half`.
+
+### Prediction messages
+
+```text
+ClientInputBody := u32 client_id, u8 frame_count, InputFrame[frame_count]
+InputFrame      := u32 tick, bytes payload
+
+OwnerState :=
+  u64 net_id,
+  u32 entity_epoch,
+  u32 tick,
+  u32 last_input_tick,
+  s8 input_lead,
+  u32 owner_client_id,
+  ContainerRef container,
+  bytes state
+```
+
+`ClientInput` and `ForwardInput` share `ClientInputBody`. The stock client repeats up to its three newest frames to tolerate loss. Each input payload is the exact output of the game's `INetworkInput.Serialize` method.
+
+`OwnerState.state` is the exact output of the predicted behavior's `WriteState`. `input_lead` is the smallest observed `input_tick - worker_tick` since the previous report, clamped to `-127` through `127`. `-128` means that no input arrived during the reporting window.
+
+### Container ownership
+
+```text
+ContainerOwnership := u16 entry_count, OwnershipEntry[entry_count]
+OwnershipEntry :=
+  u16 container_index,
+  string container_id,
+  u16 worker_index,
+  string worker_id,
+  u64 lease_epoch,
+  string lease_state,
+  u8 flags,
+  [vector3 bounds_center, vector3 bounds_size when flags bit 0 is set]
+```
+
+Flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box in absolute world coordinates. Other bits are reserved. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
+
+### Reliable message batch
+
+```text
+Batch := u16 message_count, BatchedMessage[message_count]
+BatchedMessage := u16 byte_length, raw_message[byte_length]
+```
+
+Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and its length MUST fit in a `u16`. The gateway uses `Batch` only for reliable gateway-to-client traffic. It flushes at about 1,100 bytes or by the end of the current transport poll, preserving reliable-message order.
+
+### Player lifecycle
+
+```text
+SpawnPlayer   := u32 client_id, ContainerRef container, string name, bool is_bot
+DespawnPlayer := u32 client_id
+```
+
+The gateway selects a currently assigned container and asks its worker to spawn the player. The game supplies the actual spawn behavior.
+
+### Authority transfer
+
+```text
+AuthorityTransfer :=
+  EntitySpawnBody entity,
+  u32 new_epoch,
+  bytes pending_inputs,
+  bytes handover_state,
+  u16 ghost_worker_count,
+  string ghost_worker_id[ghost_worker_count]
+```
+
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 8. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+
+```text
+PendingInputs := u32 last_processed_input_tick,
+                 u16 input_count,
+                 PendingInput[input_count],
+                 bool has_last_input,
+                 [GameInput last_input when has_last_input is true]
+PendingInput  := u32 tick, GameInput input
+```
+
+The stock predicted behavior sends at most 128 pending inputs. `GameInput` is the exact output of the game's `INetworkInput.Serialize` method.
+
+`handover_state` has this envelope:
+
+```text
+HandoverState := u8 behavior_count, HandoverChunk[behavior_count]
+HandoverChunk := u16 byte_length, raw[byte_length]
+```
+
+Chunks appear in behavior-index order. Their bytes are defined by each behavior's `WriteHandoverState` and `ReadHandoverState` pair. A receiver bounds each behavior to its chunk and skips chunks beyond its behavior count.
+
+### Worker-defined messages
+
+```text
+WorkerMessage := u16 kind, raw_payload_to_end_of_message
+```
+
+The game assigns `kind` and defines the remaining bytes. `SendToWorker` selects either delivery class; reliable ordered is the default. Kind registration and the payload schema MUST match on both workers.
+
+## Receiver behavior
+
+Peers send `Hello` before role-specific traffic. A worker ignores non-`Hello` messages until it has received one. A gateway likewise ignores client traffic until it has accepted that connection's `Hello` and marked the client welcomed.
+
+Nebula readers throw on a truncated field. The client, gateway, and worker catch malformed-packet exceptions, log them, and continue polling. They log unknown or directionally unexpected message IDs. They do not require every message handler to consume all trailing bytes, so a compatible sender MUST still omit unspecified trailing data.
+
+The gateway validates client ownership before forwarding `ServerRpc`, stamps client IDs, filters transform state by current worker ownership and epoch, and rejects older entity updates. These checks limit accidental stale traffic; they do not authenticate a sender.
+
+<Cards>
+  <Card title="Control-plane contract" href="/docs/specifications/control-plane" description="Tables, reducers, lease transitions, and failure behavior." />
+  <Card title="Roles and network messages" href="/docs/concepts/roles-and-wire-protocol" description="How the protocol fits into a running mesh." />
+  <Card title="Serialization" href="/docs/guides/serialization" description="Define game-specific variable, input, RPC, and sync payloads." />
+</Cards>
