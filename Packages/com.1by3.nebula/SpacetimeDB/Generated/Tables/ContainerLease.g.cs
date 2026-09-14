@@ -45,6 +45,13 @@ namespace Nebula.Spacetime
         public global::SpacetimeDB.Col<ContainerLease, ulong> Epoch { get; }
         public global::SpacetimeDB.Col<ContainerLease, string> State { get; }
         public global::SpacetimeDB.Col<ContainerLease, SpacetimeDB.Timestamp> UpdatedAt { get; }
+        public global::SpacetimeDB.Col<ContainerLease, bool> HasBounds { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsCenterX { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsCenterY { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsCenterZ { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsSizeX { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsSizeY { get; }
+        public global::SpacetimeDB.Col<ContainerLease, float> BoundsSizeZ { get; }
 
         public ContainerLeaseCols(string tableName)
         {
@@ -53,6 +60,13 @@ namespace Nebula.Spacetime
             Epoch = new global::SpacetimeDB.Col<ContainerLease, ulong>(tableName, "epoch");
             State = new global::SpacetimeDB.Col<ContainerLease, string>(tableName, "state");
             UpdatedAt = new global::SpacetimeDB.Col<ContainerLease, SpacetimeDB.Timestamp>(tableName, "updated_at");
+            HasBounds = new global::SpacetimeDB.Col<ContainerLease, bool>(tableName, "has_bounds");
+            BoundsCenterX = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_center_x");
+            BoundsCenterY = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_center_y");
+            BoundsCenterZ = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_center_z");
+            BoundsSizeX = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_size_x");
+            BoundsSizeY = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_size_y");
+            BoundsSizeZ = new global::SpacetimeDB.Col<ContainerLease, float>(tableName, "bounds_size_z");
         }
     }
 

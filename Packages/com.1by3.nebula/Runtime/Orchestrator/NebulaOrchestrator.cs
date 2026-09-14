@@ -22,9 +22,10 @@ namespace Nebula
     /// The number of workers is a live setting: <see cref="SetDesiredWorkers"/> (from the web dashboard, see
     /// <see cref="OrchestratorHttpServer"/>) launches new processes or retires existing ones on the fly.
     /// <para>
-    /// Assignment policy (v1): containers are dealt as evenly as possible across live workers, sticky to their current
-    /// owner so a rebalance moves as few containers as possible. Four workers and four containers means one each;
-    /// three workers means one of them simulates two, and so on.
+    /// Assignment is a pluggable <see cref="IAssignmentPolicy"/> (<see cref="Policy"/>). The baked policy deals
+    /// containers as evenly as possible across live workers by count, sticky to their current owner so a rebalance
+    /// moves as few containers as possible. The cost policy deals by the load workers report per container, along a
+    /// space-filling curve, and is the default once the game registers runtime containers.
     /// </para><para>
     /// Removing a worker is graceful: it is excluded from the assignment set, so the next pass moves its containers
     /// to the survivors and the worker hands its entities over through the normal per-entity handover path. Once it
@@ -47,8 +48,27 @@ namespace Nebula
             public float RetireDeadline;
         }
 
-        public const int MaxWorkers = 32;
+        /// <summary>Hard cap on the worker cap: indices are 16-bit (the high bits of every net id).</summary>
+        public const int MaxWorkersLimit = ushort.MaxValue;
         private const int MaxEvents = 200;
+        /// <summary>The most workers this orchestrator will run (<see cref="NebulaConfig.MaxWorkers"/>).</summary>
+        public int MaxWorkers => Mathf.Clamp(Config != null ? Config.MaxWorkers : 32, 1, MaxWorkersLimit);
+
+        /// <summary>
+        /// How containers are dealt to workers. Chosen from <see cref="NebulaConfig.AssignmentPolicy"/> (or
+        /// <c>-nebula-assignment</c>) at <see cref="Initialize"/>; game code may replace it at any time. With "auto"
+        /// the baked policy runs while every container is baked and the cost policy takes over once the game
+        /// registers runtime containers.
+        /// </summary>
+        public IAssignmentPolicy Policy { get; set; }
+        private string _policyMode = "auto";
+        private readonly BakedAssignmentPolicy _bakedPolicy = new BakedAssignmentPolicy();
+        private CostBalancedAssignmentPolicy _costPolicy;
+        private readonly AssignmentInput _assignmentInput = new AssignmentInput();
+        private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
+        public float TotalCost { get; private set; }
+        private float _scaleOutSince = -1f, _scaleInSince = -1f;
 
         public NebulaConfig Config { get; private set; }
         public IControlPlane ControlPlane { get; private set; }
@@ -105,6 +125,8 @@ namespace Nebula
         private bool _containersEnsured;
         private bool _gatewayLaunched;
         private bool _hostErrorLogged;
+        /// <summary>Runtime containers appeared or vanished since the map's geometry was published.</summary>
+        private bool _geometryDirty;
 
         public string HostName => _host != null ? _host.Name : "";
 
@@ -114,10 +136,20 @@ namespace Nebula
             ControlPlane = controlPlane;
             DesiredWorkers = Mathf.Clamp(config.WorkerCount, 0, MaxWorkers);
             OrchestratorId = CommandLine.Get("nebula-orchestrator-id", "orch1");
+            _costPolicy = new CostBalancedAssignmentPolicy { Weights = config.CostWeights, Threshold = config.CostRebalanceThreshold };
+            _policyMode = CommandLine.Get("nebula-assignment", config.AssignmentPolicy ?? "auto").Trim().ToLowerInvariant();
+            if (_policyMode != "auto" && _policyMode != "baked" && _policyMode != "cost")
+            {
+                Log("warn", $"unknown assignment policy '{_policyMode}'; using auto");
+                _policyMode = "auto";
+            }
+            Policy = _policyMode == "cost" ? (IAssignmentPolicy)_costPolicy : _bakedPolicy;
             _local = new ProcessWorkerHost(config.WorkerExecutable, config.WorkerAdvertiseAddress);
             _host = CreateHost(config);
             Log("info", $"orchestrator {OrchestratorId}: desired workers = {DesiredWorkers}, host={_host.Name}, spawnGateway={config.OrchestratorSpawnsGateway}");
             Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(config));
+            ContainerRegistry.RuntimeRegistered += OnRuntimeContainersChanged;
+            ContainerRegistry.RuntimeUnregistering += OnRuntimeContainersChanged;
             StartDashboard();
             _host.Initialize(Log);
             if (!ReferenceEquals(_host, _local)) _local.Initialize(Log);
@@ -214,6 +246,7 @@ namespace Nebula
             _nextPass = Time.unscaledTime + 0.5f;
 
             ControlPlane.HeartbeatOrchestrator(OrchestratorId, (uint)DesiredWorkers);
+            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             ReapDeadWorkers();
             ReconcileDesiredCount();
             Rebalance();
@@ -224,6 +257,8 @@ namespace Nebula
 
         private void OnDestroy()
         {
+            ContainerRegistry.RuntimeRegistered -= OnRuntimeContainersChanged;
+            ContainerRegistry.RuntimeUnregistering -= OnRuntimeContainersChanged;
             _http?.Dispose();
             foreach (var m in _managed) if (m.Handle != null) _host.Kill(m.Handle);
             _host?.Dispose();
@@ -597,6 +632,129 @@ namespace Nebula
             return changes;
         }
 
+        private AssignmentInput BuildAssignmentInput(IList<WorkerInfo> eligible)
+        {
+            Telemetry.CopyOccupancy(_occupancy);
+            _assignmentInput.Baked = ContainerRegistry.All;
+            _assignmentInput.Runtime = ContainerRegistry.Runtime;
+            _assignmentInput.Eligible = eligible;
+            _assignmentInput.Leases = ControlPlane.Leases;
+            _assignmentInput.Occupancy = _occupancy;
+            _assignmentInput.KeepOrder = ContainerRegistry.IsGridded;
+            return _assignmentInput;
+        }
+
+        /// <summary>The policy this pass runs: whatever was installed, or, in auto mode, baked until runtime containers exist.</summary>
+        private IAssignmentPolicy CurrentPolicy()
+        {
+            if (Policy != null && !ReferenceEquals(Policy, _bakedPolicy) && !ReferenceEquals(Policy, _costPolicy)) return Policy; // the game's own
+            if (_policyMode == "auto") Policy = ContainerRegistry.Runtime.Count > 0 ? (IAssignmentPolicy)_costPolicy : _bakedPolicy;
+            return Policy;
+        }
+
+        /// <summary>Shown on the dashboard.</summary>
+        public string PolicyName => Policy != null ? Policy.Name : "";
+
+        /// <summary>
+        /// Grow or shrink the worker count from the cost the mesh carries (<see cref="NebulaConfig.AutoScale"/>).
+        /// A change needs the condition to hold for <see cref="NebulaConfig.ScaleHoldSeconds"/>, and only one worker
+        /// is added or removed per hold, so a burst of arrivals does not launch a fleet. Launching goes through the
+        /// worker host like any other change to the desired count.
+        /// </summary>
+        private void AutoScale(int eligibleCount)
+        {
+            if (!Config.AutoScale || Config.UseLocalControlPlane) { _scaleOutSince = _scaleInSince = -1f; return; }
+            float now = Time.unscaledTime;
+            float perWorker = eligibleCount > 0 ? TotalCost / eligibleCount : float.MaxValue;
+            bool wantOut = perWorker > Config.ScaleOutCostPerWorker && DesiredWorkers < MaxWorkers && _managed.Count(m => !m.Retiring) >= DesiredWorkers;
+            if (wantOut)
+            {
+                if (_scaleOutSince < 0f) _scaleOutSince = now;
+                else if (now - _scaleOutSince >= Config.ScaleHoldSeconds)
+                {
+                    Log("info", $"autoscale: {perWorker:0.#} cost per worker over {Config.ScaleOutCostPerWorker:0.#} for {Config.ScaleHoldSeconds:0}s; adding a worker");
+                    SetDesiredWorkers(DesiredWorkers + 1);
+                    _scaleOutSince = -1f;
+                }
+            }
+            else _scaleOutSince = -1f;
+            // Would the survivors still be under the scale-in line after one leaves? Otherwise removing one only triggers a scale-out.
+            float afterOne = eligibleCount > 1 ? TotalCost / (eligibleCount - 1) : float.MaxValue;
+            bool wantIn = eligibleCount > 1 && afterOne < Config.ScaleInCostPerWorker && DesiredWorkers > Mathf.Max(1, Config.MinWorkers) && _retiring.Count == 0;
+            if (wantIn)
+            {
+                if (_scaleInSince < 0f) _scaleInSince = now;
+                else if (now - _scaleInSince >= Config.ScaleHoldSeconds)
+                {
+                    Log("info", $"autoscale: {perWorker:0.#} cost per worker under {Config.ScaleInCostPerWorker:0.#} for {Config.ScaleHoldSeconds:0}s; removing a worker");
+                    SetDesiredWorkers(DesiredWorkers - 1);
+                    _scaleInSince = -1f;
+                }
+            }
+            else _scaleInSince = -1f;
+        }
+
+        /// <summary>
+        /// Create a runtime container (dashboard, tests, tooling): a lease row carrying <paramref name="bounds"/>
+        /// (absolute coordinates), unassigned until the next pass deals it. The normal path is a worker asking for
+        /// one next to its entities (<see cref="NebulaWorker.RequestRuntimeContainer"/>). Null on success, otherwise the reason.
+        /// </summary>
+        public string EnsureRuntimeContainer(ulong id, Bounds bounds)
+        {
+            if (bounds.size.x <= 0f || bounds.size.y <= 0f || bounds.size.z <= 0f) return "size must be positive on every axis";
+            string containerId = ContainerRegistry.RuntimeContainerId(id);
+            if (ControlPlane.FindLease(containerId) != null) return null;
+            ControlPlane.EnsureRuntimeContainer(containerId, bounds, "");
+            Log("info", $"runtime container {containerId} created at {bounds.center} size {bounds.size}");
+            _nextPass = 0f;
+            return null;
+        }
+
+        /// <summary>Delete a runtime container's lease row, so every process forgets the box. Null on success, otherwise the reason.</summary>
+        public string RemoveRuntimeContainer(ulong id)
+        {
+            string containerId = ContainerRegistry.RuntimeContainerId(id);
+            var lease = ControlPlane.FindLease(containerId);
+            if (lease == null) return $"unknown runtime container '{containerId}'";
+            if (!lease.HasBounds) return $"'{containerId}' is not a runtime container";
+            ControlPlane.RemoveContainer(containerId);
+            Log("info", $"runtime container {containerId} removed");
+            return null;
+        }
+
+        /// <summary>
+        /// Runtime containers (leases carrying a box) stay with the worker that asked for them; the game placed
+        /// them next to the entities that need them. Only one whose owner is gone or retiring moves, to the eligible
+        /// worker holding the fewest runtime containers. Pure function; returns the changes to apply.
+        /// </summary>
+        public static List<KeyValuePair<string, string>> ComputeRuntimeAssignment(IReadOnlyList<LeaseInfo> leases, IList<WorkerInfo> eligible)
+        {
+            var changes = new List<KeyValuePair<string, string>>();
+            if (eligible.Count == 0) return changes;
+            var ordered = eligible.OrderBy(w => w.WorkerIndex).ToList();
+            var load = ordered.ToDictionary(w => w.WorkerId, w => 0);
+            var orphans = new List<string>();
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var l = leases[i];
+                if (!l.HasBounds) continue;
+                if (l.State == LeaseState.Active && load.ContainsKey(l.WorkerId)) load[l.WorkerId]++;
+                else orphans.Add(l.ContainerId);
+            }
+            orphans.Sort(StringComparer.Ordinal);
+            foreach (var id in orphans)
+            {
+                string target = null;
+                foreach (var w in ordered)
+                    if (target == null || load[w.WorkerId] < load[target]) target = w.WorkerId;
+                load[target]++;
+                changes.Add(new KeyValuePair<string, string>(id, target));
+            }
+            return changes;
+        }
+
+        private void OnRuntimeContainersChanged(Container c) => _geometryDirty = true;
+
         private List<WorkerInfo> LiveWorkers() =>
             ControlPlane.Workers.Where(w => w.Status != WorkerStatus.Dead && ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)).ToList();
 
@@ -629,7 +787,11 @@ namespace Nebula
                 Log("info", $"unpinning {l.ContainerId} from {l.WorkerId} (not eligible); it follows its carrier again");
                 ControlPlane.SetLeaseState(l.ContainerId, LeaseState.Active);
             }
-            var changes = ComputeAssignment(ids, eligible, ControlPlane.Leases.ToList(), keepOrder: ContainerRegistry.IsGridded);
+            var input = BuildAssignmentInput(eligible);
+            var policy = CurrentPolicy();
+            TotalCost = _costPolicy.TotalCost(input);
+            AutoScale(eligible.Count);
+            var changes = policy.Compute(input);
             if (changes.Count == 0) return;
             Rebalances++;
             _log.Clear();
@@ -688,6 +850,23 @@ namespace Nebula
                     if (DesiredWorkers >= MaxWorkers) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
                     AddWorker();
                     break;
+                case "/api/containers/ensure":
+                {
+                    if (!PersistenceJson.TryParseObject(req.Body, out var body, out string parseError)) return OrchestratorHttpServer.Response.Error(400, parseError);
+                    if (!body.TryGetValue("id", out var idValue) || !ulong.TryParse(PersistenceJson.AsString(idValue), out ulong id)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"id\": <unsigned 64-bit>, \"center\": [x, y, z], \"size\": [x, y, z]}");
+                    if (!body.TryGetValue("center", out var centerValue) || !PersistenceJson.TryNumbers(centerValue, 3, out var c)) return OrchestratorHttpServer.Response.Error(400, "\"center\" must be [x, y, z]");
+                    if (!body.TryGetValue("size", out var sizeValue) || !PersistenceJson.TryNumbers(sizeValue, 3, out var s)) return OrchestratorHttpServer.Response.Error(400, "\"size\" must be [x, y, z]");
+                    string error = EnsureRuntimeContainer(id, new Bounds(new Vector3((float)c[0], (float)c[1], (float)c[2]), new Vector3((float)s[0], (float)s[1], (float)s[2])));
+                    if (error != null) return OrchestratorHttpServer.Response.Error(400, error);
+                    break;
+                }
+                case "/api/containers/remove":
+                {
+                    if (!ulong.TryParse(OrchestratorHttpServer.GetString(req.Body, "id"), out ulong id)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"id\": <unsigned 64-bit>}");
+                    string error = RemoveRuntimeContainer(id);
+                    if (error != null) return OrchestratorHttpServer.Response.Error(404, error);
+                    break;
+                }
                 case "/api/workers/remove":
                 {
                     string id = OrchestratorHttpServer.GetString(req.Body, "workerId");
@@ -788,7 +967,33 @@ namespace Nebula
         private void PublishState()
         {
             _nextPublish = Time.unscaledTime + 0.5f;
+            if (_geometryDirty)
+            {
+                _geometryDirty = false;
+                Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(Config));
+            }
             _http?.PublishState(BuildStateJson());
+        }
+
+        private static void WriteContainerState(JsonWriter w, Container c, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers)
+        {
+            var l = leases.FirstOrDefault(x => x.ContainerId == c.ContainerId);
+            string owner = l != null && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning) ? l.WorkerId : "";
+            var ownerRow = owner != "" ? workers.FirstOrDefault(r => r.WorkerId == owner) : null;
+            w.BeginObject();
+            w.Prop("id", c.ContainerId);
+            w.Prop("worker", owner);
+            w.Prop("workerIndex", ownerRow != null ? (int)ownerRow.WorkerIndex : -1);
+            w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
+            w.Prop("epoch", l != null ? l.Epoch : 0UL);
+            w.Prop("state", l != null ? l.State : "missing");
+            if (c.IsRuntime) w.Prop("runtime", true);
+            else if (ContainerRegistry.IsGridded)
+            {
+                w.Prop("cell", $"{c.Cell.x},{c.Cell.y},{c.Cell.z}");
+                w.Prop("isCell", c.IsCell);
+            }
+            w.EndObject();
         }
 
         /// <summary>Everything the dashboard shows, as one JSON document.</summary>
@@ -813,6 +1018,10 @@ namespace Nebula
             w.Prop("gatewayAddress", $"{Config.GatewayAddress}:{Config.GatewayPort}");
             w.Prop("desiredWorkers", DesiredWorkers);
             w.Prop("maxWorkers", MaxWorkers);
+            w.Prop("policy", PolicyName);
+            w.Prop("totalCost", TotalCost);
+            w.Prop("autoScale", Config.AutoScale);
+            w.Prop("runtimeContainers", ContainerRegistry.Runtime.Count);
             w.Prop("rebalances", Rebalances);
             w.Prop("workerTimeoutSeconds", Config.WorkerTimeoutSeconds);
 
@@ -878,25 +1087,8 @@ namespace Nebula
 
             w.Key("containers");
             w.BeginArray();
-            foreach (var c in ContainerRegistry.All)
-            {
-                var l = leases.FirstOrDefault(x => x.ContainerId == c.ContainerId);
-                string owner = l != null && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning) ? l.WorkerId : "";
-                var ownerRow = owner != "" ? workers.FirstOrDefault(r => r.WorkerId == owner) : null;
-                w.BeginObject();
-                w.Prop("id", c.ContainerId);
-                w.Prop("worker", owner);
-                w.Prop("workerIndex", ownerRow != null ? (int)ownerRow.WorkerIndex : -1);
-                w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
-                w.Prop("epoch", l != null ? l.Epoch : 0UL);
-                w.Prop("state", l != null ? l.State : "missing");
-                if (ContainerRegistry.IsGridded)
-                {
-                    w.Prop("cell", $"{c.Cell.x},{c.Cell.y},{c.Cell.z}");
-                    w.Prop("isCell", c.IsCell);
-                }
-                w.EndObject();
-            }
+            foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, leases, workers);
+            foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers);
             w.EndArray();
 
             // Carried containers: leases workers create for the containers their entities carry (ships, lifts).
@@ -941,7 +1133,7 @@ namespace Nebula
             w.Prop("serverDriven", totalServerDriven);
             w.Prop("entities", totalEntities);
             w.Prop("authoritative", totalAuth);
-            w.Prop("containers", ContainerRegistry.Count);
+            w.Prop("containers", ContainerRegistry.Count + ContainerRegistry.Runtime.Count);
             w.EndObject();
 
             w.Key("persistence");

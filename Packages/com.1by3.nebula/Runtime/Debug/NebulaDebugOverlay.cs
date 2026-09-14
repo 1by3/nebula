@@ -74,6 +74,11 @@ namespace Nebula
                 var col = ColorForWorker(c.OwnerWorkerIndex);
                 _sb.Append($"  <color=#{ColorUtility.ToHtmlStringRGB(col)}>■</color> {c.ContainerId} -> {(string.IsNullOrEmpty(c.OwnerWorkerId) ? "unassigned" : c.OwnerWorkerId)} (lease e{c.LeaseEpoch})\n");
             }
+            foreach (var c in ContainerRegistry.Runtime)
+            {
+                var col = ColorForWorker(c.OwnerWorkerIndex);
+                _sb.Append($"  <color=#{ColorUtility.ToHtmlStringRGB(col)}>▣</color> {c.ContainerId} (runtime) -> {(string.IsNullOrEmpty(c.OwnerWorkerId) ? "unassigned" : c.OwnerWorkerId)} (lease e{c.LeaseEpoch}), {c.Entities.Count} inside\n");
+            }
             foreach (var c in ContainerRegistry.Dynamic)
             {
                 var col = ColorForWorker(c.OwnerWorkerIndex);

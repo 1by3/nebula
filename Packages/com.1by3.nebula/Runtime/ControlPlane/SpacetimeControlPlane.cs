@@ -147,7 +147,17 @@ namespace Nebula
             {
                 var at = ToDateTime(l.UpdatedAt);
                 if (at > latest) latest = at;
-                _leases.Add(new LeaseInfo { ContainerId = l.ContainerId, WorkerId = l.WorkerId ?? "", Epoch = l.Epoch, State = l.State, UpdatedAt = at });
+                _leases.Add(new LeaseInfo
+                {
+                    ContainerId = l.ContainerId,
+                    WorkerId = l.WorkerId ?? "",
+                    Epoch = l.Epoch,
+                    State = l.State,
+                    UpdatedAt = at,
+                    HasBounds = l.HasBounds,
+                    BoundsCenter = new Vector3(l.BoundsCenterX, l.BoundsCenterY, l.BoundsCenterZ),
+                    BoundsSize = new Vector3(l.BoundsSizeX, l.BoundsSizeY, l.BoundsSizeZ),
+                });
             }
             _gateways.Clear();
             foreach (var g in _conn.Db.Gateway.Iter())
@@ -228,6 +238,17 @@ namespace Nebula
         public void EnsureContainer(string containerId)
         {
             if (Ready("EnsureContainer")) _conn.Reducers.EnsureContainer(containerId);
+        }
+
+        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId)
+        {
+            if (Ready("EnsureRuntimeContainer"))
+                _conn.Reducers.EnsureRuntimeContainer(containerId, workerId ?? "", bounds.center.x, bounds.center.y, bounds.center.z, bounds.size.x, bounds.size.y, bounds.size.z);
+        }
+
+        public void TouchContainer(string containerId)
+        {
+            if (Ready("TouchContainer")) _conn.Reducers.TouchContainer(containerId);
         }
 
         public void AssignContainer(string containerId, string workerId)

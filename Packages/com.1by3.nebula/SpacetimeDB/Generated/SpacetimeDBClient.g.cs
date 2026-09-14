@@ -628,6 +628,7 @@ namespace Nebula.Spacetime
             {
                 Reducer.AssignContainer args => Reducers.InvokeAssignContainer(eventContext, args),
                 Reducer.EnsureContainer args => Reducers.InvokeEnsureContainer(eventContext, args),
+                Reducer.EnsureRuntimeContainer args => Reducers.InvokeEnsureRuntimeContainer(eventContext, args),
                 Reducer.HeartbeatGateway args => Reducers.InvokeHeartbeatGateway(eventContext, args),
                 Reducer.HeartbeatOrchestrator args => Reducers.InvokeHeartbeatOrchestrator(eventContext, args),
                 Reducer.HeartbeatWorker args => Reducers.InvokeHeartbeatWorker(eventContext, args),
@@ -639,6 +640,7 @@ namespace Nebula.Spacetime
                 Reducer.ResetControlPlane args => Reducers.InvokeResetControlPlane(eventContext, args),
                 Reducer.SetGameSetting args => Reducers.InvokeSetGameSetting(eventContext, args),
                 Reducer.SetLeaseState args => Reducers.InvokeSetLeaseState(eventContext, args),
+                Reducer.TouchContainer args => Reducers.InvokeTouchContainer(eventContext, args),
                 Reducer.UnregisterGateway args => Reducers.InvokeUnregisterGateway(eventContext, args),
                 Reducer.UnregisterWorker args => Reducers.InvokeUnregisterWorker(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")

@@ -1,0 +1,101 @@
+# Runtime containers
+
+Goal: make Nebula flexible enough to host a world whose shape is decided at runtime by the game
+(Holospace's continuous chunked landscape is the first such game) without losing anything the baked
+world and dynamic container designs give the shooter demo.
+
+The world architecture (chunks, terrain, storage, what content a chunk holds) is the game's
+business. Content-addressed prefabs are also the game's business. Nebula's job is a small set of
+runtime primitives that any such world can be built on. This document is the plan and its outcome;
+the user-facing write-up is `website/content/docs/guides/runtime-containers.mdx`.
+
+## Delineation
+
+| Nebula provides | The game (Holospace) provides |
+| --- | --- |
+| Static containers that can be registered and removed while the mesh runs, named by an app-assigned 64-bit id plus bounds | The chunk model: size, coordinates, hashing coordinates to ids, when to allocate and retire |
+| A wire form for runtime containers | Terrain and chunk-content storage and streaming |
+| Neighbour detection for runtime containers by spatial hash, so ghosting works | A `Prop` network prefab with a persisted network variable naming a bundle asset |
+| Occupancy in worker telemetry, a lease lifecycle API, and a pluggable assignment policy with a cost-aware default | The CDN bundle loader that runs on clients and workers, and the allow-list for what a bundle may contain |
+| Worker cap as configuration rather than a type limit, and autoscale through `IWorkerHost` | Placement rules and permissions |
+| `Nebula.World` stays optional: floating origin, grid helpers, baked cells | Whether to use `Nebula.World` at all |
+
+Nothing changes for content-addressed prefabs in Nebula. A prop is a normal registered prefab
+whose synced state includes which asset to load; loading is ordinary Unity code in the game.
+
+## What shipped (2026-09-13)
+
+| Seam | Before | Now |
+| --- | --- | --- |
+| `ContainerRef` | 2-byte index, or `DynamicIndex` + 8-byte net id | Third form `RuntimeIndex = ushort.MaxValue - 2` + 8-byte id. `IsRuntime`, `IsStatic`, `MayArriveLater` (dynamic or runtime: messages naming an unknown one wait). Same max wire size |
+| `Container` | `IsDynamic`, `Carrier` | `IsRuntime`, `RuntimeId`. Leased and owned like a baked container |
+| `ContainerRegistry` | Dense list built once by `Load`; `_grid` when gridded; flat dynamic list | `RegisterRuntime(id, frameBounds)` / `UnregisterRuntime(id)` / `GetRuntime` / `Runtime`, legal after boot. Spatial hash (`RuntimeBucketSize`, default 256 m). `Find`, `Resolve`, `Along`, `NeighborsOf` visit it. Adjacency between runtime and baked boxes both ways. `SyncRuntime(leases)` mirrors the control plane; `PruneRuntime`; `ToFrame`/`ToAbsolute`; `ShiftRuntime` on origin shift. Events `RuntimeRegistered` / `RuntimeUnregistering`. `rt_<id>` string ids (`IsRuntimeId`, `TryParseRuntimeId`) |
+| `IControlPlane` | `EnsureContainer(id)` | `EnsureRuntimeContainer(id, bounds, workerId)`: row carries the box, created already assigned to the requester (first wins). `LeaseInfo.HasBounds/BoundsCenter/BoundsSize`. Module `container_lease` gained the box columns and the `EnsureRuntimeContainer` reducer; bindings regenerated |
+| Wire messages | `ContainerOwnershipEntry` without a box; `SpawnPlayerMsg.ContainerIndex` | Entries carry a flags byte and the box for runtime containers, so clients register them; `SpawnPlayerMsg.Container` is a `ContainerRef` so the gateway can spawn into a runtime container |
+| Roles | Waited on `IsDynamic` only | Worker, gateway, orchestrator call `SyncRuntime` before applying leases; clients from the ownership message. Pending ghosts/handovers/spawns keyed by `ContainerRef` and flushed by either registration event. Persistence dates leases on runtime containers too. Overlay, telemetry geometry, dashboard state and map include them |
+| Worker API | none | `RequestRuntimeContainer(id, frameBounds)` (idempotent) and `ReleaseRuntimeContainer(id)` (checkpoints persistent contents, despawns, deletes the row) |
+| Orchestrator | `ComputeAssignment` even split; `MaxWorkers` const 32 | `IAssignmentPolicy` (`NebulaOrchestrator.Policy`), `BakedAssignmentPolicy` (the old dealer + sticky runtime containers, `ComputeRuntimeAssignment`), `CostBalancedAssignmentPolicy` (Morton order, equal-cost contiguous runs, threshold hysteresis, orphans placed next to their neighbours' owner). `NebulaConfig.AssignmentPolicy` auto/baked/cost, `-nebula-assignment`. `MaxWorkers` from config (limit 65535: 16-bit index in every net id). `AutoScale` with hold time, min/max and cost lines. `POST /api/containers/ensure|remove`. State JSON: `policy`, `totalCost`, `runtimeContainers` |
+| Telemetry | Raw worker documents only | `MeshTelemetry.ParseContainers` pulls per-container counts without parsing the entity list; `CopyOccupancy` feeds the policy; entries expire with the documents |
+| Tests | 99 | 128: `WireFormatTests` (Phase 0 guardrail: 2-byte static ref, message layouts), `RuntimeContainerTests`, `AssignmentPolicyTests` |
+| Tooling | `typecheck.ps1` checks the repository it lives in | `-Repo` and source-over-DLL for `-ExtraSourceRoots`, so `typecheck.ps1 -Repo C:\Dev\nebula-shootergame -ExtraSourceRoots C:\Dev\nebula\Packages` checks a `file:` consumer against the live library |
+
+Untouched, as planned: baked manifests, cell scenes, `ContainerRegistry.Load` and the 2-byte static
+reference; dynamic containers and their carrier-follows semantics; the lease state machine;
+`NetworkPrefabs` and the spawn message; `Nebula.World`.
+
+## Constraints on the Prop approach (no Nebula changes, but design around them)
+
+- Synced state must live on the Prop. Content loaded from a bundle and parented afterwards is not
+  bound by Nebula, so it cannot carry `NetworkBehaviour`s or a `NetworkIdentity`.
+- The content id arrives in the spawn snapshot, so a Prop exists before its visuals and colliders
+  do. Keep a placeholder collider on the Prop or accept the window.
+- Workers load bundles too, headless. Bundles need a Linux server build with colliders intact, and
+  workers need CDN access.
+- Ghosts on neighbouring workers also resolve their content. Correct, but a cache consideration.
+- Persistence works as-is: the content id is a persisted network variable on a `PersistentEntity`.
+
+## The sample: nebula-virtualworld
+
+`C:\Dev\nebula-virtualworld` (Unity 6000.6, URP template, Nebula by `file:` reference like the
+shooter) is the exit test for the whole plan and the template for Holospace's Nebula integration:
+
+- `Chunks`: 64 m chunks on the ground plane; id = packed grid coordinate; box = a 512 m column.
+- `ChunkAllocator` (worker): every 0.25 s, a ring of one chunk around every pawn this worker owns is
+  requested; owned chunks nobody wanted for 60 s and with no pawn inside are released.
+- `ChunkLoader` (every role): on `RuntimeRegistered` a tinted ground slab with a collider is put
+  under the container; a real world streams terrain here.
+- `Prop`: the one prefab every placed object is; `[Persist]` `Shape`, `Tint`, `PlacedBy` name the
+  content, `Load()` resolves it on every process (a primitive here, a CDN bundle in Holospace).
+- `Avatar`: predicted walker; E places, X removes, 1-4 pick the shape; `-nebula-bot` clients wander.
+- `VirtualWorldGameMode`: asks for the 3x3 around the origin on `OnWorkerStarted` (the worker queues
+  requests made before it is registered), spawns pawns by name with persistence, places and removes
+  props on the authority. The allocator keeps the origin ring wanted so it never retires.
+- Verified 2026-09-13 with `nebula start --workers 2 --bots 3`: policy switched to `cost`, 30+ chunks
+  allocated as the bots roamed, pawns and prop ghosts handed over across seams in both directions,
+  props persisted, no warnings in any log.
+- `VirtualWorld > Build Sample` (or `-executeMethod VirtualWorld.Editor.VirtualWorldSetup.BuildBatch`)
+  builds the prefabs, the World scene, the config and the build settings from the scripts.
+
+## Fixed after the first run (2026-09-13, evening)
+
+- Entities parented under a runtime container were destroyed with its object when the chunk retired
+  (ghosts on workers, every remote pawn and prop on clients). On the worker the dead identity then threw
+  in `RecordPose` every tick, which aborted the tick before `PublishToGateways`: clients received no
+  world state at all ("0 states/s") and saw no bots. `NetworkIdentity.SetContainer` now detaches on
+  leaving a runtime box, `UnregisterRuntime` detaches anything networked still under it, and the worker
+  purges a destroyed identity instead of throwing.
+- Chunks flickered: an owner retired a chunk on its own idle clock while the neighbour worker's pawn
+  stood next to it. `TouchContainer` (module reducer, `IControlPlane`) stamps the row from
+  `RequestRuntimeContainer` every 15 s while another worker wants the box; the owner reads
+  `RuntimeContainerIdleSeconds` before retiring.
+- The gateway logs world-state relay counters once a second under `-nebula-verbose`.
+- Bots turn back once 150 m from the origin so a player near the spawn can find them.
+
+## Follow-ups
+
+- Holospace: the bundle loader and allow-list, Linux server bundle variants, placement permissions.
+- A gridded baked world plus runtime containers has not been exercised together beyond unit tests.
+- The cost policy's Morton quantum is 8 m; containers smaller than that in one axis still order
+  correctly but may interleave with neighbours.
+- The persistence store's `LoadContainer` is asked once per lease; a chunk that is retired and
+  re-requested within `PersistenceRestoreGraceSeconds` waits the grace period before its props return.

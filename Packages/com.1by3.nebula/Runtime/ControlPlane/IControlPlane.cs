@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Nebula
 {
@@ -45,6 +46,16 @@ namespace Nebula
         public ulong Epoch;
         public string State;
         public DateTime UpdatedAt;
+        /// <summary>
+        /// Runtime containers (<see cref="ContainerRegistry.RegisterRuntime"/>) carry their box on the lease row, in
+        /// absolute world coordinates, so every process can register the same box from the row alone. False for a
+        /// baked or carried container.
+        /// </summary>
+        public bool HasBounds;
+        public Vector3 BoundsCenter;
+        public Vector3 BoundsSize;
+        /// <summary>The row's box, when <see cref="HasBounds"/>.</summary>
+        public Bounds Bounds => new Bounds(BoundsCenter, BoundsSize);
     }
 
     /// <summary>Describes a gateway registered with the control plane.</summary>
@@ -123,6 +134,18 @@ namespace Nebula
         void SetSetting(string key, string value);
 
         void EnsureContainer(string containerId);
+        /// <summary>
+        /// Make sure a lease row exists for a runtime container, carrying its box (absolute coordinates) and, when
+        /// <paramref name="workerId"/> is given, already assigned to that worker (epoch 1, active), so the worker
+        /// that asked for the container owns it from the first change anyone sees. A no-op when the row exists:
+        /// whoever asked first wins, and the second caller sees the row on the next change.
+        /// </summary>
+        void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+        /// <summary>
+        /// Stamp a lease row's <see cref="LeaseInfo.UpdatedAt"/> without changing anything else: a worker that still
+        /// wants a runtime container it does not own says so, and the owner reads the age before retiring the box.
+        /// </summary>
+        void TouchContainer(string containerId);
         /// <summary>Assign a container to a worker (epoch + 1, state active). Leaves a pinned lease alone.</summary>
         void AssignContainer(string containerId, string workerId);
         /// <summary>

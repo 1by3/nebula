@@ -409,7 +409,7 @@ namespace Nebula
             if (reparent && !IsSceneEntity)
             {
                 if (container != null) transform.SetParent(container.transform, true);
-                else if (previous != null && previous.IsDynamic) transform.SetParent(null, true); // out of a departing carrier
+                else if (previous != null && (previous.IsDynamic || previous.IsRuntime)) transform.SetParent(null, true); // out of a departing carrier or a retiring runtime box, whose object is about to be destroyed
             }
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);

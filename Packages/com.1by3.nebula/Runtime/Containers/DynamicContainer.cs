@@ -31,6 +31,8 @@ namespace Nebula
     {
         private static readonly Dictionary<Rigidbody, DynamicContainer> ByBody = new Dictionary<Rigidbody, DynamicContainer>();
 
+        internal static void ResetForNewSession() => ByBody.Clear();
+
         private Container _volume;
 
         /// <summary>The container this entity carries (the <see cref="Container"/> component on the same object).</summary>

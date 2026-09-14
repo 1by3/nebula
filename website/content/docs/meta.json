@@ -22,6 +22,7 @@
     "guides/physics-and-handover-state",
     "guides/world-partition",
     "guides/dynamic-containers",
+    "guides/runtime-containers",
     "guides/serialization",
     "guides/configuration",
     "guides/orchestrator-and-dashboard",

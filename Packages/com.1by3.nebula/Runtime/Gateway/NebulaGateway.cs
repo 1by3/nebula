@@ -143,6 +143,7 @@ namespace Nebula
         {
             _transport.Poll(HandleTransportEvent);
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
+            ReportWorldStateStats();
 
             if (!_registered && ControlPlane.IsConnected)
             {
@@ -167,6 +168,7 @@ namespace Nebula
 
         private void OnControlPlaneChanged()
         {
+            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             _ownership.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
@@ -187,6 +189,9 @@ namespace Nebula
                     WorkerId = owner,
                     Epoch = lease.Epoch,
                     State = lease.State,
+                    HasBounds = lease.HasBounds,
+                    BoundsCenter = lease.BoundsCenter,
+                    BoundsSize = lease.BoundsSize,
                 });
             }
             _writer.Reset();
@@ -377,17 +382,32 @@ namespace Nebula
 
         private readonly List<EntityStateEntry> _scratchEntries = new List<EntityStateEntry>();
 
+        // Verbose relay statistics, logged once a second: how much world state arrives and why entries are dropped.
+        private int _wsPackets, _wsEntries, _wsUnknown, _wsStale, _wsWrongOwner, _wsSent;
+        private float _nextWsReport;
+
+        private void ReportWorldStateStats()
+        {
+            if (!NebulaLog.Verbose || Time.unscaledTime < _nextWsReport) return;
+            _nextWsReport = Time.unscaledTime + 1f;
+            NebulaLog.Debugf($"worldstate: {_wsPackets} packets {_wsEntries} entries in; dropped unknown={_wsUnknown} stale={_wsStale} wrongOwner={_wsWrongOwner}; {_wsSent} entries sent to {_clientsById.Count} client(s); {_entities.Count} entities known");
+            _wsPackets = _wsEntries = _wsUnknown = _wsStale = _wsWrongOwner = _wsSent = 0;
+        }
+
         private void OnWorldState(WorkerConn w, NetworkReader r)
         {
             // Keep only the entries this worker is still the authority for (drops a stale sender after a handover),
             // remember every entity's latest pose, then give each client the subset it is interested in.
             WorldStateMsg.ReadHeader(r, out uint tick, out ushort workerIndex, out ushort count);
+            _wsPackets++;
+            _wsEntries += count;
             _scratchEntries.Clear();
             for (int i = 0; i < count; i++)
             {
                 var entry = EntityStateEntry.Read(r);
-                if (!_entities.TryGetValue(entry.NetId, out var rec)) continue;
-                if (entry.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) continue;
+                if (!_entities.TryGetValue(entry.NetId, out var rec)) { _wsUnknown++; continue; }
+                if (entry.Epoch < rec.Epoch) { _wsStale++; continue; }
+                if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; continue; }
                 rec.Container = entry.Container;
                 rec.LastSpawn.Container = entry.Container;
                 rec.LastSpawn.LocalPosition = entry.LocalPosition;
@@ -405,6 +425,7 @@ namespace Nebula
                     var entry = _scratchEntries[i];
                     if (!WantsThisTick(entry, tick, hasPawn, pawnPos, c.PawnNetId)) continue;
                     AppendWorldState(c, tick, w.Index, entry);
+                    _wsSent++;
                 }
             }
         }
@@ -486,7 +507,7 @@ namespace Nebula
                 var carrierRot = WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1);
                 return carrierPos + carrierRot * local;
             }
-            var c = ContainerRegistry.Get(container.Index);
+            var c = ContainerRegistry.Resolve(container);
             return c != null ? c.ToWorld(local) : local;
         }
 
@@ -497,7 +518,7 @@ namespace Nebula
                 if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
                 return WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1) * local;
             }
-            var c = ContainerRegistry.Get(container.Index);
+            var c = ContainerRegistry.Resolve(container);
             return c != null ? c.Rotation * local : local;
         }
 
@@ -640,12 +661,8 @@ namespace Nebula
             c.NextSpawnAttempt = Time.unscaledTime + 3f;
             // Any container with an active lease whose worker we are connected to.
             var candidates = new List<Container>();
-            foreach (var container in ContainerRegistry.All)
-            {
-                if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
-                if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) continue;
-                candidates.Add(container);
-            }
+            CollectSpawnCandidates(ContainerRegistry.All, candidates);
+            CollectSpawnCandidates(ContainerRegistry.Runtime, candidates);
             if (candidates.Count == 0)
             {
                 NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet");
@@ -655,9 +672,20 @@ namespace Nebula
             var worker = _workersById[pick.OwnerWorkerId];
             c.SpawnWorkerId = worker.WorkerId;
             _writer.Reset();
-            new SpawnPlayerMsg { ClientId = c.ClientId, ContainerIndex = pick.Index, Name = c.Name, IsBot = c.IsBot }.Write(_writer);
+            new SpawnPlayerMsg { ClientId = c.ClientId, Container = pick.Ref, Name = c.Name, IsBot = c.IsBot }.Write(_writer);
             _transport.Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
+        }
+
+        private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates)
+        {
+            for (int i = 0; i < containers.Count; i++)
+            {
+                var container = containers[i];
+                if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
+                if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) continue;
+                candidates.Add(container);
+            }
         }
 
         private void BroadcastToClients(Delivery delivery)

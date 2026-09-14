@@ -17,21 +17,29 @@
 
 .PARAMETER ExtraSourceRoots
   Additional directories to search for package .asmdef files (e.g. a git clone of the SpacetimeDB
-  SDK when the Editor has not resolved the package yet).
+  SDK when the Editor has not resolved the package yet). An assembly found here is always compiled
+  from source, even when the project's Library holds a (possibly stale) DLL of it: pass the Nebula
+  checkout's Packages folder to check a game that consumes the package by `file:` reference against
+  the library's current sources.
+
+.PARAMETER Repo
+  The Unity project to check (default: the repository this script lives in).
 
 .EXAMPLE
   pwsh Tools/typecheck.ps1
   powershell -File Tools/typecheck.ps1 -ExtraSourceRoots C:\path\to\spacetimedbsdk
+  powershell -File Tools/typecheck.ps1 -Repo C:\Dev\nebula-shootergame -ExtraSourceRoots C:\Dev\nebula\Packages
 #>
 [CmdletBinding()]
 param(
     [string[]]$ExtraSourceRoots = @(),
+    [string]$Repo = '',
     [string]$UnityVersion = '6000.6.0f1',
     [switch]$ShowWarnings
 )
 
 $ErrorActionPreference = 'Stop'
-$repo      = Split-Path -Parent $PSScriptRoot
+$repo      = if ($Repo) { (Resolve-Path $Repo).Path } else { Split-Path -Parent $PSScriptRoot }
 $assets    = Join-Path $repo 'Assets'
 $unityData = "C:\Program Files\Unity\Hub\Editor\$UnityVersion\Editor\Data"
 $genRoot   = Join-Path $repo "Temp\typecheck\$PID"
@@ -72,13 +80,16 @@ foreach ($root in @($assets) + @(Get-ChildItem (Join-Path $repo 'Packages') -Dir
 if ($projectAsmdefs.Count -eq 0) { Write-Host '[typecheck] no asmdefs found'; exit 0 }
 
 $packageAsmdefs = @{}
+$fromSource = @{}   # asmdefs found under -ExtraSourceRoots: compiled from source even when a DLL exists
 $pkgRoots = @((Join-Path $repo 'Library\PackageCache')) + $ExtraSourceRoots
 foreach ($root in $pkgRoots) {
+    $extra = $ExtraSourceRoots -contains $root
     if (Test-Path $root) {
         Get-ChildItem $root -Recurse -Filter '*.asmdef' -ErrorAction SilentlyContinue | ForEach-Object {
             if ($_.FullName -match '[\\/](Tests|Samples~|examples~|tests~)[\\/]') { return }
             $a = Read-Asmdef $_
-            if (-not $packageAsmdefs.ContainsKey($a.Name)) { $packageAsmdefs[$a.Name] = $a }
+            if ($extra -and -not $fromSource.ContainsKey($a.Name)) { $fromSource[$a.Name] = $true; $packageAsmdefs[$a.Name] = $a; $dllIndex.Remove("$($a.Name).dll") }
+            elseif (-not $packageAsmdefs.ContainsKey($a.Name)) { $packageAsmdefs[$a.Name] = $a }
         }
     }
 }
@@ -92,6 +103,7 @@ function Resolve-Reference($name) {
     # asmdef references may be by name or by GUID:xxxx; we only support names.
     if ($name -like 'GUID:*') { return $null }
     if ($build.ContainsKey($name)) { return 'project' }
+    if ($fromSource.ContainsKey($name)) { return 'source' }
     if ($dllIndex.ContainsKey("$name.dll")) { return 'dll' }
     if ($packageAsmdefs.ContainsKey($name)) { return 'source' }
     return $null

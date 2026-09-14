@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Nebula
 {
@@ -117,6 +118,32 @@ namespace Nebula
         {
             if (this.FindLease(containerId) != null) return;
             _leases.Add(new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now });
+            Touch();
+        }
+
+        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId)
+        {
+            if (this.FindLease(containerId) != null) return;
+            bool owned = !string.IsNullOrEmpty(workerId);
+            _leases.Add(new LeaseInfo
+            {
+                ContainerId = containerId,
+                WorkerId = owned ? workerId : "",
+                Epoch = owned ? 1UL : 0UL,
+                State = owned ? LeaseState.Active : LeaseState.Orphaned,
+                UpdatedAt = Now,
+                HasBounds = true,
+                BoundsCenter = bounds.center,
+                BoundsSize = bounds.size,
+            });
+            Touch();
+        }
+
+        public void TouchContainer(string containerId)
+        {
+            var l = this.FindLease(containerId);
+            if (l == null) return;
+            l.UpdatedAt = Now;
             Touch();
         }
 

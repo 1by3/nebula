@@ -56,7 +56,8 @@ namespace Nebula
         /// yet, by the carrier's net id. The gateway replays its cache to a late joiner in no particular order, so
         /// the passenger can arrive before the ship; it binds the moment the ship's container registers.
         /// </summary>
-        private readonly Dictionary<ulong, List<EntitySpawnMsg>> _pendingByCarrier = new Dictionary<ulong, List<EntitySpawnMsg>>();
+        private readonly Dictionary<ContainerRef, List<EntitySpawnMsg>> _pendingByCarrier = new Dictionary<ContainerRef, List<EntitySpawnMsg>>();
+        private readonly HashSet<ulong> _runtimeKeep = new HashSet<ulong>();
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly NetworkWriter _writer = new NetworkWriter(2048);
         private readonly NetworkWriter _inputWriter = new NetworkWriter(256);
@@ -105,7 +106,8 @@ namespace Nebula
             _transport.StartClient();
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
-            ContainerRegistry.DynamicRegistered += OnDynamicContainerRegistered;
+            ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
+            ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
             if (autoConnect) Connect();
         }
 
@@ -146,8 +148,10 @@ namespace Nebula
         {
             SceneEntities.Registered -= OnSceneEntityRegistered;
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
-            ContainerRegistry.DynamicRegistered -= OnDynamicContainerRegistered;
+            ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
+            ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
             _transport?.Dispose();
+            _transport = null;
         }
 
         private void SetState(State s)
@@ -161,6 +165,7 @@ namespace Nebula
 
         private void Update()
         {
+            if (_transport == null) return; // not initialised (a stray component), or torn down
             _transport.Poll(HandleTransportEvent);
 
             if (ConnectionState == State.Disconnected && WantsConnection && Time.unscaledTime >= _nextConnectAttempt)
@@ -362,8 +367,18 @@ namespace Nebula
                 }
                 case MsgId.ContainerOwnership:
                 {
+                    var entries = ContainerOwnershipMsg.Read(r);
+                    // Runtime containers come and go with their lease rows: register the ones that carry a box, forget the rest.
+                    _runtimeKeep.Clear();
+                    foreach (var e in entries)
+                    {
+                        if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
+                        _runtimeKeep.Add(runtimeId);
+                        if (ContainerRegistry.GetRuntime(runtimeId) == null) ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)));
+                    }
+                    ContainerRegistry.PruneRuntime(_runtimeKeep);
                     _seenLeases.Clear();
-                    foreach (var e in ContainerOwnershipMsg.Read(r))
+                    foreach (var e in entries)
                     {
                         ContainerRegistry.ApplyLease(e.ContainerId, e.WorkerId, e.WorkerIndex, e.Epoch, e.State);
                         _seenLeases.Add(e.ContainerId);
@@ -389,12 +404,12 @@ namespace Nebula
         private void OnEntitySpawn(EntitySpawnMsg msg)
         {
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.IsDynamic)
+            if (container == null && msg.Container.MayArriveLater)
             {
                 if (_entities.ContainsKey(msg.NetId))
                 {
-                    // Known entity moved into a carrier we do not have: keep it where it is until the carrier arrives.
-                    NebulaLog.Warn($"entity #{msg.NetId} is inside carrier #{msg.Container.NetId}, unknown here; holding");
+                    // Known entity moved into a container we do not have: keep it where it is until that arrives.
+                    NebulaLog.Warn($"entity #{msg.NetId} is inside container {msg.Container}, unknown here; holding");
                 }
                 HoldForCarrier(msg);
                 return;
@@ -489,7 +504,7 @@ namespace Nebula
 
         private void OnEntityDespawn(EntityDespawnMsg msg)
         {
-            _pendingByCarrier.Remove(msg.NetId);
+            _pendingByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
             foreach (var kv in _pendingByCarrier) kv.Value.RemoveAll(held => held.NetId == msg.NetId && msg.Epoch >= held.Epoch);
             if (!_entities.TryGetValue(msg.NetId, out var e))
             {
@@ -531,7 +546,7 @@ namespace Nebula
 
         private void HoldForCarrier(EntitySpawnMsg msg)
         {
-            if (!_pendingByCarrier.TryGetValue(msg.Container.NetId, out var list)) _pendingByCarrier[msg.Container.NetId] = list = new List<EntitySpawnMsg>();
+            if (!_pendingByCarrier.TryGetValue(msg.Container, out var list)) _pendingByCarrier[msg.Container] = list = new List<EntitySpawnMsg>();
             for (int i = 0; i < list.Count; i++)
             {
                 if (list[i].NetId != msg.NetId) continue;
@@ -541,11 +556,12 @@ namespace Nebula
             list.Add(msg);
         }
 
-        /// <summary>A carrier's container is resolvable now: the spawns that were waiting for it bind.</summary>
-        private void OnDynamicContainerRegistered(Container container)
+        /// <summary>A carrier's or a runtime container is resolvable now: the spawns that were waiting for it bind.</summary>
+        private void OnLateContainerRegistered(Container container)
         {
-            if (!_pendingByCarrier.TryGetValue(container.CarrierNetId, out var list)) return;
-            _pendingByCarrier.Remove(container.CarrierNetId);
+            var key = container.Ref;
+            if (!_pendingByCarrier.TryGetValue(key, out var list)) return;
+            _pendingByCarrier.Remove(key);
             foreach (var msg in list) OnEntitySpawn(msg);
         }
 
@@ -619,7 +635,7 @@ namespace Nebula
                 var entry = EntityStateEntry.Read(r);
                 if (!_entities.TryGetValue(entry.NetId, out var e) || entry.Epoch < e.Epoch) continue;
                 var container = ContainerRegistry.Resolve(entry.Container);
-                if (container == null && entry.Container.IsDynamic) continue; // its carrier has not spawned here yet
+                if (container == null && entry.Container.MayArriveLater) continue; // its carrier or lease has not arrived here yet
                 if (container != e.Container && (e.IsLocalPlayer || e.Interpolator == null)) e.SetContainer(container);
                 if (e.OwnerWorkerIndex != workerIndex)
                 {
@@ -651,7 +667,7 @@ namespace Nebula
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing
             // would reconcile against the wrong origin for a tick and snap the pawn across the map.
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.IsDynamic) return; // the carrier is not here yet; the next report will do
+            if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
             if (container != LocalPlayer.Container) LocalPlayer.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
             LocalPlayer.Predicted.ClientReconcile(msg.Tick, _reader);

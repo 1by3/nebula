@@ -114,6 +114,7 @@
         <div class="stat"><div class="v" id="sNpcs">–</div><div class="l">server-driven</div></div>
         <div class="stat"><div class="v" id="sEntities">–</div><div class="l">entities (auth + ghosts)</div></div>
         <div class="stat"><div class="v" id="sRebalances">–</div><div class="l">rebalances</div></div>
+        <div class="stat" id="policyTile" title="How containers are dealt to workers (NebulaConfig.AssignmentPolicy)"><div class="v" id="sPolicy">–</div><div class="l">policy</div></div>
         <div class="stat" id="persistTile" title="Entities saved in the persistence store"><div class="v" id="sPersisted">–</div><div class="l">persisted</div></div>
       </div>
     </section>
@@ -224,6 +225,8 @@
     $('sNpcs').textContent = s.totals.serverDriven;
     $('sEntities').textContent = s.totals.authoritative + ' + ' + (s.totals.entities - s.totals.authoritative);
     $('sRebalances').textContent = s.rebalances;
+    $('sPolicy').textContent = s.policy || '–';
+    $('policyTile').title = `assignment policy ${s.policy || '?'}; total cost ${Number(s.totalCost || 0).toFixed(1)}; ${s.runtimeContainers || 0} runtime container(s); autoscale ${s.autoScale ? 'on' : 'off'}`;
     const p = s.persistence || { backend: 'off', connected: false, entities: 0, mode: 'off' };
     const persistOff = p.backend === 'off';
     $('sPersisted').textContent = persistOff ? '—' : (p.entities < 0 ? '?' : p.entities);

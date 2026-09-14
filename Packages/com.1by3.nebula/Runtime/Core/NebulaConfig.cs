@@ -41,6 +41,20 @@ namespace Nebula
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator keeps running.")]
         public int WorkerCount = 4;
+        [Tooltip("The most workers the orchestrator will ever run (dashboard and autoscale stop here). Worker indices are 16-bit, so up to 65535.")]
+        public int MaxWorkers = 32;
+        [Tooltip("How containers are dealt to workers: 'auto' (baked while every container is baked, cost once runtime containers exist), 'baked' (evenly by count, sticky), 'cost' (by reported load along a space-filling curve). -nebula-assignment overrides.")]
+        public string AssignmentPolicy = "auto";
+        [Tooltip("Cost policy: how far above the average a worker's cost may be before containers are re-dealt (0.3 = 30 %).")]
+        public float CostRebalanceThreshold = 0.3f;
+        [Tooltip("Cost policy: what one player / bot / server-driven entity / other entity costs, and what a leased container costs by itself.")]
+        public CostWeights CostWeights = CostWeights.Default;
+        [Tooltip("Cost policy: add a worker when the average cost per worker stays above ScaleOutCostPerWorker for ScaleHoldSeconds, remove one when it stays below ScaleInCostPerWorker. Off by default.")]
+        public bool AutoScale = false;
+        public int MinWorkers = 1;
+        public float ScaleOutCostPerWorker = 200f;
+        public float ScaleInCostPerWorker = 50f;
+        public float ScaleHoldSeconds = 30f;
         [Tooltip("Executable used to spawn workers/gateway. Empty = this process's own executable.")]
         public string WorkerExecutable = "";
         [Tooltip("Where workers run: 'process' (child processes of the orchestrator) or 'hetzner' (one cloud VM per worker). -nebula-host overrides.")]

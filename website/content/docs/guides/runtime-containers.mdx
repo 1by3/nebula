@@ -1,0 +1,71 @@
+---
+title: Runtime containers
+description: Register containers while the mesh runs, so a world whose shape is decided by the game (a chunked landscape, player plots) is simulated across workers without a baked manifest.
+---
+
+Use a **runtime container** when the game decides where the containers are while the mesh runs. A chunked landscape that grows as players explore it, plots that appear when someone buys land, or an instance that exists while a group is inside are all runtime containers. Baked containers (authored in the scene or in a world manifest) and dynamic containers (carried by an entity) keep working alongside them.
+
+A runtime container is a static box named by a 64-bit id the game chooses. Its lease row on the control plane carries the box, so every process registers the same container from the row alone; nothing about the world's shape is baked into a build. On the wire it is ten bytes (a marker index plus the id), where a baked container is two. Baked containers are unaffected.
+
+## Ask for a container
+
+On a worker, ask for a container next to the entities that need it. The request is idempotent, so call it every time an entity comes near the box:
+
+```csharp
+ulong id = Chunks.IdOf(coord);            // your hash of the chunk coordinate
+Bounds box = Chunks.BoundsOf(coord);     // in this process's frame
+worker.RequestRuntimeContainer(id, box);
+```
+
+The lease row is created already assigned to the requesting worker, so the container is simulated there from the first change anyone sees. If another worker asked first, its row stands and the call is a no-op. The orchestrator can move the container later.
+
+The gateway, the orchestrator, every worker and every client mirror the lease rows into their `ContainerRegistry` (`ContainerRegistry.Runtime`), and `ContainerRegistry.RuntimeRegistered` fires on each process once the box is there. Load whatever content belongs in the box from that event: terrain and colliders on workers, visuals on clients.
+
+```csharp
+ContainerRegistry.RuntimeRegistered += container =>
+{
+    var coord = Chunks.CoordOf(container.RuntimeId);
+    LoadTerrain(coord, container.transform);
+};
+ContainerRegistry.RuntimeUnregistering += container => UnloadTerrain(Chunks.CoordOf(container.RuntimeId));
+```
+
+Entities inside a runtime container are spawned, handed over and ghosted exactly like in a baked one. Adjacency is computed when the box registers, against baked and runtime containers whose boxes touch it, so the ghost band and handover across a chunk seam work without any extra setup.
+
+## Retire a container
+
+The owning worker retires a container when nobody needs it any more:
+
+```csharp
+worker.ReleaseRuntimeContainer(id);
+```
+
+Persistent entities still inside are checkpointed and despawned; anything else inside is despawned for good. The lease row is deleted and every process forgets the box. When the container is asked for again, Nebula's persistence restores the entities that were saved in it: a persisted entity's record names its container by id (`rt_<id>`), so the props of a chunk come back with the chunk.
+
+Only the owner can release. Before retiring, read `worker.RuntimeContainerIdleSeconds(id)`: every worker that still wants the box re-stamps its lease row while an entity of its is near it, so the row's age is the mesh-wide idle time. A clock of the owner's own would retire a chunk the neighbour's pawn is about to enter, and its props would blink out and back.
+
+Entities inside a container that goes away are detached from it, never destroyed with it: ghosts on a worker and every remote entity on a client stay alive and pick up the next container from the following state update.
+
+## Assignment policy
+
+Runtime containers are dealt to workers by the orchestrator's assignment policy (`NebulaConfig.AssignmentPolicy`, or `-nebula-assignment`):
+
+| Policy | Behaviour |
+| --- | --- |
+| `baked` | The original dealer: baked containers evenly by count, sticky to their owner. Runtime containers stay with the worker that asked for them and only move when it is gone. |
+| `cost` | Every container costs what its occupants cost (`NebulaConfig.CostWeights`: a leased box, a player, a bot, a server-driven entity). Containers are ordered along a Morton curve of their centres and cut into one contiguous run of roughly equal cost per worker. Nothing moves while the most loaded worker is within `CostRebalanceThreshold` of the average. |
+| `auto` | `baked` while every container is baked; `cost` once the game registers runtime containers. The default. |
+
+Occupancy comes from the telemetry workers already post to the dashboard once a second. A game may install its own policy by assigning `NebulaOrchestrator.Policy`; the input it receives is the baked and runtime containers, the eligible workers, the leases and the per-container occupancy.
+
+With `NebulaConfig.AutoScale` on, the orchestrator adds a worker when the average cost per worker stays above `ScaleOutCostPerWorker` for `ScaleHoldSeconds` and removes one when it stays below `ScaleInCostPerWorker`, between `MinWorkers` and `MaxWorkers`. Launching goes through the configured worker host, so a Hetzner mesh gets a new machine.
+
+## Tooling
+
+The dashboard's state lists runtime containers with the baked ones and shows the policy in use. The World map draws their boxes. `POST /api/containers/ensure` with `{"id": 5, "center": [x, y, z], "size": [x, y, z]}` creates a container from outside the game, and `POST /api/containers/remove` with `{"id": 5}` retires one.
+
+## Limits
+
+- Boxes are axis-aligned in absolute world coordinates. With a partitioned world's floating origin active they are brought into each process's frame and shifted with it.
+- The lease table gained columns for the box. Publish the control-plane module again after upgrading (`nebula start` does; `nebula deploy --reset-control-plane` for a cloud mesh).
+- A world with no baked containers has nowhere to put the first player until a worker asks for a container. Allocate the chunks around the spawn point from `NebulaGameMode.OnWorkerStarted`.

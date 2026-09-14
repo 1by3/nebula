@@ -84,18 +84,22 @@ namespace Nebula
         private struct PendingTransfer { public Peer From; public AuthorityTransferMsg Msg; }
         private readonly Dictionary<uint, EntitySpawnMsg> _pendingSceneGhosts = new Dictionary<uint, EntitySpawnMsg>();
         private readonly Dictionary<uint, PendingTransfer> _pendingSceneTransfers = new Dictionary<uint, PendingTransfer>();
-        private readonly Dictionary<ushort, float> _ownedSince = new Dictionary<ushort, float>();
+        private readonly Dictionary<Container, float> _ownedSince = new Dictionary<Container, float>();
         private const float ScenePassSeconds = 0.25f;
         private float _nextScenePass;
 
-        // Dynamic containers (see DynamicContainer): a ghost or a handover for an entity inside a carrier that has
-        // not arrived here yet waits by the carrier's net id and is applied when the carrier's container registers.
-        // Reliable ordering normally delivers the carrier first; this covers a carrier that was never ghosted here.
-        private readonly Dictionary<ulong, List<EntitySpawnMsg>> _pendingGhostsByCarrier = new Dictionary<ulong, List<EntitySpawnMsg>>();
-        private readonly Dictionary<ulong, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ulong, List<PendingTransfer>>();
+        // Dynamic and runtime containers: a ghost or a handover for an entity inside a carrier that has not arrived
+        // here yet, or in a runtime container whose lease has not, waits by the container reference and is applied
+        // when that container registers. Reliable ordering normally delivers the carrier first; this covers a
+        // carrier that was never ghosted here, and a runtime container the control plane is still delivering.
+        private readonly Dictionary<ContainerRef, List<EntitySpawnMsg>> _pendingGhostsByCarrier = new Dictionary<ContainerRef, List<EntitySpawnMsg>>();
+        private readonly Dictionary<ContainerRef, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ContainerRef, List<PendingTransfer>>();
         private readonly List<Container> _neighborScratch = new List<Container>();
         private readonly List<NetworkIdentity> _contentsScratch = new List<NetworkIdentity>();
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
+        private readonly List<ulong> _scratchIds = new List<ulong>();
+        /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
+        private readonly Dictionary<ulong, Bounds> _pendingRuntimeRequests = new Dictionary<ulong, Bounds>();
 
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
@@ -254,7 +258,8 @@ namespace Nebula
             IsListening = true;
             ControlPlane.Changed += OnControlPlaneChanged;
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
-            ContainerRegistry.DynamicRegistered += OnDynamicContainerRegistered;
+            ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
+            ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
             ContainerRegistry.WorkerIdByIndex = ResolveWorkerId;
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
@@ -290,6 +295,79 @@ namespace Nebula
             }
         }
 
+        // ---------------------------------------------------------------------------------------- runtime containers
+
+        /// <summary>
+        /// Ask the mesh for a runtime container: a static box, named by an id the game chose, that is not in the baked
+        /// set (a chunk of a landscape that is decided at runtime). <paramref name="frameBounds"/> is the box in this
+        /// process's frame. The lease row is created already assigned to this worker, so the container is simulated
+        /// here from the first change anyone sees; if another worker asked first, its row stands and this call is a
+        /// no-op. Every process registers the container from the row (<see cref="ContainerRegistry.SyncRuntime"/>),
+        /// and <see cref="ContainerRegistry.RuntimeRegistered"/> fires here once it has. Idempotent: call it every
+        /// time an entity approaches the box.
+        /// </summary>
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds)
+        {
+            if (!_registered || !ControlPlane.IsConnected)
+            {
+                _pendingRuntimeRequests[id] = frameBounds; // OnWorkerStarted runs before registration; ask as soon as we can
+                return;
+            }
+            string containerId = ContainerRegistry.RuntimeContainerId(id);
+            var lease = ControlPlane.FindLease(containerId);
+            if (lease == null)
+            {
+                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId);
+                return;
+            }
+            // Somebody else owns it and we still want it: say so now and then, so the owner's idle clock does not run out.
+            if (lease.WorkerId != WorkerId && (ControlPlane.Now - lease.UpdatedAt).TotalSeconds >= RuntimeTouchSeconds) ControlPlane.TouchContainer(containerId);
+        }
+
+        /// <summary>How often a worker re-stamps a runtime container it wants but does not own (see <see cref="RuntimeContainerIdleSeconds"/>).</summary>
+        public const float RuntimeTouchSeconds = 15f;
+
+        /// <summary>
+        /// Seconds since anyone in the mesh last asked for or changed a runtime container: its lease row's age.
+        /// Every worker that wants the box re-stamps the row while an entity of its is near it, so the owner can
+        /// retire a box only once this exceeds its grace period. Infinity when the container is unknown.
+        /// </summary>
+        public double RuntimeContainerIdleSeconds(ulong id)
+        {
+            var lease = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
+            return lease == null ? double.PositiveInfinity : (ControlPlane.Now - lease.UpdatedAt).TotalSeconds;
+        }
+
+        private void FlushRuntimeRequests()
+        {
+            if (_pendingRuntimeRequests.Count == 0 || !_registered || !ControlPlane.IsConnected) return;
+            foreach (var kv in _pendingRuntimeRequests) RequestRuntimeContainer(kv.Key, kv.Value);
+            _pendingRuntimeRequests.Clear();
+        }
+
+        /// <summary>
+        /// Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box.
+        /// Persistent entities still inside are checkpointed and despawned (they come back when the box is asked
+        /// for again); anything else inside is despawned for good. Returns false when the container is not here or
+        /// belongs to another worker.
+        /// </summary>
+        public bool ReleaseRuntimeContainer(ulong id)
+        {
+            var c = ContainerRegistry.GetRuntime(id);
+            if (c == null || !c.IsOwnedBy(WorkerId)) return false;
+            if (!_registered || !ControlPlane.IsConnected) return false;
+            _contentsScratch.Clear();
+            _contentsScratch.AddRange(c.Entities);
+            foreach (var e in _contentsScratch)
+            {
+                if (e == null || !e.HasAuthority) continue;
+                Despawn(e, keepPersisted: e.Persistent != null);
+            }
+            _contentsScratch.Clear();
+            ControlPlane.RemoveContainer(c.ContainerId);
+            return true;
+        }
+
         /// <summary>Worker id for a worker index: this worker, or a connected peer. Dynamic containers derive their owner through this.</summary>
         private string ResolveWorkerId(ushort index)
         {
@@ -302,7 +380,8 @@ namespace Nebula
             // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
             Persistence?.Shutdown();
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
-            ContainerRegistry.DynamicRegistered -= OnDynamicContainerRegistered;
+            ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
+            ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
             SceneEntities.Registered -= OnSceneEntityRegistered;
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             if (ControlPlane != null)
@@ -335,6 +414,7 @@ namespace Nebula
                 _registered = true;
                 _nextHeartbeat = 0f;
                 NebulaLog.Info($"registered with control plane as {WorkerId}");
+                FlushRuntimeRequests();
             }
             if (_registered && Time.unscaledTime >= _nextHeartbeat)
             {
@@ -356,10 +436,17 @@ namespace Nebula
         private void OnLeasesChanged()
         {
             float now = Time.unscaledTime;
-            foreach (var c in ContainerRegistry.All)
+            DateOwned(ContainerRegistry.All, now);
+            DateOwned(ContainerRegistry.Runtime, now);
+        }
+
+        private void DateOwned(IReadOnlyList<Container> containers, float now)
+        {
+            for (int i = 0; i < containers.Count; i++)
             {
-                if (c.IsOwnedBy(WorkerId)) { if (!_ownedSince.ContainsKey(c.Index)) _ownedSince[c.Index] = now; }
-                else _ownedSince.Remove(c.Index);
+                var c = containers[i];
+                if (c.IsOwnedBy(WorkerId)) { if (!_ownedSince.ContainsKey(c)) _ownedSince[c] = now; }
+                else _ownedSince.Remove(c);
             }
         }
 
@@ -379,7 +466,7 @@ namespace Nebula
                 if (_pendingSceneTransfers.ContainsKey(e.SceneId) || _pendingSceneGhosts.ContainsKey(e.SceneId)) continue;
                 var c = ContainerRegistry.Find(e.transform.position);
                 if (c == null || !c.IsOwnedBy(WorkerId)) continue;
-                if (!_ownedSince.TryGetValue(c.Index, out float since) || now - since < Config.SceneEntityGraceSeconds) continue;
+                if (!_ownedSince.TryGetValue(c, out float since) || now - since < Config.SceneEntityGraceSeconds) continue;
                 // A persistent scene object comes back as it was saved, at the epoch after the one that saved it.
                 uint epoch = Persistence != null ? Persistence.PrepareSceneEntity(e) : 0;
                 if (epoch != 0) Spawn(e, c, 0, false, epoch);
@@ -459,14 +546,19 @@ namespace Nebula
         {
             get
             {
-                foreach (var c in ContainerRegistry.All)
-                {
-                    string owner = c.OwnerWorkerId;
-                    if (string.IsNullOrEmpty(owner)) return false;
-                    if (owner != WorkerId && !(_workerPeersById.TryGetValue(owner, out var p) && p.HelloReceived)) return false;
-                }
-                return true;
+                return OwnersConnected(ContainerRegistry.All) && OwnersConnected(ContainerRegistry.Runtime);
             }
+        }
+
+        private bool OwnersConnected(IReadOnlyList<Container> containers)
+        {
+            for (int i = 0; i < containers.Count; i++)
+            {
+                string owner = containers[i].OwnerWorkerId;
+                if (string.IsNullOrEmpty(owner)) return false;
+                if (owner != WorkerId && !(_workerPeersById.TryGetValue(owner, out var p) && p.HelloReceived)) return false;
+            }
+            return true;
         }
 
         /// <summary>Registered with the control plane; the mesh knows about this worker.</summary>
@@ -633,9 +725,16 @@ namespace Nebula
             }
             ProfSimulate.End();
 
-            // Remember where everything ended up this tick (ghosts included) for lag-compensated hit tests.
+            // Remember where everything ended up this tick (ghosts included) for lag-compensated hit tests. An
+            // identity whose object was destroyed behind our back (game code, a scene unload) is dropped here rather
+            // than allowed to throw: an exception at this point would skip the publish below and blind every client.
             ProfRecordPose.Begin();
-            foreach (var e in _entities.Values) e.RecordPose(tick);
+            foreach (var e in _entities.Values)
+            {
+                if (e == null) { _scratchEntities.Add(e); continue; }
+                e.RecordPose(tick);
+            }
+            if (_scratchEntities.Count > 0) PurgeDestroyed();
             ProfRecordPose.End();
 
             // 3. Container membership (with hysteresis) and authority transfers.
@@ -681,6 +780,18 @@ namespace Nebula
             PublishToGateways(tick);
             foreach (var e in _authoritative) e.ClearDirty();
             ProfPublish.End();
+        }
+
+        /// <summary>Forget identities in <see cref="_scratchEntities"/> whose objects were destroyed without a despawn.</summary>
+        private void PurgeDestroyed()
+        {
+            _scratchIds.Clear();
+            foreach (var kv in _entities) if (kv.Value == null) _scratchIds.Add(kv.Key);
+            NebulaLog.Warn($"{_scratchIds.Count} entity object(s) were destroyed without a despawn; forgetting them");
+            foreach (var id in _scratchIds) _entities.Remove(id);
+            _authoritative.RemoveAll(e => e == null);
+            _scratchEntities.Clear();
+            _scratchIds.Clear();
         }
 
         // ---------------------------------------------------------------------------------------- spawning API
@@ -1036,10 +1147,10 @@ namespace Nebula
                 NebulaLog.Info($"handover IN  scene entity {msg.Entity.SceneId} #{msg.Entity.NetId} <- {from.Id} waits for its cell");
                 return;
             }
-            if (e == null && msg.Entity.Container.IsDynamic && ContainerRegistry.Resolve(msg.Entity.Container) == null)
+            if (e == null && msg.Entity.Container.MayArriveLater && ContainerRegistry.Resolve(msg.Entity.Container) == null)
             {
-                Pend(_pendingTransfersByCarrier, msg.Entity.Container.NetId, new PendingTransfer { From = from, Msg = msg });
-                NebulaLog.Info($"handover IN  #{msg.Entity.NetId} <- {from.Id} waits for carrier #{msg.Entity.Container.NetId}");
+                Pend(_pendingTransfersByCarrier, msg.Entity.Container, new PendingTransfer { From = from, Msg = msg });
+                NebulaLog.Info($"handover IN  #{msg.Entity.NetId} <- {from.Id} waits for container {msg.Entity.Container}");
                 return;
             }
             if (e == null) e = InstantiateGhost(msg.Entity);
@@ -1095,24 +1206,24 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- ghosts (receiving)
 
-        private static void Pend<T>(Dictionary<ulong, List<T>> pending, ulong carrierNetId, T item)
+        private static void Pend<T>(Dictionary<ContainerRef, List<T>> pending, ContainerRef container, T item)
         {
-            if (!pending.TryGetValue(carrierNetId, out var list)) pending[carrierNetId] = list = new List<T>();
+            if (!pending.TryGetValue(container, out var list)) pending[container] = list = new List<T>();
             list.Add(item);
         }
 
-        /// <summary>A carrier's container is resolvable now: apply the ghosts and handovers that were waiting for it.</summary>
-        private void OnDynamicContainerRegistered(Container container)
+        /// <summary>A carrier's or a runtime container is resolvable now: apply the ghosts and handovers that were waiting for it.</summary>
+        private void OnLateContainerRegistered(Container container)
         {
-            ulong netId = container.CarrierNetId;
-            if (_pendingGhostsByCarrier.TryGetValue(netId, out var ghosts))
+            var key = container.Ref;
+            if (_pendingGhostsByCarrier.TryGetValue(key, out var ghosts))
             {
-                _pendingGhostsByCarrier.Remove(netId);
+                _pendingGhostsByCarrier.Remove(key);
                 foreach (var msg in ghosts) OnGhostSpawn(null, msg);
             }
-            if (_pendingTransfersByCarrier.TryGetValue(netId, out var transfers))
+            if (_pendingTransfersByCarrier.TryGetValue(key, out var transfers))
             {
-                _pendingTransfersByCarrier.Remove(netId);
+                _pendingTransfersByCarrier.Remove(key);
                 foreach (var t in transfers) OnAuthorityTransfer(t.From, t.Msg);
             }
         }
@@ -1120,9 +1231,9 @@ namespace Nebula
         private NetworkIdentity InstantiateGhost(EntitySpawnMsg msg)
         {
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.IsDynamic)
+            if (container == null && msg.Container.MayArriveLater)
             {
-                Pend(_pendingGhostsByCarrier, msg.Container.NetId, msg);
+                Pend(_pendingGhostsByCarrier, msg.Container, msg);
                 return null;
             }
             var identity = msg.SceneId != 0
@@ -1151,10 +1262,10 @@ namespace Nebula
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
             var container = ContainerRegistry.Resolve(msg.Container);
-            if (container == null && msg.Container.IsDynamic)
+            if (container == null && msg.Container.MayArriveLater)
             {
-                // Its carrier is not here (yet): keep the pose in the container we last knew, rather than a wrong one.
-                NebulaLog.Warn($"{e}: spawn data names carrier #{msg.Container.NetId}, unknown here; keeping its current container");
+                // Its container is not here (yet): keep the pose in the container we last knew, rather than a wrong one.
+                NebulaLog.Warn($"{e}: spawn data names container {msg.Container}, unknown here; keeping its current container");
                 container = e.Container;
             }
             e.SetContainer(container);
@@ -1206,7 +1317,7 @@ namespace Nebula
                 var e = Find(entry.NetId);
                 if (e == null || e.HasAuthority || entry.Epoch < e.Epoch) continue;
                 var container = ContainerRegistry.Resolve(entry.Container);
-                if (container == null && entry.Container.IsDynamic) continue; // its carrier has not arrived here yet
+                if (container == null && entry.Container.MayArriveLater) continue; // its carrier or lease has not arrived here yet
                 EnsureInterpolator(e).Push(tick, container, entry.LocalPosition, entry.LocalRotation, entry.Velocity);
                 e.OwnerWorkerIndex = workerIndex;
             }
@@ -1257,8 +1368,8 @@ namespace Nebula
 
         private void OnGhostDespawn(Peer from, EntityDespawnMsg msg)
         {
-            _pendingGhostsByCarrier.Remove(msg.NetId);
-            _pendingTransfersByCarrier.Remove(msg.NetId);
+            _pendingGhostsByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
+            _pendingTransfersByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
             var e = Find(msg.NetId);
             if (e == null) { DropPendingScene(msg.NetId); return; }
             if (e.HasAuthority || msg.Epoch < e.Epoch) return;
@@ -1347,7 +1458,8 @@ namespace Nebula
                     return;
                 }
             }
-            var container = ContainerRegistry.Get(msg.ContainerIndex) ?? (ContainerRegistry.Count > 0 ? ContainerRegistry.All[0] : null);
+            var container = ContainerRegistry.Resolve(msg.Container)
+                ?? (ContainerRegistry.Count > 0 ? ContainerRegistry.All[0] : ContainerRegistry.Runtime.Count > 0 ? ContainerRegistry.Runtime[0] : null);
             if (_gameMode == null || container == null)
             {
                 NebulaLog.Error($"cannot spawn player {msg.ClientId}: gameMode={(_gameMode != null)} container={container}");
@@ -1491,6 +1603,8 @@ namespace Nebula
 
         private void OnControlPlaneChanged()
         {
+            // Runtime containers come and go with their lease rows; register them before their leases are applied.
+            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             // Leases -> container ownership.
             _seenLeases.Clear();
             foreach (var lease in ControlPlane.Leases)

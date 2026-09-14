@@ -39,6 +39,14 @@ namespace Nebula
 
         /// <summary>Carried by an entity (<see cref="DynamicContainer"/>): created and destroyed with it, moves with it, owned by its authority.</summary>
         public bool IsDynamic { get; internal set; }
+        /// <summary>
+        /// Registered by the game while the mesh runs (<see cref="ContainerRegistry.RegisterRuntime"/>): a static box
+        /// that is not in the baked set. Leased and owned like a baked container; named on the wire by
+        /// <see cref="RuntimeId"/> (<see cref="Index"/> is <see cref="ContainerRef.RuntimeIndex"/>).
+        /// </summary>
+        public bool IsRuntime { get; internal set; }
+        /// <summary>Runtime containers: the 64-bit id the game registered this container under. 0 otherwise.</summary>
+        public ulong RuntimeId { get; internal set; }
         /// <summary>Dynamic containers: the entity carrying this container. Null for static ones.</summary>
         public NetworkIdentity Carrier { get; internal set; }
         /// <summary>Dynamic containers: the carrier's net id, which names this container on the wire. 0 for static ones.</summary>
@@ -261,12 +269,12 @@ namespace Nebula
             }
         }
 
-        public override string ToString() => $"{ContainerId}[{(IsDynamic ? Ref.ToString() : Index.ToString())}]->{(string.IsNullOrEmpty(OwnerWorkerId) ? "unassigned" : OwnerWorkerId)}";
+        public override string ToString() => $"{ContainerId}[{(IsDynamic || IsRuntime ? Ref.ToString() : Index.ToString())}]->{(string.IsNullOrEmpty(OwnerWorkerId) ? "unassigned" : OwnerWorkerId)}";
 
         private void OnDrawGizmos()
         {
             Gizmos.matrix = transform.localToWorldMatrix;
-            Gizmos.color = GetComponent<DynamicContainer>() != null ? new Color(1f, 0.7f, 0.2f, 0.35f) : new Color(0.2f, 0.8f, 1f, 0.35f);
+            Gizmos.color = GetComponent<DynamicContainer>() != null ? new Color(1f, 0.7f, 0.2f, 0.35f) : IsRuntime ? new Color(0.5f, 1f, 0.4f, 0.35f) : new Color(0.2f, 0.8f, 1f, 0.35f);
             Gizmos.DrawWireCube(Center, Size);
         }
     }

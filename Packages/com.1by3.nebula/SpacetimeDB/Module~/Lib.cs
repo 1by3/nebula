@@ -50,9 +50,19 @@ public static partial class Module
         public string WorkerId;
         /// Monotonic per-container authority epoch. Bumped on every (re)assignment.
         public ulong Epoch;
-        /// assigning | active | draining | orphaned
+        /// assigning | active | draining | orphaned | pinned
         public string State;
         public Timestamp UpdatedAt;
+        /// Runtime containers (registered by the game while the mesh runs) carry their box
+        /// here, in absolute world coordinates, so every process registers the same box from
+        /// the row alone. False for a baked or carried container.
+        public bool HasBounds;
+        public float BoundsCenterX;
+        public float BoundsCenterY;
+        public float BoundsCenterZ;
+        public float BoundsSizeX;
+        public float BoundsSizeY;
+        public float BoundsSizeZ;
     }
 
     /// A client-facing gateway process.
@@ -238,6 +248,44 @@ public static partial class Module
                 State = "orphaned",
                 UpdatedAt = ctx.Timestamp,
             });
+        }
+    }
+
+    /// Make sure a lease row exists for a runtime container, carrying its box and, when
+    /// workerId is not empty, already assigned to that worker (epoch 1, active). A no-op when
+    /// the row exists: the first worker to ask owns the container, the second sees the row.
+    [SpacetimeDB.Reducer]
+    public static void EnsureRuntimeContainer(ReducerContext ctx, string containerId, string workerId,
+        float centerX, float centerY, float centerZ, float sizeX, float sizeY, float sizeZ)
+    {
+        if (ctx.Db.container_lease.ContainerId.Find(containerId) is not null) return;
+        bool owned = workerId != "";
+        ctx.Db.container_lease.Insert(new ContainerLease
+        {
+            ContainerId = containerId,
+            WorkerId = owned ? workerId : "",
+            Epoch = owned ? 1UL : 0UL,
+            State = owned ? "active" : "orphaned",
+            UpdatedAt = ctx.Timestamp,
+            HasBounds = true,
+            BoundsCenterX = centerX,
+            BoundsCenterY = centerY,
+            BoundsCenterZ = centerZ,
+            BoundsSizeX = sizeX,
+            BoundsSizeY = sizeY,
+            BoundsSizeZ = sizeZ,
+        });
+    }
+
+    /// A worker still wants a runtime container it does not own (an entity of its is next to it):
+    /// stamp the row so the owner knows the box is in use mesh-wide and does not retire it.
+    [SpacetimeDB.Reducer]
+    public static void TouchContainer(ReducerContext ctx, string containerId)
+    {
+        if (ctx.Db.container_lease.ContainerId.Find(containerId) is { } row)
+        {
+            row.UpdatedAt = ctx.Timestamp;
+            ctx.Db.container_lease.ContainerId.Update(row);
         }
     }
 

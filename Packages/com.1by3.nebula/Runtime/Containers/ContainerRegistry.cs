@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Nebula.World;
 using UnityEngine;
@@ -9,12 +10,16 @@ namespace Nebula
     /// <summary>
     /// The container graph of the loaded level: every static <see cref="Container"/>, indexed deterministically so
     /// all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic
-    /// containers currently carried by entities on this process, resolved by their carrier's net id.
+    /// containers currently carried by entities on this process, resolved by their carrier's net id, plus the
+    /// runtime containers the game registered while the mesh runs, resolved by the id the game gave them.
     /// <para>Two ways to populate the static part: <see cref="Rebuild"/> scans the loaded scene and sorts by id
     /// (single-scene games), or <see cref="Load"/> takes an already ordered list built from a
     /// <see cref="WorldContainerManifest"/> (partitioned worlds), in which case lookups go through a grid of cells
     /// instead of a linear scan. Dynamic containers come and go with their carriers
-    /// (<see cref="RegisterDynamic"/> / <see cref="UnregisterDynamic"/>, called by <see cref="DynamicContainer"/>).</para>
+    /// (<see cref="RegisterDynamic"/> / <see cref="UnregisterDynamic"/>, called by <see cref="DynamicContainer"/>).
+    /// Runtime containers come and go with their control-plane lease (<see cref="RegisterRuntime"/> /
+    /// <see cref="UnregisterRuntime"/>, called by every role from <see cref="SyncRuntime"/>); a world whose shape
+    /// is decided at runtime (a chunked landscape) has no baked set at all and lives entirely in them.</para>
     /// </summary>
     public static class ContainerRegistry
     {
@@ -26,16 +31,47 @@ namespace Nebula
         private static readonly Dictionary<ulong, Container> DynamicByNetId = new Dictionary<ulong, Container>();
         private static readonly List<NetworkIdentity> EntityScratch = new List<NetworkIdentity>();
         private struct PendingLease { public string WorkerId; public ushort WorkerIndex; public ulong Epoch; public string State; }
-        /// <summary>Leases for dynamic containers whose carrier is not here yet, by container id; applied on registration.</summary>
+        /// <summary>Leases for dynamic or runtime containers that are not here yet, by container id; applied on registration.</summary>
         private static readonly Dictionary<string, PendingLease> PendingLeases = new Dictionary<string, PendingLease>();
+
+        // Runtime containers: a flat list plus a coarse spatial hash, so a world of thousands of chunks still
+        // resolves a point by visiting a handful of buckets. Buckets are keyed in the current frame; a box is
+        // entered into every bucket it overlaps.
+        private static readonly List<Container> RuntimeList = new List<Container>();
+        private static readonly Dictionary<ulong, Container> RuntimeById = new Dictionary<ulong, Container>();
+        private static readonly Dictionary<Vector3Int, List<Container>> RuntimeHash = new Dictionary<Vector3Int, List<Container>>();
+        private static readonly List<Container> RuntimeCandidates = new List<Container>();
+        private static readonly HashSet<Container> RuntimeSeen = new HashSet<Container>();
+        private static readonly HashSet<ulong> RuntimeKeep = new HashSet<ulong>();
+        private static readonly List<ulong> RuntimeScratchIds = new List<ulong>();
+        private static Transform _runtimeRoot;
 
         /// <summary>The static containers, in wire order.</summary>
         public static IReadOnlyList<Container> All => Containers;
         public static int Count => Containers.Count;
         /// <summary>The dynamic containers present on this process (their carriers are resident here), in registration order.</summary>
         public static IReadOnlyList<Container> Dynamic => DynamicList;
+        /// <summary>The runtime containers registered on this process, in registration order.</summary>
+        public static IReadOnlyList<Container> Runtime => RuntimeList;
         /// <summary>A partitioned world's manifest is loaded: containers know their cell and lookups use the grid.</summary>
         public static bool IsGridded => _grid != null;
+        /// <summary>
+        /// Edge length, in metres, of the buckets runtime containers are hashed into. Set it before the first
+        /// <see cref="RegisterRuntime"/> (a chunk size or a small multiple of it is right); changing it later rehashes.
+        /// </summary>
+        public static float RuntimeBucketSize
+        {
+            get => _runtimeBucketSize;
+            set
+            {
+                value = Mathf.Max(1f, value);
+                if (Mathf.Approximately(value, _runtimeBucketSize)) return;
+                _runtimeBucketSize = value;
+                RehashRuntime();
+            }
+        }
+        private static float _runtimeBucketSize = 256f;
+
         public static event Action Rebuilt;
         /// <summary>Raised after a batch of leases was applied (the worker and client do this whenever the control plane changes).</summary>
         public static event Action LeasesChanged;
@@ -43,6 +79,10 @@ namespace Nebula
         public static event Action<Container> DynamicRegistered;
         /// <summary>A dynamic container is about to go (its carrier is despawning). Its contents are moved to the container around it right after.</summary>
         public static event Action<Container> DynamicUnregistering;
+        /// <summary>A runtime container became resolvable here. The game loads whatever content belongs in that box (terrain, colliders, visuals).</summary>
+        public static event Action<Container> RuntimeRegistered;
+        /// <summary>A runtime container is about to go. The game unloads its content; entities still inside are moved to the container around them right after.</summary>
+        public static event Action<Container> RuntimeUnregistering;
 
         /// <summary>
         /// How a worker index maps to a worker id, for the derived ownership of dynamic containers
@@ -51,11 +91,37 @@ namespace Nebula
         /// </summary>
         public static Func<ushort, string> WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
 
-        /// <summary>Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities (<see cref="DynamicContainer"/>) are skipped.</summary>
+        /// <summary>
+        /// Forget everything, subscribers included, without touching any object: a new play session is starting in
+        /// an Editor that did not reload the domain, and whatever is still referenced here was destroyed with the
+        /// previous one (see <see cref="NebulaStatics"/>).
+        /// </summary>
+        internal static void ResetForNewSession()
+        {
+            Containers.Clear();
+            ById.Clear();
+            _grid = null;
+            DynamicList.Clear();
+            DynamicByNetId.Clear();
+            PendingLeases.Clear();
+            RuntimeList.Clear();
+            RuntimeById.Clear();
+            RuntimeHash.Clear();
+            _runtimeRoot = null;
+            Rebuilt = null;
+            LeasesChanged = null;
+            DynamicRegistered = null;
+            DynamicUnregistering = null;
+            RuntimeRegistered = null;
+            RuntimeUnregistering = null;
+            WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
+        }
+
+        /// <summary>Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities (<see cref="DynamicContainer"/>) and runtime containers are skipped.</summary>
         public static void Rebuild()
         {
             var found = UnityEngine.Object.FindObjectsByType<Container>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
-                .Where(c => c.GetComponent<DynamicContainer>() == null)
+                .Where(c => c.GetComponent<DynamicContainer>() == null && !c.IsRuntime)
                 .OrderBy(c => c.ContainerId, StringComparer.Ordinal)
                 .ToList();
             Load(found, gridded: false);
@@ -64,11 +130,12 @@ namespace Nebula
         /// <summary>
         /// Index <paramref name="ordered"/> as given (position = wire index). With <paramref name="gridded"/> every
         /// container must carry its <see cref="Container.Cell"/>; adjacency is then only tested between containers
-        /// of neighbouring cells and <see cref="Find"/> only visits the cells around the point. Dynamic containers
-        /// registered earlier are forgotten: this is a boot-time operation.
+        /// of neighbouring cells and <see cref="Find"/> only visits the cells around the point. Dynamic and runtime
+        /// containers registered earlier are forgotten: this is a boot-time operation.
         /// </summary>
         public static void Load(IList<Container> ordered, bool gridded)
         {
+            UnregisterAllRuntime();
             Containers.Clear();
             ById.Clear();
             DynamicList.Clear();
@@ -82,6 +149,8 @@ namespace Nebula
                     throw new InvalidOperationException($"Duplicate container id '{c.ContainerId}'");
                 c.Index = (ushort)i;
                 c.IsDynamic = false;
+                c.IsRuntime = false;
+                c.RuntimeId = 0;
                 c.Carrier = null;
                 c.RefreshCache();
                 c.Neighbors.Clear();
@@ -136,13 +205,14 @@ namespace Nebula
             return _grid != null && _grid.TryGetValue(cell, out var list) ? list : (IReadOnlyList<Container>)Array.Empty<Container>();
         }
 
-        /// <summary>The static container with this wire index, or null (also null for <see cref="ContainerRef.DynamicIndex"/>: use <see cref="Resolve(ContainerRef)"/>).</summary>
+        /// <summary>The static container with this wire index, or null (also null for <see cref="ContainerRef.DynamicIndex"/> and <see cref="ContainerRef.RuntimeIndex"/>: use <see cref="Resolve(ContainerRef)"/>).</summary>
         public static Container Get(ushort index) => index < Containers.Count ? Containers[index] : null;
 
-        /// <summary>The container a wire reference names, static or dynamic, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet).</summary>
+        /// <summary>The container a wire reference names, static, dynamic or runtime, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet, a runtime container whose lease has not).</summary>
         public static Container Resolve(ContainerRef r)
         {
             if (r.IsDynamic) return DynamicByNetId.TryGetValue(r.NetId, out var c) ? c : null;
+            if (r.IsRuntime) return RuntimeById.TryGetValue(r.NetId, out var rt) ? rt : null;
             return Get(r.Index);
         }
 
@@ -153,10 +223,11 @@ namespace Nebula
         public static void RefreshCaches()
         {
             for (int i = 0; i < Containers.Count; i++) Containers[i].RefreshCache();
+            for (int i = 0; i < RuntimeList.Count; i++) RuntimeList[i].RefreshCache();
             for (int i = 0; i < DynamicList.Count; i++) DynamicList[i].RefreshCache();
         }
 
-        /// <summary>The static container with this id, or the dynamic container currently registered under it (<c>label#netId</c>), or null.</summary>
+        /// <summary>The static or runtime container with this id, or the dynamic container currently registered under it (<c>label#netId</c>), or null.</summary>
         public static Container FindById(string id)
         {
             if (id == null) return null;
@@ -225,6 +296,19 @@ namespace Nebula
             if (!DynamicList.Remove(container)) return;
             if (netId != 0 && DynamicByNetId.TryGetValue(netId, out var same) && same == container) DynamicByNetId.Remove(netId);
             DynamicUnregistering?.Invoke(container);
+            EvacuateEntities(container);
+            PendingLeases.Remove(container.ContainerId);
+            container.IsDynamic = false;
+            container.Carrier = null;
+            container.Index = ushort.MaxValue;
+            container.LeaseState = "";
+            container.OwnerWorkerId = "";
+            container.OwnerWorkerIndex = ushort.MaxValue;
+        }
+
+        /// <summary>Move every entity still inside <paramref name="container"/> to the container around it (ignoring the departing box).</summary>
+        private static void EvacuateEntities(Container container)
+        {
             EntityScratch.Clear();
             EntityScratch.AddRange(container.Entities);
             foreach (var e in EntityScratch)
@@ -235,21 +319,304 @@ namespace Nebula
                 e.SetContainer(outer);
             }
             container.Entities.Clear();
-            PendingLeases.Remove(container.ContainerId);
-            container.IsDynamic = false;
-            container.Carrier = null;
-            container.Index = ushort.MaxValue;
-            container.LeaseState = "";
-            container.OwnerWorkerId = "";
-            container.OwnerWorkerIndex = ushort.MaxValue;
+        }
+
+        // ---------------------------------------------------------------------------------------- runtime containers
+
+        /// <summary>Prefix of a runtime container's string id (<c>rt_&lt;id&gt;</c>), the form leases and persistence records use.</summary>
+        public const string RuntimeIdPrefix = "rt_";
+
+        /// <summary>The string id a runtime container registered as <paramref name="id"/> has: <c>rt_&lt;id&gt;</c>.</summary>
+        public static string RuntimeContainerId(ulong id) => RuntimeIdPrefix + id.ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>Whether a container id names a runtime container (<c>rt_&lt;id&gt;</c>).</summary>
+        public static bool IsRuntimeId(string id) => TryParseRuntimeId(id, out _);
+
+        /// <summary>The 64-bit id a runtime container id (<c>rt_&lt;id&gt;</c>) names.</summary>
+        public static bool TryParseRuntimeId(string id, out ulong runtimeId)
+        {
+            runtimeId = 0;
+            return id != null && id.Length > RuntimeIdPrefix.Length && id.StartsWith(RuntimeIdPrefix, StringComparison.Ordinal)
+                && ulong.TryParse(id.Substring(RuntimeIdPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out runtimeId);
+        }
+
+        /// <summary>The runtime container registered as <paramref name="id"/> on this process, or null.</summary>
+        public static Container GetRuntime(ulong id) => RuntimeById.TryGetValue(id, out var c) ? c : null;
+
+        /// <summary>
+        /// Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk
+        /// coordinate hash, a plot number) and axis-aligned in this process's frame. Legal at any time after boot,
+        /// on any role; every process that should resolve the container has to register it under the same id with
+        /// the same box, which is what <see cref="SyncRuntime"/> does from the control-plane leases. Registering an
+        /// id that is already here returns the existing container (its box is updated if it changed). Adjacency to
+        /// baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the
+        /// seam work like between baked containers.
+        /// </summary>
+        public static Container RegisterRuntime(ulong id, Bounds frameBounds)
+        {
+            if (RuntimeById.TryGetValue(id, out var existing))
+            {
+                if (existing.WorldBounds != frameBounds)
+                {
+                    RemoveFromHash(existing);
+                    existing.transform.position = frameBounds.center;
+                    existing.Size = frameBounds.size;
+                    existing.RefreshCache();
+                    AddToHash(existing);
+                    RelinkRuntimeNeighbors(existing);
+                }
+                return existing;
+            }
+            if (_runtimeRoot == null)
+            {
+                var root = new GameObject("RuntimeContainers");
+                if (Application.isPlaying) UnityEngine.Object.DontDestroyOnLoad(root);
+                _runtimeRoot = root.transform;
+            }
+            var go = new GameObject(RuntimeContainerId(id));
+            go.transform.SetParent(_runtimeRoot, false);
+            go.transform.position = frameBounds.center;
+            var c = go.AddComponent<Container>();
+            c.ContainerId = RuntimeContainerId(id);
+            c.Size = frameBounds.size;
+            c.Center = Vector3.zero;
+            c.IsRuntime = true;
+            c.RuntimeId = id;
+            c.Index = ContainerRef.RuntimeIndex;
+            c.RefreshCache();
+            RuntimeList.Add(c);
+            RuntimeById[id] = c;
+            ById[c.ContainerId] = c;
+            AddToHash(c);
+            RelinkRuntimeNeighbors(c);
+            if (PendingLeases.TryGetValue(c.ContainerId, out var lease))
+            {
+                PendingLeases.Remove(c.ContainerId);
+                ApplyLease(c.ContainerId, lease.WorkerId, lease.WorkerIndex, lease.Epoch, lease.State);
+            }
+            RuntimeRegistered?.Invoke(c);
+            return c;
+        }
+
+        /// <summary>
+        /// Forget a runtime container and destroy its object. Whatever is still inside is moved to the container
+        /// around it first; the game normally retires a container only once it is empty, and persists or despawns
+        /// the rest before calling this. Neighbours drop their adjacency to it.
+        /// </summary>
+        public static bool UnregisterRuntime(ulong id)
+        {
+            if (!RuntimeById.TryGetValue(id, out var c)) return false;
+            if (c == null)
+            {
+                // Its object is already gone (a scene unload took it): just forget it.
+                RuntimeById.Remove(id);
+                RuntimeList.Remove(c);
+                RehashRuntime();
+                return true;
+            }
+            RuntimeUnregistering?.Invoke(c);
+            RuntimeById.Remove(id);
+            RuntimeList.Remove(c);
+            ById.Remove(c.ContainerId);
+            RemoveFromHash(c);
+            foreach (var n in c.Neighbors) n.Neighbors.Remove(c);
+            c.Neighbors.Clear();
+            EvacuateEntities(c);
+            // Nothing networked may go down with the box: an entity that is still parented here (a ghost, a scene
+            // object moved by hand) would be destroyed with it and leave a dead reference in every list that holds it.
+            EntityScratch.Clear();
+            c.GetComponentsInChildren(true, EntityScratch);
+            foreach (var e in EntityScratch) if (e != null && e.transform.parent != null && e.transform.IsChildOf(c.transform)) e.transform.SetParent(null, true);
+            EntityScratch.Clear();
+            PendingLeases.Remove(c.ContainerId);
+            c.IsRuntime = false;
+            c.Index = ushort.MaxValue;
+            if (c.gameObject != null)
+            {
+                if (Application.isPlaying) UnityEngine.Object.Destroy(c.gameObject);
+                else UnityEngine.Object.DestroyImmediate(c.gameObject);
+            }
+            return true;
+        }
+
+        private static void UnregisterAllRuntime()
+        {
+            RuntimeScratchIds.Clear();
+            RuntimeScratchIds.AddRange(RuntimeById.Keys);
+            foreach (var id in RuntimeScratchIds) UnregisterRuntime(id);
+            RuntimeScratchIds.Clear();
+        }
+
+        /// <summary>
+        /// Mirror the runtime containers the control plane names: register every lease that carries a box and is
+        /// not here yet, forget every runtime container whose lease is gone. Boxes on the row are absolute; they are
+        /// brought into this process's frame. Workers, the gateway and the orchestrator call this whenever the
+        /// control plane changes, before applying the leases; clients do the same from the ownership message.
+        /// </summary>
+        public static void SyncRuntime(IReadOnlyList<LeaseInfo> leases)
+        {
+            RuntimeKeep.Clear();
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var l = leases[i];
+                if (!l.HasBounds || !TryParseRuntimeId(l.ContainerId, out ulong id)) continue;
+                RuntimeKeep.Add(id);
+                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize)));
+            }
+            PruneRuntime(RuntimeKeep);
+            RuntimeKeep.Clear();
+        }
+
+        /// <summary>Forget every runtime container whose id is not in <paramref name="keep"/>.</summary>
+        public static void PruneRuntime(HashSet<ulong> keep)
+        {
+            RuntimeScratchIds.Clear();
+            foreach (var id in RuntimeById.Keys) if (!keep.Contains(id)) RuntimeScratchIds.Add(id);
+            foreach (var id in RuntimeScratchIds) UnregisterRuntime(id);
+            RuntimeScratchIds.Clear();
+        }
+
+        /// <summary>An absolute box (as leases and telemetry carry it) in this process's frame: the same box unless a floating origin is active.</summary>
+        public static Bounds ToFrame(Bounds absolute)
+        {
+            var world = WorldOrigin.Definition;
+            if (world == null) return absolute;
+            var origin = world.FrameOrigin(Vector3Int.zero, WorldOrigin.Cell); // where absolute (0,0,0) sits in this frame
+            return new Bounds(absolute.center + origin, absolute.size);
+        }
+
+        /// <summary>A box in this process's frame as an absolute box: the inverse of <see cref="ToFrame"/>.</summary>
+        public static Bounds ToAbsolute(Bounds frame)
+        {
+            var world = WorldOrigin.Definition;
+            if (world == null) return frame;
+            var origin = world.FrameOrigin(Vector3Int.zero, WorldOrigin.Cell);
+            return new Bounds(frame.center - origin, frame.size);
+        }
+
+        /// <summary>The floating origin moved: runtime containers move with everything else and are rehashed.</summary>
+        public static void ShiftRuntime(Vector3 delta)
+        {
+            if (RuntimeList.Count == 0) return;
+            for (int i = 0; i < RuntimeList.Count; i++)
+            {
+                RuntimeList[i].transform.position += delta;
+                RuntimeList[i].RefreshCache();
+            }
+            RehashRuntime();
+        }
+
+        private static Vector3Int BucketOf(Vector3 p)
+        {
+            float s = _runtimeBucketSize;
+            return new Vector3Int(Mathf.FloorToInt(p.x / s), Mathf.FloorToInt(p.y / s), Mathf.FloorToInt(p.z / s));
+        }
+
+        private static void AddToHash(Container c)
+        {
+            var b = c.WorldBounds;
+            var min = BucketOf(b.min);
+            var max = BucketOf(b.max);
+            for (int x = min.x; x <= max.x; x++)
+                for (int y = min.y; y <= max.y; y++)
+                    for (int z = min.z; z <= max.z; z++)
+                    {
+                        var key = new Vector3Int(x, y, z);
+                        if (!RuntimeHash.TryGetValue(key, out var list)) RuntimeHash[key] = list = new List<Container>();
+                        list.Add(c);
+                    }
+        }
+
+        private static void RemoveFromHash(Container c)
+        {
+            var b = c.WorldBounds;
+            var min = BucketOf(b.min);
+            var max = BucketOf(b.max);
+            for (int x = min.x; x <= max.x; x++)
+                for (int y = min.y; y <= max.y; y++)
+                    for (int z = min.z; z <= max.z; z++)
+                    {
+                        var key = new Vector3Int(x, y, z);
+                        if (!RuntimeHash.TryGetValue(key, out var list)) continue;
+                        list.Remove(c);
+                        if (list.Count == 0) RuntimeHash.Remove(key);
+                    }
+        }
+
+        private static void RehashRuntime()
+        {
+            RuntimeHash.Clear();
+            for (int i = 0; i < RuntimeList.Count; i++) AddToHash(RuntimeList[i]);
+        }
+
+        /// <summary>Distinct runtime containers hashed into any bucket <paramref name="bounds"/> overlaps, into <paramref name="result"/> (cleared first).</summary>
+        private static void CollectRuntimeIn(Bounds bounds, List<Container> result)
+        {
+            result.Clear();
+            if (RuntimeHash.Count == 0) return;
+            RuntimeSeen.Clear();
+            var min = BucketOf(bounds.min);
+            var max = BucketOf(bounds.max);
+            for (int x = min.x; x <= max.x; x++)
+                for (int y = min.y; y <= max.y; y++)
+                    for (int z = min.z; z <= max.z; z++)
+                    {
+                        if (!RuntimeHash.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                        for (int i = 0; i < list.Count; i++) if (RuntimeSeen.Add(list[i])) result.Add(list[i]);
+                    }
+            RuntimeSeen.Clear();
+        }
+
+        /// <summary>Runtime containers hashed into the bucket holding <paramref name="p"/> and the 26 around it.</summary>
+        private static void CollectRuntimeAround(Vector3 p, List<Container> result)
+        {
+            float s = _runtimeBucketSize;
+            CollectRuntimeIn(new Bounds(p, new Vector3(2f * s, 2f * s, 2f * s)), result);
+        }
+
+        /// <summary>Recompute the adjacency of a runtime container to every baked and runtime container whose box touches it, both ways.</summary>
+        private static void RelinkRuntimeNeighbors(Container c)
+        {
+            foreach (var n in c.Neighbors) n.Neighbors.Remove(c);
+            c.Neighbors.Clear();
+            var a = c.WorldBounds;
+            a.Expand(0.05f);
+            if (_grid != null)
+            {
+                var min = WorldOrigin.CellOf(a.min);
+                var max = WorldOrigin.CellOf(a.max);
+                for (int x = min.x - 1; x <= max.x + 1; x++)
+                    for (int y = min.y - 1; y <= max.y + 1; y++)
+                        for (int z = min.z - 1; z <= max.z + 1; z++)
+                        {
+                            if (!_grid.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                            for (int i = 0; i < list.Count; i++) if (a.Intersects(list[i].WorldBounds)) Link(c, list[i]);
+                        }
+            }
+            else
+            {
+                for (int i = 0; i < Containers.Count; i++) if (a.Intersects(Containers[i].WorldBounds)) Link(c, Containers[i]);
+            }
+            CollectRuntimeIn(a, RuntimeCandidates);
+            for (int i = 0; i < RuntimeCandidates.Count; i++)
+            {
+                var o = RuntimeCandidates[i];
+                if (o != c && a.Intersects(o.WorldBounds)) Link(c, o);
+            }
+        }
+
+        private static void Link(Container a, Container b)
+        {
+            if (!a.Neighbors.Contains(b)) a.Neighbors.Add(b);
+            if (!b.Neighbors.Contains(a)) b.Neighbors.Add(a);
         }
 
         /// <summary>
         /// Every container adjacent to <paramref name="container"/> right now, into <paramref name="result"/>
-        /// (cleared first): its static <see cref="Container.Neighbors"/> plus every dynamic container whose box
-        /// currently touches it, and, for a dynamic container, the container its carrier sits in and every container
-        /// its box touches. This is what the ghost band walks; use it instead of <see cref="Container.Neighbors"/>
-        /// wherever a vehicle could be parked next door.
+        /// (cleared first): its static <see cref="Container.Neighbors"/> (baked and runtime) plus every dynamic
+        /// container whose box currently touches it, and, for a dynamic container, the container its carrier sits in
+        /// and every container its box touches. This is what the ghost band walks; use it instead of
+        /// <see cref="Container.Neighbors"/> wherever a vehicle could be parked next door.
         /// </summary>
         public static void NeighborsOf(Container container, List<Container> result)
         {
@@ -282,6 +649,15 @@ namespace Nebula
                     if (c != enclosing && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
+            if (RuntimeList.Count > 0)
+            {
+                CollectRuntimeIn(bounds, RuntimeCandidates);
+                for (int i = 0; i < RuntimeCandidates.Count; i++)
+                {
+                    var c = RuntimeCandidates[i];
+                    if (c != enclosing && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                }
+            }
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var d = DynamicList[i];
@@ -307,11 +683,20 @@ namespace Nebula
             {
                 CollectAround(WorldOrigin.CellOf(worldPosition), Candidates);
                 FindAmong(Candidates, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-                FindAmong(DynamicList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-                if (inside != null || nearest != null) return inside ?? nearest;
             }
-            FindAmong(Containers, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-            if (_grid == null) FindAmong(DynamicList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            else FindAmong(Containers, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            if (RuntimeList.Count > 0)
+            {
+                CollectRuntimeAround(worldPosition, RuntimeCandidates);
+                FindAmong(RuntimeCandidates, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            }
+            FindAmong(DynamicList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            if (inside == null && nearest == null)
+            {
+                // Nothing near the point: fall back to the whole set so a far-away point still gets its nearest box.
+                if (_grid != null) FindAmong(Containers, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            }
             return inside ?? nearest;
         }
 
@@ -369,12 +754,21 @@ namespace Nebula
         /// passes through, appended to <paramref name="result"/>. Nested containers are all reported: an entity in a
         /// building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of
         /// sight uses to find out which workers, besides itself, could own something along the ray. In a gridded
-        /// world only the cells the segment's bounds touch are visited; dynamic containers are always tested.
+        /// world only the cells the segment's bounds touch are visited; runtime containers are found through their
+        /// hash and dynamic containers are always tested.
         /// </summary>
         public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result)
         {
             for (int i = 0; i < DynamicList.Count; i++)
                 if (DynamicList[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(DynamicList[i]);
+            if (RuntimeList.Count > 0)
+            {
+                var box = new Bounds();
+                box.SetMinMax(Vector3.Min(a, b) - Vector3.one * margin, Vector3.Max(a, b) + Vector3.one * margin);
+                CollectRuntimeIn(box, RuntimeCandidates);
+                for (int i = 0; i < RuntimeCandidates.Count; i++)
+                    if (RuntimeCandidates[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(RuntimeCandidates[i]);
+            }
             if (_grid == null)
             {
                 for (int i = 0; i < Containers.Count; i++)
@@ -394,8 +788,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Record a control-plane lease on its container. A lease for a dynamic container whose carrier is not
-        /// resident yet is kept and applied when the carrier registers. <paramref name="state"/> is the lease state
+        /// Record a control-plane lease on its container. A lease for a dynamic or runtime container that is not
+        /// resident yet is kept and applied when it registers. <paramref name="state"/> is the lease state
         /// (<see cref="LeaseState"/>); for a dynamic container only <see cref="LeaseState.Pinned"/> changes who owns it.
         /// </summary>
         public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch, string state = LeaseState.Active)
@@ -403,7 +797,7 @@ namespace Nebula
             var c = FindById(containerId);
             if (c == null)
             {
-                if (IsDynamicId(containerId)) PendingLeases[containerId] = new PendingLease { WorkerId = workerId ?? "", WorkerIndex = workerIndex, Epoch = epoch, State = state ?? "" };
+                if (IsDynamicId(containerId) || IsRuntimeId(containerId)) PendingLeases[containerId] = new PendingLease { WorkerId = workerId ?? "", WorkerIndex = workerIndex, Epoch = epoch, State = state ?? "" };
                 return;
             }
             c.OwnerWorkerId = workerId ?? "";
@@ -412,12 +806,12 @@ namespace Nebula
             c.LeaseState = state ?? "";
         }
 
-        /// <summary>A lease row went away (a carrier despawned): forget whatever was recorded for it.</summary>
+        /// <summary>A lease row went away (a carrier despawned, a runtime container was retired): forget whatever was recorded for it.</summary>
         public static void ForgetLease(string containerId)
         {
             PendingLeases.Remove(containerId);
             var c = FindById(containerId);
-            if (c == null || !c.IsDynamic) return;
+            if (c == null || (!c.IsDynamic && !c.IsRuntime)) return;
             c.OwnerWorkerId = "";
             c.OwnerWorkerIndex = ushort.MaxValue;
             c.LeaseState = "";

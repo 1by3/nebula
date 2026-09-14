@@ -483,10 +483,16 @@ namespace Nebula
         public string WorkerId;
         public ulong Epoch;
         public string State;
+        /// <summary>Runtime containers: the box (absolute coordinates) a client registers the container with. See <see cref="LeaseInfo.HasBounds"/>.</summary>
+        public bool HasBounds;
+        public Vector3 BoundsCenter;
+        public Vector3 BoundsSize;
     }
 
     public static class ContainerOwnershipMsg
     {
+        private const byte FlagBounds = 1;
+
         public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries)
         {
             w.WriteByte((byte)MsgId.ContainerOwnership);
@@ -499,6 +505,12 @@ namespace Nebula
                 w.WriteString(e.WorkerId);
                 w.WriteULong(e.Epoch);
                 w.WriteString(e.State);
+                w.WriteByte(e.HasBounds ? FlagBounds : (byte)0);
+                if (e.HasBounds)
+                {
+                    w.WriteVector3(e.BoundsCenter);
+                    w.WriteVector3(e.BoundsSize);
+                }
             }
         }
 
@@ -508,7 +520,7 @@ namespace Nebula
             var list = new List<ContainerOwnershipEntry>(n);
             for (int i = 0; i < n; i++)
             {
-                list.Add(new ContainerOwnershipEntry
+                var e = new ContainerOwnershipEntry
                 {
                     ContainerIndex = r.ReadUShort(),
                     ContainerId = r.ReadString(),
@@ -516,7 +528,15 @@ namespace Nebula
                     WorkerId = r.ReadString(),
                     Epoch = r.ReadULong(),
                     State = r.ReadString(),
-                });
+                };
+                byte flags = r.ReadByte();
+                if ((flags & FlagBounds) != 0)
+                {
+                    e.HasBounds = true;
+                    e.BoundsCenter = r.ReadVector3();
+                    e.BoundsSize = r.ReadVector3();
+                }
+                list.Add(e);
             }
             return list;
         }
@@ -562,7 +582,8 @@ namespace Nebula
     public struct SpawnPlayerMsg
     {
         public uint ClientId;
-        public ushort ContainerIndex;
+        /// <summary>The container the gateway picked for the pawn (baked or runtime).</summary>
+        public ContainerRef Container;
         public string Name;
         public bool IsBot;
 
@@ -570,12 +591,12 @@ namespace Nebula
         {
             w.WriteByte((byte)MsgId.SpawnPlayer);
             w.WriteUInt(ClientId);
-            w.WriteUShort(ContainerIndex);
+            Container.Write(w);
             w.WriteString(Name);
             w.WriteByte(IsBot ? (byte)1 : (byte)0);
         }
 
-        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadUInt(), ContainerIndex = r.ReadUShort(), Name = r.ReadString(), IsBot = r.ReadByte() != 0 };
+        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadUInt(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0 };
     }
 
     public struct DespawnPlayerMsg

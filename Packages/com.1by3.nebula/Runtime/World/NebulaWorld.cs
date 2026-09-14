@@ -88,6 +88,16 @@ namespace Nebula
             c.IsCell = e.IsCell;
         }
 
+        /// <summary>New play session without a domain reload: drop references to the previous session's objects without touching them.</summary>
+        internal static void ResetForNewSession()
+        {
+            Streamer = null;
+            Root = null;
+            Manifest = null;
+            CellContainers.Clear();
+            Scratch.Clear();
+        }
+
         public static void Unload()
         {
             if (Streamer != null) Streamer.CellLoaded -= OnCellLoaded;
@@ -130,6 +140,7 @@ namespace Nebula
         {
             // Cell scenes were moved by the streamer; the virtual containers (and the entities under them) follow.
             foreach (var kv in CellContainers) kv.Value.transform.position += delta;
+            ContainerRegistry.ShiftRuntime(delta);
             ContainerRegistry.RefreshCaches();
             NetworkIdentity.ShiftFrameAll(delta);
             Physics.SyncTransforms();

@@ -467,9 +467,16 @@ namespace Nebula
         private void OnLeasesChanged()
         {
             float now = Time.unscaledTime;
-            foreach (var c in ContainerRegistry.All)
+            DateLeases(ContainerRegistry.All, now);
+            DateLeases(ContainerRegistry.Runtime, now); // runtime boxes are leased like baked ones; carried containers come back with their carrier
+        }
+
+        private void DateLeases(IReadOnlyList<Container> containers, float now)
+        {
+            for (int i = 0; i < containers.Count; i++)
             {
-                if (c.IsDynamic) continue; // carried containers come back with their carrier
+                var c = containers[i];
+                if (c.IsDynamic) continue;
                 if (c.IsOwnedBy(_worker.WorkerId))
                 {
                     if (!_leasedSince.ContainsKey(c.ContainerId)) _leasedSince[c.ContainerId] = now;

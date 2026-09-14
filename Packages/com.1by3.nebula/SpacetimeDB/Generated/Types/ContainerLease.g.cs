@@ -24,13 +24,34 @@ namespace Nebula.Spacetime
         public string State;
         [DataMember(Name = "updated_at")]
         public SpacetimeDB.Timestamp UpdatedAt;
+        [DataMember(Name = "has_bounds")]
+        public bool HasBounds;
+        [DataMember(Name = "bounds_center_x")]
+        public float BoundsCenterX;
+        [DataMember(Name = "bounds_center_y")]
+        public float BoundsCenterY;
+        [DataMember(Name = "bounds_center_z")]
+        public float BoundsCenterZ;
+        [DataMember(Name = "bounds_size_x")]
+        public float BoundsSizeX;
+        [DataMember(Name = "bounds_size_y")]
+        public float BoundsSizeY;
+        [DataMember(Name = "bounds_size_z")]
+        public float BoundsSizeZ;
 
         public ContainerLease(
             string ContainerId,
             string WorkerId,
             ulong Epoch,
             string State,
-            SpacetimeDB.Timestamp UpdatedAt
+            SpacetimeDB.Timestamp UpdatedAt,
+            bool HasBounds,
+            float BoundsCenterX,
+            float BoundsCenterY,
+            float BoundsCenterZ,
+            float BoundsSizeX,
+            float BoundsSizeY,
+            float BoundsSizeZ
         )
         {
             this.ContainerId = ContainerId;
@@ -38,6 +59,13 @@ namespace Nebula.Spacetime
             this.Epoch = Epoch;
             this.State = State;
             this.UpdatedAt = UpdatedAt;
+            this.HasBounds = HasBounds;
+            this.BoundsCenterX = BoundsCenterX;
+            this.BoundsCenterY = BoundsCenterY;
+            this.BoundsCenterZ = BoundsCenterZ;
+            this.BoundsSizeX = BoundsSizeX;
+            this.BoundsSizeY = BoundsSizeY;
+            this.BoundsSizeZ = BoundsSizeZ;
         }
 
         public ContainerLease()

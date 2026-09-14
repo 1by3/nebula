@@ -60,6 +60,15 @@ namespace Nebula
             finally { ById.Remove(identity.SceneId); }
         }
 
+        /// <summary>New play session without a domain reload: forget identities and subscribers of the previous one.</summary>
+        internal static void ResetForNewSession()
+        {
+            ById.Clear();
+            Snapshot.Clear();
+            Registered = null;
+            Unregistering = null;
+        }
+
         internal static void Clear()
         {
             ById.Clear();
