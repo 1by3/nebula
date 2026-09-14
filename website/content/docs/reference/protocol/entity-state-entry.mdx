@@ -1,6 +1,6 @@
 ---
 title: "EntityStateEntry"
-description: "One entity's pose inside a WorldState/GhostState batch."
+description: "One entity's selected transform fields inside a WorldState/GhostState batch."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,17 +9,17 @@ description: "One entity's pose inside a WorldState/GhostState batch."
 public struct EntityStateEntry
 ```
 
-One entity's pose inside a WorldState/GhostState batch.
+One entity's selected transform fields inside a WorldState/GhostState batch.
 
 ## Fields
 
 ### WireSize [#wiresize]
 
 ```csharp
-public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 12 + 4 + 6;
+public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 12 + 16 + 12 + 6;
 ```
 
-Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two bytes for a static container, ten for a dynamic one), position (3 floats), rotation (smallest-three, 4 bytes) and velocity (3 halves). Rotation and velocity are the two fields that tolerate compression: a pawn's yaw to a hundredth of a degree and its speed to three decimals.
+Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two bytes for a static container, ten for a dynamic one), field mask, position, rotation, scale, and velocity. Only selected axes are serialized. Position, rotation, and scale precision follows NetworkTransform; velocity uses three half floats when enabled.
 
 ### NetId [#netid]
 
@@ -57,7 +57,33 @@ public Quaternion LocalRotation;
 public Vector3 Velocity;
 ```
 
+### LocalScale [#localscale]
+
+```csharp
+public Vector3 LocalScale;
+```
+
+### Fields [#fields]
+
+```csharp
+public TransformFields Fields;
+```
+
+## Properties
+
+### Reliable [#reliable]
+
+```csharp
+public bool Reliable { get; }
+```
+
 ## Methods
+
+### Snapshot [#snapshot]
+
+```csharp
+public static EntityStateEntry Snapshot(NetworkIdentity e);
+```
 
 ### Write [#write]
 

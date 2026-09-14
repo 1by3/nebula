@@ -27,6 +27,12 @@ public uint LatestTick { get; }
 public bool HasSamples { get; }
 ```
 
+### LatestScale [#latestscale]
+
+```csharp
+public Vector3 LatestScale { get; } = Vector3.one;
+```
+
 ### LatestVelocity [#latestvelocity]
 
 ```csharp
@@ -76,7 +82,7 @@ public Quaternion LatestRotation { get; }
 ### Push [#push]
 
 ```csharp
-public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity);
+public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity, Vector3? scale = null);
 public void Push(uint tick, Vector3 position, Quaternion rotation, Vector3 velocity);
 ```
 

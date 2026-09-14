@@ -8,9 +8,9 @@ namespace Nebula
     /// Configure change thresholds, transform space, authority, interpolation, compression, and delivery mode in the
     /// Inspector.
     /// <para>
-    /// The root of a networked entity already sends its position, rotation, and velocity through the entity state
-    /// stream. Add NetworkTransform to the root when you need scale replication, <see cref="Teleport"/>, or owner
-    /// authority. Add it to a child transform to replicate the selected transform values for that child.
+    /// Add this component to each transform that should move on remote copies. Without it, an identity only
+    /// synchronizes its initial placement and container changes. Root updates use the batched spatial stream;
+    /// child updates use component state. Both honor the selected axes, thresholds, and interpolation settings.
     /// </para>
     /// <para>
     /// Nebula does not provide <c>TickSyncChildren</c> or <c>SwitchTransformSpaceWhenParented</c>. It sends every
@@ -39,6 +39,7 @@ namespace Nebula
             public bool Teleport;
             /// <summary>Position/rotation are expressed in the local (parent) space rather than world space.</summary>
             public bool InLocalSpace;
+            internal Container Frame;
         }
 
         [Header("Axes to synchronize")]
@@ -48,9 +49,13 @@ namespace Nebula
         public bool SyncRotAngleX = true;
         public bool SyncRotAngleY = true;
         public bool SyncRotAngleZ = true;
-        public bool SyncScaleX = true;
-        public bool SyncScaleY = true;
-        public bool SyncScaleZ = true;
+        public bool SyncScaleX;
+        public bool SyncScaleY;
+        public bool SyncScaleZ;
+
+        [Tooltip("Include world-space motion velocity for remote extrapolation. Disable for objects that only interpolate.")]
+        public bool SyncVelocity = true;
+        public Vector3 Velocity { get => Identity.Motion.Velocity; set => Identity.Motion.Velocity = value; }
 
         [Header("Thresholds")]
         [Tooltip("Metres the position must move before an update is sent.")]
@@ -62,8 +67,8 @@ namespace Nebula
         [Header("Space and delivery")]
         [Tooltip("Replicate localPosition/localRotation (relative to the parent) instead of world position/rotation. Scale is always local.")]
         public bool InLocalSpace;
-        [Tooltip("Send deltas unreliable-sequenced with a keyframe every NetworkIdentity.SyncKeyframeInterval ticks, instead of reliable-ordered.")]
-        public bool UseUnreliableDeltas;
+        [Tooltip("Send ordinary updates unreliable-sequenced. Root transforms send reliable recovery within 30 ticks of movement; children send periodic keyframes. Off: reliable-ordered.")]
+        public bool UseUnreliableDeltas = true;
 
         [Header("Precision")]
         [Tooltip("Send positions, scales and (uncompressed) rotations as 16-bit halves.")]
@@ -105,6 +110,8 @@ namespace Nebula
         private bool _hasLastSent;
         private Fields _pending;          // what changed since the last send (cleared in OnSyncStateSent)
         private bool _teleportPending;
+        private TransformFields _lastSentFields;
+        private bool _lastSentLocal;
 
         // ---- receiver-side state ---------------------------------------------------------------------------
 
@@ -116,8 +123,162 @@ namespace Nebula
         private bool _hasLatest;
         private Vector3 _dampVelocity;
         private Vector3 _dampScaleVelocity;
+        private EntityStateEntry _rootSent;
+        private bool _rootHasSent, _rootRecovery;
+        private uint _rootRecoveryTick;
+        private TransformFields _rootReceivedFields;
 
-        /// <summary>This component sits on the entity root, whose position/rotation the identity stream already carries.</summary>
+        internal TransformFields RootFields
+        {
+            get
+            {
+                var f = TransformFields.None;
+                if (SyncPositionX) f |= TransformFields.PositionX;
+                if (SyncPositionY) f |= TransformFields.PositionY;
+                if (SyncPositionZ) f |= TransformFields.PositionZ;
+                if (SyncRotAngleX) f |= TransformFields.RotationX;
+                if (SyncRotAngleY) f |= TransformFields.RotationY;
+                if (SyncRotAngleZ) f |= TransformFields.RotationZ;
+                if (SyncScaleX) f |= TransformFields.ScaleX;
+                if (SyncScaleY) f |= TransformFields.ScaleY;
+                if (SyncScaleZ) f |= TransformFields.ScaleZ;
+                if (SyncVelocity && SyncsPosition) f |= TransformFields.Velocity;
+                if (UseHalfFloatPrecision) f |= TransformFields.Half;
+                if (UseQuaternionSynchronization && SyncsRotation)
+                {
+                    f |= TransformFields.Quaternion | TransformFields.Rotation;
+                    if (UseQuaternionCompression) f |= TransformFields.Compressed;
+                }
+                return f;
+            }
+        }
+
+        internal bool CaptureRoot(uint tick, out EntityStateEntry entry)
+        {
+            entry = EntityStateEntry.Snapshot(Identity);
+            entry.Fields = RootFields;
+            if (IsOwnerAuthoritative && _rootHasSent && entry.LocalPosition == _rootSent.LocalPosition)
+                entry.Velocity = Identity.Motion.Velocity = Vector3.zero;
+            var state = new TransformState
+            {
+                Tick = tick, Position = entry.LocalPosition, Rotation = entry.LocalRotation, Scale = entry.LocalScale,
+                HasPosition = SyncsPosition, HasRotation = SyncsRotation, HasScale = SyncsScale,
+                InLocalSpace = InLocalSpace, Teleport = _teleportPending,
+            };
+            OnAuthorityPushTransformState(ref state);
+            entry.LocalPosition = state.Position; entry.LocalRotation = state.Rotation; entry.LocalScale = state.Scale;
+            if (!state.HasPosition) entry.Fields &= ~(TransformFields.Position | TransformFields.Velocity);
+            if (!state.HasRotation) entry.Fields &= ~TransformFields.Rotation;
+            if (!state.HasScale) entry.Fields &= ~TransformFields.Scale;
+            _teleportPending = state.Teleport;
+            if ((entry.Fields & TransformFields.Axes) == 0 && (!_rootHasSent || entry.Fields == _rootSent.Fields)) return false;
+            var p = EntityStateEntry.MergeVector(_rootSent.LocalPosition, entry.LocalPosition, entry.Fields, 0);
+            var s = EntityStateEntry.MergeVector(_rootSent.LocalScale, entry.LocalScale, entry.Fields, 6);
+            var r = (entry.Fields & TransformFields.Quaternion) != 0 ? entry.LocalRotation :
+                Quaternion.Euler(EntityStateEntry.MergeVector(_rootSent.LocalRotation.eulerAngles, entry.LocalRotation.eulerAngles, entry.Fields, 3));
+            bool changed = !_rootHasSent || entry.Fields != _rootSent.Fields || entry.Container != _rootSent.Container ||
+                (p - _rootSent.LocalPosition).sqrMagnitude > PositionThreshold * PositionThreshold ||
+                Quaternion.Angle(r, _rootSent.LocalRotation) > RotAngleThreshold ||
+                (s - _rootSent.LocalScale).sqrMagnitude > ScaleThreshold * ScaleThreshold ||
+                ((entry.Fields & TransformFields.Velocity) != 0 && (entry.Velocity - _rootSent.Velocity).sqrMagnitude > 0.000001f);
+            bool recovery = _rootRecovery && tick >= _rootRecoveryTick;
+            if (!changed && !recovery && !_teleportPending) return false;
+            _rootSent = entry;
+            _rootHasSent = true;
+            if (recovery) _rootRecovery = false;
+            else if (!_rootRecovery) { _rootRecovery = true; _rootRecoveryTick = tick + NetworkIdentity.SyncKeyframeInterval; }
+            if (!UseUnreliableDeltas || recovery || _teleportPending || (entry.Fields & TransformFields.Axes) == 0) entry.Fields |= TransformFields.Reliable;
+            if (_teleportPending) entry.Fields |= TransformFields.Teleport;
+            _teleportPending = false;
+            return true;
+        }
+
+        internal void ReceiveRoot(uint tick, Container container, in EntityStateEntry entry)
+        {
+            if (IsSyncAuthority || IsRelayingWorker || (Identity.IsLocalPlayer && Identity.Predicted != null)) return;
+            if ((entry.Fields & TransformFields.Location) == 0) AcceptFields(entry.Fields);
+            var buffer = Identity.Interpolator;
+            if (buffer == null) buffer = Identity.Interpolator = gameObject.GetComponent<RemoteInterpolator>() ?? gameObject.AddComponent<RemoteInterpolator>();
+            var p = Identity.LocalPosition;
+            var r = Identity.LocalRotation;
+            if (container != Identity.Container)
+            {
+                p = container != null ? container.ToLocal(transform.position) : transform.position;
+                r = container != null ? container.InverseRotation * transform.rotation : transform.rotation;
+            }
+            var s = transform.localScale;
+            var v = Vector3.zero;
+            if (buffer.HasSamples && buffer.LatestContainer == container)
+            { p = buffer.LatestLocalPosition; r = buffer.LatestLocalRotation; s = buffer.LatestScale; }
+            entry.Merge(ref p, ref r, ref s, ref v);
+            _rootReceivedFields = entry.Fields;
+            bool snap = !Interpolate || (entry.Fields & (TransformFields.Teleport | TransformFields.Location)) != 0;
+            if (snap) buffer.Clear();
+            buffer.Push(tick, container, p, r, v, s);
+            if (snap) ApplyRoot(container, p, r, s);
+            var state = new TransformState
+            {
+                Tick = tick, Position = !InLocalSpace && container != null ? container.ToWorld(p) : p,
+                Rotation = !InLocalSpace && container != null ? container.Rotation * r : r,
+                Scale = s, HasPosition = (entry.Fields & TransformFields.Position) != 0,
+                HasRotation = (entry.Fields & TransformFields.Rotation) != 0, HasScale = (entry.Fields & TransformFields.Scale) != 0,
+                InLocalSpace = InLocalSpace, Teleport = (entry.Fields & TransformFields.Teleport) != 0,
+            };
+            OnNetworkTransformStateUpdated(ref state);
+        }
+
+        private void ApplyRoot(Container container, Vector3 p, Quaternion r, Vector3 s)
+        {
+            if (container != Identity.Container) Identity.SetContainer(container);
+            var fields = RootFields & _rootReceivedFields;
+            p = EntityStateEntry.MergeVector(Identity.LocalPosition, p, fields, 0);
+            if ((fields & TransformFields.Rotation) == 0) r = Identity.LocalRotation;
+            else if ((fields & TransformFields.Quaternion) == 0)
+                r = Quaternion.Euler(EntityStateEntry.MergeVector(Identity.LocalRotation.eulerAngles, r.eulerAngles, fields, 3));
+            Identity.SetLocalPose(container, p, r);
+            transform.localScale = EntityStateEntry.MergeVector(transform.localScale, s, fields, 6);
+            Identity.Carried?.RefreshCache();
+            Velocity = Identity.Interpolator.LatestVelocity;
+        }
+
+        private void RenderRoot(double tick)
+        {
+            if (!isActiveAndEnabled || IsSyncAuthority || IsRelayingWorker || (Identity.IsLocalPlayer && Identity.Predicted != null)) return;
+            var buffer = Identity.Interpolator;
+            if (buffer == null) return;
+            buffer.SlerpPosition = SlerpPosition;
+            if (!buffer.Sample(tick, out var c, out var p, out var r)) return;
+            var s = buffer.SampleScale(tick);
+            if (Interpolate && Interpolation == InterpolationMode.SmoothDamp)
+            {
+                float dt = IsServer ? NetworkTime.TickInterval : Time.deltaTime;
+                p = Vector3.SmoothDamp(Identity.LocalPosition, buffer.LatestLocalPosition, ref _dampVelocity, Mathf.Max(0.0001f, PositionMaxInterpolationTime), float.MaxValue, dt);
+                r = Quaternion.Slerp(Identity.LocalRotation, buffer.LatestLocalRotation, RotationMaxInterpolationTime <= 0 ? 1 : Mathf.Clamp01(dt / RotationMaxInterpolationTime));
+                s = Vector3.SmoothDamp(transform.localScale, buffer.LatestScale, ref _dampScaleVelocity, Mathf.Max(0.0001f, ScaleMaxInterpolationTime), float.MaxValue, dt);
+            }
+            else if (!Interpolate) { c = buffer.LatestContainer; p = buffer.LatestLocalPosition; r = buffer.LatestLocalRotation; s = buffer.LatestScale; }
+            buffer.SlerpPosition = SlerpPosition;
+            ApplyRoot(c, p, r, s);
+        }
+
+        private void AcceptFields(TransformFields f)
+        {
+            SyncPositionX = (f & TransformFields.PositionX) != 0;
+            SyncPositionY = (f & TransformFields.PositionY) != 0;
+            SyncPositionZ = (f & TransformFields.PositionZ) != 0;
+            SyncRotAngleX = (f & TransformFields.RotationX) != 0;
+            SyncRotAngleY = (f & TransformFields.RotationY) != 0;
+            SyncRotAngleZ = (f & TransformFields.RotationZ) != 0;
+            SyncScaleX = (f & TransformFields.ScaleX) != 0;
+            SyncScaleY = (f & TransformFields.ScaleY) != 0;
+            SyncScaleZ = (f & TransformFields.ScaleZ) != 0;
+            SyncVelocity = (f & TransformFields.Velocity) != 0;
+            UseQuaternionSynchronization = (f & TransformFields.Quaternion) != 0;
+            UseQuaternionCompression = (f & TransformFields.Compressed) != 0;
+            UseHalfFloatPrecision = (f & TransformFields.Half) != 0;
+        }
+
+        /// <summary>This component sits on the entity root and uses the batched spatial stream.</summary>
         public bool IsRoot => Identity != null && Identity.transform == transform;
 
         public override Delivery SyncDelivery => UseUnreliableDeltas ? Delivery.Sequenced : Delivery.ReliableOrdered;
@@ -125,12 +286,6 @@ namespace Nebula
         private bool SyncsPosition => SyncPositionX || SyncPositionY || SyncPositionZ;
         private bool SyncsRotation => SyncRotAngleX || SyncRotAngleY || SyncRotAngleZ;
         private bool SyncsScale => SyncScaleX || SyncScaleY || SyncScaleZ;
-
-        /// <summary>
-        /// The root's position/rotation travel in the identity stream, except from an owner to its worker (the worker
-        /// has no other way to learn them) and for a teleport (receivers must snap their identity interpolator).
-        /// </summary>
-        private bool PoseGoesInChunk => !IsRoot || _teleportPending || (IsOwnerAuthoritative && IsOwner);
 
         // ---- state hooks -----------------------------------------------------------------------------------
 
@@ -172,12 +327,46 @@ namespace Nebula
         public override void OnNetworkSpawn()
         {
             _hasLastSent = false;
+            _hasLatest = false;
+            _rootHasSent = false;
+            _rootRecovery = false;
             ClearBuffer();
+        }
+
+        public override void WriteHandoverState(NetworkWriter writer)
+        {
+            // Simulation state is complete even when presentation omits axes.
+            writer.WriteVector3(IsRoot ? Identity.LocalPosition : transform.localPosition);
+            writer.WriteQuaternion(IsRoot ? Identity.LocalRotation : transform.localRotation);
+            writer.WriteVector3(transform.localScale);
+        }
+
+        public override void ReadHandoverState(NetworkReader reader)
+        {
+            var position = reader.ReadVector3();
+            var rotation = reader.ReadQuaternion();
+            if (IsRoot) Identity.SetLocalPose(Container, position, rotation);
+            else { transform.localPosition = position; transform.localRotation = rotation; }
+            transform.localScale = reader.ReadVector3();
+            ClearBuffer();
+        }
+
+        public override void OnOriginShifted(Vector3 delta)
+        {
+            if (_rootSent.Container.IsNone) _rootSent.LocalPosition += delta;
+            if (InLocalSpace) return;
+            if (Container == null) _lastSentPosition += delta;
+            if (_latest.Frame == null) _latest.Position += delta;
+            if (_ring != null)
+                for (int i = 0; i < _ring.Length; i++)
+                    if (_ring[i].Frame == null) _ring[i].Position += delta;
         }
 
         public override void OnGainedAuthority()
         {
             base.OnGainedAuthority();
+            _rootHasSent = false;
+            _rootRecovery = false;
             _hasLastSent = false;
             ClearBuffer();
         }
@@ -191,6 +380,7 @@ namespace Nebula
 
         protected override void AuthorityTick(uint tick, float deltaTime)
         {
+            if (IsRoot && !IsOwnerAuthoritative) return; // sampled after all simulation behaviors have run
             ReadCurrent(out var pos, out var rot, out var scale);
             if (!_hasLastSent)
             {
@@ -198,9 +388,14 @@ namespace Nebula
                 MarkSyncDirty();
                 return;
             }
-            if (SyncsPosition && (pos - _lastSentPosition).sqrMagnitude >= PositionThreshold * PositionThreshold) _pending |= Fields.Position;
-            if (SyncsRotation && Quaternion.Angle(rot, _lastSentRotation) >= RotAngleThreshold) _pending |= Fields.Rotation;
-            if (SyncsScale && (scale - _lastSentScale).sqrMagnitude >= ScaleThreshold * ScaleThreshold) _pending |= Fields.Scale;
+            var f = RootFields;
+            if (f != _lastSentFields || InLocalSpace != _lastSentLocal) _pending = Fields.Position | Fields.Rotation | Fields.Scale;
+            var selectedPos = EntityStateEntry.MergeVector(_lastSentPosition, pos, f, 0);
+            var selectedScale = EntityStateEntry.MergeVector(_lastSentScale, scale, f, 6);
+            var selectedRot = UseQuaternionSynchronization ? rot : Quaternion.Euler(EntityStateEntry.MergeVector(_lastSentRotation.eulerAngles, rot.eulerAngles, f, 3));
+            if (SyncsPosition && (selectedPos - _lastSentPosition).sqrMagnitude > PositionThreshold * PositionThreshold) _pending |= Fields.Position;
+            if (SyncsRotation && Quaternion.Angle(selectedRot, _lastSentRotation) > RotAngleThreshold) _pending |= Fields.Rotation;
+            if (SyncsScale && (selectedScale - _lastSentScale).sqrMagnitude > ScaleThreshold * ScaleThreshold) _pending |= Fields.Scale;
             if (_pending != Fields.None) MarkSyncDirty();
         }
 
@@ -210,8 +405,8 @@ namespace Nebula
             var state = new TransformState
             {
                 Position = pos, Rotation = rot, Scale = scale, InLocalSpace = InLocalSpace, Teleport = _teleportPending,
-                HasPosition = SyncsPosition && (full || (_pending & Fields.Position) != 0) && PoseGoesInChunk,
-                HasRotation = SyncsRotation && (full || (_pending & Fields.Rotation) != 0) && PoseGoesInChunk,
+                HasPosition = SyncsPosition && (full || (_pending & Fields.Position) != 0),
+                HasRotation = SyncsRotation && (full || (_pending & Fields.Rotation) != 0),
                 HasScale = SyncsScale && (full || (_pending & Fields.Scale) != 0),
             };
             OnAuthorityPushTransformState(ref state);
@@ -221,6 +416,8 @@ namespace Nebula
             if (state.HasRotation) fields |= Fields.Rotation;
             if (state.HasScale) fields |= Fields.Scale;
             if (state.Teleport) fields |= Fields.Teleport;
+            writer.WriteUShort((ushort)RootFields);
+            writer.WriteBool(InLocalSpace);
             writer.WriteByte((byte)fields);
             if (state.HasPosition) WriteVector(writer, state.Position, SyncPositionX, SyncPositionY, SyncPositionZ);
             if (state.HasRotation) WriteRotation(writer, state.Rotation);
@@ -231,6 +428,8 @@ namespace Nebula
             if (state.HasRotation || IsRoot) _lastSentRotation = rot;
             if (state.HasScale) _lastSentScale = scale;
             _hasLastSent = true;
+            _lastSentFields = RootFields;
+            _lastSentLocal = InLocalSpace;
         }
 
         protected internal override void OnSyncStateSent()
@@ -243,6 +442,10 @@ namespace Nebula
 
         public override void ReadSyncState(NetworkReader reader, uint tick, bool full)
         {
+            if (tick != 0 && _hasLatest && tick < _latest.Tick) return;
+            var wireFields = (TransformFields)reader.ReadUShort();
+            bool local = reader.ReadBool();
+            if (!IsSyncAuthority) { AcceptFields(wireFields); InLocalSpace = local; }
             var fields = (Fields)reader.ReadByte();
             var state = _hasLatest ? _latest : new TransformState { Rotation = Quaternion.identity, Scale = Vector3.one };
             state.Tick = tick;
@@ -257,8 +460,9 @@ namespace Nebula
             Vector3 fbPos, fbScale; Quaternion fbRot;
             if (_hasLatest)
             {
-                fbPos = c != null ? c.ToLocal(_latest.Position) : _latest.Position;
-                fbRot = c != null ? c.InverseRotation * _latest.Rotation : _latest.Rotation;
+                var projected = Project(_latest);
+                fbPos = c != null ? c.ToLocal(projected.Position) : projected.Position;
+                fbRot = c != null ? c.InverseRotation * projected.Rotation : projected.Rotation;
                 fbScale = _latest.Scale;
             }
             else
@@ -273,12 +477,10 @@ namespace Nebula
             // The chunk is consumed. Our own echo (owner authority: the worker re-broadcasts what we sent) stops here.
             if (IsSyncAuthority) return;
 
-            // Wire space -> stored space (absolute world, or local).
-            if (c != null)
-            {
-                if (state.HasPosition) state.Position = c.ToWorld(state.Position);
-                if (state.HasRotation) state.Rotation = c.Rotation * state.Rotation;
-            }
+            // Retain the reference frame while buffering, so moving carriers do not leave child samples behind.
+            state.Frame = c;
+            if (!state.HasPosition) state.Position = fbPos;
+            if (!state.HasRotation) state.Rotation = fbRot;
             // Carry-forward: a delta only updates the fields it carries; the rest keep the newest known value.
             var previous = _latest;
             bool hadPrevious = _hasLatest;
@@ -291,19 +493,20 @@ namespace Nebula
                 ClearBuffer();
                 _hasLatest = true;
                 _latest = state;
-                Apply(state.Position, state.Rotation, state.Scale, state.HasPosition, state.HasRotation, state.HasScale);
+                var projected = Project(state);
+                Apply(projected.Position, projected.Rotation, state.Scale, state.HasPosition, state.HasRotation, state.HasScale);
                 if (state.Teleport && IsRoot && Identity.Interpolator != null)
                 {
                     // The identity stream will resume from the new place; do not lerp across the jump.
                     Identity.Interpolator.Clear();
                     if (state.HasPosition || state.HasRotation)
-                        Identity.Interpolator.Push(tick, Container, Identity.LocalPosition, Identity.LocalRotation, Identity.Velocity);
+                        Identity.Interpolator.Push(tick, Container, Identity.LocalPosition, Identity.LocalRotation, Identity.Motion.Velocity);
                 }
                 if (IsRelayingWorker && IsRoot && state.HasPosition && !state.Teleport)
                 {
                     // Owner-driven root: derive a velocity for the identity stream so remote copies can extrapolate.
-                    var v = hadPrevious ? (state.Position - previous.Position) * NetworkTime.TickRate : Vector3.zero;
-                    Identity.Velocity = Vector3.ClampMagnitude(v, 100f);
+                    var v = hadPrevious ? (Project(state).Position - Project(previous).Position) / (Math.Max(1u, tick - previous.Tick) * NetworkTime.TickInterval) : Vector3.zero;
+                    Identity.Motion.Velocity = Vector3.ClampMagnitude(v, 100f);
                 }
             }
             else
@@ -326,6 +529,7 @@ namespace Nebula
 
         public override void RemoteTick(double renderTick)
         {
+            if (IsRoot) { RenderRoot(renderTick); return; }
             if (IsSyncAuthority || IsRelayingWorker || !Interpolate || !_hasLatest) return;
             if (Interpolation == InterpolationMode.SmoothDamp)
             {
@@ -361,8 +565,14 @@ namespace Nebula
 
         private bool TryGet(uint tick, out TransformState s)
         {
-            s = _ring[tick % Capacity];
+            s = Project(_ring[tick % Capacity]);
             return s.Tick == tick && tick != 0;
+        }
+
+        private static TransformState Project(TransformState s)
+        {
+            if (s.Frame != null) { s.Position = s.Frame.ToWorld(s.Position); s.Rotation = s.Frame.Rotation * s.Rotation; }
+            return s;
         }
 
         private void SampleBuffered(double renderTick, out Vector3 pos, out Quaternion rot, out Vector3 scale, out bool hasPos, out bool hasRot, out bool hasScale)
@@ -371,7 +581,7 @@ namespace Nebula
             if (renderTick >= _latestTick)
             {
                 // Nothing newer yet: hold the newest sample (no velocity to extrapolate with).
-                var l = _ring[_latestTick % Capacity];
+                var l = Project(_ring[_latestTick % Capacity]);
                 pos = l.Position; rot = l.Rotation; scale = l.Scale;
                 return;
             }
@@ -403,13 +613,14 @@ namespace Nebula
 
         private void SmoothDampTowardsLatest()
         {
+            var latest = Project(_latest);
             ReadStored(out var pos, out var rot, out var scale);
             float dt = IsServer ? NetworkTime.TickInterval : Time.deltaTime;
-            if (SyncsPosition) pos = Vector3.SmoothDamp(pos, _latest.Position, ref _dampVelocity, Mathf.Max(0.0001f, PositionMaxInterpolationTime), float.MaxValue, dt);
+            if (SyncsPosition) pos = Vector3.SmoothDamp(pos, latest.Position, ref _dampVelocity, Mathf.Max(0.0001f, PositionMaxInterpolationTime), float.MaxValue, dt);
             if (SyncsRotation)
             {
                 float t = RotationMaxInterpolationTime <= 0f ? 1f : Mathf.Clamp01(dt / RotationMaxInterpolationTime);
-                rot = Quaternion.Slerp(rot, _latest.Rotation, t);
+                rot = Quaternion.Slerp(rot, latest.Rotation, t);
             }
             if (SyncsScale) scale = Vector3.SmoothDamp(scale, _latest.Scale, ref _dampScaleVelocity, Mathf.Max(0.0001f, ScaleMaxInterpolationTime), float.MaxValue, dt);
             Apply(pos, rot, scale, SyncsPosition, SyncsRotation, SyncsScale);
@@ -451,37 +662,38 @@ namespace Nebula
         private void WritePosition(Vector3 p)
         {
             if (InLocalSpace) transform.localPosition = p;
-            else transform.position = Container != null ? Container.ToWorld(p) : p;
+            else transform.position = p;
         }
 
         private void WriteRotation(Quaternion r)
         {
             if (InLocalSpace) transform.localRotation = r;
-            else transform.rotation = Container != null ? Container.Rotation * r : r;
+            else transform.rotation = r;
         }
 
         /// <summary>Apply stored-space values to the transform, touching only the synchronised axes.</summary>
         private void Apply(Vector3 pos, Quaternion rot, Vector3 scale, bool hasPos, bool hasRot, bool hasScale)
         {
-            // Root pose (position/rotation) belongs to the identity stream unless the worker is relaying an owner
-            // or this is a teleport; both come through with the flags set, so simply honour the flags.
+            var frame = InLocalSpace ? null : Container;
             if (hasPos && SyncsPosition)
             {
                 ReadStored(out var cur, out _, out _);
+                if (frame != null) { cur = frame.ToLocal(cur); pos = frame.ToLocal(pos); }
                 var p = new Vector3(SyncPositionX ? pos.x : cur.x, SyncPositionY ? pos.y : cur.y, SyncPositionZ ? pos.z : cur.z);
-                if (InLocalSpace) transform.localPosition = p; else transform.position = p;
+                if (InLocalSpace) transform.localPosition = p; else transform.position = frame != null ? frame.ToWorld(p) : p;
             }
             if (hasRot && SyncsRotation)
             {
-                Quaternion r = rot;
+                Quaternion r = frame != null ? frame.InverseRotation * rot : rot;
                 if (!UseQuaternionSynchronization && !(SyncRotAngleX && SyncRotAngleY && SyncRotAngleZ))
                 {
                     ReadStored(out _, out var curRot, out _);
+                    if (frame != null) curRot = frame.InverseRotation * curRot;
                     var cur = curRot.eulerAngles;
-                    var e = rot.eulerAngles;
+                    var e = r.eulerAngles;
                     r = Quaternion.Euler(SyncRotAngleX ? e.x : cur.x, SyncRotAngleY ? e.y : cur.y, SyncRotAngleZ ? e.z : cur.z);
                 }
-                if (InLocalSpace) transform.localRotation = r; else transform.rotation = r;
+                if (InLocalSpace) transform.localRotation = r; else transform.rotation = frame != null ? frame.Rotation * r : r;
             }
             if (hasScale && SyncsScale)
             {

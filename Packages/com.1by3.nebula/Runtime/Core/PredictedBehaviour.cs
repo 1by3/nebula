@@ -8,6 +8,7 @@ namespace Nebula
     public interface INetworkInput : INetworkSerializable { }
 
     /// <summary>Non-generic surface Nebula's worker and client drive; game code derives from <see cref="PredictedBehaviour{TInput}"/>.</summary>
+    [RequireComponent(typeof(NetworkTransform))]
     public abstract class PredictedBehaviourBase : NetworkBehaviour
     {
         /// <summary>Server: tick of the newest input actually simulated. Reported to the owner for reconciliation.</summary>
@@ -117,7 +118,7 @@ namespace Nebula
         {
             writer.WriteVector3(Identity.LocalPosition);
             writer.WriteQuaternion(Identity.LocalRotation);
-            writer.WriteVector3(Identity.Velocity);
+            writer.WriteVector3(Identity.Motion.Velocity);
         }
 
         protected virtual void ReadState(NetworkReader reader)
@@ -125,7 +126,7 @@ namespace Nebula
             var position = reader.ReadVector3();
             var rotation = reader.ReadQuaternion();
             Identity.SetLocalPose(Identity.Container, position, rotation);
-            Identity.Velocity = reader.ReadVector3();
+            Identity.Motion.Velocity = reader.ReadVector3();
         }
 
         /// <summary>Called on the client after a correction was applied (for effects/telemetry).</summary>

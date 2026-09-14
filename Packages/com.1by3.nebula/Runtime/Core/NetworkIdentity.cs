@@ -6,10 +6,19 @@ using UnityEngine;
 
 namespace Nebula
 {
+    /// <summary>Motion shared by scripted movement, prediction, physics, telemetry, and persistence.</summary>
+    public sealed class NetworkMotionState
+    {
+        /// <summary>World-space linear velocity. This is only streamed when a root NetworkTransform opts in.</summary>
+        public Vector3 Velocity;
+    }
+
     /// <summary>
     /// Marks a GameObject as a networked entity. Holds the entity's network identity (a 64-bit ID created by the
     /// worker that spawned it, never by a central allocator), its current container, its authority epoch and
     /// which worker/client owns it. Every <see cref="NetworkBehaviour"/> on the object hangs off this.
+    /// Add <see cref="NetworkTransform"/> for ongoing transform replication and <see cref="NetworkRigidbody"/>
+    /// for worker-simulated physics. An identity alone only synchronizes placement at spawn and container changes.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class NetworkIdentity : MonoBehaviour
@@ -50,7 +59,74 @@ namespace Nebula
         /// <summary>Index of the worker currently authoritative (as last heard). Debug/overlay only.</summary>
         public ushort OwnerWorkerIndex { get; internal set; }
         /// <summary>Velocity as reported by the authority; used for extrapolation and carried through handover.</summary>
-        public Vector3 Velocity;
+        [Obsolete("Use Motion.Velocity, NetworkTransform.Velocity, or NetworkRigidbody.SetVelocity instead.")]
+        public Vector3 Velocity { get => Motion.Velocity; set => Motion.Velocity = value; }
+        public NetworkMotionState Motion { get; } = new NetworkMotionState();
+        public NetworkTransform RootTransform { get; private set; }
+        internal EntityStateEntry ReplicationState;
+        internal bool HasReplicationState;
+        internal uint LastStateTick;
+        internal bool HasStateTick;
+        private ContainerRef _publishedContainer;
+        private uint _publishedEpoch;
+        private bool _publishedLocation;
+        private EntityStateEntry _pendingState;
+        private uint _pendingStateTick;
+        private ushort _pendingStateWorker;
+        private bool _hasPendingState;
+
+        internal void ReplayPendingState()
+        {
+            if (!_hasPendingState) return;
+            var entry = _pendingState;
+            _hasPendingState = false;
+            ReceiveState(_pendingStateTick, _pendingStateWorker, entry);
+        }
+
+        internal void PrepareReplication(uint tick)
+        {
+            HasReplicationState = RootTransform != null && RootTransform.isActiveAndEnabled && RootTransform.CaptureRoot(tick, out ReplicationState);
+            if (!_publishedLocation || _publishedContainer != ContainerRef || _publishedEpoch != Epoch)
+            {
+                ReplicationState = EntityStateEntry.Snapshot(this);
+                ReplicationState.Fields |= TransformFields.Location | TransformFields.Reliable;
+                HasReplicationState = true;
+                _publishedLocation = true;
+                _publishedContainer = ContainerRef;
+                _publishedEpoch = Epoch;
+            }
+        }
+
+        internal bool ReceiveState(uint tick, ushort worker, in EntityStateEntry entry)
+        {
+            if (entry.NetId != NetId) return false;
+            if (entry.Epoch < Epoch || (entry.Epoch == Epoch && HasStateTick && tick <= LastStateTick)) return false;
+            var container = ContainerRegistry.Resolve(entry.Container);
+            if (container == null && entry.Container.MayArriveLater)
+            {
+                if (!_hasPendingState || entry.Epoch > _pendingState.Epoch || (entry.Epoch == _pendingState.Epoch && tick > _pendingStateTick))
+                { _pendingState = entry; _pendingStateTick = tick; _pendingStateWorker = worker; _hasPendingState = true; }
+                return false;
+            }
+            Epoch = entry.Epoch;
+            OwnerWorkerIndex = worker;
+            LastStateTick = tick;
+            HasStateTick = true;
+            bool location = (entry.Fields & TransformFields.Location) != 0;
+            if (location || RootTransform == null)
+            {
+                SetContainer(container);
+                if (!(IsLocalPlayer && Predicted != null) && !(RootTransform != null && RootTransform.IsSyncAuthority))
+                {
+                    SetLocalPose(container, entry.LocalPosition, entry.LocalRotation);
+                    transform.localScale = entry.LocalScale;
+                    Motion.Velocity = entry.Velocity;
+                }
+                Interpolator?.Clear();
+            }
+            RootTransform?.ReceiveRoot(tick, container, entry);
+            return true;
+        }
 
         public NetworkBehaviour[] Behaviours { get; private set; } = Array.Empty<NetworkBehaviour>();
         internal NetworkVariableBase[] AllVars = Array.Empty<NetworkVariableBase>();
@@ -180,7 +256,10 @@ namespace Nebula
             HasAuthority = false;
             IsLocalPlayer = false;
             OwnerWorkerIndex = 0;
-            Velocity = Vector3.zero;
+            Motion.Velocity = Vector3.zero;
+            HasStateTick = false;
+            _publishedLocation = false;
+            _hasPendingState = false;
             SetContainer(null, reparent: false);
             if (Interpolator != null)
             {
@@ -200,6 +279,7 @@ namespace Nebula
             var found = GetComponentsInChildren<NetworkBehaviour>(true);
             // Deterministic order on every process: the same prefab yields the same component order.
             Behaviours = found;
+            RootTransform = GetComponent<NetworkTransform>();
             _carried = GetComponent<DynamicContainer>();
             var vars = new List<NetworkVariableBase>();
             for (int i = 0; i < Behaviours.Length; i++)
@@ -326,6 +406,7 @@ namespace Nebula
             for (int i = 0; i < SyncBehaviours.Length; i++)
             {
                 var b = SyncBehaviours[i];
+                if (b == RootTransform) continue; // root snapshots live in EntitySpawnMsg
                 SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, SyncStateCodec.ChunkFlags.Full, b, true);
                 n++;
             }
@@ -348,8 +429,9 @@ namespace Nebula
             for (int i = 0; i < SyncBehaviours.Length; i++)
             {
                 var b = SyncBehaviours[i];
+                if (b == RootTransform) continue; // batched spatial stream, not opaque component chunks
                 if (b.SyncDelivery != delivery) continue;
-                bool keyframe = keyframeTick || !b.SyncEverSent;
+                bool keyframe = keyframeTick || !b.SyncEverSent || (b is NetworkTransform && delivery == Delivery.ReliableOrdered);
                 bool send = b.SyncDirty || (keyframe && delivery == Delivery.Sequenced);
                 if (!send) continue;
                 SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, keyframe ? SyncStateCodec.ChunkFlags.Full : SyncStateCodec.ChunkFlags.None, b, keyframe);
@@ -386,6 +468,7 @@ namespace Nebula
         /// <summary>Present the tick <paramref name="renderTick"/> on every behaviour (ghosts and remote client copies).</summary>
         public void RemoteTick(double renderTick)
         {
+            ReplayPendingState();
             for (int i = 0; i < Behaviours.Length; i++)
             {
                 try { Behaviours[i].RemoteTick(renderTick); }

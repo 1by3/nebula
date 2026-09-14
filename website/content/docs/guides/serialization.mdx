@@ -49,7 +49,7 @@ Implement `INetworkSerializable` on custom structs and classes. `NetworkVariable
 | `WriteHalf(float)` | `ReadHalf()` | 2 | IEEE half, about 3 significant digits. Fine for positions within a few hundred metres and for unit-range values. |
 | `WriteCompressedQuaternion(Quaternion)` | `ReadCompressedQuaternion()` | 4 | Smallest-three: the largest component is dropped, the other three are quantised to 10 bits each. Worst-case error about 0.1 degrees. |
 
-Nothing uses these unless you ask for it. `NetworkTransform` offers both as options; the identity's pose stream sends full floats.
+`NetworkTransform` exposes precision and compression options for root and child updates. Root velocity uses half floats when enabled.
 
 ### Reserve and patch
 

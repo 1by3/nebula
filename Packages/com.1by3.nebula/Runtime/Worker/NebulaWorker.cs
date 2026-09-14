@@ -26,7 +26,7 @@ namespace Nebula
         /// <summary>
         /// Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's
         /// MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather
-        /// than by entry count. At 36 bytes per entry this is 13 entries per packet.
+        /// than by entry count. Entry size depends on the transform's selected axes and precision.
         /// </summary>
         public const int StateBatchBytes = 500;
 
@@ -73,6 +73,7 @@ namespace Nebula
         private readonly HashSet<uint> _botClients = new HashSet<uint>();
         /// <summary>netId -> (workerId -> time last seen inside that worker's band)</summary>
         private readonly Dictionary<ulong, Dictionary<string, float>> _ghostTargets = new Dictionary<ulong, Dictionary<string, float>>();
+        private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
         /// <summary>Entities we handed off recently: netId -> new owner. Inputs that still arrive here are forwarded.</summary>
         private readonly Dictionary<ulong, string> _handedOff = new Dictionary<ulong, string>();
         private readonly List<NetworkIdentity> _scratchEntities = new List<NetworkIdentity>();
@@ -677,14 +678,6 @@ namespace Nebula
             foreach (var e in _entities.Values)
             {
                 if (e.HasAuthority) continue;
-                if (e.Interpolator != null && e.Interpolator.Sample(renderTick, out var container, out var pos, out var rot))
-                {
-                    // Container-local, applied under the container's transform: a passenger ghost lands where the
-                    // ship ghost is this tick whichever of the two this loop reaches first.
-                    if (container != e.Container) e.SetContainer(container);
-                    e.SetLocalPose(container, pos, rot);
-                    e.Velocity = e.Interpolator.LatestVelocity;
-                }
                 e.RemoteTick(renderTick);
             }
             ProfGhosts.End();
@@ -769,6 +762,8 @@ namespace Nebula
                 }
             }
             ProfContainers.End();
+
+            foreach (var e in _authoritative) e.PrepareReplication(tick);
 
             // 4. Ghost band: create neighboring copies before an entity can cross.
             ProfBand.Begin();
@@ -922,6 +917,7 @@ namespace Nebula
 
         private void UpdateGhostBand(uint tick)
         {
+            ResumeInheritedGhosts();
             float now = Time.unscaledTime;
             float margin = Config.GhostBandMargin;
 
@@ -1001,19 +997,32 @@ namespace Nebula
                     if (!kv.Value.ContainsKey(peer.Id)) continue;
                     var e = Find(kv.Key);
                     if (e == null || !e.HasAuthority) continue;
-                    if (slot < 0)
+                    if (e.HasReplicationState)
                     {
-                        _writer.Reset();
-                        slot = WorldStateMsg.Begin(_writer, MsgId.GhostState, tick, WorkerIndex);
-                    }
-                    Entry(e).Write(_writer);
-                    count++;
-                    if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
-                    {
-                        WorldStateMsg.End(_writer, slot, count);
-                        Send(peer, Delivery.Sequenced);
-                        slot = -1;
-                        count = 0;
+                        var entry = e.ReplicationState;
+                        if (entry.Reliable)
+                        {
+                            var saved = _writer.ToArray();
+                            _writer.Reset();
+                            int one = WorldStateMsg.Begin(_writer, MsgId.GhostState, tick, WorkerIndex);
+                            entry.Write(_writer);
+                            WorldStateMsg.End(_writer, one, 1);
+                            Send(peer, Delivery.ReliableOrdered);
+                            _writer.Reset();
+                            _writer.WriteRaw(new ArraySegment<byte>(saved));
+                        }
+                        else
+                        {
+                            if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.GhostState, tick, WorkerIndex); }
+                            entry.Write(_writer);
+                            count++;
+                            if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                            {
+                                WorldStateMsg.End(_writer, slot, count);
+                                Send(peer, Delivery.Sequenced);
+                                slot = -1; count = 0;
+                            }
+                        }
                     }
                     if (e.VarsDirty)
                     {
@@ -1070,15 +1079,21 @@ namespace Nebula
             targets[owner] = now;
         }
 
-        private static EntityStateEntry Entry(NetworkIdentity e) => new EntityStateEntry
+        private void ResumeInheritedGhosts()
         {
-            NetId = e.NetId,
-            Epoch = e.Epoch,
-            Container = e.ContainerRef,
-            LocalPosition = e.LocalPosition,
-            LocalRotation = e.LocalRotation,
-            Velocity = e.Velocity,
-        };
+            if (_inheritedGhosts.Count == 0) return;
+            var completed = new List<ulong>();
+            foreach (var pending in _inheritedGhosts)
+            {
+                var entity = Find(pending.Key);
+                if (entity == null || !entity.HasAuthority) { completed.Add(pending.Key); continue; }
+                Dictionary<string, float> targets = null;
+                foreach (var peer in _workerPeersById.Values)
+                    if (peer.HelloReceived && pending.Value.Remove(peer.Id)) Ghost(entity, peer.Id, ref targets, Time.unscaledTime);
+                if (pending.Value.Count == 0) completed.Add(pending.Key);
+            }
+            foreach (var id in completed) _inheritedGhosts.Remove(id);
+        }
 
         // ---------------------------------------------------------------------------------------- handover
 
@@ -1097,6 +1112,13 @@ namespace Nebula
             var entity = EntitySpawnMsg.From(e, _scratch);
             entity.Epoch = newEpoch;
             entity.OwnerWorkerIndex = (ushort)target.Index;
+            var ghostWorkers = targets != null ? new List<string>(targets.Keys) : new List<string>();
+            if (_inheritedGhosts.TryGetValue(e.NetId, out var stillPending))
+            {
+                foreach (var worker in stillPending) if (!ghostWorkers.Contains(worker)) ghostWorkers.Add(worker);
+                _inheritedGhosts.Remove(e.NetId);
+            }
+            if (!ghostWorkers.Contains(WorkerId)) ghostWorkers.Add(WorkerId);
             byte[] pending = Array.Empty<byte>();
             if (e.Predicted != null)
             {
@@ -1108,7 +1130,7 @@ namespace Nebula
             e.WriteHandoverState(_scratch);
             var handoverState = _scratch.ToArray();
             _writer.Reset();
-            new AuthorityTransferMsg { Entity = entity, NewEpoch = newEpoch, PendingInputs = pending, HandoverState = handoverState }.Write(_writer);
+            new AuthorityTransferMsg { Entity = entity, NewEpoch = newEpoch, PendingInputs = pending, HandoverState = handoverState, GhostWorkers = ghostWorkers.ToArray() }.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
 
             // Become the ghost. The object stays; its transform will now be driven by the new owner's stream.
@@ -1116,7 +1138,7 @@ namespace Nebula
             e.OwnerWorkerIndex = (ushort)target.Index;
             _authoritative.Remove(e);
             e.SetAuthority(false);
-            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Velocity);
+            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Motion.Velocity);
             SetGhostPhysics(e, true);
             _handedOff[e.NetId] = target.Id;
             HandoversOut++;
@@ -1155,7 +1177,7 @@ namespace Nebula
             }
             if (e == null) e = InstantiateGhost(msg.Entity);
             if (e == null) return;
-            if (msg.NewEpoch <= e.Epoch && e.HasAuthority)
+            if (msg.NewEpoch < e.Epoch || (msg.NewEpoch == e.Epoch && e.HasAuthority))
             {
                 NebulaLog.Warn($"stale authority transfer for {e} (epoch {msg.NewEpoch} <= {e.Epoch}); ignored");
                 return;
@@ -1178,6 +1200,16 @@ namespace Nebula
             if (!_authoritative.Contains(e)) _authoritative.Add(e);
             if (e.OwnerClientId != 0) _players[e.OwnerClientId] = e;
             e.SetAuthority(true);
+            // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
+            // including for motionless entities that will never emit another pose update.
+            if (msg.GhostWorkers != null)
+            {
+                var inherited = new HashSet<string>();
+                foreach (var worker in msg.GhostWorkers)
+                    if (worker != WorkerId) inherited.Add(worker);
+                _inheritedGhosts[e.NetId] = inherited;
+                ResumeInheritedGhosts();
+            }
             HandoversIn++;
             AuthorityReceived?.Invoke(e, from.Id);
             NebulaLog.Info($"handover IN  {e} <- {from.Id} (epoch {msg.NewEpoch}, tick {CurrentTick})");
@@ -1191,6 +1223,7 @@ namespace Nebula
         /// <summary>Fallback for a bare Rigidbody with no <see cref="NetworkRigidbody"/> (which does this itself, plus velocity).</summary>
         private static void SetGhostPhysics(NetworkIdentity e, bool ghost)
         {
+            if (e.GetComponent<NetworkRigidbody>() != null) return;
             var rb = e.GetComponent<Rigidbody>();
             if (rb != null) rb.isKinematic = ghost;
         }
@@ -1243,7 +1276,7 @@ namespace Nebula
             identity.NetId = msg.NetId;
             identity.HasAuthority = false;
             ApplySpawnData(identity, msg, msg.Epoch);
-            EnsureInterpolator(identity).Push(CurrentTick, identity.Container, identity.LocalPosition, identity.LocalRotation, identity.Velocity);
+            EnsureInterpolator(identity).Push(CurrentTick, identity.Container, identity.LocalPosition, identity.LocalRotation, identity.Motion.Velocity);
             SetGhostPhysics(identity, true);
             _entities[identity.NetId] = identity;
             if (msg.OwnerClientId != 0 && !_players.ContainsKey(msg.OwnerClientId)) _players[msg.OwnerClientId] = identity;
@@ -1270,7 +1303,9 @@ namespace Nebula
             }
             e.SetContainer(container);
             e.SetLocalPose(container, msg.LocalPosition, msg.LocalRotation);
-            e.Velocity = msg.Velocity;
+            e.transform.localScale = msg.LocalScale;
+            e.HasStateTick = false;
+            e.Motion.Velocity = msg.Velocity;
             if (msg.Vars != null && msg.Vars.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.Vars));
@@ -1305,7 +1340,7 @@ namespace Nebula
             }
             if (msg.Epoch < e.Epoch) return;
             ApplySpawnData(e, msg, msg.Epoch);
-            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Velocity);
+            EnsureInterpolator(e).Push(CurrentTick, e.Container, e.LocalPosition, e.LocalRotation, e.Motion.Velocity);
         }
 
         private void OnGhostState(Peer from, NetworkReader r)
@@ -1316,10 +1351,7 @@ namespace Nebula
                 var entry = EntityStateEntry.Read(r);
                 var e = Find(entry.NetId);
                 if (e == null || e.HasAuthority || entry.Epoch < e.Epoch) continue;
-                var container = ContainerRegistry.Resolve(entry.Container);
-                if (container == null && entry.Container.MayArriveLater) continue; // its carrier or lease has not arrived here yet
-                EnsureInterpolator(e).Push(tick, container, entry.LocalPosition, entry.LocalRotation, entry.Velocity);
-                e.OwnerWorkerIndex = workerIndex;
+                e.ReceiveState(tick, workerIndex, entry);
             }
         }
 
@@ -1381,30 +1413,29 @@ namespace Nebula
         private void PublishToGateways(uint tick)
         {
             if (_gateways.Count == 0) return;
-            int slot = -1;
-            ushort count = 0;
-            for (int i = 0; i < _authoritative.Count; i++)
+            for (int d = 0; d < 2; d++)
             {
-                var e = _authoritative[i];
-                if (slot < 0)
+                bool reliable = d == 1;
+                int slot = -1;
+                ushort count = 0;
+                foreach (var e in _authoritative)
                 {
-                    _writer.Reset();
-                    slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex);
+                    if (!e.HasReplicationState || e.ReplicationState.Reliable != reliable) continue;
+                    if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex); }
+                    e.ReplicationState.Write(_writer);
+                    count++;
+                    if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                    {
+                        WorldStateMsg.End(_writer, slot, count);
+                        foreach (var g in _gateways) Send(g, reliable ? Delivery.ReliableOrdered : Delivery.Sequenced);
+                        slot = -1; count = 0;
+                    }
                 }
-                Entry(e).Write(_writer);
-                count++;
-                if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                if (slot >= 0)
                 {
                     WorldStateMsg.End(_writer, slot, count);
-                    foreach (var g in _gateways) Send(g, Delivery.Sequenced);
-                    slot = -1;
-                    count = 0;
+                    foreach (var g in _gateways) Send(g, reliable ? Delivery.ReliableOrdered : Delivery.Sequenced);
                 }
-            }
-            if (slot >= 0)
-            {
-                WorldStateMsg.End(_writer, slot, count);
-                foreach (var g in _gateways) Send(g, Delivery.Sequenced);
             }
 
             for (int i = 0; i < _authoritative.Count; i++)

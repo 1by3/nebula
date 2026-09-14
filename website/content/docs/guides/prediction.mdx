@@ -79,7 +79,7 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
         var velocity =
             (transform.right * input.Move.x + transform.forward * input.Move.y) * Speed;
         transform.position += velocity * deltaTime;
-        Identity.Velocity = velocity;
+        Identity.Motion.Velocity = velocity;
     }
 }
 ```
@@ -88,7 +88,7 @@ Nebula calls `GatherInput` only on the owning client. It calls `Simulate` on the
 
 Write `Simulate` as a deterministic update from the current state and input. Do not read live keyboard state, use `Time.deltaTime`, or make an unseeded random choice inside it. Use the supplied `deltaTime`.
 
-Set `Identity.Velocity` when you move without a `NetworkRigidbody`. Remote interpolation and handover use this value.
+Set `Identity.Motion.Velocity` when you move without a `NetworkRigidbody`. Remote interpolation and handover use this value.
 
 ## Handle one-time effects
 
@@ -100,7 +100,7 @@ For a fire button, store enough state in the input or controller to recognize on
 
 ## Choose reconciliation state
 
-By default, `WriteState` records the entity's container-local position and rotation plus `Identity.Velocity`. `ReadState` restores those values.
+By default, `WriteState` records the entity's container-local position and rotation plus `Identity.Motion.Velocity`. `ReadState` restores those values.
 
 Override both methods when the next simulation result also depends on other state, such as grounded state, a movement mode, or a cooldown.
 

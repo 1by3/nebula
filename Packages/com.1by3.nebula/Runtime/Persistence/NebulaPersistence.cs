@@ -142,7 +142,7 @@ namespace Nebula
                 record.LocalPosition = identity.LocalPosition;
                 record.LocalRotation = identity.LocalRotation;
             }
-            if (pe.PersistVelocity) record.Velocity = identity.Velocity;
+            if (pe.PersistVelocity) record.Velocity = identity.Motion.Velocity;
 
             _stateWriter.Reset();
             PersistentStateCodec.Write(_stateWriter, identity);
@@ -224,7 +224,7 @@ namespace Nebula
                     pe.LastSavedRotation = identity.transform.rotation;
                 }
             }
-            if (pe == null || pe.PersistVelocity) identity.Velocity = record.Velocity;
+            if (pe == null || pe.PersistVelocity) identity.Motion.Velocity = record.Velocity;
             if (!string.IsNullOrEmpty(record.Key)) _byKey[record.Key] = identity;
         }
 

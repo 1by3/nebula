@@ -1,0 +1,40 @@
+---
+title: "TransformFields"
+description: "Selected axes and encoding of a root transform update."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum TransformFields : ushort
+```
+
+Selected axes and encoding of a root transform update.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `PositionX` | `1` |  |
+| `PositionY` | `2` |  |
+| `PositionZ` | `4` |  |
+| `RotationX` | `8` |  |
+| `RotationY` | `16` |  |
+| `RotationZ` | `32` |  |
+| `ScaleX` | `64` |  |
+| `ScaleY` | `128` |  |
+| `ScaleZ` | `256` |  |
+| `Velocity` | `512` |  |
+| `Teleport` | `1024` |  |
+| `Half` | `2048` |  |
+| `Quaternion` | `4096` |  |
+| `Compressed` | `8192` |  |
+| `Reliable` | `16384` |  |
+| `Location` | `32768` |  |
+| `Position` | `PositionX | PositionY | PositionZ` |  |
+| `Rotation` | `RotationX | RotationY | RotationZ` |  |
+| `Scale` | `ScaleX | ScaleY | ScaleZ` |  |
+| `Axes` | `Position | Rotation | Scale` |  |
+

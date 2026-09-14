@@ -135,6 +135,8 @@ namespace Nebula.Editor
             }
             foreach (var dup in list.Where(p => p != null).GroupBy(p => p).Where(g => g.Count() > 1))
                 issues.Add(new Issue(Severity.Warning, $"'{dup.Key.name}' is listed {dup.Count()} times in NetworkPrefabs; it spawns with the last id", dup.Key));
+            foreach (var prefab in list.Where(p => p != null))
+                foreach (var identity in prefab.GetComponentsInChildren<NetworkIdentity>(true)) CheckMotion(identity, issues);
             var listed = new HashSet<GameObject>(list.Where(p => p != null));
             var missing = NebulaSetup.NetworkPrefabCandidates().Where(p => !listed.Contains(p)).ToList();
             if (missing.Count > 0)
@@ -200,10 +202,32 @@ namespace Nebula.Editor
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 var scene = SceneManager.GetSceneAt(i);
+                foreach (var identity in NebulaSetup.FindInScene<NetworkIdentity>(scene)) CheckMotion(identity, issues);
                 var unassigned = NebulaSetup.FindInScene<NetworkIdentity>(scene).Where(id => id.SceneId == 0).ToList();
                 if (unassigned.Count > 0)
                     issues.Add(new Issue(Severity.Warning, $"'{scene.name}': {unassigned.Count} scene entit(ies) have no SceneId yet; save the scene to assign them", unassigned[0]));
             }
+        }
+
+        public static void CheckMotion(NetworkIdentity identity, List<Issue> issues)
+        {
+            var nt = identity.GetComponent<NetworkTransform>();
+            var rb = identity.GetComponent<NetworkRigidbody>();
+            var predicted = identity.GetComponent<PredictedBehaviourBase>();
+            var carrier = identity.GetComponent<DynamicContainer>();
+            if (rb == null && predicted == null && carrier == null) return;
+            if (nt == null || !nt.enabled)
+            {
+                issues.Add(new Issue(Severity.Error, $"'{identity.name}' needs an enabled root NetworkTransform for physics, prediction, or its moving container", identity));
+                return;
+            }
+            if ((rb != null || predicted != null || carrier != null) && nt.Authority != AuthorityMode.Server)
+                issues.Add(new Issue(Severity.Error, $"'{identity.name}': physics, prediction, and moving containers require worker-authoritative NetworkTransform", nt));
+            if (rb != null && predicted != null)
+                issues.Add(new Issue(Severity.Error, $"'{identity.name}': NetworkRigidbody cannot drive a predicted controller", rb));
+            if (carrier != null && !(nt.SyncPositionX && nt.SyncPositionY && nt.SyncPositionZ &&
+                nt.SyncRotAngleX && nt.SyncRotAngleY && nt.SyncRotAngleZ))
+                issues.Add(new Issue(Severity.Error, $"'{identity.name}': a moving container must synchronize every position and rotation axis", nt));
         }
     }
 }

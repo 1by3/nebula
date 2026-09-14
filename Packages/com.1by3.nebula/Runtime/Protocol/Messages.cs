@@ -86,7 +86,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 7;
+        public const ushort ProtocolVersion = 8;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -178,6 +178,7 @@ namespace Nebula
         public Quaternion LocalRotation;
         public Vector3 Velocity;
         public EntityFlags Flags;
+        public Vector3 LocalScale;
         /// <summary>Non-zero: bind the receiver's own copy of the scene object with this <see cref="NetworkIdentity.SceneId"/> instead of instantiating <see cref="PrefabId"/>.</summary>
         public uint SceneId;
         public byte[] Vars;
@@ -208,7 +209,8 @@ namespace Nebula
                 OwnerWorkerIndex = NebulaRuntime.LocalWorkerIndex,
                 LocalPosition = id.LocalPosition,
                 LocalRotation = id.LocalRotation,
-                Velocity = id.Velocity,
+                LocalScale = id.transform.localScale,
+                Velocity = id.Motion.Velocity,
                 Vars = vars,
                 State = state,
             };
@@ -230,6 +232,7 @@ namespace Nebula
             w.WriteUShort(OwnerWorkerIndex);
             w.WriteVector3(LocalPosition);
             w.WriteQuaternion(LocalRotation);
+            w.WriteVector3(LocalScale);
             w.WriteVector3(Velocity);
             w.WriteByte((byte)Flags);
             w.WriteUInt(SceneId);
@@ -249,6 +252,7 @@ namespace Nebula
                 OwnerWorkerIndex = r.ReadUShort(),
                 LocalPosition = r.ReadVector3(),
                 LocalRotation = r.ReadQuaternion(),
+                LocalScale = r.ReadVector3(),
                 Velocity = r.ReadVector3(),
                 Flags = (EntityFlags)r.ReadByte(),
                 SceneId = r.ReadUInt(),
@@ -361,16 +365,31 @@ namespace Nebula
         };
     }
 
-    /// <summary>One entity's pose inside a WorldState/GhostState batch.</summary>
+    /// <summary>Selected axes and encoding of a root transform update.</summary>
+    [Flags]
+    public enum TransformFields : ushort
+    {
+        None = 0, PositionX = 1, PositionY = 2, PositionZ = 4,
+        RotationX = 8, RotationY = 16, RotationZ = 32,
+        ScaleX = 64, ScaleY = 128, ScaleZ = 256,
+        Velocity = 512, Teleport = 1024, Half = 2048, Quaternion = 4096,
+        Compressed = 8192, Reliable = 16384, Location = 32768,
+        Position = PositionX | PositionY | PositionZ,
+        Rotation = RotationX | RotationY | RotationZ,
+        Scale = ScaleX | ScaleY | ScaleZ,
+        Axes = Position | Rotation | Scale,
+    }
+
+    /// <summary>One entity's selected transform fields inside a WorldState/GhostState batch.</summary>
     public struct EntityStateEntry
     {
         /// <summary>
         /// Largest serialized size of one entry, for sizing Sequenced batches: id, epoch, container reference (two
-        /// bytes for a static container, ten for a dynamic one), position (3 floats), rotation (smallest-three,
-        /// 4 bytes) and velocity (3 halves). Rotation and velocity are the two fields that tolerate compression: a
-        /// pawn's yaw to a hundredth of a degree and its speed to three decimals.
+        /// bytes for a static container, ten for a dynamic one), field mask, position, rotation, scale, and velocity.
+        /// Only selected axes are serialized. Position, rotation, and scale precision follows NetworkTransform;
+        /// velocity uses three half floats when enabled.
         /// </summary>
-        public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 12 + 4 + 6;
+        public const int WireSize = 8 + 4 + ContainerRef.MaxWireSize + 2 + 12 + 16 + 12 + 6;
 
         public ulong NetId;
         public uint Epoch;
@@ -378,28 +397,89 @@ namespace Nebula
         public Vector3 LocalPosition;
         public Quaternion LocalRotation;
         public Vector3 Velocity;
+        public Vector3 LocalScale;
+        public TransformFields Fields;
+        public bool Reliable => (Fields & TransformFields.Reliable) != 0;
+
+        public static EntityStateEntry Snapshot(NetworkIdentity e) => new EntityStateEntry
+        {
+            NetId = e.NetId, Epoch = e.Epoch, Container = e.ContainerRef,
+            LocalPosition = e.LocalPosition, LocalRotation = e.LocalRotation,
+            LocalScale = e.transform.localScale, Velocity = e.Motion.Velocity,
+            Fields = TransformFields.Axes | TransformFields.Quaternion | TransformFields.Compressed | TransformFields.Velocity,
+        };
+
+        private void WriteVector(NetworkWriter w, Vector3 v, int shift)
+        {
+            for (int i = 0; i < 3; i++)
+                if (((int)Fields & (1 << (shift + i))) != 0)
+                {
+                    if ((Fields & TransformFields.Half) != 0) w.WriteHalf(v[i]); else w.WriteFloat(v[i]);
+                }
+        }
+
+        private Vector3 ReadVector(NetworkReader r, int shift)
+        {
+            var v = Vector3.zero;
+            for (int i = 0; i < 3; i++)
+                if (((int)Fields & (1 << (shift + i))) != 0)
+                    v[i] = (Fields & TransformFields.Half) != 0 ? r.ReadHalf() : r.ReadFloat();
+            return v;
+        }
+
+        internal static Vector3 MergeVector(Vector3 previous, Vector3 next, TransformFields fields, int shift)
+        {
+            for (int i = 0; i < 3; i++) if (((int)fields & (1 << (shift + i))) != 0) previous[i] = next[i];
+            return previous;
+        }
+
+        internal void Merge(ref Vector3 position, ref Quaternion rotation, ref Vector3 scale, ref Vector3 velocity)
+        {
+            position = MergeVector(position, LocalPosition, Fields, 0);
+            if ((Fields & TransformFields.Rotation) != 0)
+                rotation = (Fields & TransformFields.Quaternion) != 0 ? LocalRotation :
+                    UnityEngine.Quaternion.Euler(MergeVector(rotation.eulerAngles, LocalRotation.eulerAngles, Fields, 3));
+            scale = MergeVector(scale, LocalScale, Fields, 6);
+            velocity = (Fields & TransformFields.Velocity) != 0 ? Velocity : Vector3.zero;
+        }
 
         public void Write(NetworkWriter w)
         {
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
             Container.Write(w);
-            w.WriteVector3(LocalPosition);
-            w.WriteCompressedQuaternion(LocalRotation);
-            w.WriteHalf(Velocity.x);
-            w.WriteHalf(Velocity.y);
-            w.WriteHalf(Velocity.z);
+            w.WriteUShort((ushort)Fields);
+            WriteVector(w, LocalPosition, 0);
+            if ((Fields & TransformFields.Rotation) != 0)
+            {
+                if ((Fields & TransformFields.Quaternion) == 0) WriteVector(w, LocalRotation.eulerAngles, 3);
+                else if ((Fields & TransformFields.Compressed) != 0) w.WriteCompressedQuaternion(LocalRotation);
+                else if ((Fields & TransformFields.Half) != 0)
+                { w.WriteHalf(LocalRotation.x); w.WriteHalf(LocalRotation.y); w.WriteHalf(LocalRotation.z); w.WriteHalf(LocalRotation.w); }
+                else w.WriteQuaternion(LocalRotation);
+            }
+            WriteVector(w, LocalScale, 6);
+            if ((Fields & TransformFields.Velocity) != 0)
+            { w.WriteHalf(Velocity.x); w.WriteHalf(Velocity.y); w.WriteHalf(Velocity.z); }
         }
 
-        public static EntityStateEntry Read(NetworkReader r) => new EntityStateEntry
+        public static EntityStateEntry Read(NetworkReader r)
         {
-            NetId = r.ReadULong(),
-            Epoch = r.ReadUInt(),
-            Container = ContainerRef.Read(r),
-            LocalPosition = r.ReadVector3(),
-            LocalRotation = r.ReadCompressedQuaternion(),
-            Velocity = new Vector3(r.ReadHalf(), r.ReadHalf(), r.ReadHalf()),
-        };
+            var e = new EntityStateEntry { NetId = r.ReadULong(), Epoch = r.ReadUInt(), Container = ContainerRef.Read(r) };
+            e.Fields = (TransformFields)r.ReadUShort();
+            e.LocalPosition = e.ReadVector(r, 0);
+            e.LocalRotation = Quaternion.identity;
+            if ((e.Fields & TransformFields.Rotation) != 0)
+            {
+                if ((e.Fields & TransformFields.Quaternion) == 0) e.LocalRotation = Quaternion.Euler(e.ReadVector(r, 3));
+                else if ((e.Fields & TransformFields.Compressed) != 0) e.LocalRotation = r.ReadCompressedQuaternion();
+                else if ((e.Fields & TransformFields.Half) != 0) e.LocalRotation = new Quaternion(r.ReadHalf(), r.ReadHalf(), r.ReadHalf(), r.ReadHalf()).normalized;
+                else e.LocalRotation = r.ReadQuaternion();
+            }
+            e.LocalScale = e.ReadVector(r, 6);
+            if ((e.Fields & TransformFields.Velocity) != 0) e.Velocity = new Vector3(r.ReadHalf(), r.ReadHalf(), r.ReadHalf());
+            return e;
+        }
     }
 
     /// <summary>Batched transforms for one tick from one worker. Unreliable/sequenced.</summary>
@@ -623,6 +703,7 @@ namespace Nebula
         public byte[] PendingInputs;
         /// <summary>Per-behaviour handover-only state (<see cref="NetworkIdentity.WriteHandoverState"/>).</summary>
         public byte[] HandoverState;
+        public string[] GhostWorkers;
 
         public void Write(NetworkWriter w)
         {
@@ -631,6 +712,8 @@ namespace Nebula
             w.WriteUInt(NewEpoch);
             w.WriteBytes(PendingInputs);
             w.WriteBytes(HandoverState);
+            w.WriteUShort((ushort)(GhostWorkers?.Length ?? 0));
+            if (GhostWorkers != null) foreach (var worker in GhostWorkers) w.WriteString(worker);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r) => new AuthorityTransferMsg
@@ -639,6 +722,14 @@ namespace Nebula
             NewEpoch = r.ReadUInt(),
             PendingInputs = r.ReadBytes(),
             HandoverState = r.ReadBytes(),
+            GhostWorkers = ReadGhostWorkers(r),
         };
+
+        private static string[] ReadGhostWorkers(NetworkReader r)
+        {
+            var workers = new string[r.ReadUShort()];
+            for (int i = 0; i < workers.Length; i++) workers[i] = r.ReadString();
+            return workers;
+        }
     }
 }

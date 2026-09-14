@@ -26,6 +26,7 @@ namespace Nebula
     /// </para>
     /// </summary>
     [RequireComponent(typeof(Container))]
+    [RequireComponent(typeof(NetworkTransform))]
     [DisallowMultipleComponent]
     public sealed class DynamicContainer : NetworkBehaviour
     {

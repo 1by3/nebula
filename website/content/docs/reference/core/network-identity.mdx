@@ -10,7 +10,7 @@ description: "Marks a GameObject as a networked entity."
 public sealed class NetworkIdentity : MonoBehaviour
 ```
 
-Marks a GameObject as a networked entity. Holds the entity's network identity (a 64-bit ID created by the worker that spawned it, never by a central allocator), its current container, its authority epoch and which worker/client owns it. Every [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the object hangs off this.
+Marks a GameObject as a networked entity. Holds the entity's network identity (a 64-bit ID created by the worker that spawned it, never by a central allocator), its current container, its authority epoch and which worker/client owns it. Every [`NetworkBehaviour`](/docs/reference/core/network-behaviour) on the object hangs off this. Add [`NetworkTransform`](/docs/reference/core/network-transform) for ongoing transform replication and [`NetworkRigidbody`](/docs/reference/core/network-rigidbody) for worker-simulated physics. An identity alone only synchronizes placement at spawn and container changes.
 
 ## Fields
 
@@ -29,14 +29,6 @@ public uint SceneId;
 ```
 
 Non-zero for an entity authored into a scene (assigned when the scene is saved). The worker owning its container spawns it; clients and neighbours bind to their own copy of the scene object. Leave 0 on prefabs.
-
-### Velocity [#velocity]
-
-```csharp
-public Vector3 Velocity;
-```
-
-Velocity as reported by the authority; used for extrapolation and carried through handover.
 
 ### SyncKeyframeInterval [#synckeyframeinterval]
 
@@ -159,6 +151,27 @@ public ushort OwnerWorkerIndex { get; }
 ```
 
 Index of the worker currently authoritative (as last heard). Debug/overlay only.
+
+### Velocity [#velocity]
+
+```csharp
+[Obsolete("Use Motion.Velocity, NetworkTransform.Velocity, or NetworkRigidbody.SetVelocity instead.")]
+public Vector3 Velocity { get; set; }
+```
+
+Velocity as reported by the authority; used for extrapolation and carried through handover.
+
+### Motion [#motion]
+
+```csharp
+public NetworkMotionState Motion { get; } = new NetworkMotionState();
+```
+
+### RootTransform [#roottransform]
+
+```csharp
+public NetworkTransform RootTransform { get; }
+```
 
 ### Behaviours [#behaviours]
 

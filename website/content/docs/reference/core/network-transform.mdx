@@ -12,7 +12,7 @@ public class NetworkTransform : NetworkSyncBehaviour
 
 Replicates selected position, rotation, and scale axes from the authoritative worker to clients and ghost workers. Configure change thresholds, transform space, authority, interpolation, compression, and delivery mode in the Inspector.
 
-The root of a networked entity already sends its position, rotation, and velocity through the entity state stream. Add NetworkTransform to the root when you need scale replication, [`Teleport`](#teleport), or owner authority. Add it to a child transform to replicate the selected transform values for that child.
+Add this component to each transform that should move on remote copies. Without it, an identity only synchronizes its initial placement and container changes. Root updates use the batched spatial stream; child updates use component state. Both honor the selected axes, thresholds, and interpolation settings.
 
 Nebula does not provide `TickSyncChildren` or `SwitchTransformSpaceWhenParented`. It sends every behaviour's state in the same entity update. An entity changes its parent only when it changes containers.
 
@@ -57,20 +57,28 @@ public bool SyncRotAngleZ = true;
 ### SyncScaleX [#syncscalex]
 
 ```csharp
-public bool SyncScaleX = true;
+public bool SyncScaleX;
 ```
 
 ### SyncScaleY [#syncscaley]
 
 ```csharp
-public bool SyncScaleY = true;
+public bool SyncScaleY;
 ```
 
 ### SyncScaleZ [#syncscalez]
 
 ```csharp
-public bool SyncScaleZ = true;
+public bool SyncScaleZ;
 ```
+
+### SyncVelocity [#syncvelocity]
+
+```csharp
+public bool SyncVelocity = true;
+```
+
+Include world-space motion velocity for remote extrapolation. Disable for objects that only interpolate.
 
 ### PositionThreshold [#positionthreshold]
 
@@ -105,10 +113,10 @@ Replicate localPosition/localRotation (relative to the parent) instead of world 
 ### UseUnreliableDeltas [#useunreliabledeltas]
 
 ```csharp
-public bool UseUnreliableDeltas;
+public bool UseUnreliableDeltas = true;
 ```
 
-Send deltas unreliable-sequenced with a keyframe every NetworkIdentity.SyncKeyframeInterval ticks, instead of reliable-ordered.
+Send ordinary updates unreliable-sequenced. Root transforms send reliable recovery within 30 ticks of movement; children send periodic keyframes. Off: reliable-ordered.
 
 ### UseHalfFloatPrecision [#usehalffloatprecision]
 
@@ -180,13 +188,19 @@ Smooth damp only: seconds to reach the newest scale.
 
 ## Properties
 
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity { get; set; }
+```
+
 ### IsRoot [#isroot]
 
 ```csharp
 public bool IsRoot { get; }
 ```
 
-This component sits on the entity root, whose position/rotation the identity stream already carries.
+This component sits on the entity root and uses the batched spatial stream.
 
 ### SyncDelivery [#syncdelivery]
 
@@ -232,6 +246,24 @@ Authority only: set any of position/rotation/scale (in the configured space); nu
 
 ```csharp
 public override void OnNetworkSpawn();
+```
+
+### WriteHandoverState [#writehandoverstate]
+
+```csharp
+public override void WriteHandoverState(NetworkWriter writer);
+```
+
+### ReadHandoverState [#readhandoverstate]
+
+```csharp
+public override void ReadHandoverState(NetworkReader reader);
+```
+
+### OnOriginShifted [#onoriginshifted]
+
+```csharp
+public override void OnOriginShifted(Vector3 delta);
 ```
 
 ### OnGainedAuthority [#ongainedauthority]

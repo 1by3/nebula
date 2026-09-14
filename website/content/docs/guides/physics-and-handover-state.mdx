@@ -5,40 +5,28 @@ description: Replicate rigidbody motion, transfer worker-only state, and create 
 
 Choose a replication path based on how other processes use the state:
 
-- The identity stream sends the root pose and velocity every tick.
+- A root `NetworkTransform` sends selected transform fields when they change, with reliable recovery after movement.
 - `NetworkVariable` sends state that changes occasionally. When one variable changes, Nebula sends all variables for that entity.
-- The **sync channel** sends component data by tick. `NetworkTransform` and `NetworkAnimator` use this channel.
+- The **sync channel** sends component data by tick. Child `NetworkTransform` components and `NetworkAnimator` use this channel.
 - The **handover-state** methods send worker-only state once during an authority transfer.
 
 Use this page to configure `NetworkRigidbody`, transfer custom state between workers, or create a component based on `NetworkSyncBehaviour`.
 
 ## NetworkRigidbody
 
-Add [`NetworkRigidbody`](/docs/reference/core/network-rigidbody) to a physics entity controlled by a worker. Add it to the same GameObject as its `NetworkIdentity` and Unity `Rigidbody`.
+Add [`NetworkRigidbody`](/docs/reference/core/network-rigidbody) to a physics entity controlled by a worker. Add it to the same GameObject as its `NetworkIdentity` and Unity `Rigidbody`. It requires `NetworkTransform`; use that component to select axes and configure interpolation.
 
 | Copy | Body state |
 | --- | --- |
-| Authoritative worker | Dynamic. PhysX simulates it. Each `NetworkTick` mirrors `Body.linearVelocity` into `NetworkIdentity.Velocity`, so the identity stream carries the velocity remote copies extrapolate with and a handover keeps momentum. |
+| Authoritative worker | Dynamic. PhysX simulates it. Each `NetworkTick` mirrors `Body.linearVelocity` into `NetworkIdentity.Motion.Velocity`, so the root transform stream carries the velocity remote copies extrapolate with and a handover keeps momentum. |
 | Ghost on a neighbouring worker | Kinematic. The worker moves it to the pose the owner streamed, one tick behind, before physics syncs. Other dynamic bodies on that worker collide with it as a moving kinematic. |
-| Every client | Kinematic. Follows the identity stream through `RemoteInterpolator`. |
+| Every client | Kinematic. Follows the root transform stream through `RemoteInterpolator`. |
 
-When a worker gains authority, `NetworkRigidbody` makes the body dynamic and restores its linear and angular velocity. When the worker loses authority, the component makes the body kinematic.
+When a worker gains authority, `NetworkRigidbody` restores the body’s kinematic or dynamic state, linear and angular velocity, and sleeping state. When the worker loses authority, the component makes the body kinematic.
 
-Angular velocity does not go in the per-tick stream. Nothing but the next simulating worker needs it (ghosts and clients are kinematic and rotate to the streamed pose), so it rides the handover only:
+Both linear and angular velocity travel in the handover snapshot, even if `NetworkTransform.SyncVelocity` is off. Angular velocity is not sent to clients or ghosts each tick. The next worker also receives the body’s kinematic and sleeping state.
 
-```csharp title="NetworkRigidbody.cs"
-public override void WriteHandoverState(NetworkWriter writer)
-{
-    writer.WriteVector3(Body.angularVelocity);
-}
-
-public override void ReadHandoverState(NetworkReader reader)
-{
-    _handoverAngularVelocity = reader.ReadVector3();
-}
-```
-
-Call `SetVelocity(Vector3 linear, Vector3 angular = default)` on the authoritative worker to launch a newly spawned rigidbody. The method updates `Identity.Velocity` and the dynamic `Rigidbody`:
+Call `SetVelocity(Vector3 linear, Vector3 angular = default)` on the authoritative worker to launch a newly spawned rigidbody. The method updates `Identity.Motion.Velocity` and the dynamic `Rigidbody`:
 
 ```csharp title="PlayerController.cs"
 var identity = worker.SpawnPrefab(projectilePrefab, origin, Quaternion.LookRotation(direction), Container);

@@ -70,7 +70,7 @@ public sealed class Pawn : NetworkBehaviour
 
     public override void NetworkTick(uint tick, float deltaTime)
     {
-        _anim.Animator.SetFloat("Speed", Identity.Velocity.magnitude);
+        _anim.Animator.SetFloat("Speed", Identity.Motion.Velocity.magnitude);
     }
 
     [ServerRpc]

@@ -1,0 +1,23 @@
+---
+title: "NetworkMotionState"
+description: "Motion shared by scripted movement, prediction, physics, telemetry, and persistence."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkIdentity.cs)</div>
+
+```csharp
+public sealed class NetworkMotionState
+```
+
+Motion shared by scripted movement, prediction, physics, telemetry, and persistence.
+
+## Fields
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+World-space linear velocity. This is only streamed when a root NetworkTransform opts in.
+

@@ -199,7 +199,7 @@ namespace Nebula.Tests
         [Test]
         public void EntityStateEntryCarriesADynamicReference()
         {
-            var entry = new EntityStateEntry { NetId = 9, Epoch = 1, Container = ContainerRef.Dynamic(42), LocalPosition = new Vector3(1, 2, 3), LocalRotation = Quaternion.identity, Velocity = Vector3.zero };
+            var entry = new EntityStateEntry { NetId = 9, Epoch = 1, Container = ContainerRef.Dynamic(42), LocalPosition = new Vector3(1, 2, 3), LocalRotation = Quaternion.identity, Velocity = Vector3.zero, Fields = TransformFields.Position };
             Writer.Reset();
             entry.Write(Writer);
             Assert.LessOrEqual(Writer.Length, EntityStateEntry.WireSize);

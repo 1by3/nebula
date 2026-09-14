@@ -19,7 +19,7 @@ Runs authoritative game simulation for the containers assigned to this worker. I
 public const int StateBatchBytes = 500;
 ```
 
-Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. At 36 bytes per entry this is 13 entries per packet.
+Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. Entry size depends on the transform's selected axes and precision.
 
 ### RuntimeTouchSeconds [#runtimetouchseconds]
 

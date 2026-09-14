@@ -217,14 +217,6 @@ namespace Nebula
             NetworkTime.RenderTick = _renderTick;
             foreach (var e in _entities.Values)
             {
-                if (!e.IsLocalPlayer && e.Interpolator != null && e.Interpolator.Sample(_renderTick, out var container, out var pos, out var rot))
-                {
-                    // Container-local, applied under the container's transform, so a passenger is drawn where the
-                    // ship is this frame whichever of the two this loop reaches first.
-                    if (container != e.Container) e.SetContainer(container);
-                    e.SetLocalPose(container, pos, rot);
-                    e.Velocity = e.Interpolator.LatestVelocity;
-                }
                 // The local player too: its server-authoritative children (a NetworkTransform on a turret, say) interpolate.
                 e.RemoteTick(_renderTick);
             }
@@ -428,6 +420,7 @@ namespace Nebula
             {
                 if (msg.Epoch < e.Epoch) return;
                 ushort oldWorker = e.OwnerWorkerIndex;
+                if (msg.Epoch > e.Epoch) e.HasStateTick = false;
                 e.Epoch = msg.Epoch;
                 e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
                 e.OwnerClientId = msg.OwnerClientId;
@@ -479,7 +472,9 @@ namespace Nebula
             e.IsLocalPlayer = msg.OwnerClientId != 0 && msg.OwnerClientId == ClientId;
             e.SetContainer(container);
             e.SetLocalPose(container, msg.LocalPosition, msg.LocalRotation);
-            e.Velocity = msg.Velocity;
+            e.transform.localScale = msg.LocalScale;
+            e.HasStateTick = false;
+            e.Motion.Velocity = msg.Velocity;
             if (msg.Vars != null && msg.Vars.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.Vars));
@@ -494,7 +489,7 @@ namespace Nebula
             if (!e.IsLocalPlayer)
             {
                 e.Interpolator = e.gameObject.AddComponent<RemoteInterpolator>();
-                e.Interpolator.Push(_latestServerTick, e.Container, e.LocalPosition, e.LocalRotation, e.Velocity);
+                e.Interpolator.Push(_latestServerTick, e.Container, e.LocalPosition, e.LocalRotation, e.Motion.Velocity);
                 var rb = e.GetComponent<Rigidbody>();
                 if (rb != null) rb.isKinematic = true;
             }
@@ -617,7 +612,8 @@ namespace Nebula
                 OwnerWorkerIndex = e.OwnerWorkerIndex,
                 LocalPosition = e.LocalPosition,
                 LocalRotation = e.LocalRotation,
-                Velocity = e.Velocity,
+                LocalScale = e.transform.localScale,
+                Velocity = e.Motion.Velocity,
                 Flags = (e.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (e.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
                 Vars = _writer.ToArray(),
                 State = Array.Empty<byte>(),
@@ -644,18 +640,13 @@ namespace Nebula
             {
                 var entry = EntityStateEntry.Read(r);
                 if (!_entities.TryGetValue(entry.NetId, out var e) || entry.Epoch < e.Epoch) continue;
-                var container = ContainerRegistry.Resolve(entry.Container);
-                if (container == null && entry.Container.MayArriveLater) continue; // its carrier or lease has not arrived here yet
-                if (container != e.Container && (e.IsLocalPlayer || e.Interpolator == null)) e.SetContainer(container);
-                if (e.OwnerWorkerIndex != workerIndex)
+                ushort oldWorker = e.OwnerWorkerIndex;
+                if (!e.ReceiveState(tick, workerIndex, entry)) continue;
+                if (oldWorker != workerIndex)
                 {
-                    ushort old = e.OwnerWorkerIndex;
-                    e.OwnerWorkerIndex = workerIndex;
                     AuthorityChangesSeen++;
-                    EntityAuthorityChanged?.Invoke(e, old, workerIndex);
+                    EntityAuthorityChanged?.Invoke(e, oldWorker, workerIndex);
                 }
-                if (e.IsLocalPlayer) continue; // predicted; reconciled through OwnerState
-                e.Interpolator?.Push(tick, container, entry.LocalPosition, entry.LocalRotation, entry.Velocity);
             }
         }
 

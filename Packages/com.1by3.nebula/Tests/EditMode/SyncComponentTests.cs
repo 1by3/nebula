@@ -27,6 +27,8 @@ namespace Nebula.Tests
             var childGo = new GameObject("child");
             childGo.transform.SetParent(root.transform, false);
             var nt = childGo.AddComponent<NetworkTransform>();
+            nt.UseUnreliableDeltas = false;
+            nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = true;
             configure?.Invoke(nt);
             id.Initialize();
             id.HasAuthority = authority;
@@ -128,7 +130,7 @@ namespace Nebula.Tests
                 ntA.NetworkTick(1, NetworkTime.TickInterval);
                 var bytes = Stream(a, 1, Delivery.ReliableOrdered);
                 // envelope(1) + index(1) + flags(1) + len(2) + fields(1) + pos(3 halves) + rot(4) + scale(3 halves)
-                Assert.AreEqual(1 + 1 + 1 + 2 + 1 + 6 + 4 + 6, bytes.Length);
+                Assert.AreEqual(1 + 1 + 1 + 2 + 2 + 1 + 1 + 6 + 4 + 6, bytes.Length);
                 Deliver(b, bytes, 1);
                 Assert.AreEqual(12.5f, childB.localPosition.x, 0.02f);
                 Assert.AreEqual(-3.25f, childB.localPosition.y, 0.02f);
@@ -212,7 +214,7 @@ namespace Nebula.Tests
                 ntA.NetworkTick(tick + 1, NetworkTime.TickInterval);
                 var delta = Stream(a, tick + 1, Delivery.ReliableOrdered);
                 Assert.IsNotNull(delta);
-                Assert.IsFalse(IsFull(delta), "after ClearDirty the next send is a delta");
+                Assert.IsTrue(IsFull(delta), "reliable transform updates replace the gateway's complete late-join baseline");
             }
             finally
             {
@@ -225,6 +227,52 @@ namespace Nebula.Tests
             bool full = false;
             SyncStateCodec.ReadEnvelope(new NetworkReader(envelope), (idx, flags, chunk) => full = (flags & SyncStateCodec.ChunkFlags.Full) != 0);
             return full;
+        }
+
+        [Test]
+        public void ReliableChildAtRestLeavesAFreshCompleteLateJoinSnapshot()
+        {
+            var (a, ntA, childA) = MakeEntity("authority", true);
+            var (b, ntB, childB) = MakeEntity("late-copy", false);
+            try
+            {
+                ntA.NetworkTick(1, NetworkTime.TickInterval); Stream(a, 1, Delivery.ReliableOrdered);
+                childA.localPosition = new Vector3(7, 8, 9);
+                ntA.NetworkTick(2, NetworkTime.TickInterval);
+                var cached = Stream(a, 2, Delivery.ReliableOrdered);
+                Assert.IsTrue(IsFull(cached), "gateway can replace its cached keyframe without understanding the component");
+                ntA.NetworkTick(30, NetworkTime.TickInterval);
+                Assert.IsNull(Stream(a, 30, Delivery.ReliableOrdered));
+                Deliver(b, cached, 0);
+                Assert.AreEqual(childA.localPosition, childB.localPosition);
+            }
+            finally { Object.DestroyImmediate(a.gameObject); Object.DestroyImmediate(b.gameObject); }
+        }
+
+        [Test]
+        public void ChildBufferFollowsAMovingContainerWithoutAnotherPacket()
+        {
+            var (a, ntA, childA) = MakeEntity("authority", true);
+            var (b, ntB, childB) = MakeEntity("copy", false);
+            var container = ContainerRegistry.RegisterRuntime(777, new Bounds(Vector3.zero, Vector3.one * 20));
+            try
+            {
+                a.SetContainer(container); b.SetContainer(container);
+                container.transform.rotation = Quaternion.Euler(0, 90, 0); container.RefreshCache();
+                ntA.SyncPositionY = ntA.SyncPositionZ = false;
+                ntB.SyncPositionY = ntB.SyncPositionZ = false;
+                childA.localPosition = Vector3.right * 2;
+                ntA.NetworkTick(10, NetworkTime.TickInterval);
+                b.ReadSyncState(new NetworkReader(Stream(a, 10, Delivery.ReliableOrdered)), 10, container);
+                container.transform.position += Vector3.right * 100; container.RefreshCache();
+                b.RemoteTick(10);
+                Assert.AreEqual(2, childB.localPosition.x, 0.001f);
+            }
+            finally
+            {
+                Object.DestroyImmediate(a.gameObject); Object.DestroyImmediate(b.gameObject);
+                ContainerRegistry.UnregisterRuntime(777);
+            }
         }
 
         [Test]

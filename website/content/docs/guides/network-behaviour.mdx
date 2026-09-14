@@ -29,7 +29,7 @@ Add [`NetworkIdentity`](/docs/reference/core/network-identity) to mark a GameObj
 
 `Behaviours` contains the `NetworkBehaviour` components in `GetComponentsInChildren` order. Nebula uses each component's position in this array as its network index. Use the same prefab and component order in every process.
 
-`NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). See [Prediction](/docs/guides/prediction#lag-compensated-hit-tests).
+`NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). See [Prediction](/docs/guides/prediction#perform-a-lag-compensated-query).
 
 ## NetworkBehaviour
 
@@ -175,7 +175,7 @@ Equality uses `EqualityComparer<T>.Default`, so a struct `T` needs a sensible `E
 
 Nebula does not send a per-variable delta. When any `NetworkVariable` on an entity changes, it sends every variable on that entity in discovery order. Receivers still raise `OnValueChanged` only for values that differ.
 
-Use `NetworkVariable` for state that changes occasionally, such as health, a display name, or a target. Put per-tick values in the identity pose stream, predicted state, or a custom sync component.
+Use `NetworkVariable` for state that changes occasionally, such as health, a display name, or a target. Put per-tick values in a NetworkTransform, predicted state, or a custom sync component.
 
 <Callout type="info" title="Sending a string every tick">
 A `NetworkVariable<string>` that changes often re-sends every other variable on the entity with it. Keep text that changes every tick out of `NetworkVariable`s; send it through the sync channel or an RPC instead.

@@ -5,23 +5,35 @@ description: Replicate the position, rotation, and scale of an entity root or ch
 
 Add [`NetworkTransform`](/docs/reference/core/network-transform) to replicate a Unity `Transform`. You can select axes, set change thresholds, choose local or world space, select worker or owner authority, configure interpolation, and enable compression.
 
-The component uses the [sync channel](/docs/guides/physics-and-handover-state). Add it to the entity root for scale, teleports, or owner-authoritative movement. Add it to a child for an articulated part such as a turret, door, or held item.
+## Choose the components
 
-If you are migrating from Netcode for GameObjects (NGO), read the root behavior below before you configure the component.
+| Object | Components |
+| --- | --- |
+| Static object with replicated gameplay state | `NetworkIdentity` |
+| Scripted movement | Identity and `NetworkTransform` |
+| Worker-simulated physics prop | `NetworkIdentity`, `Rigidbody`, `NetworkRigidbody`, and `NetworkTransform` |
+| Predicted character | `NetworkIdentity`, prediction behavior, and `NetworkTransform` |
+| Moving container | `NetworkIdentity`, `DynamicContainer`, and `NetworkTransform` |
 
-## The root is a special case
+Add `NetworkTransform` to each root or child that needs ongoing movement replication. A child component can animate a turret or other articulated part independently. `NetworkRigidbody`, `PredictedBehaviour`, and `DynamicContainer` require a visible `NetworkTransform` component.
 
-Every entity's root position, rotation and velocity already travel in the identity's world-state stream at full tick rate to every ghost and client, and remote copies already interpolate them through `RemoteInterpolator`. A `NetworkTransform` on the entity root therefore does not send position or rotation again. On the root it adds three things:
+An identity without `NetworkTransform` sends its initial placement and reliable container changes, but no ongoing movement. Spawn and worker-handover snapshots remain complete even when ongoing replication omits position, rotation, or scale. Turning off an axis reduces recurring bandwidth; it does not remove that value from simulation handover state.
 
-- **scale**, which the identity stream does not carry;
-- **`Teleport`**, which makes every remote copy snap instead of interpolating and clears the identity interpolator too;
-- **owner authority**, where the owning client's pose has to reach the worker somehow. In that mode the root's position and rotation do go in the chunk, but only on the owner-to-worker leg; from the worker on they travel in the identity stream as usual.
+Root updates use the batched spatial stream, which the gateway can read for distance-based delivery and late-join snapshots. Child updates use the [sync channel](/docs/guides/physics-and-handover-state). Both honor the selected axes, change thresholds, and interpolation settings.
 
-On a child transform the component replicates everything you select. `IsRoot` tells you which case a given instance is in (`Identity.transform == transform`).
+## Keep simulation and presentation consistent
 
-<Callout type="info" title="You do not need a NetworkTransform on the root to move">
-An entity with only a `NetworkIdentity` already has its root pose replicated and interpolated. Add a root `NetworkTransform` when you need scale, teleports or owner authority; add child ones for articulated parts.
-</Callout>
+Use worker authority for physics, predicted characters, and moving containers. A predicted owner applies reconciliation instead of remote transform interpolation. A moving container must synchronize all position and rotation axes so other workers can place its contents correctly. Run **Nebula > Validate Project** to check these combinations.
+
+Do not disable an axis that remote collision or distance-based delivery needs. For example, a moving physics prop needs position updates even if its mesh is hidden. Disabling position leaves the gateway with its last known position.
+
+## Update an existing project
+
+Add `NetworkTransform` to existing moving prefabs and scene entities. Component requirements apply when you add new components; they do not migrate every existing asset. Leave static objects opted out, and enable scale only where it changes during play.
+
+Use `Identity.Motion.Velocity` for scripted or predicted movement, or `NetworkRigidbody.SetVelocity` for physics. `Identity.Velocity` remains an obsolete forwarding property for source compatibility.
+
+Rebuild clients, workers, and gateways together. The selected-field format uses protocol version 8 and cannot communicate with version 7 executables. Existing persistence columns do not need a migration.
 
 ## Options
 
@@ -33,7 +45,9 @@ The inspector groups the options as the source does. Defaults are in the third c
 | --- | --- | --- |
 | `SyncPositionX` / `Y` / `Z` | true | Axes left off are not sent; the receiver keeps its own value for them. |
 | `SyncRotAngleX` / `Y` / `Z` | true | Euler axes. Ignored when `UseQuaternionSynchronization` is on (all three always travel). |
-| `SyncScaleX` / `Y` / `Z` | true | Scale is always local scale. |
+| `SyncScaleX` / `Y` / `Z` | false | Scale is always local scale. |
+
+`SyncVelocity` defaults to true. It includes `Identity.Motion.Velocity` for root position extrapolation. Turn it off when interpolation alone is sufficient; physics handover still preserves momentum.
 
 ### Thresholds
 
@@ -50,9 +64,11 @@ Thresholds compare against what was last sent, not the previous tick's value, so
 | Field | Default | Notes |
 | --- | --- | --- |
 | `InLocalSpace` | false | Replicate `localPosition` / `localRotation` relative to the parent instead of world values. Scale is local either way. |
-| `UseUnreliableDeltas` | false | Send on the sequenced (unreliable) channel with a keyframe every `NetworkIdentity.SyncKeyframeInterval` ticks. Off: reliable-ordered. |
+| `UseUnreliableDeltas` | true | Send ordinary updates on the sequenced channel. Off: reliable-ordered. Teleports and root recovery updates are reliable. |
 
-Nebula converts world-space values to container-local coordinates before it sends them. The receiving process converts them back with the container reference from the same tick. Continue to read and write world-space values in your component code.
+Nebula represents root position and rotation in the container frame. World-space child updates also travel in container-local coordinates; local-space child updates use their parent frame. Buffered samples retain their container reference so passengers follow a moving carrier. `SetState` and `Teleport` accept world values unless `InLocalSpace` is enabled.
+
+Root transforms send only when selected values cross a threshold, followed by a reliable recovery sample within 30 ticks. Recovery bypasses distance filtering, so a lost or filtered final update cannot leave an object at its old pose. Once settled, the root stops sending. Unreliable child transforms still send periodic keyframes. Reliable child updates carry complete selected state so late joiners receive the latest values.
 
 ### Precision
 
@@ -83,7 +99,7 @@ Nebula converts world-space values to container-local coordinates before it send
 
 `AuthorityMode` lives on `NetworkSyncBehaviour`, the base `NetworkTransform` shares with `NetworkAnimator`.
 
-**Server** (default): The authoritative worker produces the transform state. Once per tick, `AuthorityTick` compares the transform with the last sent state. When it changes, the worker sends an `EntityState` to the gateway and a `GhostSyncState` to workers with ghost copies. Every client, including the owner, follows this state.
+**Server** (default): The authoritative worker produces the transform state. The worker samples root transforms after simulation and batches changed values. Child transforms use `AuthorityTick` and the component sync channel. Remote copies follow this state; a predicted owner uses its reconciliation state.
 
 **Owner**: The owning client drives the transform:
 
@@ -92,7 +108,7 @@ Nebula converts world-space values to container-local coordinates before it send
 On the owning client, `NetworkSyncBehaviour.Update` runs `AuthorityTick` once per tick interval (accumulated from `Time.unscaledDeltaTime`, never more than one tick's worth per frame). If anything changed it writes a chunk and sends it in a `ServerRpc` (`RpcOwnerSyncState(byte[] chunk, bool full)`). Every `SyncKeyframeInterval`-th send from that client is a keyframe.
 </Step>
 <Step>
-The worker that controls the entity receives the RPC and applies the state without interpolation. It sends the same changes to other copies on its next tick. For a root transform, the worker also calculates `NetworkIdentity.Velocity` from consecutive owner positions and limits it to 100 meters per second.
+The worker that controls the entity receives the RPC and applies the state without interpolation. It sends the same changes to other copies on its next tick. For a root transform, the worker also calculates `NetworkIdentity.Motion.Velocity` from consecutive owner positions and limits it to 100 meters per second.
 </Step>
 <Step>
 The owner's own echo comes back through the gateway. `ReadSyncState` consumes the chunk and returns before applying anything when `IsSyncAuthority` is true, so the owner never fights its own input.
@@ -117,13 +133,13 @@ Handover is unaffected by the mode. The worker still moves the entity between co
 
 Non-authoritative copies (remote entities on a client, ghosts on a worker) present the state from `RemoteTick(renderTick)`. On a client that runs once per frame at `NetworkTime.RenderTick`, a few ticks behind the newest snapshot (`NebulaConfig.InterpolationDelayTicks`); on a worker it runs once per tick, one tick behind, before `Physics.SyncTransforms` so ghost colliders are in place for that tick's raycasts.
 
-**Buffered**: Nebula stores 64 received states by tick. `RemoteTick` interpolates between the states before and after `renderTick`. When no newer state is available, the transform holds the latest one.
+**Buffered**: Nebula stores 64 received states by tick. `RemoteTick` interpolates between the states before and after `renderTick`. When no newer state is available, child transforms hold the latest sample. Root transforms can extrapolate briefly using the supplied velocity when `SyncVelocity` is enabled.
 
-**SmoothDamp**: Nebula does not buffer states. Each `RemoteTick` moves toward the newest state. Configure the maximum interpolation time separately for position, scale, and rotation.
+**SmoothDamp**: Nebula presents the newest state without sampling between buffered ticks. Each `RemoteTick` moves toward the newest state. Configure the maximum interpolation time separately for position, scale, and rotation.
 
 Regardless of mode, a state is applied immediately (and the buffer cleared) when it is a teleport, when `Interpolate` is off, when it arrived with tick 0 (the spawn snapshot a late joiner or fresh ghost receives), or on the relaying worker.
 
-Deltas carry only the fields that changed, so the receiver keeps a merged "newest known" state and fills unsent fields and unsynchronised axes from it. Every buffered sample is therefore complete.
+Root updates carry all selected fields when any selected value crosses its threshold. Child deltas carry the field groups that changed. Receivers merge these updates into complete buffered samples while preserving unsynchronized axes.
 
 ## Teleport and SetState
 
@@ -137,7 +153,7 @@ void Teleport(Vector3 position, Quaternion rotation, Vector3 scale);
 void SetState(Vector3? position = null, Quaternion? rotation = null, Vector3? scale = null, bool teleport = true);
 ```
 
-Nebula interprets position and rotation in the configured local or world space. A teleport includes position, rotation, and scale in the next update. Remote root copies clear their buffered movement so they do not interpolate across the jump.
+Nebula interprets position and rotation in the configured local or world space. A teleport sends the selected position, rotation, and scale axes in the next update. Remote root copies clear their buffered movement so they do not interpolate across the jump.
 
 Call `SetState(..., teleport: false)` to move the transform through its normal change detection on the next `AuthorityTick`.
 
@@ -168,12 +184,13 @@ In `OnAuthorityPushTransformState` the position and rotation are in wire space (
 
 ## Delivery and keyframes
 
-`SyncDelivery` is `Delivery.Sequenced` when `UseUnreliableDeltas` is on, otherwise `Delivery.ReliableOrdered`. The worker sends one message per delivery class per entity per tick, so a reliable animator and an unreliable transform on the same entity travel separately.
+For child transforms, `SyncDelivery` is `Delivery.Sequenced` when `UseUnreliableDeltas` is on, otherwise `Delivery.ReliableOrdered`. The worker sends one component message per delivery class per entity per tick, so a reliable animator and an unreliable child transform on the same entity travel separately. Root transforms use the batched spatial stream and reliable recovery described above.
 
-Keyframes (`WriteSyncState(writer, full: true)`, every selected field) go out:
+Child keyframes (`WriteSyncState(writer, full: true)`, every selected field) go out:
 
 - on the first send after this copy gained authority (a new epoch always opens with keyframes, which is what fresh ghosts and the gateway's late-joiner cache start from);
-- every `NetworkIdentity.SyncKeyframeInterval` ticks (30, half a second at 60 Hz): for an unreliable transform whether or not it is dirty, for a reliable one only if it is dirty that tick;
+- every `NetworkIdentity.SyncKeyframeInterval` ticks (30, half a second at 60 Hz) for an unreliable transform, whether or not it is dirty;
+- on every changed reliable child update, so the gateway always has a complete snapshot;
 - in the spawn snapshot (`WriteSyncSnapshot`).
 
 Between keyframes an unreliable transform sends deltas; a lost delta shows as a held pose until the next delta or keyframe. Reliable transforms never lose a delta and pay for it in head-of-line blocking.
@@ -182,7 +199,7 @@ Between keyframes an unreliable transform sends deltas; a lost delta shows as a 
 
 | NGO | Nebula |
 | --- | --- |
-| `NetworkTransform` on the player root | `NetworkTransform` on the root, but position and rotation come from the identity stream; keep it for scale, `Teleport` or owner authority, drop it otherwise. |
+| `NetworkTransform` on the player root | Keep a root `NetworkTransform` for ongoing movement. Its axis switches control the batched root updates. |
 | `ClientNetworkTransform` | `NetworkTransform` with `Authority = AuthorityMode.Owner`. |
 | `AuthorityMode` (NGO 2.x) | `Authority` on `NetworkSyncBehaviour`, same two values. |
 | `OnIsServerAuthoritative()` override | Set `Authority` instead. |
@@ -194,7 +211,7 @@ Between keyframes an unreliable transform sends deltas; a lost delta shows as a 
 | `PositionMaxInterpolationTime`, `RotationMaxInterpolationTime`, `ScaleMaxInterpolationTime` | Same names; used by `SmoothDamp` only. |
 | `SlerpPosition` | Same. |
 | `UseHalfFloatPrecision`, `UseQuaternionSynchronization`, `UseQuaternionCompression` | Same names. |
-| `UseUnreliableDeltas` | Same; keyframes every `NetworkIdentity.SyncKeyframeInterval` ticks. |
+| `UseUnreliableDeltas` | Unreliable ordinary updates; root recovery within 30 ticks and periodic child keyframes. |
 | `Teleport(pos, rot, scale)`, `SetState(pos?, rot?, scale?, teleport)` | Same signatures. |
 | `OnAuthorityPushTransformState(ref NetworkTransformState)` | `OnAuthorityPushTransformState(ref TransformState)`. |
 | `OnNetworkTransformStateUpdated(ref NetworkTransformState)` | `OnNetworkTransformStateUpdated(ref TransformState)`. |

@@ -230,7 +230,7 @@ namespace Nebula
                 MeshTelemetry.WriteBox(w, box);
                 MeshTelemetry.ToAbsolute(carrier.transform.position, out double px, out double py, out double pz);
                 MeshTelemetry.WriteVector(w, "position", px, py, pz);
-                var v = carrier.Velocity;
+                var v = carrier.Motion.Velocity;
                 MeshTelemetry.WriteVector(w, "velocity", v.x, v.y, v.z);
                 w.EndObject();
             }

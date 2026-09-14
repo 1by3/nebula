@@ -7,11 +7,12 @@ description: "Puts a Unity Rigidbody under the mesh's authority model."
 
 ```csharp
 [RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(NetworkTransform))]
 [DisallowMultipleComponent]
 public sealed class NetworkRigidbody : NetworkBehaviour
 ```
 
-Puts a Unity `Rigidbody` under the mesh's authority model. On the worker that owns the entity the body is dynamic and PhysX simulates it; everywhere else (ghosts on neighbouring workers, every client) it is kinematic and follows the owner's state stream. Linear velocity is mirrored into [`NetworkIdentity.Velocity`](/docs/reference/core/network-identity#velocity) every tick so remote copies extrapolate and a handover keeps momentum; angular velocity only matters to the next simulating worker, so it travels with the handover alone through [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate). Add it next to the NetworkIdentity of any physics prop.
+Puts a Unity `Rigidbody` under the mesh's authority model. On the worker that owns the entity the body is dynamic and PhysX simulates it; everywhere else (ghosts on neighbouring workers, every client) it is kinematic and follows the owner's state stream. Linear velocity is mirrored into [`NetworkIdentity.Motion`](/docs/reference/core/network-identity#motion) every tick so remote copies extrapolate and a handover keeps momentum; angular velocity only matters to the next simulating worker, so it travels with the handover alone through [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate). Add it next to the NetworkIdentity of any physics prop.
 
 ## Properties
 

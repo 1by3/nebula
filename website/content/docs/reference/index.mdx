@@ -24,6 +24,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NetworkAnimator](/docs/reference/core/network-animator) | Class. Replicates selected Animator parameters from the authoritative worker to clients and ghost workers. |
 | [NetworkBehaviour](/docs/reference/core/network-behaviour) | Abstract class. Base class for replicated gameplay components. |
 | [NetworkIdentity](/docs/reference/core/network-identity) | Class. Marks a GameObject as a networked entity. |
+| [NetworkMotionState](/docs/reference/core/network-motion-state) | Class. Motion shared by scripted movement, prediction, physics, telemetry, and persistence. |
 | [NetworkPrefabs](/docs/reference/core/network-prefabs) | Static class. Prefab id table shared by every process. |
 | [NetworkRigidbody](/docs/reference/core/network-rigidbody) | Class. Puts a Unity Rigidbody under the mesh's authority model. |
 | [NetworkSyncBehaviour](/docs/reference/core/network-sync-behaviour) | Abstract class. Base for components that replicate through the per-tick sync channel and support server or owner authority. |
@@ -184,7 +185,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityFlags](/docs/reference/protocol/entity-flags) | Enum. Lists the supported entity flags values. |
 | [EntityRpcMsg](/docs/reference/protocol/entity-rpc-msg) | Struct. Carries the entity rpc protocol message. |
 | [EntitySpawnMsg](/docs/reference/protocol/entity-spawn-msg) | Struct. Full description of an entity. |
-| [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's pose inside a WorldState/GhostState batch. |
+| [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's selected transform fields inside a WorldState/GhostState batch. |
 | [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
@@ -195,6 +196,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Carries the spawn player protocol message. |
+| [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |
 | [WelcomeMsg](/docs/reference/protocol/welcome-msg) | Struct. Carries the welcome protocol message. |
 | [WorldStateMsg](/docs/reference/protocol/world-state-msg) | Static class. Batched transforms for one tick from one worker. |
 

@@ -55,6 +55,8 @@ namespace Nebula
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
+            public uint LastStateTick;
+            public bool HasStateTick;
             /// <summary>Newest keyframe per behaviour index, assembled into LastSpawn.State for late joiners.</summary>
             public Dictionary<byte, byte[]> SyncKeyframes;
 
@@ -321,6 +323,7 @@ namespace Nebula
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
+            rec.HasStateTick = false;
             rec.SeedKeyframes(msg.State);
             if (msg.OwnerClientId != 0 && _clientsById.TryGetValue(msg.OwnerClientId, out var c))
             {
@@ -408,10 +411,21 @@ namespace Nebula
                 if (!_entities.TryGetValue(entry.NetId, out var rec)) { _wsUnknown++; continue; }
                 if (entry.Epoch < rec.Epoch) { _wsStale++; continue; }
                 if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; continue; }
+                if (entry.Epoch == rec.Epoch && rec.HasStateTick && tick <= rec.LastStateTick) continue;
+                rec.HasStateTick = true;
+                rec.LastStateTick = tick;
+                rec.Epoch = entry.Epoch;
+                rec.LastSpawn.Epoch = entry.Epoch;
+                if (rec.Container != entry.Container && (entry.Fields & TransformFields.Location) == 0)
+                {
+                    var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
+                    var rotation = WorldRotation(rec.Container, rec.LastSpawn.LocalRotation, 0);
+                    rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world, 0);
+                    rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity, 0)) * rotation;
+                }
                 rec.Container = entry.Container;
                 rec.LastSpawn.Container = entry.Container;
-                rec.LastSpawn.LocalPosition = entry.LocalPosition;
-                rec.LastSpawn.LocalRotation = entry.LocalRotation;
+                entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
                 _scratchEntries.Add(entry);
             }
             if (_scratchEntries.Count == 0) return;
@@ -423,6 +437,16 @@ namespace Nebula
                 for (int i = 0; i < _scratchEntries.Count; i++)
                 {
                     var entry = _scratchEntries[i];
+                    if (entry.Reliable)
+                    {
+                        _writer.Reset();
+                        int slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, w.Index);
+                        entry.Write(_writer);
+                        WorldStateMsg.End(_writer, slot, 1);
+                        AppendReliable(c, _writer.ToSegment());
+                        _wsSent++;
+                        continue;
+                    }
                     if (!WantsThisTick(entry, tick, hasPawn, pawnPos, c.PawnNetId)) continue;
                     AppendWorldState(c, tick, w.Index, entry);
                     _wsSent++;
@@ -476,7 +500,8 @@ namespace Nebula
             if (!hasPawn) divisor = Config.InterestFarDivisor;
             else
             {
-                var pos = WorldPosition(entry.Container, entry.LocalPosition, 0);
+                var position = _entities.TryGetValue(entry.NetId, out var record) ? record.LastSpawn.LocalPosition : entry.LocalPosition;
+                var pos = WorldPosition(entry.Container, position, 0);
                 float d2 = (pos - pawnPos).sqrMagnitude;
                 if (d2 <= Config.InterestNearRadius * Config.InterestNearRadius) return true;
                 divisor = d2 <= Config.InterestFarRadius * Config.InterestFarRadius ? Config.InterestMidDivisor : Config.InterestFarDivisor;
@@ -503,9 +528,8 @@ namespace Nebula
             if (container.IsDynamic)
             {
                 if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
-                var carrierPos = WorldPosition(carrier.Container, carrier.LastSpawn.LocalPosition, depth + 1);
-                var carrierRot = WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1);
-                return carrierPos + carrierRot * local;
+                var inParent = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
+                return WorldPosition(carrier.Container, inParent, depth + 1);
             }
             var c = ContainerRegistry.Resolve(container);
             return c != null ? c.ToWorld(local) : local;
@@ -520,6 +544,20 @@ namespace Nebula
             }
             var c = ContainerRegistry.Resolve(container);
             return c != null ? c.Rotation * local : local;
+        }
+
+        private Vector3 ContainerPosition(ContainerRef container, Vector3 world, int depth)
+        {
+            if (container.IsDynamic)
+            {
+                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return world;
+                var parent = ContainerPosition(carrier.Container, world, depth + 1);
+                var relative = Quaternion.Inverse(carrier.LastSpawn.LocalRotation) * (parent - carrier.LastSpawn.LocalPosition);
+                var scale = carrier.LastSpawn.LocalScale;
+                return new Vector3(scale.x != 0 ? relative.x / scale.x : 0, scale.y != 0 ? relative.y / scale.y : 0, scale.z != 0 ? relative.z / scale.z : 0);
+            }
+            var c = ContainerRegistry.Resolve(container);
+            return c != null ? c.ToLocal(world) : world;
         }
 
         /// <summary>How many carriers an entity's container sits inside (0 in a static container), so a late joiner gets carriers before their contents.</summary>

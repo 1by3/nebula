@@ -21,6 +21,7 @@ namespace Nebula
             public Vector3 Position;
             public Quaternion Rotation;
             public Vector3 Velocity;
+            public Vector3 Scale;
             public bool Valid;
         }
 
@@ -32,6 +33,8 @@ namespace Nebula
 
         public uint LatestTick => _latestTick;
         public bool HasSamples => _any;
+        public Vector3 LatestScale { get; private set; } = Vector3.one;
+        internal bool SlerpPosition;
         /// <summary>World-space velocity of the newest sample (what the authority reported).</summary>
         public Vector3 LatestVelocity { get; private set; }
         /// <summary>Container of the newest sample (null: world space).</summary>
@@ -44,7 +47,7 @@ namespace Nebula
         public Quaternion LatestRotation => LatestContainer != null ? LatestContainer.Rotation * LatestLocalRotation : LatestLocalRotation;
 
         /// <summary>Record a pose expressed in <paramref name="container"/>'s local space (world space when null). <paramref name="velocity"/> is world-space.</summary>
-        public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity)
+        public void Push(uint tick, Container container, Vector3 localPosition, Quaternion localRotation, Vector3 velocity, Vector3? scale = null)
         {
             if (_any && tick + Capacity <= _latestTick) return; // too old to matter
             if (!_any || tick > _latestTick)
@@ -55,6 +58,7 @@ namespace Nebula
                 LatestLocalPosition = localPosition;
                 LatestLocalRotation = localRotation;
                 LatestVelocity = velocity;
+                LatestScale = scale ?? transform.localScale;
             }
             _any = true;
             ref var s = ref _ring[tick % Capacity];
@@ -63,6 +67,7 @@ namespace Nebula
             s.Position = localPosition;
             s.Rotation = localRotation;
             s.Velocity = velocity;
+            s.Scale = scale ?? transform.localScale;
             s.Valid = true;
         }
 
@@ -143,7 +148,7 @@ namespace Nebula
                     bp = container != null ? container.ToLocal(world) : world;
                     br = container != null ? container.InverseRotation * worldRot : worldRot;
                 }
-                localPosition = Vector3.Lerp(bp, after.Position, f);
+                localPosition = SlerpPosition ? Vector3.Slerp(bp, after.Position, f) : Vector3.Lerp(bp, after.Position, f);
                 localRotation = Quaternion.Slerp(br, after.Rotation, f);
                 return true;
             }
@@ -164,6 +169,21 @@ namespace Nebula
             position = container != null ? container.ToWorld(lp) : lp;
             rotation = container != null ? container.Rotation * lr : lr;
             return ok;
+        }
+
+        internal Vector3 SampleScale(double tick)
+        {
+            if (!_any || tick >= _latestTick) return LatestScale;
+            PoseSample before = default, after = default;
+            bool hasBefore = false, hasAfter = false;
+            foreach (var s in _ring)
+            {
+                if (!s.Valid) continue;
+                if (s.Tick <= tick && (!hasBefore || s.Tick > before.Tick)) { before = s; hasBefore = true; }
+                if (s.Tick > tick && (!hasAfter || s.Tick < after.Tick)) { after = s; hasAfter = true; }
+            }
+            if (hasBefore && hasAfter) return Vector3.Lerp(before.Scale, after.Scale, (float)((tick - before.Tick) / (after.Tick - before.Tick)));
+            return hasBefore ? before.Scale : hasAfter ? after.Scale : LatestScale;
         }
     }
 }
