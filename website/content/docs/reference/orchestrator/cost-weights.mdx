@@ -1,0 +1,62 @@
+---
+title: "CostWeights"
+description: "How much simulating a container costs a worker, from what is inside it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+[Serializable]
+public struct CostWeights
+```
+
+How much simulating a container costs a worker, from what is inside it. Players are the expensive ones (an input stream, prediction, interest management), bots less so, server-driven entities less again; every container costs [`Base`](#base) merely by being leased (its geometry, its scene entities, its ghosts). Ghosts are not counted: they are a consequence of the neighbours' load, not the container's own.
+
+## Fields
+
+### Base [#base]
+
+```csharp
+public float Base;
+```
+
+### Player [#player]
+
+```csharp
+public float Player;
+```
+
+### Bot [#bot]
+
+```csharp
+public float Bot;
+```
+
+### ServerDriven [#serverdriven]
+
+```csharp
+public float ServerDriven;
+```
+
+### Other [#other]
+
+```csharp
+public float Other;
+```
+
+## Properties
+
+### Default [#default]
+
+```csharp
+public static CostWeights Default { get; }
+```
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public float Of(in ContainerLoad load);
+```
+

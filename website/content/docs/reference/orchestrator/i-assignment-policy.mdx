@@ -1,0 +1,33 @@
+---
+title: "IAssignmentPolicy"
+description: "Decides which worker simulates which container."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public interface IAssignmentPolicy
+```
+
+Decides which worker simulates which container. The orchestrator runs the policy every pass and applies the changes it returns through the control plane; a policy is a pure function of its input so it can be tested without a mesh. Nebula ships [`BakedAssignmentPolicy`](/docs/reference/orchestrator/baked-assignment-policy) (deal by count, for authored and baked worlds) and [`CostBalancedAssignmentPolicy`](/docs/reference/orchestrator/cost-balanced-assignment-policy) (deal by load, for worlds whose shape is decided at runtime); a game may install its own through [`NebulaOrchestrator.Policy`](/docs/reference/orchestrator/nebula-orchestrator#policy).
+
+## Properties
+
+### Name [#name]
+
+```csharp
+string Name { get; }
+```
+
+Shown on the dashboard.
+
+## Methods
+
+### Compute [#compute]
+
+```csharp
+List<KeyValuePair<string, string>> Compute(AssignmentInput input);
+```
+
+The (container id, worker id) assignments that should change. Containers not mentioned keep their lease.
+

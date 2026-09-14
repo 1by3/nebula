@@ -106,6 +106,22 @@ public string Accept(string json, out bool detail);
 
 Store a worker's telemetry document, replacing its previous one. The document must be a JSON object whose first property is `"worker"`, as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it. Returns null when it was stored, otherwise why it was refused. `detail` is the answer for the worker: whether its next document should include entities.
 
+### CopyOccupancy [#copyoccupancy]
+
+```csharp
+public void CopyOccupancy(Dictionary<string, ContainerLoad> result);
+```
+
+Snapshot the latest per-container counts into `result` (cleared first), dropping reports older than [`ExpireSeconds`](#expireseconds). Containers nobody reported are absent. This is what the cost-aware assignment policy reads once per pass.
+
+### ParseContainers [#parsecontainers]
+
+```csharp
+public static void ParseContainers(string json, List<KeyValuePair<string, ContainerLoad>> result);
+```
+
+Pull the per-container counts out of a worker document without parsing the rest of it (the entity list can be megabytes). The array looks like `"containers":[{"id":"arena","players":1,"bots":0,...},...]` as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it; the slot for entities in no container ("") is skipped.
+
 ### Forget [#forget]
 
 ```csharp

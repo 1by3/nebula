@@ -11,19 +11,45 @@ public sealed class NebulaOrchestrator : MonoBehaviour
 
 Spins worker processes up and down and authoritatively assigns containers to them through the control plane. The number of workers is a live setting: [`SetDesiredWorkers`](#setdesiredworkers) (from the web dashboard, see [`OrchestratorHttpServer`](/docs/reference/orchestrator/orchestrator-http-server)) launches new processes or retires existing ones on the fly.
 
-Assignment policy (v1): containers are dealt as evenly as possible across live workers, sticky to their current owner so a rebalance moves as few containers as possible. Four workers and four containers means one each; three workers means one of them simulates two, and so on.
+Assignment is a pluggable [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy) ([`Policy`](#policy)). The baked policy deals containers as evenly as possible across live workers by count, sticky to their current owner so a rebalance moves as few containers as possible. The cost policy deals by the load workers report per container, along a space-filling curve, and is the default once the game registers runtime containers.
 
 Removing a worker is graceful: it is excluded from the assignment set, so the next pass moves its containers to the survivors and the worker hands its entities over through the normal per-entity handover path. Once it holds no leases and reports no authoritative entities (or the drain timeout passes) the process is killed. A worker whose heartbeat stops is declared dead, its containers are reassigned immediately, and a replacement is launched after a short delay.
 
 ## Fields
 
+### MaxWorkersLimit [#maxworkerslimit]
+
+```csharp
+public const int MaxWorkersLimit = ushort.MaxValue;
+```
+
+Hard cap on the worker cap: indices are 16-bit (the high bits of every net id).
+
+## Properties
+
 ### MaxWorkers [#maxworkers]
 
 ```csharp
-public const int MaxWorkers = 32;
+public int MaxWorkers { get; }
 ```
 
-## Properties
+The most workers this orchestrator will run ([`NebulaConfig.MaxWorkers`](/docs/reference/core/nebula-config#maxworkers)).
+
+### Policy [#policy]
+
+```csharp
+public IAssignmentPolicy Policy { get; set; }
+```
+
+How containers are dealt to workers. Chosen from [`NebulaConfig.AssignmentPolicy`](/docs/reference/core/nebula-config#assignmentpolicy) (or `-nebula-assignment`) at [`Initialize`](#initialize); game code may replace it at any time. With "auto" the baked policy runs while every container is baked and the cost policy takes over once the game registers runtime containers.
+
+### TotalCost [#totalcost]
+
+```csharp
+public float TotalCost { get; }
+```
+
+Total container cost the mesh carries, per the cost policy, as of the last pass.
 
 ### Config [#config]
 
@@ -94,6 +120,14 @@ The mesh's persistence store, so the dashboard can report how many entities are 
 ```csharp
 public string HostName { get; }
 ```
+
+### PolicyName [#policyname]
+
+```csharp
+public string PolicyName { get; }
+```
+
+Shown on the dashboard.
 
 ## Methods
 
@@ -176,6 +210,30 @@ Deal containers across live workers as evenly as possible, keeping existing assi
 | Parameter | Description |
 | --- | --- |
 | `keepOrder` | Deal `containerIds` in the order given instead of sorting by id. A partitioned world lists its containers in Morton order, so each worker's quota is a contiguous run of spatially neighbouring cells - a compact region it can load as a block. |
+
+### EnsureRuntimeContainer [#ensureruntimecontainer]
+
+```csharp
+public string EnsureRuntimeContainer(ulong id, Bounds bounds);
+```
+
+Create a runtime container (dashboard, tests, tooling): a lease row carrying `bounds` (absolute coordinates), unassigned until the next pass deals it. The normal path is a worker asking for one next to its entities ([`NebulaWorker.RequestRuntimeContainer`](/docs/reference/worker/nebula-worker#requestruntimecontainer)). Null on success, otherwise the reason.
+
+### RemoveRuntimeContainer [#removeruntimecontainer]
+
+```csharp
+public string RemoveRuntimeContainer(ulong id);
+```
+
+Delete a runtime container's lease row, so every process forgets the box. Null on success, otherwise the reason.
+
+### ComputeRuntimeAssignment [#computeruntimeassignment]
+
+```csharp
+public static List<KeyValuePair<string, string>> ComputeRuntimeAssignment(IReadOnlyList<LeaseInfo> leases, IList<WorkerInfo> eligible);
+```
+
+Runtime containers (leases carrying a box) stay with the worker that asked for them; the game placed them next to the entities that need them. Only one whose owner is gone or retiring moves, to the eligible worker holding the fewest runtime containers. Pure function; returns the changes to apply.
 
 ### PinContainer [#pincontainer]
 

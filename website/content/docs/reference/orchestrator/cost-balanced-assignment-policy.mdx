@@ -1,0 +1,77 @@
+---
+title: "CostBalancedAssignmentPolicy"
+description: "Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public sealed class CostBalancedAssignmentPolicy : IAssignmentPolicy
+```
+
+Deal by load: every container (baked or runtime) costs what [`CostWeights`](/docs/reference/orchestrator/cost-weights) says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous run of roughly equal cost per worker. Each run goes to the worker that already holds most of it, so a rebalance moves containers at run edges and nothing else. Nothing moves at all while the most loaded worker is within [`Threshold`](#threshold) of the average and every container has an owner; an orphan is then placed next to its neighbours' owner without disturbing anyone.
+
+## Fields
+
+### OrderQuantum [#orderquantum]
+
+```csharp
+public const float OrderQuantum = 8f;
+```
+
+Metres per Morton cell when ordering containers; coarse enough that a chunk's centre never straddles it.
+
+### Weights [#weights]
+
+```csharp
+public CostWeights Weights = CostWeights.Default;
+```
+
+### Threshold [#threshold]
+
+```csharp
+public float Threshold = 0.3f;
+```
+
+How far above the average a worker's cost may be before containers are re-dealt (0.3 = 30 %).
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+## Methods
+
+### CostOf [#costof]
+
+```csharp
+public float CostOf(string containerId, IReadOnlyDictionary<string, ContainerLoad> occupancy);
+```
+
+Cost of one container from what was last reported about it ([`CostWeights.Base`](/docs/reference/orchestrator/cost-weights#base) when nothing was).
+
+### TotalCost [#totalcost]
+
+```csharp
+public float TotalCost(AssignmentInput input);
+```
+
+Total cost of every container in `input`: what the mesh as a whole is carrying.
+
+### OrderKey [#orderkey]
+
+```csharp
+public static ulong OrderKey(Container c);
+```
+
+Morton key of a container's centre, so a sort puts spatial neighbours next to each other.
+
+### Compute [#compute]
+
+```csharp
+public List<KeyValuePair<string, string>> Compute(AssignmentInput input);
+```
+

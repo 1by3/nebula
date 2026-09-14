@@ -21,6 +21,14 @@ public const int StateBatchBytes = 500;
 
 Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. At 36 bytes per entry this is 13 entries per packet.
 
+### RuntimeTouchSeconds [#runtimetouchseconds]
+
+```csharp
+public const float RuntimeTouchSeconds = 15f;
+```
+
+How often a worker re-stamps a runtime container it wants but does not own (see [`RuntimeContainerIdleSeconds`](#runtimecontaineridleseconds)).
+
 ### MaxCatchUpTicks [#maxcatchupticks]
 
 ```csharp
@@ -282,6 +290,30 @@ public void Initialize(NebulaConfig config, IControlPlane controlPlane, IPersist
 ```
 
 Start the worker with a persistence store: entities carrying a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) are checkpointed into it and restored from it (see [`Persistence`](#persistence)). A null store turns persistence off; an unreachable one only delays the saves, it never stops the simulation.
+
+### RequestRuntimeContainer [#requestruntimecontainer]
+
+```csharp
+public void RequestRuntimeContainer(ulong id, Bounds frameBounds);
+```
+
+Ask the mesh for a runtime container: a static box, named by an id the game chose, that is not in the baked set (a chunk of a landscape that is decided at runtime). `frameBounds` is the box in this process's frame. The lease row is created already assigned to this worker, so the container is simulated here from the first change anyone sees; if another worker asked first, its row stands and this call is a no-op. Every process registers the container from the row ([`ContainerRegistry.SyncRuntime`](/docs/reference/containers/container-registry#syncruntime)), and [`ContainerRegistry.RuntimeRegistered`](/docs/reference/containers/container-registry#runtimeregistered) fires here once it has. Idempotent: call it every time an entity approaches the box.
+
+### RuntimeContainerIdleSeconds [#runtimecontaineridleseconds]
+
+```csharp
+public double RuntimeContainerIdleSeconds(ulong id);
+```
+
+Seconds since anyone in the mesh last asked for or changed a runtime container: its lease row's age. Every worker that wants the box re-stamps the row while an entity of its is near it, so the owner can retire a box only once this exceeds its grace period. Infinity when the container is unknown.
+
+### ReleaseRuntimeContainer [#releaseruntimecontainer]
+
+```csharp
+public bool ReleaseRuntimeContainer(ulong id);
+```
+
+Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box. Persistent entities still inside are checkpointed and despawned (they come back when the box is asked for again); anything else inside is despawned for good. Returns false when the container is not here or belongs to another worker.
 
 ### Spawn [#spawn]
 

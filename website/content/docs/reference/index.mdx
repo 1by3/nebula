@@ -101,8 +101,14 @@ Start and stop workers, assign containers, and serve the dashboard.
 
 | Type | Summary |
 | --- | --- |
+| [AssignmentInput](/docs/reference/orchestrator/assignment-input) | Class. Everything an assignment policy may look at. |
+| [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
+| [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
+| [CostBalancedAssignmentPolicy](/docs/reference/orchestrator/cost-balanced-assignment-policy) | Class. Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ... |
+| [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
 | [HetznerWorkerHost](/docs/reference/orchestrator/hetzner-worker-host) | Class. One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` |
+| [IAssignmentPolicy](/docs/reference/orchestrator/i-assignment-policy) | Interface. Decides which worker simulates which container. |
 | [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
 | [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |

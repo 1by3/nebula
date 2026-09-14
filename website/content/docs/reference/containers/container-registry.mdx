@@ -9,9 +9,9 @@ description: "The container graph of the loaded level: every static Container, i
 public static class ContainerRegistry
 ```
 
-The container graph of the loaded level: every static [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities on this process, resolved by their carrier's net id.
+The container graph of the loaded level: every static [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities on this process, resolved by their carrier's net id, plus the runtime containers the game registered while the mesh runs, resolved by the id the game gave them.
 
-Two ways to populate the static part: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan. Dynamic containers come and go with their carriers ([`RegisterDynamic`](#registerdynamic) / [`UnregisterDynamic`](#unregisterdynamic), called by [`DynamicContainer`](/docs/reference/containers/dynamic-container)).
+Two ways to populate the static part: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan. Dynamic containers come and go with their carriers ([`RegisterDynamic`](#registerdynamic) / [`UnregisterDynamic`](#unregisterdynamic), called by [`DynamicContainer`](/docs/reference/containers/dynamic-container)). Runtime containers come and go with their control-plane lease ([`RegisterRuntime`](#registerruntime) / [`UnregisterRuntime`](#unregisterruntime), called by every role from [`SyncRuntime`](#syncruntime)); a world whose shape is decided at runtime (a chunked landscape) has no baked set at all and lives entirely in them.
 
 ## Fields
 
@@ -22,6 +22,14 @@ public static Func<ushort, string> WorkerIdByIndex = index => NebulaRuntime.IsSe
 ```
 
 How a worker index maps to a worker id, for the derived ownership of dynamic containers ([`Container.OwnerWorkerId`](/docs/reference/containers/container#ownerworkerid)). The worker installs one that knows its peers; elsewhere the default only recognises this process's own worker id.
+
+### RuntimeIdPrefix [#runtimeidprefix]
+
+```csharp
+public const string RuntimeIdPrefix = "rt_";
+```
+
+Prefix of a runtime container's string id (`rt_<id>`), the form leases and persistence records use.
 
 ## Properties
 
@@ -47,6 +55,14 @@ public static IReadOnlyList<Container> Dynamic { get; }
 
 The dynamic containers present on this process (their carriers are resident here), in registration order.
 
+### Runtime [#runtime]
+
+```csharp
+public static IReadOnlyList<Container> Runtime { get; }
+```
+
+The runtime containers registered on this process, in registration order.
+
 ### IsGridded [#isgridded]
 
 ```csharp
@@ -54,6 +70,14 @@ public static bool IsGridded { get; }
 ```
 
 A partitioned world's manifest is loaded: containers know their cell and lookups use the grid.
+
+### RuntimeBucketSize [#runtimebucketsize]
+
+```csharp
+public static float RuntimeBucketSize { get; set; }
+```
+
+Edge length, in metres, of the buckets runtime containers are hashed into. Set it before the first [`RegisterRuntime`](#registerruntime) (a chunk size or a small multiple of it is right); changing it later rehashes.
 
 ## Events
 
@@ -87,6 +111,22 @@ public static event Action<Container> DynamicUnregistering;
 
 A dynamic container is about to go (its carrier is despawning). Its contents are moved to the container around it right after.
 
+### RuntimeRegistered [#runtimeregistered]
+
+```csharp
+public static event Action<Container> RuntimeRegistered;
+```
+
+A runtime container became resolvable here. The game loads whatever content belongs in that box (terrain, colliders, visuals).
+
+### RuntimeUnregistering [#runtimeunregistering]
+
+```csharp
+public static event Action<Container> RuntimeUnregistering;
+```
+
+A runtime container is about to go. The game unloads its content; entities still inside are moved to the container around them right after.
+
 ## Methods
 
 ### Rebuild [#rebuild]
@@ -95,7 +135,7 @@ A dynamic container is about to go (its carrier is despawning). Its contents are
 public static void Rebuild();
 ```
 
-Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities ([`DynamicContainer`](/docs/reference/containers/dynamic-container)) are skipped.
+Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities ([`DynamicContainer`](/docs/reference/containers/dynamic-container)) and runtime containers are skipped.
 
 ### Load [#load]
 
@@ -103,7 +143,7 @@ Scan the loaded scene(s) for static containers and index them by id. Containers 
 public static void Load(IList<Container> ordered, bool gridded);
 ```
 
-Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point. Dynamic containers registered earlier are forgotten: this is a boot-time operation.
+Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point. Dynamic and runtime containers registered earlier are forgotten: this is a boot-time operation.
 
 ### InCell [#incell]
 
@@ -119,7 +159,7 @@ Containers whose cell is `cell` (the cell container and its nested ones). Empty 
 public static Container Get(ushort index);
 ```
 
-The static container with this wire index, or null (also null for [`ContainerRef.DynamicIndex`](/docs/reference/containers/container-ref#dynamicindex): use [`Resolve`](#resolve)).
+The static container with this wire index, or null (also null for [`ContainerRef.DynamicIndex`](/docs/reference/containers/container-ref#dynamicindex) and [`ContainerRef.RuntimeIndex`](/docs/reference/containers/container-ref#runtimeindex): use [`Resolve`](#resolve)).
 
 ### Resolve [#resolve]
 
@@ -128,7 +168,7 @@ public static Container Resolve(ContainerRef r);
 public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null);
 ```
 
-The container a wire reference names, static or dynamic, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet).
+The container a wire reference names, static, dynamic or runtime, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet, a runtime container whose lease has not).
 
 ### FindDynamic [#finddynamic]
 
@@ -152,7 +192,7 @@ Re-read every container's transform (the worker does this once per tick; see [`C
 public static Container FindById(string id);
 ```
 
-The static container with this id, or the dynamic container currently registered under it (`label#netId`), or null.
+The static or runtime container with this id, or the dynamic container currently registered under it (`label#netId`), or null.
 
 ### IsDynamicId [#isdynamicid]
 
@@ -186,13 +226,101 @@ public static void UnregisterDynamic(Container container);
 
 Forget a dynamic container. Whatever is still inside it is moved to the container around it (resolved from each entity's world position, ignoring the departing box) and re-parented, so a client destroying a despawned ship does not take the passengers' objects with it. The authority decides what actually happens to them on the next tick; despawn the contents first if they should not survive the carrier.
 
+### RuntimeContainerId [#runtimecontainerid]
+
+```csharp
+public static string RuntimeContainerId(ulong id);
+```
+
+The string id a runtime container registered as `id` has: `rt_<id>`.
+
+### IsRuntimeId [#isruntimeid]
+
+```csharp
+public static bool IsRuntimeId(string id);
+```
+
+Whether a container id names a runtime container (`rt_<id>`).
+
+### TryParseRuntimeId [#tryparseruntimeid]
+
+```csharp
+public static bool TryParseRuntimeId(string id, out ulong runtimeId);
+```
+
+The 64-bit id a runtime container id (`rt_<id>`) names.
+
+### GetRuntime [#getruntime]
+
+```csharp
+public static Container GetRuntime(ulong id);
+```
+
+The runtime container registered as `id` on this process, or null.
+
+### RegisterRuntime [#registerruntime]
+
+```csharp
+public static Container RegisterRuntime(ulong id, Bounds frameBounds);
+```
+
+Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk coordinate hash, a plot number) and axis-aligned in this process's frame. Legal at any time after boot, on any role; every process that should resolve the container has to register it under the same id with the same box, which is what [`SyncRuntime`](#syncruntime) does from the control-plane leases. Registering an id that is already here returns the existing container (its box is updated if it changed). Adjacency to baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the seam work like between baked containers.
+
+### UnregisterRuntime [#unregisterruntime]
+
+```csharp
+public static bool UnregisterRuntime(ulong id);
+```
+
+Forget a runtime container and destroy its object. Whatever is still inside is moved to the container around it first; the game normally retires a container only once it is empty, and persists or despawns the rest before calling this. Neighbours drop their adjacency to it.
+
+### SyncRuntime [#syncruntime]
+
+```csharp
+public static void SyncRuntime(IReadOnlyList<LeaseInfo> leases);
+```
+
+Mirror the runtime containers the control plane names: register every lease that carries a box and is not here yet, forget every runtime container whose lease is gone. Boxes on the row are absolute; they are brought into this process's frame. Workers, the gateway and the orchestrator call this whenever the control plane changes, before applying the leases; clients do the same from the ownership message.
+
+### PruneRuntime [#pruneruntime]
+
+```csharp
+public static void PruneRuntime(HashSet<ulong> keep);
+```
+
+Forget every runtime container whose id is not in `keep`.
+
+### ToFrame [#toframe]
+
+```csharp
+public static Bounds ToFrame(Bounds absolute);
+```
+
+An absolute box (as leases and telemetry carry it) in this process's frame: the same box unless a floating origin is active.
+
+### ToAbsolute [#toabsolute]
+
+```csharp
+public static Bounds ToAbsolute(Bounds frame);
+```
+
+A box in this process's frame as an absolute box: the inverse of [`ToFrame`](#toframe).
+
+### ShiftRuntime [#shiftruntime]
+
+```csharp
+public static void ShiftRuntime(Vector3 delta);
+```
+
+The floating origin moved: runtime containers move with everything else and are rehashed.
+
 ### NeighborsOf [#neighborsof]
 
 ```csharp
 public static void NeighborsOf(Container container, List<Container> result);
 ```
 
-Every container adjacent to `container` right now, into `result` (cleared first): its static [`Container.Neighbors`](/docs/reference/containers/container#neighbors) plus every dynamic container whose box currently touches it, and, for a dynamic container, the container its carrier sits in and every container its box touches. This is what the ghost band walks; use it instead of [`Container.Neighbors`](/docs/reference/containers/container#neighbors) wherever a vehicle could be parked next door.
+Every container adjacent to `container` right now, into `result` (cleared first): its static [`Container.Neighbors`](/docs/reference/containers/container#neighbors) (baked and runtime) plus every dynamic container whose box currently touches it, and, for a dynamic container, the container its carrier sits in and every container its box touches. This is what the ghost band walks; use it instead of [`Container.Neighbors`](/docs/reference/containers/container#neighbors) wherever a vehicle could be parked next door.
 
 ### Find [#find]
 
@@ -208,7 +336,7 @@ The container whose volume holds the point; if none does, the nearest one. Conta
 public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result);
 ```
 
-Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited; dynamic containers are always tested.
+Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited; runtime containers are found through their hash and dynamic containers are always tested.
 
 ### ApplyLease [#applylease]
 
@@ -216,7 +344,7 @@ Every container whose box (grown by `margin`) the segment `a`-`b` passes through
 public static void ApplyLease(string containerId, string workerId, ushort workerIndex, ulong epoch, string state = LeaseState.Active);
 ```
 
-Record a control-plane lease on its container. A lease for a dynamic container whose carrier is not resident yet is kept and applied when the carrier registers. `state` is the lease state ([`LeaseState`](/docs/reference/control-plane/lease-state)); for a dynamic container only [`LeaseState.Pinned`](/docs/reference/control-plane/lease-state#pinned) changes who owns it.
+Record a control-plane lease on its container. A lease for a dynamic or runtime container that is not resident yet is kept and applied when it registers. `state` is the lease state ([`LeaseState`](/docs/reference/control-plane/lease-state)); for a dynamic container only [`LeaseState.Pinned`](/docs/reference/control-plane/lease-state#pinned) changes who owns it.
 
 ### ForgetLease [#forgetlease]
 
@@ -224,7 +352,7 @@ Record a control-plane lease on its container. A lease for a dynamic container w
 public static void ForgetLease(string containerId);
 ```
 
-A lease row went away (a carrier despawned): forget whatever was recorded for it.
+A lease row went away (a carrier despawned, a runtime container was retired): forget whatever was recorded for it.
 
 ### NotifyLeasesChanged [#notifyleaseschanged]
 

@@ -1,0 +1,73 @@
+---
+title: "AssignmentInput"
+description: "Everything an assignment policy may look at."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public sealed class AssignmentInput
+```
+
+Everything an assignment policy may look at. Built by the orchestrator once per pass.
+
+## Fields
+
+### Baked [#baked]
+
+```csharp
+public IReadOnlyList<Container> Baked = Array.Empty<Container>();
+```
+
+The baked containers, in wire order (Morton order in a partitioned world).
+
+### Runtime [#runtime]
+
+```csharp
+public IReadOnlyList<Container> Runtime = Array.Empty<Container>();
+```
+
+The runtime containers the control plane currently names.
+
+### Eligible [#eligible]
+
+```csharp
+public IList<WorkerInfo> Eligible = Array.Empty<WorkerInfo>();
+```
+
+Workers that may receive containers: live, not retiring.
+
+### Leases [#leases]
+
+```csharp
+public IReadOnlyList<LeaseInfo> Leases = Array.Empty<LeaseInfo>();
+```
+
+Every lease row.
+
+### Occupancy [#occupancy]
+
+```csharp
+public IReadOnlyDictionary<string, ContainerLoad> Occupancy = new Dictionary<string, ContainerLoad>();
+```
+
+The latest per-container load each worker reported, by container id. Containers nobody reported are absent.
+
+### KeepOrder [#keeporder]
+
+```csharp
+public bool KeepOrder;
+```
+
+The baked order is spatial (a partitioned world) and should be kept when dealing.
+
+## Methods
+
+### OwnerOf [#ownerof]
+
+```csharp
+public string OwnerOf(string containerId);
+```
+
+The active, eligible owner of a container, or "".
+

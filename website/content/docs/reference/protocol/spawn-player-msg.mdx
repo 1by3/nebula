@@ -19,11 +19,13 @@ Carries the spawn player protocol message.
 public uint ClientId;
 ```
 
-### ContainerIndex [#containerindex]
+### Container [#container]
 
 ```csharp
-public ushort ContainerIndex;
+public ContainerRef Container;
 ```
+
+The container the gateway picked for the pawn (baked or runtime).
 
 ### Name [#name]
 

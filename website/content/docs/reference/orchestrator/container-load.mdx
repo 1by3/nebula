@@ -1,0 +1,69 @@
+---
+title: "ContainerLoad"
+description: "What one worker last reported about one container: who is inside it (see WorkerTelemetry)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public struct ContainerLoad
+```
+
+What one worker last reported about one container: who is inside it (see [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)).
+
+## Fields
+
+### Players [#players]
+
+```csharp
+public int Players;
+```
+
+### Bots [#bots]
+
+```csharp
+public int Bots;
+```
+
+### ServerDriven [#serverdriven]
+
+```csharp
+public int ServerDriven;
+```
+
+### Other [#other]
+
+```csharp
+public int Other;
+```
+
+### Ghosts [#ghosts]
+
+```csharp
+public int Ghosts;
+```
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+The worker that reported it.
+
+### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt;
+```
+
+When the report arrived, on the telemetry clock.
+
+## Properties
+
+### Authoritative [#authoritative]
+
+```csharp
+public int Authoritative { get; }
+```
+

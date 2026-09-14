@@ -43,3 +43,33 @@ public string State;
 public DateTime UpdatedAt;
 ```
 
+### HasBounds [#hasbounds]
+
+```csharp
+public bool HasBounds;
+```
+
+Runtime containers ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)) carry their box on the lease row, in absolute world coordinates, so every process can register the same box from the row alone. False for a baked or carried container.
+
+### BoundsCenter [#boundscenter]
+
+```csharp
+public Vector3 BoundsCenter;
+```
+
+### BoundsSize [#boundssize]
+
+```csharp
+public Vector3 BoundsSize;
+```
+
+## Properties
+
+### Bounds [#bounds]
+
+```csharp
+public Bounds Bounds { get; }
+```
+
+The row's box, when [`HasBounds`](#hasbounds).
+

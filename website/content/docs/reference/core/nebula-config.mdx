@@ -110,6 +110,70 @@ public int WorkerCount = 4;
 
 How many worker processes the orchestrator keeps running.
 
+### MaxWorkers [#maxworkers]
+
+```csharp
+public int MaxWorkers = 32;
+```
+
+The most workers the orchestrator will ever run (dashboard and autoscale stop here). Worker indices are 16-bit, so up to 65535.
+
+### AssignmentPolicy [#assignmentpolicy]
+
+```csharp
+public string AssignmentPolicy = "auto";
+```
+
+How containers are dealt to workers: 'auto' (baked while every container is baked, cost once runtime containers exist), 'baked' (evenly by count, sticky), 'cost' (by reported load along a space-filling curve). -nebula-assignment overrides.
+
+### CostRebalanceThreshold [#costrebalancethreshold]
+
+```csharp
+public float CostRebalanceThreshold = 0.3f;
+```
+
+Cost policy: how far above the average a worker's cost may be before containers are re-dealt (0.3 = 30 %).
+
+### CostWeights [#costweights]
+
+```csharp
+public CostWeights CostWeights = CostWeights.Default;
+```
+
+Cost policy: what one player / bot / server-driven entity / other entity costs, and what a leased container costs by itself.
+
+### AutoScale [#autoscale]
+
+```csharp
+public bool AutoScale = false;
+```
+
+Cost policy: add a worker when the average cost per worker stays above ScaleOutCostPerWorker for ScaleHoldSeconds, remove one when it stays below ScaleInCostPerWorker. Off by default.
+
+### MinWorkers [#minworkers]
+
+```csharp
+public int MinWorkers = 1;
+```
+
+### ScaleOutCostPerWorker [#scaleoutcostperworker]
+
+```csharp
+public float ScaleOutCostPerWorker = 200f;
+```
+
+### ScaleInCostPerWorker [#scaleincostperworker]
+
+```csharp
+public float ScaleInCostPerWorker = 50f;
+```
+
+### ScaleHoldSeconds [#scaleholdseconds]
+
+```csharp
+public float ScaleHoldSeconds = 30f;
+```
+
 ### WorkerExecutable [#workerexecutable]
 
 ```csharp

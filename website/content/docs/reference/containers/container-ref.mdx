@@ -9,7 +9,7 @@ description: "How a container is named on the wire."
 public readonly struct ContainerRef : IEquatable<ContainerRef>
 ```
 
-How a container is named on the wire. A static container (authored into the scene or baked into the world manifest) is its dense registry [`Index`](#index), identical in every process. A dynamic container (one a [`DynamicContainer`](/docs/reference/containers/dynamic-container) entity carries: a ship, a train, a moving station) has no stable index, since it is created and destroyed at runtime by whichever worker spawns its carrier; it is named by the carrier's [`NetId`](#netid), which is already mesh-unique and follows the entity through every handover. On the wire that is two bytes for a static container and ten for a dynamic one.
+How a container is named on the wire. A static container (authored into the scene or baked into the world manifest) is its dense registry [`Index`](#index), identical in every process. A dynamic container (one a [`DynamicContainer`](/docs/reference/containers/dynamic-container) entity carries: a ship, a train, a moving station) has no stable index, since it is created and destroyed at runtime by whichever worker spawns its carrier; it is named by the carrier's [`NetId`](#netid), which is already mesh-unique and follows the entity through every handover. A runtime container (one the game registered while the mesh runs, see [`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)) is named by the 64-bit id the game gave it. On the wire that is two bytes for a static container and ten for a dynamic or runtime one.
 
 ## Constructors
 
@@ -37,13 +37,21 @@ public const ushort DynamicIndex = ushort.MaxValue - 1;
 
 [`Index`](#index) that says "dynamic: look at [`NetId`](#netid)".
 
+### RuntimeIndex [#runtimeindex]
+
+```csharp
+public const ushort RuntimeIndex = ushort.MaxValue - 2;
+```
+
+[`Index`](#index) that says "runtime: look at [`RuntimeId`](#runtimeid)".
+
 ### MaxWireSize [#maxwiresize]
 
 ```csharp
 public const int MaxWireSize = 2 + 8;
 ```
 
-Largest serialized size (a dynamic reference), for sizing fixed batches.
+Largest serialized size (a dynamic or runtime reference), for sizing fixed batches.
 
 ### Index [#index]
 
@@ -56,6 +64,8 @@ public readonly ushort Index;
 ```csharp
 public readonly ulong NetId;
 ```
+
+The 64-bit payload: the carrier's net id for a dynamic reference, the game's id for a runtime one, 0 otherwise.
 
 ### None [#none]
 
@@ -77,6 +87,36 @@ public bool IsNone { get; }
 public bool IsDynamic { get; }
 ```
 
+### IsRuntime [#isruntime]
+
+```csharp
+public bool IsRuntime { get; }
+```
+
+### IsStatic [#isstatic]
+
+```csharp
+public bool IsStatic { get; }
+```
+
+Names a container of the baked set (a dense index).
+
+### RuntimeId [#runtimeid]
+
+```csharp
+public ulong RuntimeId { get; }
+```
+
+The game's id of the runtime container this names (0 for any other reference).
+
+### MayArriveLater [#mayarrivelater]
+
+```csharp
+public bool MayArriveLater { get; }
+```
+
+The container may be unknown on this process for a while and show up later: a dynamic container arrives with its carrier, a runtime container with its lease. Messages naming one that has not arrived wait for it instead of being dropped.
+
 ## Methods
 
 ### Of [#of]
@@ -94,6 +134,14 @@ public static ContainerRef Dynamic(ulong carrierNetId);
 ```
 
 A reference to the dynamic container carried by entity `carrierNetId`.
+
+### Runtime [#runtime]
+
+```csharp
+public static ContainerRef Runtime(ulong runtimeId);
+```
+
+A reference to the runtime container the game registered as `runtimeId`.
 
 ### Resolve [#resolve]
 

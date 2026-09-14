@@ -80,6 +80,22 @@ public bool IsDynamic { get; }
 
 Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): created and destroyed with it, moves with it, owned by its authority.
 
+### IsRuntime [#isruntime]
+
+```csharp
+public bool IsRuntime { get; }
+```
+
+Registered by the game while the mesh runs ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)): a static box that is not in the baked set. Leased and owned like a baked container; named on the wire by [`RuntimeId`](#runtimeid) ([`Index`](#index) is [`ContainerRef.RuntimeIndex`](/docs/reference/containers/container-ref#runtimeindex)).
+
+### RuntimeId [#runtimeid]
+
+```csharp
+public ulong RuntimeId { get; }
+```
+
+Runtime containers: the 64-bit id the game registered this container under. 0 otherwise.
+
 ### Carrier [#carrier]
 
 ```csharp

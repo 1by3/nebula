@@ -71,6 +71,24 @@ public static void EnsureContainer(ReducerContext ctx, string containerId);
 
 Make sure a lease row exists for a container from the manifest.
 
+### EnsureRuntimeContainer [#ensureruntimecontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void EnsureRuntimeContainer(ReducerContext ctx, string containerId, string workerId, float centerX, float centerY, float centerZ, float sizeX, float sizeY, float sizeZ);
+```
+
+Make sure a lease row exists for a runtime container, carrying its box and, when workerId is not empty, already assigned to that worker (epoch 1, active). A no-op when the row exists: the first worker to ask owns the container, the second sees the row.
+
+### TouchContainer [#touchcontainer]
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void TouchContainer(ReducerContext ctx, string containerId);
+```
+
+A worker still wants a runtime container it does not own (an entity of its is next to it): stamp the row so the owner knows the box is in use mesh-wide and does not retire it.
+
 ### AssignContainer [#assigncontainer]
 
 ```csharp
@@ -274,12 +292,56 @@ Monotonic per-container authority epoch. Bumped on every (re)assignment.
 public string State;
 ```
 
-assigning \| active \| draining \| orphaned
+assigning \| active \| draining \| orphaned \| pinned
 
 ##### UpdatedAt [#updatedat]
 
 ```csharp
 public Timestamp UpdatedAt;
+```
+
+##### HasBounds [#hasbounds]
+
+```csharp
+public bool HasBounds;
+```
+
+Runtime containers (registered by the game while the mesh runs) carry their box here, in absolute world coordinates, so every process registers the same box from the row alone. False for a baked or carried container.
+
+##### BoundsCenterX [#boundscenterx]
+
+```csharp
+public float BoundsCenterX;
+```
+
+##### BoundsCenterY [#boundscentery]
+
+```csharp
+public float BoundsCenterY;
+```
+
+##### BoundsCenterZ [#boundscenterz]
+
+```csharp
+public float BoundsCenterZ;
+```
+
+##### BoundsSizeX [#boundssizex]
+
+```csharp
+public float BoundsSizeX;
+```
+
+##### BoundsSizeY [#boundssizey]
+
+```csharp
+public float BoundsSizeY;
+```
+
+##### BoundsSizeZ [#boundssizez]
+
+```csharp
+public float BoundsSizeZ;
 ```
 
 ### Gateway [#gateway]
