@@ -6,6 +6,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Nebula.Tls;
 using Nebula.WebRtc;
 
 namespace Nebula
@@ -213,24 +214,52 @@ namespace Nebula
             ushort udpPort = c.WebRtcPort != 0 ? c.WebRtcPort : (ushort)(c.GatewayPort + 1);
             ushort tcpPort = c.WebPort != 0 ? c.WebPort : c.GatewayPort;
             var rtc = new WebRtcServerTransport("gateway-web", c.GatewayAddress);
+            WebCertificates certificates = null;
             try
             {
                 rtc.Listen(udpPort);
-                http = new GatewayHttpServer(tcpPort, rtc, FindWebRoot());
+                certificates = CreateWebCertificates(c);
+                http = new GatewayHttpServer(tcpPort, rtc, FindWebRoot(), certificates);
                 http.Start();
+                certificates?.Start();
             }
             catch (Exception e)
             {
-                NebulaLog.Warn($"web clients are off: could not open tcp/{tcpPort} and udp/{udpPort}: {e.GetBaseException().Message}");
-                try { http?.Dispose(); } catch { }
+                NebulaLog.Warn($"web clients are off (tcp/{tcpPort}, udp/{udpPort}): {e.GetBaseException().Message}");
+                try
+                {
+                    if (http != null) http.Dispose();
+                    else certificates?.Dispose();
+                }
+                catch { }
                 http = null;
                 rtc.Dispose();
                 return null;
             }
-            string origin = $"http://{c.GatewayAddress}:{tcpPort}";
+            string origin = $"{(http.Secure ? "https" : "http")}://{c.GatewayAddress}:{tcpPort}";
             NebulaLog.Info($"web clients: signaling at {origin}{GatewayHttpServer.SignalingPath}, WebRTC on udp/{udpPort}; " +
                 (http.WebRoot != null ? $"serving the web build from {http.WebRoot} at {origin}/" : "no web build next to the gateway"));
             return rtc;
+        }
+
+        /// <summary>
+        /// HTTPS for the web port, from <c>-nebula-web-tls</c>: <c>off</c> (plain HTTP, the default) or <c>acme</c>, a
+        /// certificate for GatewayAddress from an ACME CA (Let's Encrypt unless <c>-nebula-acme-directory</c>), proven on
+        /// port 80 and kept in <c>-nebula-web-tls-dir</c>. A page served over HTTPS can only post its offer to HTTPS.
+        /// </summary>
+        private static WebCertificates CreateWebCertificates(NebulaConfig c)
+        {
+            string mode = (CommandLine.Get("nebula-web-tls") ?? "off").Trim().ToLowerInvariant();
+            if (mode == "" || mode == "off") return null;
+            if (mode != "acme") throw new ArgumentException($"-nebula-web-tls {mode}: use off or acme");
+            string identifier = c.GatewayAddress;
+            if (string.IsNullOrEmpty(identifier) || identifier == "127.0.0.1" || identifier.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("-nebula-web-tls acme needs the gateway's public address in -nebula-gateway <address>:<port>");
+            return new WebCertificates(identifier,
+                CommandLine.Get("nebula-acme-directory", AcmeClient.LetsEncrypt),
+                CommandLine.Get("nebula-web-tls-dir", Path.Combine(AppContext.BaseDirectory, "tls")),
+                CommandLine.Get("nebula-acme-email"),
+                CommandLine.Get("nebula-acme-profile", WebCertificates.DefaultProfile(identifier)));
         }
 
         /// <summary>The web build to serve: -nebula-web-root, else a Web folder next to the gateway or beside its folder (Builds/Web next to Builds/Win64).</summary>
@@ -254,6 +283,9 @@ namespace Nebula
             string logDir = LogDirectory;
             Directory.CreateDirectory(logDir);
             var args = $"{commonArgs} -nebula-service-manifest {Quote(ServiceManifest.PathOnDisk)} -logFile {Quote(Path.Combine(logDir, "gateway.log"))}";
+            // Web client switches given to the orchestrator are meant for the gateway it starts.
+            foreach (string key in new[] { "nebula-web", "nebula-web-port", "nebula-webrtc-port", "nebula-web-root", "nebula-web-tls", "nebula-web-tls-dir", "nebula-acme-directory", "nebula-acme-email", "nebula-acme-profile" })
+                if (CommandLine.Get(key) is string value) args += $" -{key} {Quote(value)}";
             var p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory });
             log("info", $"launched gateway pid={p?.Id}");
             return p;

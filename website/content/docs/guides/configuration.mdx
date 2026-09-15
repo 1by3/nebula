@@ -131,6 +131,8 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-web true\|false` | gateway | Override `WebClients`. |
 | `-nebula-web-port <port>`, `-nebula-webrtc-port <port>` | gateway | Override `WebPort` and `WebRtcPort`. |
 | `-nebula-web-root <folder>` | gateway | Serve the web build from this folder. Without it, the gateway serves a `Web` folder next to its executable or next to its build folder. |
+| `-nebula-web-tls off\|acme` | gateway, orchestrator | Serve the web port over HTTPS with a certificate from an ACME certificate authority, Let's Encrypt by default. The orchestrator passes it to the gateway it starts. See [Serve HTTPS for hosted pages](/docs/guides/web-builds#serve-https-for-hosted-pages). |
+| `-nebula-web-tls-dir <folder>`, `-nebula-acme-directory <url>`, `-nebula-acme-email <address>` | gateway, orchestrator | Choose where the certificate and account key are kept, which ACME server issues the certificate, and the contact address it registers. |
 | `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. |
 | `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |

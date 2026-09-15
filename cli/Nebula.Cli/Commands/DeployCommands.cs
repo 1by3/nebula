@@ -80,7 +80,7 @@ A deploy target must be configured (`nebula config hetzner`).
         Ui.Ok("deployed");
         Ui.Info($"dashboard  {url}");
         Ui.Info($"gateway    {ip}:{mesh.GatewayPort}   (client: {project.File.Executable} -nebula-role client -nebula-gateway {ip}:{mesh.GatewayPort})");
-        if (File.Exists(project.WebIndex)) Ui.Info($"web client http://{ip}:{mesh.GatewayPort}/   (when the tarball was packed after `nebula build --web`)");
+        Ui.Info($"web        https://{ip}:{mesh.GatewayPort}/   (HTTPS a few seconds after start; the web build is served there when the tarball was packed after `nebula build --web`)");
         Ui.Info("status     nebula status --cloud     logs: nebula logs --cloud orchestrator|gateway|w1");
         Ui.Info("tear down  nebula destroy");
         if (args.Has("open-ui")) Platform.OpenBrowser(url);

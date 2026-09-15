@@ -42,7 +42,7 @@ After you change game code, run `nebula build --web` again and reload the page. 
 
 ## How a web client connects
 
-1. The client sends a WebRTC offer to `http://<address>:<web port>/nebula/rtc`. The gateway replies with its addresses and its certificate fingerprint.
+1. The client sends a WebRTC offer to `/nebula/rtc` on the gateway's web port, over HTTPS when the page itself was loaded over HTTPS and over HTTP otherwise. The gateway replies with its addresses and its certificate fingerprint.
 2. The browser sends WebRTC traffic straight to the gateway's UDP WebRTC port. No STUN or TURN server takes part.
 3. The client opens two data channels. The reliable, ordered channel carries `Delivery.ReliableOrdered` messages. The second channel does not retransmit lost messages and carries `Delivery.Sequenced` messages, dropping any message that arrives after a newer one.
 
@@ -71,19 +71,30 @@ http://127.0.0.1:7000/?nebula-name=Player&nebula-connect
 
 `NebulaClient.ConnectTo` works the same way in a web build. Pass the gateway's web port. See [Connecting clients](/docs/guides/connecting-clients).
 
+## Serve HTTPS for hosted pages
+
+A page loaded over HTTPS, such as a build on Unity Play or itch.io, sends its WebRTC offer over HTTPS too, and the browser refuses a plain HTTP gateway. To serve the gateway's web port over HTTPS, start the gateway with `-nebula-web-tls acme`:
+
+- The gateway requests a certificate for `GatewayAddress` (the address in `-nebula-gateway`) from Let's Encrypt. It proves control of that address by answering on TCP port 80, which must be reachable from the internet.
+- For an IP address, Let's Encrypt issues a certificate that lasts about six days. The gateway renews it at half its lifetime without a restart.
+- The gateway keeps the certificate and its ACME account key in `-nebula-web-tls-dir` (default: a `tls` folder next to the gateway), so a restart reuses them.
+- For the first few seconds after the gateway starts, before the first certificate arrives, HTTPS connections fail.
+
+`nebula deploy` turns HTTPS on for you. Clients then connect to `<orchestrator public ip>:7000` from any HTTPS page. To use another ACME certificate authority, pass `-nebula-acme-directory <url>`. To register a contact address, pass `-nebula-acme-email <address>`.
+
 ## Serve the web build from another server
 
 The gateway serves the folder you pass with `-nebula-web-root <folder>`. Without that option, it looks for a `Web` folder next to its executable, then next to its build folder.
 
 To host the files elsewhere, configure your server to send `Content-Encoding: gzip` with every `.gz` file in the build. The gateway's `/nebula/rtc` endpoint accepts requests from pages on other origins.
 
-The gateway serves plain HTTP. A page loaded over HTTPS sends its offer over HTTPS too, so put the gateway's web port behind a server that terminates TLS and forwards `/nebula/rtc`.
+A page served over HTTPS needs a gateway that serves HTTPS. See [Serve HTTPS for hosted pages](#serve-https-for-hosted-pages).
 
 ## Deploy the web client
 
-Run `nebula build --web` before `nebula deploy`. The deployment tarball then includes `Builds/Web`, and the gateway on the orchestrator VM serves it at `http://<orchestrator public ip>:7000/`.
+Run `nebula build --web` before `nebula deploy`. The deployment tarball then includes `Builds/Web`, and the gateway on the orchestrator VM serves it at `https://<orchestrator public ip>:7000/`. The deployed gateway serves HTTPS, so a web build hosted elsewhere over HTTPS can connect to it too.
 
-The orchestrator firewall allows TCP on the gateway port and UDP on the gateway port plus one. A firewall created by an earlier release gets these rules on your next deployment. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
+The orchestrator firewall allows TCP on the gateway port, UDP on the gateway port plus one, and TCP port 80 for certificate validation. A firewall created by an earlier release gets these rules on your next deployment. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
 
 ## Limitations
 

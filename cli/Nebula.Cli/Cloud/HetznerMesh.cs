@@ -96,6 +96,7 @@ public sealed class HetznerMesh
             new { direction = "in", protocol = "udp", port = GatewayPort.ToString(), source_ips = anywhere, description = "gateway (clients)" },
             new { direction = "in", protocol = "tcp", port = GatewayPort.ToString(), source_ips = anywhere, description = "gateway (web clients: signaling and the web build)" },
             new { direction = "in", protocol = "udp", port = (GatewayPort + 1).ToString(), source_ips = anywhere, description = "gateway (web clients: WebRTC)" },
+            new { direction = "in", protocol = "tcp", port = "80", source_ips = anywhere, description = "gateway (certificate validation for HTTPS)" },
         });
         EnsureFirewall(WorkerFirewall, new object[]
         {
@@ -204,6 +205,9 @@ public sealed class HetznerMesh
             "-nebula-build-dir", "/opt/nebula/artifacts",
             "-nebula-advertise", privateIp,
             "-nebula-gateway", $"{publicIp}:{GatewayPort}",
+            // Web builds are usually served over HTTPS (Unity Play, itch.io) and can only signal an HTTPS gateway.
+            "-nebula-web-tls", "acme",
+            "-nebula-web-tls-dir", "/opt/nebula/data/tls",
             "-nebula-cloud-mesh", MeshName,
             "-nebula-cloud-location", location,
             "-nebula-cloud-type", WorkerType,
@@ -273,7 +277,7 @@ WantedBy=multi-user.target
             case "orchestrator":
                 return _ssh.Stream(PublicIp(orch), $"journalctl -u nebula-orchestrator -n 10 --no-pager; tail -n {lines} /var/log/nebula/orchestrator.log");
             case "gateway":
-                return _ssh.Stream(PublicIp(orch), $"tail -n {lines} /opt/nebula/bin/Logs/gateway.log");
+                return _ssh.Stream(PublicIp(orch), $"tail -n {lines} /var/log/nebula/gateway.log");
             default:
                 var w = servers.FirstOrDefault(s => s["labels"]?["nebula-worker"]?.ToString() == what)
                     ?? throw new CliError($"no server for worker '{what}'", "servers: " + string.Join(", ", servers.Select(s => s["name"])));

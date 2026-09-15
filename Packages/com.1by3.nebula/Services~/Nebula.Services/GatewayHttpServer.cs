@@ -2,12 +2,17 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Security;
+using System.Security.Authentication;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Logging;
+using Nebula.Tls;
 using Nebula.WebRtc;
 
 namespace Nebula
@@ -24,23 +29,43 @@ namespace Nebula
         private readonly WebApplication _app;
         private readonly WebRtcServerTransport _rtc;
         private readonly string _webRoot;
+        private readonly WebCertificates _certificates;
 
-        public GatewayHttpServer(ushort port, WebRtcServerTransport rtc, string webRoot)
+        /// <param name="certificates">Serve HTTPS with these (owned and disposed by this server); null serves plain HTTP.</param>
+        public GatewayHttpServer(ushort port, WebRtcServerTransport rtc, string webRoot, WebCertificates certificates = null)
         {
             _rtc = rtc;
+            _certificates = certificates;
             _webRoot = string.IsNullOrEmpty(webRoot) ? null : Path.GetFullPath(webRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
             builder.Logging.ClearProviders();
             builder.WebHost.ConfigureKestrel(options =>
             {
                 options.Limits.MaxRequestBodySize = MaxOfferBytes;
-                options.ListenAnyIP(port);
+                if (certificates == null)
+                {
+                    options.ListenAnyIP(port);
+                    return;
+                }
+                options.ListenAnyIP(port, listen =>
+                {
+                    listen.Protocols = HttpProtocols.Http1;
+                    // Chosen per connection, so a renewed certificate is used from the next connection on.
+                    listen.UseHttps(new TlsHandshakeCallbackOptions
+                    {
+                        OnConnection = _ => new ValueTask<SslServerAuthenticationOptions>(new SslServerAuthenticationOptions
+                        {
+                            ServerCertificateContext = certificates.Current ?? throw new AuthenticationException("the gateway has no certificate yet"),
+                        }),
+                    });
+                });
             });
             _app = builder.Build();
             _app.Run(Handle);
         }
 
         public string WebRoot => _webRoot;
+        public bool Secure => _certificates != null;
 
         public void Start() => _app.StartAsync().GetAwaiter().GetResult();
 
@@ -146,7 +171,11 @@ namespace Nebula
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             try { _app.StopAsync(timeout.Token).GetAwaiter().GetResult(); }
-            finally { _app.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            finally
+            {
+                _app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                _certificates?.Dispose();
+            }
         }
     }
 }
