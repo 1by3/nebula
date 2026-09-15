@@ -17,6 +17,19 @@ namespace Nebula
         public State ConnectionState { get; private set; }
         public uint ClientId { get; private set; }
         public string PlayerName { get; private set; } = "";
+        /// <summary>
+        /// The local player's identity across sessions (<see cref="PlayerIdentity"/>), from the gateway's Welcome:
+        /// derived from the ID token in <see cref="AuthToken"/>, or from the anonymous token the gateway issued
+        /// (kept in PlayerPrefs and presented again next time). Empty until welcomed.
+        /// </summary>
+        public string Identity { get; private set; } = "";
+        /// <summary>
+        /// An OpenID Connect ID token to present at the next connection: what your sign-in flow got from a provider
+        /// the mesh trusts (<see cref="NebulaConfig.AuthIssuers"/>). Set it before <see cref="ConnectTo"/>. Empty
+        /// (the default) presents the saved anonymous token, or asks the gateway for a new anonymous identity.
+        /// <c>-nebula-auth-token</c> (or <c>?nebula-auth-token=</c> in a web build) seeds it.
+        /// </summary>
+        public string AuthToken { get; set; } = "";
         public NetworkIdentity LocalPlayer { get; private set; }
         /// <summary>
         /// How far the join has got, as the gateway sees it. A mesh with <see cref="NebulaConfig.MinWorkers"/> at 0
@@ -49,6 +62,8 @@ namespace Nebula
         public event Action<NetworkIdentity, ushort, ushort> EntityAuthorityChanged; // entity, oldWorker, newWorker
         public event Action ContainerOwnershipChanged;
         public event Action<State> ConnectionStateChanged;
+        /// <summary>The gateway refused the join (the reason is fit to show the player); see <see cref="LastError"/>. The client stops reconnecting unless the refused token was a saved anonymous one, which it forgets and retries without.</summary>
+        public event Action<string> JoinRejected;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
 
@@ -149,6 +164,10 @@ namespace Nebula
             Config = config;
             ConnectsAutomatically = autoConnect;
             PlayerName = CommandLine.Get("nebula-name", DefaultPlayerName());
+            AuthToken = CommandLine.Get("nebula-auth-token", "");
+            // Bots share one PlayerPrefs store per machine and must not all become the same player.
+            _keepsIdentity = !CommandLine.Has("nebula-bot");
+            _storedToken = _keepsIdentity ? PlayerPrefs.GetString(StoredTokenPref, "") : "";
             NebulaRuntime.RpcSink = this;
 #if UNITY_WEBGL && !UNITY_EDITOR
             // A browser has no UDP sockets: a web build reaches the gateway over WebRTC data channels.
@@ -195,6 +214,31 @@ namespace Nebula
             SetState(State.Connecting);
             _gatewayPeer = _transport.Connect(Config.GatewayAddress, Config.GatewayPort);
             NebulaLog.Info($"connecting to gateway {Config.GatewayAddress}:{Config.GatewayPort} as '{PlayerName}'");
+        }
+
+        private const string StoredTokenPref = "nebula.identityToken";
+        private bool _keepsIdentity = true;
+        private string _storedToken = "";
+        private bool _presentedStoredToken;
+
+        private void RememberIssuedToken(string token)
+        {
+            _storedToken = token;
+            if (!_keepsIdentity) return;
+            try { PlayerPrefs.SetString(StoredTokenPref, token); PlayerPrefs.Save(); }
+            catch (Exception e) { NebulaLog.Warn($"could not save the identity token: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Drop the saved anonymous identity: the next connection without an <see cref="AuthToken"/> gets a new
+        /// one, and the old player's entities and records stay behind. A "reset progress" or "play as guest" button.
+        /// </summary>
+        public void ForgetStoredToken()
+        {
+            _storedToken = "";
+            _presentedStoredToken = false;
+            if (!_keepsIdentity) return;
+            try { PlayerPrefs.DeleteKey(StoredTokenPref); PlayerPrefs.Save(); } catch { }
         }
 
         /// <summary>Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or <see cref="ConnectTo"/>.</summary>
@@ -422,7 +466,9 @@ namespace Nebula
                 case TransportEvent.Kind.Connected:
                     SetState(State.Connected);
                     _writer.Reset();
-                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None }.Write(_writer);
+                    string token = !string.IsNullOrEmpty(AuthToken) ? AuthToken : _storedToken;
+                    _presentedStoredToken = string.IsNullOrEmpty(AuthToken) && token.Length > 0;
+                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token }.Write(_writer);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:
@@ -468,9 +514,31 @@ namespace Nebula
                     var w = WelcomeMsg.Read(r);
                     ClientId = w.ClientId;
                     NebulaRuntime.LocalClientId = ClientId;
+                    Identity = w.Identity ?? "";
+                    NebulaRuntime.LocalIdentity = Identity;
+                    if (!string.IsNullOrEmpty(w.Token)) RememberIssuedToken(w.Token);
                     NoteServerTick(w.ServerTick);
                     SetState(State.InGame);
-                    NebulaLog.Info($"welcome: clientId={ClientId} serverTick={w.ServerTick}");
+                    NebulaLog.Info($"welcome: clientId={ClientId} identity={(Identity.Length > 12 ? Identity.Substring(0, 12) : Identity)} serverTick={w.ServerTick}");
+                    break;
+                }
+                case MsgId.JoinRejected:
+                {
+                    var rejected = JoinRejectedMsg.Read(r);
+                    if (_presentedStoredToken)
+                    {
+                        // The mesh no longer honours the saved anonymous token (a new signing key, or anonymous
+                        // players were turned off): start over as a new player rather than loop on the same token.
+                        NebulaLog.Warn($"gateway rejected the saved identity token ({rejected.Reason}); reconnecting for a new identity");
+                        ForgetStoredToken();
+                    }
+                    else
+                    {
+                        LastError = "join rejected: " + rejected.Reason;
+                        WantsConnection = false;
+                        NebulaLog.Warn(LastError);
+                    }
+                    JoinRejected?.Invoke(rejected.Reason);
                     break;
                 }
                 case MsgId.JoinStatus:
@@ -551,6 +619,7 @@ namespace Nebula
                 e.Epoch = msg.Epoch;
                 e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
                 e.OwnerClientId = msg.OwnerClientId;
+                e.OwnerIdentity = msg.OwnerIdentity ?? "";
                 e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
                 e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
                 if (container != e.Container) e.SetContainer(container);
@@ -592,6 +661,7 @@ namespace Nebula
             e.NetId = msg.NetId;
             e.Epoch = msg.Epoch;
             e.OwnerClientId = msg.OwnerClientId;
+            e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;

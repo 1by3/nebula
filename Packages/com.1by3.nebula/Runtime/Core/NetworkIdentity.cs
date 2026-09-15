@@ -33,6 +33,12 @@ namespace Nebula
 
         public ulong NetId { get; internal set; }
         public uint OwnerClientId { get; internal set; }
+        /// <summary>
+        /// The owning player's identity across sessions (<see cref="PlayerIdentity"/>): the same string every time
+        /// that player connects, on every worker and client. Empty for entities no player owns. Key player records
+        /// on it (for example a <see cref="PersistentEntity.Key"/>); <see cref="OwnerClientId"/> changes every session.
+        /// </summary>
+        public string OwnerIdentity { get; internal set; } = "";
         /// <summary>The owning client is a headless bot. Informational (dashboard/overlay); carried through handover.</summary>
         public bool OwnerIsBot { get; internal set; }
         /// <summary>
@@ -254,6 +260,7 @@ namespace Nebula
             NetId = 0;
             Epoch = 0;
             OwnerClientId = 0;
+            OwnerIdentity = "";
             OwnerIsBot = false;
             IsServerDriven = false;
             HasAuthority = false;

@@ -18,6 +18,10 @@ namespace Nebula
         public string MeshToken = "";
         public bool UseLocalControlPlane = false;
         public string DatabaseUrl = "";
+        public string AuthIssuers = "";
+        public string AuthAudience = "";
+        public bool AuthAnonymous = true;
+        public string AuthSigningKey = "";
         public int WorkerCount = 4;
         public int MaxWorkers = 32;
         public string AssignmentPolicy = "auto";

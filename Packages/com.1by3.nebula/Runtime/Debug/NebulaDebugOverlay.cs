@@ -48,7 +48,7 @@ namespace Nebula
             var client = boot != null ? boot.Client : null;
             if (client != null)
             {
-                _sb.Append($"client {client.ConnectionState} id={client.ClientId} rtt={client.RttMs}ms serverTick~{client.EstimatedServerTick:F0} predict={client.PredictedTick} lead={client.InputLeadTicks} (adaptive +{client.InputLeadAdjustTicks}, worker sees {client.LastReportedInputLead})\n");
+                _sb.Append($"client {client.ConnectionState} id={client.ClientId} identity={(client.Identity.Length > 12 ? client.Identity.Substring(0, 12) : client.Identity)} rtt={client.RttMs}ms serverTick~{client.EstimatedServerTick:F0} predict={client.PredictedTick} lead={client.InputLeadTicks} (adaptive +{client.InputLeadAdjustTicks}, worker sees {client.LastReportedInputLead})\n");
                 _sb.Append($"entities={client.EntityCount} authorityChanges={client.AuthorityChangesSeen}\n");
                 var lp = client.LocalPlayer;
                 if (lp != null)

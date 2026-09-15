@@ -71,6 +71,8 @@ namespace Nebula
         private readonly Dictionary<uint, NetworkIdentity> _players = new Dictionary<uint, NetworkIdentity>();
         /// <summary>Clients the gateway told us are bots, so Spawn() can tag their pawns without a game-code API change.</summary>
         private readonly HashSet<uint> _botClients = new HashSet<uint>();
+        /// <summary>Client id -> the player's identity across sessions, as the gateway told us in SpawnPlayer.</summary>
+        private readonly Dictionary<uint, string> _playerIdentities = new Dictionary<uint, string>();
         /// <summary>netId -> (workerId -> time last seen inside that worker's band)</summary>
         private readonly Dictionary<ulong, Dictionary<string, float>> _ghostTargets = new Dictionary<ulong, Dictionary<string, float>>();
         private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
@@ -874,6 +876,7 @@ namespace Nebula
             identity.NetId = ((ulong)WorkerIndex << 48) | (++_nextSequence);
             identity.Epoch = epoch == 0 ? 1 : epoch;
             identity.OwnerClientId = ownerClientId;
+            identity.OwnerIdentity = ownerClientId != 0 && _playerIdentities.TryGetValue(ownerClientId, out var playerIdentity) ? playerIdentity : "";
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
             identity.IsServerDriven = serverDriven && ownerClientId == 0;
             identity.OwnerWorkerIndex = WorkerIndex;
@@ -1327,6 +1330,7 @@ namespace Nebula
         {
             e.Epoch = epoch;
             e.OwnerClientId = msg.OwnerClientId;
+            e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
@@ -1516,6 +1520,7 @@ namespace Nebula
         private void OnSpawnPlayer(Peer gateway, SpawnPlayerMsg msg)
         {
             if (msg.IsBot) _botClients.Add(msg.ClientId); else _botClients.Remove(msg.ClientId);
+            if (!string.IsNullOrEmpty(msg.Identity)) _playerIdentities[msg.ClientId] = msg.Identity; else _playerIdentities.Remove(msg.ClientId);
             if (_players.TryGetValue(msg.ClientId, out var existing) && existing != null)
             {
                 if (existing.HasAuthority)
@@ -1532,7 +1537,7 @@ namespace Nebula
                 NebulaLog.Error($"cannot spawn player {msg.ClientId}: gameMode={(_gameMode != null)} container={container}");
                 return;
             }
-            var identity = _gameMode.OnSpawnPlayer(this, msg.ClientId, msg.Name, container);
+            var identity = _gameMode.OnSpawnPlayer(this, new PlayerInfo(msg.ClientId, msg.Name, msg.Identity, msg.IsBot), container);
             if (identity == null) NebulaLog.Error($"game mode returned no entity for client {msg.ClientId}");
             else if (!identity.IsSpawned) Spawn(identity, container, msg.ClientId);
             else if (identity.OwnerClientId != msg.ClientId) NebulaLog.Error($"game mode spawned {identity} but not for client {msg.ClientId}");
@@ -1540,6 +1545,7 @@ namespace Nebula
 
         private void OnDespawnPlayer(Peer gateway, DespawnPlayerMsg msg)
         {
+            _playerIdentities.Remove(msg.ClientId);
             var e = FindPlayer(msg.ClientId);
             if (e == null) return;
             if (e.HasAuthority)

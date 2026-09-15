@@ -1,0 +1,67 @@
+---
+title: "AnonymousIdentityIssuer"
+description: "Identities the gateway hands to clients that present no token: an HS256 token with iss PlayerIdentity.AnonymousIssuer and a random sub, which the client keeps and presents on its next connection to get the same AuthResult.Identity back."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs)</div>
+
+```csharp
+public sealed class AnonymousIdentityIssuer
+```
+
+Identities the gateway hands to clients that present no token: an HS256 token with `iss` [`PlayerIdentity.AnonymousIssuer`](/docs/reference/gateway/player-identity#anonymousissuer) and a random `sub`, which the client keeps and presents on its next connection to get the same [`AuthResult.Identity`](/docs/reference/gateway/auth-result#identity) back. Every gateway of a mesh must use the same key (see [`NebulaConfig.AuthSigningKey`](/docs/reference/core/nebula-config#authsigningkey)).
+
+## Constructors
+
+### AnonymousIdentityIssuer [#anonymousidentityissuer]
+
+```csharp
+public AnonymousIdentityIssuer(byte[] key);
+```
+
+## Methods
+
+### DeriveKey [#derivekey]
+
+```csharp
+public static byte[] DeriveKey(string secret);
+```
+
+A key from a configured secret (the mesh token, or a secret of its own).
+
+### LoadOrCreateKeyFile [#loadorcreatekeyfile]
+
+```csharp
+public static byte[] LoadOrCreateKeyFile(string path);
+```
+
+A random key kept in `path`, created on first use, so identities survive a restart with nothing configured.
+
+### RandomKey [#randomkey]
+
+```csharp
+public static byte[] RandomKey();
+```
+
+### Issue [#issue]
+
+```csharp
+public string Issue(out string subject);
+```
+
+A new identity: the token to give the client, and the subject it was minted for.
+
+### IsAnonymousToken [#isanonymoustoken]
+
+```csharp
+public static bool IsAnonymousToken(string token);
+```
+
+True when `token` claims to be one of ours (so it is checked here, not against an OpenID provider).
+
+### Verify [#verify]
+
+```csharp
+public AuthResult Verify(string token);
+```
+

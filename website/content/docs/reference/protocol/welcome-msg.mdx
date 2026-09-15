@@ -31,6 +31,22 @@ public byte TickRate;
 public uint ServerTick;
 ```
 
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+The player's identity for this and every later session ([`PlayerIdentity`](/docs/reference/gateway/player-identity)).
+
+### Token [#token]
+
+```csharp
+public string Token;
+```
+
+Set when the client presented no token: the anonymous token the gateway issued for [`Identity`](#identity). The client keeps it and presents it in its next [`HelloMsg`](/docs/reference/protocol/hello-msg) to be the same player again. Empty when the client's own token was accepted.
+
 ## Methods
 
 ### Write [#write]

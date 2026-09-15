@@ -128,6 +128,10 @@ namespace Nebula
             c.ControlPlaneUrl = CommandLine.Get("nebula-control-plane", c.ControlPlaneUrl);
             c.MeshToken = CommandLine.Get("nebula-token", Environment.GetEnvironmentVariable("NEBULA_MESH_TOKEN") is { Length: > 0 } token ? token : c.MeshToken);
             c.DatabaseUrl = CommandLine.Get("nebula-database", Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL") is { Length: > 0 } db ? db : c.DatabaseUrl);
+            c.AuthIssuers = CommandLine.Get("nebula-auth-issuers", c.AuthIssuers);
+            c.AuthAudience = CommandLine.Get("nebula-auth-audience", c.AuthAudience);
+            c.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", c.AuthAnonymous);
+            c.AuthSigningKey = CommandLine.Get("nebula-auth-key", Environment.GetEnvironmentVariable("NEBULA_AUTH_KEY") is { Length: > 0 } authKey ? authKey : c.AuthSigningKey);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);
             c.MinWorkers = CommandLine.GetInt("nebula-min-workers", c.MinWorkers);
             c.MaxWorkers = CommandLine.GetInt("nebula-max-workers", c.MaxWorkers);

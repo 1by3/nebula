@@ -1,0 +1,121 @@
+---
+title: Authentication and player identity
+description: Give every player a stable identity across sessions, either anonymously or from an OpenID Connect provider such as Google, Auth0, Firebase, or Clerk.
+---
+
+Nebula gives every connected player an **identity**: a 64-character string that stays the same each time that player connects, on every worker and client. Use it to key saved characters, inventories, and accounts. The connection's client ID changes every session; the identity does not.
+
+The gateway establishes the identity when a client connects. There are two ways to get one:
+
+| Mode | How it works | Use it when |
+| --- | --- | --- |
+| Anonymous (default) | The gateway issues a token the first time a client connects. The client stores it in `PlayerPrefs` and presents it on later connections. | You want players to keep progress without a sign-in flow, or during development. |
+| OpenID Connect | Your game signs the player in with a provider, gets an ID token, and passes it to `NebulaClient`. The gateway checks the token against the provider's published keys. | You need real accounts, cross-device play, or a login that other services share. |
+
+Both modes can be on at the same time. A client that presents an ID token is identified by it; a client that presents nothing gets an anonymous identity.
+
+## How the identity is derived
+
+The identity is the SHA-256 hash of the token's issuer and subject claims, written as lowercase hex. `PlayerIdentity.Derive(issuer, subject)` computes it. The same account at the same provider always yields the same identity, and two providers can never collide. Anonymous identities use the issuer `nebula` and a random subject.
+
+Nebula never stores the provider's user ID, email, or name. If your game needs profile data, read it from the provider yourself.
+
+## Read the identity in your game
+
+On a worker, override the `PlayerInfo` overload of `OnSpawnPlayer`. `player.Identity` is the stable identity; `player.ClientId` is this session's connection ID.
+
+```csharp title="ExampleGameMode.cs"
+public sealed class ExampleGameMode : NebulaGameMode
+{
+    public GameObject PlayerPrefab;
+
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container)
+    {
+        var identity = NetworkPrefabs.Instantiate(
+            NetworkPrefabs.IdOf(PlayerPrefab),
+            NebulaContainerHelpers.RandomPointIn(container, margin: 2f, y: 0f),
+            Quaternion.identity,
+            container.transform);
+        identity.name = $"Player {player.Name}";
+        // Key the saved character on the identity so the player finds it again next session.
+        identity.GetComponent<PersistentEntity>().Key = "player:" + player.Identity;
+        worker.Spawn(identity, container, player.ClientId);
+        return identity;
+    }
+}
+```
+
+A game mode that overrides the four-argument `OnSpawnPlayer(worker, clientId, playerName, container)` keeps working: the `PlayerInfo` overload calls it by default. Override one or the other.
+
+Every spawned entity carries its owner's identity in `NetworkIdentity.OwnerIdentity`, on workers, ghosts, and clients alike. It is empty for entities no player owns.
+
+On a client, `NebulaClient.Identity` and `NebulaRuntime.LocalIdentity` hold the local player's identity once the gateway has welcomed the client.
+
+See [Persistence](/docs/guides/persistence#keys) for how keys select saved records.
+
+## Anonymous identities
+
+With the default configuration, a client that connects without a token gets a new identity and a token for it in the gateway's welcome. The client saves the token under the `PlayerPrefs` key `nebula.identityToken` and presents it on every later connection, so the player stays the same across restarts.
+
+Bots started with `-nebula-bot` do not save or reuse tokens. Each bot process gets a fresh identity, so several bots on one machine never become the same player.
+
+Call `NebulaClient.ForgetStoredToken()` to drop the saved token. The next connection gets a new identity, and the old player's saved entities stay behind. Use it for a "reset progress" button.
+
+### The signing key
+
+Anonymous tokens are signed with a key every gateway of a mesh must share. The gateway picks the key in this order:
+
+1. `NebulaConfig.AuthSigningKey`, or `-nebula-auth-key`, or the `NEBULA_AUTH_KEY` environment variable for the standalone gateway.
+2. Derived from `MeshToken` when one is set. `nebula deploy` sets a mesh token, so a deployed mesh needs no extra configuration.
+3. A random key stored in `nebula-auth.key` next to the gateway executable. This is what `nebula start` uses. Delete the file to invalidate every anonymous identity.
+
+If the key changes, every saved anonymous token stops verifying. The client notices the rejection, forgets its token, and reconnects as a new player.
+
+## OpenID Connect providers
+
+To accept sign-ins, list the providers the mesh trusts and the audience their tokens must carry.
+
+| Setting | Command line | Meaning |
+| --- | --- | --- |
+| `AuthIssuers` | `-nebula-auth-issuers` | Issuer URLs, separated by commas. The value must match the token's `iss` claim exactly, apart from a trailing slash. Examples: `https://accounts.google.com`, `https://your-tenant.us.auth0.com/`, `https://securetoken.google.com/your-firebase-project`. |
+| `AuthAudience` | `-nebula-auth-audience` | The `aud` claim a token must carry: the client ID the provider issued your game. Leave it empty only during development; without it, a token minted for any other app of the same provider is accepted. |
+| `AuthAnonymous` | `-nebula-auth-anonymous false` | Set to false to require a sign-in token from every client. |
+
+Set them on the `NebulaConfig` asset. `nebula build` exports them to the standalone services, and the orchestrator passes them to the gateway it starts.
+
+The gateway fetches each issuer's `/.well-known/openid-configuration` document, then its JSON Web Key Set, the first time a token from that issuer arrives, and caches the keys. A token signed with an unknown key ID triggers one refresh, which is how key rotation is handled. Supported signature algorithms are RS256, RS384, RS512, ES256, ES384, and ES512. Tokens must carry `exp` and `sub`; the gateway allows 60 seconds of clock skew.
+
+### Present the token from the client
+
+Sign the player in with the provider's SDK or a browser flow, then hand the ID token to the client before connecting:
+
+```csharp title="SignIn.cs"
+var client = NebulaBootstrap.Instance.Client;
+client.AuthToken = idToken; // the JWT your sign-in flow returned
+client.ConnectTo(gatewayAddress, gatewayPort, displayName);
+```
+
+`AuthToken` is presented on every connection until you clear it. Refresh it before it expires if the player may reconnect later; a gateway rejects an expired token. Bots and test clients can pass `-nebula-auth-token <jwt>` on the command line, or `?nebula-auth-token=` in a web build's URL.
+
+Nebula does not run the sign-in itself. A desktop build typically opens the provider's login page in the system browser and receives the token on a loopback port or through a custom URL scheme; a web build uses the provider's JavaScript SDK; a mobile build uses the platform SDK. Each provider documents these flows.
+
+### When a join is rejected
+
+If the gateway cannot accept a token, it sends the reason and closes the connection. On the client, `NebulaClient.JoinRejected` fires with the reason, `LastError` shows it (the title screen displays `LastError`), and the client stops reconnecting. Common reasons:
+
+| Reason | Fix |
+| --- | --- |
+| `this game requires signing in` | `AuthAnonymous` is off and the client presented no token. |
+| `issuer '...' is not trusted by this mesh` | Add the provider to `AuthIssuers`. |
+| `token was not issued for this game (audience)` | `AuthAudience` does not match the token's `aud`. Check the client ID. |
+| `token has expired` | Refresh the token before connecting. |
+| `token signed with an unknown key` | The provider rotated keys and the refresh did not find the key ID. Check that `AuthIssuers` names the issuer that signs this token. |
+| `could not reach the identity provider` | The gateway could not download the provider's keys. Check the gateway host's outbound HTTPS access. |
+
+The gateway logs every rejection with the client's connection ID and the same reason.
+
+## What this does and does not protect
+
+Authentication answers "which player is this?" so that saved state follows the right person. It does not encrypt the client link on its own: LiteNetLib traffic is plain UDP, so a token can be read in transit on an untrusted network. WebRTC links from web builds are encrypted with DTLS. Anonymous tokens have no expiry; a copied token is that player until the signing key changes or the client forgets it.
+
+The identity is not an authorization system. Deciding what a player may do, and validating their inputs, stays in your game code on the worker.

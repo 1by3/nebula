@@ -51,6 +51,8 @@ public sealed class ConnectMenu : MonoBehaviour
 
 `ConnectTo` replaces the configured gateway address and keeps retrying every 2 seconds until the connection succeeds or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
 
+The gateway also identifies the player when it connects: anonymously by default, or from an OpenID Connect token you set in `NebulaClient.AuthToken` before connecting. See [Authentication and player identity](/docs/guides/authentication).
+
 Use these `NebulaClient` members to drive your UI:
 
 | Member | Use it to |

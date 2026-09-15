@@ -103,6 +103,14 @@ public byte[] State;
 
 Keyframe from every sync behaviour ([`NetworkIdentity.WriteSyncSnapshot`](/docs/reference/core/network-identity#writesyncsnapshot)); empty when the prefab has none.
 
+### OwnerIdentity [#owneridentity]
+
+```csharp
+public string OwnerIdentity;
+```
+
+The owning player's [`PlayerIdentity`](/docs/reference/gateway/player-identity); empty for entities no player owns. Travels with the entity through ghosting and handover.
+
 ## Methods
 
 ### From [#from]

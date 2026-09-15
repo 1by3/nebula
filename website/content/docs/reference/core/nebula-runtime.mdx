@@ -31,6 +31,14 @@ public static bool IsClient { get; }
 public static uint LocalClientId { get; }
 ```
 
+### LocalIdentity [#localidentity]
+
+```csharp
+public static string LocalIdentity { get; } = "";
+```
+
+Client side: the local player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)), once welcomed. Empty before that and on workers.
+
 ### LocalWorkerId [#localworkerid]
 
 ```csharp

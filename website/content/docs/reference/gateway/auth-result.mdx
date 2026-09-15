@@ -1,0 +1,69 @@
+---
+title: "AuthResult"
+description: "Outcome of checking the token a client presented in Hello (see OidcTokenValidator)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs)</div>
+
+```csharp
+public struct AuthResult
+```
+
+Outcome of checking the token a client presented in `Hello` (see [`OidcTokenValidator`](/docs/reference/gateway/oidc-token-validator)).
+
+## Fields
+
+### Ok [#ok]
+
+```csharp
+public bool Ok;
+```
+
+The token was valid; [`Identity`](#identity), [`Issuer`](#issuer) and [`Subject`](#subject) are set.
+
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+The player's stable identity ([`PlayerIdentity.Derive`](/docs/reference/gateway/player-identity#derive)).
+
+### Issuer [#issuer]
+
+```csharp
+public string Issuer;
+```
+
+The token's `iss` claim: the OpenID provider, or [`PlayerIdentity.AnonymousIssuer`](/docs/reference/gateway/player-identity#anonymousissuer) for a gateway-issued token.
+
+### Subject [#subject]
+
+```csharp
+public string Subject;
+```
+
+The token's `sub` claim: the provider's user id.
+
+### Error [#error]
+
+```csharp
+public string Error;
+```
+
+Why the token was rejected (empty when [`Ok`](#ok)).
+
+## Methods
+
+### Fail [#fail]
+
+```csharp
+public static AuthResult Fail(string error);
+```
+
+### Accept [#accept]
+
+```csharp
+public static AuthResult Accept(string issuer, string subject);
+```
+

@@ -57,6 +57,22 @@ public int WorkerCount { get; }
 public int EntityCount { get; }
 ```
 
+### TokenValidator [#tokenvalidator]
+
+```csharp
+public OidcTokenValidator TokenValidator { get; set; }
+```
+
+The OpenID token checker built from [`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers), or null when the mesh trusts no provider. Replace it (before the first client) to supply keys by hand or a different fetcher.
+
+### AnonymousIdentities [#anonymousidentities]
+
+```csharp
+public AnonymousIdentityIssuer AnonymousIdentities { get; }
+```
+
+Issues and checks anonymous identities, or null when [`NebulaConfig.AuthAnonymous`](/docs/reference/core/nebula-config#authanonymous) is off.
+
 ## Methods
 
 ### Initialize [#initialize]

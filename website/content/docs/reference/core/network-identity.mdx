@@ -68,6 +68,14 @@ public ulong NetId { get; }
 public uint OwnerClientId { get; }
 ```
 
+### OwnerIdentity [#owneridentity]
+
+```csharp
+public string OwnerIdentity { get; } = "";
+```
+
+The owning player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)): the same string every time that player connects, on every worker and client. Empty for entities no player owns. Key player records on it (for example a [`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key)); [`OwnerClientId`](#ownerclientid) changes every session.
+
 ### OwnerIsBot [#ownerisbot]
 
 ```csharp

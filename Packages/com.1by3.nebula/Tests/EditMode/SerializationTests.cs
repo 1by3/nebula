@@ -93,6 +93,7 @@ namespace Nebula.Tests
                 Flags = EntityFlags.ServerDriven,
                 SceneId = 0xC0FFEE,
                 Vars = new byte[] { 9, 8, 7 },
+                OwnerIdentity = "0123456789abcdef",
             };
             var w = new NetworkWriter();
             msg.Write(w, MsgId.GhostSpawn);
@@ -102,6 +103,7 @@ namespace Nebula.Tests
             Assert.AreEqual(msg.NetId, back.NetId);
             Assert.AreEqual(msg.Epoch, back.Epoch);
             Assert.AreEqual(msg.OwnerClientId, back.OwnerClientId);
+            Assert.AreEqual(msg.OwnerIdentity, back.OwnerIdentity);
             Assert.AreEqual(EntityFlags.ServerDriven, back.Flags);
             Assert.AreEqual(0xC0FFEEu, back.SceneId);
             Assert.AreEqual(msg.LocalPosition, back.LocalPosition);

@@ -445,6 +445,11 @@ namespace Nebula
         {
             string args = $"-nebula-control-plane {ControlPlaneUrl()} -nebula-gateway {Config.GatewayAddress}:{Config.GatewayPort} -nebula-telemetry {TelemetryUrl()}";
             if (!string.IsNullOrEmpty(Config.MeshToken)) args += $" -nebula-token {Config.MeshToken}";
+            // The gateway decides who may join; it gets the same answer the orchestrator was configured with.
+            if (!string.IsNullOrEmpty(Config.AuthIssuers)) args += $" -nebula-auth-issuers {Config.AuthIssuers.Replace(" ", ",")}";
+            if (!string.IsNullOrEmpty(Config.AuthAudience)) args += $" -nebula-auth-audience {Config.AuthAudience}";
+            if (!Config.AuthAnonymous) args += " -nebula-auth-anonymous false";
+            if (!string.IsNullOrEmpty(Config.AuthSigningKey)) args += $" -nebula-auth-key {Config.AuthSigningKey}";
             // Workers keep their persistent entities through this orchestrator's store, or not at all.
             args += $" -nebula-persistence-mode {(Persistence != null ? "remote" : "off")}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";

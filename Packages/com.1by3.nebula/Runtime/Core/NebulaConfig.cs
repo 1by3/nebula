@@ -50,6 +50,16 @@ namespace Nebula
         [Tooltip("Where the orchestrator keeps the control plane and saved entities: sqlite:<file> or postgres://user:password@host/db (standalone orchestrator), file:<folder> (Unity orchestrator), or memory. Empty = a default next to the process. -nebula-database overrides.")]
         public string DatabaseUrl = "";
 
+        [Header("Authentication")]
+        [Tooltip("OpenID Connect providers whose ID tokens the gateway accepts, as issuer URLs separated by commas (for example https://accounts.google.com or https://your-tenant.auth0.com/). The gateway fetches each provider's signing keys from its discovery document. Empty = no sign-in tokens are accepted. -nebula-auth-issuers overrides.")]
+        public string AuthIssuers = "";
+        [Tooltip("The audience (aud claim) a token must carry: the client id the provider issued your game. Empty skips the check, which lets a token minted for another app of the same provider join. -nebula-auth-audience overrides.")]
+        public string AuthAudience = "";
+        [Tooltip("Let clients that present no token join with an anonymous identity the gateway issues and the client keeps for its next connection. Off = every client needs an ID token from AuthIssuers. -nebula-auth-anonymous overrides.")]
+        public bool AuthAnonymous = true;
+        [Tooltip("Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA_AUTH_KEY.")]
+        public string AuthSigningKey = "";
+
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]
         public int WorkerCount = 4;

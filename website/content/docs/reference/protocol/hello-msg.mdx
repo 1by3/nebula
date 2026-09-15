@@ -16,7 +16,7 @@ Carries the hello protocol message.
 ### ProtocolVersion [#protocolversion]
 
 ```csharp
-public const ushort ProtocolVersion = 10;
+public const ushort ProtocolVersion = 11;
 ```
 
 ### Role [#role]
@@ -42,6 +42,14 @@ public uint Index;
 ```csharp
 public HelloFlags Flags;
 ```
+
+### Token [#token]
+
+```csharp
+public string Token;
+```
+
+Client only: the token that says who the player is. An OpenID Connect ID token from a provider the mesh trusts ([`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers)), the token a gateway issued in an earlier [`WelcomeMsg`](/docs/reference/protocol/welcome-msg), or empty to ask for a new anonymous identity. Workers and gateways leave it empty.
 
 ### Version [#version]
 

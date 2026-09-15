@@ -37,6 +37,22 @@ public uint ClientId { get; }
 public string PlayerName { get; } = "";
 ```
 
+### Identity [#identity]
+
+```csharp
+public string Identity { get; } = "";
+```
+
+The local player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)), from the gateway's Welcome: derived from the ID token in [`AuthToken`](#authtoken), or from the anonymous token the gateway issued (kept in PlayerPrefs and presented again next time). Empty until welcomed.
+
+### AuthToken [#authtoken]
+
+```csharp
+public string AuthToken { get; set; } = "";
+```
+
+An OpenID Connect ID token to present at the next connection: what your sign-in flow got from a provider the mesh trusts ([`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers)). Set it before [`ConnectTo`](#connectto). Empty (the default) presents the saved anonymous token, or asks the gateway for a new anonymous identity. `-nebula-auth-token` (or `?nebula-auth-token=` in a web build) seeds it.
+
 ### LocalPlayer [#localplayer]
 
 ```csharp
@@ -201,6 +217,14 @@ public event Action ContainerOwnershipChanged;
 public event Action<State> ConnectionStateChanged;
 ```
 
+### JoinRejected [#joinrejected]
+
+```csharp
+public event Action<string> JoinRejected;
+```
+
+The gateway refused the join (the reason is fit to show the player); see [`LastError`](#lasterror). The client stops reconnecting unless the refused token was a saved anonymous one, which it forgets and retries without.
+
 ### JoinStateChanged [#joinstatechanged]
 
 ```csharp
@@ -234,6 +258,14 @@ Connect to a gateway chosen at runtime, for example from your own connection UI.
 ```csharp
 public void Connect();
 ```
+
+### ForgetStoredToken [#forgetstoredtoken]
+
+```csharp
+public void ForgetStoredToken();
+```
+
+Drop the saved anonymous identity: the next connection without an [`AuthToken`](#authtoken) gets a new one, and the old player's entities and records stay behind. A "reset progress" or "play as guest" button.
 
 ### Disconnect [#disconnect]
 

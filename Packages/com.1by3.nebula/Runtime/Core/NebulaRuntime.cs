@@ -16,6 +16,8 @@ namespace Nebula
         public static bool IsServer { get; internal set; }
         public static bool IsClient { get; internal set; }
         public static uint LocalClientId { get; internal set; }
+        /// <summary>Client side: the local player's identity across sessions (<see cref="PlayerIdentity"/>), once welcomed. Empty before that and on workers.</summary>
+        public static string LocalIdentity { get; internal set; } = "";
         public static string LocalWorkerId { get; internal set; } = "";
         public static ushort LocalWorkerIndex { get; internal set; }
         public static IRpcSink RpcSink { get; internal set; }
@@ -26,6 +28,7 @@ namespace Nebula
             IsServer = false;
             IsClient = false;
             LocalClientId = 0;
+            LocalIdentity = "";
             LocalWorkerId = "";
             LocalWorkerIndex = 0;
             RpcSink = null;

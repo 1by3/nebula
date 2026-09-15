@@ -28,6 +28,12 @@ namespace Nebula
             public string Name = "";
             public bool IsBot;
             public bool Welcomed;
+            /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>), set when the Hello's token was accepted.</summary>
+            public string Identity = "";
+            /// <summary>Hello received; its token is being checked against an OpenID provider's keys.</summary>
+            public bool AuthPending;
+            /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
+            public float DisconnectAt;
             public ulong PawnNetId;
             /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
             public JoinState Join;
@@ -142,6 +148,16 @@ namespace Nebula
         private uint _nextClientId = 1;
         private bool _registered;
         private float _nextHeartbeat;
+        private OidcTokenValidator _oidc;
+        private AnonymousIdentityIssuer _anonymous;
+
+        /// <summary>
+        /// The OpenID token checker built from <see cref="NebulaConfig.AuthIssuers"/>, or null when the mesh trusts no
+        /// provider. Replace it (before the first client) to supply keys by hand or a different fetcher.
+        /// </summary>
+        public OidcTokenValidator TokenValidator { get => _oidc; set => _oidc = value; }
+        /// <summary>Issues and checks anonymous identities, or null when <see cref="NebulaConfig.AuthAnonymous"/> is off.</summary>
+        public AnonymousIdentityIssuer AnonymousIdentities => _anonymous;
 
         /// <param name="browserTransport">A second transport clients arrive on, already listening: the standalone
         /// gateway's WebRTC listener for web builds. Null accepts UDP clients only.</param>
@@ -155,6 +171,42 @@ namespace Nebula
             _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
             ControlPlane.Changed += OnControlPlaneChanged;
             NebulaLog.Info($"gateway {GatewayId} listening on udp/{config.GatewayPort}");
+            InitializeAuth(config);
+        }
+
+        /// <summary>
+        /// Who may join and how they are identified: tokens from the configured OpenID providers, anonymous
+        /// identities the gateway issues itself, or both (the default: anonymous only, since no issuer is configured).
+        /// </summary>
+        private void InitializeAuth(NebulaConfig config)
+        {
+            var issuers = OidcTokenValidator.ParseIssuerList(config.AuthIssuers);
+            if (issuers.Count > 0)
+            {
+                _oidc = new OidcTokenValidator(issuers, config.AuthAudience);
+                NebulaLog.Info($"auth: accepting ID tokens from {string.Join(", ", issuers)}" + (string.IsNullOrEmpty(config.AuthAudience) ? " (no audience check: set AuthAudience to your client id)" : $" for audience '{config.AuthAudience}'"));
+            }
+            if (config.AuthAnonymous)
+            {
+                byte[] key;
+                string source;
+                if (!string.IsNullOrEmpty(config.AuthSigningKey)) { key = AnonymousIdentityIssuer.DeriveKey(config.AuthSigningKey); source = "AuthSigningKey"; }
+                else if (!string.IsNullOrEmpty(config.MeshToken)) { key = AnonymousIdentityIssuer.DeriveKey(config.MeshToken); source = "the mesh token"; }
+                else
+                {
+#if NEBULA_SERVICE
+                    string path = System.IO.Path.Combine(AppContext.BaseDirectory, "nebula-auth.key");
+#else
+                    string path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-auth.key");
+#endif
+                    key = AnonymousIdentityIssuer.LoadOrCreateKeyFile(path);
+                    source = path;
+                }
+                _anonymous = new AnonymousIdentityIssuer(key);
+                NebulaLog.Info($"auth: anonymous identities on, signing key from {source}");
+            }
+            else if (_oidc == null) NebulaLog.Warn("auth: anonymous identities are off and no AuthIssuers are configured: no client can join");
+            else NebulaLog.Info("auth: anonymous identities off; every client needs an ID token");
         }
 
 #if NEBULA_SERVICE
@@ -172,6 +224,7 @@ namespace Nebula
                 }
             }
             _transport?.Dispose();
+            _oidc?.Dispose();
         }
 
 #if NEBULA_SERVICE
@@ -181,9 +234,11 @@ namespace Nebula
 #endif
         {
             _transport.Poll(HandleTransportEvent);
+            _oidc?.Tick();
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
             _transport.Flush();
             ReportWorldStateStats();
+            DropRejectedClients();
 
             if (!_registered && ControlPlane.IsConnected)
             {
@@ -667,31 +722,10 @@ namespace Nebula
                     _clientsByPeer[peerId] = c;
                     _clientsById[c.ClientId] = c;
                 }
+                if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{c.ClientId}" : hello.Id;
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
-                c.Welcomed = true;
-                NebulaLog.Info($"client {c.ClientId} '{c.Name}'{(c.IsBot ? " (bot)" : "")} connected");
-
-                _writer.Reset();
-                new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick }.Write(_writer);
-                _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-                _writer.Reset();
-                ContainerOwnershipMsg.Write(_writer, _ownership);
-                _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-                // Carriers before their contents: a passenger's spawn names the ship's container, which the client
-                // can only resolve once it has the ship (it holds the spawn otherwise, but this keeps that rare).
-                _replayOrder.Clear();
-                _replayOrder.AddRange(_entities.Values);
-                _replayOrder.Sort((a, b) => CarrierDepth(a).CompareTo(CarrierDepth(b)));
-                foreach (var rec in _replayOrder)
-                {
-                    rec.RefreshSpawnState(_scratch);
-                    _writer.Reset();
-                    rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);
-                    _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-                }
-                SendJoinStatus(c, JoinState.Starting);
-                TryRequestSpawn(c);
+                Authenticate(c, hello.Token ?? "");
                 return;
             }
             if (c == null || !c.Welcomed) return;
@@ -752,6 +786,101 @@ namespace Nebula
                 NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting for the world to start" + (estimate > 0 ? $" (about {estimate} s)" : ""));
         }
 
+        // ---------------------------------------------------------------------------------------- authentication
+
+        /// <summary>
+        /// Decide who this client is from the token in its Hello: none = a fresh anonymous identity (when allowed),
+        /// one of ours = checked here, anything else = an ID token for <see cref="TokenValidator"/>, which may
+        /// answer later once the provider's keys are fetched.
+        /// </summary>
+        private void Authenticate(ClientConn c, string token)
+        {
+            if (token.Length == 0)
+            {
+                if (_anonymous == null) { Reject(c, "this game requires signing in"); return; }
+                string issued = _anonymous.Issue(out string subject);
+                WelcomeClient(c, AuthResult.Accept(PlayerIdentity.AnonymousIssuer, subject), issued);
+                return;
+            }
+            if (AnonymousIdentityIssuer.IsAnonymousToken(token))
+            {
+                if (_anonymous == null) { Reject(c, "anonymous players are not allowed on this game"); return; }
+                var result = _anonymous.Verify(token);
+                if (result.Ok) WelcomeClient(c, result, "");
+                else Reject(c, result.Error);
+                return;
+            }
+            if (_oidc == null) { Reject(c, "this game does not accept sign-in tokens"); return; }
+            c.AuthPending = true;
+            int peerId = c.PeerId;
+            _oidc.Validate(token, result =>
+            {
+                c.AuthPending = false;
+                // The link may have gone away while the keys were fetched.
+                if (!_clientsByPeer.TryGetValue(peerId, out var current) || current != c || c.Welcomed || c.DisconnectAt != 0) return;
+                if (result.Ok) WelcomeClient(c, result, "");
+                else Reject(c, result.Error);
+            });
+        }
+
+        /// <summary>Tell the client why and drop the link a moment later, once the message has had time to go out.</summary>
+        private void Reject(ClientConn c, string reason)
+        {
+            NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
+            _writer.Reset();
+            new JoinRejectedMsg { Reason = reason }.Write(_writer);
+            _transport.Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            c.DisconnectAt = Time.unscaledTime + 0.5f;
+        }
+
+        private readonly List<ClientConn> _toDrop = new List<ClientConn>();
+
+        private void DropRejectedClients()
+        {
+            _toDrop.Clear();
+            foreach (var c in _clientsById.Values)
+                if (c.DisconnectAt != 0 && Time.unscaledTime >= c.DisconnectAt) _toDrop.Add(c);
+            foreach (var c in _toDrop)
+            {
+                _clientsByPeer.Remove(c.PeerId);
+                _clientsById.Remove(c.ClientId);
+                _transport.Disconnect(c.PeerId);
+            }
+        }
+
+        /// <summary>The client is who it says it is: welcome it, replay the world, and ask a worker for a pawn.</summary>
+        private void WelcomeClient(ClientConn c, in AuthResult auth, string issuedToken)
+        {
+            int peerId = c.PeerId;
+            c.Identity = auth.Identity ?? "";
+            c.Welcomed = true;
+            string how = auth.Issuer == PlayerIdentity.AnonymousIssuer ? (issuedToken.Length > 0 ? "new anonymous identity" : "anonymous") : auth.Issuer;
+            NebulaLog.Info($"client {c.ClientId} '{c.Name}'{(c.IsBot ? " (bot)" : "")} connected as {ShortIdentity(c.Identity)} ({how})");
+
+            _writer.Reset();
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken }.Write(_writer);
+            _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            _writer.Reset();
+            ContainerOwnershipMsg.Write(_writer, _ownership);
+            _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            // Carriers before their contents: a passenger's spawn names the ship's container, which the client
+            // can only resolve once it has the ship (it holds the spawn otherwise, but this keeps that rare).
+            _replayOrder.Clear();
+            _replayOrder.AddRange(_entities.Values);
+            _replayOrder.Sort((a, b) => CarrierDepth(a).CompareTo(CarrierDepth(b)));
+            foreach (var rec in _replayOrder)
+            {
+                rec.RefreshSpawnState(_scratch);
+                _writer.Reset();
+                rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);
+                _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            }
+            SendJoinStatus(c, JoinState.Starting);
+            TryRequestSpawn(c);
+        }
+
+        private static string ShortIdentity(string identity) => identity.Length > 12 ? identity.Substring(0, 12) + ".." : identity;
+
         private void OnClientLost(ClientConn c)
         {
             _clientsByPeer.Remove(c.PeerId);
@@ -789,7 +918,7 @@ namespace Nebula
             var worker = _workersById[pick.OwnerWorkerId];
             c.SpawnWorkerId = worker.WorkerId;
             _writer.Reset();
-            new SpawnPlayerMsg { ClientId = c.ClientId, Container = pick.Ref, Name = c.Name, IsBot = c.IsBot }.Write(_writer);
+            new SpawnPlayerMsg { ClientId = c.ClientId, Container = pick.Ref, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity }.Write(_writer);
             _transport.Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
         }

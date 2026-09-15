@@ -1,0 +1,37 @@
+---
+title: "PlayerIdentity"
+description: "A player's identity across sessions: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs)</div>
+
+```csharp
+public static class PlayerIdentity
+```
+
+A player's identity across sessions: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. The same account at the same provider always maps to the same identity, and two providers can never collide. It is what [`NetworkIdentity.OwnerIdentity`](/docs/reference/core/network-identity#owneridentity) and [`NebulaClient.Identity`](/docs/reference/client/nebula-client#identity) carry, and what a game keys player records on (for example a [`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key)).
+
+## Fields
+
+### AnonymousIssuer [#anonymousissuer]
+
+```csharp
+public const string AnonymousIssuer = "nebula";
+```
+
+The `iss` of tokens the gateway issues itself to clients that presented none.
+
+## Methods
+
+### Derive [#derive]
+
+```csharp
+public static string Derive(string issuer, string subject);
+```
+
+### Hex [#hex]
+
+```csharp
+public static string Hex(byte[] bytes);
+```
+

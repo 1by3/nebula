@@ -122,7 +122,8 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-gateway <address:port>` | client, worker, orchestrator | Set the gateway address. A client connects immediately when you supply this option. |
 | `-nebula-connect` | client | Connect to the configured gateway at startup. `NebulaTitleScreen` stays hidden. |
 | `-nebula-name <name>` | client | Set the player's display name. |
-| `-nebula-bot` | client | Mark this headless client as a bot. Your game must provide its input behavior. |
+| `-nebula-bot` | client | Mark this headless client as a bot. Your game must provide its input behavior. A bot does not keep an anonymous identity between runs. |
+| `-nebula-auth-token <jwt>` | client | Present this OpenID Connect ID token to the gateway. See [Authentication](/docs/guides/authentication). |
 | `-nebula-worker-id <id>` | worker | Set the worker ID. The orchestrator normally supplies it. |
 | `-nebula-worker-index <number>` | worker | Set the worker index. The orchestrator normally supplies it. |
 | `-nebula-port <port>` | worker | Set the worker's listening port. |
@@ -134,6 +135,8 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-web-tls off\|acme` | gateway, orchestrator | Serve the web port over HTTPS with a certificate from an ACME certificate authority, Let's Encrypt by default. The orchestrator passes it to the gateway it starts. See [Serve HTTPS for hosted pages](/docs/guides/web-builds#serve-https-for-hosted-pages). |
 | `-nebula-web-tls-dir <folder>`, `-nebula-acme-directory <url>`, `-nebula-acme-email <address>` | gateway, orchestrator | Choose where the certificate and account key are kept, which ACME server issues the certificate, and the contact address it registers. |
 | `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. |
+| `-nebula-auth-issuers <urls>`, `-nebula-auth-audience <id>`, `-nebula-auth-anonymous true\|false` | gateway, orchestrator | Override `AuthIssuers`, `AuthAudience`, and `AuthAnonymous`. The orchestrator passes them to the gateway it starts. See [Authentication](/docs/guides/authentication). |
+| `-nebula-auth-key <secret>` | gateway, orchestrator | Override `AuthSigningKey`, the key anonymous identity tokens are signed with. The standalone gateway also reads `NEBULA_AUTH_KEY`. |
 | `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
 | `-nebula-persistence-mode auto\|database\|remote\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |

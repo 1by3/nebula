@@ -18,6 +18,7 @@
     "guides/network-behaviour",
     "guides/rpcs",
     "guides/connecting-clients",
+    "guides/authentication",
     "guides/web-builds",
     "guides/prediction",
     "guides/spawning",

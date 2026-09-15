@@ -13,7 +13,8 @@ Create one [`NebulaGameMode`](/docs/reference/core/nebula-game-mode) subclass to
 
 | Hook | When |
 | --- | --- |
-| `OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)` | The gateway asked this worker to create a player. Instantiate the prefab, spawn it and return the identity. Abstract. |
+| `OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container)` | The gateway asked this worker to create a player. Instantiate the prefab, spawn it and return the identity. `player` carries the connection ID, display name, bot flag, and the player's [identity across sessions](/docs/guides/authentication). By default it calls the overload below. |
+| `OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)` | The same hook without the identity. Override one of the two. |
 | `OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player)` | The player's client went away. The worker despawns the entity after this returns. |
 | `OnWorkerStarted(NebulaWorker worker)` | The worker is listening on its port. Note that registration with the control plane happens later; see `IsRegistered` below. |
 

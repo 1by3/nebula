@@ -16,10 +16,11 @@ Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. P
 ### OnSpawnPlayer [#onspawnplayer]
 
 ```csharp
-public abstract NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container);
+public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container);
+public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container);
 ```
 
-Create and spawn the player's entity inside `container`. Return the spawned identity.
+Create and spawn the player's entity inside `container`. Return the spawned identity. Override this or the [`PlayerInfo`](/docs/reference/core/player-info) overload (which also gets the player's identity across sessions).
 
 ### OnPlayerDespawn [#onplayerdespawn]
 

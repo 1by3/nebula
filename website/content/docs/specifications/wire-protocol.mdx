@@ -9,9 +9,9 @@ The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** descri
 
 ## Compatibility
 
-The current protocol version is `8`. Every `Hello` carries that version.
+The current protocol version is `11`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `8`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `11`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -39,7 +39,7 @@ A client built for the web connects to the gateway over WebRTC data channels ins
 | `ReliableOrdered` | id 0 | reliable, ordered | One data channel message contains one Nebula payload, as on LiteNetLib. |
 
 <Callout type="warn" title="The wire is not secure">
-LiteNetLib connections are neither encrypted nor authenticated. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
+LiteNetLib connections are not encrypted. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`; only a client's `token` is checked (see [Authentication](/docs/guides/authentication)), and it travels in the clear on a LiteNetLib link. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
 </Callout>
 
 ## Primitive encodings
@@ -125,6 +125,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 2 | `Welcome` | `G-C` | Reliable ordered | [`Welcome`](#hello-and-session-messages) |
 | 3 | `Ping` | `C-G` | Sequenced | [`Ping`](#hello-and-session-messages) |
 | 4 | `Pong` | `G-C` | Sequenced | [`Pong`](#hello-and-session-messages) |
+| 6 | `JoinRejected` | `G-C` | Reliable ordered | [`JoinRejected`](#hello-and-session-messages) |
 | 10 | `EntitySpawn` | `W-G-C` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 11 | `EntityDespawn` | `W-G-C` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
 | 12 | `EntityVars` | `W-G-C` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -157,13 +158,16 @@ The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Rep
 ### Hello and session messages
 
 ```text
-Hello       := u16 protocol_version, u8 role, string id, u32 index, u8 flags
-Welcome     := u32 client_id, u8 tick_rate, u32 server_tick
-Ping        := f64 client_time
-Pong        := f64 client_time, u32 server_tick
+Hello        := u16 protocol_version, u8 role, string id, u32 index, u8 flags, string token
+Welcome      := u32 client_id, u8 tick_rate, u32 server_tick, string identity, string token
+JoinRejected := string reason
+Ping         := f64 client_time
+Pong         := f64 client_time, u32 server_tick
 ```
 
-For a client, `Hello.id` is the requested player name, `index` is zero, and `flags` may include `Bot`. For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. The gateway assigns a client ID and sends the fixed tick rate, currently `60`, in `Welcome`.
+For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, and `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity. For a worker, `id` is the worker ID, `index` is its worker index, and `token` is empty. A gateway sends its gateway ID with an index of zero and an empty token.
+
+The gateway assigns a client ID and sends the fixed tick rate, currently `60`, in `Welcome`. `Welcome.identity` is the player's identity: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. `Welcome.token` is set only when the client presented no token; it is the anonymous token the gateway issued for that identity, which the client keeps for its next `Hello`. A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. See [Authentication](/docs/guides/authentication).
 
 `Pong.client_time` echoes `Ping.client_time`. `server_tick` is the gateway's current derived tick.
 
@@ -184,13 +188,14 @@ EntitySpawnBody :=
   u8 entity_flags,
   u32 scene_id,
   bytes vars,
-  bytes state
+  bytes state,
+  string owner_identity
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 ```
 
-`EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate.
+`EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate. `owner_identity` is the owning player's identity (see `Welcome`), or empty for an entity no player owns.
 
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
@@ -323,11 +328,11 @@ Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and 
 ### Player lifecycle
 
 ```text
-SpawnPlayer   := u32 client_id, ContainerRef container, string name, bool is_bot
+SpawnPlayer   := u32 client_id, ContainerRef container, string name, bool is_bot, string identity
 DespawnPlayer := u32 client_id
 ```
 
-The gateway selects a currently assigned container and asks its worker to spawn the player. The game supplies the actual spawn behavior.
+The gateway selects a currently assigned container and asks its worker to spawn the player. `identity` is the player's identity as the gateway established it from the client's `Hello`. The game supplies the actual spawn behavior.
 
 ### Authority transfer
 

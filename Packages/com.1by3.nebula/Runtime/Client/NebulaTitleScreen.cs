@@ -112,6 +112,7 @@ namespace Nebula
             GUILayout.Label($"{Client.Config.GatewayAddress}:{Client.Config.GatewayPort}  as  {Client.PlayerName}", _label);
             GUILayout.Label(state, _label);
             if (Client.RttMs >= 0) GUILayout.Label($"rtt {Client.RttMs} ms", _small);
+            if (Client.Identity.Length > 0) GUILayout.Label($"identity {Client.Identity.Substring(0, 12)}", _small);
             if (!string.IsNullOrEmpty(Client.LastError)) GUILayout.Label(Client.LastError, _small);
             GUILayout.FlexibleSpace();
             GUILayout.BeginHorizontal();

@@ -1,0 +1,73 @@
+---
+title: "JsonWebToken"
+description: "Compact JSON Web Token (JWT) encoding: split, decode and sign."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/ClientAuth.cs)</div>
+
+```csharp
+public static class JsonWebToken
+```
+
+Compact JSON Web Token (JWT) encoding: split, decode and sign. No policy lives here.
+
+## Methods
+
+### UnixNow [#unixnow]
+
+```csharp
+public static long UnixNow();
+```
+
+### TryParse [#tryparse]
+
+```csharp
+public static bool TryParse(string token, out Dictionary<string, object> header, out Dictionary<string, object> payload, out byte[] signedBytes, out byte[] signature, out string error);
+```
+
+Split `header.payload.signature` and decode the two JSON objects. Does not verify anything.
+
+### SignHs256 [#signhs256]
+
+```csharp
+public static string SignHs256(string payloadJson, byte[] key);
+```
+
+An HS256 token over `payloadJson`.
+
+### Base64UrlEncode [#base64urlencode]
+
+```csharp
+public static string Base64UrlEncode(byte[] bytes);
+```
+
+### Base64UrlDecode [#base64urldecode]
+
+```csharp
+public static byte[] Base64UrlDecode(string s);
+```
+
+### Claim [#claim]
+
+```csharp
+public static string Claim(Dictionary<string, object> claims, string name);
+```
+
+A claim as a string (numbers and booleans are formatted; missing = null).
+
+### NumericClaim [#numericclaim]
+
+```csharp
+public static long? NumericClaim(Dictionary<string, object> claims, string name);
+```
+
+A numeric claim (`exp`, `iat`), or null when missing or not a number.
+
+### HasAudience [#hasaudience]
+
+```csharp
+public static bool HasAudience(Dictionary<string, object> claims, string audience);
+```
+
+True when the `aud` claim (a string or an array of strings) names `audience`.
+

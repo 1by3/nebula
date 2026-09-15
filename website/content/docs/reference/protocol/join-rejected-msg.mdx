@@ -1,0 +1,35 @@
+---
+title: "JoinRejectedMsg"
+description: "Gateway -> client: the join was refused; Reason is fit to show the player."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct JoinRejectedMsg
+```
+
+Gateway -\> client: the join was refused; [`Reason`](#reason) is fit to show the player. The gateway disconnects after sending it.
+
+## Fields
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static JoinRejectedMsg Read(NetworkReader r);
+```
+

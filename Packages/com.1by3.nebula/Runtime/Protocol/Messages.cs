@@ -25,6 +25,11 @@ namespace Nebula
         /// "world starting" state instead of leaving it welcomed with no pawn and no explanation.
         /// </summary>
         JoinStatus = 5,
+        /// <summary>
+        /// Gateway -> client: the join was refused (<see cref="JoinRejectedMsg"/>: the token in <c>Hello</c> did not
+        /// verify, or the mesh requires one). The gateway disconnects right after sending it.
+        /// </summary>
+        JoinRejected = 6,
 
         // Entity replication (worker -> gateway -> clients)
         EntitySpawn = 10,
@@ -96,11 +101,17 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 10;
+        public const ushort ProtocolVersion = 11;
         public PeerRole Role;
         public string Id;
         public uint Index;
         public HelloFlags Flags;
+        /// <summary>
+        /// Client only: the token that says who the player is. An OpenID Connect ID token from a provider the mesh
+        /// trusts (<see cref="NebulaConfig.AuthIssuers"/>), the token a gateway issued in an earlier
+        /// <see cref="WelcomeMsg"/>, or empty to ask for a new anonymous identity. Workers and gateways leave it empty.
+        /// </summary>
+        public string Token;
         public ushort Version;
 
         public void Write(NetworkWriter w)
@@ -111,6 +122,7 @@ namespace Nebula
             w.WriteString(Id);
             w.WriteUInt(Index);
             w.WriteByte((byte)Flags);
+            w.WriteString(Token ?? "");
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -121,6 +133,7 @@ namespace Nebula
             m.Id = r.ReadString();
             m.Index = r.ReadUInt();
             m.Flags = (HelloFlags)r.ReadByte();
+            m.Token = r.ReadString() ?? "";
             return m;
         }
     }
@@ -130,6 +143,14 @@ namespace Nebula
         public uint ClientId;
         public byte TickRate;
         public uint ServerTick;
+        /// <summary>The player's identity for this and every later session (<see cref="PlayerIdentity"/>).</summary>
+        public string Identity;
+        /// <summary>
+        /// Set when the client presented no token: the anonymous token the gateway issued for <see cref="Identity"/>.
+        /// The client keeps it and presents it in its next <see cref="HelloMsg"/> to be the same player again.
+        /// Empty when the client's own token was accepted.
+        /// </summary>
+        public string Token;
 
         public void Write(NetworkWriter w)
         {
@@ -137,9 +158,25 @@ namespace Nebula
             w.WriteUInt(ClientId);
             w.WriteByte(TickRate);
             w.WriteUInt(ServerTick);
+            w.WriteString(Identity ?? "");
+            w.WriteString(Token ?? "");
         }
 
-        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg { ClientId = r.ReadUInt(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt() };
+        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg { ClientId = r.ReadUInt(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "" };
+    }
+
+    /// <summary>Gateway -> client: the join was refused; <see cref="Reason"/> is fit to show the player. The gateway disconnects after sending it.</summary>
+    public struct JoinRejectedMsg
+    {
+        public string Reason;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.JoinRejected);
+            w.WriteString(Reason ?? "");
+        }
+
+        public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "" };
     }
 
     /// <summary>How far a client's join has got. Reported by the gateway in <see cref="JoinStatusMsg"/>.</summary>
@@ -226,6 +263,8 @@ namespace Nebula
         public byte[] Vars;
         /// <summary>Keyframe from every sync behaviour (<see cref="NetworkIdentity.WriteSyncSnapshot"/>); empty when the prefab has none.</summary>
         public byte[] State;
+        /// <summary>The owning player's <see cref="PlayerIdentity"/>; empty for entities no player owns. Travels with the entity through ghosting and handover.</summary>
+        public string OwnerIdentity;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -246,6 +285,7 @@ namespace Nebula
                 PrefabId = id.PrefabId,
                 SceneId = id.SceneId,
                 OwnerClientId = id.OwnerClientId,
+                OwnerIdentity = id.OwnerIdentity,
                 Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
                 Container = id.ContainerRef,
                 Epoch = id.Epoch,
@@ -282,6 +322,7 @@ namespace Nebula
             w.WriteUInt(SceneId);
             w.WriteBytes(Vars);
             w.WriteBytes(State);
+            w.WriteString(OwnerIdentity ?? "");
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -302,6 +343,7 @@ namespace Nebula
                 SceneId = r.ReadUInt(),
                 Vars = r.ReadBytes(),
                 State = r.ReadBytes(),
+                OwnerIdentity = r.ReadString() ?? "",
             };
         }
     }
@@ -718,6 +760,8 @@ namespace Nebula
         public ContainerRef Container;
         public string Name;
         public bool IsBot;
+        /// <summary>The player's <see cref="PlayerIdentity"/>, as the gateway established it from the client's token.</summary>
+        public string Identity;
 
         public void Write(NetworkWriter w)
         {
@@ -726,9 +770,10 @@ namespace Nebula
             Container.Write(w);
             w.WriteString(Name);
             w.WriteByte(IsBot ? (byte)1 : (byte)0);
+            w.WriteString(Identity ?? "");
         }
 
-        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadUInt(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0 };
+        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadUInt(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0, Identity = r.ReadString() ?? "" };
     }
 
     public struct DespawnPlayerMsg

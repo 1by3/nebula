@@ -1,0 +1,55 @@
+---
+title: "PlayerInfo"
+description: "Who is joining, as the gateway told the worker (NebulaGameMode.OnSpawnPlayer)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaGameMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaGameMode.cs)</div>
+
+```csharp
+public readonly struct PlayerInfo
+```
+
+Who is joining, as the gateway told the worker ([`NebulaGameMode.OnSpawnPlayer`](/docs/reference/core/nebula-game-mode#onspawnplayer)).
+
+## Constructors
+
+### PlayerInfo [#playerinfo]
+
+```csharp
+public PlayerInfo(uint clientId, string name, string identity, bool isBot);
+```
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public readonly uint ClientId;
+```
+
+This session's connection id. Changes every time the player connects.
+
+### Name [#name]
+
+```csharp
+public readonly string Name;
+```
+
+The display name the client asked for.
+
+### Identity [#identity]
+
+```csharp
+public readonly string Identity;
+```
+
+The player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)): from the OpenID token they presented, or the anonymous token the gateway issued them.
+
+### IsBot [#isbot]
+
+```csharp
+public readonly bool IsBot;
+```
+
+The client is a headless bot.
+
