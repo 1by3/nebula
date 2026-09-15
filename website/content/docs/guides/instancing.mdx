@@ -1,0 +1,246 @@
+---
+title: Create private instances
+description: Define private areas with containers, prepare player crossings, and allow a bounded view of the public world.
+---
+
+An instance is a separate simulation scope containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
+
+Use instances for private homes, party dungeons, training rooms, or separate copies of a mission. A container still defines where simulation happens and which [worker](/docs/concepts/containers-and-handover) is responsible. The instance ID determines which copy an entity belongs to. Creating an ordinary runtime container alone does not make it private.
+
+## Model an apartment entrance
+
+Keep the street and hallway in the public world. Define the apartment interior as one or more template parts. Place an `InstanceBoundary` at the entrance, with its `Interior` volume covering the private rooms.
+
+The hallway can provide space to prepare the apartment before the player reaches its door. It does not need a special transition container type. `PreparationDistance` expands the interior bounds to determine when preparation starts.
+
+| Player location | Simulation scope | Visible networked entities |
+| --- | --- | --- |
+| Street or hallway | Public (`0`) | Public entities; no private occupants. |
+| Their apartment | Private instance selected by the entrance | Entities in that instance, plus public entities in its configured observation bounds. |
+| Another player's apartment | A different private instance | That instance's entities and its configured public view; no occupants of other private copies. |
+
+When the player crosses, their connection stays open and their network ID stays the same. Outside observers stop receiving that player's entity. From inside, the player can still see people in the hallway when it is within `PublicView`. The game controls the door animation, fade, or other visual treatment.
+
+The same player can leave through the boundary to return to the public world. The destination must be covered by a public container.
+
+## Define an area
+
+1. Create an **Instance Template** asset from **Assets > Create > Nebula > Instance Template**.
+2. Give the template a stable `TemplateId`. Add a part for each container, with a unique part ID and bounds relative to the instance origin.
+3. Put each part's static geometry prefab in a `Resources` folder. Set `ContentResource` to its resource path without the extension. Position the prefab's content relative to the center of the part's bounds.
+4. Add an `InstanceBoundary` to the shared scene. Assign the template and set `Interior` to the volume players enter. Place the boundary at the instance origin.
+5. Set `PreparationDistance` to start loading before players enter the volume.
+
+The boundary preserves world position when crossing. Its volumes are axis-aligned; rotating the boundary does not rotate them. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part.
+
+Static content prefabs must not contain `NetworkIdentity` components. Spawn networked furniture, enemies, and other stateful objects through the worker's spawn API, passing an instance container. Add `PersistentEntity` and use instance-specific persistence keys for objects that must survive a restart.
+
+### Template and entrance settings
+
+| Setting | What to configure |
+| --- | --- |
+| `TemplateId` | A stable, nonempty name for this layout, such as `apartment`. |
+| `Parts[].Id` | A unique, nonempty name within the template, such as `living-room`. |
+| `Parts[].Bounds` | A positive-size box relative to the instance origin. Cover every area players can enter. |
+| `Parts[].ContentResource` | A static prefab path, such as `Instances/Apartment`, for `Resources/Instances/Apartment.prefab`. An empty path creates a container with no static content. |
+| `ObservePublic` | Whether occupants receive the bounded public view. Disable it for a fully separate encounter. |
+| `PublicView` | The public observation box relative to the instance origin, shared by the template's parts. |
+| `Interior` | The private crossing volume relative to the boundary's position. |
+| `PreparationDistance` | Distance added on each side of the crossing volume to begin preparation. Increase it if players can reach the entrance before loading finishes. |
+| `Personal` | Use `OwnerIdentity` as the destination key when enabled and no custom resolver is set. |
+| `SharedKey` | Key used when `Personal` is disabled and no custom resolver is set. Defaults to `shared`. |
+
+For a single-room apartment, start with matching template-part and interior bounds. For multiple rooms, put the arrival room first and make `Interior` cover the entire private area. Keep the boundary position and the template's instance origin aligned. Boundary rotation and scale do not transform these bounds.
+
+Include the boundary in the scenes loaded by workers, not only in client presentation. Include the static resources in both worker and client builds. The built-in boundary handles authoritative player-owned entities; use explicit transfers for server-controlled entities.
+
+### Separate scenery from collision
+
+Each private instance uses its own Unity 3D physics scene. Include the floors, walls, and other collision geometry needed to simulate inside it. Public colliders at the same coordinates do not supply private collision.
+
+Public scenery remains the game's responsibility. If the public scene already draws the building shell, avoid duplicating the same visible surfaces in the private prefab. A collision-only copy can reuse that shell visually, while instance-specific furniture and decorations render inside the private copy. Private static renderers are hidden on a client until it enters that scope.
+
+Preparation loads bundled assets on the client before entry. Entity visibility filtering does not make those assets secret or prevent a modified client from inspecting them.
+
+## Choose who enters together
+
+With `Personal` enabled, the boundary uses the player's authenticated `OwnerIdentity` as its key. Returning players resolve the same container IDs. With `Personal` disabled, everyone using the same `SharedKey` enters the same instance.
+
+`OwnerIdentity` is the stable [player identity](/docs/guides/authentication), including anonymous identities. A display name or connection ID is not a substitute. Changing a display name does not select another personal apartment.
+
+| Use case | Destination key | Game responsibility |
+| --- | --- | --- |
+| Personal home | Owner identity | Save furniture using keys specific to that home. |
+| Invited visitor | Home owner's identity | Resolve the selected home and check invitations. |
+| Party dungeon | Party or run ID | Check party membership and use a new run ID for a fresh copy. |
+| Match or training session | Match or session ID | Control admission, entry pose, exit, and cleanup. |
+| Persistent guild hall | Stable guild ID | Check membership and retain the same layout identifiers. |
+
+For housing assignments, invitations, or party runs, supply server-side `ResolveKey` and `CanEnter` callbacks. The resolver selects the destination; the admission callback decides whether the player may enter it. Admission is checked again at crossing. Preparation does not reveal destination entities to the client.
+
+Install these callbacks on every worker that can simulate the entrance. The following component shows the wiring for an owner-only home; replace the predicate with your server-side invitation check to admit guests:
+
+```csharp title="HomeAdmission.cs"
+using Nebula;
+using UnityEngine;
+
+[RequireComponent(typeof(InstanceBoundary))]
+public sealed class HomeAdmission : MonoBehaviour
+{
+    public string HomeOwnerIdentity;
+    private InstanceBoundary boundary;
+
+    private void Awake()
+    {
+        boundary = GetComponent<InstanceBoundary>();
+        boundary.ResolveKey = player => HomeOwnerIdentity;
+        boundary.CanEnter = (player, key) =>
+            !string.IsNullOrEmpty(key) && player.OwnerIdentity == key;
+    }
+
+    private void OnDestroy()
+    {
+        if (boundary == null) return;
+        boundary.ResolveKey = null;
+        boundary.CanEnter = null;
+    }
+}
+```
+
+Set `HomeOwnerIdentity` from your server's housing data. A resolver selects a key; it does not enforce permission by itself. With no `CanEnter` callback, the entrance allows any player to use its resolved key. Keep the key stable while a player occupies the area so the boundary can recognize their private scope on exit. The built-in boundary permits occupants to leave even if admission is later revoked.
+
+For temporary runs, include a run identifier in the key. Container leases remain registered until explicitly removed; automatic empty-instance expiration and suspension are not currently provided.
+
+The scope is derived from `TemplateId + "/" + key`; each part's runtime ID also includes its part ID. Reusing those values selects the same copy. Changing them selects new container IDs. Use a consistent key format and delimiters. Reusing a key with different bounds or a different content resource is rejected while its lease exists; treat layout changes as a migration or choose a new template ID.
+
+## Prepare a transfer from game code
+
+For matchmaking or teleportation, call `NebulaWorker.PrepareInstance(template, key, origin)`. It returns container references. Resolve them after the control plane has delivered their leases, then call `PrepareTransfer(entity, destination)` after checking admission.
+
+Keep the returned `InstanceTransfer` until `Ready` is true or `Error` is set. Call `TryCommitTransfer` to cross at a world-space position and rotation. It returns false if preparation, source authority, or the destination lease is no longer valid. Preparation expires after its timeout. Each transfer can be committed once.
+
+Follow this sequence on the entity's authoritative worker:
+
+1. Validate the destination key and the player's permission in game code.
+2. Call `PrepareInstance` and wait for the selected `ContainerRef.Resolve()` to return a container with an owning lease. A control-plane request is not an immediate load-completion signal.
+3. Call `PrepareTransfer` once for this attempt and retain its result. The default timeout is 15 seconds, with a minimum of one second.
+4. Poll the retained result from your existing worker update flow. `Ready` means the destination worker and owning client have acknowledged preparation. Entities without an owning client do not require a client acknowledgment.
+5. Recheck game-level admission, then call `TryCommitTransfer` with a safe world-space pose inside the destination. Treat its return value as the final success check.
+6. On failure or expiration, keep the entity in its source and start a new preparation when appropriate. Do not reuse a finished transfer.
+
+`Ready` alone is not a reservation: the commit checks the entity's authority, its source container and epoch, and the destination lease again. An **epoch** is a version number for authority or assignment. A change invalidates older preparations. `Error` reports a failure; `Finished` also becomes true after a successful commit or an expired/invalidated attempt.
+
+The built-in boundary handles this sequence automatically. If a crossing cannot commit, it holds the player at the last position it recorded. Place spawn points outside the crossing volume so players approach it normally.
+
+The destination must be a static container. Authored scene entities cannot transfer out of their scene. For a return trip from game code, select a public container and prepare another transfer; do not change only the transform or `InstanceId`.
+
+`TryCommitTransfers` checks all preparations before moving a group. Prepare each player separately so every client confirms readiness. Moving a carrier also moves its parented contents into the carrier's physics scene.
+
+Group commits accept a translation applied to each member's world position and preserve each rotation. Pass `Vector3.zero` to keep their positions. All preparations must belong to the worker performing the commit. Cross-worker party coordination and game-level rollback are the game's responsibility; this API is not a distributed transaction.
+
+The gateway connection stays open. The entity keeps its network ID and velocity. Ordinary worker handover moves authority when the destination belongs to another worker.
+
+## See outside from inside
+
+Enable `ObservePublic` and set the template's `PublicView` bounds relative to its origin. Occupants receive public entities within those bounds, while public observers receive no private entities. Other private instances remain hidden. Replicas visible before and after crossing stay resident on the client.
+
+This is an observation-only connection. It does not grant cross-instance collision, targeting, or damage. The game supplies the public scenery and the visual treatment of the entrance. Portal rendering, remote camera views, and moving entrance anchors are not provided by `InstanceBoundary`.
+
+`PublicView` selects public entities by position in a box. It is not a camera frustum, line-of-sight test, or a window-shaped portal. Within the private scope, entities remain eligible for replication regardless of distance; distance affects update frequency. Public-to-private and private-to-other-private visibility are not configurable through this template.
+
+## Keep gameplay in the correct scope
+
+Use `NetworkIdentity.PhysicsScene` for movement raycasts, sweeps, and overlaps. Global `Physics` queries inspect the public physics scene. For a loaded instance ID, use `InstanceScenes.PhysicsFor(instanceId)`.
+
+Filter game-maintained entity lists by `InstanceId`, including AI targets and analytic hit tests. Carry the scope in game-defined worker messages. `ContainerRegistry.Find` and `Along` accept an instance ID; their default is the public world. Ordinary `Resolve` preserves the current container's scope.
+
+For example, this helper queries the shooter's physics scene:
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+public static class ScopedQueries
+{
+    public static bool Raycast(NetworkIdentity shooter, Ray ray,
+        float distance, int layerMask, out RaycastHit hit)
+    {
+        return shooter.PhysicsScene.Raycast(ray.origin, ray.direction,
+            out hit, distance, layerMask, QueryTriggerInteraction.Ignore);
+    }
+}
+```
+
+Apply the same rule to movement sweeps, ground checks, triggers, projectiles, and AI perception. Validate scope again when applying delayed damage or processing asynchronous query results: the target may have crossed after the query began. Custom RPC handlers and shared game services must enforce their own access rules. Receiving a public replica through the outward view does not authorize interaction with it.
+
+Parts in the same instance share one local physics scene per process. Parts in different instances do not collide. `InstanceScenes.PhysicsFor` returns an invalid scene for an unloaded private scope; check `IsValid()` before querying it. Nebula advances private physics scenes on workers. Unity 2D physics isolation is not implemented by this feature.
+
+Nebula filters gateway spawns, variables, transform state, behavior state, and entity RPCs by visibility. Unknown runtime containers are hidden until their metadata arrives. Distance-based update frequency applies after this visibility check.
+
+## Save and retire an instance
+
+A stable instance key provides repeatable container IDs, not automatic saving of every object. Add [PersistentEntity](/docs/guides/persistence) to objects that must survive and save their state through the persistence APIs. Include the home or run key in each object's persistence key so copies do not share saved records.
+
+After a mesh restart, request the same template and key again at the same origin. Saved entities can then restore into their recreated containers. Your game must retain the account-to-home or party-to-run mapping needed to choose that key.
+
+For cleanup, first transfer players out and stop admitting new occupants. On the owning worker for each part, call `ReleaseRuntimeContainer` with its runtime ID. This checkpoints and despawns persistent entities and despawns transient entities before removing the lease. **Transient contents are lost when you release a container.** Releasing a lease does not delete the saved persistent records.
+
+Retire every part of a multi-container instance. Unloading one part does not retire the others. Nebula does not automatically expire empty instances, suspend runs, or delete their saved records. Use your game's occupancy and session rules to decide when cleanup is safe; preparing an instance is not a player reservation.
+
+## Build and test
+
+Rebuild workers, gateways, and clients together. Instance metadata changes the wire protocol to version `12`.
+
+Use two clients to check that public observers lose sight of an entering player, occupants retain the configured outward view, and different private copies cannot see or hit each other. Test missing content and worker reassignment during preparation: both must leave the source authoritative until a valid transfer can be committed.
+
+Use distinct player identities for the personal-instance test. Two clients sharing a saved anonymous token or signing into the same account select the same personal key, even with different display names.
+
+| Test | Expected result |
+| --- | --- |
+| One player enters while another waits outside | The entering player disappears from the public observer. |
+| Occupant looks toward the public hallway | Public entities within `PublicView` remain visible. |
+| Two distinct identities enter a personal area | Each sees their own private copy. |
+| Two admitted players resolve the same key | They see each other inside the same copy. |
+| Occupant leaves | Public visibility returns without reconnecting. |
+| Run a raycast or spawn a projectile at overlapping coordinates | Gameplay affects only the intended scope. |
+| Traverse multiple private parts | Ordinary container resolution stays within that instance. |
+| Deny entry, remove a required resource, or change a lease during preparation | The crossing does not commit; the game can retry after correcting the condition. |
+| Restart and enter a saved home | Persistent contents restore when the same containers are recreated. |
+
+### Rebuild after a protocol change
+
+Editor compilation updates the client running in Unity. It does not update an already-running gateway or the worker executables. If the gateway log reports `client protocol 12 != 11; disconnecting`, the editor and mesh are from different protocol versions.
+
+From the game project's root, rebuild and restart the mesh:
+
+```bash
+nebula stop
+nebula build
+nebula start
+```
+
+Then enter Play mode and connect again. On Windows, the equivalent Editor sequence is to leave Play mode, choose **Nebula > Mesh > Stop Local Mesh**, run **Nebula > Build > Windows Player (Mono, development)**, wait for the build and service publishing to finish, and choose **Nebula > Mesh > Start Local Mesh (orchestrator + gateway + workers)**. Rebuild standalone or web clients too if you use them.
+
+See [Running locally](/docs/getting-started/running-locally) for build paths and [Connecting clients](/docs/guides/connecting-clients) for connection setup.
+
+### Troubleshoot entry and visibility
+
+| Symptom | Check |
+| --- | --- |
+| Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
+| Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Allow enough preparation distance. |
+| Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. |
+| Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |
+| Floor or wall collision disappears inside | Include those colliders in private static content and use scoped physics queries. |
+| Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
+| Hallway players disappear from inside | Enable `ObservePublic` and check `PublicView` relative to the instance origin. |
+| Saved furniture is missing or shared across copies | Check stable template/part/key values, `PersistentEntity`, and instance-specific persistence keys. |
+
+## API and protocol reference
+
+- [InstanceTemplate](/docs/reference/containers/instance-template) defines content and bounds.
+- [InstanceBoundary](/docs/reference/containers/instance-boundary) implements positional entry and exit.
+- [NebulaWorker](/docs/reference/worker/nebula-worker) creates instances and prepares or commits transfers.
+- [InstanceTransfer](/docs/reference/worker/instance-transfer) reports preparation state.
+- [InstanceScenes](/docs/reference/containers/instance-scenes) exposes scoped physics and content preparation.
+- [Wire protocol](/docs/specifications/wire-protocol#instance-preparation) and [control plane](/docs/specifications/control-plane) describe preparation messages and lease metadata.

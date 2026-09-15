@@ -7,6 +7,8 @@ Use a **runtime container** when the game decides where the containers are while
 
 A runtime container is a static box named by a 64-bit id the game chooses. Its lease row on the control plane carries the box, so every process registers the same container from the row alone; nothing about the world's shape is baked into a build. On the wire it is ten bytes (a marker index plus the id), where a baked container is two. Baked containers are unaffected.
 
+To create separate private copies with isolated visibility and physics, follow [Create private instances](/docs/guides/instancing). An ordinary runtime container remains in the public scope unless it carries instance metadata.
+
 ## Ask for a container
 
 On a worker, ask for a container next to the entities that need it. The request is idempotent, so call it every time an entity comes near the box:

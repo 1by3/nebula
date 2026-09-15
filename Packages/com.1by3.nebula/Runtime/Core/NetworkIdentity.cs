@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Nebula
 {
@@ -50,6 +51,10 @@ namespace Nebula
         /// <summary>Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.</summary>
         public uint Epoch { get; internal set; }
         public Container Container { get; internal set; }
+        /// <summary>The entity's simulation scope. Zero is the public world.</summary>
+        public ulong InstanceId => Container != null ? Container.InstanceId : 0;
+        /// <summary>Use this scene for raycasts and overlap tests to exclude entities in other instances.</summary>
+        public PhysicsScene PhysicsScene => gameObject.scene.GetPhysicsScene();
         /// <summary>Wire index of the current container (<see cref="ContainerRef.DynamicIndex"/> inside a dynamic one, <see cref="ushort.MaxValue"/> in none). Prefer <see cref="ContainerRef"/>.</summary>
         public ushort ContainerIndex => Container != null ? Container.Index : ushort.MaxValue;
         /// <summary>How the current container is named on the wire (see <see cref="Nebula.ContainerRef"/>).</summary>
@@ -495,17 +500,25 @@ namespace Nebula
                 NebulaLog.Warn($"{this} cannot be inside the container it carries; ignored");
                 return;
             }
+            if (container != null && container.InstanceId != 0 && !InstanceScenes.Prepare(container))
+                throw new InvalidOperationException("Instance content is unavailable: " + container.ContainerId);
             Container = container;
             if (previous != null) previous.Entities.Remove(this);
             if (container != null) container.Entities.Add(this);
             // A scene object stays in its scene's hierarchy (the streamer moves the scene, not the container).
             if (reparent && !IsSceneEntity)
             {
+                if (container != null && gameObject.scene != container.gameObject.scene)
+                {
+                    transform.SetParent(null, true);
+                    SceneManager.MoveGameObjectToScene(gameObject, container.gameObject.scene);
+                }
                 if (container != null) transform.SetParent(container.transform, true);
                 else if (previous != null && (previous.IsDynamic || previous.IsRuntime)) transform.SetParent(null, true); // out of a departing carrier or a retiring runtime box, whose object is about to be destroyed
             }
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);
+            if (IsLocalPlayer) InstanceScenes.SetView(InstanceId);
         }
 
         internal void InvokeSpawn()

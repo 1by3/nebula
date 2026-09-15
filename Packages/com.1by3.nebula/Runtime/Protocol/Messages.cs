@@ -47,10 +47,12 @@ namespace Nebula
         /// hit); one packet each was most of a client's packet rate.
         /// </summary>
         Batch = 18,
+        InstancePrepare = 19,
 
         // Client -> gateway -> worker
         ClientInput = 20,
         ServerRpc = 21,
+        InstanceReady = 22,
 
         // Gateway -> worker
         SpawnPlayer = 30,
@@ -101,7 +103,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 11;
+        public const ushort ProtocolVersion = 12;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -651,6 +653,7 @@ namespace Nebula
 
     public struct ContainerOwnershipEntry
     {
+        public InstanceContainerInfo Instance;
         public ushort ContainerIndex;
         public string ContainerId;
         public ushort WorkerIndex;
@@ -679,6 +682,8 @@ namespace Nebula
                 w.WriteString(e.WorkerId);
                 w.WriteULong(e.Epoch);
                 w.WriteString(e.State);
+                w.WriteBool(e.Instance != null);
+                e.Instance?.Write(w);
                 w.WriteByte(e.HasBounds ? FlagBounds : (byte)0);
                 if (e.HasBounds)
                 {
@@ -703,6 +708,7 @@ namespace Nebula
                     Epoch = r.ReadULong(),
                     State = r.ReadString(),
                 };
+                e.Instance = r.ReadBool() ? InstanceContainerInfo.Read(r) : null;
                 byte flags = r.ReadByte();
                 if ((flags & FlagBounds) != 0)
                 {

@@ -1,0 +1,47 @@
+---
+title: "InstanceTransfer"
+description: "A prepared crossing."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/InstanceTransfers.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/InstanceTransfers.cs)</div>
+
+```csharp
+public sealed class InstanceTransfer
+```
+
+A prepared crossing. It can be committed once, while the source authority and destination lease remain valid.
+
+## Properties
+
+### Ready [#ready]
+
+```csharp
+public bool Ready { get; }
+```
+
+Whether worker and client preparation succeeded. Commit still rechecks authority and the destination lease.
+
+### Finished [#finished]
+
+```csharp
+public bool Finished { get; }
+```
+
+True after a successful commit, expiration, or invalidation. Finished preparations cannot be reused.
+
+### Error [#error]
+
+```csharp
+public string Error { get; }
+```
+
+Failure description, or null when no failure has been recorded. Inspect independently of Finished.
+
+### Destination [#destination]
+
+```csharp
+public Container Destination { get; }
+```
+
+Static container selected when preparation began.
+

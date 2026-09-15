@@ -52,4 +52,4 @@ Because the object stays in its scene's hierarchy, it is never re-parented under
 
 Exactly one worker simulates a scene entity, based on the container that contains it. Other workers and clients receive its replicated state. A scene entity ID is not a reusable prefab ID; the controlling worker creates it when the entity enters the mesh.
 
-The gateway announces every scene entity to every client. A map with thousands of scene entities therefore sends thousands of small spawn messages to a joining client. After the spawn, the gateway reduces state update frequency for entities farther from the client's pawn. Variables and RPCs follow their usual delivery rules.
+The gateway announces scene entities to clients allowed to observe their instance. A map with thousands of scene entities therefore sends thousands of small spawn messages to a joining client. After the spawn, the gateway reduces state update frequency for entities farther from the client's pawn. Variables and RPCs follow their usual delivery rules.

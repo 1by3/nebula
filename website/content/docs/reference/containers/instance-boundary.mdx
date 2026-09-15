@@ -1,0 +1,71 @@
+---
+title: "InstanceBoundary"
+description: "Prepares a private area as players approach and crosses its bounds without changing their world pose."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceBoundary.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceBoundary.cs)</div>
+
+```csharp
+public sealed class InstanceBoundary : MonoBehaviour
+```
+
+Prepares a private area as players approach and crosses its bounds without changing their world pose.
+
+## Fields
+
+### Template [#template]
+
+```csharp
+public InstanceTemplate Template;
+```
+
+Private layout created at this component's world position. Must be available on workers.
+
+### Interior [#interior]
+
+```csharp
+public Bounds Interior = new Bounds(Vector3.zero, new Vector3(10, 5, 10));
+```
+
+Crossing volume relative to the component's position. Rotation and scale do not transform the bounds.
+
+### PreparationDistance [#preparationdistance]
+
+```csharp
+public float PreparationDistance = 8;
+```
+
+Distance added on each side of Interior to begin preparing a crossing before entry.
+
+### Personal [#personal]
+
+```csharp
+public bool Personal = true;
+```
+
+Use the player's stable OwnerIdentity as the key when no ResolveKey callback is installed.
+
+### SharedKey [#sharedkey]
+
+```csharp
+public string SharedKey = "shared";
+```
+
+Key used when Personal is false and no ResolveKey callback is installed.
+
+### ResolveKey [#resolvekey]
+
+```csharp
+public Func<NetworkIdentity, string> ResolveKey;
+```
+
+Server-side destination key override, for housing assignments or party runs.
+
+### CanEnter [#canenter]
+
+```csharp
+public Func<NetworkIdentity, string, bool> CanEnter;
+```
+
+Server-side admission check for entry into the resolved key. When unset, entry is allowed. Occupants can exit without passing this check.
+

@@ -23,7 +23,7 @@ The gateway connects to every worker. It routes each client's input to the worke
 
 When a client connects, the gateway chooses a ready container and asks its worker to spawn the player's entity. It caches one keyframe for each sync behavior so a new client can create entities in the correct state.
 
-The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It announces every entity to every client, then reduces the update rate for entities farther from the client's pawn. Configure those distance bands in `NebulaConfig`.
+The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It filters entities by instance visibility, then reduces the update rate for visible entities farther from the client's pawn. Configure those distance bands in `NebulaConfig`.
 
 ## Orchestrator
 

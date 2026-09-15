@@ -104,6 +104,20 @@ public ulong RuntimeId { get; }
 
 Runtime containers: the 64-bit id the game registered this container under. 0 otherwise.
 
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId { get; }
+```
+
+Private simulation scope, or zero for the public world. Carried containers follow their carrier.
+
+### Instance [#instance]
+
+```csharp
+public InstanceContainerInfo Instance { get; }
+```
+
 ### Carrier [#carrier]
 
 ```csharp

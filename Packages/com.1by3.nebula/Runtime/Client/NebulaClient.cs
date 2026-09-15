@@ -496,6 +496,15 @@ namespace Nebula
             var id = (MsgId)r.ReadByte();
             switch (id)
             {
+                case MsgId.InstancePrepare:
+                {
+                    var preparation = InstancePreparationMsg.Read(r);
+                    var destination = preparation.Destination.Resolve();
+                    preparation.Success = destination != null && destination.LeaseEpoch == preparation.LeaseEpoch && InstanceScenes.Prepare(destination);
+                    _writer.Reset(); preparation.Write(_writer, MsgId.InstanceReady);
+                    _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+                    break;
+                }
                 case MsgId.Batch:
                 {
                     // Handlers reset _reader for nested payloads, so the envelope is walked with its own reader.
@@ -571,7 +580,7 @@ namespace Nebula
                     {
                         if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                         _runtimeKeep.Add(runtimeId);
-                        if (ContainerRegistry.GetRuntime(runtimeId) == null) ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)));
+                        if (ContainerRegistry.GetRuntime(runtimeId) == null) ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)), e.Instance);
                     }
                     ContainerRegistry.PruneRuntime(_runtimeKeep);
                     _seenLeases.Clear();
@@ -877,6 +886,7 @@ namespace Nebula
         {
             if (LocalPlayer == null || LocalPlayer.NetId != msg.NetId || LocalPlayer.Predicted == null) return;
             if (msg.Epoch < LocalPlayer.Epoch) return;
+            LocalPlayer.Epoch = msg.Epoch;
             if (msg.InputLead != OwnerStateMsg.NoInputLead) NoteInputLead(msg.InputLead);
             if (msg.Tick == 0) return;
             // The state is in the worker's container frame for that tick; move there first, or a seam crossing

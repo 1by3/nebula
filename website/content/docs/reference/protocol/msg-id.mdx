@@ -30,8 +30,10 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `ContainerOwnership` | `16` |  |
 | `EntityState` | `17` | Per-behaviour sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick. |
 | `Batch` | `18` | Gateway -\> client: several reliable messages in one packet: `[count:ushort]{[len:ushort][message]}`. A big mesh produces hundreds of small reliable messages a second (an RPC per shot, a vars update per hit); one packet each was most of a client's packet rate. |
+| `InstancePrepare` | `19` |  |
 | `ClientInput` | `20` |  |
 | `ServerRpc` | `21` |  |
+| `InstanceReady` | `22` |  |
 | `SpawnPlayer` | `30` |  |
 | `DespawnPlayer` | `31` |  |
 | `GhostSpawn` | `40` |  |

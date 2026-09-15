@@ -52,6 +52,9 @@ Define container volumes and look up their current worker assignments.
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
+| [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their world pose. |
+| [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
+| [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
 | [NebulaContainerHelpers](/docs/reference/containers/nebula-container-helpers) | Static class. Geometry helpers for placing things inside a Container. |
 
 ## World partition
@@ -78,6 +81,8 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | Type | Summary |
 | --- | --- |
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. Defines the worker messaging operations used by WorkerQuery. |
+| [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
+| [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Provides the nebula worker API. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
@@ -213,6 +218,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
+| [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
+| [InstancePreparationMsg](/docs/reference/protocol/instance-preparation-msg) | Struct. Carries the instance preparation protocol message. |
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown). |

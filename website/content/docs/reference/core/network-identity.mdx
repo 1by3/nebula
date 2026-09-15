@@ -106,6 +106,22 @@ Monotonic authority epoch; bumped on every authority change. Stale-epoch message
 public Container Container { get; }
 ```
 
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId { get; }
+```
+
+The entity's simulation scope. Zero is the public world.
+
+### PhysicsScene [#physicsscene]
+
+```csharp
+public PhysicsScene PhysicsScene { get; }
+```
+
+Use this scene for raycasts and overlap tests to exclude entities in other instances.
+
 ### ContainerIndex [#containerindex]
 
 ```csharp

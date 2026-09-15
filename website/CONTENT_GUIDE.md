@@ -78,7 +78,7 @@ Important current boundaries include:
 - An entity persists only if it carries a `PersistentEntity` component: Nebula checkpoints those entities and restores them when a worker gains the lease of their container. The transient state of every other entity is still lost when a worker fails, as is any state on a persistent entity that is neither a `[Persist]` NetworkVariable nor written by `WritePersistentState`.
 - Automatic gateway failover and client reconnection are not provided.
 - UDP connections do not provide encryption or authentication. WebRTC encrypts a web client's link with DTLS, but the gateway authenticates no client.
-- The gateway announces each entity to each client, then reduces state update frequency by distance. It does not omit distant entities entirely.
+- The gateway filters entities by instance visibility, then reduces state update frequency by distance. Distance alone does not omit entities within the same instance. Private occupants can receive a bounded observation-only view of the public world.
 - Bots and server-driven entities require game-supplied behavior.
 - The legacy `--npcs` option only seeds a game-defined setting named `npcs`. It does not spawn non-player characters.
 - Hetzner is the only deployment target implemented by the CLI.

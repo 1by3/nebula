@@ -29,6 +29,7 @@
     "guides/world-partition",
     "guides/dynamic-containers",
     "guides/runtime-containers",
+    "guides/instancing",
     "guides/serialization",
     "guides/configuration",
     "guides/orchestrator-and-dashboard",

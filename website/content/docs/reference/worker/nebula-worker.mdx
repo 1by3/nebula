@@ -6,7 +6,7 @@ description: "Runs authoritative game simulation for the containers assigned to 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs)</div>
 
 ```csharp
-public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
+public sealed partial class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
 ```
 
 Runs authoritative game simulation for the containers assigned to this worker. It creates ghost copies near boundaries, transfers entities when they cross into another worker's container, and sends entity state to the gateway. One worker can control any number of containers. A transfer between two containers on the same worker does not use the network.

@@ -1,0 +1,88 @@
+---
+title: "InstanceTemplate"
+description: "Reusable geometry and container bounds for a private area."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceTemplate.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceTemplate.cs)</div>
+
+```csharp
+[CreateAssetMenu(menuName = "Nebula/Instance Template")]
+public sealed class InstanceTemplate : ScriptableObject
+```
+
+Reusable geometry and container bounds for a private area. Bounds are relative to the instance origin.
+
+## Fields
+
+### TemplateId [#templateid]
+
+```csharp
+public string TemplateId = "interior";
+```
+
+Stable layout identifier combined with the game-selected instance key to derive a private scope.
+
+### Parts [#parts]
+
+```csharp
+public Part[] Parts =
+{
+    new Part()
+};
+```
+
+Containers in the layout. The boundary uses the first part as its entry destination.
+
+### ObservePublic [#observepublic]
+
+```csharp
+public bool ObservePublic = true;
+```
+
+Allow occupants to receive public entities within PublicView. Does not enable cross-instance interaction.
+
+### PublicView [#publicview]
+
+```csharp
+public Bounds PublicView = new Bounds(Vector3.zero, new Vector3(60, 30, 60));
+```
+
+Axis-aligned public observation bounds relative to the instance origin.
+
+## Nested types
+
+### Part [#part]
+
+```csharp
+[Serializable]
+public sealed class Part
+```
+
+One static runtime container in the instance layout.
+
+#### Fields
+
+##### Id [#id]
+
+```csharp
+public string Id = "interior";
+```
+
+Nonempty identifier unique within the template. Participates in the stable runtime container ID.
+
+##### Bounds [#bounds]
+
+```csharp
+public Bounds Bounds = new Bounds(Vector3.zero, new Vector3(20, 10, 20));
+```
+
+Positive-size, axis-aligned bounds relative to the instance origin.
+
+##### ContentResource [#contentresource]
+
+```csharp
+public string ContentResource = "";
+```
+
+Static prefab path under Resources, without an extension. Empty means no static content. Content must contain no NetworkIdentity components.
+

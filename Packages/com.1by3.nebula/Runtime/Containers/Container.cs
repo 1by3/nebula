@@ -54,6 +54,9 @@ namespace Nebula
         public bool IsRuntime { get; internal set; }
         /// <summary>Runtime containers: the 64-bit id the game registered this container under. 0 otherwise.</summary>
         public ulong RuntimeId { get; internal set; }
+        /// <summary>Private simulation scope, or zero for the public world. Carried containers follow their carrier.</summary>
+        public ulong InstanceId => IsDynamic && Carrier != null ? Carrier.InstanceId : Instance?.InstanceId ?? 0;
+        public InstanceContainerInfo Instance { get; internal set; }
         /// <summary>Dynamic containers: the entity carrying this container. Null for static ones.</summary>
         public NetworkIdentity Carrier { get; internal set; }
         /// <summary>Dynamic containers: the carrier's net id, which names this container on the wire. 0 for static ones.</summary>

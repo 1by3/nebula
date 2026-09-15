@@ -104,6 +104,8 @@ namespace Nebula
         public List<Container> Neighbors { get; } = new List<Container>();
         public bool IsDynamic => false;
         public ulong CarrierNetId => 0;
+        public InstanceContainerInfo Instance;
+        public ulong InstanceId => Instance?.InstanceId ?? 0;
         public string OwnerWorkerId { get; set; } = "";
         public ushort OwnerWorkerIndex { get; set; } = ushort.MaxValue;
         public ulong LeaseEpoch { get; set; }
@@ -184,12 +186,12 @@ namespace Nebula
                 if (!l.HasBounds || !l.ContainerId.StartsWith("rt_", StringComparison.Ordinal) || !ulong.TryParse(l.ContainerId.Substring(3), out var id)) continue;
                 keep.Add(id);
                 if (RuntimeById.ContainsKey(id)) continue;
-                var c = new Container { ContainerId = l.ContainerId, Index = ContainerRef.RuntimeIndex, IsRuntime = true, RuntimeId = id, Size = l.BoundsSize, transform = new ContainerFrame { position = l.BoundsCenter } };
+                var c = new Container { ContainerId = l.ContainerId, Index = ContainerRef.RuntimeIndex, IsRuntime = true, RuntimeId = id, Size = l.BoundsSize, Instance = l.Instance, transform = new ContainerFrame { position = l.BoundsCenter } };
                 var bounds = c.WorldBounds;
                 bounds.Expand(0.05f);
                 foreach (var neighbor in All.Concat(RuntimeList))
                 {
-                    if (!bounds.Intersects(neighbor.WorldBounds)) continue;
+                    if (neighbor.InstanceId != c.InstanceId || !bounds.Intersects(neighbor.WorldBounds)) continue;
                     c.Neighbors.Add(neighbor);
                     neighbor.Neighbors.Add(c);
                 }

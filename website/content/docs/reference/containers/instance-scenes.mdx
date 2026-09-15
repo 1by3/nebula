@@ -1,0 +1,31 @@
+---
+title: "InstanceScenes"
+description: "Loads instance geometry into separate physics scenes."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceScenes.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceScenes.cs)</div>
+
+```csharp
+public static class InstanceScenes
+```
+
+Loads instance geometry into separate physics scenes. Query an entity's PhysicsScene for gameplay collision tests.
+
+## Methods
+
+### PhysicsFor [#physicsfor]
+
+```csharp
+public static PhysicsScene PhysicsFor(ulong instanceId);
+```
+
+The physics scene for a loaded scope. An unknown private scope returns an invalid scene.
+
+### Prepare [#prepare]
+
+```csharp
+public static bool Prepare(Container container);
+```
+
+Load this container's geometry. Returns false when its resource is missing or contains network identities.
+

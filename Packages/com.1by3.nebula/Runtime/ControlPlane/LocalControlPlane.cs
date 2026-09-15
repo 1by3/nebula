@@ -153,7 +153,7 @@ namespace Nebula
             Touch();
         }
 
-        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId)
+        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null)
         {
             if (this.FindLease(containerId) != null) return;
             bool owned = !string.IsNullOrEmpty(workerId);
@@ -167,6 +167,7 @@ namespace Nebula
                 HasBounds = true,
                 BoundsCenter = bounds.center,
                 BoundsSize = bounds.size,
+                Instance = instance?.Copy(),
             });
             Touch();
         }

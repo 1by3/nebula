@@ -138,7 +138,7 @@ void EnsureContainer(string containerId);
 ### EnsureRuntimeContainer [#ensureruntimecontainer]
 
 ```csharp
-void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null);
 ```
 
 Make sure a lease row exists for a runtime container, carrying its box (absolute coordinates) and, when `workerId` is given, already assigned to that worker (epoch 1, active), so the worker that asked for the container owns it from the first change anyone sees. A no-op when the row exists: whoever asked first wins, and the second caller sees the row on the next change.

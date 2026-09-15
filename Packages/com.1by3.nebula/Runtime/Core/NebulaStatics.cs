@@ -14,6 +14,7 @@ namespace Nebula
         private static void ResetForNewSession()
         {
             ContainerRegistry.ResetForNewSession();
+            InstanceScenes.Reset();
             SceneEntities.ResetForNewSession();
             NetworkIdentity.Live.Clear();
             DynamicContainer.ResetForNewSession();

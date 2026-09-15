@@ -352,7 +352,7 @@ namespace Nebula
         /// baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the
         /// seam work like between baked containers.
         /// </summary>
-        public static Container RegisterRuntime(ulong id, Bounds frameBounds)
+        public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null)
         {
             if (RuntimeById.TryGetValue(id, out var existing))
             {
@@ -382,6 +382,7 @@ namespace Nebula
             c.Center = Vector3.zero;
             c.IsRuntime = true;
             c.RuntimeId = id;
+            c.Instance = instance?.Copy();
             c.Index = ContainerRef.RuntimeIndex;
             c.RefreshCache();
             RuntimeList.Add(c);
@@ -406,6 +407,8 @@ namespace Nebula
         public static bool UnregisterRuntime(ulong id)
         {
             if (!RuntimeById.TryGetValue(id, out var c)) return false;
+            // A removed lease cannot silently move private occupants into the public world.
+            if (c != null && c.InstanceId != 0 && c.Entities.Count > 0) return false;
             if (c == null)
             {
                 // Its object is already gone (a scene unload took it): just forget it.
@@ -415,6 +418,7 @@ namespace Nebula
                 return true;
             }
             RuntimeUnregistering?.Invoke(c);
+            InstanceScenes.Release(c);
             RuntimeById.Remove(id);
             RuntimeList.Remove(c);
             ById.Remove(c.ContainerId);
@@ -461,7 +465,7 @@ namespace Nebula
                 var l = leases[i];
                 if (!l.HasBounds || !TryParseRuntimeId(l.ContainerId, out ulong id)) continue;
                 RuntimeKeep.Add(id);
-                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize)));
+                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize)), l.Instance);
             }
             PruneRuntime(RuntimeKeep);
             RuntimeKeep.Clear();
@@ -607,6 +611,7 @@ namespace Nebula
 
         private static void Link(Container a, Container b)
         {
+            if (a.InstanceId != b.InstanceId) return;
             if (!a.Neighbors.Contains(b)) a.Neighbors.Add(b);
             if (!b.Neighbors.Contains(a)) b.Neighbors.Add(a);
         }
@@ -630,7 +635,7 @@ namespace Nebula
                 for (int i = 0; i < DynamicList.Count; i++)
                 {
                     var d = DynamicList[i];
-                    if (d != container && bounds.Intersects(d.WorldBounds)) result.Add(d);
+                    if (d != container && d.InstanceId == container.InstanceId && bounds.Intersects(d.WorldBounds)) result.Add(d);
                 }
                 return;
             }
@@ -639,14 +644,14 @@ namespace Nebula
             if (_grid != null)
             {
                 CollectAround(WorldOrigin.CellOf(bounds.center), Candidates);
-                foreach (var c in Candidates) if (c != enclosing && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                foreach (var c in Candidates) if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
             }
             else
             {
                 for (int i = 0; i < Containers.Count; i++)
                 {
                     var c = Containers[i];
-                    if (c != enclosing && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                    if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
             if (RuntimeList.Count > 0)
@@ -655,13 +660,13 @@ namespace Nebula
                 for (int i = 0; i < RuntimeCandidates.Count; i++)
                 {
                     var c = RuntimeCandidates[i];
-                    if (c != enclosing && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                    if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
             for (int i = 0; i < DynamicList.Count; i++)
             {
                 var d = DynamicList[i];
-                if (d == container || d == enclosing) continue;
+                if (d == container || d == enclosing || d.InstanceId != container.InstanceId) continue;
                 if (bounds.Intersects(d.WorldBounds)) result.Add(d);
             }
         }
@@ -675,37 +680,37 @@ namespace Nebula
         /// agrees. <paramref name="exclude"/> leaves one container out of the search: an entity carrying a container
         /// resolves its own position without it, or it would be found inside itself.
         /// </summary>
-        public static Container Find(Vector3 worldPosition, Container exclude = null)
+        public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0)
         {
             Container inside = null, nearest = null;
             float insideVolume = float.MaxValue, nearestDist = float.MaxValue;
             if (_grid != null)
             {
                 CollectAround(WorldOrigin.CellOf(worldPosition), Candidates);
-                FindAmong(Candidates, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                FindAmong(Candidates, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            else FindAmong(Containers, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            else FindAmong(Containers, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (RuntimeList.Count > 0)
             {
                 CollectRuntimeAround(worldPosition, RuntimeCandidates);
-                FindAmong(RuntimeCandidates, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            FindAmong(DynamicList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            FindAmong(DynamicList, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (inside == null && nearest == null)
             {
                 // Nothing near the point: fall back to the whole set so a far-away point still gets its nearest box.
-                if (_grid != null) FindAmong(Containers, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (_grid != null) FindAmong(Containers, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
             return inside ?? nearest;
         }
 
-        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
+        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ulong instanceId, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
         {
             for (int i = 0; i < list.Count; i++)
             {
                 var c = list[i];
-                if (c == exclude) continue;
+                if (c == exclude || c.InstanceId != instanceId) continue;
                 float d = c.SignedDistance(worldPosition);
                 if (d <= 0f)
                 {
@@ -733,7 +738,7 @@ namespace Nebula
         public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null)
         {
             if (current == null) return Find(worldPosition, exclude);
-            var candidate = Find(worldPosition, exclude);
+            var candidate = Find(worldPosition, exclude, current.InstanceId);
             if (candidate == null || candidate == current) return current;
             if (current.Contains(worldPosition))
             {
@@ -757,22 +762,22 @@ namespace Nebula
         /// world only the cells the segment's bounds touch are visited; runtime containers are found through their
         /// hash and dynamic containers are always tested.
         /// </summary>
-        public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result)
+        public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result, ulong instanceId = 0)
         {
             for (int i = 0; i < DynamicList.Count; i++)
-                if (DynamicList[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(DynamicList[i]);
+                if (DynamicList[i].InstanceId == instanceId && DynamicList[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(DynamicList[i]);
             if (RuntimeList.Count > 0)
             {
                 var box = new Bounds();
                 box.SetMinMax(Vector3.Min(a, b) - Vector3.one * margin, Vector3.Max(a, b) + Vector3.one * margin);
                 CollectRuntimeIn(box, RuntimeCandidates);
                 for (int i = 0; i < RuntimeCandidates.Count; i++)
-                    if (RuntimeCandidates[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(RuntimeCandidates[i]);
+                    if (RuntimeCandidates[i].InstanceId == instanceId && RuntimeCandidates[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(RuntimeCandidates[i]);
             }
             if (_grid == null)
             {
                 for (int i = 0; i < Containers.Count; i++)
-                    if (Containers[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(Containers[i]);
+                    if (Containers[i].InstanceId == instanceId && Containers[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(Containers[i]);
                 return;
             }
             var min = WorldOrigin.CellOf(Vector3.Min(a, b) - Vector3.one * margin);
@@ -783,7 +788,7 @@ namespace Nebula
                     {
                         if (!_grid.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
                         for (int i = 0; i < list.Count; i++)
-                            if (list[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(list[i]);
+                            if (list[i].InstanceId == instanceId && list[i].IntersectsSegment(a, b, margin, out _, out _)) result.Add(list[i]);
                     }
         }
 

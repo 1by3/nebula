@@ -175,8 +175,8 @@ namespace Nebula
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatOrchestrator).Arg("orchestratorId", orchestratorId).Arg("desiredWorkers", desiredWorkers).End());
         public void SetSetting(string key, string value) => Enqueue(_op.Op(ControlPlaneJson.SetSetting).Arg("key", key).Arg("value", value ?? "").End());
         public void EnsureContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.EnsureContainer).Arg("containerId", containerId).End());
-        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId) =>
-            Enqueue(_op.Op(ControlPlaneJson.EnsureRuntimeContainer).Arg("containerId", containerId).Arg("workerId", workerId ?? "").Arg("center", bounds.center).Arg("size", bounds.size).End());
+        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null) =>
+            Enqueue(_op.Op(ControlPlaneJson.EnsureRuntimeContainer).Arg("containerId", containerId).Arg("workerId", workerId ?? "").Arg("center", bounds.center).Arg("size", bounds.size).Arg("instance", InstanceContainerInfo.Encode(instance)).End());
         public void TouchContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.TouchContainer).Arg("containerId", containerId).End());
         public void AssignContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.AssignContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void PinContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.PinContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());

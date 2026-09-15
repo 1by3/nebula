@@ -1,0 +1,60 @@
+---
+title: "InstanceContainerInfo"
+description: "Identifies a private container's simulation scope, content, and optional outward view."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/InstanceContainerInfo.cs)</div>
+
+```csharp
+[Serializable]
+public sealed class InstanceContainerInfo
+```
+
+Identifies a private container's simulation scope, content, and optional outward view.
+
+## Fields
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId;
+```
+
+### ContentResource [#contentresource]
+
+```csharp
+public string ContentResource = "";
+```
+
+### ObservePublic [#observepublic]
+
+```csharp
+public bool ObservePublic;
+```
+
+### ObservationCenter [#observationcenter]
+
+```csharp
+public Vector3 ObservationCenter;
+```
+
+### ObservationSize [#observationsize]
+
+```csharp
+public Vector3 ObservationSize;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter writer);
+```
+
+### Read [#read]
+
+```csharp
+public static InstanceContainerInfo Read(NetworkReader reader);
+```
+

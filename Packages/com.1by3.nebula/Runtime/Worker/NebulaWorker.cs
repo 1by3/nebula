@@ -11,7 +11,7 @@ namespace Nebula
     /// gateway. One worker can control any number of containers. A transfer between two containers on the same worker
     /// does not use the network.
     /// </summary>
-    public sealed class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
+    public sealed partial class NebulaWorker : MonoBehaviour, IRpcSink, IWorkerMessaging
     {
         private sealed class Peer
         {
@@ -706,6 +706,7 @@ namespace Nebula
             NetworkTime.Tick = tick;
             TickCount++;
             float dt = NetworkTime.TickInterval;
+            UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
 
             // 1. Ghosts follow the stream they are driven by (kinematic: no solve of their own).
@@ -754,6 +755,7 @@ namespace Nebula
                 }
             }
             ProfSimulate.End();
+            InstanceScenes.Simulate(dt);
 
             // Remember where everything ended up this tick (ghosts included) for lag-compensated hit tests. An
             // identity whose object was destroyed behind our back (game code, a scene unload) is dropped here rather
@@ -774,6 +776,7 @@ namespace Nebula
             foreach (var e in _scratchEntities)
             {
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
+                InstanceBoundary.Tick(this, e);
                 // A carrier never resolves into the container it carries (its origin is inside its own box).
                 var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e.Carried);
                 if (resolved != e.Container)
@@ -1800,6 +1803,8 @@ namespace Nebula
             switch (id)
             {
                 case MsgId.SpawnPlayer: OnSpawnPlayer(peer, SpawnPlayerMsg.Read(r)); break;
+                case MsgId.InstancePrepare: OnInstancePrepare(peer, InstancePreparationMsg.Read(r)); break;
+                case MsgId.InstanceReady: OnInstanceReady(peer, InstancePreparationMsg.Read(r)); break;
                 case MsgId.DespawnPlayer: OnDespawnPlayer(peer, DespawnPlayerMsg.Read(r)); break;
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;

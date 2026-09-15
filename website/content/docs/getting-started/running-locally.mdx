@@ -21,6 +21,8 @@ You can keep the project open in the Unity Editor while you build. The CLI copie
 
 The CLI prints compiler errors and lines tagged `[nebula]`. To read the complete build log, open `Builds/unity-build.log`. If a running mesh has locked the previous build, run `nebula build --stop-mesh` to stop it before building.
 
+After a wire-protocol change, rebuild and restart the mesh as well as any standalone or web clients. Compiling scripts in the Editor does not update running services. A gateway warning such as `client protocol 12 != 11; disconnecting` means the client and gateway versions differ. See [Rebuild after a protocol change](/docs/guides/instancing#rebuild-after-a-protocol-change).
+
 ## Start
 
 ```bash

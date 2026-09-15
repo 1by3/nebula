@@ -35,6 +35,7 @@ namespace Nebula
             /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
             public float DisconnectAt;
             public ulong PawnNetId;
+            public readonly HashSet<ulong> Visible = new HashSet<ulong>();
             /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
             public JoinState Join;
             public ushort JoinEstimate;
@@ -145,6 +146,69 @@ namespace Nebula
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkReader _reader = new NetworkReader();
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
+        private readonly NetworkWriter _visibilityWriter = new NetworkWriter(1024);
+
+        private Container ScopeContainer(ContainerRef reference)
+        {
+            for (int depth = 0; reference.IsDynamic && depth < 16; depth++)
+            {
+                if (!_entities.TryGetValue(reference.NetId, out var carrier)) return null;
+                reference = carrier.Container;
+            }
+            return ContainerRegistry.Resolve(reference);
+        }
+
+        private bool CanObserve(ClientConn client, EntityRecord entity)
+        {
+            if (!client.Welcomed) return false;
+            if (entity.NetId == client.PawnNetId) return true;
+            var target = ScopeContainer(entity.Container);
+            // Unknown runtime containers must never fall back to public visibility.
+            if (target == null && !entity.Container.IsNone) return false;
+            var source = _entities.TryGetValue(client.PawnNetId, out var pawn) ? ScopeContainer(pawn.Container) : null;
+            ulong scope = source?.InstanceId ?? 0;
+            if ((target?.InstanceId ?? 0) == scope) return true;
+            if (target != null && target.InstanceId != 0) return false;
+            var view = source?.Instance;
+            return view != null && view.ObservePublic && new Bounds(view.ObservationCenter, view.ObservationSize)
+                .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition, 0));
+        }
+
+        private bool ReconcileVisibility(ClientConn client, EntityRecord entity)
+        {
+            bool visible = CanObserve(client, entity);
+            if (visible && client.Visible.Add(entity.NetId))
+            {
+                entity.RefreshSpawnState(_scratch);
+                _visibilityWriter.Reset();
+                entity.LastSpawn.Write(_visibilityWriter, MsgId.EntitySpawn);
+                AppendReliable(client, _visibilityWriter.ToSegment());
+            }
+            else if (!visible && client.Visible.Remove(entity.NetId))
+            {
+                _visibilityWriter.Reset();
+                new EntityDespawnMsg { NetId = entity.NetId, Epoch = entity.Epoch }.Write(_visibilityWriter, MsgId.EntityDespawn);
+                AppendReliable(client, _visibilityWriter.ToSegment());
+            }
+            return visible;
+        }
+
+        private void ReconcileView(ClientConn client)
+        {
+            // Preserve replicas visible on both sides of a crossing, including the public hallway.
+            foreach (var entity in _entities.Values) ReconcileVisibility(client, entity);
+        }
+
+        private void BroadcastEntity(EntityRecord entity, Delivery delivery)
+        {
+            var segment = _writer.ToSegment();
+            foreach (var client in _clientsById.Values)
+            {
+                if (!client.Welcomed || !client.Visible.Contains(entity.NetId) || !CanObserve(client, entity)) continue;
+                if (delivery == Delivery.ReliableOrdered) AppendReliable(client, segment);
+                else _transport.Send(client.PeerId, delivery, segment);
+            }
+        }
         private uint _nextClientId = 1;
         private bool _registered;
         private float _nextHeartbeat;
@@ -287,6 +351,7 @@ namespace Nebula
                     HasBounds = lease.HasBounds,
                     BoundsCenter = lease.BoundsCenter,
                     BoundsSize = lease.BoundsSize,
+                    Instance = lease.Instance,
                 });
             }
             _writer.Reset();
@@ -362,6 +427,16 @@ namespace Nebula
             switch (id)
             {
                 case MsgId.EntitySpawn: OnEntitySpawn(w, EntitySpawnMsg.Read(r)); break;
+                case MsgId.InstancePrepare:
+                {
+                    var preparation = InstancePreparationMsg.Read(r);
+                    if (!_entities.TryGetValue(preparation.EntityId, out var pawn) || pawn.OwnerWorkerIndex != w.Index ||
+                        !_clientsById.TryGetValue(pawn.OwnerClientId, out var client) || client.PawnNetId != pawn.NetId) break;
+                    preparation.SourceWorker = w.Index;
+                    _writer.Reset(); preparation.Write(_writer, MsgId.InstancePrepare);
+                    AppendReliable(client, _writer.ToSegment());
+                    break;
+                }
                 case MsgId.EntityDespawn: OnEntityDespawn(w, EntityDespawnMsg.Read(r)); break;
                 case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r), r); break;
                 case MsgId.EntityRpc: OnEntityRpc(w, r); break;
@@ -390,7 +465,8 @@ namespace Nebula
                 _entities.Remove(netId);
                 _writer.Reset();
                 new EntityDespawnMsg { NetId = netId, Epoch = rec.Epoch }.Write(_writer, MsgId.EntityDespawn);
-                BroadcastToClients(Delivery.ReliableOrdered);
+                foreach (var client in _clientsById.Values)
+                    if (client.Visible.Remove(netId)) AppendReliable(client, _writer.ToSegment());
                 if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == netId)
                 {
                     c.PawnNetId = 0;
@@ -424,9 +500,17 @@ namespace Nebula
                 c.PawnNetId = msg.NetId;
                 SendJoinStatus(c, JoinState.Joined);
             }
-            _writer.Reset();
-            msg.Write(_writer, MsgId.EntitySpawn);
-            BroadcastToClients(Delivery.ReliableOrdered);
+            foreach (var client in _clientsById.Values)
+            {
+                bool alreadyVisible = client.Visible.Contains(rec.NetId);
+                if (ReconcileVisibility(client, rec) && alreadyVisible)
+                {
+                    _writer.Reset();
+                    msg.Write(_writer, MsgId.EntitySpawn);
+                    AppendReliable(client, _writer.ToSegment());
+                }
+                if (client.PawnNetId == rec.NetId) ReconcileView(client);
+            }
         }
 
         private void OnEntityDespawn(WorkerConn w, EntityDespawnMsg msg)
@@ -441,7 +525,8 @@ namespace Nebula
             }
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityDespawn);
-            BroadcastToClients(Delivery.ReliableOrdered);
+            foreach (var client in _clientsById.Values)
+                if (client.Visible.Remove(msg.NetId)) AppendReliable(client, _writer.ToSegment());
         }
 
         private void OnEntityVars(WorkerConn w, EntityVarsMsg msg, NetworkReader r)
@@ -451,7 +536,7 @@ namespace Nebula
             rec.LastSpawn.Epoch = msg.Epoch;
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityVars);
-            BroadcastToClients(Delivery.ReliableOrdered);
+            BroadcastEntity(rec, Delivery.ReliableOrdered);
         }
 
         private void OnEntityState(WorkerConn w, EntitySyncMsg msg)
@@ -465,13 +550,13 @@ namespace Nebula
             });
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityState);
-            BroadcastToClients(msg.Delivery);
+            BroadcastEntity(rec, msg.Delivery);
         }
 
         private void OnEntityRpc(WorkerConn w, NetworkReader r)
         {
             var msg = EntityRpcMsg.Read(r);
-            if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch) return;
+            if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
             if (msg.ClientId == 0 && msg.Radius > 0f)
@@ -482,12 +567,12 @@ namespace Nebula
                 var seg = _writer.ToSegment();
                 foreach (var c in _clientsById.Values)
                 {
-                    if (!c.Welcomed || !TryGetPawnPosition(c, out var pawnPos)) continue;
+                    if (!c.Welcomed || !c.Visible.Contains(rec.NetId) || !CanObserve(c, rec) || !TryGetPawnPosition(c, out var pawnPos)) continue;
                     if ((pawnPos - at).sqrMagnitude <= r2) AppendReliable(c, seg);
                 }
             }
-            else if (msg.ClientId == 0) BroadcastToClients(Delivery.ReliableOrdered);
-            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Welcomed) AppendReliable(c, _writer.ToSegment());
+            else if (msg.ClientId == 0) BroadcastEntity(rec, Delivery.ReliableOrdered);
+            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Visible.Contains(rec.NetId) && CanObserve(c, rec)) AppendReliable(c, _writer.ToSegment());
         }
 
         private readonly List<EntityStateEntry> _scratchEntries = new List<EntityStateEntry>();
@@ -530,9 +615,12 @@ namespace Nebula
                     rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world, 0);
                     rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity, 0)) * rotation;
                 }
+                bool changedScope = ScopeContainer(rec.Container)?.InstanceId != ScopeContainer(entry.Container)?.InstanceId;
                 rec.Container = entry.Container;
                 rec.LastSpawn.Container = entry.Container;
                 entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
+                if (changedScope)
+                    foreach (var observer in _clientsById.Values) ReconcileView(observer);
                 _scratchEntries.Add(entry);
             }
             if (_scratchEntries.Count == 0) return;
@@ -544,6 +632,7 @@ namespace Nebula
                 for (int i = 0; i < _scratchEntries.Count; i++)
                 {
                     var entry = _scratchEntries[i];
+                    if (!ReconcileVisibility(c, _entities[entry.NetId])) continue;
                     if (entry.Reliable)
                     {
                         _writer.Reset();
@@ -743,6 +832,15 @@ namespace Nebula
                     _transport.Send(w.PeerId, Delivery.Sequenced, _writer.ToSegment());
                     break;
                 }
+                case MsgId.InstanceReady:
+                {
+                    var preparation = InstancePreparationMsg.Read(r);
+                    if (preparation.EntityId != c.PawnNetId || !_entities.TryGetValue(c.PawnNetId, out var pawn) ||
+                        pawn.OwnerWorkerIndex != preparation.SourceWorker || !_workersByIndex.TryGetValue(preparation.SourceWorker, out var source)) break;
+                    _writer.Reset(); preparation.Write(_writer, MsgId.InstanceReady);
+                    _transport.Send(source.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                    break;
+                }
                 case MsgId.ServerRpc:
                 {
                     var msg = EntityRpcMsg.Read(r);
@@ -870,6 +968,8 @@ namespace Nebula
             _replayOrder.Sort((a, b) => CarrierDepth(a).CompareTo(CarrierDepth(b)));
             foreach (var rec in _replayOrder)
             {
+                if (!CanObserve(c, rec)) continue;
+                c.Visible.Add(rec.NetId);
                 rec.RefreshSpawnState(_scratch);
                 _writer.Reset();
                 rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);

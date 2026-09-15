@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 8, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 12, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 8. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 12. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `11`. Every `Hello` carries that version.
+The current protocol version is `12`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `11`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `12`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -135,6 +135,8 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 16 | `ContainerOwnership` | `G-C` | Reliable ordered | [`ContainerOwnership`](#container-ownership) |
 | 17 | `EntityState` | `W-G-C` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 18 | `Batch` | `G-C` | Reliable ordered | [`Batch`](#reliable-message-batch) |
+| 19 | `InstancePrepare` | `W-W`, `W-G-C` | Reliable ordered | [`InstancePreparation`](#instance-preparation) |
+| 22 | `InstanceReady` | `W-W`, `C-G-W` | Reliable ordered | [`InstancePreparation`](#instance-preparation) |
 | 20 | `ClientInput` | `C-G-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
 | 21 | `ServerRpc` | `C-G-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
@@ -310,11 +312,24 @@ OwnershipEntry :=
   string worker_id,
   u64 lease_epoch,
   string lease_state,
+  bool has_instance,
+  [InstanceContainerInfo when has_instance],
   u8 flags,
   [vector3 bounds_center, vector3 bounds_size when flags bit 0 is set]
 ```
 
 Flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box in absolute world coordinates. Other bits are reserved. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
+
+### Instance preparation
+
+```text
+InstanceContainerInfo := u64 instance_id, string content_resource,
+  bool observe_public, vector3 observation_center, vector3 observation_size
+InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
+  u16 source_worker, u64 lease_epoch, bool success
+```
+
+Preparation asks the destination worker and owning client to load content before crossing. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
 
 ### Reliable message batch
 

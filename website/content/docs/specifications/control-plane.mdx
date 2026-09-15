@@ -84,6 +84,7 @@ Nebula's runtime applies these conventions:
 | `state` | Lease state. Any supplied string is stored. |
 | `updatedAt` | Newest write that touched or changed the lease. |
 | `hasBounds`, `center`, `size` | Whether `center` and `size` define a runtime-container box, in absolute coordinates. Absent when `hasBounds` is false. |
+| `instance` | Optional Base64-encoded `InstanceContainerInfo` from the [wire specification](/docs/specifications/wire-protocol#instance-preparation). Includes the private scope, content resource, and outward observation bounds. |
 
 The lease epoch is not an entity authority epoch. The wire protocol represents this lease epoch as a `u64` in `ContainerOwnership`, while per-entity messages carry a separate `u32` epoch.
 
@@ -106,7 +107,7 @@ A request body is `{"ops":[op, op, ...]}`. Each op is an object with an `"op"` n
 | `HeartbeatOrchestrator` | `orchestratorId`, `desiredWorkers` | Accepted; the host is the orchestrator and keeps nothing. |
 | `SetSetting` | `key`, `value` | Insert or update. No-op when unchanged. |
 | `EnsureContainer` | `containerId` | Insert an unassigned `orphaned` lease at epoch 0 if missing. |
-| `EnsureRuntimeContainer` | `containerId`, `workerId`, `center`, `size` | Insert a bounded lease if missing: owned and `active` at epoch 1 when `workerId` is nonempty, else unassigned and `orphaned` at epoch 0. |
+| `EnsureRuntimeContainer` | `containerId`, `workerId`, `center`, `size`, optional `instance` | Insert a bounded lease if missing: owned and `active` at epoch 1 when `workerId` is nonempty, else unassigned and `orphaned` at epoch 0. `instance` uses the same Base64 metadata encoding as the lease row. Existing rows remain unchanged. |
 | `TouchContainer` | `containerId` | Refresh `updatedAt`. |
 | `AssignContainer` | `containerId`, `workerId` | See the transition table. |
 | `PinContainer` | `containerId`, `workerId` | See the transition table. |

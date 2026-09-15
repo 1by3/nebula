@@ -45,6 +45,7 @@ namespace Nebula
     /// <summary>Describes the current worker assignment for one container.</summary>
     public sealed class LeaseInfo
     {
+        public InstanceContainerInfo Instance;
         public string ContainerId;
         public string WorkerId;
         public ulong Epoch;
@@ -174,7 +175,7 @@ namespace Nebula
         /// that asked for the container owns it from the first change anyone sees. A no-op when the row exists:
         /// whoever asked first wins, and the second caller sees the row on the next change.
         /// </summary>
-        void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId);
+        void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null);
         /// <summary>
         /// Stamp a lease row's <see cref="LeaseInfo.UpdatedAt"/> without changing anything else: a worker that still
         /// wants a runtime container it does not own says so, and the owner reads the age before retiring the box.

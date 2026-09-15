@@ -87,7 +87,7 @@ private void RpcPlayDoorSound(Vector3 position)
 }
 ```
 
-An effect that is only visible near the entity does not need to reach every client. Give the attribute a `Radius` (metres) and the gateway delivers the broadcast only to clients whose pawn is within that distance of the entity; a targeted `OwnerRpc` is never filtered:
+An effect that is only visible near the entity does not need to reach every client. Give the attribute a `Radius` (metres) and the gateway delivers the broadcast only to clients whose pawn is within that distance of the entity; a targeted `OwnerRpc` bypasses the distance filter but still requires visibility:
 
 ```csharp
 [ClientRpc(Radius = 150f)]
@@ -115,7 +115,7 @@ private void RpcPurchaseConfirmed(int itemId)
 }
 ```
 
-Do not call `OwnerRpc` for an entity with `OwnerClientId == 0`. Client ID 0 means broadcast at the gateway, so an owner call on a server-driven entity reaches every client.
+Do not call `OwnerRpc` for an entity with `OwnerClientId == 0`. Client ID 0 means broadcast at the gateway, so an owner call on a server-driven entity reaches every client allowed to observe it.
 
 Clients reject an RPC with an older authority epoch than the entity state they already hold.
 

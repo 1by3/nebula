@@ -261,7 +261,7 @@ The runtime container registered as `id` on this process, or null.
 ### RegisterRuntime [#registerruntime]
 
 ```csharp
-public static Container RegisterRuntime(ulong id, Bounds frameBounds);
+public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null);
 ```
 
 Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk coordinate hash, a plot number) and axis-aligned in this process's frame. Legal at any time after boot, on any role; every process that should resolve the container has to register it under the same id with the same box, which is what [`SyncRuntime`](#syncruntime) does from the control-plane leases. Registering an id that is already here returns the existing container (its box is updated if it changed). Adjacency to baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the seam work like between baked containers.
@@ -325,7 +325,7 @@ Every container adjacent to `container` right now, into `result` (cleared first)
 ### Find [#find]
 
 ```csharp
-public static Container Find(Vector3 worldPosition, Container exclude = null);
+public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0);
 ```
 
 The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees. `exclude` leaves one container out of the search: an entity carrying a container resolves its own position without it, or it would be found inside itself.
@@ -333,7 +333,7 @@ The container whose volume holds the point; if none does, the nearest one. Conta
 ### Along [#along]
 
 ```csharp
-public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result);
+public static void Along(Vector3 a, Vector3 b, float margin, List<Container> result, ulong instanceId = 0);
 ```
 
 Every container whose box (grown by `margin`) the segment `a`-`b` passes through, appended to `result`. Nested containers are all reported: an entity in a building is in the building's box and in the outdoor box around it. This is what a hitscan or a line of sight uses to find out which workers, besides itself, could own something along the ray. In a gridded world only the cells the segment's bounds touch are visited; runtime containers are found through their hash and dynamic containers are always tested.

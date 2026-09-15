@@ -77,6 +77,7 @@ namespace Nebula
                 w.Prop("state", l.State ?? "");
                 w.Prop("updatedAt", ToUnixMs(l.UpdatedAt));
                 w.Prop("hasBounds", l.HasBounds);
+                if (l.Instance != null) w.Prop("instance", InstanceContainerInfo.Encode(l.Instance));
                 if (l.HasBounds)
                 {
                     w.Key("center"); Vec(w, l.BoundsCenter);
@@ -159,6 +160,7 @@ namespace Nebula
                         State = Str(o, "state"),
                         UpdatedAt = FromUnixMs(Num(o, "updatedAt")),
                         HasBounds = Bool(o, "hasBounds"),
+                        Instance = InstanceContainerInfo.Decode(Str(o, "instance")),
                     };
                     if (l.HasBounds)
                     {
@@ -284,7 +286,7 @@ namespace Nebula
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
                 case EnsureContainer: cp.EnsureContainer(Str(o, "containerId")); return null;
-                case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), new Bounds(Vec(o, "center"), Vec(o, "size")), Str(o, "workerId")); return null;
+                case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), new Bounds(Vec(o, "center"), Vec(o, "size")), Str(o, "workerId"), InstanceContainerInfo.Decode(Str(o, "instance"))); return null;
                 case TouchContainer: cp.TouchContainer(Str(o, "containerId")); return null;
                 case AssignContainer: cp.AssignContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
