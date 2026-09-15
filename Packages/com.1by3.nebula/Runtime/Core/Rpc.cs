@@ -6,7 +6,15 @@ namespace Nebula
 {
     /// <summary>Runs on every client that knows the entity (or only its owner when sent with OwnerRpc).</summary>
     [AttributeUsage(AttributeTargets.Method)]
-    public sealed class ClientRpcAttribute : Attribute { }
+    public sealed class ClientRpcAttribute : Attribute
+    {
+        /// <summary>
+        /// Metres. When set, the gateway delivers a broadcast of this RPC only to clients whose pawn is within this
+        /// distance of the entity (a tracer, a footstep, a muzzle flash: nobody across the map needs it). 0 (the
+        /// default) reaches every client. Targeted sends (OwnerRpc) are never filtered.
+        /// </summary>
+        public float Radius;
+    }
 
     /// <summary>Sent by the owning client, runs on whichever worker currently has authority over the entity.</summary>
     [AttributeUsage(AttributeTargets.Method)]
@@ -29,6 +37,8 @@ namespace Nebula
         public RpcKind Kind;
         public uint Hash;
         public string Name;
+        /// <summary>ClientRpc only: <see cref="ClientRpcAttribute.Radius"/>.</summary>
+        public float Radius;
     }
 
     /// <summary>Reflection-based RPC table. A source generator can replace this later without changing gameplay code.</summary>
@@ -59,7 +69,9 @@ namespace Nebula
                 foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                 {
                     RpcKind kind;
-                    if (m.GetCustomAttribute<ClientRpcAttribute>() != null) kind = RpcKind.Client;
+                    float radius = 0f;
+                    var clientAttr = m.GetCustomAttribute<ClientRpcAttribute>();
+                    if (clientAttr != null) { kind = RpcKind.Client; radius = clientAttr.Radius; }
                     else if (m.GetCustomAttribute<ServerRpcAttribute>() != null) kind = RpcKind.Server;
                     else if (m.GetCustomAttribute<AuthorityRpcAttribute>() != null) kind = RpcKind.Authority;
                     else continue;
@@ -75,7 +87,7 @@ namespace Nebula
                     uint hash = Hash(m.Name);
                     if (table.ContainsKey(hash))
                         throw new InvalidOperationException($"RPC name collision on {t.Name}: {m.Name} (overloads are not supported)");
-                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, Hash = hash, Name = m.Name };
+                    table[hash] = new RpcMethod { Method = m, ParameterTypes = types, Kind = kind, Hash = hash, Name = m.Name, Radius = radius };
                 }
             }
             Tables[type] = table;

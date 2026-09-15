@@ -61,6 +61,12 @@ namespace Nebula
         /// <summary>Drain the socket and deliver every pending event to <paramref name="handler"/>.</summary>
         void Poll(Action<TransportEvent> handler);
 
+        /// <summary>
+        /// Push everything queued by <see cref="Send"/> onto the wire now instead of at the transport's next internal
+        /// update. Call once per tick after the last Send, so a packet never waits for the sender's timer.
+        /// </summary>
+        void Flush();
+
         void Stop();
     }
 }

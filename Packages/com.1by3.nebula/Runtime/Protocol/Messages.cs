@@ -90,7 +90,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 8;
+        public const ushort ProtocolVersion = 9;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -347,6 +347,8 @@ namespace Nebula
         public uint MethodHash;
         /// <summary>For ClientRpc: 0 = every client, otherwise only that client. For ServerRpc: the sending client (filled by the gateway).</summary>
         public uint ClientId;
+        /// <summary>For a ClientRpc broadcast: deliver only to clients whose pawn is within this many metres of the entity (0 = everyone). See ClientRpcAttribute.Radius.</summary>
+        public float Radius;
         public byte[] Args;
 
         public void Write(NetworkWriter w, MsgId id)
@@ -357,6 +359,7 @@ namespace Nebula
             w.WriteByte(BehaviourIndex);
             w.WriteUInt(MethodHash);
             w.WriteUInt(ClientId);
+            w.WriteFloat(Radius);
             w.WriteBytes(Args);
         }
 
@@ -367,6 +370,7 @@ namespace Nebula
             BehaviourIndex = r.ReadByte(),
             MethodHash = r.ReadUInt(),
             ClientId = r.ReadUInt(),
+            Radius = r.ReadFloat(),
             Args = r.ReadBytes(),
         };
     }

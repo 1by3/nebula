@@ -74,7 +74,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `InterestFarRadius` | `80` m | Use the middle update rate between the near and far distances. |
 | `InterestMidDivisor` | `4` | Forward available unreliable root updates on every fourth tick in the middle band. Use `1` to forward each available update. |
 | `InterestFarDivisor` | `12` | Forward available unreliable root updates on every twelfth tick beyond the far distance. Clients without a pawn also use this filter. |
-| `InterpolationDelayTicks` | `3` | Render remote entities this many ticks behind the latest received state. |
+| `InterpolationDelayTicks` | `3` | Render remote entities at least this many ticks behind the latest received state. The client adds the lateness it measures on the slowest worker's stream (up to 6 ticks; `NebulaClient.RenderDelayTicks` shows the total). |
 | `InputLeadMarginTicks` | `2` | Add this many ticks to half the measured round-trip time when scheduling input. |
 | `InputLeadTargetTicks` | `3` | Keep client input this many ticks ahead when it arrives at the worker. |
 | `InputLeadMaxAdjustTicks` | `30` | Limit how far the client can increase its input lead. |

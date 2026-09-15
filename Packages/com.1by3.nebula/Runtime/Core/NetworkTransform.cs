@@ -212,7 +212,10 @@ namespace Nebula
             { p = buffer.LatestLocalPosition; r = buffer.LatestLocalRotation; s = buffer.LatestScale; }
             entry.Merge(ref p, ref r, ref s, ref v);
             _rootReceivedFields = entry.Fields;
-            bool snap = !Interpolate || (entry.Fields & (TransformFields.Teleport | TransformFields.Location)) != 0;
+            // A container change (a ship crossing a cell seam, an entity handed to another worker) is not a jump: the
+            // sample carries its container and the interpolator bridges frames, so an interpolating copy keeps its
+            // buffer and glides across the seam. Only a teleport, or a copy that does not interpolate, snaps.
+            bool snap = !Interpolate || (entry.Fields & TransformFields.Teleport) != 0;
             if (snap) buffer.Clear();
             buffer.Push(tick, container, p, r, v, s);
             if (snap) ApplyRoot(container, p, r, s);

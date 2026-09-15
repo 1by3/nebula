@@ -87,6 +87,18 @@ private void RpcPlayDoorSound(Vector3 position)
 }
 ```
 
+An effect that is only visible near the entity does not need to reach every client. Give the attribute a `Radius` (metres) and the gateway delivers the broadcast only to clients whose pawn is within that distance of the entity; a targeted `OwnerRpc` is never filtered:
+
+```csharp
+[ClientRpc(Radius = 150f)]
+private void RpcShotFired(Vector3 origin, Vector3 end, bool hit)
+{
+    DrawTracer(origin, end, hit);
+}
+```
+
+With hundreds of NPCs shooting, this keeps each client's reliable stream to the fights it can see.
+
 Use `OwnerRpc` when only the owning client needs the result:
 
 ```csharp

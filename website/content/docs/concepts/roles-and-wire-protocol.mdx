@@ -93,7 +93,7 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
 | `EntityState` | either | Sends state from sync components that have changed. |
-| `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast) |
+| `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast). A broadcast declared with a `Radius` carries it, and the gateway forwards it only to clients whose pawn is within that distance of the entity. |
 
 **Client to gateway to worker**
 

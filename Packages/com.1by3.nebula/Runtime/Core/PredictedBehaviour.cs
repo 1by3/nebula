@@ -87,6 +87,8 @@ namespace Nebula
 
         /// <summary>Positional error above which the client snaps to the server's state and replays.</summary>
         protected virtual float CorrectionThreshold => 0.05f;
+        /// <summary>Diagnostics: log every correction with the server and predicted positions (owning client).</summary>
+        public static bool LogCorrections;
 
         /// <summary>
         /// True while <see cref="Simulate"/> is re-running already-predicted ticks after a server correction. One-shot
@@ -291,6 +293,7 @@ namespace Nebula
             }
             // Snap to the server's state at serverTick (ReadState left us there) and replay every input after it.
             Corrections++;
+            if (LogCorrections) NebulaLog.Info($"correction on {Identity} tick {serverTick} error {error:0.000} m: server {serverPos:F3} predicted {predicted:F3} (recorded in {(h.Container != null ? h.Container.ContainerId : "world")}, now in {(Identity.Container != null ? Identity.Container.ContainerId : "world")})");
             LastCorrectionMagnitude = error;
             if (error > MaxCorrectionMagnitude) MaxCorrectionMagnitude = error;
             h.Position = serverPos;

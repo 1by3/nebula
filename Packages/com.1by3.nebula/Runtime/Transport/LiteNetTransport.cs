@@ -106,6 +106,8 @@ namespace Nebula
             _handler = null;
         }
 
+        public void Flush() => _net.TriggerUpdate();
+
         public void Stop()
         {
             _net.Stop();

@@ -44,6 +44,10 @@ namespace Nebula
                     Console.SetOut(synchronized); Console.SetError(synchronized);
                 }
                 NebulaLog.Verbose = CommandLine.GetBool("nebula-verbose", false);
+                // Windows wakes a sleeping thread on its timer interrupt, 15.6 ms apart by default. A 60 Hz loop and the
+                // transport's send thread both sleep between ticks, so without a finer timer every packet through this
+                // process could wait up to two interrupts. Unity players request 1 ms themselves; a plain .NET process must ask.
+                using var timer = FineTimer.Request();
                 var manifest = ServiceManifest.Load(CommandLine.Get("nebula-service-manifest", Path.Combine(AppContext.BaseDirectory, "nebula-services.json")));
                 var config = manifest.Config;
                 ApplyOverrides(config);
@@ -80,12 +84,28 @@ namespace Nebula
                 }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
+                // The orchestrator ticks at the simulation rate; the gateway is a relay, and a packet it holds until its
+                // next loop is latency the client sees, so it polls and forwards several times per tick.
+                double period = gateway != null ? NetworkTime.TickInterval / 4 : NetworkTime.TickInterval;
                 var clock = Stopwatch.StartNew();
                 double next = 0;
+                // Loop telemetry: how regularly the service actually ticks (the OS timer decides, not the code).
+                int loops = 0; double maxPeriod = 0, maxWork = 0, workSum = 0, lastStart = 0, nextReport = 5;
                 while (!stop.IsCancellationRequested)
                 {
+                    double start = clock.Elapsed.TotalSeconds;
+                    if (loops > 0 && start - lastStart > maxPeriod) maxPeriod = start - lastStart;
+                    lastStart = start;
                     control.Tick(); persistence?.Tick(); orchestrator?.Tick(); gateway?.Tick();
-                    next += NetworkTime.TickInterval;
+                    double work = clock.Elapsed.TotalSeconds - start;
+                    workSum += work; if (work > maxWork) maxWork = work;
+                    loops++;
+                    if (start >= nextReport)
+                    {
+                        NebulaLog.Info($"loop {loops / 5f:0} Hz, period max {maxPeriod * 1000:0.0} ms, tick avg {workSum / loops * 1000:0.00} ms max {maxWork * 1000:0.0} ms");
+                        loops = 0; maxPeriod = maxWork = workSum = 0; nextReport = start + 5;
+                    }
+                    next += period;
                     double delay = next - clock.Elapsed.TotalSeconds;
                     if (delay > 0) stop.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(delay));
                     else if (delay < -1) next = clock.Elapsed.TotalSeconds;
@@ -182,6 +202,36 @@ namespace Nebula
             return p;
         }
         private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+    /// <summary>Holds the Windows multimedia timer at 1 ms for the life of the process (a no-op elsewhere).</summary>
+    internal sealed class FineTimer : IDisposable
+    {
+        [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint ms);
+        [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint ms);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetProcessInformation(IntPtr process, int informationClass, ref PowerThrottlingState state, uint size);
+        [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+        [StructLayout(LayoutKind.Sequential)] private struct PowerThrottlingState { public uint Version, ControlMask, StateMask; }
+        private const int ProcessPowerThrottling = 4;
+        private const uint PowerThrottlingIgnoreTimerResolution = 0x4;
+        private readonly bool _held;
+        private FineTimer(bool held) { _held = held; }
+        public static FineTimer Request()
+        {
+            if (!OperatingSystem.IsWindows()) return new FineTimer(false);
+            if (Environment.GetEnvironmentVariable("NEBULA_COARSE_TIMER") == "1") { NebulaLog.Warn("NEBULA_COARSE_TIMER=1: leaving the Windows timer at its default resolution (diagnostics)"); return new FineTimer(false); }
+            try
+            {
+                // Windows 11 ignores a timer-resolution request from a process without a foreground window (a
+                // service like this one) unless the process opts out of that power throttling first.
+                var state = new PowerThrottlingState { Version = 1, ControlMask = PowerThrottlingIgnoreTimerResolution, StateMask = 0 };
+                bool optedOut = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, ref state, (uint)Marshal.SizeOf<PowerThrottlingState>());
+                bool held = timeBeginPeriod(1) == 0;
+                NebulaLog.Info($"timer resolution 1 ms {(held ? "requested" : "refused")}; background throttling opt-out {(optedOut ? "ok" : "unavailable")}");
+                return new FineTimer(held);
+            }
+            catch (Exception e) { NebulaLog.Warn($"could not raise the timer resolution: {e.Message}"); return new FineTimer(false); }
+        }
+        public void Dispose() { if (_held) timeEndPeriod(1); }
     }
     public static class NebulaLog
     {

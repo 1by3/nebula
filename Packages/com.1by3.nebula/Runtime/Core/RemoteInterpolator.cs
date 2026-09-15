@@ -31,6 +31,11 @@ namespace Nebula
         private uint _previousTick;
         private bool _any;
 
+        /// <summary>Process-wide sample statistics, reset by whoever reports them (NebulaClient's telemetry line).</summary>
+        public static long Samples, Starved;
+        public static double DepthSum, MaxOvershoot;
+        public static void ResetStats() { Samples = Starved = 0; DepthSum = MaxOvershoot = 0; }
+
         public uint LatestTick => _latestTick;
         public bool HasSamples => _any;
         public Vector3 LatestScale { get; private set; } = Vector3.one;
@@ -107,6 +112,23 @@ namespace Nebula
             localRotation = LatestLocalRotation;
             if (!_any) return false;
 
+            // Telemetry (see NebulaClient), for streams arriving every tick or two only: an entity the gateway sends
+            // every 12th tick, or one that stopped moving, sits past its newest sample by design. A full-rate stream
+            // whose render tick runs past the newest sample is starving: the snapshot pipeline delivered late.
+            // Only while the stream is current (its newest sample is within two ticks of the newest tick heard): an
+            // entity that stopped moving stops being sent, and is not starving. A stalled pipeline shows up in the
+            // client's own-pawn gaps and snapshot age instead.
+            if (_latestTick - _previousTick <= 2 && NetworkTime.LatestServerTick - _latestTick <= 2)
+            {
+                Samples++;
+                DepthSum += _latestTick - renderTick;
+                if (renderTick > _latestTick + 1)
+                {
+                    Starved++;
+                    double over = renderTick - _latestTick;
+                    if (over > MaxOvershoot) MaxOvershoot = over;
+                }
+            }
             if (renderTick >= _latestTick)
             {
                 // Past the newest sample: extrapolate by velocity, for at most the spacing this stream arrives at

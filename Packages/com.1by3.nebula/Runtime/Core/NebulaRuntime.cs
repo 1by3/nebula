@@ -5,7 +5,7 @@ namespace Nebula
     /// <summary>Where RPCs and state changes go once a behaviour has produced them. Implemented by the worker and the client.</summary>
     public interface IRpcSink
     {
-        void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId);
+        void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius);
         void SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
         void SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
     }

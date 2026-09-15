@@ -86,6 +86,34 @@ namespace Nebula
         private int _frames;
         private int _lastCorrections;
         private double _renderTick;
+        private double _renderOffset;
+        private bool _hasRenderOffset;
+        /// <summary>How fast the render clock's offset closes on its target: the fraction of the remaining error removed per second (a 1/3 s time constant).</summary>
+        private const double RenderOffsetRatePerSecond = 3.0;
+        private float _maxFrameMs;
+        private int _fixedThisFrame, _maxFixedPerFrame;
+        /// <summary>Gaps in the local pawn's own state stream (which the gateway sends every tick) longer than this many ticks.</summary>
+        private const uint StateGapThresholdTicks = 3;
+        private uint _lastOwnStateTick;
+        private int _stateGaps;
+        private uint _worstStateGap;
+        /// <summary>Age of world-state packets on arrival, ms, measured against the wall clock the workers derive their ticks from (exact on one machine, clock offset elsewhere: read the spread, not the absolute).</summary>
+        private double _ageMin = double.MaxValue, _ageMax, _ageSum;
+        private int _ageCount;
+        /// <summary>How far behind the newest tick heard the world-state stream of the slowest worker currently runs (ticks), over the last two seconds.</summary>
+        public int StreamLagTicks => Math.Max(_lagBucket, _lagPreviousBucket);
+        /// <summary>The render delay in use: <see cref="NebulaConfig.InterpolationDelayTicks"/> plus the measured stream lag.</summary>
+        public int RenderDelayTicks { get; private set; }
+        private const int MaxStreamLagTicks = 6;
+        private int _lagBucket, _lagPreviousBucket;
+        private float _lagBucketEnds;
+        // The carrier the local pawn rides (a ship): frame-to-frame jumps of its rendered hull beyond what its velocity explains.
+        private NetworkIdentity _carrier;
+        private Vector3 _carrierLastPos;
+        private ContainerRef _carrierLastContainer;
+        private uint _carrierLastEpoch;
+        private int _carrierHitches, _carrierContainerChanges, _carrierEpochChanges;
+        private float _carrierWorstJump;
         /// <summary>After raising the lead, reports for inputs sent with the old lead keep arriving for about an RTT; ignore them.</summary>
         private float _leadHoldUntil;
         private float _leadRelaxAt;
@@ -185,6 +213,10 @@ namespace Nebula
             }
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
+            float frameMs = Time.unscaledDeltaTime * 1000f;
+            if (frameMs > _maxFrameMs) _maxFrameMs = frameMs;
+            if (_fixedThisFrame > _maxFixedPerFrame) _maxFixedPerFrame = _fixedThisFrame;
+            _fixedThisFrame = 0;
             if (Time.unscaledTime >= _nextTelemetry)
             {
                 _nextTelemetry = Time.unscaledTime + TelemetryIntervalSeconds;
@@ -211,19 +243,61 @@ namespace Nebula
             // is half an RTT ahead of it): on a 40 ms link the old way left under two ticks of buffer, so every
             // bit of jitter tipped the interpolator into extrapolating and pawns skipped.
             double halfRttTicks = RttMs > 0 ? RttMs * 0.5 / 1000.0 * NetworkTime.TickRate : 0.5;
-            double targetRender = _serverTickEstimate - halfRttTicks - Config.InterpolationDelayTicks;
-            if (Math.Abs(targetRender - _renderTick) > 10) _renderTick = targetRender;
-            else _renderTick += (targetRender - _renderTick) * 0.1;
+            // Streams from different workers arrive with different lateness (each worker publishes its tick at its own
+            // point in its frame): the clock anchors on the newest tick heard, so the configured delay alone would leave
+            // the slowest worker's entities with almost no buffer. Interpolate behind the slowest current stream.
+            RenderDelayTicks = Config.InterpolationDelayTicks + Math.Min(StreamLagTicks, MaxStreamLagTicks);
+            double targetRender = _serverTickEstimate - halfRttTicks - RenderDelayTicks;
+            // The render clock advances with real time; only its offset from the target is smoothed, at a rate in
+            // seconds. Smoothing the tick itself toward a target that moves every frame lags behind it by
+            // (1 - k) / k frame-steps: at 60 fps with k = 0.1 that was nine ticks, a quarter second of extra
+            // latency, and once the lag crossed the snap threshold every remote entity jumped a dozen ticks ahead
+            // twice a second. Fast clients never saw it; a client rendering a busy scene saw nothing else.
+            double now = Time.unscaledTimeAsDouble * NetworkTime.TickRate;
+            double desiredOffset = targetRender - now;
+            if (!_hasRenderOffset || Math.Abs(desiredOffset - _renderOffset) > 10) { _renderOffset = desiredOffset; _hasRenderOffset = true; }
+            else _renderOffset += (desiredOffset - _renderOffset) * Math.Min(1.0, RenderOffsetRatePerSecond * Time.unscaledDeltaTime);
+            _renderTick = now + _renderOffset;
             NetworkTime.RenderTick = _renderTick;
             foreach (var e in _entities.Values)
             {
                 // The local player too: its server-authoritative children (a NetworkTransform on a turret, say) interpolate.
                 e.RemoteTick(_renderTick);
             }
+            TrackCarrier();
+        }
+
+        /// <summary>Telemetry for the hull under the local pawn: a rendered jump the reported velocity does not explain is a hitch the pilot sees.</summary>
+        private void TrackCarrier()
+        {
+            var carrier = LocalPlayer != null && LocalPlayer.Container != null ? LocalPlayer.Container.Carrier : null;
+            if (carrier != _carrier)
+            {
+                _carrier = carrier;
+                if (carrier == null) return;
+                _carrierLastPos = carrier.transform.position;
+                _carrierLastContainer = carrier.ContainerRef;
+                _carrierLastEpoch = carrier.Epoch;
+                return;
+            }
+            if (carrier == null) return;
+            var pos = carrier.transform.position;
+            float moved = (pos - _carrierLastPos).magnitude;
+            float expected = carrier.Motion.Velocity.magnitude * Time.unscaledDeltaTime;
+            if (moved > expected * 2f + 0.05f)
+            {
+                _carrierHitches++;
+                if (moved - expected > _carrierWorstJump) _carrierWorstJump = moved - expected;
+            }
+            _carrierLastPos = pos;
+            if (carrier.ContainerRef != _carrierLastContainer) { _carrierContainerChanges++; _carrierLastContainer = carrier.ContainerRef; }
+            if (carrier.Epoch != _carrierLastEpoch) { _carrierEpochChanges++; _carrierLastEpoch = carrier.Epoch; }
         }
 
         private void FixedUpdate()
         {
+            _fixedThisFrame++;
+            if (_transport == null) return; // torn down (see OnDestroy); Unity can still call FixedUpdate this frame
             if (ConnectionState != State.InGame || LocalPlayer == null || LocalPlayer.Predicted == null) return;
 
             // Inputs must reach the worker before it simulates that tick: lead by half the RTT plus a margin, plus
@@ -269,6 +343,7 @@ namespace Nebula
             _writer.Reset();
             _inputMsg.Write(_writer, MsgId.ClientInput);
             _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
+            _transport.Flush();
         }
 
         private void ReportTelemetry()
@@ -277,7 +352,14 @@ namespace Nebula
             int corrections = predicted != null ? predicted.Corrections - _lastCorrections : 0;
             if (predicted != null) _lastCorrections = predicted.Corrections;
             float seconds = TelemetryIntervalSeconds;
-            NebulaLog.Info($"client {_frames / seconds:0} fps entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")}");
+            NebulaLog.Info($"client {_frames / seconds:0} fps entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}" : "")}");
+            _carrierHitches = _carrierContainerChanges = _carrierEpochChanges = 0; _carrierWorstJump = 0;
+            _ageMin = double.MaxValue; _ageMax = 0; _ageSum = 0; _ageCount = 0;
+            RemoteInterpolator.ResetStats();
+            _maxFrameMs = 0;
+            _maxFixedPerFrame = 0;
+            _stateGaps = 0;
+            _worstStateGap = 0;
             _frames = 0;
             _packetsIn = 0;
             _bytesIn = 0;
@@ -635,11 +717,28 @@ namespace Nebula
         {
             WorldStateMsg.ReadHeader(r, out uint tick, out ushort workerIndex, out ushort count);
             NoteServerTick(tick);
+            int lag = (int)Math.Min(_latestServerTick - tick, 30);
+            if (Time.unscaledTime >= _lagBucketEnds) { _lagPreviousBucket = _lagBucket; _lagBucket = 0; _lagBucketEnds = Time.unscaledTime + 1f; }
+            if (lag > _lagBucket) _lagBucket = lag;
+            double age = (NetworkTime.DerivedTickExact - tick) * NetworkTime.TickInterval * 1000.0;
+            if (age < _ageMin) _ageMin = age;
+            if (age > _ageMax) _ageMax = age;
+            _ageSum += age; _ageCount++;
             _stateEntriesIn += count;
             for (int i = 0; i < count; i++)
             {
                 var entry = EntityStateEntry.Read(r);
                 if (!_entities.TryGetValue(entry.NetId, out var e) || entry.Epoch < e.Epoch) continue;
+                if (e == LocalPlayer)
+                {
+                    // The own pawn is sent every tick: a gap here is a packet lost or delayed somewhere on the path.
+                    if (_lastOwnStateTick != 0 && tick > _lastOwnStateTick + StateGapThresholdTicks)
+                    {
+                        _stateGaps++;
+                        if (tick - _lastOwnStateTick > _worstStateGap) _worstStateGap = tick - _lastOwnStateTick;
+                    }
+                    if (tick > _lastOwnStateTick) _lastOwnStateTick = tick;
+                }
                 ushort oldWorker = e.OwnerWorkerIndex;
                 if (!e.ReceiveState(tick, workerIndex, entry)) continue;
                 if (oldWorker != workerIndex)
@@ -724,13 +823,14 @@ namespace Nebula
             _pendingSceneByNetId.Clear();
             _pendingByCarrier.Clear();
             LocalPlayer = null;
+            _hasRenderOffset = false;
         }
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
-        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId)
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius)
         {
             NebulaLog.Warn("ClientRpc sent from a client; ignored");
         }

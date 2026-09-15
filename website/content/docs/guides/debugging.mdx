@@ -60,6 +60,31 @@ To profile your own game code, create a section with `NebulaProfiler.Section("na
 
 To read profile lines from a deployed worker, run `nebula logs --cloud w1 -n 300` and filter for `profile`.
 
+## Read the delivery path
+
+A low worker tick time does not mean players see smooth motion: a snapshot still has to cross the worker's transport, the gateway's loop, and the client's frame. Two more telemetry lines cover that path.
+
+The client writes one line every five seconds (`nebula logs bot1`, or the player log):
+
+```text
+[nebula] client 142 fps entities 1016 in 866 pkt/s 285.0 KB/s 4901 states/s (msgs: state 1788 rpc 279 vars 810) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 2 last 0.10m | full-rate interp: depth 3.8 ticks, starved 3.0% worst +2.0 | frame max 17.8ms fixed/frame max 1 | gaps>3t 1 worst 176t | render delay 4t (stream lag 1t) | snapshot age ms min 6.5 avg 17.6 max 35.0
+```
+
+- `corrections` counts reconciliation snaps of the local pawn; steady non-zero counts with a large `last` distance mean prediction and simulation disagree.
+- `full-rate interp` covers entities the gateway sends every tick. `depth` is how many ticks of buffer the interpolator has; `starved` is the share of frames that had to extrapolate past the newest sample. Starvation is what a player sees as remote entities stuttering or rubberbanding.
+- `render delay` is `InterpolationDelayTicks` plus `stream lag`, the lateness measured on the slowest worker's stream.
+- `snapshot age` is the age of world-state packets on arrival, against the wall clock the workers derive ticks from. On one machine the numbers are exact; across machines read the spread between `min` and `max`, which is the jitter the interpolation delay has to cover.
+- `frame max` and `fixed/frame max` show whether the client itself is stalling.
+- `carrier hitches` appears while the local pawn rides a carrier (a ship): frame-to-frame jumps of the hull that its reported velocity does not explain, with the carrier's container and epoch changes in the same window. A pilot feels every one of these.
+
+The standalone orchestrator and gateway write a loop line every five seconds:
+
+```text
+[nebula] loop 240 Hz, period max 6.1 ms, tick avg 0.08 ms max 0.3 ms
+```
+
+`period max` is the longest wait between two loops. The gateway runs four loops per tick; a period well above its interval means the process is not being scheduled on time (on Windows, the service requests a 1 ms timer and opts out of background timer throttling at startup; the log says so).
+
 ## Find logs
 
 For a local mesh, find logs in `Builds/<platform>/Logs/`, where `<platform>` is `Win64`, `MacOS`, or `Linux64`.

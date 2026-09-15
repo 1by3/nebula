@@ -774,6 +774,7 @@ namespace Nebula
             ProfPublish.Begin();
             PublishToGateways(tick);
             foreach (var e in _authoritative) e.ClearDirty();
+            _transport.Flush();
             ProfPublish.End();
         }
 
@@ -1594,9 +1595,9 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
-        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId)
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius)
         {
-            var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Args = ToArray(args) };
+            var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Radius = radius, Args = ToArray(args) };
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
             foreach (var g in _gateways) Send(g, Delivery.ReliableOrdered);

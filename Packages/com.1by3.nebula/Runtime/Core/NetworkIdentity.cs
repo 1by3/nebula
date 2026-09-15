@@ -113,7 +113,10 @@ namespace Nebula
             LastStateTick = tick;
             HasStateTick = true;
             bool location = (entry.Fields & TransformFields.Location) != 0;
-            if (location || RootTransform == null)
+            // An interpolating root transform carries a container change through its buffer (see
+            // NetworkTransform.ReceiveRoot); placing the object here as well would jump it to the newest sample.
+            bool smoothed = RootTransform != null && RootTransform.Interpolate && (entry.Fields & TransformFields.Teleport) == 0;
+            if ((location && !smoothed) || RootTransform == null)
             {
                 SetContainer(container);
                 if (!(IsLocalPlayer && Predicted != null) && !(RootTransform != null && RootTransform.IsSyncAuthority))

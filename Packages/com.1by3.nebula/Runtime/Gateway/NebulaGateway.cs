@@ -162,6 +162,7 @@ namespace Nebula
         {
             _transport.Poll(HandleTransportEvent);
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
+            _transport.Flush();
             ReportWorldStateStats();
 
             if (!_registered && ControlPlane.IsConnected)
@@ -396,7 +397,19 @@ namespace Nebula
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch) return;
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
-            if (msg.ClientId == 0) BroadcastToClients(Delivery.ReliableOrdered);
+            if (msg.ClientId == 0 && msg.Radius > 0f)
+            {
+                // A spatial RPC (a tracer, a footstep): only clients whose pawn is within its radius of the entity.
+                var at = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
+                float r2 = msg.Radius * msg.Radius;
+                var seg = _writer.ToSegment();
+                foreach (var c in _clientsById.Values)
+                {
+                    if (!c.Welcomed || !TryGetPawnPosition(c, out var pawnPos)) continue;
+                    if ((pawnPos - at).sqrMagnitude <= r2) AppendReliable(c, seg);
+                }
+            }
+            else if (msg.ClientId == 0) BroadcastToClients(Delivery.ReliableOrdered);
             else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Welcomed) AppendReliable(c, _writer.ToSegment());
         }
 

@@ -97,7 +97,7 @@ namespace Nebula.Tests
             public int RoundTripMs(int peerId) => 0;
             public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload)
             { var bytes = new byte[payload.Count]; Array.Copy(payload.Array, payload.Offset, bytes, 0, bytes.Length); Sent.Add((delivery, bytes)); }
-            public void Poll(Action<TransportEvent> handler) { } public void Stop() { } public void Dispose() { }
+            public void Poll(Action<TransportEvent> handler) { } public void Flush() { } public void Stop() { } public void Dispose() { }
         }
 
         [Test] public void WorkerBatchesOnlyOptedInEntitiesWithinSequencedPacketBudget()
