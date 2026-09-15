@@ -64,6 +64,55 @@ namespace Nebula.Editor
 
         public static string MacBuildDir => Path.Combine(ProjectRoot, "Builds", "MacOS");
         public static string MacExecutablePath => Path.Combine(MacBuildDir, "Nebula.app");
+        public static string WebBuildDir => Path.Combine(ProjectRoot, "Builds", "Web");
+
+        [MenuItem("Nebula/Build/Web Client", priority = 2)]
+        public static void BuildWebMenu()
+        {
+            var report = BuildWeb();
+            if (report != null && report.summary.result == BuildResult.Succeeded)
+            {
+                EditorUtility.RevealInFinder(Path.Combine(WebBuildDir, "index.html"));
+            }
+        }
+
+        /// <summary>
+        /// Web client (Builds/Web): a browser build that reaches the gateway over WebRTC. The standalone gateway serves
+        /// it from a Web folder beside its own build folder, so `nebula start` puts it at http://127.0.0.1:7000/.
+        /// The build is gzip-compressed, because browsers accept brotli only over HTTPS.
+        /// </summary>
+        public static BuildReport BuildWeb()
+        {
+            var scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray();
+            if (scenes.Length == 0)
+            {
+                Debug.LogError("[nebula] no scenes in Build Settings. Add your game scene in File > Build Profiles.");
+                return null;
+            }
+            var compression = PlayerSettings.WebGL.compressionFormat;
+            var fallback = PlayerSettings.WebGL.decompressionFallback;
+            bool runInBackground = PlayerSettings.runInBackground;
+            try
+            {
+                PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
+                PlayerSettings.WebGL.decompressionFallback = false;
+                PlayerSettings.runInBackground = true;
+                var options = new BuildPlayerOptions { scenes = scenes, locationPathName = WebBuildDir, target = BuildTarget.WebGL, options = BuildOptions.None };
+                Debug.Log($"[nebula] building {WebBuildDir} (WebGL) with scenes: {string.Join(", ", scenes)}");
+                var report = BuildPipeline.BuildPlayer(options);
+                Debug.Log($"[nebula] build {report.summary.result} in {report.summary.totalTime.TotalSeconds:F0}s, {report.summary.totalErrors} errors");
+                return report;
+            }
+            finally
+            {
+                PlayerSettings.WebGL.compressionFormat = compression;
+                PlayerSettings.WebGL.decompressionFallback = fallback;
+                PlayerSettings.runInBackground = runInBackground;
+            }
+        }
+
+        /// <summary>Entry point for batchmode web client builds; exits with a non-zero code on failure.</summary>
+        public static void BuildWebBatch() => ExitOnFailure(BuildWeb());
 
         private static BuildReport Build(BuildTarget target, StandaloneBuildSubtarget subtarget, string location, NamedBuildTarget named)
         {

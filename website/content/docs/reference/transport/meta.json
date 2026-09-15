@@ -1,4 +1,4 @@
 {
   "title": "Transport",
-  "pages": ["delivery", "i-transport", "lite-net-transport", "transport-event"]
+  "pages": ["delivery", "i-transport", "lite-net-transport", "multi-transport", "transport-event"]
 }

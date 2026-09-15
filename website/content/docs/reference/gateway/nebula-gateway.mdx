@@ -62,6 +62,10 @@ public int EntityCount { get; }
 ### Initialize [#initialize]
 
 ```csharp
-public void Initialize(NebulaConfig config, IControlPlane controlPlane);
+public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null);
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `browserTransport` | A second transport clients arrive on, already listening: the standalone gateway's WebRTC listener for web builds. Null accepts UDP clients only. |
 

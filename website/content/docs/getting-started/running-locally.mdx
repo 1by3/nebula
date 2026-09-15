@@ -10,11 +10,12 @@ Run the commands on this page from a Unity project where you have already run `n
 ```bash
 nebula build
 nebula build --linux
+nebula build --web
 ```
 
 To build the game for your current platform, run `nebula build`. The command reads the required Unity version from `ProjectSettings/ProjectVersion.txt`. It finds that version through Unity Hub, `NEBULA_UNITY`, or the path saved by `nebula config unity`.
 
-On Windows, the default output is `Builds/Win64/Nebula.exe`. Set `executable` in `nebula.json` to change the base name. To build a Linux dedicated server, run `nebula build --linux`. This command writes the server to `Builds/Linux64` and creates `Builds/nebula-linux.tar.gz` for deployment.
+On Windows, the default output is `Builds/Win64/Nebula.exe`. Set `executable` in `nebula.json` to change the base name. To build a Linux dedicated server, run `nebula build --linux`. This command writes the server to `Builds/Linux64` and creates `Builds/nebula-linux.tar.gz` for deployment. To build a client that runs in a browser, run `nebula build --web`. It writes `Builds/Web`, which the local gateway serves. See [Build for the web](/docs/guides/web-builds).
 
 You can keep the project open in the Unity Editor while you build. The CLI copies the project to `~/.nebula-cli/scratch/<project>`, builds the copy, and writes the result to your project's `Builds/` folder.
 
@@ -48,6 +49,8 @@ Builds\Win64\Nebula.exe -nebula-role client -nebula-name Player
 ```
 
 If your scene includes `NebulaTitleScreen`, enter the gateway address and a display name on the title screen, then select **Connect**. Use `127.0.0.1:7000` for a local mesh. Press Escape during the game to disconnect or choose another gateway. **Nebula > Set Up Active Scene** adds the title screen for you.
+
+To join from a browser, run `nebula build --web`, then open `http://127.0.0.1:7000/`.
 
 Without `NebulaTitleScreen`, a client started without connection arguments stays idle until your code calls `NebulaClient.ConnectTo`. See [Connecting clients](/docs/guides/connecting-clients).
 

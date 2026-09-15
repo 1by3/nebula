@@ -82,6 +82,30 @@ public string WorkerAdvertiseAddress = "127.0.0.1";
 
 Address workers advertise to peers and the gateway.
 
+### WebClients [#webclients]
+
+```csharp
+public bool WebClients = true;
+```
+
+The standalone gateway also accepts clients from a Web build: WebRTC signaling over HTTP on WebPort and data channels over UDP on WebRtcPort. It serves the web build too when a Web folder sits next to it. -nebula-web false turns this off.
+
+### WebPort [#webport]
+
+```csharp
+public ushort WebPort = 0;
+```
+
+TCP port of the gateway's HTTP server (WebRTC signaling and the web build). 0 = the same number as GatewayPort. A browser client connects to this port. -nebula-web-port overrides.
+
+### WebRtcPort [#webrtcport]
+
+```csharp
+public ushort WebRtcPort = 0;
+```
+
+UDP port browsers' WebRTC traffic arrives on. 0 = GatewayPort + 1. -nebula-webrtc-port overrides.
+
 ### ControlPlaneUrl [#controlplaneurl]
 
 ```csharp

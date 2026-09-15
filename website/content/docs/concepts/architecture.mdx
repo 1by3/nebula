@@ -85,8 +85,8 @@ The control plane stores none of this. Keep accounts, matchmaking records, and a
 
 ## Account for current network limits
 
-All Nebula links currently use LiteNetLib over UDP. Nebula provides reliable ordered delivery for messages that must arrive and unreliable sequenced delivery for frequently replaced state such as transforms.
+Workers, the gateway, and native clients use LiteNetLib over UDP. Clients from a Unity Web build reach the gateway over WebRTC data channels (see [Build for the web](/docs/guides/web-builds)). Both provide reliable ordered delivery for messages that must arrive and unreliable sequenced delivery for frequently replaced state such as transforms.
 
-The worker-to-worker link and client link do not provide encryption or authentication. Run worker links on a trusted private network. Put public client traffic behind infrastructure that supplies the security and traffic protection your game requires.
+The worker-to-worker link and the UDP client link do not provide encryption or authentication. WebRTC encrypts a web client's link with DTLS, but the gateway does not authenticate any client. Run worker links on a trusted private network. Put public client traffic behind infrastructure that supplies the security and traffic protection your game requires.
 
 Nebula announces every replicated entity to every connected client. The gateway reduces the state update rate for entities farther from the client's pawn, but it does not omit their spawn or state entirely. Configure the distance bands in `NebulaConfig`, then measure bandwidth and client load with your expected entity count.

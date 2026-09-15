@@ -80,6 +80,13 @@ public static class UnityLocator
         return Path.Combine(dir, "Data");
     }
 
+    /// <summary>Does this editor have the Web module (what the web client is built with)?</summary>
+    public static bool HasWebModule(string editorExe)
+    {
+        string engines = Platform.IsMac ? DataDir(editorExe) : Path.Combine(DataDir(editorExe), "PlaybackEngines");
+        return Directory.Exists(Path.Combine(engines, "WebGLSupport"));
+    }
+
     /// <summary>Does this editor have the Linux Dedicated Server module (what cloud workers are built with)?</summary>
     public static bool HasLinuxServerModule(string editorExe)
     {
@@ -108,7 +115,7 @@ public static class UnityLocator
     }
 }
 
-public enum BuildTarget { Host, Linux }
+public enum BuildTarget { Host, Linux, Web }
 
 /// <summary>Batchmode player builds through Nebula's editor script (Packages/com.1by3.nebula/Editor/NebulaBuild.cs).</summary>
 public static class UnityBuild
@@ -130,15 +137,18 @@ public static class UnityBuild
     public static string Build(Context ctx, NebulaProject project, Options options)
     {
         bool linux = options.Target == BuildTarget.Linux;
-        string method = linux ? "Nebula.Editor.NebulaBuild.BuildLinuxServerBatch" : project.HostBuildMethod;
-        string buildRel = linux ? Path.Combine("Builds", "Linux64") : Path.GetRelativePath(project.Root, project.HostBuildDir);
-        string exe = linux ? project.LinuxExecutable : project.HostExecutable;
-        string label = linux ? "Linux dedicated server" : project.HostBuildLabel;
+        bool web = options.Target == BuildTarget.Web;
+        string method = linux ? "Nebula.Editor.NebulaBuild.BuildLinuxServerBatch" : web ? "Nebula.Editor.NebulaBuild.BuildWebBatch" : project.HostBuildMethod;
+        string buildRel = linux ? Path.Combine("Builds", "Linux64") : web ? Path.Combine("Builds", "Web") : Path.GetRelativePath(project.Root, project.HostBuildDir);
+        string exe = linux ? project.LinuxExecutable : web ? project.WebIndex : project.HostExecutable;
+        string label = linux ? "Linux dedicated server" : web ? "web client" : project.HostBuildLabel;
 
         string unity = UnityLocator.Find(ctx.Config, project.UnityVersion);
         Ui.Step($"building the {label} with Unity {project.UnityVersion}");
         if (linux && !UnityLocator.HasLinuxServerModule(unity))
             throw new CliError("this Unity install has no Linux Dedicated Server module", "add 'Linux Dedicated Server Build Support' to the editor in Unity Hub");
+        if (web && !UnityLocator.HasWebModule(unity))
+            throw new CliError("this Unity install has no Web module", "add 'Web Build Support' to the editor in Unity Hub");
 
         var scenes = project.EnabledScenes();
         if (scenes.Length == 0)
@@ -152,7 +162,7 @@ public static class UnityBuild
             scratch = true;
         }
 
-        if (!linux)
+        if (!linux && !web)
         {
             var running = Shell.RunningUnder(project.HostBuildDir).ToList();
             if (running.Count > 0)
@@ -191,7 +201,7 @@ public static class UnityBuild
             projectDir = scratchDir;
         }
 
-        string log = Path.Combine(project.BuildsDir, linux ? "unity-build-linux.log" : "unity-build.log");
+        string log = Path.Combine(project.BuildsDir, linux ? "unity-build-linux.log" : web ? "unity-build-web.log" : "unity-build.log");
         Directory.CreateDirectory(project.BuildsDir);
         File.Delete(log);
         Ui.Info($"log: {log}");
@@ -217,29 +227,38 @@ public static class UnityBuild
         }
         if (!File.Exists(exe)) throw new CliError($"the build reported success but {exe} is missing");
         Ui.Ok($"built {exe} in {timer.Elapsed.TotalSeconds:F0}s");
+        // The web client talks to the services of the host or Linux build; it has none of its own.
+        if (web) return exe;
 
         ServiceBuild.Publish(project, linux);
 
         if (linux)
         {
-            Ui.Info($"packing {project.LinuxTarball}");
-            PackTarball(project.LinuxBuildDir, project.LinuxTarball);
+            Ui.Info($"packing {project.LinuxTarball}{(File.Exists(project.WebIndex) ? " with the web client" : "")}");
+            PackTarball(project.LinuxBuildDir, project.LinuxTarball, project.WebBuildDir);
             Ui.Ok($"{Path.GetFileName(project.LinuxTarball)} ({new FileInfo(project.LinuxTarball).Length / 1024 / 1024} MB)");
             return project.LinuxTarball;
         }
         return exe;
     }
 
-    /// <summary>One flat tarball of the Linux build (no logs), extracted into /opt/nebula on every VM.</summary>
-    public static void PackTarball(string buildDir, string tarball)
+    /// <summary>
+    /// One flat tarball of the Linux build (no logs), extracted into /opt/nebula on every VM. A web client build in
+    /// <paramref name="webDir"/> goes in as Web/, where the gateway looks for the web build to serve.
+    /// </summary>
+    public static void PackTarball(string buildDir, string tarball, string? webDir = null)
     {
         File.Delete(tarball);
         using var file = File.Create(tarball);
         using var gz = new GZipStream(file, CompressionLevel.Fastest);
         using var tar = new TarWriter(gz, TarEntryFormat.Gnu, leaveOpen: false);
-        foreach (var f in Directory.EnumerateFiles(buildDir, "*", SearchOption.AllDirectories))
+        var files = Directory.EnumerateFiles(buildDir, "*", SearchOption.AllDirectories)
+            .Select(f => (Path: f, Rel: Path.GetRelativePath(buildDir, f).Replace('\\', '/')))
+            .Where(f => !f.Rel.StartsWith("Web/"));
+        if (webDir != null && File.Exists(Path.Combine(webDir, "index.html")))
+            files = files.Concat(Directory.EnumerateFiles(webDir, "*", SearchOption.AllDirectories).Select(f => (Path: f, Rel: "Web/" + Path.GetRelativePath(webDir, f).Replace('\\', '/'))));
+        foreach (var (f, rel) in files)
         {
-            string rel = Path.GetRelativePath(buildDir, f).Replace('\\', '/');
             if (rel.StartsWith("Logs/") || rel.EndsWith(".log")) continue;
             var entry = new GnuTarEntry(TarEntryType.RegularFile, rel)
             {

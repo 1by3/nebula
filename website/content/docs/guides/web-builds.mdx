@@ -1,0 +1,97 @@
+---
+title: Build for the web
+description: Build a Unity Web client that joins a Nebula mesh from a browser over WebRTC, and let the gateway serve it.
+---
+
+To let players join from a browser, build a Unity Web client with `nebula build --web`. A browser cannot open UDP sockets, so a web client connects to the gateway over WebRTC data channels instead. The gateway is the process that accepts client connections. It accepts web clients and UDP clients at the same time. Workers, the orchestrator, and your gameplay code treat a web client like any other client.
+
+Before you start:
+
+- Install **Web Build Support** for your Unity version in Unity Hub.
+- Set up the project with `nebula init` and build the host player with `nebula build`. The local mesh runs from that build.
+
+## Build and play locally
+
+<Steps>
+<Step>
+### Build the web client
+
+```bash
+nebula build --web
+```
+
+The CLI builds a Unity Web player into `Builds/Web`. The first web build re-imports the project's assets for the Web platform, which can take a long time for a large project. The build uses gzip compression, because browsers accept Brotli-compressed files only over HTTPS.
+</Step>
+<Step>
+### Start the mesh
+
+```bash
+nebula start
+```
+
+The gateway serves the web build from the `Web` folder next to its own build folder. `nebula start` prints the address, for example `web client  http://127.0.0.1:7000/`.
+</Step>
+<Step>
+### Open the game in a browser
+
+Open `http://127.0.0.1:7000/`. The page connects back to the gateway that served it. If your scene includes `NebulaTitleScreen`, the address field already contains the page's address. Select **Connect**.
+</Step>
+</Steps>
+
+After you change game code, run `nebula build --web` again and reload the page. You do not need to restart the mesh.
+
+## How a web client connects
+
+1. The client sends a WebRTC offer to `http://<address>:<web port>/nebula/rtc`. The gateway replies with its addresses and its certificate fingerprint.
+2. The browser sends WebRTC traffic straight to the gateway's UDP WebRTC port. No STUN or TURN server takes part.
+3. The client opens two data channels. The reliable, ordered channel carries `Delivery.ReliableOrdered` messages. The second channel does not retransmit lost messages and carries `Delivery.Sequenced` messages, dropping any message that arrives after a newer one.
+
+Both channels carry the same Nebula messages as a UDP connection. The round-trip time (RTT) a web client reports comes from the browser's connection statistics. When the browser does not report one, the client measures RTT with its ping messages.
+
+| Port | Default | Purpose |
+| --- | --- | --- |
+| TCP `WebPort` | `0`, which uses the same number as `GatewayPort` (`7000`) | WebRTC offers and answers, and the web build's files. A web client connects to this port. |
+| UDP `WebRtcPort` | `0`, which uses `GatewayPort + 1` (`7001`) | WebRTC data channel traffic. |
+| UDP `GatewayPort` | `7000` | UDP clients. |
+
+If the gateway cannot open either web port, it logs a warning and turns web clients off. UDP clients can still connect. Set `WebClients` to `false`, or pass `-nebula-web false`, to turn web clients off yourself.
+
+## Choose the gateway a web client uses
+
+A web client has no command line. It reads the same options from the page's query string, without the leading dash:
+
+```text
+http://127.0.0.1:7000/?nebula-name=Player&nebula-connect
+```
+
+- Without `nebula-gateway`, the client uses the address and port that served the page. It does this only while `NebulaConfig.GatewayAddress` is `127.0.0.1` or `localhost`. Set `GatewayAddress` to your gateway's address when another server hosts the web build.
+- `nebula-gateway=<address:port>` selects a gateway. Use the gateway's web port, not its UDP port.
+- `nebula-connect` connects at startup and keeps `NebulaTitleScreen` hidden.
+- `nebula-name=<name>` sets the display name. A web client without it uses `player`.
+
+`NebulaClient.ConnectTo` works the same way in a web build. Pass the gateway's web port. See [Connecting clients](/docs/guides/connecting-clients).
+
+## Serve the web build from another server
+
+The gateway serves the folder you pass with `-nebula-web-root <folder>`. Without that option, it looks for a `Web` folder next to its executable, then next to its build folder.
+
+To host the files elsewhere, configure your server to send `Content-Encoding: gzip` with every `.gz` file in the build. The gateway's `/nebula/rtc` endpoint accepts requests from pages on other origins.
+
+The gateway serves plain HTTP. A page loaded over HTTPS sends its offer over HTTPS too, so put the gateway's web port behind a server that terminates TLS and forwards `/nebula/rtc`.
+
+## Deploy the web client
+
+Run `nebula build --web` before `nebula deploy`. The deployment tarball then includes `Builds/Web`, and the gateway on the orchestrator VM serves it at `http://<orchestrator public ip>:7000/`.
+
+The orchestrator firewall allows TCP on the gateway port and UDP on the gateway port plus one. A firewall created by an earlier release gets these rules on your next deployment. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
+
+## Limitations
+
+<Callout type="warn" title="Web clients are not authenticated">
+WebRTC encrypts data channel traffic with DTLS, but the gateway accepts every offer. Anyone who can reach the web port can connect, just as with UDP clients.
+</Callout>
+
+- A network that blocks outbound UDP stops web clients from connecting. The gateway has no TCP or TURN fallback.
+- The gateway offers IPv4 addresses only.
+- Only the standalone `nebula-gateway` accepts web clients. A gateway running inside a Unity process does not.
+- Browsers slow down pages in background tabs. A web client in a hidden tab can fall behind and correct its prediction when it becomes visible again.

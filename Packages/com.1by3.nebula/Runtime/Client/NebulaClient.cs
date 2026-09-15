@@ -83,6 +83,8 @@ namespace Nebula
         private uint _latestServerTick;
         private uint _predictTick;
         private float _nextPing;
+        /// <summary>Round trip measured from ping/pong (smoothed), or -1; used when the transport has no measurement of its own.</summary>
+        private double _pongRttMs = -1;
         private float _nextConnectAttempt;
 
         // Telemetry: one "[nebula] client ..." line every 5 s (packets and bytes in, frames, lead, RTT, corrections).
@@ -146,15 +148,30 @@ namespace Nebula
         {
             Config = config;
             ConnectsAutomatically = autoConnect;
-            PlayerName = CommandLine.Get("nebula-name", Environment.UserName);
+            PlayerName = CommandLine.Get("nebula-name", DefaultPlayerName());
             NebulaRuntime.RpcSink = this;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // A browser has no UDP sockets: a web build reaches the gateway over WebRTC data channels.
+            _transport = new WebRtcClientTransport("client");
+#else
             _transport = new LiteNetTransport("client");
+#endif
             _transport.StartClient();
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
             if (autoConnect) Connect();
+        }
+
+        private static string DefaultPlayerName()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return "player"; // a browser does not say who is signed in
+#else
+            try { return Environment.UserName; }
+            catch (Exception) { return "player"; }
+#endif
         }
 
         /// <summary>
@@ -241,6 +258,8 @@ namespace Nebula
                 new PingMsg { ClientTime = Time.unscaledTimeAsDouble }.Write(_writer);
                 _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
                 int rtt = _transport.RoundTripMs(_gatewayPeer);
+                // A transport that cannot measure (some browsers report no candidate-pair RTT) falls back on ping/pong.
+                if (rtt < 0 && _pongRttMs >= 0) rtt = (int)Math.Round(_pongRttMs);
                 if (rtt >= 0) RttMs = rtt;
             }
 
@@ -470,6 +489,8 @@ namespace Nebula
                 case MsgId.Pong:
                 {
                     var p = PongMsg.Read(r);
+                    double measured = (Time.unscaledTimeAsDouble - p.ClientTime) * 1000.0;
+                    if (measured >= 0) _pongRttMs = _pongRttMs < 0 ? measured : _pongRttMs + (measured - _pongRttMs) * 0.2;
                     NoteServerTick(p.ServerTick);
                     break;
                 }

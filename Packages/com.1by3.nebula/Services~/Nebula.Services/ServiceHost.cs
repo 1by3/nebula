@@ -6,6 +6,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Nebula.WebRtc;
 
 namespace Nebula
 {
@@ -18,7 +19,7 @@ namespace Nebula
             {
                 Console.WriteLine($"nebula-{role} -nebula-service-manifest <nebula-services.json> [-nebula-token <secret>] [-logFile <path>]");
                 Console.WriteLine("Orchestrator: -nebula-worker-exe <Unity player> -nebula-workers <count> -nebula-dashboard-port <port> [-nebula-database sqlite:<file>|postgres://...|memory] [-nebula-reset-persistence]");
-                Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port> -nebula-control-plane <orchestrator url>");
+                Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port> -nebula-control-plane <orchestrator url> [-nebula-web false] [-nebula-web-port <tcp>] [-nebula-webrtc-port <udp>] [-nebula-web-root <folder>]");
                 return 0;
             }
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -30,6 +31,7 @@ namespace Nebula
             IControlPlane control = null;
             IPersistenceStore persistence = null;
             NebulaDatabase database = null;
+            GatewayHttpServer web = null;
             StreamWriter log = null;
             var originalOut = Console.Out;
             var originalError = Console.Error;
@@ -80,7 +82,7 @@ namespace Nebula
                     control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new RemoteControlPlane(config.ControlPlaneUrl, config.MeshToken);
                     control.Connect();
                     gateway = new NebulaGateway();
-                    gateway.Initialize(config, control);
+                    gateway.Initialize(config, control, config.WebClients ? StartWebClients(config, out web) : null);
                 }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
@@ -115,7 +117,7 @@ namespace Nebula
             catch (Exception e) { NebulaLog.Error(e.ToString()); return 1; }
             finally
             {
-                try { gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
+                try { web?.Dispose(); gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
                 finally { Console.CancelKeyPress -= cancel; Console.SetOut(originalOut); Console.SetError(originalError); log?.Dispose(); }
             }
         }
@@ -139,6 +141,9 @@ namespace Nebula
             c.OrchestratorSpawnsGateway = CommandLine.GetBool("nebula-spawn-gateway", c.OrchestratorSpawnsGateway);
             c.PersistenceMode = CommandLine.Get("nebula-persistence-mode", c.PersistenceMode);
             c.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", c.PersistenceLocalFile);
+            c.WebClients = CommandLine.GetBool("nebula-web", c.WebClients);
+            c.WebPort = Port("nebula-web-port", c.WebPort, true);
+            c.WebRtcPort = Port("nebula-webrtc-port", c.WebRtcPort, true);
             var gateway = CommandLine.Get("nebula-gateway");
             if (!string.IsNullOrEmpty(gateway))
             {
@@ -197,6 +202,52 @@ namespace Nebula
                 _ => new SqlControlPlaneStorage(database),
             };
         }
+        /// <summary>
+        /// The gateway's side for web builds: WebRTC data channels on UDP (<see cref="NebulaConfig.WebRtcPort"/>) and an
+        /// HTTP server for signaling and the web build (<see cref="NebulaConfig.WebPort"/>). A port that cannot be opened
+        /// turns web clients off with a warning; UDP clients are not affected.
+        /// </summary>
+        private static WebRtcServerTransport StartWebClients(NebulaConfig c, out GatewayHttpServer http)
+        {
+            http = null;
+            ushort udpPort = c.WebRtcPort != 0 ? c.WebRtcPort : (ushort)(c.GatewayPort + 1);
+            ushort tcpPort = c.WebPort != 0 ? c.WebPort : c.GatewayPort;
+            var rtc = new WebRtcServerTransport("gateway-web", c.GatewayAddress);
+            try
+            {
+                rtc.Listen(udpPort);
+                http = new GatewayHttpServer(tcpPort, rtc, FindWebRoot());
+                http.Start();
+            }
+            catch (Exception e)
+            {
+                NebulaLog.Warn($"web clients are off: could not open tcp/{tcpPort} and udp/{udpPort}: {e.GetBaseException().Message}");
+                try { http?.Dispose(); } catch { }
+                http = null;
+                rtc.Dispose();
+                return null;
+            }
+            string origin = $"http://{c.GatewayAddress}:{tcpPort}";
+            NebulaLog.Info($"web clients: signaling at {origin}{GatewayHttpServer.SignalingPath}, WebRTC on udp/{udpPort}; " +
+                (http.WebRoot != null ? $"serving the web build from {http.WebRoot} at {origin}/" : "no web build next to the gateway"));
+            return rtc;
+        }
+
+        /// <summary>The web build to serve: -nebula-web-root, else a Web folder next to the gateway or beside its folder (Builds/Web next to Builds/Win64).</summary>
+        private static string FindWebRoot()
+        {
+            string configured = CommandLine.Get("nebula-web-root");
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (File.Exists(Path.Combine(configured, "index.html"))) return Path.GetFullPath(configured);
+                NebulaLog.Warn($"-nebula-web-root {configured} has no index.html; not serving a web build");
+                return null;
+            }
+            foreach (string candidate in new[] { Path.Combine(AppContext.BaseDirectory, "Web"), Path.Combine(AppContext.BaseDirectory, "..", "Web") })
+                if (File.Exists(Path.Combine(candidate, "index.html"))) return Path.GetFullPath(candidate);
+            return null;
+        }
+
         internal static Process LaunchGateway(string commonArgs, Action<string, string> log)
         {
             string exe = CommandLine.Get("nebula-gateway-exe", Path.Combine(AppContext.BaseDirectory, "nebula-gateway" + (OperatingSystem.IsWindows() ? ".exe" : "")));

@@ -29,8 +29,17 @@ Nebula uses LiteNetLib over User Datagram Protocol (UDP). A connection request u
 
 Except for `Batch`, one LiteNetLib application payload contains one complete Nebula message. The first byte is always its `MsgId`. A sender MUST use the delivery class listed below; the receiver does not derive or verify the class from the payload.
 
+### Web clients
+
+A client built for the web connects to the gateway over WebRTC data channels instead of LiteNetLib. It sends its Session Description Protocol (SDP) offer as the body of `POST /nebula/rtc` on the gateway's web port and applies the SDP answer from the response. The gateway answers as an ICE-lite endpoint with DTLS role `passive` and lists its host candidates. Both data channels are created with `negotiated: true`, and every message is binary.
+
+| Nebula delivery | Data channel | Options | Contract |
+| --- | ---: | --- | --- |
+| `Sequenced` | id 1 | `ordered: false`, `maxRetransmits: 0` | Each message starts with a `u16` sequence number that increases by one per message and wraps. A receiver MUST drop a message whose number is not newer than the newest it delivered; a number is newer when it differs and `(number - newest) mod 65536` is below 32768. The Nebula message follows the two bytes. |
+| `ReliableOrdered` | id 0 | reliable, ordered | One data channel message contains one Nebula payload, as on LiteNetLib. |
+
 <Callout type="warn" title="The wire is not secure">
-Nebula does not encrypt or authenticate connections. A peer can claim any role, process identifier, worker index, or client name in `Hello`. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
+LiteNetLib connections are neither encrypted nor authenticated. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
 </Callout>
 
 ## Primitive encodings

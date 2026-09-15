@@ -60,6 +60,12 @@ public static string MacBuildDir { get; }
 public static string MacExecutablePath { get; }
 ```
 
+### WebBuildDir [#webbuilddir]
+
+```csharp
+public static string WebBuildDir { get; }
+```
+
 ## Methods
 
 ### BuildWindowsMenu [#buildwindowsmenu]
@@ -95,6 +101,29 @@ public static BuildReport BuildMac();
 ```
 
 macOS player (Builds/MacOS/Nebula.app): what `nebula start` runs on a Mac.
+
+### BuildWebMenu [#buildwebmenu]
+
+```csharp
+[MenuItem("Nebula/Build/Web Client", priority = 2)]
+public static void BuildWebMenu();
+```
+
+### BuildWeb [#buildweb]
+
+```csharp
+public static BuildReport BuildWeb();
+```
+
+Web client (Builds/Web): a browser build that reaches the gateway over WebRTC. The standalone gateway serves it from a Web folder beside its own build folder, so `nebula start` puts it at `http://127.0.0.1:7000/.` The build is gzip-compressed, because browsers accept brotli only over HTTPS.
+
+### BuildWebBatch [#buildwebbatch]
+
+```csharp
+public static void BuildWebBatch();
+```
+
+Entry point for batchmode web client builds; exits with a non-zero code on failure.
 
 ### BuildWindowsBatch [#buildwindowsbatch]
 

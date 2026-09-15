@@ -6,7 +6,7 @@ public sealed class BuildCommand : Command
 {
     public override string Name => "build";
     public override string Summary => "Build the Unity player and standalone .NET services";
-    public override string Usage => "[worker|client|services] [--linux] [--scratch] [--stop-mesh]";
+    public override string Usage => "[worker|client|services] [--linux|--web] [--scratch] [--stop-mesh]";
     public override string? Details => @"
 The default build compiles the Unity player, exports configuration and container geometry, and publishes
 self-contained .NET orchestrator and gateway executables into the same build folder. `worker` and `client`
@@ -16,24 +16,32 @@ the .NET 10 SDK. Running the published services does not require a separate .NET
 
 Without --linux, builds target this machine. --linux builds the Linux dedicated server and .NET services
 into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`.
+--web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. The gateway serves
+it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). Run
+`nebula build --web` before `nebula build --linux` to include the web client in the deploy tarball.
 If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch
 (the Editor holds an exclusive lock on the project). Builds/unity-build*.log has the full Unity output.
 ";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("linux", false, "build the Linux dedicated server and pack the deploy tarball"),
+        new OptionSpec("web", false, "build the web client into Builds/Web"),
         new OptionSpec("scratch", false, "always build from a mirrored copy of the project"),
         new OptionSpec("force", false, "build in place even if the Editor seems to hold the project"),
         new OptionSpec("stop-mesh", false, "stop a running local mesh first (it holds the previous build open)"),
     };
-    public override string[] Examples => new[] { "nebula build", "nebula build worker --linux", "nebula build --stop-mesh" };
+    public override string[] Examples => new[] { "nebula build", "nebula build worker --linux", "nebula build --web", "nebula build --stop-mesh" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
         var project = ctx.RequireProject();
         if (args.Positional.Count > 0 && args.Positional[0] is not ("worker" or "client" or "services"))
-            throw new CliError($"unknown build target '{args.Positional[0]}'", "nebula build [worker|client|services] [--linux]");
-        var target = args.Has("linux") ? BuildTarget.Linux : BuildTarget.Host;
+            throw new CliError($"unknown build target '{args.Positional[0]}'", "nebula build [worker|client|services] [--linux|--web]");
+        if (args.Has("linux") && args.Has("web"))
+            throw new CliError("--linux and --web are separate builds", "run `nebula build --web`, then `nebula build --linux`");
+        var target = args.Has("linux") ? BuildTarget.Linux : args.Has("web") ? BuildTarget.Web : BuildTarget.Host;
+        if (target == BuildTarget.Web && args.Positional.FirstOrDefault() is "worker" or "services")
+            throw new CliError("the web build is a client only", "nebula build --web");
         if (args.Positional.FirstOrDefault() == "services")
         {
             if (target == BuildTarget.Linux && !File.Exists(project.LinuxExecutable))
@@ -46,11 +54,16 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
                 LocalMesh.Stop(project);
             }
             ServiceBuild.Publish(project, target == BuildTarget.Linux);
-            if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball);
+            if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball, project.WebBuildDir);
             return 0;
         }
         UnityBuild.Build(ctx, project, new UnityBuild.Options(target, args.Has("scratch"), args.Has("force"), args.Has("stop-mesh")));
-        Ui.Info(target == BuildTarget.Linux ? "to deploy this build, run: nebula deploy" : "to start this build, run: nebula start --open-ui");
+        Ui.Info(target switch
+        {
+            BuildTarget.Linux => "to deploy this build, run: nebula deploy",
+            BuildTarget.Web => $"to play in a browser, run `nebula start` and open http://127.0.0.1:{project.File.Mesh.GatewayPort}/",
+            _ => "to start this build, run: nebula start --open-ui",
+        });
         return 0;
     }
 }

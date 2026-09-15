@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Nebula.Cli.Cloud;
@@ -93,6 +94,8 @@ public sealed class HetznerMesh
             new { direction = "in", protocol = "tcp", port = "22", source_ips = anywhere, description = "ssh" },
             new { direction = "in", protocol = "tcp", port = DashboardPort.ToString(), source_ips = anywhere, description = "dashboard" },
             new { direction = "in", protocol = "udp", port = GatewayPort.ToString(), source_ips = anywhere, description = "gateway (clients)" },
+            new { direction = "in", protocol = "tcp", port = GatewayPort.ToString(), source_ips = anywhere, description = "gateway (web clients: signaling and the web build)" },
+            new { direction = "in", protocol = "udp", port = (GatewayPort + 1).ToString(), source_ips = anywhere, description = "gateway (web clients: WebRTC)" },
         });
         EnsureFirewall(WorkerFirewall, new object[]
         {
@@ -131,10 +134,24 @@ public sealed class HetznerMesh
     private JsonNode EnsureFirewall(string name, object[] rules)
     {
         var fw = _api.ByName("firewalls", name);
-        if (fw != null) return fw;
-        Ui.Info($"creating firewall '{name}'");
-        return _api.Post("/firewalls", new { name, rules, labels = new Dictionary<string, string> { ["nebula-mesh"] = MeshName } })["firewall"]!;
+        if (fw == null)
+        {
+            Ui.Info($"creating firewall '{name}'");
+            return _api.Post("/firewalls", new { name, rules, labels = new Dictionary<string, string> { ["nebula-mesh"] = MeshName } })["firewall"]!;
+        }
+        // A firewall made by an earlier release lacks later rules (the web client ports): add those, keep the rest.
+        var existing = fw["rules"]?.AsArray() ?? new JsonArray();
+        var missing = JsonSerializer.SerializeToNode(rules)!.AsArray().Where(r => !existing.Any(e => SameRule(e, r))).ToList();
+        if (missing.Count == 0) return fw;
+        Ui.Info($"adding {missing.Count} rule(s) to firewall '{name}'");
+        var merged = new JsonArray(existing.Select(e => e!.DeepClone()).Concat(missing.Select(r => r!.DeepClone())).ToArray());
+        var response = _api.Post($"/firewalls/{fw["id"]}/actions/set_rules", new { rules = merged });
+        foreach (var action in response["actions"]?.AsArray() ?? new JsonArray()) _api.WaitAction(action);
+        return fw;
     }
+
+    private static bool SameRule(JsonNode? a, JsonNode? b) =>
+        a?["direction"]?.ToString() == b?["direction"]?.ToString() && a?["protocol"]?.ToString() == b?["protocol"]?.ToString() && a?["port"]?.ToString() == b?["port"]?.ToString();
 
     // --- deploy ------------------------------------------------------------------------------------------
 

@@ -100,6 +100,7 @@ public static class LocalMesh
         Ui.Blank();
         Ui.Info($"dashboard   {dashboard}");
         Ui.Info($"gateway     127.0.0.1:{mesh.GatewayPort}  (press Play in the Editor, or run the client build)");
+        if (File.Exists(project.WebIndex)) Ui.Info($"web client  http://127.0.0.1:{mesh.GatewayPort}/  (Builds/Web, served by the gateway)");
         Ui.Info($"logs        {logs}  (`nebula logs orchestrator|gateway|w1`)");
         Ui.Info("stop        nebula stop");
         if (o.OpenUi) Platform.OpenBrowser(dashboard);
@@ -197,6 +198,8 @@ public static class LocalMesh
 
         if (!UdpPortFree(gatewayPort))
             throw new CliError($"UDP port {gatewayPort} (the gateway) is in use by another program", "stop it, or change mesh.gatewayPort in nebula.json");
+        if (!TcpPortFree(gatewayPort))
+            Ui.Warn($"TCP port {gatewayPort} is in use by another program; the gateway will not accept web clients");
         if (!TcpPortFree(dashboardPort))
             throw new CliError($"TCP port {dashboardPort} (the dashboard) is in use by another program", "stop it, or change mesh.dashboardPort in nebula.json");
     }

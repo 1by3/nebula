@@ -3,7 +3,10 @@ using System.Collections.Generic;
 
 namespace Nebula
 {
-    /// <summary>Tiny "-key value" / "-flag" parser over <see cref="Environment.GetCommandLineArgs"/>.</summary>
+    /// <summary>
+    /// Tiny "-key value" / "-flag" parser over <see cref="Environment.GetCommandLineArgs"/>. A web build has no command
+    /// line and reads the same switches from the page's query string instead: <c>?nebula-name=Jesse&amp;nebula-connect</c>.
+    /// </summary>
     public static class CommandLine
     {
         private static Dictionary<string, string> _args;
@@ -14,6 +17,10 @@ namespace Nebula
             {
                 if (_args != null) return _args;
                 _args = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                ParseQuery(UnityEngine.Application.absoluteURL, _args);
+                return _args;
+#else
                 var raw = Environment.GetCommandLineArgs();
                 for (int i = 1; i < raw.Length; i++)
                 {
@@ -28,6 +35,25 @@ namespace Nebula
                     _args[key] = value;
                 }
                 return _args;
+#endif
+            }
+        }
+
+        /// <summary>Adds the parameters of a URL's query string ("a=1&amp;b") to <paramref name="into"/>, URL-decoded, with any leading dashes removed from the keys.</summary>
+        public static void ParseQuery(string url, IDictionary<string, string> into)
+        {
+            if (string.IsNullOrEmpty(url)) return;
+            int start = url.IndexOf('?');
+            if (start < 0) return;
+            int end = url.IndexOf('#', start);
+            string query = end < 0 ? url.Substring(start + 1) : url.Substring(start + 1, end - start - 1);
+            foreach (string pair in query.Split('&'))
+            {
+                if (pair.Length == 0) continue;
+                int eq = pair.IndexOf('=');
+                string key = Uri.UnescapeDataString((eq < 0 ? pair : pair.Substring(0, eq)).Replace('+', ' ')).TrimStart('-');
+                if (key.Length == 0) continue;
+                into[key] = eq < 0 ? "" : Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
             }
         }
 

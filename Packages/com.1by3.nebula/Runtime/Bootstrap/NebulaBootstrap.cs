@@ -318,6 +318,15 @@ namespace Nebula
                 cfg.GatewayAddress = parts[0];
                 if (parts.Length > 1 && ushort.TryParse(parts[1], out var p)) cfg.GatewayPort = p;
             }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // A web build served by the gateway connects back to where the page came from, unless the config names a
+            // real gateway or the page passes ?nebula-gateway=address:port.
+            else if (IsLoopback(cfg.GatewayAddress) && Uri.TryCreate(Application.absoluteURL, UriKind.Absolute, out var page) && (page.Scheme == "http" || page.Scheme == "https"))
+            {
+                cfg.GatewayAddress = page.Host;
+                cfg.GatewayPort = (ushort)page.Port;
+            }
+#endif
             cfg.ControlPlaneUrl = CommandLine.Get("nebula-control-plane", cfg.ControlPlaneUrl);
             cfg.MeshToken = CommandLine.Get("nebula-token", cfg.MeshToken);
             cfg.DatabaseUrl = CommandLine.Get("nebula-database", cfg.DatabaseUrl);
@@ -342,6 +351,9 @@ namespace Nebula
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
             return cfg;
         }
+
+        private static bool IsLoopback(string address) =>
+            string.IsNullOrEmpty(address) || address == "127.0.0.1" || address.Equals("localhost", StringComparison.OrdinalIgnoreCase);
 
         private static string ResolveAdvertise(string value)
         {

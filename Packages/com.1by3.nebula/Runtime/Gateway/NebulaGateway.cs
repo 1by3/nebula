@@ -143,13 +143,16 @@ namespace Nebula
         private bool _registered;
         private float _nextHeartbeat;
 
-        public void Initialize(NebulaConfig config, IControlPlane controlPlane)
+        /// <param name="browserTransport">A second transport clients arrive on, already listening: the standalone
+        /// gateway's WebRTC listener for web builds. Null accepts UDP clients only.</param>
+        public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null)
         {
             Config = config;
             ControlPlane = controlPlane;
             GatewayId = CommandLine.Get("nebula-gateway-id", "gw1");
-            _transport = new LiteNetTransport("gateway");
-            _transport.Listen(config.GatewayPort);
+            var udp = new LiteNetTransport("gateway");
+            udp.Listen(config.GatewayPort);
+            _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
             ControlPlane.Changed += OnControlPlaneChanged;
             NebulaLog.Info($"gateway {GatewayId} listening on udp/{config.GatewayPort}");
         }

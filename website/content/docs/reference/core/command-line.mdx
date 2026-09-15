@@ -9,9 +9,17 @@ description: "Tiny \"-key value\" / \"-flag\" parser over Environment.GetCommand
 public static class CommandLine
 ```
 
-Tiny "-key value" / "-flag" parser over `Environment.GetCommandLineArgs`.
+Tiny "-key value" / "-flag" parser over `Environment.GetCommandLineArgs`. A web build has no command line and reads the same switches from the page's query string instead: `?nebula-name=Jesse&nebula-connect`.
 
 ## Methods
+
+### ParseQuery [#parsequery]
+
+```csharp
+public static void ParseQuery(string url, IDictionary<string, string> into);
+```
+
+Adds the parameters of a URL's query string ("a=1&b") to `into`, URL-decoded, with any leading dashes removed from the keys.
 
 ### Override [#override]
 

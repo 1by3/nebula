@@ -62,6 +62,9 @@ public sealed class NebulaProject
     public string LinuxBuildDir => Path.Combine(BuildsDir, "Linux64");
     public string LinuxExecutable => Path.Combine(LinuxBuildDir, File.Executable + ".x86_64");
     public string LinuxTarball => Path.Combine(BuildsDir, "nebula-linux.tar.gz");
+    /// <summary>The web client build; the gateway serves it from here (a Web folder beside the host build folder).</summary>
+    public string WebBuildDir => Path.Combine(BuildsDir, "Web");
+    public string WebIndex => Path.Combine(WebBuildDir, "index.html");
     public string TempDir => Path.Combine(Root, "Temp");
     public string CliStateDir => Path.Combine(TempDir, "nebula-cli");
     public string MeshStateFile => Path.Combine(CliStateDir, "mesh.json");

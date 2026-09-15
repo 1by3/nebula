@@ -32,6 +32,14 @@ namespace Nebula
         [Tooltip("Address workers advertise to peers and the gateway.")]
         public string WorkerAdvertiseAddress = "127.0.0.1";
 
+        [Header("Web clients")]
+        [Tooltip("The standalone gateway also accepts clients from a Web build: WebRTC signaling over HTTP on WebPort and data channels over UDP on WebRtcPort. It serves the web build too when a Web folder sits next to it. -nebula-web false turns this off.")]
+        public bool WebClients = true;
+        [Tooltip("TCP port of the gateway's HTTP server (WebRTC signaling and the web build). 0 = the same number as GatewayPort. A browser client connects to this port. -nebula-web-port overrides.")]
+        public ushort WebPort = 0;
+        [Tooltip("UDP port browsers' WebRTC traffic arrives on. 0 = GatewayPort + 1. -nebula-webrtc-port overrides.")]
+        public ushort WebRtcPort = 0;
+
         [Header("Control plane")]
         [Tooltip("Address of the orchestrator that hosts the control plane (its dashboard, e.g. http://127.0.0.1:7080/), for a worker or gateway started by hand. Processes the orchestrator launches get it on the command line (-nebula-control-plane).")]
         public string ControlPlaneUrl = "http://127.0.0.1:7080/";

@@ -35,6 +35,9 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `GatewayAddress`, `GatewayPort` | `127.0.0.1`, `7000` | Set the address and port clients use to reach the gateway. |
 | `WorkerBasePort` | `7100` | Set the base for worker ports. Worker 1 uses `7101`, worker 2 uses `7102`, and so on. |
 | `WorkerAdvertiseAddress` | `127.0.0.1` | Set the address workers advertise to peers and the gateway. |
+| `WebClients` | `true` | Let the standalone gateway accept clients from a Unity Web build over WebRTC. See [Build for the web](/docs/guides/web-builds). |
+| `WebPort` | `0` | Set the gateway's TCP port for WebRTC offers and the web build. `0` uses the same number as `GatewayPort`. A web client connects to this port. |
+| `WebRtcPort` | `0` | Set the gateway's UDP port for WebRTC traffic. `0` uses `GatewayPort + 1`. |
 | `ControlPlaneUrl` | `http://127.0.0.1:7080/` | Set the orchestrator's dashboard address for a worker or gateway you start by hand. The orchestrator passes it to the processes it launches. |
 | `MeshToken` | empty | Set a shared secret that workers and gateways present to the orchestrator. Empty means no token. `nebula deploy` generates one per deployment. |
 | `UseLocalControlPlane` | `false` | Enable the in-process control plane only when all server roles run in one process, such as in a test. |
@@ -125,6 +128,9 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-port <port>` | worker | Set the worker's listening port. |
 | `-nebula-advertise <address\|auto>` | worker, gateway, orchestrator | Set the address advertised to other processes. Use `auto` to select the first private IPv4 address. |
 | `-nebula-control-plane <url>` | worker, gateway | Override `ControlPlaneUrl`. |
+| `-nebula-web true\|false` | gateway | Override `WebClients`. |
+| `-nebula-web-port <port>`, `-nebula-webrtc-port <port>` | gateway | Override `WebPort` and `WebRtcPort`. |
+| `-nebula-web-root <folder>` | gateway | Serve the web build from this folder. Without it, the gateway serves a `Web` folder next to its executable or next to its build folder. |
 | `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. |
 | `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
@@ -150,6 +156,8 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 Cloud deployments also use `-nebula-cloud-*` options. Let `nebula deploy` supply them unless you run the orchestrator yourself. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner) for the supported values.
 
 Unity's standard `-batchmode`, `-nographics`, and `-logFile <path>` options also apply.
+
+A web build has no command line. It reads the same options from the page's query string, without the leading dash, for example `?nebula-name=Player&nebula-connect`.
 
 ## Configure one project in nebula.json
 

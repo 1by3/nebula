@@ -49,7 +49,7 @@ public sealed class ConnectMenu : MonoBehaviour
 }
 ```
 
-`ConnectTo` replaces the configured gateway address and keeps retrying every 2 seconds until the connection succeeds or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name.
+`ConnectTo` replaces the configured gateway address and keeps retrying every 2 seconds until the connection succeeds or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
 
 Use these `NebulaClient` members to drive your UI:
 
@@ -92,6 +92,10 @@ Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway 127.0.0.1:7000 -nebu
 ```
 
 For these clients, `ConnectsAutomatically` is `true`. See [Configuration](/docs/guides/configuration#override-runtime-values-on-the-command-line) for every runtime option.
+
+## Connect from a web build
+
+A web build connects to the gateway over WebRTC and reads the same options from the page's query string, such as `?nebula-name=Player&nebula-connect`. By default it connects to the gateway that served the page. See [Build for the web](/docs/guides/web-builds).
 
 <Callout type="warn" title="Connections are not authenticated">
 Nebula does not encrypt or authenticate client connections. Anyone who can reach the gateway address can connect.

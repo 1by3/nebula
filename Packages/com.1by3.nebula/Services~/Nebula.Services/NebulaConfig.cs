@@ -11,6 +11,9 @@ namespace Nebula
         public ushort GatewayPort = 7000;
         public ushort WorkerBasePort = 7100;
         public string WorkerAdvertiseAddress = "127.0.0.1";
+        public bool WebClients = true;
+        public ushort WebPort = 0;
+        public ushort WebRtcPort = 0;
         public string ControlPlaneUrl = "http://127.0.0.1:7080/";
         public string MeshToken = "";
         public bool UseLocalControlPlane = false;
