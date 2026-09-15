@@ -82,6 +82,9 @@ namespace Nebula
                     w.Key("center"); Vec(w, l.BoundsCenter);
                     w.Key("size"); Vec(w, l.BoundsSize);
                 }
+                // The hint travels beside the lease in its compact string form, so a row costs a handful of bytes
+                // when nothing was hinted and stays readable in the stored document when something was.
+                if (l.HasHint) w.Prop("hint", l.Hint.ToString());
                 w.EndObject();
             }
             w.EndArray();
@@ -95,6 +98,7 @@ namespace Nebula
                 w.Prop("address", g.Address ?? "");
                 w.Prop("port", (int)g.Port);
                 w.Prop("lastHeartbeat", ToUnixMs(g.LastHeartbeat));
+                w.Prop("pendingJoins", (long)g.PendingJoins);
                 w.EndObject();
             }
             w.EndArray();
@@ -161,6 +165,8 @@ namespace Nebula
                         l.BoundsCenter = Vec(o, "center");
                         l.BoundsSize = Vec(o, "size");
                     }
+                    string hint = Str(o, "hint");
+                    if (!string.IsNullOrEmpty(hint)) { l.HasHint = true; l.Hint = ContainerHint.Parse(hint); }
                     s.Leases.Add(l);
                 }
             }
@@ -175,6 +181,7 @@ namespace Nebula
                         Address = Str(o, "address"),
                         Port = (ushort)Num(o, "port"),
                         LastHeartbeat = FromUnixMs(Num(o, "lastHeartbeat")),
+                        PendingJoins = (uint)Num(o, "pendingJoins"),
                     });
                 }
             }
@@ -193,7 +200,8 @@ namespace Nebula
             HeartbeatOrchestrator = "HeartbeatOrchestrator", SetSetting = "SetSetting",
             EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer",
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
-            ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane";
+            ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane",
+            SetContainerHint = "SetContainerHint";
 
         /// <summary>Builds one write object. Call <see cref="Op"/> then the <c>Arg</c> overloads, then <see cref="End"/>.</summary>
         public sealed class OpWriter
@@ -271,7 +279,7 @@ namespace Nebula
                 }
                 case UnregisterWorker: cp.UnregisterWorker(Str(o, "workerId")); return null;
                 case RegisterGateway: cp.RegisterGateway(Str(o, "gatewayId"), Str(o, "address"), (ushort)Num(o, "port")); return null;
-                case HeartbeatGateway: cp.HeartbeatGateway(Str(o, "gatewayId")); return null;
+                case HeartbeatGateway: cp.HeartbeatGateway(Str(o, "gatewayId"), (uint)Num(o, "pendingJoins")); return null;
                 case UnregisterGateway: cp.UnregisterGateway(Str(o, "gatewayId")); return null;
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
@@ -281,6 +289,7 @@ namespace Nebula
                 case AssignContainer: cp.AssignContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case SetLeaseState: cp.SetLeaseState(Str(o, "containerId"), Str(o, "state")); return null;
+                case SetContainerHint: cp.SetContainerHint(Str(o, "containerId"), ContainerHint.Parse(Str(o, "hint"))); return null;
                 case ReleaseContainer: cp.ReleaseContainer(Str(o, "containerId")); return null;
                 case RemoveContainer: cp.RemoveContainer(Str(o, "containerId")); return null;
                 case ResetControlPlane: cp.ResetControlPlane(); return null;

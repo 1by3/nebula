@@ -18,5 +18,6 @@ Lists the supported worker handle state values.
 | `Launching` |  | Requested; the machine is booting or the process is starting. Not yet on the control plane. |
 | `Running` |  | The host reports that the worker is running. The orchestrator still uses heartbeats to determine whether it is responsive. |
 | `Exited` |  | The process exited or the machine is gone. |
+| `Parked` |  | Retired into the idle pool: the instance still exists and still costs what it costs, but the orchestrator deals it no containers. [`IWorkerHost.Unpark`](/docs/reference/orchestrator/i-worker-host#unpark) brings it back; the host drops it by itself once keeping it stops being free (see [`HetznerWorkerHost`](/docs/reference/orchestrator/hetzner-worker-host)). |
 | `Failed` |  | The host could not launch it at all (no executable, cloud API error, quota). |
 

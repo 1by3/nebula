@@ -103,6 +103,9 @@ namespace Nebula
             {
                 NebulaClient.State.Connecting => "connecting...",
                 NebulaClient.State.Connected => "connected, waiting for the world...",
+                // A mesh that has scaled to zero holds the join while a worker boots; say so instead of "waiting".
+                NebulaClient.State.InGame when Client.Join == JoinState.Starting =>
+                    "world starting" + (Client.JoinEstimatedSeconds > 0 ? $", about {Client.JoinEstimatedSeconds} s..." : "..."),
                 NebulaClient.State.InGame => "in game" + (Client.LocalPlayer == null ? ", waiting for a pawn..." : ""),
                 _ => "reconnecting...",
             };

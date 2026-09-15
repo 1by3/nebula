@@ -89,11 +89,22 @@ namespace Nebula.Hosting
             public string PublicIp = "";
             public string ServerStatus = "";
             public bool DeleteRequested;
+            /// <summary>Time this handle's create call went out; the start of the first billed hour.</summary>
+            public float LaunchedAt;
+            /// <summary>End of the hour Hetzner has already charged for, as of the moment this handle was parked.</summary>
+            public float BilledUntil;
+            /// <summary>When the host deletes this parked machine: the end of the paid hour, or sooner when the idle pool is shorter.</summary>
+            public float RetainUntil;
+            public float ParkedSecondsRemaining => State == WorkerHandleState.Parked ? Math.Max(0f, RetainUntil - Time.unscaledTime) : -1f;
             public string Describe => ServerId != 0 ? $"hetzner server {ServerId} {ServerName} {Address}" : $"hetzner {ServerName} (creating)";
         }
 
         private const string ApiBase = "https://api.hetzner.cloud/v1";
         private const float PollIntervalSeconds = 15f;
+        /// <summary>Hetzner charges per started hour, so a machine deleted after 61 minutes has cost two.</summary>
+        public const float BillingPeriodSeconds = 3600f;
+        /// <summary>Delete a parked machine this long before the paid hour ends, so the delete call lands inside it.</summary>
+        public const float BillingSafetyMarginSeconds = 120f;
 
         private readonly CloudHostSettings _settings;
         private readonly HttpClient _http;
@@ -113,6 +124,10 @@ namespace Nebula.Hosting
         }
 
         public string Name => "hetzner";
+        /// <summary>A VM already paid for is worth keeping: a retired worker is parked and unparked instead of deleted and recreated.</summary>
+        public bool SupportsParking => true;
+        /// <summary>Measured: create, Ubuntu boot, build download and Unity start is well over a minute.</summary>
+        public float TypicalBootSeconds => 75f;
         public bool IsReady { get; private set; }
         public string InitializationError { get; private set; } = "";
 
@@ -166,6 +181,8 @@ namespace Nebula.Hosting
             var servers = JsonUtility.FromJson<ServersResponse>(stale.Body)?.servers ?? new List<Server>();
             foreach (var s in servers)
             {
+                // Parked machines carry the same labels as running ones, so a crashed orchestrator's idle pool is
+                // swept here too and no unowned machine keeps billing.
                 _log("warn", $"hetzner: deleting stale server {s.id} {s.name} left by a previous run");
                 Delete(s.id, s.name);
             }
@@ -191,6 +208,7 @@ namespace Nebula.Hosting
                 return h;
             }
             h.ServerName = $"{_settings.MeshId}-{spec.WorkerId}-{++_generation}";
+            h.LaunchedAt = Time.unscaledTime;
             _handles.Add(h);
 
             string workerArgs = $"-nebula-role worker -nebula-worker-id {spec.WorkerId} -nebula-worker-index {spec.Index} -nebula-port {spec.Port} -nebula-advertise $PRIVATE_IP";
@@ -286,6 +304,68 @@ namespace Nebula.Hosting
             if (h.ServerId != 0) Delete(h.ServerId, h.ServerName);
         }
 
+        /// <summary>
+        /// End of the billing period a machine launched at <paramref name="launchedAt"/> has been charged for as of
+        /// <paramref name="now"/>. Hetzner bills per started hour, so a machine up for five minutes is paid for until
+        /// minute 60 and one up for 61 minutes until minute 120; keeping it parked until then is free. Pure function.
+        /// </summary>
+        public static float BilledUntilSeconds(float launchedAt, float now, float billingPeriodSeconds = BillingPeriodSeconds)
+        {
+            if (billingPeriodSeconds <= 0f) return now;
+            double uptime = Math.Max(0.0, now - launchedAt);
+            double periods = Math.Max(1.0, Math.Ceiling(uptime / billingPeriodSeconds));
+            return (float)(launchedAt + periods * billingPeriodSeconds);
+        }
+
+        /// <summary>
+        /// When a machine parked at <paramref name="now"/> stops being kept: the end of the hour it has already been
+        /// billed, or sooner when <paramref name="idlePoolSeconds"/> asks for less. A longer idle pool is not
+        /// honoured, because the hour after this one is a fresh charge and nobody asked to pay it.
+        /// <para>
+        /// <see cref="BillingSafetyMarginSeconds"/> is taken off the <i>billed</i> deadline only, so the delete call
+        /// lands before the next hour starts. It is not taken off a retention the developer asked for: an
+        /// <c>IdlePoolSeconds</c> under the margin would otherwise mean "delete on the next tick".
+        /// </para>
+        /// Pure function; the result is the wall-clock moment the machine goes.
+        /// </summary>
+        public static float RetainUntilSeconds(float launchedAt, float now, float idlePoolSeconds)
+        {
+            float billedUntil = BilledUntilSeconds(launchedAt, now) - BillingSafetyMarginSeconds;
+            if (idlePoolSeconds <= 0f) return billedUntil;
+            return Math.Min(billedUntil, now + idlePoolSeconds);
+        }
+
+        /// <summary>True when a parked machine kept until <paramref name="retainUntil"/> must be deleted now. Pure function.</summary>
+        public static bool ParkedInstanceExpired(float now, float retainUntil) => now >= retainUntil;
+
+        /// <summary>
+        /// Keep the machine instead of deleting it: the worker process stays up and keeps heartbeating, the
+        /// orchestrator simply deals it nothing. It is deleted in <see cref="Tick"/> once the hour Hetzner has
+        /// already charged for runs out (or sooner, when <paramref name="idlePoolSeconds"/> is shorter), unless
+        /// <see cref="Unpark"/> claims it first.
+        /// </summary>
+        public void Park(IWorkerHandle handle, float idlePoolSeconds)
+        {
+            if (!(handle is Handle h) || h.DeleteRequested) return;
+            if (h.State != WorkerHandleState.Running && h.State != WorkerHandleState.Launching) { Kill(handle); return; }
+            float now = Time.unscaledTime;
+            h.BilledUntil = BilledUntilSeconds(h.LaunchedAt, now);
+            h.RetainUntil = RetainUntilSeconds(h.LaunchedAt, now, idlePoolSeconds);
+            h.State = WorkerHandleState.Parked;
+            h.Reason = "parked";
+            _log("info", $"hetzner: parking server {h.ServerId} {h.ServerName} ({h.WorkerId}); it stays paid for another {Math.Max(0f, h.RetainUntil - now):F0}s");
+        }
+
+        /// <summary>Take a parked machine back into service. The worker never stopped, so it is ready at once.</summary>
+        public bool Unpark(IWorkerHandle handle)
+        {
+            if (!(handle is Handle h) || h.State != WorkerHandleState.Parked || h.DeleteRequested) return false;
+            h.State = WorkerHandleState.Running;
+            h.Reason = "";
+            _log("info", $"hetzner: unparking server {h.ServerId} {h.ServerName}; it keeps worker id {h.WorkerId}");
+            return true;
+        }
+
         private void Delete(long serverId, string name)
         {
             Task.Run(async () =>
@@ -307,6 +387,7 @@ namespace Nebula.Hosting
             {
                 try { a(); } catch (Exception e) { _log("error", "hetzner: " + e.Message); }
             }
+            ExpireParked();
             if (IsReady && !_pollInFlight && Time.unscaledTime >= _nextPoll && _handles.Any(h => h.ServerId != 0))
             {
                 _nextPoll = Time.unscaledTime + PollIntervalSeconds;
@@ -316,6 +397,27 @@ namespace Nebula.Hosting
                     var r = await GetAsync($"/servers?label_selector={Uri.EscapeDataString("nebula-mesh=" + _settings.MeshId + ",nebula-role=worker")}&per_page=50");
                     _mainThread.Enqueue(() => OnPolled(r));
                 });
+            }
+        }
+
+        /// <summary>Delete parked machines whose paid hour is nearly over: nobody unparked them, so they stop costing.</summary>
+        private void ExpireParked()
+        {
+            if (_handles.Count == 0) return;
+            float now = Time.unscaledTime;
+            // Backwards, so removing the expired machine does not disturb the walk: this runs every frame and must
+            // not copy the handle list to do nothing, which is the usual outcome.
+            for (int i = _handles.Count - 1; i >= 0; i--)
+            {
+                var h = _handles[i];
+                if (h.State != WorkerHandleState.Parked || h.DeleteRequested) continue;
+                if (!ParkedInstanceExpired(now, h.RetainUntil)) continue;
+                _log("info", $"hetzner: parked server {h.ServerId} {h.ServerName} ({h.WorkerId}) reached the end of its paid hour; deleting it");
+                h.DeleteRequested = true;
+                h.State = WorkerHandleState.Exited;
+                h.Reason = "idle pool expired";
+                _handles.RemoveAt(i);
+                if (h.ServerId != 0) Delete(h.ServerId, h.ServerName);
             }
         }
 
@@ -355,6 +457,7 @@ namespace Nebula.Hosting
             w.Prop("serverStatus", h.ServerStatus);
             w.Prop("publicIp", h.PublicIp);
             w.Prop("privateIp", h.Address);
+            if (h.State == WorkerHandleState.Parked) w.Prop("paidSecondsRemaining", h.ParkedSecondsRemaining);
         }
 
         public void Dispose()

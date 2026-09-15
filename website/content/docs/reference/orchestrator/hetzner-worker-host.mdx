@@ -21,6 +21,24 @@ All HTTP work runs on the thread pool; results are queued and applied in [`Tick`
 public HetznerWorkerHost(CloudHostSettings settings);
 ```
 
+## Fields
+
+### BillingPeriodSeconds [#billingperiodseconds]
+
+```csharp
+public const float BillingPeriodSeconds = 3600f;
+```
+
+Hetzner charges per started hour, so a machine deleted after 61 minutes has cost two.
+
+### BillingSafetyMarginSeconds [#billingsafetymarginseconds]
+
+```csharp
+public const float BillingSafetyMarginSeconds = 120f;
+```
+
+Delete a parked machine this long before the paid hour ends, so the delete call lands inside it.
+
 ## Properties
 
 ### Name [#name]
@@ -28,6 +46,22 @@ public HetznerWorkerHost(CloudHostSettings settings);
 ```csharp
 public string Name { get; }
 ```
+
+### SupportsParking [#supportsparking]
+
+```csharp
+public bool SupportsParking { get; }
+```
+
+A VM already paid for is worth keeping: a retired worker is parked and unparked instead of deleted and recreated.
+
+### TypicalBootSeconds [#typicalbootseconds]
+
+```csharp
+public float TypicalBootSeconds { get; }
+```
+
+Measured: create, Ubuntu boot, build download and Unity start is well over a minute.
 
 ### IsReady [#isready]
 
@@ -60,6 +94,50 @@ public IWorkerHandle Launch(WorkerLaunchSpec spec);
 ```csharp
 public void Kill(IWorkerHandle handle);
 ```
+
+### BilledUntilSeconds [#billeduntilseconds]
+
+```csharp
+public static float BilledUntilSeconds(float launchedAt, float now, float billingPeriodSeconds = BillingPeriodSeconds);
+```
+
+End of the billing period a machine launched at `launchedAt` has been charged for as of `now`. Hetzner bills per started hour, so a machine up for five minutes is paid for until minute 60 and one up for 61 minutes until minute 120; keeping it parked until then is free. Pure function.
+
+### RetainUntilSeconds [#retainuntilseconds]
+
+```csharp
+public static float RetainUntilSeconds(float launchedAt, float now, float idlePoolSeconds);
+```
+
+When a machine parked at `now` stops being kept: the end of the hour it has already been billed, or sooner when `idlePoolSeconds` asks for less. A longer idle pool is not honoured, because the hour after this one is a fresh charge and nobody asked to pay it.
+
+[`BillingSafetyMarginSeconds`](#billingsafetymarginseconds) is taken off the *billed* deadline only, so the delete call lands before the next hour starts. It is not taken off a retention the developer asked for: an `IdlePoolSeconds` under the margin would otherwise mean "delete on the next tick".
+
+Pure function; the result is the wall-clock moment the machine goes.
+
+### ParkedInstanceExpired [#parkedinstanceexpired]
+
+```csharp
+public static bool ParkedInstanceExpired(float now, float retainUntil);
+```
+
+True when a parked machine kept until `retainUntil` must be deleted now. Pure function.
+
+### Park [#park]
+
+```csharp
+public void Park(IWorkerHandle handle, float idlePoolSeconds);
+```
+
+Keep the machine instead of deleting it: the worker process stays up and keeps heartbeating, the orchestrator simply deals it nothing. It is deleted in [`Tick`](#tick) once the hour Hetzner has already charged for runs out (or sooner, when `idlePoolSeconds` is shorter), unless [`Unpark`](#unpark) claims it first.
+
+### Unpark [#unpark]
+
+```csharp
+public bool Unpark(IWorkerHandle handle);
+```
+
+Take a parked machine back into service. The worker never stopped, so it is ready at once.
 
 ### Tick [#tick]
 

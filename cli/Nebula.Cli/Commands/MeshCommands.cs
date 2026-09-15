@@ -7,7 +7,7 @@ public sealed class StartCommand : Command
 {
     public override string Name => "start";
     public override string Summary => "Start the orchestrator, gateway, and workers on this computer";
-    public override string Usage => "[--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]";
+    public override string Usage => "[--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
 Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and
 starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client
@@ -25,13 +25,15 @@ stay across restarts unless you pass --reset-persistence.
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("build", false, "build first (nebula build)"),
-        new OptionSpec("workers", true, "worker processes (default from nebula.json, 4)", "N"),
+        new OptionSpec("workers", true, "worker processes to start with; on its own it fixes the count (min = max = N). Default from nebula.json, 4", "N"),
+        new OptionSpec("min", true, "autoscaling floor; the mesh starts here when --workers is not given, and 0 allows scaling to zero (default: --workers)", "N"),
+        new OptionSpec("max", true, "autoscaling ceiling; autoscaling grows into the band from --min (default: --workers)", "N"),
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --reset-persistence" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -39,8 +41,17 @@ stay across restarts unless you pass --reset-persistence.
         if (args.Has("build"))
             UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Host, StopMesh: true));
         var mesh = project.File.Mesh;
+        // --workers alone means a fixed mesh (min = max = N), which is what it has always meant; --min/--max open the band.
+        int workers = args.GetInt("workers", mesh.Workers);
+        int min = args.GetInt("min", args.Has("workers") ? workers : mesh.MinWorkers ?? workers);
+        int max = args.GetInt("max", args.Has("workers") ? workers : mesh.MaxWorkers ?? workers);
+        if (min < 0 || max < 1 || min > max) throw new CliError($"invalid worker range {min}..{max}", "0 <= --min <= --max and --max >= 1");
+        // A band without an explicit count starts at the floor and lets autoscaling grow into the band; anything else
+        // would start a mesh at `--max` and only ever shrink, which is not what `--min 1 --max 4` reads as.
+        bool band = args.Has("min") || args.Has("max");
+        int start = args.Has("workers") || !band ? Math.Clamp(workers, min, max) : min;
         LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
-            args.GetInt("workers", mesh.Workers), args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
+            start, min, max, args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
             args.Has("open-ui"), args.Has("reset-persistence")));
         return 0;
     }

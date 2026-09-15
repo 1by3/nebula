@@ -15,7 +15,13 @@ public sealed class ProjectFile
     public sealed class MeshSettings
     {
         public int Workers { get; set; } = 4;
+        /// <summary>The fewest workers autoscaling leaves running. Null = a fixed mesh of <see cref="Workers"/>; 0 allows scaling to zero.</summary>
+        public int? MinWorkers { get; set; }
+        /// <summary>The most workers the orchestrator may run. Null = a fixed mesh of <see cref="Workers"/>.</summary>
+        public int? MaxWorkers { get; set; }
         public int Npcs { get; set; } = 0;
+        /// <summary>How long a retired worker stays in the idle pool, ready to come back without a boot. 0 = the host decides (a local process is killed at once; a cloud VM is kept for the hour it is billed).</summary>
+        public double IdlePoolSeconds { get; set; } = 0;
         public int DashboardPort { get; set; } = 7080;
         public int GatewayPort { get; set; } = 7000;
         /// <summary>Where the local orchestrator keeps the control plane and saved entities (sqlite:&lt;file&gt;, postgres://..., memory). Null = Library/Nebula/nebula.db.</summary>

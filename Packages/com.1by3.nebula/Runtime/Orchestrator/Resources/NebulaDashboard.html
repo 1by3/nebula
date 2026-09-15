@@ -55,6 +55,8 @@
   th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
   td { padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   td.mono, .mono { font-family: var(--mono); }
+  .hintcell { cursor: pointer; border-bottom: 1px dotted var(--muted); }
+  #hintNote { color: var(--warn); }
   .idcell { display: flex; align-items: center; min-width: 0; }
   .idcell .sw { flex: 0 0 auto; }
   .idcell span:last-child { overflow-wrap: anywhere; }
@@ -72,6 +74,12 @@
   #toast.show { display: block; }
   #toast.ok { background: #1c3a2b; color: #b4f0cf; border-color: #2a5a40; }
   .muted { color: var(--ink-3); }
+  .warnText { color: var(--warn); }
+  .util { margin-bottom: 8px; }
+  .util .bar { height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .util .fill { height: 100%; background: var(--ok, #4ec9a0); }
+  .util.warn .fill { background: var(--warn); }
+  .util.bad .fill { background: var(--bad); }
   .gateway { display: inline-flex; align-items: center; gap: 8px; padding: 3px 3px 3px 11px; border: 1px solid var(--accent); border-radius: 9px; background: var(--panel-2); }
   .gateway .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
   .gateway.ok .dot { background: var(--ok); } .gateway.bad .dot { background: var(--bad); }
@@ -92,6 +100,7 @@
   <span class="sub" id="orchId">—</span>
   <span class="pill" id="cpPill"><span class="dot"></span><span>control plane</span></span>
   <span class="pill" id="netPill"><span class="dot"></span><span>dashboard</span></span>
+  <span class="pill warn" id="zeroPill" hidden><span class="dot"></span><span id="zeroPillText">Scale to zero is on</span></span>
   <div class="gateway" id="gwBox">
     <span class="dot"></span><span class="label">Gateway</span>
     <input id="gwAddress" type="text" value="" disabled aria-label="Gateway address">
@@ -131,8 +140,20 @@
       </span>
       <button id="btnAdd" class="primary">Add worker</button>
       <button id="btnRebalance">Rebalance now</button>
+      <span class="muted">Autoscale between</span>
+      <input id="scaleMin" type="number" min="0" step="1" style="width:64px" title="MinWorkers: the fewest workers autoscaling leaves running (0 allows scaling to zero)">
+      <span class="muted">and</span>
+      <input id="scaleMax" type="number" min="1" step="1" style="width:64px" title="MaxWorkers: the most workers the orchestrator will ever run">
+      <button id="btnLimits">Set</button>
       <span class="muted" id="hint" style="margin-left:auto; font-size:12px">Changing the count launches or drains processes; containers move to keep the load even.</span>
     </div>
+    <div class="muted" id="scaleLine" style="margin-top:8px; font-size:12px">–</div>
+  </section>
+
+  <section class="card" id="parkedCard" hidden>
+    <h2>Idle pool</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:8px" id="parkedHint">Retired workers this host keeps instead of deleting, so a scale-out takes one back warm.</div>
+    <div id="parked"></div>
   </section>
 
   <div class="workers" id="workers"></div>
@@ -153,8 +174,10 @@
   <div class="row">
     <section class="card">
       <h2>Containers</h2>
+      <div class="warn" id="hintNote" style="display:none; font-size:12px; margin-bottom:8px"></div>
       <table>
-        <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th></tr></thead>
+        <div class="muted" style="font-size:12px; margin-bottom:8px">Hints tell the planner what it cannot measure. Click one to edit it: <span class="mono">x2</span> heavier, <span class="mono">group=name</span> keep together, <span class="mono">seam=0.5</span> avoid cutting here, <span class="mono">dedicated</span> a worker of its own. Empty clears it.</div>
+        <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th><th>Hint</th></tr></thead>
         <tbody id="containers"></tbody>
       </table>
     </section>
@@ -169,7 +192,7 @@
     <section class="card">
       <h2>Gateways</h2>
       <table>
-        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th></tr></thead>
+        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Joining</th></tr></thead>
         <tbody id="gateways"></tbody>
       </table>
     </section>
@@ -190,6 +213,20 @@
 
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
+  // p90 of the worker's tick time as a fraction of the tick budget: the signal the scaler works from.
+  function utilBar(w, s) {
+    const sc = s.scale || {};
+    const u = Number(w.utilization || 0);
+    const out = Number(sc.outUtilization || 0.7);
+    const cls = u >= out ? 'bad' : u >= out * 0.75 ? 'warn' : '';
+    const pct = Math.max(0, Math.min(100, u * 100));
+    const title = `p90 of the last ${sc.windowSeconds || 20} s: ${(u * 100).toFixed(0)} % of the ${(sc.tickPeriodMs || 16.7).toFixed(1)} ms tick budget (scale-out line ${(out * 100).toFixed(0)} %)`;
+    return `<div class="util ${cls}" title="${esc(title)}">
+        <div class="meta" style="display:flex;justify-content:space-between"><span>utilization</span><span>${w.alive ? (u * 100).toFixed(0) + ' %' : '—'}</span></div>
+        <div class="bar"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>
+      </div>`;
+  }
+  function fmtSecs(v) { v = Math.max(0, Math.round(v)); return v >= 60 ? Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's' : v + 's'; }
   function fmtTime(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], {hour12:false}); }
 
   function stateClass(w) {
@@ -198,6 +235,7 @@
     return 'warn';
   }
   function stateLabel(w) {
+    if (w.state === 'parked') return 'parked' + (w.paidSecondsRemaining >= 0 ? ' · paid ' + fmtSecs(w.paidSecondsRemaining) : '');
     if (w.state === 'draining') return 'draining' + (w.drainRemainingSeconds >= 0 ? ' · ' + Math.ceil(w.drainRemainingSeconds) + 's' : '');
     if (w.state === 'relaunching') return 'relaunch in ' + Math.ceil(Math.max(0, w.relaunchInSeconds)) + 's';
     return w.state;
@@ -217,7 +255,7 @@
     const gb = $('gwBox'); gb.className = 'gateway ' + (gwLive ? 'ok' : 'bad');
     gb.title = (gwLive ? 'Gateway registered. ' : 'Gateway not registered. ') + 'Clients connect here: enter it on the title screen, or pass -nebula-role client -nebula-gateway ' + (gwAddress || '<address>');
 
-    $('sLive').textContent = s.totals.liveWorkers;
+    $('sLive').textContent = s.totals.liveWorkers + (s.totals.parkedWorkers ? ' +' + s.totals.parkedWorkers : '');
     $('sDesired').textContent = s.desiredWorkers;
     $('sContainers').textContent = s.totals.containers;
     $('sPlayers').textContent = s.totals.players;
@@ -246,6 +284,38 @@
       st.innerHTML = keys.map(k => `<div class="controls" style="margin-bottom:4px"><span class="n" style="min-width:140px">${esc(k)}</span><input data-key="${esc(k)}" value="${esc(s.settings[k])}" style="width:200px"><button data-set="${esc(k)}">Set</button></div>`).join('');
     }
 
+    const sc = s.scale || {};
+    const band = `${s.minWorkers ?? 0}–${s.maxWorkers ?? 0}`;
+    $('scaleLine').textContent = sc.enabled ? `autoscale ${band}: ${sc.reason || 'idle'}` : `autoscale off (workers ${band})`;
+    // Scale to zero: a persistent warning, because the cost of it is paid by whoever joins first after an idle period.
+    const zero = !!sc.scaleToZero, pending = sc.pendingJoins || 0, liveCount = (s.totals && s.totals.liveWorkers) || 0;
+    $('zeroPill').hidden = !zero;
+    $('zeroPillText').textContent = `Scale to zero is on: the first player after an idle period waits for a worker to boot (about ${Math.round(s.hostBootSeconds || 0)} s on this host)`;
+    if (pending > 0 && liveCount === 0)
+    {
+      $('scaleLine').textContent = `world starting: ${pending} client(s) waiting to join, no worker running (about ${Math.round(s.hostBootSeconds || 0)} s)`;
+      $('scaleLine').className = 'muted warnText';
+    }
+    else $('scaleLine').className = 'muted' + (sc.blockedBy ? ' warnText' : '');
+    if (!$('scaleMin').matches(':focus')) $('scaleMin').value = s.minWorkers ?? 0;
+    if (!$('scaleMax').matches(':focus')) $('scaleMax').value = s.maxWorkers ?? 0;
+    $('btnLimits').disabled = busy;
+
+    const parked = s.parked || [];
+    $('parkedCard').hidden = !parked.length && !s.hostParks;
+    $('parkedHint').textContent = s.hostParks
+      ? `Retired workers the ${s.host} host keeps instead of deleting, so a scale-out takes one back warm (about ${Math.round(s.hostBootSeconds || 0)} s saved). ${s.idlePoolSeconds > 0 ? 'Kept for up to ' + fmtSecs(s.idlePoolSeconds) + '.' : 'Kept while they are already paid for.'}`
+      : `The ${s.host} host does not park workers: a retired worker is stopped at once and a new one starts in about ${Math.round(s.hostBootSeconds || 0)} s.`;
+    $('parked').innerHTML = parked.length ? parked.map(w => `
+      <div class="controls" style="margin-bottom:4px">
+        <span class="sw" style="--wc:${esc(w.color)}"></span>
+        <span class="n mono" style="min-width:60px">${esc(w.id)}</span>
+        <span class="muted" style="font-size:12px">#${w.index}${w.instance ? ' · ' + esc(w.instance) : ''} · parked ${fmtSecs(w.parkedSeconds)}${w.paidSecondsRemaining >= 0 ? ' · paid for another ' + fmtSecs(w.paidSecondsRemaining) : ''}</span>
+        <button class="small" data-park="resume" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Take this worker back into service; it is warm, so it starts holding containers at once">Resume</button>
+        <button class="small danger" data-park="delete" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Drop it now instead of waiting for the host to let it go">Delete</button>
+      </div>`).join('')
+      : '<div class="muted">The idle pool is empty.</div>';
+
     const ws = $('workers');
     if (!s.workers.length) {
       ws.innerHTML = '<div class="card muted">No workers. Use <b>Add worker</b> to launch one.</div>';
@@ -264,6 +334,7 @@
             <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
             <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
           </div>
+          ${utilBar(w, s)}
           <div class="meta" style="margin-bottom:8px">heartbeat ${fmtAge(w.heartbeatAgeSeconds)} · ${esc(w.address || 'not registered')} · tick ${w.tickCount}</div>
           <div class="actions">
             <button class="small danger" data-act="kill" data-id="${esc(w.id)}" ${(!w.managed || !w.instance || busy) ? 'disabled' : ''} title="Kill the process / delete the VM to simulate a crash; the orchestrator relaunches it">Kill</button>
@@ -272,10 +343,17 @@
         </article>`).join('');
     }
 
+    const hintNote = $('hintNote');
+    if (hintNote) {
+      hintNote.textContent = (s.scale && s.scale.hintNote) || '';
+      hintNote.style.display = (s.scale && s.scale.hintNote) ? '' : 'none';
+    }
+
     $('containers').innerHTML = s.containers.map(c => `
       <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
-          <td>${c.epoch}</td><td>${esc(c.state)}</td></tr>`).join('');
+          <td>${c.epoch}</td><td>${esc(c.state)}</td>
+          <td><span class="mono hintcell" data-act="hint" data-id="${esc(c.id)}" title="Click to edit this container's balancing hint">${c.hint ? esc(c.hint) : '<span class="muted">–</span>'}</span></td></tr>`).join('');
 
     const live = s.workers.filter(w => w.alive && !w.retiring);
     $('carried').innerHTML = s.carried.length ? s.carried.map(c => `
@@ -288,8 +366,8 @@
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
 
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => `
-      <tr><td class="mono">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td></tr>`).join('')
-      : '<tr><td colspan="3" class="muted">no gateway registered</td></tr>';
+      <tr><td class="mono">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td><td${g.pendingJoins ? ' class="warnText"' : ''}>${g.pendingJoins || 0}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">no gateway registered</td></tr>';
 
     $('log').innerHTML = s.events.map(e => `<div class="${esc(e.level)}"><span class="t">${fmtTime(e.time)}</span><span>${esc(e.message)}</span></div>`).join('');
   }
@@ -350,6 +428,7 @@
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(a).then(done, legacy);
     else legacy();
   };
+  $('btnLimits').onclick = () => post('/api/scale/limits', { min: Number($('scaleMin').value), max: Number($('scaleMax').value) });
   $('btnPlus').onclick = () => post('/api/workers/add');
   $('btnNewSetting').onclick = () => { const k = $('newKey').value.trim(); if (!k) return; post('/api/settings', { key: k, value: $('newValue').value }); $('newKey').value = ''; $('newValue').value = ''; };
   $('settings').addEventListener('click', (ev) => {
@@ -371,6 +450,25 @@
     if (!b || b.disabled) return;
     if (b.dataset.act === 'remove') post('/api/workers/remove', { workerId: b.dataset.id });
     else if (b.dataset.act === 'kill') post('/api/workers/kill', { workerId: b.dataset.id });
+  });
+
+  $('parked').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-park]');
+    if (!b || b.disabled) return;
+    if (b.dataset.park === 'resume') post('/api/workers/unpark', { workerId: b.dataset.id });
+    else post('/api/workers/delete-parked', { workerId: b.dataset.id });
+  });
+
+  $('containers').addEventListener('click', (ev) => {
+    const cell = ev.target.closest('[data-act="hint"]');
+    if (!cell) return;
+    const now = (cell.textContent || '').trim();
+    const next = prompt(`Balancing hint for ${cell.dataset.id}
+
+x2 = twice as heavy, group=name, seam=0..1, dedicated.
+Separate with commas; leave empty to clear.`, now === '–' ? '' : now);
+    if (next === null) return;
+    post('/api/containers/hint', { containerId: cell.dataset.id, hint: next.trim() });
   });
 
   $('carried').addEventListener('click', (ev) => {

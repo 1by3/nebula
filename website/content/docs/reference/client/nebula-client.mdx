@@ -43,6 +43,22 @@ public string PlayerName { get; } = "";
 public NetworkIdentity LocalPlayer { get; }
 ```
 
+### Join [#join]
+
+```csharp
+public JoinState Join { get; }
+```
+
+How far the join has got, as the gateway sees it. A mesh with [`NebulaConfig.MinWorkers`](/docs/reference/core/nebula-config#minworkers) at 0 has nowhere to spawn the first player after an idle period, so the gateway holds the join in [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) while a worker boots and completes it with no reconnect; show a "world starting" screen while this is [`JoinState.Starting`](/docs/reference/protocol/join-state#starting).
+
+### JoinEstimatedSeconds [#joinestimatedseconds]
+
+```csharp
+public int JoinEstimatedSeconds { get; }
+```
+
+Roughly how many seconds the gateway expects the [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) hold to last; 0 when unknown.
+
 ### RttMs [#rttms]
 
 ```csharp
@@ -107,6 +123,22 @@ public IEnumerable<NetworkIdentity> Entities { get; }
 public int AuthorityChangesSeen { get; }
 ```
 
+### StreamLagTicks [#streamlagticks]
+
+```csharp
+public int StreamLagTicks { get; }
+```
+
+How far behind the newest tick heard the world-state stream of the slowest worker currently runs (ticks), over the last two seconds.
+
+### RenderDelayTicks [#renderdelayticks]
+
+```csharp
+public int RenderDelayTicks { get; }
+```
+
+The render delay in use: [`NebulaConfig.InterpolationDelayTicks`](/docs/reference/core/nebula-config#interpolationdelayticks) plus the measured stream lag.
+
 ### LastError [#lasterror]
 
 ```csharp
@@ -168,6 +200,14 @@ public event Action ContainerOwnershipChanged;
 ```csharp
 public event Action<State> ConnectionStateChanged;
 ```
+
+### JoinStateChanged [#joinstatechanged]
+
+```csharp
+public event Action<JoinState, int> JoinStateChanged;
+```
+
+The join's state changed: (state, estimated seconds). Raised on the main thread.
 
 ## Methods
 

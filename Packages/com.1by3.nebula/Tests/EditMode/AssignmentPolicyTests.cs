@@ -214,5 +214,98 @@ namespace Nebula.Tests
             Assert.AreEqual(2, final.Values.Count(v => v == "w2"));
             Assert.AreEqual(final["arena"], final[ids[0]], "the arena and its eastern neighbour sit together on the curve");
         }
+
+        [Test]
+        public void PredictDealsToSyntheticWorkersAndAddsUpTheirLoad()
+        {
+            var ids = Row(8);
+            var leases = ids.Select(id => Lease(id, "w1")).ToList();
+            var input = Input(Workers(1), leases);
+            input.Utilization = ids.ToDictionary(id => id, _ => 0.1f);
+            var policy = new CostBalancedAssignmentPolicy();
+
+            var one = policy.Predict(input, 1);
+            Assert.AreEqual(0.8f, one.Peak, 1e-4f, "one worker carries everything");
+            Assert.AreEqual(0.8f, one.Mean, 1e-4f);
+            Assert.AreEqual(0, one.Unassigned);
+            Assert.AreEqual(8, one.Containers[one.PeakWorker].Count);
+
+            var two = policy.Predict(input, 2);
+            Assert.AreEqual(0.4f, two.Peak, 1e-4f, "two workers split the row evenly");
+            Assert.AreEqual(2, two.Containers.Count);
+            CollectionAssert.AreEquivalent(ids, two.Containers.Values.SelectMany(c => c).ToList());
+            Assert.IsTrue(two.Containers.Keys.All(k => k.StartsWith(AssignmentPlanner.SyntheticPrefix)), "the dry run never names a real worker");
+            Assert.AreEqual(0.1f, two.HeaviestUtilization, 1e-4f);
+
+            Assert.AreEqual(0f, policy.Predict(input, 0).Peak, "no workers, no plan");
+        }
+
+        [Test]
+        public void PredictNamesTheContainerThatCarriesTheLoadOnItsOwn()
+        {
+            // One cell holds a crowd: however many workers there are, it lands whole on one of them.
+            var ids = Row(4);
+            var leases = ids.Select(id => Lease(id, "w1")).ToList();
+            var occupancy = new Dictionary<string, ContainerLoad> { [ids[2]] = Load(30) };
+            var input = Input(Workers(1), leases, occupancy);
+            input.Utilization = new Dictionary<string, float> { [ids[0]] = 0.02f, [ids[1]] = 0.02f, [ids[2]] = 0.8f, [ids[3]] = 0.02f };
+            var policy = new CostBalancedAssignmentPolicy();
+
+            var four = policy.Predict(input, 4);
+            Assert.AreEqual(0.8f, four.Peak, 1e-4f, "splitting four ways does not split the crowd");
+            Assert.AreEqual(ids[2], four.HeaviestContainer);
+            Assert.AreEqual(1, four.Containers[four.PeakWorker].Count);
+        }
+
+        [Test]
+        public void PredictWorksForTheBakedPolicyToo()
+        {
+            var ids = Row(4);
+            var leases = ids.Select(id => Lease(id, "w1")).ToList();
+            var input = Input(Workers(1), leases);
+            input.Utilization = ids.ToDictionary(id => id, _ => 0.2f);
+            // The baked policy only deals baked containers, so a runtime-only world leaves them all unassigned.
+            var plan = new BakedAssignmentPolicy().Predict(input, 2);
+            Assert.AreEqual(4, plan.Unassigned);
+            Assert.AreEqual(0f, plan.Peak);
+        }
+
+        [Test]
+        public void CostPolicyRefusesAReDealThatBuysAlmostNothing()
+        {
+            // Eight chunks, w1 holds seven and w2 one: unbalanced by count, but w2's single chunk is where the load
+            // actually is. Cutting the curve in half hands three more of w1's chunks to the worker already carrying
+            // the crowd, so the busiest worker ends up worse off; the mesh is busy enough for that to be believed.
+            var ids = Row(8);
+            var leases = ids.Select((id, i) => Lease(id, i < 7 ? "w1" : "w2")).ToList();
+            var input = Input(Workers(1, 2), leases);
+            input.Utilization = ids.ToDictionary(id => id, id => id == ids[7] ? 0.45f : 0.07f);
+            var policy = new CostBalancedAssignmentPolicy();
+            Assert.IsEmpty(policy.Compute(input), "0.49 -> 0.66 on the busiest worker is not a gain at all");
+
+            // The same layout with the load spread evenly does move: the busiest worker halves.
+            input.Utilization = ids.ToDictionary(id => id, _ => 0.15f);
+            Assert.IsNotEmpty(policy.Compute(input));
+        }
+
+        [Test]
+        public void CostPolicyStillReDealsWhenNobodyIsBusyEnoughForUtilizationToMeanAnything()
+        {
+            // Seven chunks against one is a threefold cost imbalance, but at 0.01 of a tick each no re-deal can
+            // possibly buy MinGain of a tick budget. Vetoing on that froze the layout until something was already
+            // hot; below MinGainFloor the cost-unit balance rule is the one that decides.
+            var ids = Row(8);
+            var leases = ids.Select((id, i) => Lease(id, i < 7 ? "w1" : "w2")).ToList();
+            var input = Input(Workers(1, 2), leases);
+            input.Utilization = ids.ToDictionary(id => id, _ => 0.01f);
+            var policy = new CostBalancedAssignmentPolicy();
+            Assert.Less(0.07f, policy.MinGainFloor, "the busiest worker is nowhere near the floor");
+
+            var changes = policy.Compute(input);
+            Assert.IsNotEmpty(changes, "a 7:1 split is re-dealt even though the tick times cannot show the gain");
+            var after = Apply(leases, changes);
+            Assert.AreEqual(4, ids.Count(id => after[id] == "w1"));
+            Assert.AreEqual(4, ids.Count(id => after[id] == "w2"));
+        }
     }
 }

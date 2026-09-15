@@ -100,7 +100,7 @@ namespace Nebula
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
-        private readonly Dictionary<ulong, Bounds> _pendingRuntimeRequests = new Dictionary<ulong, Bounds>();
+        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool)>();
 
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
@@ -306,12 +306,45 @@ namespace Nebula
         /// no-op. Every process registers the container from the row (<see cref="ContainerRegistry.SyncRuntime"/>),
         /// and <see cref="ContainerRegistry.RuntimeRegistered"/> fires here once it has. Idempotent: call it every
         /// time an entity approaches the box.
+        /// <para>
+        /// This overload says nothing about the hint, so it never touches one: a hint set from the dashboard or by
+        /// the three-argument overload survives every later approach. Use that overload to change it.
+        /// </para>
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds)
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false);
+
+        /// <summary>
+        /// Ask for a runtime container and tell the planner what kind of box it is in the same breath
+        /// (<see cref="ContainerHint"/>): a chunk holding a boss arena is <c>Dedicated</c>, the rooms of one dungeon
+        /// share an <c>AffinityGroup</c>. The hint is written to the lease row, so every orchestrator sees it and a
+        /// restart does not lose it. A default hint writes nothing. Idempotent like the two-argument overload; the
+        /// hint is re-applied when it differs from the row, so a game may raise and lower it as the box heats up.
+        /// </summary>
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true);
+
+        /// <summary>
+        /// Should this approach write the hint row? Only a caller that actually named a hint may, and only when what
+        /// the row says differs from what was asked for - the call is made every time an entity comes near the box,
+        /// and a write per tick would be a control-plane write per tick. A caller that named none leaves the row
+        /// alone whatever is in it, so the dashboard's hint (or an earlier explicit one) is not erased by the next
+        /// approach. Pure function.
+        /// </summary>
+        /// <param name="explicitHint">The caller passed a hint (the three-argument overload), rather than defaulting.</param>
+        /// <param name="rowHasHint">The lease row carries a hint today.</param>
+        /// <param name="rowHint">What the row says (ignored when <paramref name="rowHasHint"/> is false).</param>
+        /// <param name="wanted">The hint the caller asked for.</param>
+        public static bool ShouldWriteHint(bool explicitHint, bool rowHasHint, in ContainerHint rowHint, in ContainerHint wanted)
+        {
+            if (!explicitHint) return false;
+            if (rowHasHint != !wanted.IsDefault) return true;
+            return rowHasHint && rowHint != wanted;
+        }
+
+        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint)
         {
             if (!_registered || !ControlPlane.IsConnected)
             {
-                _pendingRuntimeRequests[id] = frameBounds; // OnWorkerStarted runs before registration; ask as soon as we can
+                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint); // OnWorkerStarted runs before registration; ask as soon as we can
                 return;
             }
             string containerId = ContainerRegistry.RuntimeContainerId(id);
@@ -319,8 +352,10 @@ namespace Nebula
             if (lease == null)
             {
                 ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId);
+                if (writeHint && !hint.IsDefault) ControlPlane.SetContainerHint(containerId, hint);
                 return;
             }
+            if (ShouldWriteHint(writeHint, lease.HasHint, lease.Hint, hint)) ControlPlane.SetContainerHint(containerId, hint);
             // Somebody else owns it and we still want it: say so now and then, so the owner's idle clock does not run out.
             if (lease.WorkerId != WorkerId && (ControlPlane.Now - lease.UpdatedAt).TotalSeconds >= RuntimeTouchSeconds) ControlPlane.TouchContainer(containerId);
         }
@@ -342,7 +377,7 @@ namespace Nebula
         private void FlushRuntimeRequests()
         {
             if (_pendingRuntimeRequests.Count == 0 || !_registered || !ControlPlane.IsConnected) return;
-            foreach (var kv in _pendingRuntimeRequests) RequestRuntimeContainer(kv.Key, kv.Value);
+            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint);
             _pendingRuntimeRequests.Clear();
         }
 

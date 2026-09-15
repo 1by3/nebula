@@ -49,3 +49,11 @@ string Reason { get; }
 
 Why [`State`](#state) is Exited/Failed, when known.
 
+### ParkedSecondsRemaining [#parkedsecondsremaining]
+
+```csharp
+float ParkedSecondsRemaining { get; }
+```
+
+While [`State`](#state) is [`WorkerHandleState.Parked`](/docs/reference/orchestrator/worker-handle-state#parked): how much longer the host will keep this instance before deleting it (the rest of the hour Hetzner has already charged for). Negative when the host does not park, or when it keeps parked instances indefinitely.
+

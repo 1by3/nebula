@@ -1,0 +1,69 @@
+---
+title: "ScaleDecision"
+description: "The scaler's answer, and everything the dashboard needs to explain it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs)</div>
+
+```csharp
+public struct ScaleDecision
+```
+
+The scaler's answer, and everything the dashboard needs to explain it.
+
+## Fields
+
+### Action [#action]
+
+```csharp
+public ScaleAction Action;
+```
+
+### Peak [#peak]
+
+```csharp
+public float Peak;
+```
+
+The busiest worker's measured p90 utilization.
+
+### Mean [#mean]
+
+```csharp
+public float Mean;
+```
+
+Mean measured p90 utilization across the eligible workers.
+
+### HeldSeconds, HoldSeconds [#heldseconds-holdseconds]
+
+```csharp
+public float HeldSeconds, HoldSeconds;
+```
+
+How long the current condition has held, and for how long it must, in seconds. Both 0 when nothing is held.
+
+### BlockedBy [#blockedby]
+
+```csharp
+public string BlockedBy;
+```
+
+The container that makes growing pointless (all the load and no way to split it), or "".
+
+### RetireWorkerId [#retireworkerid]
+
+```csharp
+public string RetireWorkerId;
+```
+
+The worker that should retire when [`Action`](#action) is [`ScaleAction.Shrink`](/docs/reference/orchestrator/scale-action#shrink).
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+One line for the dashboard and the event log.
+

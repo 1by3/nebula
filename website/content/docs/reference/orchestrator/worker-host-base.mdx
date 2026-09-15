@@ -1,0 +1,95 @@
+---
+title: "WorkerHostBase"
+description: "Base class for hosts that do not park: Park kills, Unpark fails, and the orchestrator never parks into them."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/IWorkerHost.cs)</div>
+
+```csharp
+public abstract class WorkerHostBase : IWorkerHost
+```
+
+Base class for hosts that do not park: [`Park`](#park) kills, [`Unpark`](#unpark) fails, and the orchestrator never parks into them. Deriving from this keeps a host source-compatible when [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) grows optional members.
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public abstract string Name { get; }
+```
+
+### IsReady [#isready]
+
+```csharp
+public abstract bool IsReady { get; }
+```
+
+### InitializationError [#initializationerror]
+
+```csharp
+public abstract string InitializationError { get; }
+```
+
+### SupportsParking [#supportsparking]
+
+```csharp
+public virtual bool SupportsParking { get; }
+```
+
+### TypicalBootSeconds [#typicalbootseconds]
+
+```csharp
+public virtual float TypicalBootSeconds { get; }
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public abstract void Initialize(Action<string, string> log);
+```
+
+### Launch [#launch]
+
+```csharp
+public abstract IWorkerHandle Launch(WorkerLaunchSpec spec);
+```
+
+### Kill [#kill]
+
+```csharp
+public abstract void Kill(IWorkerHandle handle);
+```
+
+### Tick [#tick]
+
+```csharp
+public abstract void Tick();
+```
+
+### WriteHandleJson [#writehandlejson]
+
+```csharp
+public abstract void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public abstract void Dispose();
+```
+
+### Park [#park]
+
+```csharp
+public virtual void Park(IWorkerHandle handle, float idlePoolSeconds);
+```
+
+### Unpark [#unpark]
+
+```csharp
+public virtual bool Unpark(IWorkerHandle handle);
+```
+

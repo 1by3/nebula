@@ -16,7 +16,7 @@ Where RPCs and state changes go once a behaviour has produced them. Implemented 
 ### SendClientRpc [#sendclientrpc]
 
 ```csharp
-void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId);
+void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius);
 ```
 
 ### SendServerRpc [#sendserverrpc]

@@ -15,6 +15,8 @@ Assignment is a pluggable [`IAssignmentPolicy`](/docs/reference/orchestrator/i-a
 
 Removing a worker is graceful: it is excluded from the assignment set, so the next pass moves its containers to the survivors and the worker hands its entities over through the normal per-entity handover path. Once it holds no leases and reports no authoritative entities (or the drain timeout passes) the process is killed. A worker whose heartbeat stops is declared dead, its containers are reassigned immediately, and a replacement is launched after a short delay.
 
+On a host where an instance costs money to keep and time to recreate ([`IWorkerHost.SupportsParking`](/docs/reference/orchestrator/i-worker-host#supportsparking)), a drained worker is parked into the idle pool instead of killed: it keeps its worker id, its index and its machine, receives no leases, and a later scale-out takes it back before anything new is launched. The host drops a parked instance by itself when keeping it stops being free.
+
 ## Fields
 
 ### MaxWorkersLimit [#maxworkerslimit]
@@ -35,13 +37,29 @@ public int MaxWorkers { get; }
 
 The most workers this orchestrator will run ([`NebulaConfig.MaxWorkers`](/docs/reference/core/nebula-config#maxworkers)).
 
+### MinWorkers [#minworkers]
+
+```csharp
+public int MinWorkers { get; }
+```
+
+The fewest workers autoscaling will leave running ([`NebulaConfig.MinWorkers`](/docs/reference/core/nebula-config#minworkers)); 0 means the mesh may scale to zero.
+
+### ParkedWorkerCount [#parkedworkercount]
+
+```csharp
+public int ParkedWorkerCount { get; }
+```
+
+How many workers are in the idle pool. They cost the host something but do no work and are not counted in [`DesiredWorkers`](#desiredworkers).
+
 ### Policy [#policy]
 
 ```csharp
 public IAssignmentPolicy Policy { get; set; }
 ```
 
-How containers are dealt to workers. Chosen from [`NebulaConfig.AssignmentPolicy`](/docs/reference/core/nebula-config#assignmentpolicy) (or `-nebula-assignment`) at [`Initialize`](#initialize); game code may replace it at any time. With "auto" the baked policy runs while every container is baked and the cost policy takes over once the game registers runtime containers.
+How containers are dealt to workers. Chosen from [`NebulaConfig.AssignmentPolicy`](/docs/reference/core/nebula-config#assignmentpolicy) (or `-nebula-assignment`) at [`Initialize`](#initialize); game code may replace it at any time. "auto" is the cost policy, for baked and runtime worlds alike; "baked" is the explicit opt-out that deals by count.
 
 ### TotalCost [#totalcost]
 
@@ -50,6 +68,14 @@ public float TotalCost { get; }
 ```
 
 Total container cost the mesh carries, per the cost policy, as of the last pass.
+
+### Loads [#loads]
+
+```csharp
+public WorkerLoadTracker Loads { get; } = new WorkerLoadTracker(() => Time.unscaledTime);
+```
+
+The rolling tick-time window behind the scaling signal, sampled from every heartbeat this orchestrator sees.
 
 ### Config [#config]
 
@@ -121,6 +147,14 @@ The mesh's persistence store, so the dashboard can report how many entities are 
 public string HostName { get; }
 ```
 
+### AtWorkerCeiling [#atworkerceiling]
+
+```csharp
+public bool AtWorkerCeiling { get; }
+```
+
+The mesh is already driving towards as many workers as [`MaxWorkers`](#maxworkers) allows, so nothing may be added or resumed.
+
 ### PolicyName [#policyname]
 
 ```csharp
@@ -128,6 +162,14 @@ public string PolicyName { get; }
 ```
 
 Shown on the dashboard.
+
+### PendingJoins [#pendingjoins]
+
+```csharp
+public int PendingJoins { get; }
+```
+
+Clients waiting to be placed: welcomed by a live gateway with nowhere to spawn yet ([`GatewayInfo.PendingJoins`](/docs/reference/control-plane/gateway-info#pendingjoins)). Non-zero means somebody is looking at a "world starting" screen.
 
 ## Methods
 
@@ -191,6 +233,22 @@ public static uint NextFreeIndex(IEnumerable<uint> used);
 
 Smallest positive index not in `used` (indices double as ports and entity-id high bits, so they are reused).
 
+### EligibleWorkers [#eligibleworkers]
+
+```csharp
+public static List<WorkerInfo> EligibleWorkers(IEnumerable<WorkerInfo> live, ICollection<string> retiring, ICollection<string> retired, ICollection<string> parked);
+```
+
+The workers an assignment pass may deal containers to: the live ones minus those draining, just retired, or sitting in the idle pool. A parked worker still heartbeats, so only this filter keeps leases off it. Pure function.
+
+### PickWorkerToUnpark [#pickworkertounpark]
+
+```csharp
+public static string PickWorkerToUnpark(IEnumerable<KeyValuePair<string, float>> parkedAt);
+```
+
+Which parked worker a scale-out takes back first: the most recently parked one. It is the warmest, and on a billed host it is the one with the most paid time left. Pure function; null when the pool is empty.
+
 ### PickWorkerToRetire [#pickworkertoretire]
 
 ```csharp
@@ -198,6 +256,22 @@ public static string PickWorkerToRetire(IEnumerable<KeyValuePair<string, uint>> 
 ```
 
 Which worker leaves first when scaling down: the highest index among those not already retiring.
+
+### UnparkWorker [#unparkworker]
+
+```csharp
+public bool UnparkWorker(string workerId);
+```
+
+Take one worker back out of the idle pool from the dashboard, raising the desired count to match. The ceiling is checked *before* unparking: raising a desired count that is already at [`MaxWorkers`](#maxworkers) clamps it back to where it was, and the reconciler would retire the worker that had just been resumed on the very next pass. False when the pool is empty or the mesh is at its ceiling ([`AtWorkerCeiling`](#atworkerceiling) tells the two apart for the HTTP answer).
+
+### DeleteParkedWorker [#deleteparkedworker]
+
+```csharp
+public bool DeleteParkedWorker(string workerId);
+```
+
+Drop a parked worker now instead of waiting for the host to let it go (the dashboard's "delete").
 
 ### ComputeAssignment [#computeassignment]
 
@@ -234,6 +308,14 @@ public static List<KeyValuePair<string, string>> ComputeRuntimeAssignment(IReadO
 ```
 
 Runtime containers (leases carrying a box) stay with the worker that asked for them; the game placed them next to the entities that need them. Only one whose owner is gone or retiring moves, to the eligible worker holding the fewest runtime containers. Pure function; returns the changes to apply.
+
+### SetContainerHint [#setcontainerhint]
+
+```csharp
+public string SetContainerHint(string containerId, in ContainerHint hint);
+```
+
+Tell the planner something about a container while the mesh runs ([`ContainerHint`](/docs/reference/containers/container-hint)): the value goes on its control-plane row, so it outlives this orchestrator and beats whatever was baked. Passing [`ContainerHint.Default`](/docs/reference/containers/container-hint#default) clears it and lets the baked hint stand again. Null on success, otherwise the reason. The next pass acts on it.
 
 ### PinContainer [#pincontainer]
 

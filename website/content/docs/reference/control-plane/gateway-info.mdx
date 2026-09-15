@@ -37,3 +37,11 @@ public ushort Port;
 public DateTime LastHeartbeat;
 ```
 
+### PendingJoins [#pendingjoins]
+
+```csharp
+public uint PendingJoins;
+```
+
+Clients welcomed by this gateway that are still waiting for somewhere to spawn ([`JoinState.Starting`](/docs/reference/protocol/join-state#starting)). The orchestrator reads it as demand: a pending join at zero workers wakes the mesh at once, and no scale-in goes below one worker while it is non-zero.
+

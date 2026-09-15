@@ -6,7 +6,7 @@ description: "Start the orchestrator, gateway, and workers on this computer"
 To start the orchestrator, gateway, and workers on this computer, run:
 
 ```bash
-nebula start [--build] [--workers N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
+nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
 ```
 
 Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
@@ -20,7 +20,9 @@ The orchestrator keeps the control plane and every saved entity in one database,
 | Option | Description |
 | --- | --- |
 | `--build` | Build first (nebula build). |
-| `--workers <N>` | Worker processes (default from nebula.json, 4). |
+| `--workers <N>` | Worker processes to start with; on its own it fixes the count (min = max = N). Default from nebula.json, 4. |
+| `--min <N>` | Autoscaling floor; the mesh starts here when --workers is not given, and 0 allows scaling to zero (default: --workers). |
+| `--max <N>` | Autoscaling ceiling; autoscaling grows into the band from --min (default: --workers). |
 | `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default 0). |
 | `--bots <N>` | Start headless clients with the bot flag; the game supplies their behavior (default 0). |
 | `--open-ui` | Open the Nebula Dashboard in the browser once it is up. |
@@ -41,5 +43,6 @@ These work with every command and may appear before or after it.
 ```bash
 nebula start --open-ui
 nebula start --build --workers 2
+nebula start --min 1 --max 4
 nebula start --reset-persistence
 ```

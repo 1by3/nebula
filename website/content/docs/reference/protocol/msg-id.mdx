@@ -19,6 +19,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `Welcome` | `2` |  |
 | `Ping` | `3` |  |
 | `Pong` | `4` |  |
+| `JoinStatus` | `5` | Gateway -\> client: how the join is going ([`JoinStatusMsg`](/docs/reference/protocol/join-status-msg)). Sent once the client is welcomed and again whenever the answer changes, so a mesh that has scaled to zero can hold the client in a "world starting" state instead of leaving it welcomed with no pawn and no explanation. |
 | `EntitySpawn` | `10` |  |
 | `EntityDespawn` | `11` |  |
 | `EntityVars` | `12` |  |

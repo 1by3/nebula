@@ -18,6 +18,7 @@ namespace Nebula.Hosting
             public WorkerHandleState State { get; set; }
             public string Reason { get; set; } = "";
             public string Address => "";
+            public float ParkedSecondsRemaining => -1f;
             public string Describe => Process != null ? $"pid {SafePid(Process)}" : "no process";
         }
 
@@ -37,6 +38,16 @@ namespace Nebula.Hosting
         public string Name => "process";
         public bool IsReady => true;
         public string InitializationError => "";
+        /// <summary>A local process costs nothing while it is not running, so retiring one kills it and the idle pool stays empty.</summary>
+        public bool SupportsParking => false;
+        /// <summary>A Unity player in batch mode is simulating a couple of seconds after it is started.</summary>
+        public float TypicalBootSeconds => 3f;
+
+        /// <summary>Killing is how this host parks: a process is free to restart, so there is nothing to keep.</summary>
+        public void Park(IWorkerHandle handle, float idlePoolSeconds) => Kill(handle);
+
+        /// <summary>Nothing is ever parked here, so there is never anything to bring back.</summary>
+        public bool Unpark(IWorkerHandle handle) => false;
 
         public void Initialize(Action<string, string> log) { _log = log ?? _log; }
 

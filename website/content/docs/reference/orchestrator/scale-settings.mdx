@@ -1,0 +1,67 @@
+---
+title: "ScaleSettings"
+description: "The two lines and the two clocks the scaler works to; a copy of the matching NebulaConfig fields."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs)</div>
+
+```csharp
+public struct ScaleSettings
+```
+
+The two lines and the two clocks the scaler works to; a copy of the matching [`NebulaConfig`](/docs/reference/core/nebula-config) fields.
+
+## Fields
+
+### ScaleOutUtilization [#scaleoututilization]
+
+```csharp
+public float ScaleOutUtilization;
+```
+
+The busiest worker above this fraction of its tick budget, held, means grow.
+
+### ScaleInUtilization [#scaleinutilization]
+
+```csharp
+public float ScaleInUtilization;
+```
+
+The mesh's mean below this, held, means shrink.
+
+### HoldSeconds [#holdseconds]
+
+```csharp
+public float HoldSeconds;
+```
+
+How long a condition must hold before anything happens.
+
+### MinGain [#mingain]
+
+```csharp
+public float MinGain;
+```
+
+The smallest drop in the predicted peak that makes an extra worker worth launching.
+
+### MinWorkers [#minworkers]
+
+```csharp
+public int MinWorkers;
+```
+
+### MaxWorkers [#maxworkers]
+
+```csharp
+public int MaxWorkers;
+```
+
+## Properties
+
+### Default [#default]
+
+```csharp
+public static ScaleSettings Default { get; }
+```
+

@@ -97,6 +97,8 @@ namespace Nebula
         public Vector3Int Cell;
         public bool IsCell, IsRuntime;
         public ulong RuntimeId;
+        /// <summary>The baked balancing hint, exported with the container (<see cref="ContainerHint"/>).</summary>
+        public ContainerHint Hint = ContainerHint.Default;
         public ContainerFrame transform = new ContainerFrame();
         public List<string> NeighborIds = new List<string>();
         public List<Container> Neighbors { get; } = new List<Container>();

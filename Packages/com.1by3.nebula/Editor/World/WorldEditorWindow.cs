@@ -28,6 +28,10 @@ namespace Nebula.Editor
         private Vector2 _scroll;
         private bool _drawGrid = true;
         private string _lastBake = "";
+        /// <summary>Cells picked for hint editing (ctrl- or shift-click in the grid). Ids, not coords, so a cell deleted underneath us simply drops out.</summary>
+        private readonly HashSet<Vector3Int> _hintPick = new HashSet<Vector3Int>();
+        private ContainerHint _hintBrush = ContainerHint.Default;
+        private bool _hintsOpen;
 
         [MenuItem("Nebula/World/World Window", priority = 40)]
         public static void Open() => GetWindow<WorldEditorWindow>("World");
@@ -56,6 +60,8 @@ namespace Nebula.Editor
             DrawSettings();
             EditorGUILayout.Space();
             DrawGrid();
+            EditorGUILayout.Space();
+            DrawHints();
             EditorGUILayout.Space();
             DrawTools();
         }
@@ -157,7 +163,7 @@ namespace Nebula.Editor
             if (_world.Cells.Count == 0) { min = Vector3Int.zero; max = Vector3Int.zero; }
             int x0 = min.x - _padding, x1 = max.x + _padding, z0 = min.z - _padding, z1 = max.z + _padding;
             int cols = x1 - x0 + 1, rows = z1 - z0 + 1;
-            EditorGUILayout.LabelField($"Layer {_layer}: {_world.Cells.Count(c => c.Coord.y == _layer)} cell(s) of {_world.Cells.Count}. Click: create / open / close. Right-click: more.", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField($"Layer {_layer}: {_world.Cells.Count(c => c.Coord.y == _layer)} cell(s) of {_world.Cells.Count}. Click: create / open / close. Ctrl-click: pick for hints. Right-click: more.", EditorStyles.miniLabel);
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(false), GUILayout.MaxHeight(rows * (CellPx + 2) + 30));
             var area = GUILayoutUtility.GetRect(cols * (CellPx + 2) + 30, rows * (CellPx + 2) + 20);
@@ -178,12 +184,19 @@ namespace Nebula.Editor
                     bool open = entry != null && WorldAssets.IsOpen(entry);
                     var color = entry == null ? new Color(0.25f, 0.25f, 0.25f) : open ? new Color(0.35f, 0.75f, 0.35f) : new Color(0.3f, 0.45f, 0.75f);
                     if (coord == WorldEditorPlacement.EditorOriginCell) color = Color.Lerp(color, Color.yellow, 0.35f);
+                    if (_hintPick.Contains(coord)) color = Color.Lerp(color, Color.white, 0.45f);
                     EditorGUI.DrawRect(rect, color);
+                    // A cell carrying a hint gets a corner tab, so the map shows where the planner was told something.
+                    if (!HintOf(coord).IsDefault) EditorGUI.DrawRect(new Rect(rect.xMax - 7, rect.y + 1, 6, 6), new Color(1f, 0.6f, 0.1f));
                     GUI.Label(rect, entry == null ? "" : $"{coord.x},{coord.z}", label);
                     var e = Event.current;
                     if (e.type == EventType.MouseDown && rect.Contains(e.mousePosition))
                     {
                         if (e.button == 1) ShowContext(coord, entry);
+                        else if (e.control || e.shift || e.command)
+                        {
+                            if (!_hintPick.Remove(coord) && entry != null) _hintPick.Add(coord);
+                        }
                         else if (entry == null) WorldAuthoring.CreateCell(_world, coord);
                         else if (open) WorldAuthoring.CloseCell(_world, coord);
                         else WorldAuthoring.OpenCell(_world, coord);
@@ -220,6 +233,80 @@ namespace Nebula.Editor
             foreach (var c in _world.Cells.ToList())
                 if (c.Coord != coord && WorldAssets.IsOpen(c)) if (!WorldAuthoring.CloseCell(_world, c.Coord)) return;
             WorldAuthoring.OpenCell(_world, coord);
+        }
+
+        // ---------------------------------------------------------------------------------------- balancing hints
+
+        /// <summary>The manifest entry for the container spanning <paramref name="coord"/>, or null (no manifest, or not baked yet).</summary>
+        private WorldContainerManifest.Entry CellEntry(Vector3Int coord)
+        {
+            if (_manifest == null) return null;
+            string id = WorldContainerManifest.CellContainerId(coord);
+            foreach (var e in _manifest.Entries) if (e.IsCell && e.Id == id) return e;
+            return null;
+        }
+
+        private ContainerHint HintOf(Vector3Int coord)
+        {
+            var e = CellEntry(coord);
+            return e != null ? e.Hint : ContainerHint.Default;
+        }
+
+        /// <summary>
+        /// Per-cell balancing hints (<see cref="ContainerHint"/>): pick cells on the map with ctrl-click, set the
+        /// values here, apply them to the whole pick at once. The hint lives on the manifest entry, so it survives a
+        /// rebake and ships with the build; the orchestrator reads it when it deals containers to workers.
+        /// </summary>
+        private void DrawHints()
+        {
+            _hintsOpen = EditorGUILayout.Foldout(_hintsOpen, $"Balancing hints ({_hintPick.Count} cell(s) picked)", true);
+            if (!_hintsOpen) return;
+            if (_manifest == null || _manifest.Entries.Count == 0)
+            {
+                EditorGUILayout.HelpBox("Bake the container manifest first: hints are stored on its entries.", MessageType.Info);
+                return;
+            }
+            EditorGUILayout.HelpBox("Ctrl-click cells on the map to pick them, then apply. Cost multiplier scales what the planner thinks the cell costs; an affinity group keeps cells on one worker; seam cost makes the planner cut the map somewhere else; dedicated reserves a worker for the cell.", MessageType.None);
+
+            _hintBrush.CostMultiplier = EditorGUILayout.FloatField(new GUIContent("Cost multiplier", "1 = as measured. 2 = treat this cell as twice as heavy."), _hintBrush.CostMultiplier);
+            _hintBrush.AffinityGroup = EditorGUILayout.TextField(new GUIContent("Affinity group", "Cells sharing a name are dealt to one worker. Empty = none."), _hintBrush.AffinityGroup ?? "");
+            _hintBrush.SeamCost = EditorGUILayout.Slider(new GUIContent("Seam cost", "0..1: how much a worker boundary beside this cell hurts."), _hintBrush.SeamCost, 0f, 1f);
+            _hintBrush.Dedicated = EditorGUILayout.Toggle(new GUIContent("Dedicated", "Reserve a worker for this cell."), _hintBrush.Dedicated);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(_hintPick.Count == 0))
+                {
+                    if (GUILayout.Button($"Apply to {_hintPick.Count} picked cell(s)")) ApplyHint(_hintBrush);
+                    if (GUILayout.Button("Clear hint on picked", GUILayout.Width(150))) ApplyHint(ContainerHint.Default);
+                    if (GUILayout.Button("Copy from first picked", GUILayout.Width(160)))
+                        foreach (var c in _hintPick) { _hintBrush = HintOf(c); break; }
+                }
+                if (GUILayout.Button("Deselect", GUILayout.Width(80))) { _hintPick.Clear(); Repaint(); }
+            }
+
+            var hinted = _manifest.Entries.Where(e => !e.Hint.IsDefault).ToList();
+            EditorGUILayout.LabelField(hinted.Count == 0 ? "No container carries a hint." : $"{hinted.Count} container(s) with a hint:", EditorStyles.miniLabel);
+            foreach (var e in hinted.Take(12))
+                EditorGUILayout.LabelField($"    {e.Id}", e.Hint.ToString(), EditorStyles.miniLabel);
+            if (hinted.Count > 12) EditorGUILayout.LabelField($"    ... and {hinted.Count - 12} more", EditorStyles.miniLabel);
+        }
+
+        private void ApplyHint(ContainerHint hint)
+        {
+            Undo.RecordObject(_manifest, "Set container hints");
+            int changed = 0;
+            foreach (var coord in _hintPick)
+            {
+                var e = CellEntry(coord);
+                if (e == null) continue;
+                e.Hint = hint;
+                changed++;
+            }
+            EditorUtility.SetDirty(_manifest);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[world] hint '{(hint.IsDefault ? "default" : hint.ToString())}' applied to {changed} cell container(s)");
+            Repaint();
         }
 
         private void DrawTools()

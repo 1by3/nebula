@@ -18,6 +18,15 @@ namespace Nebula
         public uint ClientId { get; private set; }
         public string PlayerName { get; private set; } = "";
         public NetworkIdentity LocalPlayer { get; private set; }
+        /// <summary>
+        /// How far the join has got, as the gateway sees it. A mesh with <see cref="NebulaConfig.MinWorkers"/> at 0
+        /// has nowhere to spawn the first player after an idle period, so the gateway holds the join in
+        /// <see cref="JoinState.Starting"/> while a worker boots and completes it with no reconnect; show a
+        /// "world starting" screen while this is <see cref="JoinState.Starting"/>.
+        /// </summary>
+        public JoinState Join { get; private set; }
+        /// <summary>Roughly how many seconds the gateway expects the <see cref="JoinState.Starting"/> hold to last; 0 when unknown.</summary>
+        public int JoinEstimatedSeconds { get; private set; }
         public int RttMs { get; private set; } = -1;
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
@@ -40,6 +49,8 @@ namespace Nebula
         public event Action<NetworkIdentity, ushort, ushort> EntityAuthorityChanged; // entity, oldWorker, newWorker
         public event Action ContainerOwnershipChanged;
         public event Action<State> ConnectionStateChanged;
+        /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
+        public event Action<JoinState, int> JoinStateChanged;
 
         private ITransport _transport;
         private int _gatewayPeer = -1;
@@ -443,6 +454,19 @@ namespace Nebula
                     NebulaLog.Info($"welcome: clientId={ClientId} serverTick={w.ServerTick}");
                     break;
                 }
+                case MsgId.JoinStatus:
+                {
+                    var j = JoinStatusMsg.Read(r);
+                    if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds) break;
+                    Join = j.State;
+                    JoinEstimatedSeconds = j.EstimatedSeconds;
+                    if (Join == JoinState.Starting)
+                        NebulaLog.Info("world starting" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : "") + ": no worker is running yet; holding the join");
+                    else if (Join == JoinState.Joined) NebulaLog.Info("joined the world");
+                    try { JoinStateChanged?.Invoke(Join, JoinEstimatedSeconds); }
+                    catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
+                    break;
+                }
                 case MsgId.Pong:
                 {
                     var p = PongMsg.Read(r);
@@ -824,6 +848,13 @@ namespace Nebula
             _pendingByCarrier.Clear();
             LocalPlayer = null;
             _hasRenderOffset = false;
+            if (Join != JoinState.None)
+            {
+                Join = JoinState.None;
+                JoinEstimatedSeconds = 0;
+                try { JoinStateChanged?.Invoke(Join, 0); }
+                catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
+            }
         }
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;

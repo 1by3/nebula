@@ -35,6 +35,30 @@ public float Threshold = 0.3f;
 
 How far above the average a worker's cost may be before containers are re-dealt (0.3 = 30 %).
 
+### MinGain [#mingain]
+
+```csharp
+public float MinGain = 0.1f;
+```
+
+The smallest improvement in the busiest worker's measured utilization that justifies moving containers during play (0.1 = a tenth of a tick budget). Checked only when [`AssignmentInput.Utilization`](/docs/reference/orchestrator/assignment-input#utilization) carries real measurements and every container already has an owner; an orphan is always placed.
+
+### MinGainFloor [#mingainfloor]
+
+```csharp
+public float MinGainFloor = 0.35f;
+```
+
+How busy the busiest worker must already be before the [`MinGain`](#mingain) veto applies at all (a fraction of a tick budget; half the default scale-out line). Below it the utilization signal is too small to show a gain of [`MinGain`](#mingain) however lopsided the mesh is - a 3x cost imbalance over two nearly idle workers still measures as a few hundredths of a tick - and vetoing on it would freeze the layout until something is already hot. The cost-unit balance rule decides instead.
+
+### SeamGraceMeters [#seamgracemeters]
+
+```csharp
+public float SeamGraceMeters = 10f;
+```
+
+TODO (phase 3): a container with a player within this many metres of the seam that would move is left alone for a pass rather than handed over mid-fight. The occupancy report carries counts, not positions - only the detail documents the map page asks for have positions - so the check needs a cheap per-container "nearest player to each face" figure from the worker before it can be implemented honestly.
+
 ## Properties
 
 ### Name [#name]
@@ -43,12 +67,21 @@ How far above the average a worker's cost may be before containers are re-dealt 
 public string Name { get; }
 ```
 
+### Note [#note]
+
+```csharp
+public string Note { get; } = "";
+```
+
+What the last [`Compute`](#compute) could not honour, for the dashboard and the log ("" when everything fitted). Today only one thing can go wrong: more [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) containers than the mesh has workers to spare, in which case none of them is reserved and they share like anything else.
+
 ## Methods
 
 ### CostOf [#costof]
 
 ```csharp
 public float CostOf(string containerId, IReadOnlyDictionary<string, ContainerLoad> occupancy);
+public float CostOf(string containerId, AssignmentInput input);
 ```
 
 Cost of one container from what was last reported about it ([`CostWeights.Base`](/docs/reference/orchestrator/cost-weights#base) when nothing was).

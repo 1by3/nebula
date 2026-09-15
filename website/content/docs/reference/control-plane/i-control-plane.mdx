@@ -102,8 +102,12 @@ void RegisterGateway(string gatewayId, string address, ushort port);
 ### HeartbeatGateway [#heartbeatgateway]
 
 ```csharp
-void HeartbeatGateway(string gatewayId);
+void HeartbeatGateway(string gatewayId, uint pendingJoins);
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `pendingJoins` | Welcomed clients with nowhere to spawn yet ([`GatewayInfo.PendingJoins`](/docs/reference/control-plane/gateway-info#pendingjoins)). |
 
 ### UnregisterGateway [#unregistergateway]
 
@@ -168,6 +172,14 @@ Pin a carried container to `workerId`: worker, epoch and [`LeaseState.Pinned`](/
 ```csharp
 void SetLeaseState(string containerId, string state);
 ```
+
+### SetContainerHint [#setcontainerhint]
+
+```csharp
+void SetContainerHint(string containerId, in ContainerHint hint);
+```
+
+Attach a balancing hint to a container, creating the lease row if it does not exist yet: the game (or the dashboard) telling the planner something it cannot measure while the mesh runs. The row outlives an orchestrator restart, and the value wins over whatever was baked. Setting [`ContainerHint.Default`](/docs/reference/containers/container-hint#default) clears the runtime hint and lets the baked one stand again.
 
 ### ReleaseContainer [#releasecontainer]
 

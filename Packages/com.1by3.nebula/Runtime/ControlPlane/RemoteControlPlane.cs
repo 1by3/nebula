@@ -169,7 +169,7 @@ namespace Nebula
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
         public void RegisterGateway(string gatewayId, string address, ushort port) =>
             Enqueue(_op.Op(ControlPlaneJson.RegisterGateway).Arg("gatewayId", gatewayId).Arg("address", address).Arg("port", (long)port).End());
-        public void HeartbeatGateway(string gatewayId) => Enqueue(_op.Op(ControlPlaneJson.HeartbeatGateway).Arg("gatewayId", gatewayId).End());
+        public void HeartbeatGateway(string gatewayId, uint pendingJoins) => Enqueue(_op.Op(ControlPlaneJson.HeartbeatGateway).Arg("gatewayId", gatewayId).Arg("pendingJoins", (long)pendingJoins).End());
         public void UnregisterGateway(string gatewayId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterGateway).Arg("gatewayId", gatewayId).End());
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatOrchestrator).Arg("orchestratorId", orchestratorId).Arg("desiredWorkers", desiredWorkers).End());
@@ -181,6 +181,7 @@ namespace Nebula
         public void AssignContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.AssignContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void PinContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.PinContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void SetLeaseState(string containerId, string state) => Enqueue(_op.Op(ControlPlaneJson.SetLeaseState).Arg("containerId", containerId).Arg("state", state).End());
+        public void SetContainerHint(string containerId, in ContainerHint hint) => Enqueue(_op.Op(ControlPlaneJson.SetContainerHint).Arg("containerId", containerId).Arg("hint", hint.ToString()).End());
         public void ReleaseContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.ReleaseContainer).Arg("containerId", containerId).End());
         public void RemoveContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.RemoveContainer).Arg("containerId", containerId).End());
         public void ResetControlPlane() => Enqueue(_op.Op(ControlPlaneJson.ResetControlPlane).End());

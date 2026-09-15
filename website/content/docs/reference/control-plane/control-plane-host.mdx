@@ -181,7 +181,7 @@ public void RegisterGateway(string gatewayId, string address, ushort port);
 ### HeartbeatGateway [#heartbeatgateway]
 
 ```csharp
-public void HeartbeatGateway(string gatewayId);
+public void HeartbeatGateway(string gatewayId, uint pendingJoins);
 ```
 
 ### UnregisterGateway [#unregistergateway]
@@ -236,6 +236,12 @@ public void PinContainer(string containerId, string workerId);
 
 ```csharp
 public void SetLeaseState(string containerId, string state);
+```
+
+### SetContainerHint [#setcontainerhint]
+
+```csharp
+public void SetContainerHint(string containerId, in ContainerHint hint);
 ```
 
 ### ReleaseContainer [#releasecontainer]

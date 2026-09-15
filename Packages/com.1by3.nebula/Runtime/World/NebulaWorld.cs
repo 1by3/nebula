@@ -86,6 +86,7 @@ namespace Nebula
             c.Center = e.Center;
             c.Cell = e.Cell;
             c.IsCell = e.IsCell;
+            c.Hint = e.Hint;
         }
 
         /// <summary>New play session without a domain reload: drop references to the previous session's objects without touching them.</summary>

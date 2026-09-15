@@ -1,0 +1,135 @@
+---
+title: "ContainerHint"
+description: "What the game knows about a container that the orchestrator cannot measure: how expensive it really is, what it belongs with, how much a worker boundary beside it hurts, and whether it wants a machine to itself."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerHint.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerHint.cs)</div>
+
+```csharp
+[Serializable]
+public struct ContainerHint : IEquatable<ContainerHint>
+```
+
+What the game knows about a container that the orchestrator cannot measure: how expensive it really is, what it belongs with, how much a worker boundary beside it hurts, and whether it wants a machine to itself. The built-in [`CostBalancedAssignmentPolicy`](/docs/reference/orchestrator/cost-balanced-assignment-policy) reads these; a game with needs beyond them writes its own [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy).
+
+A hint is set at bake time on [`WorldContainerManifest.Entry`](/docs/reference/world/world-container-manifest#entry) (the World window edits it per cell) and at runtime through [`IControlPlane.SetContainerHint`](/docs/reference/control-plane/i-control-plane#setcontainerhint), which stores it beside the lease so an orchestrator restart sees it again. The runtime value wins over the baked one.
+
+## Fields
+
+### CostMultiplier [#costmultiplier]
+
+```csharp
+public float CostMultiplier;
+```
+
+Scales what this container is treated as costing: 1 is "as measured", 2 makes the planner give it twice the room. The manual correction for a container whose occupancy is a poor proxy for its tick time - a handful of entities running expensive AI, or a hundred static props that cost almost nothing.
+
+### AffinityGroup [#affinitygroup]
+
+```csharp
+public string AffinityGroup;
+```
+
+Containers sharing a non-empty group are dealt as one item, so an instanced dungeon's rooms land on the same worker and nobody crosses a machine boundary walking through a door. "" means no group.
+
+### SeamCost [#seamcost]
+
+```csharp
+public float SeamCost;
+```
+
+0..1: how much a worker boundary next to this container hurts. Where two neighbours on the curve both carry it, the planner charges itself for cutting between them and prefers to cut somewhere else. Raise it on whatever is currently hot and contested (the cells inside a battle royale's circle).
+
+### Dedicated [#dedicated]
+
+```csharp
+public bool Dedicated;
+```
+
+This container wants a worker to itself: the planner reserves one for it before dealing everything else. A city hub, a raid boss room. A worker holding one is never chosen for retirement.
+
+## Properties
+
+### Default [#default]
+
+```csharp
+public static ContainerHint Default { get; }
+```
+
+Nothing said: cost as measured, no group, no seam charge, shared like anything else.
+
+### IsDefault [#isdefault]
+
+```csharp
+public bool IsDefault { get; }
+```
+
+This hint says nothing the planner would act on, so it need not be stored or shown.
+
+### EffectiveMultiplier [#effectivemultiplier]
+
+```csharp
+public float EffectiveMultiplier { get; }
+```
+
+The multiplier as the planner uses it: a hint that was never initialised (a zeroed struct out of a list) means "as measured", not "free", so anything at or below zero reads as 1.
+
+### EffectiveSeamCost [#effectiveseamcost]
+
+```csharp
+public float EffectiveSeamCost { get; }
+```
+
+The seam charge as the planner uses it, clamped into 0..1.
+
+### Group [#group]
+
+```csharp
+public string Group { get; }
+```
+
+The group as the planner uses it ("" when unset).
+
+## Methods
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(ContainerHint other);
+public override bool Equals(object obj);
+```
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### operator == [#operator]
+
+```csharp
+public static bool operator ==(ContainerHint a, ContainerHint b);
+```
+
+### operator != [#operator]
+
+```csharp
+public static bool operator !=(ContainerHint a, ContainerHint b);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+The compact string form used on a command line and in the CLI: `x2,group=keep,seam=0.5,dedicated`. Only the parts that differ from the default are written, so a default hint is "".
+
+### Parse [#parse]
+
+```csharp
+public static ContainerHint Parse(string text);
+```
+
+Read the form [`ToString`](#tostring) writes. Unknown parts are ignored, so a newer hint field passing through an older build is dropped rather than rejected; "" is the default hint.
+

@@ -1,0 +1,87 @@
+---
+title: "AssignmentPlan"
+description: "What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPlanner.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPlanner.cs)</div>
+
+```csharp
+public sealed class AssignmentPlan
+```
+
+What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them. The scaler compares the plan at N, N+1 and N-1 instead of guessing from an average ([`WorkerScaler`](/docs/reference/orchestrator/worker-scaler)).
+
+## Fields
+
+### WorkerCount [#workercount]
+
+```csharp
+public int WorkerCount;
+```
+
+How many workers the plan was drawn for.
+
+### Containers [#containers]
+
+```csharp
+public readonly Dictionary<string, List<string>> Containers = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+```
+
+Synthetic worker id -\> the containers it would hold.
+
+### Load [#load]
+
+```csharp
+public readonly Dictionary<string, float> Load = new Dictionary<string, float>(StringComparer.Ordinal);
+```
+
+Synthetic worker id -\> predicted utilization (the sum of its containers' attributed load).
+
+### Peak [#peak]
+
+```csharp
+public float Peak;
+```
+
+The busiest worker's predicted utilization.
+
+### Mean [#mean]
+
+```csharp
+public float Mean;
+```
+
+Mean predicted utilization across the plan's workers.
+
+### PeakWorker [#peakworker]
+
+```csharp
+public string PeakWorker = "";
+```
+
+The busiest worker in the plan.
+
+### HeaviestContainer [#heaviestcontainer]
+
+```csharp
+public string HeaviestContainer = "";
+```
+
+The heaviest single container on the busiest worker: the one to blame when splitting does not help.
+
+### HeaviestUtilization [#heaviestutilization]
+
+```csharp
+public float HeaviestUtilization;
+```
+
+That container's attributed utilization.
+
+### Unassigned [#unassigned]
+
+```csharp
+public int Unassigned;
+```
+
+Containers the policy left unassigned (a policy that ignores runtime containers, say).
+

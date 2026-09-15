@@ -191,6 +191,16 @@ To make cells smaller than 256 m, also reduce the gateway's interest radii. A ce
 </Step>
 </Steps>
 
+## Balancing hints per cell
+
+The **World** window edits a [balancing hint](/docs/guides/orchestrator-and-dashboard#balancing-hints) per cell, so the map itself says which cells are special before the mesh ever runs.
+
+1. Bake the container manifest first: hints live on its entries.
+2. Ctrl-click cells on the map to pick them. Picked cells lighten; a cell that already carries a hint gets an orange corner tab.
+3. Set the values under **Balancing hints** and press **Apply to N picked cell(s)**. **Clear hint on picked** resets them, and **Copy from first picked** loads an existing hint back into the fields.
+
+A typical use is marking the city hub cell `Dedicated`, or giving the cells of one landmark a shared affinity group. Hints are carried across a rebake by container id, so re-baking after moving scenery does not lose them. The runtime value set through the dashboard or game code still wins over the baked one.
+
 ## Settings
 
 | `NebulaConfig` field | Default | Meaning |

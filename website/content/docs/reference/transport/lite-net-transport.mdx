@@ -97,6 +97,12 @@ public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
 public void Poll(Action<TransportEvent> handler);
 ```
 
+### Flush [#flush]
+
+```csharp
+public void Flush();
+```
+
 ### Stop [#stop]
 
 ```csharp

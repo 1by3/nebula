@@ -35,6 +35,146 @@ public class ServiceTests
         Assert.That(ContainerRef.Of(m.Containers[1]).Index, Is.EqualTo(1));
         Assert.That(m.Containers[1].ToWorld(Vector3.zero).x, Is.EqualTo(210));
     }
+    // ------------------------------------------------------------------ container hints and the cost policy
+
+    /// <summary>A row of equal boxes along x, so the Morton order of their centres is the row order.</summary>
+    private List<string> HintRow(int count)
+    {
+        var containers = new List<Container>();
+        for (int x = 0; x < count; x++)
+            containers.Add(new Container { ContainerId = "c" + x, Index = (ushort)x, Size = new(64, 64, 64), transform = new ContainerFrame { position = new((x + 0.5f) * 64f, 0, 0) } });
+        ServiceManifest.Load(WriteManifest(new ServiceManifest { Containers = containers }));
+        return containers.Select(c => c.ContainerId).ToList();
+    }
+
+    private string WriteManifest(ServiceManifest m)
+    {
+        var path = Path.Combine(directory, "nebula-services.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(m, ServiceManifest.Json));
+        return path;
+    }
+
+    private static AssignmentInput HintInput(int workers, List<LeaseInfo> leases, Dictionary<string, ContainerHint>? hints = null) => new()
+    {
+        Baked = ContainerRegistry.All,
+        Runtime = ContainerRegistry.Runtime,
+        Eligible = Enumerable.Range(1, workers).Select(i => new WorkerInfo { WorkerId = "w" + i, WorkerIndex = (uint)i, Status = WorkerStatus.Ready }).ToList(),
+        Leases = leases,
+        Occupancy = new Dictionary<string, ContainerLoad>(),
+        Hints = hints ?? new Dictionary<string, ContainerHint>(),
+    };
+
+    private static Dictionary<string, string> HintApply(List<LeaseInfo> leases, List<KeyValuePair<string, string>> changes)
+    {
+        var map = leases.ToDictionary(l => l.ContainerId, l => l.State == LeaseState.Active ? l.WorkerId : "");
+        foreach (var c in changes) map[c.Key] = c.Value;
+        return map;
+    }
+
+    private static List<LeaseInfo> Orphans(List<string> ids) =>
+        ids.Select(id => new LeaseInfo { ContainerId = id, WorkerId = "", State = LeaseState.Orphaned, Epoch = 1 }).ToList();
+
+    [Test]
+    public void HintCostMultiplierMovesTheCut()
+    {
+        var ids = HintRow(4);
+        var leases = Orphans(ids);
+        var policy = new CostBalancedAssignmentPolicy();
+        var plain = HintApply(leases, policy.Compute(HintInput(2, leases)));
+        Assert.That(ids.Count(i => plain[i] == plain[ids[0]]), Is.EqualTo(2), "an unhinted row splits down the middle");
+
+        var hints = new Dictionary<string, ContainerHint> { [ids[0]] = new() { CostMultiplier = 3f } };
+        var weighted = HintApply(leases, policy.Compute(HintInput(2, leases, hints)));
+        Assert.That(weighted[ids[0]], Is.Not.EqualTo(weighted[ids[1]]), "the heavy container takes a worker of its own");
+        Assert.That(weighted[ids[1]], Is.EqualTo(weighted[ids[3]]));
+    }
+
+    [Test]
+    public void HintDedicatedReservesAWorker()
+    {
+        var ids = HintRow(5);
+        var leases = Orphans(ids);
+        var policy = new CostBalancedAssignmentPolicy();
+        var hints = new Dictionary<string, ContainerHint> { [ids[2]] = new() { Dedicated = true } };
+        var map = HintApply(leases, policy.Compute(HintInput(3, leases, hints)));
+        string hub = map[ids[2]];
+        Assert.That(ids.Where(i => i != ids[2]).All(i => map[i] != hub), Is.True, "nothing shares the dedicated worker");
+        Assert.That(ids.Where(i => i != ids[2]).Select(i => map[i]).Distinct().Count(), Is.EqualTo(2));
+        Assert.That(policy.Note, Is.Empty);
+    }
+
+    [Test]
+    public void HintDedicatedWithoutRoomIsReported()
+    {
+        var ids = HintRow(3);
+        var leases = Orphans(ids);
+        var policy = new CostBalancedAssignmentPolicy();
+        var hints = new Dictionary<string, ContainerHint> { [ids[0]] = new() { Dedicated = true } };
+        var map = HintApply(leases, policy.Compute(HintInput(1, leases, hints)));
+        Assert.That(ids.Select(i => map[i]).Distinct().Count(), Is.EqualTo(1));
+        Assert.That(policy.Note, Does.Contain("dedicated"));
+    }
+
+    [Test]
+    public void HintAffinityGroupIsDealtAsOne()
+    {
+        var ids = HintRow(4);
+        var leases = Orphans(ids);
+        var policy = new CostBalancedAssignmentPolicy();
+        var hints = new Dictionary<string, ContainerHint>
+        {
+            [ids[1]] = new() { AffinityGroup = "dungeon" },
+            [ids[2]] = new() { AffinityGroup = "dungeon" },
+        };
+        var map = HintApply(leases, policy.Compute(HintInput(2, leases, hints)));
+        Assert.That(map[ids[1]], Is.EqualTo(map[ids[2]]), "the group lands on one worker");
+        Assert.That(ids.Select(i => map[i]).Distinct().Count(), Is.EqualTo(2), "both workers are used");
+    }
+
+    [Test]
+    public void HintSeamCostMovesTheCutElsewhere()
+    {
+        var ids = HintRow(4);
+        var leases = Orphans(ids);
+        var policy = new CostBalancedAssignmentPolicy();
+        var plain = HintApply(leases, policy.Compute(HintInput(2, leases)));
+        Assert.That(plain[ids[1]], Is.Not.EqualTo(plain[ids[2]]), "without hints the cut falls in the middle");
+
+        var hints = new Dictionary<string, ContainerHint>
+        {
+            [ids[1]] = new() { SeamCost = 1f },
+            [ids[2]] = new() { SeamCost = 1f },
+        };
+        var hinted = HintApply(leases, policy.Compute(HintInput(2, leases, hints)));
+        Assert.That(hinted[ids[1]], Is.EqualTo(hinted[ids[2]]), "the contested pair is not split");
+        Assert.That(ids.Select(i => hinted[i]).Distinct().Count(), Is.EqualTo(2), "both workers still have work");
+    }
+
+    [Test]
+    public void HintsSurviveTheServiceManifest()
+    {
+        var hint = new ContainerHint { CostMultiplier = 2f, AffinityGroup = "hub", SeamCost = 0.5f, Dedicated = true };
+        var m = ServiceManifest.Load(WriteManifest(new ServiceManifest
+        {
+            Containers = new() { new Container { ContainerId = "cell", Index = 0, Size = new(10, 10, 10), Hint = hint } },
+        }));
+        Assert.That(m.Containers[0].Hint, Is.EqualTo(hint), "the baked hint reaches the standalone orchestrator");
+    }
+
+    [Test]
+    public void PredictWeighsHintedContainersTheSameWayComputeDoes()
+    {
+        var ids = HintRow(4);
+        var leases = Orphans(ids);
+        var hints = new Dictionary<string, ContainerHint> { [ids[0]] = new() { CostMultiplier = 4f } };
+        var input = HintInput(2, leases, hints);
+        input.Utilization = ids.ToDictionary(i => i, _ => 0.1f);
+        var plan = new CostBalancedAssignmentPolicy().Predict(input, 2);
+        Assert.That(AssignmentPlanner.UtilizationOf(input, ids[0]), Is.EqualTo(0.4f).Within(1e-4f));
+        Assert.That(AssignmentPlanner.UtilizationOf(input, ids[1]), Is.EqualTo(0.1f).Within(1e-4f));
+        Assert.That(plan.HeaviestContainer, Is.EqualTo(ids[0]));
+    }
+
     [Test]
     public void RuntimeNeighborsAreAddedAndRemoved()
     {
@@ -198,6 +338,41 @@ public class ServiceTests
         socket.Start(); socket.Stop();
     }
     [Test]
+    public void ResumingAParkedWorkerAtTheCeilingIsRefusedInsteadOfRetiringItAgain()
+    {
+        // UnparkWorker raised the desired count and then clamped it, so at MaxWorkers the resumed worker came back
+        // only to be picked as the surplus one on the very next pass. The ceiling is now checked first, and the
+        // dashboard gets the same 409 POST /api/workers/add answers.
+        Load(new ServiceManifest());
+        using var socket = new TcpListener(IPAddress.Loopback, 0);
+        socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
+        var c = new NebulaConfig { UseLocalControlPlane = true, WorkerCount = 1, MinWorkers = 1, MaxWorkers = 1, OrchestratorSpawnsGateway = false, DashboardPort = (ushort)port };
+        using var plane = new LocalControlPlane(); plane.Connect();
+        var orch = new NebulaOrchestrator();
+        try
+        {
+            orch.Initialize(c, plane); orch.Tick(); Thread.Sleep(1100); orch.Tick();
+            Assert.That(orch.DesiredWorkers, Is.EqualTo(1));
+            Assert.That(orch.AtWorkerCeiling, Is.True);
+            Assert.That(orch.UnparkWorker(null), Is.False, "nothing may be resumed into a full mesh");
+            Assert.That(orch.DesiredWorkers, Is.EqualTo(1), "and the desired count is untouched");
+
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            // POSTs are queued for the orchestrator's own thread, so keep ticking while the request is in flight.
+            int Post(string path)
+            {
+                var call = http.PostAsync($"http://localhost:{port}{path}", new StringContent("{}"));
+                var deadline = Stopwatch.StartNew();
+                while (!call.IsCompleted && deadline.Elapsed.TotalSeconds < 5) { orch.Tick(); Thread.Sleep(5); }
+                return (int)call.GetAwaiter().GetResult().StatusCode;
+            }
+            Assert.That(Post("/api/workers/unpark"), Is.EqualTo(409));
+            Assert.That(Post("/api/workers/add"), Is.EqualTo(409), "the two paths answer alike");
+        }
+        finally { orch.Dispose(); }
+        socket.Start(); socket.Stop();
+    }
+    [Test]
     public void GatewayAcceptsClientHelloOverRealUdp()
     {
         Load(new ServiceManifest());
@@ -236,5 +411,54 @@ public class ServiceTests
         }
         finally { gateway.Dispose(); }
         using var rebound = new UdpClient(port);
+    }
+
+    /// <summary>
+    /// Scale to zero: with no worker registered there is nowhere to spawn, so the gateway holds the join in
+    /// JoinState.Starting (with the host's boot estimate) instead of leaving the client welcomed and silent, counts
+    /// it as pending, and reports that on its control-plane heartbeat so the orchestrator wakes the mesh.
+    /// </summary>
+    [Test]
+    public void GatewayHoldsTheJoinWhenNoWorkerIsRunning()
+    {
+        Load(new ServiceManifest());
+        using var plane = new LocalControlPlane(); plane.Connect();
+        plane.SetSetting(MeshSettings.BootSeconds, "75");
+        var gateway = new NebulaGateway();
+        using var client = new LiteNetTransport("test-client");
+        using var reserve = new UdpClient(0);
+        int port = ((IPEndPoint)reserve.Client.LocalEndPoint).Port; reserve.Close();
+        var status = new JoinStatusMsg { State = JoinState.None };
+        try
+        {
+            gateway.Initialize(new NebulaConfig { GatewayPort = (ushort)port, WorkerHeartbeatSeconds = 0.05f }, plane);
+            client.Connect("127.0.0.1", port);
+            var deadline = Stopwatch.StartNew();
+            while (deadline.Elapsed.TotalSeconds < 5 && (status.State != JoinState.Starting || plane.Gateways.Count == 0 || plane.Gateways[0].PendingJoins == 0))
+            {
+                gateway.Tick();
+                client.Poll(e =>
+                {
+                    if (e.Type == TransportEvent.Kind.Connected)
+                    {
+                        var w = new NetworkWriter();
+                        new HelloMsg { Role = PeerRole.Client, Id = "test-client" }.Write(w);
+                        client.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
+                    }
+                    if (e.Type == TransportEvent.Kind.Data)
+                    {
+                        var r = new NetworkReader(e.Data);
+                        if ((MsgId)r.ReadByte() == MsgId.JoinStatus) status = JoinStatusMsg.Read(r);
+                    }
+                });
+                Thread.Sleep(5);
+            }
+            Assert.That(status.State, Is.EqualTo(JoinState.Starting), "the client is held, not dropped");
+            Assert.That(status.EstimatedSeconds, Is.EqualTo(75), "and told roughly how long this host takes to boot a worker");
+            Assert.That(gateway.PendingJoinCount, Is.EqualTo(1));
+            Assert.That(plane.Gateways[0].PendingJoins, Is.EqualTo(1u), "the orchestrator sees the demand on the heartbeat");
+        }
+        finally { gateway.Dispose(); }
+        using var rebound2 = new UdpClient(port);
     }
 }

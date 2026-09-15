@@ -17,6 +17,12 @@ Bounds box = Chunks.BoundsOf(coord);     // in this process's frame
 worker.RequestRuntimeContainer(id, box);
 ```
 
+An overload takes a [balancing hint](#balancing-hints) alongside the box, so a chunk that holds a boss arena can say so as it is created:
+
+```csharp
+worker.RequestRuntimeContainer(id, box, new ContainerHint { Dedicated = true });
+```
+
 The lease row is created already assigned to the requesting worker, so the container is simulated there from the first change anyone sees. If another worker asked first, its row stands and the call is a no-op. The orchestrator can move the container later.
 
 The gateway, the orchestrator, every worker and every client mirror the lease rows into their `ContainerRegistry` (`ContainerRegistry.Runtime`), and `ContainerRegistry.RuntimeRegistered` fires on each process once the box is there. Load whatever content belongs in the box from that event: terrain and colliders on workers, visuals on clients.
@@ -31,6 +37,38 @@ ContainerRegistry.RuntimeUnregistering += container => UnloadTerrain(Chunks.Coor
 ```
 
 Entities inside a runtime container are spawned, handed over and ghosted exactly like in a baked one. Adjacency is computed when the box registers, against baked and runtime containers whose boxes touch it, so the ghost band and handover across a chunk seam work without any extra setup.
+
+## Balancing hints
+
+The orchestrator measures how busy each worker is, but it cannot know what a container *means*. A hint tells it what the game knows. Every field is optional and the default says nothing:
+
+| Field | Effect |
+| --- | --- |
+| `CostMultiplier` | Scales what the planner treats the container as costing. `1` is "as measured"; `2` gives it twice the room. The correction for a container whose occupant count is a poor proxy for its tick time. |
+| `AffinityGroup` | Containers sharing a non-empty group are dealt as a single item, so they land on one worker. |
+| `SeamCost` | `0..1`. Where two neighbours both carry it, the planner is charged for cutting between them and prefers to cut elsewhere. |
+| `Dedicated` | Reserves a worker for this container before dealing the rest. A worker holding one is never chosen for retirement. |
+
+Worked examples:
+
+- **A city hub.** One cell everybody passes through. Mark it `Dedicated` and it gets a machine to itself; the rest of the map is dealt across what is left.
+- **A battle royale.** Raise `SeamCost` on the cells inside the circle at the start of each phase, and the worker boundary moves out of the fight instead of running through it.
+- **An instanced dungeon.** Give the rooms of one instance a shared `AffinityGroup` so a party never crosses a machine boundary walking through a door.
+- **A chunked world with nothing special in it.** Leave everything default; the measured signal is enough.
+
+Set a hint at bake time (the World window, stored in the manifest), at runtime from game code, or from the dashboard. The runtime value wins over the baked one, and it lives on the container's control-plane row, so an orchestrator restart still sees it.
+
+```csharp
+// From game code on a worker, in the same call that asks for the container.
+worker.RequestRuntimeContainer(id, box, new ContainerHint { Dedicated = true });
+
+// Or at any time, for any container.
+orchestrator.SetContainerHint("cell_3_0_1", new ContainerHint { CostMultiplier = 2f, SeamCost = 0.5f });
+```
+
+The compact form used by the dashboard and the HTTP API is `x2,group=keep,seam=0.5,dedicated`; an empty string clears the runtime hint and lets the baked one stand again.
+
+If more containers ask to be `Dedicated` than the mesh has workers to spare (it needs one more worker than there are dedicated containers), none of them is reserved and they share like anything else. The orchestrator logs it and the dashboard shows the reason above the container list.
 
 ## Retire a container
 
@@ -52,13 +90,15 @@ Runtime containers are dealt to workers by the orchestrator's assignment policy 
 
 | Policy | Behaviour |
 | --- | --- |
-| `baked` | The original dealer: baked containers evenly by count, sticky to their owner. Runtime containers stay with the worker that asked for them and only move when it is gone. |
+| `baked` | The opt-out for games that want count-based sticky dealing: baked containers evenly by count, sticky to their owner. Runtime containers stay with the worker that asked for them and only move when it is gone. |
 | `cost` | Every container costs what its occupants cost (`NebulaConfig.CostWeights`: a leased box, a player, a bot, a server-driven entity). Containers are ordered along a Morton curve of their centres and cut into one contiguous run of roughly equal cost per worker. Nothing moves while the most loaded worker is within `CostRebalanceThreshold` of the average. |
-| `auto` | `baked` while every container is baked; `cost` once the game registers runtime containers. The default. |
+| `auto` | The default: `cost`, for baked and runtime worlds alike. |
 
 Occupancy comes from the telemetry workers already post to the dashboard once a second. A game may install its own policy by assigning `NebulaOrchestrator.Policy`; the input it receives is the baked and runtime containers, the eligible workers, the leases and the per-container occupancy.
 
-With `NebulaConfig.AutoScale` on, the orchestrator adds a worker when the average cost per worker stays above `ScaleOutCostPerWorker` for `ScaleHoldSeconds` and removes one when it stays below `ScaleInCostPerWorker`, between `MinWorkers` and `MaxWorkers`. Launching goes through the configured worker host, so a Hetzner mesh gets a new machine.
+The cost policy also refuses to re-deal when the move would buy less than `ScaleMinGain` of a tick on the busiest worker: a handover costs entity transfers and a visible seam, so it has to be worth making.
+
+`NebulaConfig.AutoScale` is on by default and keeps the worker count between `MinWorkers` and `MaxWorkers` from the tick time workers report, checking every change against a dry run of this policy first. See [Autoscale](/docs/guides/orchestrator-and-dashboard#autoscale). Launching goes through the configured worker host, so a Hetzner mesh gets a new machine.
 
 ## Tooling
 

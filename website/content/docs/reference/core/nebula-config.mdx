@@ -120,7 +120,7 @@ Where the orchestrator keeps the control plane and saved entities: sqlite:\<file
 public int WorkerCount = 4;
 ```
 
-How many worker processes the orchestrator keeps running.
+How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.
 
 ### MaxWorkers [#maxworkers]
 
@@ -136,7 +136,7 @@ The most workers the orchestrator will ever run (dashboard and autoscale stop he
 public string AssignmentPolicy = "auto";
 ```
 
-How containers are dealt to workers: 'auto' (baked while every container is baked, cost once runtime containers exist), 'baked' (evenly by count, sticky), 'cost' (by reported load along a space-filling curve). -nebula-assignment overrides.
+How containers are dealt to workers: 'auto' (the cost policy: by reported load along a space-filling curve), 'baked' (the opt-out: evenly by count, sticky), 'cost' (the same as auto, named explicitly). -nebula-assignment overrides.
 
 ### CostRebalanceThreshold [#costrebalancethreshold]
 
@@ -157,10 +157,10 @@ Cost policy: what one player / bot / server-driven entity / other entity costs, 
 ### AutoScale [#autoscale]
 
 ```csharp
-public bool AutoScale = false;
+public bool AutoScale = true;
 ```
 
-Cost policy: add a worker when the average cost per worker stays above ScaleOutCostPerWorker for ScaleHoldSeconds, remove one when it stays below ScaleInCostPerWorker. Off by default.
+Keep the worker count between MinWorkers and MaxWorkers from how busy the workers are: add one when the busiest worker's tick time stays over ScaleOutUtilization of the tick budget, remove one when the mesh's mean stays under ScaleInUtilization. Every change is checked against a dry run of the assignment policy first.
 
 ### MinWorkers [#minworkers]
 
@@ -168,23 +168,63 @@ Cost policy: add a worker when the average cost per worker stays above ScaleOutC
 public int MinWorkers = 1;
 ```
 
-### ScaleOutCostPerWorker [#scaleoutcostperworker]
+The fewest workers autoscaling will leave running. 0 allows scaling to zero (the first player then waits for a worker to boot).
+
+### ScaleOutUtilization [#scaleoututilization]
 
 ```csharp
-public float ScaleOutCostPerWorker = 200f;
+public float ScaleOutUtilization = 0.7f;
 ```
 
-### ScaleInCostPerWorker [#scaleincostperworker]
+Grow when the busiest worker spends more than this fraction of its tick budget simulating (0.7 = 11.7 ms of a 16.7 ms tick), for ScaleHoldSeconds.
+
+### ScaleInUtilization [#scaleinutilization]
 
 ```csharp
-public float ScaleInCostPerWorker = 50f;
+public float ScaleInUtilization = 0.3f;
 ```
+
+Shrink when the mesh's mean utilization stays under this fraction of the tick budget for ScaleHoldSeconds and the survivors would stay under ScaleOutUtilization.
 
 ### ScaleHoldSeconds [#scaleholdseconds]
 
 ```csharp
 public float ScaleHoldSeconds = 30f;
 ```
+
+How long a condition must hold before a worker is added or retired. Only one change happens per hold.
+
+### ScaleWindowSeconds [#scalewindowseconds]
+
+```csharp
+public float ScaleWindowSeconds = 20f;
+```
+
+Length of the rolling per-worker tick-time window whose 90th percentile is the scaling signal.
+
+### ScaleMinGain [#scalemingain]
+
+```csharp
+public float ScaleMinGain = 0.1f;
+```
+
+The smallest predicted drop in the busiest worker's utilization that makes another worker (or a re-deal) worth it. Below this the orchestrator reports the hot container as unsplittable instead of growing.
+
+### IdlePoolSeconds [#idlepoolseconds]
+
+```csharp
+public float IdlePoolSeconds = 0f;
+```
+
+How long a retired worker is kept in the idle pool, ready to be taken back without a boot, on a host where that is cheaper than recreating it (a cloud VM). 0 = the host's own answer: Hetzner keeps it for the rest of the hour it has already been billed, a local process is killed at once.
+
+### SeamGraceMeters [#seamgracemeters]
+
+```csharp
+public float SeamGraceMeters = 10f;
+```
+
+Cost policy: a container with a player within this many metres of a seam that would move is left alone for a pass (see ContainerHint, phase 3).
 
 ### WorkerExecutable [#workerexecutable]
 

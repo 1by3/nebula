@@ -39,9 +39,32 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `MeshToken` | empty | Set a shared secret that workers and gateways present to the orchestrator. Empty means no token. `nebula deploy` generates one per deployment. |
 | `UseLocalControlPlane` | `false` | Enable the in-process control plane only when all server roles run in one process, such as in a test. |
 | `DatabaseUrl` | empty | Select where the orchestrator keeps the control plane and saved entities: `sqlite:<file>`, `postgres://...`, `file:<folder>`, or `memory`. Empty means a default next to the process. |
-| `WorkerCount` | `4` | Set the initial number of workers. |
+| `WorkerCount` | `4` | Set the number of workers to start with. |
 | `WorkerHost` | `process` | Use `process` for child processes or `hetzner` for one Hetzner Cloud VM per worker. |
 | `DashboardPort` | `7080` | Set the dashboard port. Use `0` to disable the dashboard. |
+
+### Autoscaling
+
+The orchestrator keeps the worker count between `MinWorkers` and `MaxWorkers` from the tick time workers report, and
+checks every change against a dry run of the assignment policy first. See
+[Autoscale](/docs/guides/orchestrator-and-dashboard#autoscale).
+
+| Field | Default | Command line | `nebula.json` | What to set |
+| --- | --- | --- | --- | --- |
+| `MinWorkers` | `1` | `-nebula-min-workers <n>` | `mesh.minWorkers` | Set the fewest workers autoscaling leaves running. `0` allows scaling to zero: the first player then waits for a worker to boot. |
+| `MaxWorkers` | `32` | `-nebula-max-workers <n>` | `mesh.maxWorkers` | Set the most workers the orchestrator will ever run. |
+| `AutoScale` | `true` | `-nebula-autoscale true\|false` | — | Turn autoscaling off to keep `WorkerCount` workers running whatever the load. |
+| `ScaleOutUtilization` | `0.7` | — | — | Grow when the busiest worker spends more than this fraction of its tick budget simulating (`0.7` = 11.7 ms of a 16.7 ms tick). |
+| `ScaleInUtilization` | `0.3` | — | — | Shrink when the mesh's mean utilization stays under this fraction and the survivors would stay under `ScaleOutUtilization`. |
+| `ScaleHoldSeconds` | `30` | — | — | Choose how long a condition must hold before a worker is added or retired. Only one change happens per hold. |
+| `ScaleWindowSeconds` | `20` | — | — | Set the length of the rolling per-worker tick-time window whose 90th percentile is the scaling signal. |
+| `ScaleMinGain` | `0.1` | — | — | Require this much predicted improvement in the busiest worker before adding a worker or re-dealing containers. Below it the orchestrator reports the hot container as unsplittable instead of growing. |
+| `SeamGraceMeters` | `10` m | — | — | Leave a container alone for a pass when a player is within this distance of a seam that would move. Configured but not enforced yet: occupancy reports carry counts, not positions. |
+| `IdlePoolSeconds` | `0` | `-nebula-idle-pool <seconds>` | `mesh.idlePoolSeconds` | Keep a retired worker parked for at most this long on a host that parks. `0` means as long as it is already paid for (Hetzner: the rest of the billed hour). See [Idle pool](/docs/guides/orchestrator-and-dashboard#idle-pool). |
+
+The fields without a command-line option are set on the `NebulaConfig` asset. `nebula start --workers N` fixes the
+count (`min` = `max` = `N`); `nebula start --min A --max B` opens the band, starts the mesh at `A`, and lets
+autoscaling grow it towards `B`.
 
 ### Failure and handover timing
 
@@ -110,6 +133,9 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-persistence-file <path>` | worker, orchestrator | Override `PersistenceLocalFile`. |
 | `-nebula-persistence-checkpoint <seconds>` | worker | Override `PersistenceCheckpointSeconds`. |
 | `-nebula-workers <number>` | orchestrator | Set the initial worker count. |
+| `-nebula-min-workers <number>`, `-nebula-max-workers <number>` | orchestrator | Override `MinWorkers` and `MaxWorkers`, the autoscaling band. |
+| `-nebula-autoscale true\|false` | orchestrator | Override `AutoScale`. |
+| `-nebula-idle-pool <seconds>` | orchestrator | Override `IdlePoolSeconds`. |
 | `-nebula-settings key=value,key=value` | orchestrator | Add game-defined, mesh-wide settings to the control plane. |
 | `-nebula-dashboard-port <port>` | orchestrator | Set the dashboard port. |
 | `-nebula-dashboard-bind <address\|+>` | orchestrator | Bind the dashboard to one address. Use `+` to bind all interfaces. |
@@ -135,6 +161,9 @@ Run `nebula init` to create `nebula.json` at the Unity project root. The CLI rea
   "executable": "Nebula",
   "mesh": {
     "workers": 4,
+    "minWorkers": 1,
+    "maxWorkers": 4,
+    "idlePoolSeconds": 0,
     "npcs": 0,
     "dashboardPort": 7080,
     "gatewayPort": 7000
@@ -153,6 +182,8 @@ Run `nebula init` to create `nebula.json` at the Unity project root. The CLI rea
 | `nebula` | Records the CLI version that last wrote the file. `nebula init` updates it. |
 | `executable` | Sets the base name of builds produced by `NebulaBuild`, such as `Nebula.exe` or `Nebula.x86_64`. |
 | `mesh.workers` | Sets the default worker count for `nebula start`. |
+| `mesh.minWorkers`, `mesh.maxWorkers` | Set the default autoscaling band for `nebula start`. Leave them out and `--workers` fixes the count. `--min` / `--max` override them, and the mesh starts at the floor. |
+| `mesh.idlePoolSeconds` | Sets how long a retired worker stays parked in the idle pool. `0` uses the host's own answer. |
 | `mesh.dashboardPort`, `mesh.gatewayPort` | Set the ports used by a local mesh and by deployment firewalls. |
 | `mesh.database` | Select where the local orchestrator keeps the control plane and saved entities. Leave it out for `sqlite:Library/Nebula/nebula.db`. |
 | `deploy.target` | Selects the deployment provider. This release supports `hetzner`. |

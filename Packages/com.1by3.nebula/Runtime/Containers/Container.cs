@@ -37,6 +37,13 @@ namespace Nebula
         /// <summary>Static adjacency: containers whose boxes touch or overlap this one, computed when the registry loads. Dynamic containers are not in it; see <see cref="ContainerRegistry.NeighborsOf"/>.</summary>
         public List<Container> Neighbors { get; } = new List<Container>();
 
+        /// <summary>
+        /// What the game tells the planner about this container (<see cref="ContainerHint"/>): the baked value, from
+        /// the world manifest or the scene. The orchestrator prefers the control-plane row when one was set while
+        /// the mesh runs (<see cref="IControlPlane.SetContainerHint"/>).
+        /// </summary>
+        public ContainerHint Hint = ContainerHint.Default;
+
         /// <summary>Carried by an entity (<see cref="DynamicContainer"/>): created and destroyed with it, moves with it, owned by its authority.</summary>
         public bool IsDynamic { get; internal set; }
         /// <summary>

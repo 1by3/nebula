@@ -124,9 +124,9 @@ namespace Nebula
             Touch();
         }
 
-        public void HeartbeatGateway(string gatewayId)
+        public void HeartbeatGateway(string gatewayId, uint pendingJoins)
         {
-            foreach (var g in _gateways) if (g.GatewayId == gatewayId) g.LastHeartbeat = Now;
+            foreach (var g in _gateways) if (g.GatewayId == gatewayId) { g.LastHeartbeat = Now; g.PendingJoins = pendingJoins; }
             Touch();
         }
 
@@ -204,6 +204,23 @@ namespace Nebula
             l.WorkerId = workerId;
             l.Epoch += 1;
             l.State = LeaseState.Pinned;
+            l.UpdatedAt = Now;
+            Touch();
+        }
+
+        public void SetContainerHint(string containerId, in ContainerHint hint)
+        {
+            var l = this.FindLease(containerId);
+            if (l == null)
+            {
+                // Hinting a container before anything leased it is legal: the row is the hint's home.
+                l = new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now };
+                _leases.Add(l);
+            }
+            bool wanted = !hint.IsDefault;
+            if (l.HasHint == wanted && l.Hint == hint) return;
+            l.HasHint = wanted;
+            l.Hint = wanted ? hint : ContainerHint.Default;
             l.UpdatedAt = Now;
             Touch();
         }

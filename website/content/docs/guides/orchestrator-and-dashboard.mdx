@@ -41,13 +41,91 @@ For example, four workers and four containers results in one container per worke
 
 ## Change the worker count
 
-Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. `NebulaConfig.MaxWorkers` sets the limit and defaults to 32.
+Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. The count stays between `NebulaConfig.MinWorkers` (default 1) and `NebulaConfig.MaxWorkers` (default 32); `nebula start --workers N` fixes both ends at `N`, and `nebula start --min 1 --max 4` opens the band.
+
+## Autoscale
+
+`NebulaConfig.AutoScale` is on by default. Every worker reports the wall-clock time of its simulated tick on each heartbeat; the orchestrator keeps the last `ScaleWindowSeconds` (20 s) of that per worker and uses the 90th percentile as its **utilization**: the fraction of the 16.7 ms tick budget the worker is spending. The dashboard draws it as a bar on each worker card.
+
+- **Grow** when the busiest worker stays above `ScaleOutUtilization` (0.7) for `ScaleHoldSeconds` (30 s) **and** a dry run of the assignment policy with one more worker lowers the predicted peak by at least `ScaleMinGain` (0.1).
+- **Shrink** when the mesh's mean stays below `ScaleInUtilization` (0.3) for the same hold **and** a dry run with one worker fewer keeps everyone under the scale-out line. The worker carrying least is the one that retires.
+
+Only one change happens per hold, and nothing is decided while a launch or a drain is still in flight.
+
+When the mesh is overloaded but an extra worker would not help - one container holds the load and the policy cannot split it - the orchestrator does **not** grow. It publishes the container in `scale.blockedBy` and the dashboard says so ("cell_3_0_1 ... cannot be split"). That is the cue to split the cell or give it a [balancing hint](#balancing-hints).
+
+`MinWorkers` may be 0; see [Scale to zero](#scale-to-zero).
+
+The dashboard's Workers card shows the decision line ("holding: peak 0.74 for 12/30 s", "blocked: ...", "steady: ...") and lets you edit the min/max band, which `POST /api/scale/limits` with `{"min": n, "max": n}` also does.
 
 When you add a worker, the orchestrator starts it on the lowest available worker index and rebalances containers.
 
 When you remove a worker, the orchestrator retires the highest-index worker by default. It first assigns the worker's containers to other workers. The retiring worker then transfers its authoritative entities through the normal handover process.
 
 The orchestrator stops the retiring worker after it has no containers or authoritative entities. It stops the worker after `WorkerDrainTimeoutSeconds` even if the drain has not completed. If you scale to zero, no worker can receive the entities, so every retiring worker stops after the timeout.
+
+## Scale to zero
+
+`MinWorkers` may be 0 (`nebula start --min 0 --max 2`, `-nebula-min-workers 0`, or the min/max band on the dashboard). An idle mesh then retires its last worker: every lease is released and nothing is running but the orchestrator and the gateway. Nothing is lost - entities that were persisted come back with the next worker - and on a cloud host nothing is billed.
+
+The first player after such an idle period pays for it, so Nebula makes the wait explicit instead of failing the join:
+
+1. The client connects to the gateway and is welcomed as usual. There is nowhere to spawn, so the gateway holds the join in `JoinState.Starting` and tells the client roughly how long a worker takes to boot on this host (`IWorkerHost.TypicalBootSeconds`: about 3 s for the `process` host, about 75 s for `hetzner`).
+2. The gateway reports the waiting client on its control-plane heartbeat. The orchestrator raises the desired worker count to `max(1, MinWorkers)` **at once** - no scale-out hold, because somebody is already waiting - and takes a parked worker back from the [idle pool](#idle-pool) if there is one, which turns the boot into a restart.
+3. As soon as the worker registers and its lease is active, the gateway places the player. The join finishes on the same connection; the client never reconnects.
+
+While any client is connected or waiting to join, the scaler's floor is one worker whatever `MinWorkers` says, so a scale-in can never race the wake-up.
+
+The dashboard shows a persistent warning pill while `MinWorkers` is 0 ("Scale to zero is on: the first player after an idle period waits for a worker to boot (about N s on this host)"), the Gateways card counts clients that are joining, and the decision line reads "world starting: 1 client(s) waiting to join, no worker running" while the mesh boots. `nebula status` prints the same two lines. In `/api/state`, `hostBootSeconds` is the host's estimate and `scale.pendingJoins` / `scale.scaleToZero` are the live state.
+
+On the client, `NebulaClient.Join`, `NebulaClient.JoinEstimatedSeconds` and the `JoinStateChanged` event drive a "world starting" screen; see [Connecting clients](/docs/guides/connecting-clients).
+
+<Callout type="warn">Scale to zero suits a game that tolerates a cold start - a persistent world played in sessions, a demo, a test mesh. Keep `MinWorkers` at 1 for anything a player is expected to drop into immediately.</Callout>
+
+## Idle pool
+
+Retiring a worker does not always mean throwing its machine away. A host says whether keeping one is worth it, and the orchestrator asks it to **park** a worker it has drained instead of stopping it:
+
+- The `process` host does not park. A local process costs nothing to start again, so a retired worker is stopped at once.
+- The `hetzner` host parks. Hetzner bills per started hour, so a VM retired after five minutes is paid for until the hour ends. The machine stays up, the worker keeps heartbeating, and the orchestrator simply deals it no containers. It is deleted a couple of minutes before that paid hour runs out unless something takes it back first.
+
+A parked worker keeps its worker id and its worker index, so nothing new is ever started on that index while it sits in the pool, and entity ids stay unambiguous. It is never eligible for a lease and is not counted in the desired worker count.
+
+A scale-out takes the most recently parked worker back before it launches anything: that worker is already booted and its build is already downloaded, so it starts holding containers in the next assignment pass instead of a minute later. `NebulaConfig.IdlePoolSeconds` (or `-nebula-idle-pool`, or `mesh.idlePoolSeconds` in `nebula.json`) shortens how long a parked worker is kept; the default `0` means "as long as it is already paid for", which is the host's own answer.
+
+The dashboard shows an **Idle pool** card listing each parked worker with how long it has been parked and how much paid time is left, plus two actions: **Resume** takes it back into service (`POST /api/workers/unpark`), and **Delete** drops it now instead of waiting (`POST /api/workers/delete-parked`). When the host does not park, the card explains that and shows what a cold start costs on it.
+
+## Balancing hints
+
+The orchestrator measures how busy each worker is, but it cannot know what a container *means*. A hint tells it what the game knows. Every field is optional and the default says nothing:
+
+| Field | Effect |
+| --- | --- |
+| `CostMultiplier` | Scales what the planner treats the container as costing. `1` is "as measured"; `2` gives it twice the room. The correction for a container whose occupant count is a poor proxy for its tick time. |
+| `AffinityGroup` | Containers sharing a non-empty group are dealt as a single item, so they land on one worker. |
+| `SeamCost` | `0..1`. Where two neighbours both carry it, the planner is charged for cutting between them and prefers to cut elsewhere. |
+| `Dedicated` | Reserves a worker for this container before dealing the rest. A worker holding one is never chosen for retirement. |
+
+Worked examples:
+
+- **A city hub.** One cell everybody passes through. Mark it `Dedicated` and it gets a machine to itself; the rest of the map is dealt across what is left.
+- **A battle royale.** Raise `SeamCost` on the cells inside the circle at the start of each phase, and the worker boundary moves out of the fight instead of running through it.
+- **An instanced dungeon.** Give the rooms of one instance a shared `AffinityGroup` so a party never crosses a machine boundary walking through a door.
+- **A chunked world with nothing special in it.** Leave everything default; the measured signal is enough.
+
+Set a hint at bake time (the World window, stored in the manifest), at runtime from game code, or from the dashboard. The runtime value wins over the baked one, and it lives on the container's control-plane row, so an orchestrator restart still sees it.
+
+```csharp
+// From game code on a worker, in the same call that asks for the container.
+worker.RequestRuntimeContainer(id, box, new ContainerHint { Dedicated = true });
+
+// Or at any time, for any container.
+orchestrator.SetContainerHint("cell_3_0_1", new ContainerHint { CostMultiplier = 2f, SeamCost = 0.5f });
+```
+
+The compact form used by the dashboard and the HTTP API is `x2,group=keep,seam=0.5,dedicated`; an empty string clears the runtime hint and lets the baked one stand again.
+
+If more containers ask to be `Dedicated` than the mesh has workers to spare (it needs one more worker than there are dedicated containers), none of them is reserved and they share like anything else. The orchestrator logs it and the dashboard shows the reason above the container list.
 
 ## Handle a failed worker
 
@@ -134,7 +212,10 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `POST /api/workers/add` | none | Adds one to the requested worker count. |
 | `POST /api/workers/remove` | `{"workerId": "w3"}` or `{}` | Gracefully retires one worker. Without an ID, Nebula chooses the highest index. |
 | `POST /api/workers/kill` | `{"workerId": "w3"}` | Stops one worker immediately to simulate a failure. |
+| `POST /api/workers/unpark` | `{"workerId": "w3"}` or `{}` | Takes one worker back out of the idle pool and raises the desired count. Without an ID, Nebula chooses the most recently parked one. |
+| `POST /api/workers/delete-parked` | `{"workerId": "w3"}` | Deletes one parked worker now instead of waiting for its paid time to run out. |
 | `POST /api/rebalance` | none | Runs a container-assignment pass immediately. |
+| `POST /api/containers/hint` | `{"containerId": "cell_3_0_1", "hint": "x2,seam=0.5,dedicated"}` | Sets one container's balancing hint. An empty hint clears it. |
 | `POST /api/containers/pin` | `{"containerId": "interior#…", "workerId": "w2"}` | Assigns a dynamic container to a live worker. |
 | `POST /api/containers/unpin` | `{"containerId": "interior#…"}` | Returns a dynamic container to its carrier's worker. |
 | `GET /api/persistence/records` | none | Returns every persisted record with its state decoded into named entries. |

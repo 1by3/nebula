@@ -20,6 +20,12 @@ namespace Nebula.Hosting
         Running,
         /// <summary>The process exited or the machine is gone.</summary>
         Exited,
+        /// <summary>
+        /// Retired into the idle pool: the instance still exists and still costs what it costs, but the orchestrator
+        /// deals it no containers. <see cref="IWorkerHost.Unpark"/> brings it back; the host drops it by itself once
+        /// keeping it stops being free (see <see cref="HetznerWorkerHost"/>).
+        /// </summary>
+        Parked,
         /// <summary>The host could not launch it at all (no executable, cloud API error, quota).</summary>
         Failed,
     }
@@ -35,6 +41,12 @@ namespace Nebula.Hosting
         string Address { get; }
         /// <summary>Why <see cref="State"/> is Exited/Failed, when known.</summary>
         string Reason { get; }
+        /// <summary>
+        /// While <see cref="State"/> is <see cref="WorkerHandleState.Parked"/>: how much longer the host will keep
+        /// this instance before deleting it (the rest of the hour Hetzner has already charged for). Negative when the
+        /// host does not park, or when it keeps parked instances indefinitely.
+        /// </summary>
+        float ParkedSecondsRemaining { get; }
     }
 
     /// <summary>
@@ -68,10 +80,65 @@ namespace Nebula.Hosting
         /// <summary>Stop the worker immediately (crash semantics: kill the process, delete the machine).</summary>
         void Kill(IWorkerHandle handle);
 
+        /// <summary>
+        /// True when <see cref="Park"/> is cheaper than <see cref="Kill"/> plus a fresh <see cref="Launch"/>, so the
+        /// orchestrator parks a retired worker into the idle pool instead of killing it. False on hosts where an
+        /// instance costs nothing to recreate (<see cref="ProcessWorkerHost"/>) and on hosts written before parking
+        /// existed (<see cref="WorkerHostBase"/> answers false), which keeps the old behaviour exactly.
+        /// </summary>
+        bool SupportsParking { get; }
+
+        /// <summary>
+        /// Roughly how long this host takes to get a freshly launched worker simulating: the cost of a cold start,
+        /// used for the scale-to-zero warning and for the dashboard's idle-pool copy. Process host ~3 s, a cloud VM
+        /// that boots an image and downloads a build ~75 s.
+        /// </summary>
+        float TypicalBootSeconds { get; }
+
+        /// <summary>
+        /// Retire the worker into the idle pool: the orchestrator has drained it and will deal it nothing more, but
+        /// wants it back cheaply if load returns. A host that cannot park just kills the instance.
+        /// </summary>
+        /// <param name="idlePoolSeconds">
+        /// How long the orchestrator would like it kept (<see cref="NebulaConfig.IdlePoolSeconds"/>); 0 means "as
+        /// long as it is free", which is the host's own answer (Hetzner: the rest of the hour it has been billed).
+        /// </param>
+        void Park(IWorkerHandle handle, float idlePoolSeconds);
+
+        /// <summary>
+        /// Bring a parked instance back. True when the handle is <see cref="WorkerHandleState.Running"/> again and
+        /// the worker it holds keeps its id and index; false when the host has already dropped it, in which case the
+        /// orchestrator launches a fresh worker instead.
+        /// </summary>
+        bool Unpark(IWorkerHandle handle);
+
         /// <summary>Main thread, every frame: apply results of background work to the handles and refresh their state.</summary>
         void Tick();
 
         /// <summary>Extra host-specific fields for the dashboard's worker entry.</summary>
         void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+    }
+
+    /// <summary>
+    /// Base class for hosts that do not park: <see cref="Park"/> kills, <see cref="Unpark"/> fails, and the
+    /// orchestrator never parks into them. Deriving from this keeps a host source-compatible when
+    /// <see cref="IWorkerHost"/> grows optional members.
+    /// </summary>
+    public abstract class WorkerHostBase : IWorkerHost
+    {
+        public abstract string Name { get; }
+        public abstract bool IsReady { get; }
+        public abstract string InitializationError { get; }
+        public abstract void Initialize(Action<string, string> log);
+        public abstract IWorkerHandle Launch(WorkerLaunchSpec spec);
+        public abstract void Kill(IWorkerHandle handle);
+        public abstract void Tick();
+        public abstract void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+        public abstract void Dispose();
+
+        public virtual bool SupportsParking => false;
+        public virtual float TypicalBootSeconds => 5f;
+        public virtual void Park(IWorkerHandle handle, float idlePoolSeconds) => Kill(handle);
+        public virtual bool Unpark(IWorkerHandle handle) => false;
     }
 }

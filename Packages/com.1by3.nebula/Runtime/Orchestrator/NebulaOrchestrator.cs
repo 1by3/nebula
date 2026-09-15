@@ -37,6 +37,11 @@ namespace Nebula
     /// holds no leases and reports no authoritative entities (or the drain timeout passes) the process is killed.
     /// A worker whose heartbeat stops is declared dead, its containers are reassigned immediately, and a replacement
     /// is launched after a short delay.
+    /// </para><para>
+    /// On a host where an instance costs money to keep and time to recreate (<see cref="IWorkerHost.SupportsParking"/>),
+    /// a drained worker is parked into the idle pool instead of killed: it keeps its worker id, its index and its
+    /// machine, receives no leases, and a later scale-out takes it back before anything new is launched. The host
+    /// drops a parked instance by itself when keeping it stops being free.
     /// </para>
     /// </summary>
     public sealed class NebulaOrchestrator
@@ -54,6 +59,10 @@ namespace Nebula
             public float RelaunchAt = -1f;
             public bool Retiring;
             public float RetireDeadline;
+            /// <summary>In the idle pool: the instance is still there (and still paid for) but it is dealt nothing. See <see cref="IWorkerHost.Park"/>.</summary>
+            public bool Parked;
+            /// <summary>When it was parked; the most recently parked worker is the first one unparked.</summary>
+            public float ParkedAt;
         }
 
         /// <summary>Hard cap on the worker cap: indices are 16-bit (the high bits of every net id).</summary>
@@ -61,12 +70,23 @@ namespace Nebula
         private const int MaxEvents = 200;
         /// <summary>The most workers this orchestrator will run (<see cref="NebulaConfig.MaxWorkers"/>).</summary>
         public int MaxWorkers => Mathf.Clamp(Config != null ? Config.MaxWorkers : 32, 1, MaxWorkersLimit);
+        /// <summary>The fewest workers autoscaling will leave running (<see cref="NebulaConfig.MinWorkers"/>); 0 means the mesh may scale to zero.</summary>
+        public int MinWorkers => Mathf.Clamp(Config != null ? Config.MinWorkers : 1, 0, MaxWorkers);
+        /// <summary>How long the host is asked to keep a parked worker (<see cref="NebulaConfig.IdlePoolSeconds"/>); 0 leaves it to the host.</summary>
+        private float IdlePoolSeconds => Config != null ? Mathf.Max(0f, Config.IdlePoolSeconds) : 0f;
+        /// <summary>True when retiring a worker parks it instead of killing it.</summary>
+        private bool CanPark => _host != null && _host.SupportsParking;
+        /// <summary>Workers sitting in the idle pool, most recently parked first: the order they are taken back in.</summary>
+        private IEnumerable<ManagedWorker> ParkedWorkers => _managed.Where(m => m.Parked).OrderByDescending(m => m.ParkedAt);
+        /// <summary>The idle pool as <see cref="PickWorkerToUnpark"/> sees it.</summary>
+        private IEnumerable<KeyValuePair<string, float>> ParkedByTime => _managed.Where(m => m.Parked).Select(m => new KeyValuePair<string, float>(m.Id, m.ParkedAt));
+        /// <summary>How many workers are in the idle pool. They cost the host something but do no work and are not counted in <see cref="DesiredWorkers"/>.</summary>
+        public int ParkedWorkerCount => _managed.Count(m => m.Parked);
 
         /// <summary>
         /// How containers are dealt to workers. Chosen from <see cref="NebulaConfig.AssignmentPolicy"/> (or
-        /// <c>-nebula-assignment</c>) at <see cref="Initialize"/>; game code may replace it at any time. With "auto"
-        /// the baked policy runs while every container is baked and the cost policy takes over once the game
-        /// registers runtime containers.
+        /// <c>-nebula-assignment</c>) at <see cref="Initialize"/>; game code may replace it at any time. "auto" is
+        /// the cost policy, for baked and runtime worlds alike; "baked" is the explicit opt-out that deals by count.
         /// </summary>
         public IAssignmentPolicy Policy { get; set; }
         private string _policyMode = "auto";
@@ -76,7 +96,22 @@ namespace Nebula
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
         /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
         public float TotalCost { get; private set; }
-        private float _scaleOutSince = -1f, _scaleInSince = -1f;
+
+        /// <summary>The rolling tick-time window behind the scaling signal, sampled from every heartbeat this orchestrator sees.</summary>
+        public WorkerLoadTracker Loads { get; } = new WorkerLoadTracker(() => Time.unscaledTime);
+        private readonly WorkerScaler _scaler = new WorkerScaler();
+        /// <summary>Reused every pass so the settle check allocates nothing (<see cref="WorkerScaler.IsInFlight"/>).</summary>
+        private readonly List<WorkerScaler.MeshMember> _meshScratch = new List<WorkerScaler.MeshMember>();
+        /// <summary>p90 utilization per eligible worker, as of the last pass.</summary>
+        private readonly Dictionary<string, float> _utilization = new Dictionary<string, float>(StringComparer.Ordinal);
+        /// <summary>That utilization spread over the containers, as of the last pass (<see cref="AssignmentInput.Utilization"/>).</summary>
+        private readonly Dictionary<string, float> _containerUtilization = new Dictionary<string, float>(StringComparer.Ordinal);
+        /// <summary>The last thing the policy said it could not honour, so it is logged once rather than every pass.</summary>
+        private string _hintNote = "";
+        /// <summary>The baked hints merged with the ones set while the mesh runs, rebuilt each pass (<see cref="AssignmentInput.Hints"/>).</summary>
+        private readonly Dictionary<string, ContainerHint> _containerHints = new Dictionary<string, ContainerHint>(StringComparer.Ordinal);
+        /// <summary>What the scaler decided last pass; shown on the dashboard as the scaling line.</summary>
+        private ScaleDecision _scale = new ScaleDecision { BlockedBy = "", RetireWorkerId = "", Reason = "idle" };
 
         public NebulaConfig Config { get; private set; }
         public IControlPlane ControlPlane { get; private set; }
@@ -155,16 +190,22 @@ namespace Nebula
         {
             Config = config;
             ControlPlane = controlPlane;
-            DesiredWorkers = Mathf.Clamp(config.WorkerCount, 0, MaxWorkers);
+            // WorkerCount is the count to start with; the autoscaling floor only applies when autoscaling is running.
+            bool scaling = config.AutoScale && !config.UseLocalControlPlane;
+            DesiredWorkers = Mathf.Clamp(config.WorkerCount, scaling ? MinWorkers : 0, MaxWorkers);
+            Loads.WindowSeconds = Mathf.Max(1f, config.ScaleWindowSeconds);
+            // Wired once: a per-pass assignment would allocate a delegate every half second for nothing.
+            _scaler.CanRetire = MayRetire; // a worker holding a dedicated container is never the one to go
+            _scaler.IsWarm = Loads.IsWarm;  // nor one whose window is still filling
             OrchestratorId = CommandLine.Get("nebula-orchestrator-id", "orch1");
-            _costPolicy = new CostBalancedAssignmentPolicy { Weights = config.CostWeights, Threshold = config.CostRebalanceThreshold };
+            _costPolicy = new CostBalancedAssignmentPolicy { Weights = config.CostWeights, Threshold = config.CostRebalanceThreshold, MinGain = config.ScaleMinGain, SeamGraceMeters = config.SeamGraceMeters };
             _policyMode = CommandLine.Get("nebula-assignment", config.AssignmentPolicy ?? "auto").Trim().ToLowerInvariant();
             if (_policyMode != "auto" && _policyMode != "baked" && _policyMode != "cost")
             {
                 Log("warn", $"unknown assignment policy '{_policyMode}'; using auto");
                 _policyMode = "auto";
             }
-            Policy = _policyMode == "cost" ? (IAssignmentPolicy)_costPolicy : _bakedPolicy;
+            Policy = _policyMode == "baked" ? (IAssignmentPolicy)_bakedPolicy : _costPolicy;
             _local = new ProcessWorkerHost(config.WorkerExecutable, config.WorkerAdvertiseAddress);
             _host = CreateHost(config);
             Log("info", $"orchestrator {OrchestratorId}: desired workers = {DesiredWorkers}, host={_host.Name}, spawnGateway={config.OrchestratorSpawnsGateway}");
@@ -281,6 +322,7 @@ namespace Nebula
             ControlPlane.HeartbeatOrchestrator(OrchestratorId, (uint)DesiredWorkers);
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             ReapDeadWorkers();
+            WakeForDemand();
             ReconcileDesiredCount();
             Rebalance();
             FinishRetirements();
@@ -323,6 +365,8 @@ namespace Nebula
         /// </summary>
         private void SeedSettings()
         {
+            // Nebula's own row: the gateway reads it to tell a client held in JoinState.Starting how long a worker takes.
+            ControlPlane.SetSetting(MeshSettings.BootSeconds, Mathf.RoundToInt(_host.TypicalBootSeconds).ToString());
             string spec = CommandLine.Get("nebula-settings", "");
             if (string.IsNullOrWhiteSpace(spec)) return;
             foreach (var part in spec.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
@@ -355,6 +399,7 @@ namespace Nebula
                 return true;
             }
             if (_retiring.ContainsKey(workerId)) return false;
+            if (_managed.Any(m => m.Id == workerId && m.Parked)) return false; // already out of service
             bool known = _managed.Any(m => m.Id == workerId && !m.Retiring) || ControlPlane.FindWorker(workerId) != null;
             if (!known) return false;
             BeginRetire(workerId, "removed from dashboard");
@@ -369,6 +414,7 @@ namespace Nebula
         {
             var m = _managed.FirstOrDefault(x => x.Id == workerId);
             if (m == null || m.Handle == null) return false;
+            if (m.Parked) return DeleteParkedWorker(workerId);
             Log("warn", $"killing worker {workerId} ({m.Handle.Describe}) to simulate a crash");
             _host.Kill(m.Handle);
             _nextPass = 0f;
@@ -478,6 +524,7 @@ namespace Nebula
                 Log("warn", $"worker {w.WorkerId} missed heartbeats for {(ControlPlane.Now - w.LastHeartbeat).TotalSeconds:F1}s; declaring dead");
                 ControlPlane.UnregisterWorker(w.WorkerId);
                 Telemetry.Forget(w.WorkerId);
+                Loads.Forget(w.WorkerId);
                 var m = _managed.FirstOrDefault(x => x.Id == w.WorkerId);
                 if (m != null) OnManagedWorkerDead(m);
                 else _retiring.Remove(w.WorkerId);
@@ -503,8 +550,20 @@ namespace Nebula
 
         private void OnManagedWorkerDead(ManagedWorker m)
         {
+            string reason = m.Handle != null && !string.IsNullOrEmpty(m.Handle.Reason) ? m.Handle.Reason : "instance gone";
             if (m.Handle != null) _host.Kill(m.Handle);
             m.Handle = null;
+            if (m.Parked)
+            {
+                // The host dropped it (the paid hour ended) or the machine vanished. Nothing was running on it.
+                _managed.Remove(m);
+                _retired[m.Id] = Time.unscaledTime;
+                ControlPlane.UnregisterWorker(m.Id);
+                Loads.Forget(m.Id);
+                Telemetry.Forget(m.Id);
+                Log("info", $"parked worker {m.Id} left the idle pool ({reason})");
+                return;
+            }
             if (m.Retiring)
             {
                 // It was on its way out anyway; its leases are orphaned by the unregister and the next pass deals them out.
@@ -524,7 +583,7 @@ namespace Nebula
             if (Config.UseLocalControlPlane) return;
             foreach (var m in _managed)
             {
-                if (m.RelaunchAt >= 0f && Time.unscaledTime >= m.RelaunchAt)
+                if (!m.Parked && m.RelaunchAt >= 0f && Time.unscaledTime >= m.RelaunchAt)
                 {
                     Log("info", $"relaunching worker {m.Id}");
                     LaunchWorker(m.Index);
@@ -543,6 +602,31 @@ namespace Nebula
             return i;
         }
 
+        /// <summary>
+        /// The workers an assignment pass may deal containers to: the live ones minus those draining, just retired,
+        /// or sitting in the idle pool. A parked worker still heartbeats, so only this filter keeps leases off it.
+        /// Pure function.
+        /// </summary>
+        public static List<WorkerInfo> EligibleWorkers(IEnumerable<WorkerInfo> live, ICollection<string> retiring, ICollection<string> retired, ICollection<string> parked)
+        {
+            return live.Where(w => !retiring.Contains(w.WorkerId) && !retired.Contains(w.WorkerId) && !parked.Contains(w.WorkerId)).ToList();
+        }
+
+        /// <summary>
+        /// Which parked worker a scale-out takes back first: the most recently parked one. It is the warmest, and on
+        /// a billed host it is the one with the most paid time left. Pure function; null when the pool is empty.
+        /// </summary>
+        public static string PickWorkerToUnpark(IEnumerable<KeyValuePair<string, float>> parkedAt)
+        {
+            string best = null;
+            float bestTime = 0f;
+            foreach (var kv in parkedAt)
+            {
+                if (best == null || kv.Value > bestTime) { best = kv.Key; bestTime = kv.Value; }
+            }
+            return best;
+        }
+
         /// <summary>Which worker leaves first when scaling down: the highest index among those not already retiring.</summary>
         public static string PickWorkerToRetire(IEnumerable<KeyValuePair<string, uint>> candidates)
         {
@@ -558,22 +642,27 @@ namespace Nebula
         private void ReconcileDesiredCount()
         {
             if (Config.UseLocalControlPlane) return;
-            var active = _managed.Where(m => !m.Retiring).ToList();
+            var active = _managed.Where(m => !m.Retiring && !m.Parked).ToList();
             int guard = 0;
             while (active.Count < DesiredWorkers && guard++ < MaxWorkers)
             {
-                var used = _managed.Select(m => m.Index).Concat(ControlPlane.Workers.Select(w => w.WorkerIndex));
-                uint index = NextFreeIndex(used);
-                Log("info", $"scaling up: launching worker w{index}");
-                LaunchWorker(index);
-                active = _managed.Where(m => !m.Retiring).ToList();
+                // The idle pool first: a parked worker is already booted, already paid for, and keeps its id and index.
+                if (!Unpark())
+                {
+                    // Parked workers keep their index, so NextFreeIndex never hands out one that is in the pool.
+                    var used = _managed.Select(m => m.Index).Concat(ControlPlane.Workers.Select(w => w.WorkerIndex));
+                    uint index = NextFreeIndex(used);
+                    Log("info", $"scaling up: launching worker w{index}");
+                    LaunchWorker(index);
+                }
+                active = _managed.Where(m => !m.Retiring && !m.Parked).ToList();
             }
             while (active.Count > DesiredWorkers)
             {
                 string id = PickWorkerToRetire(active.Select(m => new KeyValuePair<string, uint>(m.Id, m.Index)));
                 if (id == null) break;
                 BeginRetire(id, "scaling down");
-                active = _managed.Where(m => !m.Retiring).ToList();
+                active = _managed.Where(m => !m.Retiring && !m.Parked).ToList();
             }
         }
 
@@ -591,6 +680,91 @@ namespace Nebula
             Log("info", $"retiring worker {workerId} ({reason}); draining its containers");
         }
 
+        /// <summary>
+        /// Hand a drained worker to the host's idle pool. It keeps its worker id, its index and its control-plane
+        /// row (it goes on heartbeating), so unparking it is instant and no new worker can take its index meanwhile.
+        /// False when the host refused, in which case the caller kills it as before.
+        /// </summary>
+        private bool Park(ManagedWorker m)
+        {
+            _host.Park(m.Handle, IdlePoolSeconds);
+            if (m.Handle.State != WorkerHandleState.Parked) return false;
+            m.Parked = true;
+            m.Retiring = false;
+            m.RelaunchAt = -1f;
+            m.ParkedAt = Time.unscaledTime;
+            float paid = m.Handle.ParkedSecondsRemaining;
+            Log("info", $"worker {m.Id} parked ({m.Handle.Describe}){(paid >= 0f ? $"; paid for another {paid:F0}s" : "")}");
+            return true;
+        }
+
+        /// <summary>
+        /// Take the most recently parked worker back into service, if there is one. It is warm, so it starts taking
+        /// containers on this very pass instead of after a boot. False when the idle pool is empty or the host has
+        /// already dropped what was in it.
+        /// </summary>
+        private bool Unpark(string workerId = null)
+        {
+            var pool = ParkedByTime.Where(kv => workerId == null || kv.Key == workerId).ToList();
+            while (pool.Count > 0)
+            {
+                string pick = PickWorkerToUnpark(pool);
+                pool.RemoveAll(kv => kv.Key == pick);
+                var m = _managed.First(x => x.Id == pick);
+                if (m.Handle == null || !_host.Unpark(m.Handle))
+                {
+                    // The host let it go; forget it and let the caller launch something instead.
+                    Log("info", $"worker {m.Id} is no longer in the idle pool; launching a new worker instead");
+                    _managed.Remove(m);
+                    _retired[m.Id] = Time.unscaledTime;
+                    ControlPlane.UnregisterWorker(m.Id);
+                    continue;
+                }
+                m.Parked = false;
+                m.ParkedAt = 0f;
+                _retired.Remove(m.Id);
+                Log("info", $"scaling up: unparking worker {m.Id} from the idle pool ({m.Handle.Describe})");
+                _nextPass = 0f;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Take one worker back out of the idle pool from the dashboard, raising the desired count to match. The
+        /// ceiling is checked <i>before</i> unparking: raising a desired count that is already at
+        /// <see cref="MaxWorkers"/> clamps it back to where it was, and the reconciler would retire the worker that
+        /// had just been resumed on the very next pass. False when the pool is empty or the mesh is at its ceiling
+        /// (<see cref="AtWorkerCeiling"/> tells the two apart for the HTTP answer).
+        /// </summary>
+        public bool UnparkWorker(string workerId)
+        {
+            if (AtWorkerCeiling) return false;
+            if (!_managed.Any(m => m.Parked && (workerId == null || m.Id == workerId))) return false;
+            if (!Unpark(workerId)) return false;
+            DesiredWorkers = Mathf.Clamp(DesiredWorkers + 1, 0, MaxWorkers);
+            return true;
+        }
+
+        /// <summary>The mesh is already driving towards as many workers as <see cref="MaxWorkers"/> allows, so nothing may be added or resumed.</summary>
+        public bool AtWorkerCeiling => DesiredWorkers >= MaxWorkers;
+
+        /// <summary>Drop a parked worker now instead of waiting for the host to let it go (the dashboard's "delete").</summary>
+        public bool DeleteParkedWorker(string workerId)
+        {
+            var m = _managed.FirstOrDefault(x => x.Parked && x.Id == workerId);
+            if (m == null) return false;
+            Log("info", $"deleting parked worker {m.Id} ({(m.Handle != null ? m.Handle.Describe : "no instance")}) from the dashboard");
+            if (m.Handle != null) _host.Kill(m.Handle);
+            _managed.Remove(m);
+            _retired[m.Id] = Time.unscaledTime;
+            ControlPlane.UnregisterWorker(m.Id);
+            Loads.Forget(m.Id);
+            Telemetry.Forget(m.Id);
+            _nextPass = 0f;
+            return true;
+        }
+
         private void FinishRetirements()
         {
             if (_retiring.Count == 0) return;
@@ -603,21 +777,29 @@ namespace Nebula
                 bool drained = row == null || row.AuthoritativeCount == 0;
                 bool timedOut = now >= _retiring[id];
                 if (!drained && !timedOut) continue;
+                var managed = _managed.FirstOrDefault(x => x.Id == id);
+                bool willPark = managed != null && managed.Handle != null && CanPark && drained;
                 Log(timedOut && !drained ? "warn" : "info",
                     timedOut && !drained
-                        ? $"worker {id} still reports {row.AuthoritativeCount} authoritative entities after the drain timeout; killing it anyway"
-                        : $"worker {id} drained; shutting it down");
-                ControlPlane.UnregisterWorker(id);
-                _seenAlive.Remove(id);
-                Telemetry.Forget(id);
-                var m = _managed.FirstOrDefault(x => x.Id == id);
-                if (m != null)
+                        ? $"worker {id} still reports {row.AuthoritativeCount} authoritative entities after the drain timeout; {(willPark ? "parking" : "killing")} it anyway"
+                        : $"worker {id} drained; {(willPark ? "parking it in the idle pool" : "shutting it down")}");
+                if (!willPark)
+                {
+                    // A parked worker keeps its control-plane row and its heartbeat: it is idle, not gone.
+                    ControlPlane.UnregisterWorker(id);
+                    _seenAlive.Remove(id);
+                    Telemetry.Forget(id);
+                }
+                Loads.Forget(id);
+                var m = managed;
+                bool parked = willPark && Park(m);
+                if (m != null && !parked)
                 {
                     if (m.Handle != null) _host.Kill(m.Handle);
                     _managed.Remove(m);
                 }
                 _retiring.Remove(id);
-                _retired[id] = now;
+                if (!parked) _retired[id] = now;
             }
         }
 
@@ -682,20 +864,65 @@ namespace Nebula
         private AssignmentInput BuildAssignmentInput(IList<WorkerInfo> eligible)
         {
             Telemetry.CopyOccupancy(_occupancy);
+            Loads.CopyUtilization(eligible, _utilization);
+            WorkerLoadTracker.Attribute(_utilization, ControlPlane.Leases, _occupancy, Config.CostWeights, _containerUtilization);
+            _assignmentInput.Utilization = _containerUtilization;
             _assignmentInput.Baked = ContainerRegistry.All;
             _assignmentInput.Runtime = ContainerRegistry.Runtime;
             _assignmentInput.Eligible = eligible;
             _assignmentInput.Leases = ControlPlane.Leases;
             _assignmentInput.Occupancy = _occupancy;
+            BuildHints();
+            _assignmentInput.Hints = _containerHints;
             _assignmentInput.KeepOrder = ContainerRegistry.IsGridded;
             return _assignmentInput;
         }
 
-        /// <summary>The policy this pass runs: whatever was installed, or, in auto mode, baked until runtime containers exist.</summary>
+        /// <summary>
+        /// Collect what the planner is told about each container: the baked hint the container was loaded with
+        /// (manifest or scene), overridden by the hint on its control-plane row when one was set while the mesh runs.
+        /// Only containers that actually carry a hint are entered, so a world nobody hinted costs an empty table.
+        /// </summary>
+        private void BuildHints()
+        {
+            _containerHints.Clear();
+            for (int i = 0; i < ContainerRegistry.All.Count; i++)
+            {
+                var c = ContainerRegistry.All[i];
+                if (!c.Hint.IsDefault) _containerHints[c.ContainerId] = c.Hint;
+            }
+            for (int i = 0; i < ContainerRegistry.Runtime.Count; i++)
+            {
+                var c = ContainerRegistry.Runtime[i];
+                if (!c.Hint.IsDefault) _containerHints[c.ContainerId] = c.Hint;
+            }
+            var leases = ControlPlane.Leases;
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var l = leases[i];
+                if (l.HasHint) _containerHints[l.ContainerId] = l.Hint; // the live value wins over the baked one
+            }
+        }
+
+        /// <summary>Workers holding a <see cref="ContainerHint.Dedicated"/> container: never the one retired.</summary>
+        private bool MayRetire(string workerId)
+        {
+            if (string.IsNullOrEmpty(workerId)) return true;
+            var leases = ControlPlane.Leases;
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var l = leases[i];
+                if (l.WorkerId != workerId || !LeaseState.IsOwning(l.State)) continue;
+                if (_containerHints.TryGetValue(l.ContainerId, out var hint) && hint.Dedicated) return false;
+            }
+            return true;
+        }
+
+        /// <summary>The policy this pass runs: whatever the game installed, otherwise the cost policy ("auto"), or the baked one when that was chosen explicitly.</summary>
         private IAssignmentPolicy CurrentPolicy()
         {
             if (Policy != null && !ReferenceEquals(Policy, _bakedPolicy) && !ReferenceEquals(Policy, _costPolicy)) return Policy; // the game's own
-            if (_policyMode == "auto") Policy = ContainerRegistry.Runtime.Count > 0 ? (IAssignmentPolicy)_costPolicy : _bakedPolicy;
+            if (_policyMode == "auto") Policy = _costPolicy;
             return Policy;
         }
 
@@ -703,42 +930,103 @@ namespace Nebula
         public string PolicyName => Policy != null ? Policy.Name : "";
 
         /// <summary>
-        /// Grow or shrink the worker count from the cost the mesh carries (<see cref="NebulaConfig.AutoScale"/>).
-        /// A change needs the condition to hold for <see cref="NebulaConfig.ScaleHoldSeconds"/>, and only one worker
-        /// is added or removed per hold, so a burst of arrivals does not launch a fleet. Launching goes through the
+        /// Clients waiting to be placed: welcomed by a live gateway with nowhere to spawn yet
+        /// (<see cref="GatewayInfo.PendingJoins"/>). Non-zero means somebody is looking at a "world starting" screen.
+        /// </summary>
+        public int PendingJoins
+        {
+            get
+            {
+                int n = 0;
+                foreach (var g in ControlPlane.Gateways)
+                {
+                    if ((ControlPlane.Now - g.LastHeartbeat).TotalSeconds > Config.WorkerTimeoutSeconds) continue;
+                    n += (int)g.PendingJoins;
+                }
+                return n;
+            }
+        }
+
+        /// <summary>Anyone at all on the mesh: a player or bot on a worker, or a join the gateway is holding.</summary>
+        private bool HasDemand => PendingJoins > 0 || ConnectedClients > 0;
+
+        /// <summary>Clients (human or bot) that already own a pawn somewhere, as the workers report them.</summary>
+        private int ConnectedClients
+        {
+            get
+            {
+                int n = 0;
+                foreach (var w in ControlPlane.Workers)
+                {
+                    if (!ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)) continue;
+                    n += (int)(w.PlayerCount + w.BotCount);
+                }
+                return n;
+            }
+        }
+
+        /// <summary>
+        /// Scale to zero's other half: a mesh at zero workers has nobody to play on, so a join the gateway is
+        /// holding raises the desired count at once - no scale-out hold, since the player is already waiting. The
+        /// launch path (<see cref="ReconcileDesiredCount"/>) takes a parked worker back before launching a new one,
+        /// so the wait is a restart rather than a boot whenever the idle pool still has something in it.
+        /// </summary>
+        private void WakeForDemand()
+        {
+            if (!Config.AutoScale || Config.UseLocalControlPlane) return;
+            int floor = WorkerScaler.FloorWorkers(MinWorkers, HasDemand);
+            if (DesiredWorkers >= floor) return;
+            int pending = PendingJoins;
+            Log("info", pending > 0
+                ? $"waking the mesh: {pending} client(s) waiting to join and {DesiredWorkers} worker(s) running"
+                : $"waking the mesh: {ConnectedClients} client(s) connected and {DesiredWorkers} worker(s) running");
+            _scaler.Reset();
+            SetDesiredWorkers(floor);
+        }
+
+        /// <summary>
+        /// Grow or shrink the worker count from how busy the workers actually are
+        /// (<see cref="NebulaConfig.AutoScale"/>). The decision itself lives in <see cref="WorkerScaler"/>, which
+        /// asks the assignment policy what it would do with one worker more or one fewer instead of dividing an
+        /// abstract cost by a count; the orchestrator only applies the answer. Launching and retiring go through the
         /// worker host like any other change to the desired count.
         /// </summary>
-        private void AutoScale(int eligibleCount)
+        private void AutoScale(AssignmentInput input, IAssignmentPolicy policy)
         {
-            if (!Config.AutoScale || Config.UseLocalControlPlane) { _scaleOutSince = _scaleInSince = -1f; return; }
-            float now = Time.unscaledTime;
-            float perWorker = eligibleCount > 0 ? TotalCost / eligibleCount : float.MaxValue;
-            bool wantOut = perWorker > Config.ScaleOutCostPerWorker && DesiredWorkers < MaxWorkers && _managed.Count(m => !m.Retiring) >= DesiredWorkers;
-            if (wantOut)
+            if (!Config.AutoScale || Config.UseLocalControlPlane)
             {
-                if (_scaleOutSince < 0f) _scaleOutSince = now;
-                else if (now - _scaleOutSince >= Config.ScaleHoldSeconds)
-                {
-                    Log("info", $"autoscale: {perWorker:0.#} cost per worker over {Config.ScaleOutCostPerWorker:0.#} for {Config.ScaleHoldSeconds:0}s; adding a worker");
+                _scaler.Reset();
+                _scale = new ScaleDecision { BlockedBy = "", RetireWorkerId = "", Reason = Config.AutoScale ? "single process" : "autoscaling is off" };
+                return;
+            }
+            var settings = new ScaleSettings
+            {
+                ScaleOutUtilization = Config.ScaleOutUtilization,
+                ScaleInUtilization = Config.ScaleInUtilization,
+                HoldSeconds = Config.ScaleHoldSeconds,
+                MinGain = Config.ScaleMinGain,
+                // While anyone is connected or waiting to join, one worker is the floor whatever MinWorkers says:
+                // scale to zero is for an idle mesh, and the scaler must not fight WakeForDemand.
+                MinWorkers = WorkerScaler.FloorWorkers(MinWorkers, HasDemand),
+                MaxWorkers = MaxWorkers,
+            };
+            // A launch or a drain that has not landed yet makes the measurement meaningless: hold everything. A
+            // parked worker is in the idle pool, not in service, so it is not part of the count being driven to.
+            _meshScratch.Clear();
+            foreach (var m in _managed) _meshScratch.Add(new WorkerScaler.MeshMember { Retiring = m.Retiring, Parked = m.Parked });
+            bool inFlight = WorkerScaler.IsInFlight(_retiring.Count, _meshScratch, DesiredWorkers);
+            _scale = _scaler.Evaluate(Time.unscaledTime, _utilization, input, policy, DesiredWorkers, settings, inFlight);
+            switch (_scale.Action)
+            {
+                case ScaleAction.Grow:
+                    Log("info", "autoscale: " + _scale.Reason);
                     SetDesiredWorkers(DesiredWorkers + 1);
-                    _scaleOutSince = -1f;
-                }
+                    break;
+                case ScaleAction.Shrink:
+                    Log("info", "autoscale: " + _scale.Reason);
+                    if (!RemoveWorker(_scale.RetireWorkerId)) SetDesiredWorkers(DesiredWorkers - 1);
+                    break;
             }
-            else _scaleOutSince = -1f;
-            // Would the survivors still be under the scale-in line after one leaves? Otherwise removing one only triggers a scale-out.
-            float afterOne = eligibleCount > 1 ? TotalCost / (eligibleCount - 1) : float.MaxValue;
-            bool wantIn = eligibleCount > 1 && afterOne < Config.ScaleInCostPerWorker && DesiredWorkers > Mathf.Max(1, Config.MinWorkers) && _retiring.Count == 0;
-            if (wantIn)
-            {
-                if (_scaleInSince < 0f) _scaleInSince = now;
-                else if (now - _scaleInSince >= Config.ScaleHoldSeconds)
-                {
-                    Log("info", $"autoscale: {perWorker:0.#} cost per worker under {Config.ScaleInCostPerWorker:0.#} for {Config.ScaleHoldSeconds:0}s; removing a worker");
-                    SetDesiredWorkers(DesiredWorkers - 1);
-                    _scaleInSince = -1f;
-                }
-            }
-            else _scaleInSince = -1f;
         }
 
         /// <summary>
@@ -808,9 +1096,15 @@ namespace Nebula
         private void Rebalance()
         {
             var live = LiveWorkers();
-            foreach (var w in live) _seenAlive.Add(w.WorkerId);
+            foreach (var w in live)
+            {
+                _seenAlive.Add(w.WorkerId);
+                Loads.Sample(w.WorkerId, w.TickMs);
+            }
+            Loads.Expire();
             // Retiring workers stay alive for the drain but receive nothing new.
-            var eligible = live.Where(w => !_retiring.ContainsKey(w.WorkerId) && !_retired.ContainsKey(w.WorkerId)).ToList();
+            var parkedIds = new HashSet<string>(_managed.Where(m => m.Parked).Select(m => m.Id), StringComparer.Ordinal);
+            var eligible = EligibleWorkers(live, _retiring.Keys, _retired.Keys, parkedIds);
             var ids = ContainerRegistry.All.Select(c => c.ContainerId).ToList();
             if (eligible.Count == 0 && _retiring.Count > 0)
             {
@@ -837,8 +1131,15 @@ namespace Nebula
             var input = BuildAssignmentInput(eligible);
             var policy = CurrentPolicy();
             TotalCost = _costPolicy.TotalCost(input);
-            AutoScale(eligible.Count);
+            AutoScale(input, policy);
             var changes = policy.Compute(input);
+            // The cost policy reports what it could not honour (too few workers for the dedicated containers).
+            string note = ReferenceEquals(policy, _costPolicy) ? _costPolicy.Note : "";
+            if (note != _hintNote)
+            {
+                _hintNote = note;
+                if (note != "") Log("warn", "hints: " + note);
+            }
             if (changes.Count == 0) return;
             Rebalances++;
             _log.Clear();
@@ -901,8 +1202,21 @@ namespace Nebula
                     if (!SetSetting(key, value)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"key\": \"name\", \"value\": \"text\"}");
                     break;
                 }
+                case "/api/scale/limits":
+                {
+                    // The autoscale band, live: min may be 0 (scale to zero), max is capped by the 16-bit index space.
+                    if (!OrchestratorHttpServer.TryGetInt(req.Body, "min", out int min) || !OrchestratorHttpServer.TryGetInt(req.Body, "max", out int max))
+                        return OrchestratorHttpServer.Response.Error(400, "body must be {\"min\": n, \"max\": n}");
+                    if (max < 1 || max > MaxWorkersLimit || min < 0 || min > max) return OrchestratorHttpServer.Response.Error(400, $"0 <= min <= max and 1 <= max <= {MaxWorkersLimit}");
+                    Config.MinWorkers = min;
+                    Config.MaxWorkers = max;
+                    Log("info", $"autoscale band set to {min}..{max} from the dashboard");
+                    if (DesiredWorkers < min) SetDesiredWorkers(min);
+                    else if (DesiredWorkers > max) SetDesiredWorkers(max);
+                    break;
+                }
                 case "/api/workers/add":
-                    if (DesiredWorkers >= MaxWorkers) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
+                    if (AtWorkerCeiling) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
                     AddWorker();
                     break;
                 case "/api/containers/ensure":
@@ -926,6 +1240,21 @@ namespace Nebula
                 {
                     string id = OrchestratorHttpServer.GetString(req.Body, "workerId");
                     if (!RemoveWorker(id)) return OrchestratorHttpServer.Response.Error(404, string.IsNullOrEmpty(id) ? "no workers to remove" : $"unknown or already retiring worker '{id}'");
+                    break;
+                }
+                case "/api/workers/unpark":
+                {
+                    string id = OrchestratorHttpServer.GetString(req.Body, "workerId");
+                    // The same answer /api/workers/add gives: resuming a parked worker adds one to the mesh.
+                    if (AtWorkerCeiling) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
+                    if (!UnparkWorker(string.IsNullOrEmpty(id) ? null : id))
+                        return OrchestratorHttpServer.Response.Error(404, string.IsNullOrEmpty(id) ? "the idle pool is empty" : $"worker '{id}' is not parked");
+                    break;
+                }
+                case "/api/workers/delete-parked":
+                {
+                    string id = OrchestratorHttpServer.GetString(req.Body, "workerId");
+                    if (!DeleteParkedWorker(id)) return OrchestratorHttpServer.Response.Error(404, $"worker '{id}' is not parked");
                     break;
                 }
                 case "/api/workers/kill":
@@ -969,6 +1298,14 @@ namespace Nebula
                     if (response.Status == 200) Log("info", $"persisted record duplicated from the dashboard: {OrchestratorHttpServer.GetString(req.Body, "newKey")}");
                     return response;
                 }
+                case "/api/containers/hint":
+                {
+                    string id = OrchestratorHttpServer.GetString(req.Body, "containerId");
+                    if (string.IsNullOrEmpty(id)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"containerId\": \"id\", \"hint\": \"x2,group=g,seam=0.5,dedicated\"}");
+                    string error = SetContainerHint(id, ContainerHint.Parse(OrchestratorHttpServer.GetString(req.Body, "hint")));
+                    if (error != null) return OrchestratorHttpServer.Response.Error(400, error);
+                    break;
+                }
                 case "/api/containers/pin":
                 {
                     string id = OrchestratorHttpServer.GetString(req.Body, "containerId");
@@ -989,6 +1326,23 @@ namespace Nebula
             }
             PublishState();
             return OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"desired\":{DesiredWorkers}}}");
+        }
+
+        /// <summary>
+        /// Tell the planner something about a container while the mesh runs (<see cref="ContainerHint"/>): the value
+        /// goes on its control-plane row, so it outlives this orchestrator and beats whatever was baked. Passing
+        /// <see cref="ContainerHint.Default"/> clears it and lets the baked hint stand again. Null on success,
+        /// otherwise the reason. The next pass acts on it.
+        /// </summary>
+        public string SetContainerHint(string containerId, in ContainerHint hint)
+        {
+            if (string.IsNullOrEmpty(containerId)) return "a container id is required";
+            bool known = ContainerRegistry.FindById(containerId) != null || ControlPlane.FindLease(containerId) != null;
+            if (!known) return $"unknown container '{containerId}'";
+            ControlPlane.SetContainerHint(containerId, hint);
+            Log("info", $"hint for {containerId}: {(hint.IsDefault ? "cleared" : hint.ToString())}");
+            RequestRebalance();
+            return null;
         }
 
         /// <summary>
@@ -1030,7 +1384,7 @@ namespace Nebula
             _http?.PublishState(BuildStateJson());
         }
 
-        private static void WriteContainerState(JsonWriter w, Container c, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers)
+        private static void WriteContainerState(JsonWriter w, Container c, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers, IReadOnlyDictionary<string, ContainerHint> hints)
         {
             var l = leases.FirstOrDefault(x => x.ContainerId == c.ContainerId);
             string owner = l != null && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning) ? l.WorkerId : "";
@@ -1042,6 +1396,13 @@ namespace Nebula
             w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
             w.Prop("epoch", l != null ? l.Epoch : 0UL);
             w.Prop("state", l != null ? l.State : "missing");
+            // The hint as the planner sees it this pass (baked, or the control-plane row when one was set).
+            var hint = hints != null && hints.TryGetValue(c.ContainerId, out var h) ? h : c.Hint;
+            w.Prop("hint", hint.IsDefault ? "" : hint.ToString());
+            w.Prop("hintMultiplier", hint.EffectiveMultiplier);
+            w.Prop("hintGroup", hint.Group);
+            w.Prop("hintSeam", hint.EffectiveSeamCost);
+            w.Prop("hintDedicated", hint.Dedicated);
             if (c.IsRuntime) w.Prop("runtime", true);
             else if (ContainerRegistry.IsGridded)
             {
@@ -1070,9 +1431,13 @@ namespace Nebula
             w.Prop("host", _host.Name);
             w.Prop("hostReady", _host.IsReady);
             w.Prop("hostError", _host.InitializationError ?? "");
+            w.Prop("hostBootSeconds", _host.TypicalBootSeconds);
+            w.Prop("hostParks", _host.SupportsParking);
+            w.Prop("idlePoolSeconds", IdlePoolSeconds);
             // The address clients connect to (the one the spawned gateway registers).
             w.Prop("gatewayAddress", $"{Config.GatewayAddress}:{Config.GatewayPort}");
             w.Prop("desiredWorkers", DesiredWorkers);
+            w.Prop("minWorkers", MinWorkers);
             w.Prop("maxWorkers", MaxWorkers);
             w.Prop("policy", PolicyName);
             w.Prop("totalCost", TotalCost);
@@ -1080,6 +1445,26 @@ namespace Nebula
             w.Prop("runtimeContainers", ContainerRegistry.Runtime.Count);
             w.Prop("rebalances", Rebalances);
             w.Prop("workerTimeoutSeconds", Config.WorkerTimeoutSeconds);
+
+            // Scaling: what the scaler saw and what it decided, so the dashboard can explain why nothing is happening.
+            w.Key("scale");
+            w.BeginObject();
+            w.Prop("enabled", Config.AutoScale && !Config.UseLocalControlPlane);
+            w.Prop("action", _scale.Action == ScaleAction.Grow ? "grow" : _scale.Action == ScaleAction.Shrink ? "shrink" : "none");
+            w.Prop("peak", _scale.Peak);
+            w.Prop("mean", _scale.Mean);
+            w.Prop("heldSeconds", _scale.HeldSeconds);
+            w.Prop("holdSeconds", _scale.HoldSeconds);
+            w.Prop("blockedBy", _scale.BlockedBy ?? "");
+            w.Prop("reason", _scale.Reason ?? "");
+            w.Prop("outUtilization", Config.ScaleOutUtilization);
+            w.Prop("inUtilization", Config.ScaleInUtilization);
+            w.Prop("windowSeconds", Config.ScaleWindowSeconds);
+            w.Prop("tickPeriodMs", WorkerLoadTracker.TickPeriodMs);
+            w.Prop("hintNote", _hintNote ?? "");
+            w.Prop("pendingJoins", PendingJoins);
+            w.Prop("scaleToZero", Config.AutoScale && !Config.UseLocalControlPlane && MinWorkers == 0);
+            w.EndObject();
 
             // Workers: the union of control-plane rows and processes we manage (a freshly launched worker has no row yet).
             var ids = new List<string>();
@@ -1096,13 +1481,15 @@ namespace Nebula
                 bool alive = row != null && ControlPlane.IsWorkerAlive(row, Config.WorkerTimeoutSeconds);
                 uint index = row != null ? row.WorkerIndex : (m != null ? m.Index : 0);
                 bool retiring = _retiring.ContainsKey(id);
+                bool parked = m != null && m.Parked;
                 string state;
-                if (m != null && m.RelaunchAt >= 0f) state = "relaunching";
+                if (parked) state = "parked";
+                else if (m != null && m.RelaunchAt >= 0f) state = "relaunching";
                 else if (retiring) state = "draining";
                 else if (!alive && m != null && m.Handle != null && !HandleGone(m)) state = "launching";
                 else if (!alive) state = "dead";
                 else state = row.Status; // starting | ready
-                if (alive && !retiring) liveCount++;
+                if (alive && !retiring && !parked) liveCount++;
                 if (alive)
                 {
                     totalPlayers += row.PlayerCount; totalBots += row.BotCount; totalServerDriven += row.ServerDrivenCount; totalEntities += row.EntityCount; totalAuth += row.AuthoritativeCount;
@@ -1115,6 +1502,8 @@ namespace Nebula
                 w.Prop("state", state);
                 w.Prop("alive", alive);
                 w.Prop("retiring", retiring);
+                w.Prop("parked", parked);
+                w.Prop("paidSecondsRemaining", parked && m.Handle != null ? m.Handle.ParkedSecondsRemaining : -1f);
                 w.Prop("managed", m != null);
                 w.Prop("instance", m != null && m.Handle != null ? m.Handle.Describe : "");
                 if (m != null && m.Handle != null) _host.WriteHandleJson(m.Handle, w);
@@ -1123,6 +1512,7 @@ namespace Nebula
                 w.Prop("relaunchInSeconds", m != null && m.RelaunchAt >= 0f ? Math.Max(0f, m.RelaunchAt - now) : -1f);
                 w.Prop("drainRemainingSeconds", retiring ? Math.Max(0f, _retiring[id] - now) : -1f);
                 w.Prop("tickMs", row != null ? row.TickMs : 0f);
+                w.Prop("utilization", Loads.Utilization(id));
                 w.Prop("tickCount", row != null ? row.TickCount : 0UL);
                 w.Prop("entities", row != null ? row.EntityCount : 0U);
                 w.Prop("authoritative", row != null ? row.AuthoritativeCount : 0U);
@@ -1141,10 +1531,28 @@ namespace Nebula
             }
             w.EndArray();
 
+            // The idle pool: retired workers the host is still keeping. They hold nothing and are not counted in
+            // desiredWorkers; the dashboard offers to take one back or to drop it early.
+            w.Key("parked");
+            w.BeginArray();
+            foreach (var m in ParkedWorkers)
+            {
+                w.BeginObject();
+                w.Prop("id", m.Id);
+                w.Prop("index", m.Index);
+                w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker((ushort)m.Index)));
+                w.Prop("instance", m.Handle != null ? m.Handle.Describe : "");
+                w.Prop("parkedSeconds", Math.Max(0f, now - m.ParkedAt));
+                w.Prop("paidSecondsRemaining", m.Handle != null ? m.Handle.ParkedSecondsRemaining : -1f);
+                if (m.Handle != null) _host.WriteHandleJson(m.Handle, w);
+                w.EndObject();
+            }
+            w.EndArray();
+
             w.Key("containers");
             w.BeginArray();
-            foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, leases, workers);
-            foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers);
+            foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, leases, workers, _containerHints);
+            foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers, _containerHints);
             w.EndArray();
 
             // Carried containers: leases workers create for the containers their entities carry (ships, lifts).
@@ -1177,6 +1585,7 @@ namespace Nebula
                 w.Prop("id", g.GatewayId);
                 w.Prop("address", $"{g.Address}:{g.Port}");
                 w.Prop("heartbeatAgeSeconds", Math.Max(0.0, (ControlPlane.Now - g.LastHeartbeat).TotalSeconds));
+                w.Prop("pendingJoins", (int)g.PendingJoins);
                 w.EndObject();
             }
             w.EndArray();
@@ -1184,6 +1593,7 @@ namespace Nebula
             w.Key("totals");
             w.BeginObject();
             w.Prop("liveWorkers", liveCount);
+            w.Prop("parkedWorkers", ParkedWorkerCount);
             w.Prop("players", totalPlayers);
             w.Prop("bots", totalBots);
             w.Prop("serverDriven", totalServerDriven);

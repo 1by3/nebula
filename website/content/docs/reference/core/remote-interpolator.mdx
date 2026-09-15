@@ -13,6 +13,22 @@ Tick-indexed pose buffer for copies of an entity this process does not simulate:
 
 Samples are kept in the space they arrived in: container-local, tagged with the container. A pose inside a moving container (a passenger on a ship) is therefore interpolated relative to the ship, and the sampled local pose is applied under the ship's transform wherever the ship is *now*, so passengers never lag a frame behind the hull. A sample with no container is a world pose (an entity outside every container).
 
+## Fields
+
+### Samples, Starved [#samples-starved]
+
+```csharp
+public static long Samples, Starved;
+```
+
+Process-wide sample statistics, reset by whoever reports them (NebulaClient's telemetry line).
+
+### DepthSum, MaxOvershoot [#depthsum-maxovershoot]
+
+```csharp
+public static double DepthSum, MaxOvershoot;
+```
+
 ## Properties
 
 ### LatestTick [#latesttick]
@@ -78,6 +94,12 @@ public Quaternion LatestRotation { get; }
 ```
 
 ## Methods
+
+### ResetStats [#resetstats]
+
+```csharp
+public static void ResetStats();
+```
 
 ### Push [#push]
 

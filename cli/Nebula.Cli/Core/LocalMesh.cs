@@ -21,7 +21,10 @@ public static class LocalMesh
         public string? Executable { get; set; }
     }
 
-    public sealed record StartOptions(int Workers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false);
+    /// <param name="Workers">Workers to start with.</param>
+    /// <param name="MinWorkers">Autoscaling floor; equal to <paramref name="Workers"/> for a fixed mesh.</param>
+    /// <param name="MaxWorkers">Autoscaling ceiling; equal to <paramref name="Workers"/> for a fixed mesh.</param>
+    public sealed record StartOptions(int Workers, int MinWorkers, int MaxWorkers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false);
 
     public static void Start(Context ctx, NebulaProject project, StartOptions o)
     {
@@ -42,13 +45,16 @@ public static class LocalMesh
         if (o.ResetPersistence) Ui.Warn("--reset-persistence: every saved entity is deleted when the orchestrator starts");
 
         // --- orchestrator (launches the gateway and the workers) ----------------------------------------------
-        Ui.Step($"starting the orchestrator with {o.Workers} worker(s) and the game-defined 'npcs' setting at {o.Npcs}");
+        Ui.Step($"starting the orchestrator with {o.Workers} worker(s){(o.MinWorkers == o.MaxWorkers ? " (fixed)" : $", autoscaling between {o.MinWorkers} and {o.MaxWorkers}")} and the game-defined 'npcs' setting at {o.Npcs}");
         var orch = new List<string>
         {
             "-nebula-worker-exe", exe,
             "-nebula-service-manifest", Path.Combine(project.HostBuildDir, ServiceBuild.ManifestName),
             "-nebula-gateway", $"127.0.0.1:{mesh.GatewayPort}",
             "-nebula-workers", o.Workers.ToString(),
+            "-nebula-min-workers", o.MinWorkers.ToString(),
+            "-nebula-max-workers", o.MaxWorkers.ToString(),
+            "-nebula-idle-pool", mesh.IdlePoolSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "-nebula-settings", $"npcs={o.Npcs}",
             "-nebula-dashboard-port", mesh.DashboardPort.ToString(),
             "-nebula-database", database,
@@ -235,7 +241,9 @@ public static class LocalMesh
         while (DateTime.UtcNow < deadline)
         {
             var s = FetchState(dashboardUrl);
-            if (s != null) return s;
+            // The HTTP server answers before the orchestrator has a mesh to describe, and that first snapshot has no
+            // worker list: waiting for it keeps the summary line from printing blanks.
+            if (s != null && s["desiredWorkers"] != null && s["workers"] != null) return s;
             Thread.Sleep(1000);
         }
         return null;
@@ -244,7 +252,8 @@ public static class LocalMesh
     public static string Summary(JsonNode s)
     {
         var t = s["totals"];
-        return $"{t?["liveWorkers"] ?? s["workers"]?.AsArray().Count} live worker(s), {t?["players"] ?? 0} player(s), {t?["bots"] ?? 0} bot(s), {t?["serverDriven"] ?? 0} NPC(s), desired {s["desiredWorkers"]}";
+        object live = (object?)t?["liveWorkers"] ?? s["workers"]?.AsArray().Count ?? 0;
+        return $"{live} live worker(s), {t?["players"] ?? 0} player(s), {t?["bots"] ?? 0} bot(s), {t?["serverDriven"] ?? 0} NPC(s), desired {s["desiredWorkers"] ?? 0}";
     }
 
     /// <summary>Print the dashboard snapshot the way `nebula status` shows it.</summary>
@@ -252,6 +261,13 @@ public static class LocalMesh
     {
         Ui.Info($"host={s["host"]} ready={s["hostReady"]} controlPlane={s["controlPlaneConnected"]}{(s["controlPlaneStorage"] is { } cps && cps.ToString().Length > 0 ? " stored in " + cps : "")} desired={s["desiredWorkers"]}");
         Ui.Info(Summary(s));
+        // Scale to zero: say why there is no worker, and who is waiting for one.
+        var sc = s["scale"];
+        int pendingJoins = sc?["pendingJoins"] is { } pj && int.TryParse(pj.ToString(), out var pjv) ? pjv : 0;
+        if (pendingJoins > 0)
+            Ui.Warn($"world starting: {pendingJoins} client(s) waiting to join (about {s["hostBootSeconds"] ?? 0} s on this host)");
+        else if (sc?["scaleToZero"] is { } z && z.GetValue<bool>())
+            Ui.Info("scale to zero is on: an idle mesh keeps no workers, and the first player waits for one to boot");
         // Older builds have no persistence layer and report no "persistence" object at all.
         if (s["persistence"] is { } p)
             Ui.Info($"persistence mode={p["mode"]} backend={p["backend"]} connected={p["connected"]} entities={p["entities"] ?? 0}");

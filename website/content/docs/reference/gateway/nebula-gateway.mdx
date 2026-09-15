@@ -37,6 +37,14 @@ public string GatewayId { get; }
 public int ClientCount { get; }
 ```
 
+### PendingJoinCount [#pendingjoincount]
+
+```csharp
+public int PendingJoinCount { get; }
+```
+
+Welcomed clients with nowhere to spawn yet: the mesh has no worker holding an active lease, so they are held in [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) rather than rejected. Reported on every control-plane heartbeat; the orchestrator treats it as demand and wakes a mesh that has scaled to zero.
+
 ### WorkerCount [#workercount]
 
 ```csharp

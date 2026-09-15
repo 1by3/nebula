@@ -16,7 +16,7 @@
     <Compile Include="../../Runtime/Transport/**/*.cs" />
     <Compile Include="../../Runtime/Serialization/**/*.cs" />
     <Compile Include="../../Runtime/Core/CommandLine.cs;../../Runtime/Core/NetworkTime.cs;../../Runtime/Core/SyncState.cs;../../Runtime/Core/DatabaseUrl.cs" />
-    <Compile Include="../../Runtime/Containers/ContainerRef.cs" />
+    <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs" />
     <Compile Include="../../Runtime/Persistence/IPersistenceStore.cs;../../Runtime/Persistence/LocalPersistenceStore.cs;../../Runtime/Persistence/PersistedRecordJson.cs;../../Runtime/Persistence/PersistenceHost.cs;../../Runtime/Persistence/RemotePersistenceStore.cs" />
     <Compile Include="../../ThirdParty/LiteNetLib/**/*.cs" />
     <Compile Include="../../World/WorldGrid.cs" />

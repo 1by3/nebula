@@ -19,6 +19,12 @@ namespace Nebula
         Welcome = 2,
         Ping = 3,
         Pong = 4,
+        /// <summary>
+        /// Gateway -> client: how the join is going (<see cref="JoinStatusMsg"/>). Sent once the client is welcomed
+        /// and again whenever the answer changes, so a mesh that has scaled to zero can hold the client in a
+        /// "world starting" state instead of leaving it welcomed with no pawn and no explanation.
+        /// </summary>
+        JoinStatus = 5,
 
         // Entity replication (worker -> gateway -> clients)
         EntitySpawn = 10,
@@ -90,7 +96,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 9;
+        public const ushort ProtocolVersion = 10;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -134,6 +140,38 @@ namespace Nebula
         }
 
         public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg { ClientId = r.ReadUInt(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt() };
+    }
+
+    /// <summary>How far a client's join has got. Reported by the gateway in <see cref="JoinStatusMsg"/>.</summary>
+    public enum JoinState : byte
+    {
+        /// <summary>Not connected, or not welcomed yet.</summary>
+        None = 0,
+        /// <summary>
+        /// Welcomed, but there is nowhere to spawn yet: the mesh has no worker holding an active lease. With
+        /// <see cref="NebulaConfig.MinWorkers"/> at 0 this is the normal first join after an idle period - a worker
+        /// is booting and the gateway places the player as soon as it registers, with no reconnect.
+        /// </summary>
+        Starting = 1,
+        /// <summary>The player has a pawn on a worker.</summary>
+        Joined = 2,
+    }
+
+    /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown).</summary>
+    public struct JoinStatusMsg
+    {
+        public JoinState State;
+        /// <summary>Roughly how long the client should expect to wait, in seconds; 0 when nobody can say.</summary>
+        public ushort EstimatedSeconds;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.JoinStatus);
+            w.WriteByte((byte)State);
+            w.WriteUShort(EstimatedSeconds);
+        }
+
+        public static JoinStatusMsg Read(NetworkReader r) => new JoinStatusMsg { State = (JoinState)r.ReadByte(), EstimatedSeconds = r.ReadUShort() };
     }
 
     public struct PingMsg

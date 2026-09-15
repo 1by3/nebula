@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -35,6 +36,10 @@ namespace Nebula.Editor
             }
             var entries = new List<WorldContainerManifest.Entry>();
             var ids = new HashSet<string>();
+            // Balancing hints are authored on the manifest, not in the cell scenes, so a rebake has to carry them
+            // across by container id or every hint set in the World window would be lost on the next bake.
+            var hints = new Dictionary<string, ContainerHint>(StringComparer.Ordinal);
+            foreach (var e in manifest.Entries) if (e != null && !string.IsNullOrEmpty(e.Id) && !e.Hint.IsDefault) hints[e.Id] = e.Hint;
             foreach (var cell in WorldAssets.CellsSorted(world))
             {
                 report.Cells++;
@@ -43,6 +48,7 @@ namespace Nebula.Editor
                 entries.Add(new WorldContainerManifest.Entry
                 {
                     Id = cellId, Cell = cell.Coord, IsCell = true, Size = world.CellSize, Center = Vector3.zero,
+                    Hint = hints.TryGetValue(cellId, out var cellHint) ? cellHint : ContainerHint.Default,
                 });
 
                 if (string.IsNullOrEmpty(cell.ScenePath) || !File.Exists(cell.ScenePath))
@@ -78,6 +84,7 @@ namespace Nebula.Editor
                                 Id = c.ContainerId, Cell = cell.Coord, IsCell = false,
                                 LocalPosition = local, LocalRotation = t.rotation, LocalScale = t.lossyScale,
                                 Size = c.Size, Center = c.Center,
+                                Hint = hints.TryGetValue(c.ContainerId, out var hint) ? hint : c.Hint,
                             });
                             report.Containers++;
                         }

@@ -56,11 +56,26 @@ Use these `NebulaClient` members to drive your UI:
 | Member | Use it to |
 | --- | --- |
 | `ConnectionState` and `ConnectionStateChanged` | Show `Disconnected`, `Connecting`, `Connected`, or `InGame`. |
+| `Join`, `JoinEstimatedSeconds` and `JoinStateChanged` | Show a "world starting" screen while the mesh boots a worker (see below). |
 | `LocalPlayer` and `LocalPlayerSpawned` | Hide your menu when the player's entity arrives. |
 | `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
 | `WantsConnection` | Tell whether the client is connecting or will retry. |
 | `ConnectsAutomatically` | Hide your menu when the command line already supplied the connection. |
 | `Disconnect()` | Leave the gateway and stop retrying. |
+
+### The "world starting" state
+
+A mesh with [scale to zero](/docs/guides/orchestrator-and-dashboard#scale-to-zero) turned on (`MinWorkers = 0`) keeps no workers while nobody is playing. A client that joins then is welcomed normally, but there is nowhere to spawn it yet, so the gateway holds the join instead of rejecting it: `Join` becomes `JoinState.Starting` and `JoinEstimatedSeconds` is roughly how long a worker takes to boot on that host. When the worker is up the gateway places the player, `Join` becomes `JoinState.Joined` and `LocalPlayer` arrives - all on the same connection, with no reconnect and nothing for your UI to retry.
+
+```csharp
+client.JoinStateChanged += (state, seconds) =>
+{
+    StartingPanel.SetActive(state == JoinState.Starting);
+    StartingLabel.text = seconds > 0 ? $"World starting, about {seconds} s..." : "World starting...";
+};
+```
+
+`NebulaTitleScreen` already does this: it shows "world starting, about 75 s..." in place of "waiting for a pawn...".
 
 `NebulaTitleScreen.TryParse` splits text such as `127.0.0.1:7000` into an address and port. You can use it to validate a single address field.
 

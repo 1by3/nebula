@@ -29,6 +29,9 @@ namespace Nebula
             public bool IsBot;
             public bool Welcomed;
             public ulong PawnNetId;
+            /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
+            public JoinState Join;
+            public ushort JoinEstimate;
             public float NextSpawnAttempt;
             public string SpawnWorkerId = "";
             /// <summary>World-state entries filtered for this client, coalesced across a worker's batches of one tick (see FlushWorldState).</summary>
@@ -105,6 +108,20 @@ namespace Nebula
         public IControlPlane ControlPlane { get; private set; }
         public string GatewayId { get; private set; }
         public int ClientCount => _clientsById.Count;
+        /// <summary>
+        /// Welcomed clients with nowhere to spawn yet: the mesh has no worker holding an active lease, so they are
+        /// held in <see cref="JoinState.Starting"/> rather than rejected. Reported on every control-plane heartbeat;
+        /// the orchestrator treats it as demand and wakes a mesh that has scaled to zero.
+        /// </summary>
+        public int PendingJoinCount
+        {
+            get
+            {
+                int n = 0;
+                foreach (var c in _clientsById.Values) if (c.Welcomed && c.PawnNetId == 0) n++;
+                return n;
+            }
+        }
         public int WorkerCount => _workersById.Count;
         public int EntityCount => _entities.Count;
 
@@ -173,7 +190,7 @@ namespace Nebula
             if (_registered && Time.unscaledTime >= _nextHeartbeat)
             {
                 _nextHeartbeat = Time.unscaledTime + Config.WorkerHeartbeatSeconds;
-                ControlPlane.HeartbeatGateway(GatewayId);
+                ControlPlane.HeartbeatGateway(GatewayId, (uint)PendingJoinCount);
             }
 
             // Players without a pawn get one as soon as a worker is available.
@@ -319,6 +336,7 @@ namespace Nebula
                 if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == netId)
                 {
                     c.PawnNetId = 0;
+                    SendJoinStatus(c, JoinState.Starting);
                     c.NextSpawnAttempt = Time.unscaledTime + 1f; // give the orchestrator a moment to reassign
                 }
             }
@@ -346,6 +364,7 @@ namespace Nebula
             if (msg.OwnerClientId != 0 && _clientsById.TryGetValue(msg.OwnerClientId, out var c))
             {
                 c.PawnNetId = msg.NetId;
+                SendJoinStatus(c, JoinState.Joined);
             }
             _writer.Reset();
             msg.Write(_writer, MsgId.EntitySpawn);
@@ -668,6 +687,7 @@ namespace Nebula
                     rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);
                     _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
                 }
+                SendJoinStatus(c, JoinState.Starting);
                 TryRequestSpawn(c);
                 return;
             }
@@ -711,6 +731,24 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Tell a client how its join is going, when the answer changed. The estimate for a hold is what the
+        /// orchestrator published for this worker host (<see cref="IWorkerHost.TypicalBootSeconds"/>, seeded as the
+        /// <see cref="MeshSettings.BootSeconds"/> mesh setting), so the game can show "world starting, about N s".
+        /// </summary>
+        private void SendJoinStatus(ClientConn c, JoinState state)
+        {
+            ushort estimate = state == JoinState.Starting ? (ushort)Mathf.Clamp(ControlPlane.GetSettingInt(MeshSettings.BootSeconds, 0), 0, ushort.MaxValue) : (ushort)0;
+            if (c.Join == state && c.JoinEstimate == estimate) return;
+            c.Join = state;
+            c.JoinEstimate = estimate;
+            _writer.Reset();
+            new JoinStatusMsg { State = state, EstimatedSeconds = estimate }.Write(_writer);
+            _transport.Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            if (state == JoinState.Starting)
+                NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting for the world to start" + (estimate > 0 ? $" (about {estimate} s)" : ""));
+        }
+
         private void OnClientLost(ClientConn c)
         {
             _clientsByPeer.Remove(c.PeerId);
@@ -733,7 +771,11 @@ namespace Nebula
             CollectSpawnCandidates(ContainerRegistry.Runtime, candidates);
             if (candidates.Count == 0)
             {
-                NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet");
+                // Nothing to spawn into: with MinWorkers at 0 this is the normal first join after an idle period.
+                // The client is held rather than dropped, the orchestrator sees the pending join on the next
+                // heartbeat and boots a worker, and this retry (every 3 s) places the player with no reconnect.
+                SendJoinStatus(c, JoinState.Starting);
+                NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet; holding the join (world starting)");
                 return;
             }
             #if NEBULA_SERVICE

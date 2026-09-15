@@ -1,4 +1,4 @@
 {
   "title": "Containers",
-  "pages": ["container", "container-ref", "container-registry", "dynamic-container", "nebula-container-helpers"]
+  "pages": ["container", "container-hint", "container-ref", "container-registry", "dynamic-container", "nebula-container-helpers"]
 }

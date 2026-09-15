@@ -63,6 +63,22 @@ public Vector3 BoundsCenter;
 public Vector3 BoundsSize;
 ```
 
+### HasHint [#hashint]
+
+```csharp
+public bool HasHint;
+```
+
+A balancing hint was set for this container while the mesh runs ([`IControlPlane.SetContainerHint`](/docs/reference/control-plane/i-control-plane#setcontainerhint)). It travels beside the lease and is stored with it, so an orchestrator that restarts sees it again; when false the baked hint ([`Container.Hint`](/docs/reference/containers/container#hint)) stands.
+
+### Hint [#hint]
+
+```csharp
+public ContainerHint Hint = ContainerHint.Default;
+```
+
+The runtime hint, when [`HasHint`](#hashint).
+
 ## Properties
 
 ### Bounds [#bounds]

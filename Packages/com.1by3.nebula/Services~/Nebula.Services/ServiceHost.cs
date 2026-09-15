@@ -126,6 +126,10 @@ namespace Nebula
             c.MeshToken = CommandLine.Get("nebula-token", Environment.GetEnvironmentVariable("NEBULA_MESH_TOKEN") is { Length: > 0 } token ? token : c.MeshToken);
             c.DatabaseUrl = CommandLine.Get("nebula-database", Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL") is { Length: > 0 } db ? db : c.DatabaseUrl);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);
+            c.MinWorkers = CommandLine.GetInt("nebula-min-workers", c.MinWorkers);
+            c.MaxWorkers = CommandLine.GetInt("nebula-max-workers", c.MaxWorkers);
+            c.AutoScale = CommandLine.GetBool("nebula-autoscale", c.AutoScale);
+            c.IdlePoolSeconds = CommandLine.GetFloat("nebula-idle-pool", c.IdlePoolSeconds);
             c.WorkerExecutable = CommandLine.Get("nebula-worker-exe", c.WorkerExecutable);
             c.WorkerHost = CommandLine.Get("nebula-host", c.WorkerHost);
             c.BuildArtifactDir = CommandLine.Get("nebula-build-dir", c.BuildArtifactDir);
@@ -144,6 +148,8 @@ namespace Nebula
             }
             if (c.WorkerCount < 0 || c.MaxWorkers < 1 || c.MaxWorkers > NebulaOrchestrator.MaxWorkersLimit || c.WorkerBasePort + c.MaxWorkers > ushort.MaxValue)
                 throw new ArgumentException("Invalid worker count or worker port range in service configuration");
+            if (c.MinWorkers < 0 || c.MinWorkers > c.MaxWorkers)
+                throw new ArgumentException("MinWorkers must be between 0 and MaxWorkers");
         }
         private static ushort Port(string key, ushort fallback, bool allowZero)
         {

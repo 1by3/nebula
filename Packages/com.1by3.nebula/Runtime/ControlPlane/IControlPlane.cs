@@ -60,6 +60,14 @@ namespace Nebula
         public Vector3 BoundsSize;
         /// <summary>The row's box, when <see cref="HasBounds"/>.</summary>
         public Bounds Bounds => new Bounds(BoundsCenter, BoundsSize);
+        /// <summary>
+        /// A balancing hint was set for this container while the mesh runs (<see cref="IControlPlane.SetContainerHint"/>).
+        /// It travels beside the lease and is stored with it, so an orchestrator that restarts sees it again; when
+        /// false the baked hint (<see cref="Container.Hint"/>) stands.
+        /// </summary>
+        public bool HasHint;
+        /// <summary>The runtime hint, when <see cref="HasHint"/>.</summary>
+        public ContainerHint Hint = ContainerHint.Default;
     }
 
     /// <summary>Describes a gateway registered with the control plane.</summary>
@@ -69,6 +77,12 @@ namespace Nebula
         public string Address;
         public ushort Port;
         public DateTime LastHeartbeat;
+        /// <summary>
+        /// Clients welcomed by this gateway that are still waiting for somewhere to spawn
+        /// (<see cref="JoinState.Starting"/>). The orchestrator reads it as demand: a pending join at zero workers
+        /// wakes the mesh at once, and no scale-in goes below one worker while it is non-zero.
+        /// </summary>
+        public uint PendingJoins;
     }
 
     /// <summary>Provides the states used by a container lease.</summary>
@@ -86,6 +100,20 @@ namespace Nebula
 
         /// <summary>The lease names a worker that currently simulates the container.</summary>
         public static bool IsOwning(string state) => state == Active || state == Draining || state == Pinned;
+    }
+
+    /// <summary>
+    /// Mesh-wide settings Nebula itself writes, in the same key/value channel the game uses
+    /// (<see cref="IControlPlane.Settings"/>). The <c>nebula.</c> prefix is reserved for them.
+    /// </summary>
+    public static class MeshSettings
+    {
+        /// <summary>
+        /// Roughly how long this mesh's worker host takes to boot a worker, in seconds
+        /// (<see cref="IWorkerHost.TypicalBootSeconds"/>). Seeded by the orchestrator; read by the gateway, which
+        /// passes it to a client it is holding in <see cref="JoinState.Starting"/> so the game can say how long.
+        /// </summary>
+        public const string BootSeconds = "nebula.bootSeconds";
     }
 
     /// <summary>Provides the lifecycle states reported by a worker.</summary>
@@ -130,7 +158,8 @@ namespace Nebula
         void UnregisterWorker(string workerId);
 
         void RegisterGateway(string gatewayId, string address, ushort port);
-        void HeartbeatGateway(string gatewayId);
+        /// <param name="pendingJoins">Welcomed clients with nowhere to spawn yet (<see cref="GatewayInfo.PendingJoins"/>).</param>
+        void HeartbeatGateway(string gatewayId, uint pendingJoins);
         void UnregisterGateway(string gatewayId);
 
         void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
@@ -160,6 +189,13 @@ namespace Nebula
         /// </summary>
         void PinContainer(string containerId, string workerId);
         void SetLeaseState(string containerId, string state);
+        /// <summary>
+        /// Attach a balancing hint to a container, creating the lease row if it does not exist yet: the game (or the
+        /// dashboard) telling the planner something it cannot measure while the mesh runs. The row outlives an
+        /// orchestrator restart, and the value wins over whatever was baked. Setting <see cref="ContainerHint.Default"/>
+        /// clears the runtime hint and lets the baked one stand again.
+        /// </summary>
+        void SetContainerHint(string containerId, in ContainerHint hint);
         void ReleaseContainer(string containerId);
         /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>
         void RemoveContainer(string containerId);

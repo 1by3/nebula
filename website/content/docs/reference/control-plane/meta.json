@@ -1,4 +1,4 @@
 {
   "title": "Control plane",
-  "pages": ["control-plane-extensions", "control-plane-host", "control-plane-json", "file-control-plane-storage", "gateway-info", "i-control-plane", "i-control-plane-storage", "lease-info", "lease-state", "local-control-plane", "memory-control-plane-storage", "remote-control-plane", "worker-info", "worker-stats", "worker-status"]
+  "pages": ["control-plane-extensions", "control-plane-host", "control-plane-json", "file-control-plane-storage", "gateway-info", "i-control-plane", "i-control-plane-storage", "lease-info", "lease-state", "local-control-plane", "memory-control-plane-storage", "mesh-settings", "remote-control-plane", "worker-info", "worker-stats", "worker-status"]
 }

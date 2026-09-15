@@ -45,6 +45,14 @@ public uint ClientId;
 
 For ClientRpc: 0 = every client, otherwise only that client. For ServerRpc: the sending client (filled by the gateway).
 
+### Radius [#radius]
+
+```csharp
+public float Radius;
+```
+
+For a ClientRpc broadcast: deliver only to clients whose pawn is within this many metres of the entity (0 = everyone). See ClientRpcAttribute.Radius.
+
 ### Args [#args]
 
 ```csharp

@@ -193,6 +193,16 @@ MonoBehaviour:
   UseLocalControlPlane: 0
   DatabaseUrl: 
   WorkerCount: 4
+  MaxWorkers: 32
+  AutoScale: 1
+  MinWorkers: 1
+  ScaleOutUtilization: 0.7
+  ScaleInUtilization: 0.3
+  ScaleHoldSeconds: 30
+  ScaleWindowSeconds: 20
+  ScaleMinGain: 0.1
+  SeamGraceMeters: 10
+  IdlePoolSeconds: 0
   WorkerExecutable:
   WorkerHost: process
   BuildArtifactDir:

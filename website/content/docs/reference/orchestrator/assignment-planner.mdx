@@ -1,0 +1,49 @@
+---
+title: "AssignmentPlanner"
+description: "Runs an IAssignmentPolicy as a dry run against a hypothetical worker count."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPlanner.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPlanner.cs)</div>
+
+```csharp
+public static class AssignmentPlanner
+```
+
+Runs an [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy) as a dry run against a hypothetical worker count. Unity's Mono has no default interface methods, so this is an extension rather than a member of [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy): every policy a game already wrote gains `Predict` without changing.
+
+## Fields
+
+### SyntheticPrefix [#syntheticprefix]
+
+```csharp
+public const string SyntheticPrefix = "sim-";
+```
+
+Prefix of the made-up worker ids a dry run deals to. They never reach the control plane.
+
+## Methods
+
+### SyntheticWorker [#syntheticworker]
+
+```csharp
+public static string SyntheticWorker(int index);
+```
+
+The id of the nth synthetic worker of a dry run.
+
+### Predict [#predict]
+
+```csharp
+public static AssignmentPlan Predict(this IAssignmentPolicy policy, AssignmentInput input, int workerCount);
+```
+
+Deal `input`'s containers across `workerCount` empty workers and add up what each would carry. The dry run has no leases, so every container is an orphan the policy must place; the result is the layout the policy would converge on with that many workers, not the cost of getting there. Per-container load comes from [`AssignmentInput.Utilization`](/docs/reference/orchestrator/assignment-input#utilization).
+
+### UtilizationOf [#utilizationof]
+
+```csharp
+public static float UtilizationOf(AssignmentInput input, string containerId);
+```
+
+Attributed utilization of one container as the planner weighs it: what was measured, scaled by [`ContainerHint.CostMultiplier`](/docs/reference/containers/container-hint#costmultiplier). 0 when nothing was reported for it. Every place that adds up predicted load goes through here, so a hinted container is as heavy in a dry run as it is in a deal.
+

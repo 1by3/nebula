@@ -295,9 +295,27 @@ Start the worker with a persistence store: entities carrying a [`PersistentEntit
 
 ```csharp
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds);
+public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint);
 ```
 
 Ask the mesh for a runtime container: a static box, named by an id the game chose, that is not in the baked set (a chunk of a landscape that is decided at runtime). `frameBounds` is the box in this process's frame. The lease row is created already assigned to this worker, so the container is simulated here from the first change anyone sees; if another worker asked first, its row stands and this call is a no-op. Every process registers the container from the row ([`ContainerRegistry.SyncRuntime`](/docs/reference/containers/container-registry#syncruntime)), and [`ContainerRegistry.RuntimeRegistered`](/docs/reference/containers/container-registry#runtimeregistered) fires here once it has. Idempotent: call it every time an entity approaches the box.
+
+This overload says nothing about the hint, so it never touches one: a hint set from the dashboard or by the three-argument overload survives every later approach. Use that overload to change it.
+
+### ShouldWriteHint [#shouldwritehint]
+
+```csharp
+public static bool ShouldWriteHint(bool explicitHint, bool rowHasHint, in ContainerHint rowHint, in ContainerHint wanted);
+```
+
+Should this approach write the hint row? Only a caller that actually named a hint may, and only when what the row says differs from what was asked for - the call is made every time an entity comes near the box, and a write per tick would be a control-plane write per tick. A caller that named none leaves the row alone whatever is in it, so the dashboard's hint (or an earlier explicit one) is not erased by the next approach. Pure function.
+
+| Parameter | Description |
+| --- | --- |
+| `explicitHint` | The caller passed a hint (the three-argument overload), rather than defaulting. |
+| `rowHasHint` | The lease row carries a hint today. |
+| `rowHint` | What the row says (ignored when `rowHasHint` is false). |
+| `wanted` | The hint the caller asked for. |
 
 ### RuntimeContainerIdleSeconds [#runtimecontaineridleseconds]
 

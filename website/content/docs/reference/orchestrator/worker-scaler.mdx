@@ -1,0 +1,121 @@
+---
+title: "WorkerScaler"
+description: "Decides when the mesh should gain or lose a worker, by asking the assignment policy what it would do rather than dividing an abstract cost by a worker count."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs)</div>
+
+```csharp
+public sealed class WorkerScaler
+```
+
+Decides when the mesh should gain or lose a worker, by asking the assignment policy what it would do rather than dividing an abstract cost by a worker count. Grow when the busiest worker has been over [`ScaleSettings.ScaleOutUtilization`](/docs/reference/orchestrator/scale-settings#scaleoututilization) for the hold *and* a dry run at N+1 workers actually lowers the predicted peak by [`ScaleSettings.MinGain`](/docs/reference/orchestrator/scale-settings#mingain); shrink when the mesh's mean has been under [`ScaleSettings.ScaleInUtilization`](/docs/reference/orchestrator/scale-settings#scaleinutilization) for the hold *and* a dry run at N-1 keeps everyone under the scale-out line. One change per hold: both clocks reset after a decision.
+
+Pure except for the two hold clocks it keeps: it is fed (utilization, input, policy, settings, now) and returns a decision, so a whole history can be replayed in a unit test.
+
+## Fields
+
+### CanRetire [#canretire]
+
+```csharp
+public Func<string, bool> CanRetire = _ => true;
+```
+
+May this worker be retired? The orchestrator installs a predicate that refuses a worker holding a [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) container, so a reserved hub is never the machine that goes away. Default: anyone may go.
+
+### IsWarm [#iswarm]
+
+```csharp
+public Func<string, bool> IsWarm = _ => true;
+```
+
+Has this worker reported enough heartbeats to be judged? A worker launched moments ago has an empty window and reads as 0 % busy, which would drag the mesh's mean under the scale-in line and make the brand new machine the cheapest one to retire. The orchestrator wires this to [`WorkerLoadTracker.IsWarm`](/docs/reference/orchestrator/worker-load-tracker#iswarm); a cold worker is left out of the peak, the mean and the retiree choice, and holds the shrink branch until its window fills. Default: everyone counts.
+
+## Methods
+
+### IsInFlight [#isinflight]
+
+```csharp
+public static bool IsInFlight(int retiringCount, IEnumerable<MeshMember> managed, int desiredWorkers);
+```
+
+Is a launch or a retirement still landing, making this pass's measurement meaningless? True while anything is draining, or while the number of workers actually in service differs from the count the orchestrator is driving towards. A parked worker is *not* in service: it is in the idle pool, and counting it would leave a parking host permanently "waiting for the mesh to settle" after a shrink. The same `!Retiring && !Parked` rule the launch/retire reconciler uses. Pure function.
+
+### FloorWorkers [#floorworkers]
+
+```csharp
+public static int FloorWorkers(int minWorkers, bool hasDemand);
+```
+
+The fewest workers the mesh may have right now. [`ScaleSettings.MinWorkers`](/docs/reference/orchestrator/scale-settings#minworkers) at 0 (scale to zero) only applies to an idle mesh: the moment a client is connected or a gateway is holding a join, one worker is the floor, so a shrink cannot race the wake-up that the pending join triggers.
+
+### HeldOut [#heldout]
+
+```csharp
+public float HeldOut(double now);
+```
+
+How long the scale-out condition has held, in seconds, or 0.
+
+### HeldIn [#heldin]
+
+```csharp
+public float HeldIn(double now);
+```
+
+How long the scale-in condition has held, in seconds, or 0.
+
+### Reset [#reset]
+
+```csharp
+public void Reset();
+```
+
+Forget both holds (autoscaling was turned off, or the mesh is in flux).
+
+### Evaluate [#evaluate]
+
+```csharp
+public ScaleDecision Evaluate(double now, IReadOnlyDictionary<string, float> utilization, AssignmentInput input, IAssignmentPolicy policy, int desiredWorkers, in ScaleSettings settings, bool inFlight);
+```
+
+One pass.
+
+| Parameter | Description |
+| --- | --- |
+| `now` | Seconds on a monotonic clock. |
+| `utilization` | p90 utilization per eligible worker ([`WorkerLoadTracker.CopyUtilization`](/docs/reference/orchestrator/worker-load-tracker#copyutilization)). |
+| `input` | The same input the policy is about to run against, with [`AssignmentInput.Utilization`](/docs/reference/orchestrator/assignment-input#utilization) filled in. |
+| `policy` | The policy in force; it is run as a dry run, never applied. |
+| `desiredWorkers` | The count the orchestrator is currently driving towards. |
+| `settings` | The lines and limits. |
+| `inFlight` | A launch or a retirement is still happening; hold everything until it settles. |
+
+## Nested types
+
+### MeshMember [#meshmember]
+
+```csharp
+public struct MeshMember
+```
+
+One managed worker as the settle check sees it ([`IsInFlight`](#isinflight)).
+
+#### Fields
+
+##### Retiring [#retiring]
+
+```csharp
+public bool Retiring;
+```
+
+Draining its containers on the way out.
+
+##### Parked [#parked]
+
+```csharp
+public bool Parked;
+```
+
+In the host's idle pool: still in the managed list, but not one of the workers the mesh is running.
+

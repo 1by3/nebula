@@ -38,6 +38,14 @@ Box size in local space, centred on Center.
 public Vector3 Center = new Vector3(0f, 5f, 0f);
 ```
 
+### Hint [#hint]
+
+```csharp
+public ContainerHint Hint = ContainerHint.Default;
+```
+
+What the game tells the planner about this container ([`ContainerHint`](/docs/reference/containers/container-hint)): the baked value, from the world manifest or the scene. The orchestrator prefers the control-plane row when one was set while the mesh runs ([`IControlPlane.SetContainerHint`](/docs/reference/control-plane/i-control-plane#setcontainerhint)).
+
 ## Properties
 
 ### Index [#index]

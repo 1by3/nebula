@@ -216,6 +216,15 @@ public class StorageAndHostTests
             var rt = remote.Leases.First(l => l.ContainerId == "rt_7");
             Assert.That(rt.HasBounds && rt.BoundsCenter.x == 10 && rt.BoundsSize.y == 4 && rt.WorkerId == "w1" && rt.Epoch == 1, Is.True);
             Assert.That(remote.Settings["npcs"], Is.EqualTo("12"));
+
+            // A balancing hint set through the mirror lands on the lease row and comes back to every subscriber.
+            remote.SetContainerHint("rt_7", new ContainerHint { CostMultiplier = 2.5f, AffinityGroup = "raid", SeamCost = 0.5f, Dedicated = true });
+            WaitUntil(() => remote.Leases.First(l => l.ContainerId == "rt_7").HasHint, Pump);
+            var hinted = remote.Leases.First(l => l.ContainerId == "rt_7");
+            Assert.That(hinted.Hint.EffectiveMultiplier, Is.EqualTo(2.5f));
+            Assert.That(hinted.Hint.Group, Is.EqualTo("raid"));
+            Assert.That(hinted.Hint.Dedicated, Is.True);
+            Assert.That(host.FindLease("rt_7").Hint, Is.EqualTo(hinted.Hint), "the host is the source of truth the mirror agrees with");
             Assert.That(Math.Abs((remote.Now - host.Now).TotalSeconds), Is.LessThan(2));
             Assert.That(remote.PendingWrites, Is.Zero);
 

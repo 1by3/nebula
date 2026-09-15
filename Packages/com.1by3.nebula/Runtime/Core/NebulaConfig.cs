@@ -43,22 +43,34 @@ namespace Nebula
         public string DatabaseUrl = "";
 
         [Header("Orchestrator")]
-        [Tooltip("How many worker processes the orchestrator keeps running.")]
+        [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]
         public int WorkerCount = 4;
         [Tooltip("The most workers the orchestrator will ever run (dashboard and autoscale stop here). Worker indices are 16-bit, so up to 65535.")]
         public int MaxWorkers = 32;
-        [Tooltip("How containers are dealt to workers: 'auto' (baked while every container is baked, cost once runtime containers exist), 'baked' (evenly by count, sticky), 'cost' (by reported load along a space-filling curve). -nebula-assignment overrides.")]
+        [Tooltip("How containers are dealt to workers: 'auto' (the cost policy: by reported load along a space-filling curve), 'baked' (the opt-out: evenly by count, sticky), 'cost' (the same as auto, named explicitly). -nebula-assignment overrides.")]
         public string AssignmentPolicy = "auto";
         [Tooltip("Cost policy: how far above the average a worker's cost may be before containers are re-dealt (0.3 = 30 %).")]
         public float CostRebalanceThreshold = 0.3f;
         [Tooltip("Cost policy: what one player / bot / server-driven entity / other entity costs, and what a leased container costs by itself.")]
         public CostWeights CostWeights = CostWeights.Default;
-        [Tooltip("Cost policy: add a worker when the average cost per worker stays above ScaleOutCostPerWorker for ScaleHoldSeconds, remove one when it stays below ScaleInCostPerWorker. Off by default.")]
-        public bool AutoScale = false;
+        [Tooltip("Keep the worker count between MinWorkers and MaxWorkers from how busy the workers are: add one when the busiest worker's tick time stays over ScaleOutUtilization of the tick budget, remove one when the mesh's mean stays under ScaleInUtilization. Every change is checked against a dry run of the assignment policy first.")]
+        public bool AutoScale = true;
+        [Tooltip("The fewest workers autoscaling will leave running. 0 allows scaling to zero (the first player then waits for a worker to boot).")]
         public int MinWorkers = 1;
-        public float ScaleOutCostPerWorker = 200f;
-        public float ScaleInCostPerWorker = 50f;
+        [Tooltip("Grow when the busiest worker spends more than this fraction of its tick budget simulating (0.7 = 11.7 ms of a 16.7 ms tick), for ScaleHoldSeconds.")]
+        public float ScaleOutUtilization = 0.7f;
+        [Tooltip("Shrink when the mesh's mean utilization stays under this fraction of the tick budget for ScaleHoldSeconds and the survivors would stay under ScaleOutUtilization.")]
+        public float ScaleInUtilization = 0.3f;
+        [Tooltip("How long a condition must hold before a worker is added or retired. Only one change happens per hold.")]
         public float ScaleHoldSeconds = 30f;
+        [Tooltip("Length of the rolling per-worker tick-time window whose 90th percentile is the scaling signal.")]
+        public float ScaleWindowSeconds = 20f;
+        [Tooltip("The smallest predicted drop in the busiest worker's utilization that makes another worker (or a re-deal) worth it. Below this the orchestrator reports the hot container as unsplittable instead of growing.")]
+        public float ScaleMinGain = 0.1f;
+        [Tooltip("How long a retired worker is kept in the idle pool, ready to be taken back without a boot, on a host where that is cheaper than recreating it (a cloud VM). 0 = the host's own answer: Hetzner keeps it for the rest of the hour it has already been billed, a local process is killed at once.")]
+        public float IdlePoolSeconds = 0f;
+        [Tooltip("Cost policy: a container with a player within this many metres of a seam that would move is left alone for a pass (see ContainerHint, phase 3).")]
+        public float SeamGraceMeters = 10f;
         [Tooltip("Unity executable used to spawn workers. nebula start supplies this path to the standalone orchestrator with -nebula-worker-exe.")]
         public string WorkerExecutable = "";
         [Tooltip("Where workers run: 'process' (child processes of the orchestrator) or 'hetzner' (one cloud VM per worker). -nebula-host overrides.")]

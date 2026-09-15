@@ -53,6 +53,22 @@ public IReadOnlyDictionary<string, ContainerLoad> Occupancy = new Dictionary<str
 
 The latest per-container load each worker reported, by container id. Containers nobody reported are absent.
 
+### Utilization [#utilization]
+
+```csharp
+public IReadOnlyDictionary<string, float> Utilization = new Dictionary<string, float>();
+```
+
+How much of a worker's tick budget each container is costing, by container id: its worker's p90 utilization spread over the containers it leases in proportion to their cost-weighted occupancy ([`WorkerLoadTracker.Attribute`](/docs/reference/orchestrator/worker-load-tracker#attribute)). 0.4 means "four tenths of a tick". Containers nobody reported are absent. This is what the scaler's dry runs add up.
+
+### Hints [#hints]
+
+```csharp
+public IReadOnlyDictionary<string, ContainerHint> Hints = new Dictionary<string, ContainerHint>();
+```
+
+What the game says about each container beyond what the mesh can measure, by container id ([`ContainerHint`](/docs/reference/containers/container-hint)). The orchestrator merges the baked hints with the ones set while the mesh runs, the runtime value winning. Containers nobody hinted are absent, which reads as [`ContainerHint.Default`](/docs/reference/containers/container-hint#default).
+
 ### KeepOrder [#keeporder]
 
 ```csharp
@@ -62,6 +78,14 @@ public bool KeepOrder;
 The baked order is spatial (a partitioned world) and should be kept when dealing.
 
 ## Methods
+
+### HintOf [#hintof]
+
+```csharp
+public ContainerHint HintOf(string containerId);
+```
+
+The hint for a container, or [`ContainerHint.Default`](/docs/reference/containers/container-hint#default) when nothing was said about it.
 
 ### OwnerOf [#ownerof]
 

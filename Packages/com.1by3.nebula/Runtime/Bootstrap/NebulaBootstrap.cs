@@ -322,6 +322,10 @@ namespace Nebula
             cfg.MeshToken = CommandLine.Get("nebula-token", cfg.MeshToken);
             cfg.DatabaseUrl = CommandLine.Get("nebula-database", cfg.DatabaseUrl);
             cfg.WorkerCount = CommandLine.GetInt("nebula-workers", cfg.WorkerCount);
+            cfg.MinWorkers = CommandLine.GetInt("nebula-min-workers", cfg.MinWorkers);
+            cfg.MaxWorkers = CommandLine.GetInt("nebula-max-workers", cfg.MaxWorkers);
+            cfg.AutoScale = CommandLine.GetBool("nebula-autoscale", cfg.AutoScale);
+            cfg.IdlePoolSeconds = CommandLine.GetFloat("nebula-idle-pool", cfg.IdlePoolSeconds);
             cfg.WorkerExecutable = CommandLine.Get("nebula-worker-exe", cfg.WorkerExecutable);
             cfg.WorkerHost = CommandLine.Get("nebula-host", cfg.WorkerHost);
             cfg.BuildArtifactDir = CommandLine.Get("nebula-build-dir", cfg.BuildArtifactDir);

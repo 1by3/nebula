@@ -31,6 +31,8 @@ namespace Nebula
             public Vector3 LocalScale = Vector3.one;
             public Vector3 Size;
             public Vector3 Center;
+            [Tooltip("What the planner should know about this container beyond what it can measure (Nebula > World, Balancing hints).")]
+            public ContainerHint Hint = ContainerHint.Default;
         }
 
         public WorldDefinition World;

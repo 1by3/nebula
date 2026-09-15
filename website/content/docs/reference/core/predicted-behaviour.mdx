@@ -15,6 +15,16 @@ A server-authoritative, client-predicted behaviour (the player controller, typic
 - On the authoritative worker, [`Simulate`](#simulate) runs with the input for that tick. When the entity crosses to another worker the buffered inputs travel with it, so the input stream never breaks.
 - The worker reports its post-simulation state to the owner; if the client's prediction for that tick disagrees by more than [`CorrectionThreshold`](#correctionthreshold), the client rewinds and replays.
 
+## Fields
+
+### LogCorrections [#logcorrections]
+
+```csharp
+public static bool LogCorrections;
+```
+
+Diagnostics: log every correction with the server and predicted positions (owning client).
+
 ## Properties
 
 ### LastInput [#lastinput]

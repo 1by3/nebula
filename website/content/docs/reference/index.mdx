@@ -47,6 +47,7 @@ Define container volumes and look up their current worker assignments.
 | Type | Summary |
 | --- | --- |
 | [Container](/docs/reference/containers/container) | Class. Defines a box-shaped authority area with its own local coordinate space. |
+| [ContainerHint](/docs/reference/containers/container-hint) | Struct. What the game knows about a container that the orchestrator cannot measure: how expensive it really is, what it belongs with, how much a worker boundary beside it hurts, and whether it wants a machine to itself. |
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
@@ -104,6 +105,8 @@ Start and stop workers, assign containers, and serve the dashboard.
 | Type | Summary |
 | --- | --- |
 | [AssignmentInput](/docs/reference/orchestrator/assignment-input) | Class. Everything an assignment policy may look at. |
+| [AssignmentPlan](/docs/reference/orchestrator/assignment-plan) | Class. What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them. |
+| [AssignmentPlanner](/docs/reference/orchestrator/assignment-planner) | Static class. Runs an IAssignmentPolicy as a dry run against a hypothetical worker count. |
 | [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
 | [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
@@ -120,8 +123,14 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
 | [PersistenceEditor](/docs/reference/orchestrator/persistence-editor) | Class. Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence). |
 | [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs each worker as a child Unity process using the configured worker executable. |
+| [ScaleAction](/docs/reference/orchestrator/scale-action) | Enum. What the scaler decided this pass. |
+| [ScaleDecision](/docs/reference/orchestrator/scale-decision) | Struct. The scaler's answer, and everything the dashboard needs to explain it. |
+| [ScaleSettings](/docs/reference/orchestrator/scale-settings) | Struct. The two lines and the two clocks the scaler works to; a copy of the matching NebulaConfig fields. |
 | [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum. Lists the supported worker handle state values. |
+| [WorkerHostBase](/docs/reference/orchestrator/worker-host-base) | Abstract class. Base class for hosts that do not park: Park kills, Unpark fails, and the orchestrator never parks into them. |
 | [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |
+| [WorkerLoadTracker](/docs/reference/orchestrator/worker-load-tracker) | Class. How busy each worker is, as a fraction of its tick budget: WorkerInfo.TickMs / tickPeriodMs, sampled from every heartbeat and kept for a short window (NebulaConfig.ScaleWindowSeconds). |
+| [WorkerScaler](/docs/reference/orchestrator/worker-scaler) | Class. Decides when the mesh should gain or lose a worker, by asking the assignment policy what it would do rather than dividing an abstract cost by a worker count. |
 
 ## Control plane
 
@@ -140,6 +149,7 @@ Register processes and share container assignments and settings through the cont
 | [LeaseState](/docs/reference/control-plane/lease-state) | Static class. Provides the states used by a container lease. |
 | [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. |
 | [MemoryControlPlaneStorage](/docs/reference/control-plane/memory-control-plane-storage) | Class. Keeps nothing: the control plane starts empty on every orchestrator run. |
+| [MeshSettings](/docs/reference/control-plane/mesh-settings) | Static class. Mesh-wide settings Nebula itself writes, in the same key/value channel the game uses (IControlPlane.Settings). |
 | [RemoteControlPlane](/docs/reference/control-plane/remote-control-plane) | Class. IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
@@ -196,6 +206,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
+| [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
+| [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown). |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |

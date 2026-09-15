@@ -91,6 +91,14 @@ void Poll(Action<TransportEvent> handler);
 
 Drain the socket and deliver every pending event to `handler`.
 
+### Flush [#flush]
+
+```csharp
+void Flush();
+```
+
+Push everything queued by [`Send`](#send) onto the wire now instead of at the transport's next internal update. Call once per tick after the last Send, so a packet never waits for the sender's timer.
+
 ### Stop [#stop]
 
 ```csharp

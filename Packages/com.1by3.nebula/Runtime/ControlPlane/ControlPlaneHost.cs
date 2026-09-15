@@ -144,7 +144,7 @@ namespace Nebula
         public void HeartbeatWorker(string workerId, string status, in WorkerStats stats) => _plane.HeartbeatWorker(workerId, status, stats);
         public void UnregisterWorker(string workerId) => _plane.UnregisterWorker(workerId);
         public void RegisterGateway(string gatewayId, string address, ushort port) => _plane.RegisterGateway(gatewayId, address, port);
-        public void HeartbeatGateway(string gatewayId) => _plane.HeartbeatGateway(gatewayId);
+        public void HeartbeatGateway(string gatewayId, uint pendingJoins) => _plane.HeartbeatGateway(gatewayId, pendingJoins);
         public void UnregisterGateway(string gatewayId) => _plane.UnregisterGateway(gatewayId);
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) => _plane.HeartbeatOrchestrator(orchestratorId, desiredWorkers);
         public void SetSetting(string key, string value) => _plane.SetSetting(key, value);
@@ -154,6 +154,7 @@ namespace Nebula
         public void AssignContainer(string containerId, string workerId) => _plane.AssignContainer(containerId, workerId);
         public void PinContainer(string containerId, string workerId) => _plane.PinContainer(containerId, workerId);
         public void SetLeaseState(string containerId, string state) => _plane.SetLeaseState(containerId, state);
+        public void SetContainerHint(string containerId, in ContainerHint hint) => _plane.SetContainerHint(containerId, hint);
         public void ReleaseContainer(string containerId) => _plane.ReleaseContainer(containerId);
         public void RemoveContainer(string containerId) => _plane.RemoveContainer(containerId);
         public void ResetControlPlane() => _plane.ResetControlPlane();

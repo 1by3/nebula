@@ -1,0 +1,21 @@
+---
+title: "ScaleAction"
+description: "What the scaler decided this pass."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/WorkerScaler.cs)</div>
+
+```csharp
+public enum ScaleAction
+```
+
+What the scaler decided this pass.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` |  | Nothing to do, or a condition is still being held. |
+| `Grow` |  | Add one worker. |
+| `Shrink` |  | Retire one worker ([`ScaleDecision.RetireWorkerId`](/docs/reference/orchestrator/scale-decision#retireworkerid)). |
+

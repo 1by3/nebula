@@ -1,0 +1,43 @@
+---
+title: "JoinStatusMsg"
+description: "Gateway -> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct JoinStatusMsg
+```
+
+Gateway -\> client: the join's state and, while [`JoinState.Starting`](/docs/reference/protocol/join-state#starting), a rough wait in seconds (0 = unknown).
+
+## Fields
+
+### State [#state]
+
+```csharp
+public JoinState State;
+```
+
+### EstimatedSeconds [#estimatedseconds]
+
+```csharp
+public ushort EstimatedSeconds;
+```
+
+Roughly how long the client should expect to wait, in seconds; 0 when nobody can say.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static JoinStatusMsg Read(NetworkReader r);
+```
+
