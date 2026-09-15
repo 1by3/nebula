@@ -36,6 +36,12 @@ public sealed class ProjectFile
         /// <summary>Where the deployed orchestrator keeps the control plane and saved entities: postgres://... or sqlite:&lt;file on the VM&gt;. Null = the CLI config (`nebula config database`), else SQLite on the orchestrator VM.</summary>
         public string? Database { get; set; }
         public int Workers { get; set; } = 4;
+        /// <summary>The fewest worker VMs autoscaling leaves running. Null = a fixed mesh of <see cref="Workers"/>; 0 allows scaling to zero.</summary>
+        public int? MinWorkers { get; set; }
+        /// <summary>The most worker VMs the orchestrator may run. Null = a fixed mesh of <see cref="Workers"/>.</summary>
+        public int? MaxWorkers { get; set; }
+        /// <summary>How long a retired worker VM stays in the idle pool. 0 = keep it for the hour Hetzner bills.</summary>
+        public double IdlePoolSeconds { get; set; } = 0;
         public int Npcs { get; set; } = 0;
         public string? WorkerType { get; set; }
         public string? OrchestratorType { get; set; }

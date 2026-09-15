@@ -46,7 +46,8 @@ nebula stop
 nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, persistence, recent events
 nebula logs [role] [-n N] [--follow] [--cloud]
 nebula config hetzner|database|unity|source|show
-nebula deploy [--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]
+nebula deploy [--target hetzner] [--workers N] [--min N] [--max N] [--npcs N] [--open-ui] [--reset-persistence]
+                             same --workers/--min/--max semantics as `nebula start`; defaults from nebula.json deploy.*
 nebula destroy [--all]
 ```
 
@@ -80,7 +81,8 @@ Per-project settings that travel with the project:
   "mesh":   { "workers": 4, "npcs": 0, "dashboardPort": 7080, "gatewayPort": 7000,
               "database": "sqlite:Library/Nebula/nebula.db" },
   "deploy": { "target": "hetzner", "meshName": "nebula-mygame", "database": "postgres://user:pw@host/db",
-              "persistenceDatabase": "nebula-mygame-persist", "workers": 4, "npcs": 0 }
+              "persistenceDatabase": "nebula-mygame-persist", "workers": 4, "minWorkers": 1, "maxWorkers": 8,
+              "idlePoolSeconds": 0, "npcs": 0 }
 }
 ```
 

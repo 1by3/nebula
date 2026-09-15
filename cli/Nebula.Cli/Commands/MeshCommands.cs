@@ -26,8 +26,7 @@ stay across restarts unless you pass --reset-persistence.
     {
         new OptionSpec("build", false, "build first (nebula build)"),
         new OptionSpec("workers", true, "worker processes to start with; on its own it fixes the count (min = max = N). Default from nebula.json, 4", "N"),
-        new OptionSpec("min", true, "autoscaling floor; the mesh starts here when --workers is not given, and 0 allows scaling to zero (default: --workers)", "N"),
-        new OptionSpec("max", true, "autoscaling ceiling; autoscaling grows into the band from --min (default: --workers)", "N"),
+        WorkerBand.MinOption, WorkerBand.MaxOption,
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
@@ -41,20 +40,35 @@ stay across restarts unless you pass --reset-persistence.
         if (args.Has("build"))
             UnityBuild.Build(ctx, project, new UnityBuild.Options(BuildTarget.Host, StopMesh: true));
         var mesh = project.File.Mesh;
+        var band = WorkerBand.Resolve(args, mesh.Workers, mesh.MinWorkers, mesh.MaxWorkers);
+        LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
+            band.Start, band.Min, band.Max, args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
+            args.Has("open-ui"), args.Has("reset-persistence")));
+        return 0;
+    }
+}
+
+/// <summary>The worker range `nebula start` and `nebula deploy` share: --workers N alone fixes the count, --min/--max open the band.</summary>
+public readonly record struct WorkerBand(int Start, int Min, int Max)
+{
+    public static readonly OptionSpec MinOption = new("min", true, "autoscaling floor; the mesh starts here when --workers is not given, and 0 allows scaling to zero (default: --workers)", "N");
+    public static readonly OptionSpec MaxOption = new("max", true, "autoscaling ceiling; autoscaling grows into the band from --min (default: --workers)", "N");
+
+    public static WorkerBand Resolve(ParsedArgs args, int defaultWorkers, int? defaultMin, int? defaultMax)
+    {
         // --workers alone means a fixed mesh (min = max = N), which is what it has always meant; --min/--max open the band.
-        int workers = args.GetInt("workers", mesh.Workers);
-        int min = args.GetInt("min", args.Has("workers") ? workers : mesh.MinWorkers ?? workers);
-        int max = args.GetInt("max", args.Has("workers") ? workers : mesh.MaxWorkers ?? workers);
+        int workers = args.GetInt("workers", defaultWorkers);
+        int min = args.GetInt("min", args.Has("workers") ? workers : defaultMin ?? workers);
+        int max = args.GetInt("max", args.Has("workers") ? workers : defaultMax ?? workers);
         if (min < 0 || max < 1 || min > max) throw new CliError($"invalid worker range {min}..{max}", "0 <= --min <= --max and --max >= 1");
         // A band without an explicit count starts at the floor and lets autoscaling grow into the band; anything else
         // would start a mesh at `--max` and only ever shrink, which is not what `--min 1 --max 4` reads as.
         bool band = args.Has("min") || args.Has("max");
         int start = args.Has("workers") || !band ? Math.Clamp(workers, min, max) : min;
-        LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
-            start, min, max, args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
-            args.Has("open-ui"), args.Has("reset-persistence")));
-        return 0;
+        return new WorkerBand(start, min, max);
     }
+
+    public string Describe() => Min == Max ? $"{Max} worker(s)" : $"{Start} worker(s), autoscaling {Min}..{Max}";
 }
 
 public sealed class StopCommand : Command

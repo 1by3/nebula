@@ -41,7 +41,7 @@ For example, four workers and four containers results in one container per worke
 
 ## Change the worker count
 
-Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. The count stays between `NebulaConfig.MinWorkers` (default 1) and `NebulaConfig.MaxWorkers` (default 32); `nebula start --workers N` fixes both ends at `N`, and `nebula start --min 1 --max 4` opens the band.
+Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or in `nebula.json`. After the mesh starts, use the dashboard or HTTP API to change it. The count stays between `NebulaConfig.MinWorkers` (default 1) and `NebulaConfig.MaxWorkers` (default 32); `nebula start --workers N` fixes both ends at `N`, and `nebula start --min 1 --max 4` opens the band. `nebula deploy` takes the same `--workers`, `--min` and `--max`, defaulting to `deploy.workers`, `deploy.minWorkers` and `deploy.maxWorkers` in `nebula.json`.
 
 ## Autoscale
 

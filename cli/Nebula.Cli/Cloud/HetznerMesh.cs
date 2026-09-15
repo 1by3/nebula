@@ -157,7 +157,7 @@ public sealed class HetznerMesh
 
     /// <param name="Database">Database URL the orchestrator stores the control plane and saved entities in (sqlite:&lt;file on the VM&gt; or postgres://...).</param>
     /// <param name="MeshToken">Shared secret workers and the gateway present to the orchestrator.</param>
-    public sealed record DeployOptions(int Workers, int Npcs, string Database, string MeshToken, bool ResetPersistence, bool SkipUpload, bool Verbose);
+    public sealed record DeployOptions(int Workers, int MinWorkers, int MaxWorkers, double IdlePoolSeconds, int Npcs, string Database, string MeshToken, bool ResetPersistence, bool SkipUpload, bool Verbose);
 
     /// <summary>Ship the tarball and (re)start the orchestrator service. Returns the dashboard URL.</summary>
     public string Deploy(JsonNode orch, string tarball, DeployOptions o)
@@ -195,6 +195,9 @@ public sealed class HetznerMesh
             "-nebula-service-manifest", "/opt/nebula/bin/nebula-services.json",
             "-nebula-host", "hetzner",
             "-nebula-workers", o.Workers.ToString(),
+            "-nebula-min-workers", o.MinWorkers.ToString(),
+            "-nebula-max-workers", o.MaxWorkers.ToString(),
+            "-nebula-idle-pool", o.IdlePoolSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "-nebula-settings", $"npcs={o.Npcs}",
             "-nebula-dashboard-port", DashboardPort.ToString(),
             "-nebula-dashboard-bind", "+",

@@ -68,6 +68,8 @@ The `mesh` section (`dashboardPort` 7080, `gatewayPort` 7000) is shared with the
 nebula deploy --workers 4 --open-ui
 ```
 
+`--workers N` runs a fixed mesh of N worker VMs. `--min N --max M` opens an [autoscaling](/docs/guides/orchestrator-and-dashboard#autoscale) band instead: the orchestrator starts at `--min`, adds VMs while workers are busy and retires idle ones into an idle pool, where a VM stays for the hour Hetzner already billed (`deploy.idlePoolSeconds` in `nebula.json` shortens that). `--min 0` allows scaling to zero. Without any of these flags the mesh uses `deploy.workers`, `deploy.minWorkers` and `deploy.maxWorkers` from `nebula.json`.
+
 `deploy` refuses to run until `nebula config hetzner` has been completed. Then, in order:
 
 1. **Build.** Runs `Nebula.Editor.NebulaBuild.BuildLinuxServerBatch` in batchmode (from a mirrored copy under `~/.nebula-cli/scratch/<project>` if the Editor has the project open) and packs `Builds/nebula-linux.tar.gz`. `--skip-build` reuses the existing tarball.
@@ -131,7 +133,7 @@ The orchestrator VM runs two processes: the orchestrator (dashboard, worker host
 
 ```
 Nebula.x86_64 -batchmode -nographics -nebula-role orchestrator -nebula-host hetzner
-  -nebula-workers 4
+  -nebula-workers 4 -nebula-min-workers 4 -nebula-max-workers 4 -nebula-idle-pool 0
   -nebula-dashboard-port 7080 -nebula-dashboard-bind + -nebula-build-dir /opt/nebula/artifacts
   -nebula-advertise <private ip> -nebula-gateway <public ip>:7000
   -nebula-cloud-mesh nebula -nebula-cloud-location ash -nebula-cloud-type cpx21 -nebula-cloud-image ubuntu-24.04

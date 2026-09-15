@@ -7,11 +7,16 @@ public sealed class DeployCommand : Command
 {
     public override string Name => "deploy";
     public override string Summary => "Build and deploy the mesh to the configured cloud target";
-    public override string Usage => "[--target hetzner] [--workers N] [--npcs N] [--open-ui] [--reset-persistence]";
+    public override string Usage => "[--target hetzner] [--workers N] [--min N] [--max N] [--npcs N] [--open-ui] [--reset-persistence]";
     public override string? Details => @"
 Build the Linux dedicated server at Builds/nebula-linux.tar.gz. Create any missing SSH key, private network,
 firewall, and orchestrator VM. Upload the build and restart the orchestrator service. The orchestrator hosts the
 control plane, creates one VM per worker, and keeps the control plane and every saved entity in its database.
+
+--workers N alone runs a fixed mesh of N VMs. --min/--max open an autoscaling band: the orchestrator starts at
+--min, adds VMs while workers are busy and retires them into an idle pool when they are not (see
+deploy.idlePoolSeconds in nebula.json; the default keeps a retired VM for the hour Hetzner bills). --min 0
+allows scaling to zero; the first player then waits for a VM to boot.
 
 The database is a SQLite file on the orchestrator VM (/opt/nebula/data/nebula.db) unless you point the mesh at a
 PostgreSQL server with `nebula config database`, deploy.database in nebula.json, or NEBULA_DATABASE_URL. Saved
@@ -26,7 +31,8 @@ A deploy target must be configured (`nebula config hetzner`).
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("target", true, "deploy target (default from nebula.json: hetzner)", "name"),
-        new OptionSpec("workers", true, "worker VMs the orchestrator keeps running (default from nebula.json, 4)", "N"),
+        new OptionSpec("workers", true, "worker VMs to start with; on its own it fixes the count (min = max = N). Default from nebula.json, 4", "N"),
+        WorkerBand.MinOption, WorkerBand.MaxOption,
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default from nebula.json)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard once it answers"),
         new OptionSpec("skip-build", false, "use the existing Builds/nebula-linux.tar.gz"),
@@ -34,7 +40,7 @@ A deploy target must be configured (`nebula config hetzner`).
         new OptionSpec("skip-upload", false, "only rewrite the service and restart (no build, no upload)"),
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
     };
-    public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --open-ui", "nebula deploy --skip-build" };
+    public override string[] Examples => new[] { "nebula deploy", "nebula deploy --workers 4 --open-ui", "nebula deploy --min 1 --max 8", "nebula deploy --skip-build" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -50,11 +56,11 @@ A deploy target must be configured (`nebula config hetzner`).
         try { parsed = DatabaseUrl.Parse(database, NebulaProject.DefaultDeployDatabase); }
         catch (ArgumentException e) { throw new CliError(e.Message, "nebula config database"); }
         if (parsed.Scheme is "file" or "memory") throw new CliError($"a deployed orchestrator needs sqlite: or postgres:, not '{parsed.Scheme}:'", "nebula config database");
-        int workers = args.GetInt("workers", project.File.Deploy.Workers);
+        var band = WorkerBand.Resolve(args, project.File.Deploy.Workers, project.File.Deploy.MinWorkers, project.File.Deploy.MaxWorkers);
         int npcs = args.GetInt("npcs", project.File.Deploy.Npcs);
         bool skipUpload = args.Has("skip-upload");
 
-        Ui.Title($"deploying {Path.GetFileName(project.Root)} to Hetzner: {workers} worker(s), database {parsed.Display}");
+        Ui.Title($"deploying {Path.GetFileName(project.Root)} to Hetzner: {band.Describe()}, database {parsed.Display}");
 
         // --- build --------------------------------------------------------------------------------------
         if (!skipUpload && !args.Has("skip-build"))
@@ -67,7 +73,7 @@ A deploy target must be configured (`nebula config hetzner`).
         var orch = mesh.Provision();
         // A fresh shared secret per deployment: it never leaves the VMs and the CLI has no reason to keep it.
         string token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(workers, npcs, database, token, args.Has("reset-persistence"), skipUpload, ctx.Verbose));
+        string url = mesh.Deploy(orch, project.LinuxTarball, new HetznerMesh.DeployOptions(band.Start, band.Min, band.Max, project.File.Deploy.IdlePoolSeconds, npcs, database, token, args.Has("reset-persistence"), skipUpload, ctx.Verbose));
 
         string ip = HetznerMesh.PublicIp(orch);
         Ui.Blank();
