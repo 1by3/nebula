@@ -87,6 +87,11 @@ namespace Nebula
                 await response.WriteAsync(ready ? "ok" : "not ready", context.RequestAborted);
                 return;
             }
+            if (path == SignalingPath && _rtc == null)
+            {
+                response.StatusCode = 404;
+                return;
+            }
             if (path == SignalingPath)
             {
                 // A web build hosted on another origin still signals here.

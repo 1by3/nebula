@@ -175,7 +175,7 @@ A drain request is bound to the gateway's incarnation: a gateway that restarts r
 
 ### Health checks
 
-The standalone gateway's HTTP server answers `GET /healthz` with `200` while the gateway is ready (registered, connected to the control plane, not draining) and `503` otherwise. Point the load balancer's health check at it on the web port (`WebPort`, the gateway port by default). The endpoint exists only when `WebClients` is on, which is the default.
+The standalone gateway's HTTP server answers `GET /healthz` with `200` while the gateway is ready (registered, connected to the control plane, not draining) and `503` otherwise. Point the load balancer's health check at it on the web port (`WebPort`, the gateway port by default). With `WebClients` off the gateway still serves this one endpoint on that port.
 
 ### The Gateways table
 
