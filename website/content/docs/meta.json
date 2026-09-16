@@ -36,6 +36,7 @@
     "guides/control-plane",
     "guides/persistence",
     "guides/debugging",
+    "guides/load-testing",
     "---Deploying---",
     "deploy/cloud",
     "deploy/hetzner",
