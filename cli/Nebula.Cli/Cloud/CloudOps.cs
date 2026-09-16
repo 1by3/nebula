@@ -204,9 +204,10 @@ public static class CloudDeploy
 
         Ui.Step($"uploading {Path.GetFileName(tarball)}");
         long size = new FileInfo(tarball).Length;
-        string sha = Sha256(tarball);
+        var (sha, md5) = Hashes(tarball);
         Ui.Info($"{size / 1024.0 / 1024.0:F1} MB, sha256 {sha.Substring(0, 12)}...");
-        var created = api.CreateArtifact(projectId, sha, size, Path.GetFileName(tarball));
+        // The MD5 lets the API trust storage's checksum of the upload instead of reading 400 MB back.
+        var created = api.CreateArtifact(projectId, sha, size, Path.GetFileName(tarball), md5);
         var artifact = created.Artifact;
         if (created.Upload == null && artifact.State == "verified")
         {
@@ -311,6 +312,18 @@ public static class CloudDeploy
     {
         using var fs = File.OpenRead(file);
         return Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant();
+    }
+
+    /// <summary>SHA-256 and MD5 of a file in one pass.</summary>
+    public static (string Sha256, string Md5) Hashes(string file)
+    {
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
+        using var fs = File.OpenRead(file);
+        var buffer = new byte[1 << 20];
+        int n;
+        while ((n = fs.Read(buffer, 0, buffer.Length)) > 0) { sha.AppendData(buffer, 0, n); md5.AppendData(buffer, 0, n); }
+        return (Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant(), Convert.ToHexString(md5.GetHashAndReset()).ToLowerInvariant());
     }
 
     /// <summary>HelloMsg.ProtocolVersion from the package's Runtime/Protocol/Messages.cs, or null when the package is not resolved.</summary>

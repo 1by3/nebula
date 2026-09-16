@@ -262,8 +262,8 @@ public sealed class CloudApi
     public sealed record GitInfo(string? Commit, string? Branch, bool Dirty);
     public sealed record Release(string Id, string ProjectId, int Number, string? Label, string ArtifactId, string? Sha256, string? NebulaVersion, int? ProtocolVersion, GitInfo? Git, string? Notes, System.Text.Json.JsonElement? CreatedBy, string? CreatedAt);
 
-    public ArtifactCreated CreateArtifact(string project, string sha256, long sizeBytes, string fileName) =>
-        Send<ArtifactCreated>(HttpMethod.Post, $"/projects/{project}/artifacts", new { kind = "linux-server", sha256, sizeBytes, fileName }, "artifact-" + sha256);
+    public ArtifactCreated CreateArtifact(string project, string sha256, long sizeBytes, string fileName, string? md5 = null) =>
+        Send<ArtifactCreated>(HttpMethod.Post, $"/projects/{project}/artifacts", new { kind = "linux-server", sha256, md5, sizeBytes, fileName }, "artifact-" + sha256);
 
     /// <summary>Ask the API to verify what is in storage. 202 "verifying" (poll <see cref="GetArtifact"/>), 200 "verified", or a 400 <see cref="CloudApiError"/> when nothing usable is there.</summary>
     public Artifact CompleteArtifact(string project, string artifact) =>

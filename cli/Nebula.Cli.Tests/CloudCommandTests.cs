@@ -211,6 +211,7 @@ public class CloudCommandTests
         string tarball = Path.Combine(_project, "Builds", "nebula-linux.tar.gz");
         var artifact = _cloud.Of("POST", "/v1/projects/prj_1/artifacts").Single().Json!;
         Assert.That(artifact["sha256"]!.ToString(), Is.EqualTo(Sha(tarball)));
+        Assert.That(artifact["md5"]!.ToString(), Is.EqualTo(Convert.ToHexString(MD5.HashData(File.ReadAllBytes(tarball))).ToLowerInvariant()));
         Assert.That((long)artifact["sizeBytes"]!, Is.EqualTo(new FileInfo(tarball).Length));
         Assert.That(artifact["kind"]!.ToString(), Is.EqualTo("linux-server"));
         Assert.That(_cloud.Uploads["art_1"], Is.EqualTo(File.ReadAllBytes(tarball)));
