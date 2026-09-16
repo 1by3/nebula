@@ -192,7 +192,7 @@
     <section class="card">
       <h2>Gateways</h2>
       <table>
-        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Joining</th></tr></thead>
+        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Clients</th><th>Joining</th><th>Out</th><th>CPU</th><th>Lag</th><th>State</th><th></th></tr></thead>
         <tbody id="gateways"></tbody>
       </table>
     </section>
@@ -213,6 +213,7 @@
 
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
+  function fmtRate(bytesPerSecond) { const b = bytesPerSecond * 8; return b >= 1e6 ? (b / 1e6).toFixed(1) + ' Mb/s' : b >= 1e3 ? (b / 1e3).toFixed(0) + ' kb/s' : Math.round(b) + ' b/s'; }
   // p90 of the worker's tick time as a fraction of the tick budget: the signal the scaler works from.
   function utilBar(w, s) {
     const sc = s.scale || {};
@@ -365,9 +366,20 @@
             : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
 
-    $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => `
-      <tr><td class="mono">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td><td${g.pendingJoins ? ' class="warnText"' : ''}>${g.pendingJoins || 0}</td></tr>`).join('')
-      : '<tr><td colspan="4" class="muted">no gateway registered</td></tr>';
+    $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {
+      const state = g.draining ? 'draining' : g.drainRequested ? 'drain requested' : g.ready ? 'ready' : 'starting';
+      const joining = (g.pendingJoins || 0) + (g.joiningClients || 0) + (g.reconnectingClients || 0);
+      return `
+      <tr><td class="mono" title="incarnation ${esc(g.incarnation || '')}">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td>
+        <td>${g.activeClients || 0}</td><td${g.pendingJoins ? ' class="warnText"' : ''} title="${g.pendingJoins || 0} waiting for a worker, ${g.joiningClients || 0} authenticating, ${g.reconnectingClients || 0} reconnecting">${joining}</td>
+        <td title="${Math.round(g.packetsOut || 0)} packets/s to clients; ${fmtRate(g.workerBytesOut || 0)} to workers">${fmtRate(g.bytesOut || 0)}</td>
+        <td>${((g.cpu || 0) * 100).toFixed(0)}%</td><td${(g.loopLagMs || 0) > 8 ? ' class="warnText"' : ''}>${(g.loopLagMs || 0).toFixed(1)} ms</td>
+        <td${g.draining || g.drainRequested ? ' class="warnText"' : ''}>${state}</td>
+        <td>${g.drainRequested || g.draining
+          ? `<button class="small" data-act="undrain" data-id="${esc(g.id)}" title="Take this gateway back into service">Undrain</button>`
+          : `<button class="small" data-act="drain" data-id="${esc(g.id)}" ${s.gateways.length < 2 ? 'disabled' : ''} title="Refuse new clients and ask its clients to reconnect through another gateway">Drain</button>`}</td></tr>`;
+      }).join('')
+      : '<tr><td colspan="10" class="muted">no gateway registered</td></tr>';
 
     $('log').innerHTML = s.events.map(e => `<div class="${esc(e.level)}"><span class="t">${fmtTime(e.time)}</span><span>${esc(e.message)}</span></div>`).join('');
   }
@@ -450,6 +462,13 @@
     if (!b || b.disabled) return;
     if (b.dataset.act === 'remove') post('/api/workers/remove', { workerId: b.dataset.id });
     else if (b.dataset.act === 'kill') post('/api/workers/kill', { workerId: b.dataset.id });
+  });
+
+  $('gateways').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-act]');
+    if (!b || b.disabled) return;
+    if (b.dataset.act === 'drain') post('/api/gateways/drain', { id: b.dataset.id, draining: true });
+    else if (b.dataset.act === 'undrain') post('/api/gateways/drain', { id: b.dataset.id, draining: false });
   });
 
   $('parked').addEventListener('click', (ev) => {

@@ -188,7 +188,13 @@ public sealed class HetznerMesh
 
         // Secrets go over stdin into a root-only file, never onto a command line: the provider token, the database
         // URL (it may carry a password) and the mesh token the orchestrator hands to its workers.
-        _ssh.SendFile(publicIp, $"HCLOUD_TOKEN={_settings.ResolveToken()}\nNEBULA_DATABASE_URL={o.Database}\nNEBULA_MESH_TOKEN={o.MeshToken}\n", "/etc/nebula/env", "0600");
+        // The player signing key is separate from the mesh token on purpose: the mesh token changes on every
+        // deployment, while anonymous player identities and session tokens must survive one, so the key is generated
+        // once per orchestrator VM and carried over from the previous environment file.
+        var existingKey = _ssh.Run(publicIp, "grep '^NEBULA_AUTH_KEY=' /etc/nebula/env 2>/dev/null | cut -d= -f2-");
+        string authKey = existingKey.Ok && existingKey.Stdout.Trim().Length >= 32 ? existingKey.Stdout.Trim()
+            : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        _ssh.SendFile(publicIp, $"HCLOUD_TOKEN={_settings.ResolveToken()}\nNEBULA_DATABASE_URL={o.Database}\nNEBULA_MESH_TOKEN={o.MeshToken}\nNEBULA_AUTH_KEY={authKey}\n", "/etc/nebula/env", "0600");
 
         var args = new List<string>
         {

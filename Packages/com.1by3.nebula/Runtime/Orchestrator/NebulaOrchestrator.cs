@@ -224,6 +224,9 @@ namespace Nebula
             {
                 case "hetzner":
                     return new HetznerWorkerHost(CloudHostSettings.FromCommandLine(OrchestratorId, config.WorkerAdvertiseAddress, config.DashboardPort));
+                case "cloud":
+                    // Managed hosting: workers come from a deployment-scoped resource API, not from a provider this process has credentials for.
+                    return new CloudWorkerHost(CloudWorkerHostSettings.FromCommandLine());
                 case "":
                 case "process":
                 case "local":
