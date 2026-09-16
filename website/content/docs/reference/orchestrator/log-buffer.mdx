@@ -1,0 +1,137 @@
+---
+title: "LogBuffer"
+description: "The mesh's recent log lines, kept on the orchestrator so one place holds what every process of the mesh said last: workers, gateways and the orchestrator's own shipper post batches to POST /api/logs ({\"lines\":[{\"at\",\"role\",\"instance\",\"le..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/LogBuffer.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/LogBuffer.cs)</div>
+
+```csharp
+public sealed class LogBuffer
+```
+
+The mesh's recent log lines, kept on the orchestrator so one place holds what every process of the mesh said last: workers, gateways and the orchestrator's own shipper post batches to `POST /api/logs` (`{"lines":[{"at","role","instance","level","message"}]}`), and readers page through `GET /api/logs?since=<seq>&role=&instance=&limit=`, which answers the lines after `since` and the next cursor. A fixed number of lines is kept; older ones fall off. A machine that is deleted keeps its last lines here for as long as the buffer holds them, which is what makes a worker's last words readable after it is gone. Thread-safe: posts and reads happen on the dashboard's listener threads.
+
+## Constructors
+
+### LogBuffer [#logbuffer]
+
+```csharp
+public LogBuffer(int capacity = 20000);
+```
+
+## Fields
+
+### MaxBodyChars [#maxbodychars]
+
+```csharp
+public const int MaxBodyChars = 1024 * 1024;
+```
+
+Largest request body accepted, in characters.
+
+### MaxLinesPerRequest [#maxlinesperrequest]
+
+```csharp
+public const int MaxLinesPerRequest = 5000;
+```
+
+### MaxMessageChars [#maxmessagechars]
+
+```csharp
+public const int MaxMessageChars = 4096;
+```
+
+### DefaultQueryLimit [#defaultquerylimit]
+
+```csharp
+public const int DefaultQueryLimit = 500;
+```
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+### NextSeq [#nextseq]
+
+```csharp
+public long NextSeq { get; }
+```
+
+The sequence number the next appended line gets; a reader that asks for `since = NextSeq - 1` gets only what comes after now.
+
+## Methods
+
+### Append [#append]
+
+```csharp
+public long Append(string role, string instance, string level, string at, string message);
+```
+
+### Accept [#accept]
+
+```csharp
+public string Accept(string body, out int accepted);
+```
+
+Take a `{"lines":[...]}` document; null when it was accepted, otherwise why not.
+
+### Query [#query]
+
+```csharp
+public string Query(long since, string role, string instance, int limit);
+```
+
+Lines with a sequence number above `since` that match the filters, oldest first, at most `limit`.
+
+## Nested types
+
+### Line [#line]
+
+```csharp
+public struct Line
+```
+
+Stores the values used by line.
+
+#### Fields
+
+##### Seq [#seq]
+
+```csharp
+public long Seq;
+```
+
+##### At [#at]
+
+```csharp
+public string At;
+```
+
+##### Role [#role]
+
+```csharp
+public string Role;
+```
+
+##### Instance [#instance]
+
+```csharp
+public string Instance;
+```
+
+##### Level [#level]
+
+```csharp
+public string Level;
+```
+
+##### Message [#message]
+
+```csharp
+public string Message;
+```
+

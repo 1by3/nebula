@@ -100,7 +100,7 @@ Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway <orchestrator public
 
 If your scene includes `NebulaTitleScreen`, you can start the client without `-nebula-gateway` and type the address on the title screen. The title screen remembers the last address you used. Bots work the same way with `-nebula-bot`.
 
-To play in a browser, run `nebula build --web` before `nebula deploy`. The tarball then includes the web client, and the gateway serves it at `https://<orchestrator public ip>:7000/`. The gateway gets its HTTPS certificate from Let's Encrypt a few seconds after it starts, so web builds hosted on HTTPS sites such as Unity Play can connect to it as well. See [Build for the web](/docs/guides/web-builds).
+To play in a browser, host `Builds/Web` yourself (the deployment never includes it) and point it at the gateway. The gateway gets its HTTPS certificate from Let's Encrypt a few seconds after it starts, so web builds hosted on HTTPS sites such as Unity Play can connect to it. See [Build for the web](/docs/guides/web-builds).
 </Step>
 <Step>
 ### Redeploy after a code change
@@ -160,7 +160,7 @@ From the create call to a registered, container-owning worker takes about 30 s. 
 | Where | Port | Purpose |
 | --- | --- | --- |
 | Orchestrator VM, public | `udp/7000` | Gateway, the address UDP clients use. |
-| Orchestrator VM, public | `tcp/7000`, `udp/7001` | Gateway for web clients: the web build and WebRTC offers over HTTPS on TCP, WebRTC traffic on UDP. |
+| Orchestrator VM, public | `tcp/7000`, `udp/7001` | Gateway for web clients: WebRTC offers over HTTPS on TCP, WebRTC traffic on UDP. |
 | Orchestrator VM, public | `tcp/80` | Let's Encrypt validation of the gateway's HTTPS certificate. |
 | Orchestrator VM, public | `tcp/7080` | Dashboard and API. Unauthenticated. |
 | Orchestrator VM, public | `tcp/22` | ssh for `nebula logs --cloud`. |

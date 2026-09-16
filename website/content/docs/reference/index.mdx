@@ -134,6 +134,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
 | [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
+| [LogBuffer](/docs/reference/orchestrator/log-buffer) | Class. The mesh's recent log lines, kept on the orchestrator so one place holds what every process of the mesh said last: workers, gateways and the orchestrator's own shipper post batches to POST /api/logs (\{"lines":\[\{"at","role","instance","le... |
 | [MeshTelemetry](/docs/reference/orchestrator/mesh-telemetry) | Class. The data behind the World map page of the Nebula Dashboard (/map). |
 | [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |

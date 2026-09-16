@@ -59,7 +59,7 @@ The command runs these steps and prints each one:
 3. **Release.** Creates a release from the artifact, the service manifest (`Builds/Linux64/nebula-services.json`), the CLI version, the wire protocol version from the package source, and the git commit, branch, and dirty flag. `--label v12` names it.
 4. **Rollout.** Starts the rollout and prints its steps and events until it finishes. The deployment's machines are created on the first rollout, which takes a few minutes; a later rollout restarts the orchestrator on the new build and recreates the workers.
 
-When the rollout succeeds, the CLI prints the gateway address for clients, the web URL where the gateway serves a web build, and the Cloud Dashboard URL. `--open-ui` opens the dashboard.
+When the rollout succeeds, the CLI prints the gateway address for clients and the Cloud Dashboard URL. `--open-ui` opens the dashboard.
 
 `--min N --max N` change the deployment's worker range before the rollout. `--release <id>` rolls out an existing release without building.
 </Step>
@@ -70,7 +70,7 @@ When the rollout succeeds, the CLI prints the gateway address for clients, the w
 Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway <gateway address>
 ```
 
-Use the gateway address that `nebula deploy` or `nebula status --cloud` prints. To play in a browser, run `nebula build --web` before `nebula deploy`; the tarball then includes the web client and the gateway serves it at the web URL. See [Build for the web](/docs/guides/web-builds).
+Use the gateway address that `nebula deploy` or `nebula status --cloud` prints. A web client is never part of a deployment: host `Builds/Web` yourself and point it at that gateway address. See [Build for the web](/docs/guides/web-builds).
 </Step>
 <Step>
 ### Redeploy after a code change

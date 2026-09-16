@@ -16,9 +16,9 @@ the .NET 10 SDK. Running the published services does not require a separate .NET
 
 Without --linux, builds target this machine. --linux builds the Linux dedicated server and .NET services
 into Builds/Linux64 and packs Builds/nebula-linux.tar.gz for `nebula deploy`.
---web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. The gateway serves
-it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). Run
-`nebula build --web` before `nebula build --linux` to include the web client in the deploy tarball.
+--web builds the web client (a Unity Web build that connects over WebRTC) into Builds/Web. A local gateway serves
+it: after `nebula start`, open the gateway's address in a browser (http://127.0.0.1:7000/ by default). The deploy
+tarball never includes it: host the web build yourself and point it at the deployed gateway (see the web builds guide).
 If the Unity Editor has the project open, the build runs from a mirrored copy under ~/.nebula-cli/scratch
 (the Editor holds an exclusive lock on the project). Builds/unity-build*.log has the full Unity output.
 ";
@@ -54,7 +54,7 @@ If the Unity Editor has the project open, the build runs from a mirrored copy un
                 LocalMesh.Stop(project);
             }
             ServiceBuild.Publish(project, target == BuildTarget.Linux);
-            if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball, project.WebBuildDir);
+            if (target == BuildTarget.Linux) UnityBuild.PackTarball(project.LinuxBuildDir, project.LinuxTarball);
             return 0;
         }
         UnityBuild.Build(ctx, project, new UnityBuild.Options(target, args.Has("scratch"), args.Has("force"), args.Has("stop-mesh")));

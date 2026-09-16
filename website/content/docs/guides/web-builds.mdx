@@ -92,7 +92,7 @@ A page served over HTTPS needs a gateway that serves HTTPS. See [Serve HTTPS for
 
 ## Deploy the web client
 
-Run `nebula build --web` before `nebula deploy`. The deployment tarball then includes `Builds/Web`, and the gateway on the orchestrator VM serves it at `https://<orchestrator public ip>:7000/`. The deployed gateway serves HTTPS, so a web build hosted elsewhere over HTTPS can connect to it too.
+A deployment never ships the web build: deployed gateways carry game traffic only, and their public address serves nothing over HTTP but WebRTC signaling and a health check. Host `Builds/Web` where you host the rest of your game (Unity Play, itch.io, your own CDN) and point the page at the deployed gateway with the query string above, for example `?nebula-gateway=<gateway address>`. A page served over HTTPS needs the gateway's web port over HTTPS too; see [Serve HTTPS for hosted pages](#serve-https-for-hosted-pages).
 
 The orchestrator firewall allows TCP on the gateway port, UDP on the gateway port plus one, and TCP port 80 for certificate validation. A firewall created by an earlier release gets these rules on your next deployment. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
 
