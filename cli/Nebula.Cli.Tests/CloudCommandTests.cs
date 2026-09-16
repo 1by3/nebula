@@ -392,10 +392,10 @@ public class CloudCommandTests
             orchestrator = new { state = "running", address = "10.10.0.5", publicIp = "203.0.113.9", heartbeatAgeSeconds = 1.3, version = "0.1.0-alpha.22" },
             gateways = new[]
             {
-                new { id = "gw1", incarnation = 3, address = "203.0.113.10:7000", privateAddress = "10.10.0.6", state = "ready", inLoadBalancer = true,
+                new { id = "gw1", incarnation = "00000003", address = "203.0.113.10:7000", privateAddress = "10.10.0.6", state = "ready", inLoadBalancer = true,
                       clients = new { active = 12, joining = 1, reconnecting = 0 }, packetsPerSecond = new { @in = 640.0, @out = 1900.0 },
                       bytesPerSecond = new { @in = 51200.0, @out = 2097152.0, workers = 4096.0 }, cpu = 0.31, memoryBytes = 123456789L, loopLagMs = 0.8, workerConnections = 2, heartbeatAgeSeconds = 0.5 },
-                new { id = "gw2", incarnation = 1, address = "203.0.113.11:7000", privateAddress = "10.10.0.7", state = "draining", inLoadBalancer = false,
+                new { id = "gw2", incarnation = "00000001", address = "203.0.113.11:7000", privateAddress = "10.10.0.7", state = "draining", inLoadBalancer = false,
                       clients = new { active = 2, joining = 0, reconnecting = 1 }, packetsPerSecond = new { @in = 10.0, @out = 20.0 },
                       bytesPerSecond = new { @in = 100.0, @out = 200.0, workers = 50.0 }, cpu = 0.05, memoryBytes = 1000L, loopLagMs = 0.1, workerConnections = 2, heartbeatAgeSeconds = 2.0 },
             },
@@ -422,9 +422,9 @@ public class CloudCommandTests
     sampled    2026-09-16T10:00:00Z
 
     gateways:
-    gateway  state     lb   address            clients  joining  reconn  pps in/out  bytes/s in/out  to workers  cpu  lag ms  workers  hb s
-    gw1#3    ready     yes  203.0.113.10:7000  12       1        0       640/1900    50.0K/2.0M      4.0K        31%  0.8     2        0.5
-    gw2#1    draining  no   203.0.113.11:7000  2        0        1       10/20       100/200         50          5%   0.1     2        2.0
+    gateway       state     lb   address            clients  joining  reconn  pps in/out  bytes/s in/out  to workers  cpu  lag ms  workers  hb s
+    gw1#00000003  ready     yes  203.0.113.10:7000  12       1        0       640/1900    50.0K/2.0M      4.0K        31%  0.8     2        0.5
+    gw2#00000001  draining  no   203.0.113.11:7000  2        0        1       10/20       100/200         50          5%   0.1     2        2.0
 
     workers:
     worker  index  size   state      address     tick ms  util  entities  players  bots  hb s
