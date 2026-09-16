@@ -1,7 +1,7 @@
 # The `nebula` CLI
 
-The command-line tool is the developer's front door to Nebula: it installs Nebula into a Unity project, runs
-the mesh locally, and deploys it to a cloud provider. It is one self-contained executable (no .NET runtime
+The command-line tool installs Nebula into a Unity project, runs the mesh locally, and deploys it to Nebula
+Cloud or to your own Hetzner Cloud project. It is one self-contained executable (no .NET runtime
 needed) built from `cli/Nebula.Cli`, and it works the same on Windows, macOS and Linux.
 
 ## Installing
@@ -44,11 +44,17 @@ nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [
                              the mesh starts at --min, growing and shrinking between the two (--min 0 scales to zero)
 nebula stop
 nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, persistence, recent events
-nebula logs [role] [-n N] [--follow] [--cloud]
+nebula logs [role] [-n N] [--follow] [--cloud] [--instance x] [--since 10m]
+nebula scale --min N --max N [--gateways-min N --gateways-max N] [--target local|hetzner|cloud]
+nebula dashboard [--target local|hetzner|cloud]
 nebula config hetzner|database|unity|source|show
-nebula deploy [--target hetzner] [--workers N] [--min N] [--max N] [--npcs N] [--open-ui] [--reset-persistence]
+nebula deploy [--target hetzner|cloud] [--workers N] [--min N] [--max N] [--npcs N] [--open-ui] [--reset-persistence]
                              same --workers/--min/--max semantics as `nebula start`; defaults from nebula.json deploy.*
-nebula destroy [--all]
+                             cloud: [--release rel_id] [--label v12] [--allow-protocol-change] [--region id] [--worker-size s]
+nebula destroy [--target hetzner|cloud] [--all]
+nebula cloud login|logout|account
+nebula deployments [--all] [--json]
+nebula rollback [--release rel_id]
 ```
 
 `nebula --help` and `nebula <command> --help` describe every option. Global options: `--project <path>`
@@ -82,12 +88,15 @@ Per-project settings that travel with the project:
               "database": "sqlite:Library/Nebula/nebula.db" },
   "deploy": { "target": "hetzner", "meshName": "nebula-mygame", "database": "postgres://user:pw@host/db",
               "persistenceDatabase": "nebula-mygame-persist", "workers": 4, "minWorkers": 1, "maxWorkers": 8,
-              "idlePoolSeconds": 0, "npcs": 0 }
+              "idlePoolSeconds": 0, "npcs": 0 },
+  "cloud":  { "organization": "my-studio", "project": "my-game", "deployment": "production" }
 }
 ```
 
 `mesh` holds the local defaults `nebula start` uses; `deploy` the cloud ones (`workerType`,
-`orchestratorType` and `location` may be added to override the values in the CLI config). `executable` is the
+`orchestratorType` and `location` may be added to override the values in the CLI config). `deploy.target` is
+`hetzner` or `cloud`. `cloud` names the Nebula Cloud organization, project and deployment; the first
+`nebula deploy --target cloud` writes it. Keys the CLI does not know are kept as they are. `executable` is the
 base name NebulaBuild gives the player (`Nebula.exe`, `Nebula.x86_64`, `Nebula.app`).
 
 `database` names the control-plane database, `persistenceDatabase` the separate database that holds saved
@@ -115,7 +124,39 @@ every time. Saved entities live in their own database and survive restarts. To t
 `nebula status` prints a persistence line (mode, backend, connection, number of saved entities) when the mesh
 reports one.
 
-## Deploying
+## Deploying to Nebula Cloud
+
+```
+nebula cloud login           device code: the CLI prints it, opens the Cloud Dashboard, and polls until you approve
+nebula deploy --target cloud --open-ui
+```
+
+The first cloud deploy in a project picks (or creates) the organization, project and deployment, interactively or
+from `--org`, `--cloud-project`, `--deployment`, `--region`, `--worker-size` (`--yes` takes the defaults), and
+writes them to `nebula.json`. Every deploy then: builds the Linux server and packs the tarball; computes its
+SHA-256 and registers an artifact (`POST /v1/projects/{p}/artifacts`), uploads it to the presigned URL with a
+progress line and completes it (content-addressed: the same bytes are never uploaded twice); creates a release
+with the service manifest, the CLI version, `HelloMsg.ProtocolVersion` read from the package source and the git
+commit/branch/dirty flag; patches the worker band when `--min/--max` were given; starts a rollout and follows the
+operation's events (`GET /v1/operations/{id}/events?after=&wait=30`) until it finishes. Ctrl-C leaves the operation
+running and the next run reattaches to it; a 409 from the rollout does the same with the operation it names.
+
+`nebula status --cloud` renders `GET /v1/deployments/{d}/status` (health, release, orchestrator, gateways with
+clients/traffic/cpu/lag, workers, mesh totals); `nebula logs --cloud <role|w1|gw1> [--since 10m] [--follow]` reads
+the log page and then the server-sent event stream; `nebula scale`, `nebula rollback`, `nebula destroy` (type the
+deployment name, or `--yes`) and `nebula dashboard` map to the corresponding endpoints. `nebula deployments`
+lists deployments across the project's organization (`--all` for every organization).
+
+`Cloud/CloudApi.cs` is the client: bearer tokens from `~/.nebula-cli/config.json` (`cloud` section), a refresh
+on 401 that rotates and saves the refresh token, an `Idempotency-Key` (one random id per CLI invocation plus the
+operation name) on every mutating call so a retried request replays instead of repeating, a
+`User-Agent: nebula-cli/<version>`, and the error envelope mapped to messages with hints (402 spend limit, 426
+upgrade required, 401 log in). `NEBULA_CLOUD_API` overrides the API host; `--api` at login stores one.
+
+`cli/Nebula.Cli.Tests` (NUnit) runs the commands in-process against a fake Cloud API on a local port:
+`dotnet test cli/Nebula.Cli.Tests`.
+
+## Deploying to Hetzner
 
 ```
 nebula config hetzner        API token (checked against the API), project label, region, VM types
@@ -142,6 +183,7 @@ always takes precedence, so CI can run without the file. The CLI replaced the ea
 ```
 cli/
   Nebula.Cli/          the .NET 10 console app (Program.cs dispatches to Commands/*, Core/* and Cloud/* do the work)
+  Nebula.Cli.Tests/    NUnit tests with an in-process fake of the Nebula Cloud API
   install/install.ps1  Windows installer (hosted at windows.nebula.1by3.co)
   install/install.sh   Linux/macOS installer (hosted at install.nebula.1by3.co)
   scripts/package.*    builds the per-platform release archives into cli/dist

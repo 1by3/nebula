@@ -1,0 +1,131 @@
+---
+title: Deploy to Nebula Cloud
+description: Log in to Nebula Cloud, deploy a project from the CLI, and operate the deployment with status, logs, scale, rollback, and destroy.
+---
+
+Run `nebula deploy --target cloud` to run your mesh on Nebula Cloud, the hosted service for Nebula. Nebula Cloud provisions the machines, the load-balanced gateways, and the database for each deployment, and keeps every release you upload so you can roll back. You need a Nebula Cloud account and the `nebula` CLI; you do not need a cloud provider account or ssh.
+
+A **deployment** is one running mesh with its own gateways, orchestrator, workers, and database. A **release** is one uploaded build together with its service manifest and version numbers; releases are immutable. A **rollout** is the operation that makes a deployment run a release. Deployments belong to a **project**, and projects belong to an **organization** that holds the members and the billing.
+
+## Prerequisites
+
+- A Nebula Cloud account. Sign up in the Cloud Dashboard before you log in from the CLI.
+- The `nebula` CLI and a project with `nebula.json` (see [Install](/docs/getting-started/install)).
+- **Unity with Linux Dedicated Server support** installed for the project's Unity version. `nebula deploy` builds `Builds/Linux64/<executable>.x86_64` with the Server subtarget; without the module the build fails.
+- Git on your `PATH` if you want each release to record the commit it was built from. Without it, releases have no git information.
+
+## Log in
+
+To log in, run:
+
+```bash
+nebula cloud login
+```
+
+The CLI prints a short code and opens the Cloud Dashboard in your browser. Approve the code there. The CLI then stores an access token and a refresh token in `~/.nebula-cli/config.json` (readable only by you on Unix) and refreshes them as they expire. To check who you are logged in as and which organizations you belong to, run `nebula cloud account`. To end the session, run `nebula cloud logout`.
+
+Pass `--no-browser` to print the approval URL instead of opening it. `NEBULA_CLOUD_API` in the environment points every command at another API host.
+
+## Deploy
+
+<Steps>
+<Step>
+### Choose the deployment
+
+The first time you run `nebula deploy --target cloud` in a project, the CLI asks which organization, project, and deployment to use, and offers to create missing ones. With `--yes` it takes the defaults: your only organization, a project named after the project folder, and a deployment named `production` in the first available region with `small` workers. Pass `--org`, `--cloud-project`, `--deployment`, `--region`, and `--worker-size` to choose without prompts.
+
+The choice is written to the `cloud` section of `nebula.json`, and `deploy.target` becomes `cloud`, so later runs of `nebula deploy` use the same deployment without `--target`:
+
+```json
+{
+  "deploy": { "target": "cloud", "workers": 4, "minWorkers": 1, "maxWorkers": 8 },
+  "cloud": { "organization": "my-studio", "project": "my-game", "deployment": "production" }
+}
+```
+
+`deploy.workers`, `deploy.minWorkers`, and `deploy.maxWorkers` set the worker range of a deployment the CLI creates. The other keys of the `deploy` section are for the Hetzner target.
+</Step>
+<Step>
+### Build and roll out
+
+```bash
+nebula deploy --target cloud --open-ui
+```
+
+The command runs these steps and prints each one:
+
+1. **Build.** Runs `Nebula.Editor.NebulaBuild.BuildLinuxServerBatch` in batchmode, publishes the .NET services, and packs `Builds/nebula-linux.tar.gz`. `--skip-build` reuses the existing tarball.
+2. **Upload.** Computes the tarball's SHA-256, registers it as an artifact, and uploads it with a progress line. An artifact with the same content is not uploaded again.
+3. **Release.** Creates a release from the artifact, the service manifest (`Builds/Linux64/nebula-services.json`), the CLI version, the wire protocol version from the package source, and the git commit, branch, and dirty flag. `--label v12` names it.
+4. **Rollout.** Starts the rollout and prints its steps and events until it finishes. The deployment's machines are created on the first rollout, which takes a few minutes; a later rollout restarts the orchestrator on the new build and recreates the workers.
+
+When the rollout succeeds, the CLI prints the gateway address for clients, the web URL where the gateway serves a web build, and the Cloud Dashboard URL. `--open-ui` opens the dashboard.
+
+`--min N --max N` change the deployment's worker range before the rollout. `--release <id>` rolls out an existing release without building.
+</Step>
+<Step>
+### Connect a client
+
+```powershell
+Builds\Win64\Nebula.exe -nebula-role client -nebula-gateway <gateway address>
+```
+
+Use the gateway address that `nebula deploy` or `nebula status --cloud` prints. To play in a browser, run `nebula build --web` before `nebula deploy`; the tarball then includes the web client and the gateway serves it at the web URL. See [Build for the web](/docs/guides/web-builds).
+</Step>
+<Step>
+### Redeploy after a code change
+
+Run `nebula deploy` again. It builds, uploads what changed, creates a new release, and rolls it out. Players are disconnected while the orchestrator restarts.
+
+<Callout type="warn">
+A rollout is refused when the release changes the wire protocol version, because every connected client would be disconnected and old clients could no longer join. Pass `--allow-protocol-change` to roll it out anyway.
+</Callout>
+</Step>
+</Steps>
+
+## Follow and resume a rollout
+
+Every rollout, rollback, and destroy is an **operation** with steps. The CLI prints the steps and the events the operation emits, then reports success or the failing step and its message. A failed rollout leaves the previous release running.
+
+Press Ctrl-C to stop following. The operation keeps running; the CLI prints its id and the next `nebula deploy`, `nebula rollback`, or `nebula destroy` reattaches to it instead of starting another one. The same happens when a rollout is already running when you deploy.
+
+## Operate the deployment
+
+| Command | What it does |
+| --- | --- |
+| `nebula status --cloud` | Health, release, gateway address, orchestrator, load balancer, mesh totals, and one row per gateway (clients, packets and bytes per second, CPU, loop lag, draining) and per worker (tick time, utilization, entities, players). `--json` prints the raw status document. |
+| `nebula logs --cloud <role>` | Recent log lines of `orchestrator`, `gateway`, `worker`, or `all`. A name such as `w2` or `gw1` selects one instance; `--instance` does the same. `--since 10m` limits the time range and `--follow` streams new lines. |
+| `nebula scale --min N --max N` | Change the worker range live. `--gateways-min` and `--gateways-max` bound the gateway fleet. Nothing restarts. |
+| `nebula rollback` | Roll out the release that ran before the current one. `--release <id>` chooses another release. |
+| `nebula deployments` | List the deployments of the project's organization, or of every organization with `--all`. |
+| `nebula dashboard` | Open the deployment's page in the Cloud Dashboard, which embeds the mesh's Nebula Dashboard. |
+
+Autoscaling works as it does locally: the orchestrator adds workers while the ones it has are busy and retires idle ones down to `--min`. `--min 0` allows scaling to zero. See [Orchestrator, Nebula Dashboard and worker hosts](/docs/guides/orchestrator-and-dashboard).
+
+### Spend limit
+
+Each organization has a spend limit, set in the Cloud Dashboard. When the projected cost for the month reaches it, `nebula status --cloud` shows `SPEND LIMIT REACHED`, and rollouts and scale-out are refused with a message that says so. Running sessions are not terminated. Raise the limit in the Cloud Dashboard or scale the deployment in.
+
+### Roles
+
+What you can do depends on your role in the organization: a developer can deploy, scale, and roll back; an admin or owner can also destroy deployments and manage members; billing is for owners and the billing role. `nebula cloud account` shows your role in each organization.
+
+## Remove the deployment
+
+<Callout type="warn">
+`nebula destroy` deletes the deployment's machines and its database, including every saved entity. This cannot be undone. The organization, project, and releases stay, so a later `nebula deploy` creates the deployment again from scratch.
+</Callout>
+
+```bash
+nebula destroy
+```
+
+The command asks you to type the deployment's name. `--yes` skips the question. The CLI follows the destroy operation until every resource is gone.
+
+## Troubleshooting
+
+- **`you are not logged in to Nebula Cloud`**: run `nebula cloud login`. The same message appears when a session was revoked or expired past its refresh window.
+- **`this project has no Nebula Cloud deployment in nebula.json`**: run `nebula deploy --target cloud` once to choose one, or pass `--org`, `--cloud-project`, and `--deployment`.
+- **`this CLI is too old for the Cloud API`**: run `nebula setup` to update the CLI to the minimum version the message names.
+- **The rollout failed at `wait-ready`**: the orchestrator did not become healthy on the new build. Read `nebula logs --cloud orchestrator --since 10m`, fix the build, and deploy again; the previous release keeps running in the meantime.
+- **`--region` is ignored**: a region is fixed when a deployment is created. Create another deployment with `--deployment <name> --region <id>` to move.

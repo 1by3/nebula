@@ -1,0 +1,38 @@
+---
+title: "nebula deployments"
+description: "List the Nebula Cloud deployments of the project's organization"
+---
+
+To list the Nebula Cloud deployments of the project's organization, run:
+
+```bash
+nebula deployments [--all] [--json]
+```
+
+Show every deployment of the organization the current project deploys to (nebula.json cloud.organization), or of every organization you belong to with --all. Outside a project, --all is implied.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--all` | Every organization you belong to. |
+| `--json` | Print the deployments as JSON. |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula deployments
+nebula deployments --all
+nebula deployments --json
+```

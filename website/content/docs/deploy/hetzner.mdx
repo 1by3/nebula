@@ -5,7 +5,7 @@ description: Run the Nebula control plane, orchestrator, gateway, and workers on
 
 Run `nebula deploy` to deploy Nebula to Hetzner Cloud. The command creates one virtual machine (VM) for the orchestrator and gateway and lets the orchestrator create one VM per worker. The orchestrator hosts the control plane and keeps it, with every saved entity, in a SQLite file on its VM or in a PostgreSQL database you point it at.
 
-The deployment uses the same game build as a local mesh. It starts the orchestrator with `-nebula-host hetzner` instead of `-nebula-host process`. This release supports Hetzner as its only deployment target.
+The deployment uses the same game build as a local mesh. It starts the orchestrator with `-nebula-host hetzner` instead of `-nebula-host process`. To run the mesh on the hosted service instead, see [Deploy to Nebula Cloud](/docs/deploy/cloud).
 
 ## Prerequisites
 
@@ -48,7 +48,7 @@ Set `HCLOUD_TOKEN` to override the saved token, such as in continuous integratio
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `target` | `hetzner` | Deploy target. Only `hetzner` is implemented. |
+| `target` | `hetzner` | Deploy target: `hetzner`, or `cloud` for [Nebula Cloud](/docs/deploy/cloud). |
 | `meshName` | `nebula` | Label every cloud resource carries (`nebula-mesh=<meshName>`) and the base for resource names: network and ssh key `<meshName>`, server `<meshName>-orchestrator`, firewalls `<meshName>-orchestrator` and `<meshName>-worker`. One mesh per Hetzner project. |
 | `database` | `sqlite:/opt/nebula/data/nebula.db` | Where the deployed orchestrator keeps the control plane and saved entities. Falls back to the CLI config's `database.url`, then to SQLite on the VM. |
 | `workers` | 4 | Worker VMs the orchestrator keeps running. `--workers` overrides per deploy. |

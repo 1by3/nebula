@@ -81,7 +81,7 @@ Important current boundaries include:
 - The gateway filters entities by instance visibility, then reduces state update frequency by distance. Distance alone does not omit entities within the same instance. Private occupants can receive a bounded observation-only view of the public world.
 - Bots and server-driven entities require game-supplied behavior.
 - The legacy `--npcs` option only seeds a game-defined setting named `npcs`. It does not spawn non-player characters.
-- Hetzner is the only deployment target implemented by the CLI.
+- The CLI deploys to two targets: Nebula Cloud (`--target cloud`) and the reader's own Hetzner Cloud project (`--target hetzner`). Do not describe Nebula Cloud prices, the hosting provider behind it, or its internal services; document only what the CLI does.
 
 Recheck these statements against the code before repeating them. Change this guide when the implementation changes.
 

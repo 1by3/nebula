@@ -37,6 +37,7 @@
     "guides/persistence",
     "guides/debugging",
     "---Deploying---",
+    "deploy/cloud",
     "deploy/hetzner",
     "---Reference---",
     "cli",

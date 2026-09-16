@@ -1,21 +1,27 @@
 ---
 title: "nebula destroy"
-description: "Delete the mesh's cloud servers"
+description: "Delete the deployed mesh"
 ---
 
-To delete the mesh's cloud servers, run:
+To delete the deployed mesh, run:
 
 ```bash
-nebula destroy [--all]
+nebula destroy [--target hetzner|cloud] [--all]
 ```
 
-Delete every server labelled with the mesh (orchestrator and workers). A SQLite database on the orchestrator VM goes with it, and with it every saved entity; a PostgreSQL database is left untouched.
+On Nebula Cloud: delete the deployment named in nebula.json with every machine, its database and every saved entity. The command asks you to type the deployment's name unless you pass --yes, then follows the destroy operation. The organization, project and releases stay.
+
+On Hetzner: delete every server labelled with the mesh (orchestrator and workers). A SQLite database on the orchestrator VM goes with it, and with it every saved entity; a PostgreSQL database is left untouched.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `--all` | Also delete the firewalls, private network, and SSH key. |
+| `--target <name>` | Deploy target: hetzner or cloud (default from nebula.json deploy.target). |
+| `--all` | Hetzner: also delete the firewalls, private network, and SSH key. |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
 
 ## Global options
 
@@ -26,3 +32,11 @@ These work with every command and may appear before or after it.
 | `--project <path>` | Run against another Nebula project instead of the current folder. |
 | `-v, --verbose` | Print stack traces and the commands the CLI runs. |
 | `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula destroy
+nebula destroy --yes
+nebula destroy --target hetzner --all
+```

@@ -1,0 +1,39 @@
+---
+title: "nebula dashboard"
+description: "Open the Nebula Dashboard of the local mesh or the deployed one"
+---
+
+To open the Nebula Dashboard of the local mesh or the deployed one, run:
+
+```bash
+nebula dashboard [--target local|hetzner|cloud] [--no-open]
+```
+
+Print the dashboard URL and open it in the browser. For a Nebula Cloud deployment that is the Cloud Dashboard page that embeds the mesh's Nebula Dashboard; for the local mesh it is http://127.0.0.1:7080/ (mesh.dashboardPort in nebula.json); for a Hetzner deployment the orchestrator VM's dashboard port.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--target <name>` | Local, hetzner or cloud (default: nebula.json deploy.target when a deployment exists there, else local). |
+| `--no-open` | Only print the URL. |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula dashboard
+nebula dashboard --target local
+```
