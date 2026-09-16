@@ -105,9 +105,13 @@ Accept client connections, route input to workers, and send replicated state to 
 | [AnonymousIdentityIssuer](/docs/reference/gateway/anonymous-identity-issuer) | Class. Identities the gateway hands to clients that present no token: an HS256 token with iss PlayerIdentity.AnonymousIssuer and a random sub, which the client keeps and presents on its next connection to get the same AuthResult.Identity back. |
 | [AuthResult](/docs/reference/gateway/auth-result) | Struct. Outcome of checking the token a client presented in Hello (see OidcTokenValidator). |
 | [JsonWebToken](/docs/reference/gateway/json-web-token) | Static class. Compact JSON Web Token (JWT) encoding: split, decode and sign. |
+| [MeshPeerAuth](/docs/reference/gateway/mesh-peer-auth) | Static class. How gateways and workers prove to each other that they belong to the mesh: HelloMsg.Token on an infrastructure link carries unixSeconds.base64url(HMAC-SHA256(key, role\|id\|incarnation\|unixSeconds)) with a key derived from the mesh token (... |
 | [NebulaGateway](/docs/reference/gateway/nebula-gateway) | Class. Accepts client connections and maintains a connection to every worker. |
 | [OidcTokenValidator](/docs/reference/gateway/oidc-token-validator) | Class. Checks OpenID Connect ID tokens against the issuers a mesh trusts (NebulaConfig.AuthIssuers): signature (RS256/384/512 and ES256/384/512 with the provider's published keys), issuer, expiry, and audience. |
 | [PlayerIdentity](/docs/reference/gateway/player-identity) | Static class. A player's identity across sessions: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. |
+| [SessionClaims](/docs/reference/gateway/session-claims) | Struct. What a session token says about the session it names. |
+| [SessionIds](/docs/reference/gateway/session-ids) | Static class. Mesh-wide session ids. |
+| [SessionTokens](/docs/reference/gateway/session-tokens) | Class. Issues and checks the session tokens a gateway gives every welcomed client (WelcomeMsg.SessionToken). |
 
 ## Orchestrator
 
@@ -120,6 +124,8 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [AssignmentPlanner](/docs/reference/orchestrator/assignment-planner) | Static class. Runs an IAssignmentPolicy as a dry run against a hypothetical worker count. |
 | [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
+| [CloudWorkerHost](/docs/reference/orchestrator/cloud-worker-host) | Class. An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa... |
+| [CloudWorkerHostSettings](/docs/reference/orchestrator/cloud-worker-host-settings) | Class. Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. |
 | [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
 | [CostBalancedAssignmentPolicy](/docs/reference/orchestrator/cost-balanced-assignment-policy) | Class. Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ... |
 | [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
@@ -154,6 +160,7 @@ Register processes and share container assignments and settings through the cont
 | [ControlPlaneJson](/docs/reference/control-plane/control-plane-json) | Static class. The control plane as one JSON document, and one control-plane write as one JSON object. |
 | [FileControlPlaneStorage](/docs/reference/control-plane/file-control-plane-storage) | Class. The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy. |
 | [GatewayInfo](/docs/reference/control-plane/gateway-info) | Class. Describes a gateway registered with the control plane. |
+| [GatewayStats](/docs/reference/control-plane/gateway-stats) | Struct. What a gateway reports about itself on every heartbeat. |
 | [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Provides process registration, container assignments with epochs, and game-defined settings. |
 | [IControlPlaneStorage](/docs/reference/control-plane/i-control-plane-storage) | Interface. Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup. |
 | [LeaseInfo](/docs/reference/control-plane/lease-info) | Class. Describes the current worker assignment for one container. |
@@ -208,7 +215,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
 | [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class. Carries the container ownership protocol message. |
-| [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Carries the despawn player protocol message. |
+| [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). |
 | [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct. Carries the entity despawn protocol message. |
 | [EntityFlags](/docs/reference/protocol/entity-flags) | Enum. Lists the supported entity flags values. |
 | [EntityRpcMsg](/docs/reference/protocol/entity-rpc-msg) | Struct. Carries the entity rpc protocol message. |
@@ -216,6 +223,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's selected transform fields inside a WorldState/GhostState batch. |
 | [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
+| [GatewayDrainingMsg](/docs/reference/protocol/gateway-draining-msg) | Struct. Gateway -\> client: the gateway is draining and will close this link. |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
 | [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
@@ -227,8 +235,9 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |
+| [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
-| [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Carries the spawn player protocol message. |
+| [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
 | [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |
 | [WelcomeMsg](/docs/reference/protocol/welcome-msg) | Struct. Carries the welcome protocol message. |
 | [WorldStateMsg](/docs/reference/protocol/world-state-msg) | Static class. Batched transforms for one tick from one worker. |

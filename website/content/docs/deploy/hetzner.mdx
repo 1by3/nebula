@@ -75,7 +75,7 @@ nebula deploy --workers 4 --open-ui
 1. **Build.** Runs `Nebula.Editor.NebulaBuild.BuildLinuxServerBatch` in batchmode (from a mirrored copy under `~/.nebula-cli/scratch/<project>` if the Editor has the project open) and packs `Builds/nebula-linux.tar.gz`. `--skip-build` reuses the existing tarball.
 2. **Provision what is missing** (idempotent): the ssh key `~/.ssh/nebula_hetzner` (generated if absent) uploaded as `<meshName>`; the private network `<meshName>` on `10.0.0.0/16` with subnet `10.0.1.0/24` in the region's zone; the two firewalls; and the orchestrator VM, created with the key, the network and the orchestrator firewall, then waited on until ssh answers (up to 240 s).
 3. **Upload.** `scp` of the tarball to `/opt/nebula/artifacts/nebula-linux.tar.gz.uploading`, then over ssh: stop `nebula-orchestrator` (the orchestrator deletes its worker VMs on shutdown), move the tarball into place, unpack it into `/opt/nebula/bin`. `--skip-upload` skips the build and upload and only rewrites the service.
-4. **Write the service.** The secrets go over stdin into `/etc/nebula/env` (`HCLOUD_TOKEN`, `NEBULA_DATABASE_URL`, and a freshly generated `NEBULA_MESH_TOKEN`; mode 0600, never on a command line), and `/etc/systemd/system/nebula-orchestrator.service` is written with the full command line (see below). `systemctl daemon-reload`, `enable`, `restart`. `--reset-persistence` adds `-nebula-reset-persistence`, which deletes every saved entity as the orchestrator starts.
+4. **Write the service.** The secrets go over stdin into `/etc/nebula/env` (`HCLOUD_TOKEN`, `NEBULA_DATABASE_URL`, a freshly generated `NEBULA_MESH_TOKEN`, and `NEBULA_AUTH_KEY`; mode 0600, never on a command line), and `/etc/systemd/system/nebula-orchestrator.service` is written with the full command line (see below). `NEBULA_AUTH_KEY`, the key anonymous identities and session tokens are signed with, is generated the first time and carried over from the existing environment file on every later deploy, so players keep their anonymous identities across deployments. The mesh token is new on every deploy. `systemctl daemon-reload`, `enable`, `restart`. `--reset-persistence` adds `-nebula-reset-persistence`, which deletes every saved entity as the orchestrator starts.
 5. **Wait for the dashboard** at `http://<public ip>:7080/` for up to 80 s. On timeout it prints the last `journalctl` and log lines and fails with a pointer to `nebula logs --cloud orchestrator`.
 
 The orchestrator then creates one VM per worker. Deploy reports the dashboard URL and the gateway address as soon as the orchestrator answers; the workers take about 30 s more each to register.
@@ -105,7 +105,7 @@ To play in a browser, run `nebula build --web` before `nebula deploy`. The tarba
 <Step>
 ### Redeploy after a code change
 
-Run `nebula deploy` again. It rebuilds, re-uploads and restarts the orchestrator, which deletes its worker VMs on the way down and recreates them from the new tarball. Players are disconnected during a redeploy; there is no rolling update.
+Run `nebula deploy` again. It rebuilds, re-uploads and restarts the orchestrator, which deletes its worker VMs on the way down and recreates them from the new tarball. Players are disconnected during a redeploy; there is no rolling update. Their anonymous identities survive it, because the player signing key is kept on the VM.
 </Step>
 </Steps>
 
@@ -141,7 +141,7 @@ Nebula.x86_64 -batchmode -nographics -nebula-role orchestrator -nebula-host hetz
   -logFile /var/log/nebula/orchestrator.log
 ```
 
-`-nebula-advertise` is the orchestrator's private IP: workers reach the gateway, the control plane, and the build download over the private network. `-nebula-gateway` is the public address the gateway registers so clients can find it. The database URL and the mesh token come from `/etc/nebula/env`, not the command line. `--verbose` on `nebula deploy` adds `-nebula-verbose`.
+`-nebula-advertise` is the orchestrator's private IP: workers reach the gateway, the control plane, and the build download over the private network. `-nebula-gateway` is the public address the gateway registers so clients can find it. The database URL, the mesh token, and the player signing key come from `/etc/nebula/env`, not the command line. `--verbose` on `nebula deploy` adds `-nebula-verbose`.
 
 ### How worker VMs boot
 
@@ -209,7 +209,8 @@ The orchestrator deletes worker VMs when it stops cleanly and sweeps leftovers w
 
 ## Security and operations
 
-- **The control plane is protected by the mesh token only.** Workers and the gateway present the token `nebula deploy` generated; without it the orchestrator answers `401`. The token lives in `/etc/nebula/env` on the orchestrator VM and on the worker VMs' command lines.
+- **The control plane is protected by the mesh token only.** Workers and the gateway present the token `nebula deploy` generated; without it the orchestrator answers `401`, and the gateway and workers refuse a peer that cannot present a credential derived from it. The token lives in `/etc/nebula/env` on the orchestrator VM and on the worker VMs' command lines.
+- **The player signing key lives on the orchestrator VM.** `NEBULA_AUTH_KEY` in `/etc/nebula/env` signs anonymous identities and session tokens. `nebula deploy` keeps it across deployments; `nebula destroy` deletes it with the VM, and every anonymous player then becomes a new player. Copy the value out of the file first if you rebuild the VM and want to keep them.
 - **The dashboard is unauthenticated.** Anyone who can reach `tcp/7080` can resize or kill the mesh. Restrict the orchestrator firewall's dashboard rule to your own IP (the firewall is created by `nebula deploy`; edit it in the Hetzner console).
 - **SQLite lives and dies with the VM.** Point the mesh at PostgreSQL (`nebula config database`) when the saved world must survive `nebula destroy` or a lost VM.
 - **Replacing a worker takes about 30 s**: a fresh VM boots, downloads the build and registers. Its transient entities are gone; players respawn through `OnSpawnPlayer`.

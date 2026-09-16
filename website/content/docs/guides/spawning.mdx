@@ -13,12 +13,14 @@ Create one [`NebulaGameMode`](/docs/reference/core/nebula-game-mode) subclass to
 
 | Hook | When |
 | --- | --- |
-| `OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container)` | The gateway asked this worker to create a player. Instantiate the prefab, spawn it and return the identity. `player` carries the connection ID, display name, bot flag, and the player's [identity across sessions](/docs/guides/authentication). By default it calls the overload below. |
-| `OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)` | The same hook without the identity. Override one of the two. |
-| `OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player)` | The player's client went away. The worker despawns the entity after this returns. |
+| `OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container)` | The gateway asked this worker to create a player. Instantiate the prefab, spawn it and return the identity. `player` carries the session ID (`ClientId`), display name, bot flag, and the player's [identity across sessions](/docs/guides/authentication). By default it calls the overload below. |
+| `OnSpawnPlayer(NebulaWorker worker, ulong clientId, string playerName, Container container)` | The same hook without the identity. Override one of the two. |
+| `OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player)` | The player's session ended: the client left and nobody reclaimed the session within `NebulaConfig.SessionReclaimSeconds`. The worker despawns the entity after this returns. |
 | `OnWorkerStarted(NebulaWorker worker)` | The worker is listening on its port. Note that registration with the control plane happens later; see `IsRegistered` below. |
 
 `OnSpawnPlayer` is called on whichever worker the gateway picked, with the container the gateway chose. If the hook returns an identity that is not yet spawned, the worker spawns it for that client; if it returns null, the worker logs an error and the client gets no pawn.
+
+The client ID is a `ulong` **session ID**, unique across every gateway of the mesh. It stays the same when the player reconnects within the session, through any gateway, and the reconnecting player gets the same pawn back when the worker still holds it, so `OnSpawnPlayer` is not called again. When a client's link drops, the worker keeps the pawn for `SessionReclaimSeconds` (default 30 s) with no input; if nobody reclaims it, `OnPlayerDespawn` runs and the pawn is despawned. A player who reconnects after that gets a new pawn through `OnSpawnPlayer` with the same session ID. Store the ID as a `ulong`; see [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection).
 
 `NebulaContainerHelpers.RandomPointIn(container, margin, y)` is a static helper: a uniform random point inside the container's floor footprint, `margin` metres in from the edge, at height `y`.
 
@@ -29,7 +31,7 @@ public sealed class ExampleGameMode : NebulaGameMode
 {
     public GameObject PlayerPrefab;
 
-    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, ulong clientId, string playerName, Container container)
     {
         var position = NebulaContainerHelpers.RandomPointIn(container, margin: 2f, y: 0f);
         var identity = NetworkPrefabs.Instantiate(
@@ -73,12 +75,12 @@ All spawning happens on a worker through [`NebulaWorker`](/docs/reference/worker
 
 | Member | What it does |
 | --- | --- |
-| `Spawn(NetworkIdentity identity, Container container, uint ownerClientId = 0)` | Make an already-instantiated identity live: mint the id, set epoch 1, take authority, put it in the container (or resolve one from its position when `container` is null), run `OnNetworkSpawn` then `OnGainedAuthority` on every behaviour, and announce it to the gateway. A non-zero `ownerClientId` makes it that client's player entity. |
-| `SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, uint ownerClientId = 0)` | `NetworkPrefabs.Instantiate` followed by `Spawn`, parented under the container's transform. Returns the identity. |
+| `Spawn(NetworkIdentity identity, Container container, ulong ownerClientId = 0)` | Make an already-instantiated identity live: mint the id, set epoch 1, take authority, put it in the container (or resolve one from its position when `container` is null), run `OnNetworkSpawn` then `OnGainedAuthority` on every behaviour, and announce it to the gateway. A non-zero `ownerClientId` makes it that client's player entity. |
+| `SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, ulong ownerClientId = 0)` | `NetworkPrefabs.Instantiate` followed by `Spawn`, parented under the container's transform. Returns the identity. |
 | `SpawnServerDriven(NetworkIdentity identity, Container container)` | `Spawn` with no owning client and `NetworkIdentity.IsServerDriven` set. Whichever worker holds authority drives it; a `PredictedBehaviour<TInput>` on it gets its input from `GatherServerInput` instead of a client. |
 | `Despawn(NetworkIdentity identity)` | Authority only. Sends `EntityDespawn` to the gateway and `GhostDespawn` to every worker holding a ghost, runs `OnNetworkDespawn`, destroys the GameObject. Calling it on a ghost logs a warning and does nothing. |
 | `Find(ulong netId)` | Any entity resident on this worker, authoritative or ghost, or null. |
-| `FindPlayer(uint clientId)` | The entity owned by a client, or null. |
+| `FindPlayer(ulong clientId)` | The entity owned by a client (session ID), or null. |
 | `Entities` | Every resident entity (authoritative and ghosts). |
 | `Authoritative` | The entities this worker simulates right now. |
 
@@ -174,7 +176,7 @@ Make the operation idempotent, which means running it twice with the same inputs
 
 - **Workers spawn; clients ask.** A client that wants something created sends a `ServerRpc` and the owning worker spawns it (see [RPCs](/docs/guides/rpcs)).
 - **Reconcile mesh-wide logic.** There is no singleton worker. Store low-frequency targets in mesh settings, then let each worker reconcile its own authoritative entities.
-- **Entities live on workers.** A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`. Durable state belongs in your own persistence layer, written from `OnLostAuthority` or on your own schedule.
+- **Entities live on workers.** A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`, with the same session ID. Durable state belongs in your own persistence layer, written from `OnLostAuthority` or on your own schedule.
 
 <Cards>
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What happens on the tick after you spawn into a foreign container." />

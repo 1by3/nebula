@@ -112,6 +112,14 @@ public static string GetString(string body, string key);
 
 Reads a string property from a flat JSON object body; "" when absent.
 
+### TryGetBool [#trygetbool]
+
+```csharp
+public static bool TryGetBool(string body, string key, out bool value);
+```
+
+Reads a boolean property from a flat JSON object body; false (and false) when absent.
+
 ## Nested types
 
 ### Request [#request]

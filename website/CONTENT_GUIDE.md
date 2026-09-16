@@ -76,8 +76,8 @@ Document what Nebula does now. Do not present a design idea, roadmap item, or ol
 Important current boundaries include:
 
 - An entity persists only if it carries a `PersistentEntity` component: Nebula checkpoints those entities and restores them when a worker gains the lease of their container. The transient state of every other entity is still lost when a worker fails, as is any state on a persistent entity that is neither a `[Persist]` NetworkVariable nor written by `WritePersistentState`.
-- Automatic gateway failover and client reconnection are not provided.
-- UDP connections do not provide encryption or authentication. WebRTC encrypts a web client's link with DTLS, but the gateway authenticates no client.
+- A client reconnects by itself with its session token, through any gateway of the mesh, and keeps its pawn when it returns within `SessionReclaimSeconds`. Nebula does not provide the load balancer that spreads clients over several gateways, and the orchestrator starts only its own gateway and does not restart it.
+- UDP connections are not encrypted. WebRTC encrypts a web client's link with DTLS. The gateway identifies players by an anonymous or OpenID Connect token; gateways and workers authenticate each other only when a mesh token is set.
 - The gateway filters entities by instance visibility, then reduces state update frequency by distance. Distance alone does not omit entities within the same instance. Private occupants can receive a bounded observation-only view of the public world.
 - Bots and server-driven entities require game-supplied behavior.
 - The legacy `--npcs` option only seeds a game-defined setting named `npcs`. It does not spawn non-player characters.

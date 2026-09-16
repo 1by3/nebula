@@ -19,6 +19,14 @@ Describes a gateway registered with the control plane.
 public string GatewayId;
 ```
 
+### Incarnation [#incarnation]
+
+```csharp
+public uint Incarnation;
+```
+
+Changes on every start of the gateway process ([`HelloMsg.Incarnation`](/docs/reference/protocol/hello-msg#incarnation)); 0 for a row written by an older gateway.
+
 ### Address [#address]
 
 ```csharp
@@ -37,11 +45,29 @@ public ushort Port;
 public DateTime LastHeartbeat;
 ```
 
+### Stats [#stats]
+
+```csharp
+public GatewayStats Stats;
+```
+
+What the gateway last reported about itself.
+
+### DrainRequested [#drainrequested]
+
+```csharp
+public bool DrainRequested;
+```
+
+Somebody asked this gateway to drain ([`IControlPlane.SetGatewayDraining`](/docs/reference/control-plane/i-control-plane#setgatewaydraining)). The gateway sees the flag on its own row and stops accepting clients; [`GatewayStats.Draining`](/docs/reference/control-plane/gateway-stats#draining) is its acknowledgement.
+
+## Properties
+
 ### PendingJoins [#pendingjoins]
 
 ```csharp
-public uint PendingJoins;
+public uint PendingJoins { get; set; }
 ```
 
-Clients welcomed by this gateway that are still waiting for somewhere to spawn ([`JoinState.Starting`](/docs/reference/protocol/join-state#starting)). The orchestrator reads it as demand: a pending join at zero workers wakes the mesh at once, and no scale-in goes below one worker while it is non-zero.
+Shorthand for [`GatewayStats.PendingJoins`](/docs/reference/control-plane/gateway-stats#pendingjoins).
 

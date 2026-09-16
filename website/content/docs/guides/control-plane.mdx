@@ -64,7 +64,7 @@ The control plane is one JSON document with a version number that grows on every
 | --- | --- | --- |
 | `workers` | Registered worker | `workerId`, `workerIndex`, `address`, `port`, `status`, `lastHeartbeat`, `tickCount`, `tickMs`, `entityCount`, `authoritativeCount`, `ghostCount`, `playerCount`, `botCount`, `serverDrivenCount` |
 | `leases` | Container | `containerId`, `workerId` (`""` = unassigned), `epoch`, `state`, `updatedAt`, `hasBounds`, `center`, `size` |
-| `gateways` | Registered gateway | `gatewayId`, `address`, `port`, `lastHeartbeat` |
+| `gateways` | Registered gateway | `gatewayId`, `incarnation`, `address`, `port`, `lastHeartbeat`, `drainRequested`, and the gateway's load report (`pendingJoins`, `activeClients`, `joiningClients`, `reconnectingClients`, `packetsIn`, `packetsOut`, `bytesIn`, `bytesOut`, `workerBytesIn`, `workerBytesOut`, `cpu`, `memoryBytes`, `loopLagMs`, `workerConnections`, `ready`, `draining`) |
 | `settings` | Setting | key and value, both strings |
 
 The orchestrator assigns each worker a `workerIndex`. This value becomes the high 16 bits of network IDs created by that worker and selects its diagnostic color.
@@ -80,9 +80,10 @@ Every `IControlPlane` method except the reads is one write. A mirror posts them 
 | `RegisterWorker` | `workerId, workerIndex, address, port` | Insert or update the worker with status `starting` and a fresh heartbeat. |
 | `HeartbeatWorker` | `workerId, status, stats` | Update status, heartbeat and every counter. No-op for an unknown id. |
 | `UnregisterWorker` | `workerId` | Remove the worker and set every lease it held to `workerId = ""`, state `orphaned`. |
-| `RegisterGateway` | `gatewayId, address, port` | Insert or update. |
-| `HeartbeatGateway` | `gatewayId` | Refresh the heartbeat. |
+| `RegisterGateway` | `gatewayId, address, port, incarnation` | Insert or update. A new incarnation clears a stale drain request. |
+| `HeartbeatGateway` | `gatewayId, stats` | Refresh the heartbeat and replace the gateway's load report (`GatewayStats`). |
 | `UnregisterGateway` | `gatewayId` | Remove the gateway. |
+| `SetGatewayDraining` | `gatewayId, draining` | Ask a gateway to take itself out of service, or cancel that. The orchestrator exposes it as `POST /api/gateways/drain`. |
 | `HeartbeatOrchestrator` | `orchestratorId, desiredWorkers` | Accepted and ignored by the host, which is the orchestrator. |
 | `SetSetting` | `key, value` | Insert or update. No-op when the value is unchanged. |
 | `EnsureContainer` | `containerId` | Insert an `orphaned` lease at epoch 0 if none exists. |
@@ -138,9 +139,10 @@ public interface IControlPlane : IDisposable
     void RegisterWorker(string workerId, uint workerIndex, string address, ushort port);
     void HeartbeatWorker(string workerId, string status, in WorkerStats stats);
     void UnregisterWorker(string workerId);
-    void RegisterGateway(string gatewayId, string address, ushort port);
-    void HeartbeatGateway(string gatewayId);
+    void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0);
+    void HeartbeatGateway(string gatewayId, in GatewayStats stats);
     void UnregisterGateway(string gatewayId);
+    void SetGatewayDraining(string gatewayId, bool draining);
     void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
     void SetSetting(string key, string value);
     void EnsureContainer(string containerId);
@@ -155,7 +157,7 @@ public interface IControlPlane : IDisposable
 }
 ```
 
-`ControlPlaneExtensions` adds `FindWorker`, `FindLease`, `GetSetting`, `GetSettingInt` and `IsWorkerAlive`.
+`ControlPlaneExtensions` adds `FindWorker`, `FindGateway`, `FindLease`, `GetSetting`, `GetSettingInt` and `IsWorkerAlive`. `GatewayInfo` carries the gateway's `Incarnation`, `DrainRequested` flag and last `Stats`; see [Run more than one gateway](/docs/guides/orchestrator-and-dashboard#run-more-than-one-gateway).
 
 ### How a mirror stays current
 

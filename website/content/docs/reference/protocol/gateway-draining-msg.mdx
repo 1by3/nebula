@@ -1,0 +1,35 @@
+---
+title: "GatewayDrainingMsg"
+description: "Gateway -> client: the gateway is draining and will close this link."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct GatewayDrainingMsg
+```
+
+Gateway -\> client: the gateway is draining and will close this link. The client reconnects (through the address it connected to, which a load balancer maps to another gateway) within [`ReconnectWithinSeconds`](#reconnectwithinseconds), presenting its session token so the session and pawn carry over.
+
+## Fields
+
+### ReconnectWithinSeconds [#reconnectwithinseconds]
+
+```csharp
+public ushort ReconnectWithinSeconds;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static GatewayDrainingMsg Read(NetworkReader r);
+```
+

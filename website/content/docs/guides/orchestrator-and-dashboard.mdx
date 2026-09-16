@@ -70,7 +70,7 @@ The orchestrator stops the retiring worker after it has no containers or authori
 
 The first player after such an idle period pays for it, so Nebula makes the wait explicit instead of failing the join:
 
-1. The client connects to the gateway and is welcomed as usual. There is nowhere to spawn, so the gateway holds the join in `JoinState.Starting` and tells the client roughly how long a worker takes to boot on this host (`IWorkerHost.TypicalBootSeconds`: about 3 s for the `process` host, about 75 s for `hetzner`).
+1. The client connects to the gateway and is welcomed as usual. There is nowhere to spawn, so the gateway holds the join in `JoinState.Starting` and tells the client roughly how long a worker takes to boot on this host (`IWorkerHost.TypicalBootSeconds`: about 3 s for the `process` host, about 75 s for `hetzner` and `cloud`).
 2. The gateway reports the waiting client on its control-plane heartbeat. The orchestrator raises the desired worker count to `max(1, MinWorkers)` **at once** - no scale-out hold, because somebody is already waiting - and takes a parked worker back from the [idle pool](#idle-pool) if there is one, which turns the boot into a restart.
 3. As soon as the worker registers and its lease is active, the gateway places the player. The join finishes on the same connection; the client never reconnects.
 
@@ -88,6 +88,7 @@ Retiring a worker does not always mean throwing its machine away. A host says wh
 
 - The `process` host does not park. A local process costs nothing to start again, so a retired worker is stopped at once.
 - The `hetzner` host parks. Hetzner bills per started hour, so a VM retired after five minutes is paid for until the hour ends. The machine stays up, the worker keeps heartbeating, and the orchestrator simply deals it no containers. It is deleted a couple of minutes before that paid hour runs out unless something takes it back first.
+- The `cloud` host parks. It asks the hosting platform's resource API to park the machine; the platform keeps it until the moment it stops being free and deletes it itself. Taking it back (`unpark`) keeps the worker ID; when the platform has already released the machine, the orchestrator launches a fresh worker instead.
 
 A parked worker keeps its worker id and its worker index, so nothing new is ever started on that index while it sits in the pool, and entity ids stay unambiguous. It is never eligible for a lease and is not counted in the desired worker count.
 
@@ -137,6 +138,49 @@ After `DeadWorkerReplaceDelaySeconds`, the orchestrator starts a replacement on 
 Entities without `PersistentEntity` lose their state when their worker fails. Persistent entities restore their saved checkpoint after reassignment; changes since that checkpoint and fields that were not saved are lost. The gateway asks the new container owner to spawn affected players again. See [Persistence](/docs/guides/persistence).
 </Callout>
 
+## Run more than one gateway
+
+One mesh can be served by any number of gateways. The orchestrator starts one (`gw1`) as a child process next to itself; `nebula start` and `nebula deploy` to Hetzner run that one. Whoever runs the gateway fleet, a hosting platform or you, starts the others and puts a load balancer in front of them. The orchestrator does not start, replace, or size gateways beyond its own, and it does not restart `gw1` if it exits.
+
+### Identity and sessions
+
+Every gateway has a persistent **gateway ID** (`-nebula-gateway-id`, default `gw1`), unique within the mesh, and draws a random **incarnation** when its process starts. The incarnation is the high half of every session ID the gateway issues, so two gateways, or two starts of the same gateway, never hand out the same client ID. Workers key player state by that session ID.
+
+Each welcome carries a signed session token. A client that reconnects, to any gateway of the mesh, presents it and gets the same session and pawn back. This is what lets a load balancer move clients between gateways without the game noticing more than a pause in input; see [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection).
+
+For this to work, every gateway of a mesh needs:
+
+- The same `MeshToken`. It authenticates gateways and workers to each other and to the control plane.
+- The same `AuthSigningKey` (`NEBULA_AUTH_KEY`), which the session tokens and anonymous identities are signed with. With the key derived from the mesh token instead, every deployment changes it; the gateway warns about that.
+- A distinct `-nebula-gateway-id`.
+- `-nebula-gateway <address:port>` set to the address clients use, which is the load balancer's address when there is one. The gateway registers that address in the control plane and the dashboard shows it.
+
+### Load reports
+
+Every gateway reports itself on each control-plane heartbeat: welcomed clients with a pawn, clients being authenticated or placed, sessions waiting for a reconnect, packets and bytes per second on the client side, bytes per second on the worker side, CPU as a fraction of one core, memory, the longest loop lag, worker links, and whether it is ready or draining. `GET /api/state` publishes them per gateway (`activeClients`, `joiningClients`, `reconnectingClients`, `packetsIn`, `packetsOut`, `bytesIn`, `bytesOut`, `workerBytesIn`, `workerBytesOut`, `cpu`, `memoryBytes`, `loopLagMs`, `workerConnections`, `ready`, `draining`), together with `incarnation` and `drainRequested`. Size the fleet from these numbers; a connection count alone says nothing about replication cost. The field contract is in the [control plane specification](/docs/specifications/control-plane#gateways).
+
+A gateway whose heartbeat is older than three times `WorkerTimeoutSeconds` is removed from the list, so `/api/state` names the gateways that exist rather than every one that ever registered.
+
+### Drain a gateway
+
+To take a gateway out of service without dropping its players, ask it to drain:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:7080/api/gateways/drain -ContentType application/json -Body '{"id": "gw2", "draining": true}'
+```
+
+The orchestrator sets `drainRequested` on the gateway's control-plane row. The gateway sees the flag, stops accepting new clients (a new join is refused with `gateway is draining`, and the client retries after a second), and sends `GatewayDraining` to every connected client with `NebulaConfig.GatewayDrainReconnectSeconds` (default 10). Each client reconnects at once with its session token, through the load balancer to another gateway, and continues with its pawn. The gateway reports `draining` on its heartbeat and answers `503` on its health endpoint. Stop the process once `activeClients` reaches zero or your own drain timeout passes. Send `"draining": false` to cancel; the gateway then accepts clients again.
+
+A drain request is bound to the gateway's incarnation: a gateway that restarts registers with a new one, which clears a stale request.
+
+### Health checks
+
+The standalone gateway's HTTP server answers `GET /healthz` with `200` while the gateway is ready (registered, connected to the control plane, not draining) and `503` otherwise. Point the load balancer's health check at it on the web port (`WebPort`, the gateway port by default). The endpoint exists only when `WebClients` is on, which is the default.
+
+### The Gateways table
+
+The dashboard's **Gateways** table lists every registered gateway with its address, heartbeat age, clients, clients joining, outbound rate, CPU, loop lag, and state (`starting`, `ready`, `drain requested`, `draining`). **Drain** asks a gateway to drain and **Undrain** cancels; the button is disabled while the mesh has only one gateway, because its clients would have nowhere to go.
+
 ## Open the Nebula Dashboard
 
 To open the local dashboard, visit `http://localhost:7080/`. Change `NebulaConfig.DashboardPort` or pass `-nebula-dashboard-port` to use another port. Set the port to `0` to disable the dashboard.
@@ -155,6 +199,7 @@ Use the overview to:
 - Review player, bot, and server-driven entity counts.
 - Check tick time and heartbeat age for each worker.
 - Add, retire, or stop a worker.
+- See every gateway's load and drain one (see [Run more than one gateway](#run-more-than-one-gateway)).
 - Edit game-defined mesh settings.
 - Pin a dynamic container to a worker or return it to its carrier's worker.
 - Read recent orchestrator events.
@@ -206,7 +251,7 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 
 | Method and path | Body | Result |
 | --- | --- | --- |
-| `GET /api/state` | none | Returns workers, containers, gateways, totals, settings, and recent events. |
+| `GET /api/state` | none | Returns workers, containers, gateways with their load reports, totals, settings, and recent events. |
 | `POST /api/desired` | `{"desired": 2}` | Sets the requested worker count between 0 and 32. |
 | `POST /api/settings` | `{"key": "round-time", "value": "600"}` | Sets one game-defined mesh setting. |
 | `POST /api/workers/add` | none | Adds one to the requested worker count. |
@@ -214,6 +259,7 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `POST /api/workers/kill` | `{"workerId": "w3"}` | Stops one worker immediately to simulate a failure. |
 | `POST /api/workers/unpark` | `{"workerId": "w3"}` or `{}` | Takes one worker back out of the idle pool and raises the desired count. Without an ID, Nebula chooses the most recently parked one. |
 | `POST /api/workers/delete-parked` | `{"workerId": "w3"}` | Deletes one parked worker now instead of waiting for its paid time to run out. |
+| `POST /api/gateways/drain` | `{"id": "gw2", "draining": true}` | Asks one gateway to refuse new clients and send its clients to another gateway. `"draining": false` cancels. `404` for an unknown gateway. |
 | `POST /api/rebalance` | none | Runs a container-assignment pass immediately. |
 | `POST /api/containers/hint` | `{"containerId": "cell_3_0_1", "hint": "x2,seam=0.5,dedicated"}` | Sets one container's balancing hint. An empty hint clears it. |
 | `POST /api/containers/pin` | `{"containerId": "interior#…", "workerId": "w2"}` | Assigns a dynamic container to a live worker. |
@@ -235,13 +281,25 @@ Set `NebulaConfig.WorkerHost` or pass `-nebula-host` to select a worker host:
 | Value | Where workers run | When to use it |
 | --- | --- | --- |
 | `process` | Child processes on the orchestrator's computer | Use for local development. This is the default used by `nebula start`. |
-| `hetzner` | One Hetzner Cloud VM per worker | Use for hosted tests. This is the host used by `nebula deploy`. |
+| `hetzner` | One Hetzner Cloud VM per worker | Use for hosted tests. This is the host used by `nebula deploy --target hetzner`. |
+| `cloud` | One machine per worker, requested from a hosting platform's resource API | Use when a hosting platform runs the orchestrator for you and gives it a deployment-scoped API. This is the host used by [Nebula Cloud](/docs/deploy/cloud). |
 
-The gateway always runs as a child process next to the orchestrator, even when workers run on cloud VMs.
+The orchestrator starts one gateway (`gw1`) as a child process next to itself whatever the host, unless `OrchestratorSpawnsGateway` is off (`-nebula-spawn-gateway false`). See [Run more than one gateway](#run-more-than-one-gateway).
 
 For a local process host, set `NebulaConfig.WorkerExecutable` or pass `-nebula-worker-exe` when the orchestrator cannot find the game executable. Worker logs are written to the build's `Logs` directory.
 
 For Hetzner, let `nebula deploy` configure the private network, VM image, firewall, SSH key, build URL, and API token. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
+
+### The cloud worker host
+
+With `-nebula-host cloud`, the orchestrator does not call a cloud provider itself. It asks a resource API that is scoped to one deployment for worker machines, and the service behind that API holds the provider credentials and turns each request into a machine. The orchestrator's own machine never sees an account-wide credential, and Nebula's assignment, drain, replacement, and scale-to-zero logic is unchanged; the host only changes where a worker comes from.
+
+| Option | Environment variable | Meaning |
+| --- | --- | --- |
+| `-nebula-cloud-api <url>` | `NEBULA_CLOUD_API` | Base URL of the resource API. The host appends `/d/...`. |
+| `-nebula-cloud-deployment-token <token>` | `NEBULA_CLOUD_DEPLOYMENT_TOKEN` | The deployment-scoped bearer token. Keep it in an environment file rather than on the command line. |
+
+The host calls `GET /d/self` at startup to check the token and read the deployment's region, worker size, and worker ceiling, then `GET /d/workers`. Workers listed from a previous orchestrator run are deleted, not adopted. It requests a machine with `POST /d/workers` (`{"workerId", "index", "port", "commonArgs"}`), polls `GET /d/workers` every five seconds for state and private address, and uses `DELETE /d/workers/<id>`, `POST /d/workers/<id>/park` (`{"seconds": n}`), and `POST /d/workers/<id>/unpark`. A worker resource is `{workerId, resourceId, index, state, privateAddress, size, reason, parkedUntil}` with states `launching`, `running`, `parked`, `exiting`, `exited`, and `failed`, wrapped as `{"worker": ...}` on single answers and `{"workers": [...]}` on the list; errors come as `{"error": {"code", "message"}}`. A create that answers `402` means the deployment reached its spend limit and `409` that it is at its worker ceiling; the worker is reported as failed with that reason. The hosting platform documents the API itself.
 
 ## Test simulation load
 

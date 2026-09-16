@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 12, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 13, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 12. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 13. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `12`. Every `Hello` carries that version.
+The current protocol version is `13`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `12`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `13`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -39,7 +39,7 @@ A client built for the web connects to the gateway over WebRTC data channels ins
 | `ReliableOrdered` | id 0 | reliable, ordered | One data channel message contains one Nebula payload, as on LiteNetLib. |
 
 <Callout type="warn" title="The wire is not secure">
-LiteNetLib connections are not encrypted. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`; only a client's `token` is checked (see [Authentication](/docs/guides/authentication)), and it travels in the clear on a LiteNetLib link. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
+LiteNetLib connections are not encrypted. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`. A client's `token` and `session` are checked (see [Authentication](/docs/guides/authentication)), and a gateway or worker must present a credential derived from the mesh token when the mesh has one; all of them travel in the clear on a LiteNetLib link. Without a mesh token, every gateway and worker peer is accepted. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
 </Callout>
 
 ## Primitive encodings
@@ -86,7 +86,7 @@ Decode each ten-bit value with `(q / 1023) * (2 * r) - r`. Reconstruct the omitt
 
 An entity authority epoch is a `u32` and starts at 1. It increases on every handover. Receivers ignore entity state whose epoch is older than the newest epoch they have accepted. This is separate from the `u64` lease epoch in the [control-plane contract](/docs/specifications/control-plane).
 
-`client_id` is a gateway-local `u32`. Zero means no owner in an entity record and broadcast in an `EntityRpc`. The gateway replaces the `client_id` supplied by a client in `ClientInput` and `ServerRpc` with the ID assigned to that connection.
+`client_id` is a `u64` session identifier that is unique across every gateway of a mesh. A gateway draws a random 32-bit **incarnation** when it starts and numbers its sessions from 1: `client_id = (incarnation << 32) | sequence`. Zero means no owner in an entity record and broadcast in an `EntityRpc`. The gateway replaces the `client_id` supplied by a client in `ClientInput` and `ServerRpc` with the session ID of that connection. A session ID stays the same when the client reconnects with its session token, through any gateway of the mesh (see [`Hello` and session messages](#hello-and-session-messages)).
 
 ### Container reference
 
@@ -113,7 +113,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 8 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 13 sender MUST write them as zero.
 
 ## Message registry
 
@@ -125,7 +125,9 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 2 | `Welcome` | `G-C` | Reliable ordered | [`Welcome`](#hello-and-session-messages) |
 | 3 | `Ping` | `C-G` | Sequenced | [`Ping`](#hello-and-session-messages) |
 | 4 | `Pong` | `G-C` | Sequenced | [`Pong`](#hello-and-session-messages) |
+| 5 | `JoinStatus` | `G-C` | Reliable ordered | [`JoinStatus`](#hello-and-session-messages) |
 | 6 | `JoinRejected` | `G-C` | Reliable ordered | [`JoinRejected`](#hello-and-session-messages) |
+| 7 | `GatewayDraining` | `G-C` | Reliable ordered | [`GatewayDraining`](#hello-and-session-messages) |
 | 10 | `EntitySpawn` | `W-G-C` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 11 | `EntityDespawn` | `W-G-C` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
 | 12 | `EntityVars` | `W-G-C` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -151,7 +153,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 
-IDs not listed in this table are reserved. A version 8 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 13 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -160,16 +162,28 @@ The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Rep
 ### Hello and session messages
 
 ```text
-Hello        := u16 protocol_version, u8 role, string id, u32 index, u8 flags, string token
-Welcome      := u32 client_id, u8 tick_rate, u32 server_tick, string identity, string token
-JoinRejected := string reason
-Ping         := f64 client_time
-Pong         := f64 client_time, u32 server_tick
+Hello           := u16 protocol_version, u8 role, string id, u32 index, u8 flags,
+                   string token, string session, u32 incarnation
+Welcome         := u64 client_id, u8 tick_rate, u32 server_tick, string identity,
+                   string token, string session_token, bool reclaimed
+JoinStatus      := u8 state, u16 estimated_seconds
+JoinRejected    := string reason, bool retry
+GatewayDraining := u16 reconnect_within_seconds
+Ping            := f64 client_time
+Pong            := f64 client_time, u32 server_tick
 ```
 
-For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, and `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity. For a worker, `id` is the worker ID, `index` is its worker index, and `token` is empty. A gateway sends its gateway ID with an index of zero and an empty token.
+For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity, `session` is the `session_token` from the last `Welcome` or empty on a first connection, and `incarnation` is zero.
 
-The gateway assigns a client ID and sends the fixed tick rate, currently `60`, in `Welcome`. `Welcome.identity` is the player's identity: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. `Welcome.token` is set only when the client presented no token; it is the anonymous token the gateway issued for that identity, which the client keeps for its next `Hello`. A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. See [Authentication](/docs/guides/authentication).
+For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. Both send a nonzero `incarnation`, a random number drawn when the process started, so a peer that sees the same ID twice can tell a restart from a reconnect. When the mesh has a mesh token, `token` on a gateway or worker `Hello` is the credential `unix_seconds.base64url(HMAC-SHA256(key, role|id|incarnation|unix_seconds))`, where `key = SHA-256("nebula-peer-auth:" + mesh_token)` and `role` is the decimal `PeerRole` value. A receiver rejects a credential whose timestamp differs from its clock by more than 300 seconds or whose MAC does not match. Without a mesh token, `token` is empty and every peer is accepted.
+
+The gateway assigns the client ID, a mesh-wide session ID, and sends the fixed tick rate, currently `60`, in `Welcome`. `Welcome.identity` is the player's identity: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. `Welcome.token` is set only when the client presented no token; it is the anonymous token the gateway issued for that identity, which the client keeps for its next `Hello`. `Welcome.session_token` is a signed token naming the session: an HS256 JSON Web Token over the session ID, identity, display name, bot flag, and connection generation, valid for 24 hours. The client keeps it for the life of the process and presents it as `Hello.session` when it reconnects. A gateway that verifies it, for the identity that just authenticated, welcomes the client with the same `client_id` and sets `reclaimed`; the pawn is the same one when the worker still holds it. A session token for another identity, an expired one, or one signed for another mesh is ignored and a new session starts. See [Authentication](/docs/guides/authentication).
+
+`JoinStatus.state` is `0` (none), `1` (starting: welcomed, but no worker holds a lease yet) or `2` (joined). `estimated_seconds` is a rough wait while starting; `0` means unknown.
+
+A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. `retry` set means the refusal is about the gateway, not the client: it is draining, and the client SHOULD reconnect after a short delay, which a load balancer then hands to another gateway. `retry` clear means the client's credentials were refused and retrying with the same ones is pointless.
+
+`GatewayDraining` tells a connected client that the gateway is leaving service. The client SHOULD reconnect within `reconnect_within_seconds`, presenting its session token, so the session and pawn carry over to the gateway that answers.
 
 `Pong.client_time` echoes `Ping.client_time`. `server_tick` is the gateway's current derived tick.
 
@@ -179,7 +193,7 @@ The gateway assigns a client ID and sends the fixed tick rate, currently `60`, i
 EntitySpawnBody :=
   u64 net_id,
   u16 prefab_id,
-  u32 owner_client_id,
+  u64 owner_client_id,
   ContainerRef container,
   u32 entity_epoch,
   u16 owner_worker_index,
@@ -234,13 +248,13 @@ EntityRpcBody :=
   u32 entity_epoch,
   u8 behavior_index,
   u32 method_hash,
-  u32 client_id,
+  u64 client_id,
   bytes args
 ```
 
 `EntityRpc`, `ServerRpc`, and `AuthorityRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
 
-Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. The gateway overwrites `ServerRpc.client_id` with the sending connection's assigned ID and only forwards a call for an entity that connection owns.
+Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. The gateway overwrites `ServerRpc.client_id` with the sending connection's session ID and only forwards a call for an entity that connection owns. A worker accepts a `ServerRpc` for a session only from the gateway that currently holds that session.
 
 ### Batched transform state
 
@@ -283,7 +297,7 @@ After `fields`, write data in this order:
 ### Prediction messages
 
 ```text
-ClientInputBody := u32 client_id, u8 frame_count, InputFrame[frame_count]
+ClientInputBody := u64 client_id, u8 frame_count, InputFrame[frame_count]
 InputFrame      := u32 tick, bytes payload
 
 OwnerState :=
@@ -292,12 +306,12 @@ OwnerState :=
   u32 tick,
   u32 last_input_tick,
   s8 input_lead,
-  u32 owner_client_id,
+  u64 owner_client_id,
   ContainerRef container,
   bytes state
 ```
 
-`ClientInput` and `ForwardInput` share `ClientInputBody`. The stock client repeats up to its three newest frames to tolerate loss. Each input payload is the exact output of the game's `INetworkInput.Serialize` method.
+`ClientInput` and `ForwardInput` share `ClientInputBody`. A worker accepts `ClientInput` for a session only from the gateway that currently holds that session. The stock client repeats up to its three newest frames to tolerate loss. Each input payload is the exact output of the game's `INetworkInput.Serialize` method.
 
 `OwnerState.state` is the exact output of the predicted behavior's `WriteState`. `input_lead` is the smallest observed `input_tick - worker_tick` since the previous report, clamped to `-127` through `127`. `-128` means that no input arrived during the reporting window.
 
@@ -343,11 +357,15 @@ Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and 
 ### Player lifecycle
 
 ```text
-SpawnPlayer   := u32 client_id, ContainerRef container, string name, bool is_bot, string identity
-DespawnPlayer := u32 client_id
+SpawnPlayer   := u64 client_id, ContainerRef container, string name, bool is_bot, string identity, u64 generation
+DespawnPlayer := u64 client_id, u64 generation
 ```
 
 The gateway selects a currently assigned container and asks its worker to spawn the player. `identity` is the player's identity as the gateway established it from the client's `Hello`. The game supplies the actual spawn behavior.
+
+`SpawnPlayer` is also the message by which a gateway claims a session. `generation` is the session's connection generation: every time a client connects or reconnects, the gateway sets it to a value newer than any the session had before. A worker that already holds a pawn for `client_id` re-announces it to the sender with `EntitySpawn` and, when `generation` is newer than the one it holds, routes the session's input and RPCs through the sender from then on. A worker MUST ignore a `SpawnPlayer` or `DespawnPlayer` whose `generation` is older than the one it holds. This fences a gateway that lost the client from undoing what the gateway that gained it did.
+
+On `DespawnPlayer`, or when a gateway's link is lost, a worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30) and despawns it afterwards unless a newer `SpawnPlayer` reclaimed the session. With the setting at `0` it despawns the pawn at once.
 
 ### Authority transfer
 
@@ -358,10 +376,14 @@ AuthorityTransfer :=
   bytes pending_inputs,
   bytes handover_state,
   u16 ghost_worker_count,
-  string ghost_worker_id[ghost_worker_count]
+  string ghost_worker_id[ghost_worker_count],
+  u64 session_generation,
+  string session_gateway
 ```
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 8. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+`session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
+
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 13. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,
@@ -397,7 +419,7 @@ Peers send `Hello` before role-specific traffic. A worker ignores non-`Hello` me
 
 Nebula readers throw on a truncated field. The client, gateway, and worker catch malformed-packet exceptions, log them, and continue polling. They log unknown or directionally unexpected message IDs. They do not require every message handler to consume all trailing bytes, so a compatible sender MUST still omit unspecified trailing data.
 
-The gateway validates client ownership before forwarding `ServerRpc`, stamps client IDs, filters transform state by current worker ownership and epoch, and rejects older entity updates. These checks limit accidental stale traffic; they do not authenticate a sender.
+The gateway validates client ownership before forwarding `ServerRpc`, stamps session IDs, filters transform state by current worker ownership and epoch, and rejects older entity updates. A worker accepts input and `ServerRpc` for a session only from the gateway that holds it, and ignores player claims and despawns with an older generation. These checks limit accidental stale traffic and fence out a gateway that lost a session. Only the mesh peer credential authenticates a service peer, and only when a mesh token is configured.
 
 <Cards>
   <Card title="Control-plane contract" href="/docs/specifications/control-plane" description="Tables, reducers, lease transitions, and failure behavior." />

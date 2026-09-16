@@ -18,7 +18,7 @@ Add [`NetworkIdentity`](/docs/reference/core/network-identity) to mark a GameObj
 | `NetId` | `ulong` | The entity ID created by the worker that spawned it: `[workerIndex:16][sequence:48]`. |
 | `Epoch` | `uint` | Monotonic authority epoch, bumped on every authority change. Every entity message carries it and stale-epoch messages are dropped everywhere. |
 | `Container` | `Container` | The container the entity is currently in. Positions travel container-local on the wire. |
-| `OwnerClientId` | `uint` | The owning client, or `0` when no client owns it. |
+| `OwnerClientId` | `ulong` | The owning client's session ID, or `0` when no client owns it. It stays the same when that client reconnects. |
 | `IsServerDriven` | `bool` | No client owns this entity. The worker with authority drives it. Spawn it with `NebulaWorker.SpawnServerDriven`. |
 | `HasAuthority` | `bool` | Worker side: this process simulates the entity right now. Always `false` on a client. |
 | `IsLocalPlayer` | `bool` | Client side: the local client owns this entity. |

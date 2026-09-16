@@ -1,0 +1,41 @@
+---
+title: "SessionIds"
+description: "Mesh-wide session ids."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs)</div>
+
+```csharp
+public static class SessionIds
+```
+
+Mesh-wide session ids. A gateway draws a random 32-bit incarnation when it starts and numbers its sessions from 1, so two gateways (or two starts of the same gateway) never hand out the same id without any coordination: `id = incarnation << 32 | sequence`. Workers key player state by this id, and it stays the same when the client reconnects through another gateway with its session token.
+
+## Methods
+
+### Make [#make]
+
+```csharp
+public static ulong Make(uint incarnation, uint sequence);
+```
+
+### Incarnation [#incarnation]
+
+```csharp
+public static uint Incarnation(ulong sessionId);
+```
+
+### Sequence [#sequence]
+
+```csharp
+public static uint Sequence(ulong sessionId);
+```
+
+### NewIncarnation [#newincarnation]
+
+```csharp
+public static uint NewIncarnation();
+```
+
+A fresh incarnation: random, never 0 (0 is "no incarnation" on the wire).
+

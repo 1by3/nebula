@@ -1,0 +1,45 @@
+---
+title: "MeshPeerAuth"
+description: "How gateways and workers prove to each other that they belong to the mesh: HelloMsg.Token on an infrastructure link carries unixSeconds.base64url(HMAC-SHA256(key, role|id|incarnation|unixSeconds)) with a key derived from the mesh token (..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs)</div>
+
+```csharp
+public static class MeshPeerAuth
+```
+
+How gateways and workers prove to each other that they belong to the mesh: [`HelloMsg.Token`](/docs/reference/protocol/hello-msg#token) on an infrastructure link carries `unixSeconds.base64url(HMAC-SHA256(key, role|id|incarnation|unixSeconds))` with a key derived from the mesh token ([`NebulaConfig.MeshToken`](/docs/reference/core/nebula-config#meshtoken)). A peer without the mesh token cannot mint one, and a captured token is only good for the same role, id and incarnation for [`MaxAgeSeconds`](#maxageseconds). With no mesh token configured (a local mesh) every peer is accepted, as before. Players are authenticated separately ([`OidcTokenValidator`](/docs/reference/gateway/oidc-token-validator), [`AnonymousIdentityIssuer`](/docs/reference/gateway/anonymous-identity-issuer)).
+
+## Fields
+
+### MaxAgeSeconds [#maxageseconds]
+
+```csharp
+public const long MaxAgeSeconds = 300;
+```
+
+## Methods
+
+### DeriveKey [#derivekey]
+
+```csharp
+public static byte[] DeriveKey(string meshToken);
+```
+
+### Issue [#issue]
+
+```csharp
+public static string Issue(string meshToken, PeerRole role, string id, uint incarnation);
+public static string Issue(byte[] key, PeerRole role, string id, uint incarnation, long unixSeconds);
+```
+
+### Verify [#verify]
+
+```csharp
+public static bool Verify(string meshToken, PeerRole role, string id, uint incarnation, string token, out string error);
+public static bool Verify(byte[] key, PeerRole role, string id, uint incarnation, string token, long now, out string error);
+```
+
+True when `token` proves the peer holds the mesh token, or when the mesh has none.
+

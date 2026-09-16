@@ -25,6 +25,8 @@ When a client connects, the gateway chooses a ready container and asks its worke
 
 The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It filters entities by instance visibility, then reduces the update rate for visible entities farther from the client's pawn. Configure those distance bands in `NebulaConfig`.
 
+One mesh can have several gateways. Each has a persistent ID (`-nebula-gateway-id`) and a random incarnation per start, and assigns every client a **session ID** that is unique across the mesh: `(incarnation << 32) | sequence`. That session ID is the client ID game code sees. The gateway's welcome carries a signed session token; a client that reconnects through any gateway of the mesh presents it and keeps its session ID and pawn. Workers key player state by session ID and accept input for a session only from the gateway that currently holds it. A gateway asked to drain refuses new clients and tells the ones it has to reconnect elsewhere, and every gateway reports its load on each control-plane heartbeat. See [Run more than one gateway](/docs/guides/orchestrator-and-dashboard#run-more-than-one-gateway).
+
 ## Orchestrator
 
 The standalone `nebula-orchestrator` executable starts the gateway and keeps `DesiredWorkers` workers running. `nebula start` supplies the exported service data and Unity worker executable path. A worker host decides whether workers run as child processes or on separate cloud virtual machines.
@@ -78,10 +80,12 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 
 | Message | Direction | Purpose |
 | --- | --- | --- |
-| `Hello` | client to gateway; both sides of service links | Identify the role, id, index, protocol version, and flags. |
-| `Welcome` | gateway to client | Assign the client ID and report the tick rate and server tick. |
+| `Hello` | client to gateway; both sides of service links | Identify the role, id, index, protocol version, and flags. A client adds its identity token and, when reconnecting, its session token; a gateway or worker adds its incarnation and, when the mesh has a token, a credential derived from it. |
+| `Welcome` | gateway to client | Assign the session ID (the client ID), report the tick rate, server tick, and identity, and hand out the session token. |
+| `JoinStatus`, `JoinRejected` | gateway to client | Report that the join is waiting for a worker or was completed, or refuse it with a reason (and whether retrying makes sense). |
+| `GatewayDraining` | gateway to client | Ask the client to reconnect elsewhere within a number of seconds because the gateway is leaving service. |
 | `Ping`, `Pong` | client to gateway and back | Round-trip time (RTT) measurement for the input lead. |
-| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity |
+| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. |
 | `ContainerOwnership` | gateway to client | The container-to-worker table with lease epochs, for routing and the overlay. |
 
 **Worker to gateway to client**
@@ -110,12 +114,12 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `GhostState` | Sequenced or Reliable | Selected root transform updates for ghosts, with the same opt-in and recovery rules as `WorldState`. |
 | `GhostVars` | Reliable | Sends the complete variable block after one variable changes. |
 | `GhostSyncState` | Reliable or Sequenced | Sends sync-component changes to ghosts. |
-| `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, and existing ghost recipients. |
+| `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, existing ghost recipients, and the owner's session (generation and gateway) so the receiver accepts the owner's input at once. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
 | `ForwardInput` | Sequenced | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 
 ## Trust model
 
-Nebula does not encrypt or authenticate the worker-to-worker or client links. Run workers on a trusted private network. Put public client traffic behind a relay or protected ingress that meets your security requirements.
+Nebula does not encrypt the worker-to-worker or UDP client links. When the mesh has a `MeshToken`, gateways and workers refuse a peer that cannot present a credential derived from it; without one, any peer is accepted. Clients are identified by token (see [Authentication](/docs/guides/authentication)), but the token travels in the clear on UDP. Run workers on a trusted private network. Put public client traffic behind a relay or protected ingress that meets your security requirements.
 
 Nebula sends a complete entity variable block when any `NetworkVariable` changes. It sends most positions as full floating-point values. See [Serialization](/docs/guides/serialization).

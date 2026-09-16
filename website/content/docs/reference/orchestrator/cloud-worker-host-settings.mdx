@@ -1,0 +1,47 @@
+---
+title: "CloudWorkerHostSettings"
+description: "Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/CloudWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/CloudWorkerHost.cs)</div>
+
+```csharp
+public sealed class CloudWorkerHostSettings
+```
+
+Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. Read from `-nebula-cloud-api` and `-nebula-cloud-deployment-token`, with `NEBULA_CLOUD_API` and `NEBULA_CLOUD_DEPLOYMENT_TOKEN` as environment fallbacks (a systemd EnvironmentFile keeps the token off the command line).
+
+## Fields
+
+### ApiUrl [#apiurl]
+
+```csharp
+public string ApiUrl = "";
+```
+
+Base URL of the resource API, for example `https://api.example.com/v1`. The host appends `/d/…`.
+
+### DeploymentToken [#deploymenttoken]
+
+```csharp
+public string DeploymentToken = "";
+```
+
+The deployment-scoped bearer token. Never logged.
+
+### PollIntervalSeconds [#pollintervalseconds]
+
+```csharp
+public float PollIntervalSeconds = 5f;
+```
+
+How often the worker list is refreshed.
+
+## Methods
+
+### FromCommandLine [#fromcommandline]
+
+```csharp
+public static CloudWorkerHostSettings FromCommandLine();
+```
+

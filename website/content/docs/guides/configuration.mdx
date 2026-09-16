@@ -39,11 +39,12 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `WebPort` | `0` | Set the gateway's TCP port for WebRTC offers and the web build. `0` uses the same number as `GatewayPort`. A web client connects to this port. |
 | `WebRtcPort` | `0` | Set the gateway's UDP port for WebRTC traffic. `0` uses `GatewayPort + 1`. |
 | `ControlPlaneUrl` | `http://127.0.0.1:7080/` | Set the orchestrator's dashboard address for a worker or gateway you start by hand. The orchestrator passes it to the processes it launches. |
-| `MeshToken` | empty | Set a shared secret that workers and gateways present to the orchestrator. Empty means no token. `nebula deploy` generates one per deployment. |
+| `MeshToken` | empty | Set a shared secret that workers and gateways present to the orchestrator, and to each other when they connect. Empty means no token and every peer is accepted. `nebula deploy` generates one per deployment. |
 | `UseLocalControlPlane` | `false` | Enable the in-process control plane only when all server roles run in one process, such as in a test. |
 | `DatabaseUrl` | empty | Select where the orchestrator keeps the control plane and saved entities: `sqlite:<file>`, `postgres://...`, `file:<folder>`, or `memory`. Empty means a default next to the process. |
 | `WorkerCount` | `4` | Set the number of workers to start with. |
-| `WorkerHost` | `process` | Use `process` for child processes or `hetzner` for one Hetzner Cloud VM per worker. |
+| `WorkerHost` | `process` | Use `process` for child processes, `hetzner` for one Hetzner Cloud VM per worker, or `cloud` to request machines from a hosting platform's resource API. See [Choose where workers run](/docs/guides/orchestrator-and-dashboard#choose-where-workers-run). |
+| `OrchestratorSpawnsGateway` | `true` | Let the orchestrator start one gateway (`gw1`) as a child process. Turn it off when whoever runs the gateway fleet starts every gateway. |
 | `DashboardPort` | `7080` | Set the dashboard port. Use `0` to disable the dashboard. |
 
 ### Autoscaling
@@ -77,6 +78,8 @@ autoscaling grow it towards `B`.
 | `WorkerTimeoutSeconds` | `5` | Choose how long the orchestrator waits before it treats a silent worker as dead. |
 | `DeadWorkerReplaceDelaySeconds` | `8` | Wait this long before starting a replacement for a dead worker. |
 | `WorkerDrainTimeoutSeconds` | `10` | Give a retiring worker this long to transfer its entities before stopping it. |
+| `SessionReclaimSeconds` | `30` | Keep a player's pawn this long after the player's link drops, so the player can reconnect (through any gateway of the mesh) with the same session and pawn. `0` despawns at once. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection). |
+| `GatewayDrainReconnectSeconds` | `10` | Tell the clients of a draining gateway that they have this long to reconnect before it closes their links. |
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
@@ -129,14 +132,15 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-port <port>` | worker | Set the worker's listening port. |
 | `-nebula-advertise <address\|auto>` | worker, gateway, orchestrator | Set the address advertised to other processes. Use `auto` to select the first private IPv4 address. |
 | `-nebula-control-plane <url>` | worker, gateway | Override `ControlPlaneUrl`. |
+| `-nebula-gateway-id <id>` | gateway | Set the gateway's persistent ID (default `gw1`). Give every gateway of a mesh a distinct one. |
 | `-nebula-web true\|false` | gateway | Override `WebClients`. |
 | `-nebula-web-port <port>`, `-nebula-webrtc-port <port>` | gateway | Override `WebPort` and `WebRtcPort`. |
 | `-nebula-web-root <folder>` | gateway | Serve the web build from this folder. Without it, the gateway serves a `Web` folder next to its executable or next to its build folder. |
 | `-nebula-web-tls off\|acme` | gateway, orchestrator | Serve the web port over HTTPS with a certificate from an ACME certificate authority, Let's Encrypt by default. The orchestrator passes it to the gateway it starts. See [Serve HTTPS for hosted pages](/docs/guides/web-builds#serve-https-for-hosted-pages). |
 | `-nebula-web-tls-dir <folder>`, `-nebula-acme-directory <url>`, `-nebula-acme-email <address>` | gateway, orchestrator | Choose where the certificate and account key are kept, which ACME server issues the certificate, and the contact address it registers. |
-| `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. |
+| `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. With a token set, gateways and workers refuse peers that cannot present a credential derived from it. |
 | `-nebula-auth-issuers <urls>`, `-nebula-auth-audience <id>`, `-nebula-auth-anonymous true\|false` | gateway, orchestrator | Override `AuthIssuers`, `AuthAudience`, and `AuthAnonymous`. The orchestrator passes them to the gateway it starts. See [Authentication](/docs/guides/authentication). |
-| `-nebula-auth-key <secret>` | gateway, orchestrator | Override `AuthSigningKey`, the key anonymous identity tokens are signed with. The standalone gateway also reads `NEBULA_AUTH_KEY`. |
+| `-nebula-auth-key <secret>` | gateway, orchestrator | Override `AuthSigningKey`, the key anonymous identity tokens and session tokens are signed with. The standalone gateway also reads `NEBULA_AUTH_KEY`. Every gateway of a mesh needs the same key. |
 | `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
 | `-nebula-persistence-mode auto\|database\|remote\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |
@@ -150,7 +154,9 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-settings key=value,key=value` | orchestrator | Add game-defined, mesh-wide settings to the control plane. |
 | `-nebula-dashboard-port <port>` | orchestrator | Set the dashboard port. |
 | `-nebula-dashboard-bind <address\|+>` | orchestrator | Bind the dashboard to one address. Use `+` to bind all interfaces. |
-| `-nebula-host process\|hetzner` | orchestrator | Select where workers run. |
+| `-nebula-host process\|hetzner\|cloud` | orchestrator | Select where workers run. |
+| `-nebula-cloud-api <url>`, `-nebula-cloud-deployment-token <token>` | orchestrator | With `-nebula-host cloud`, the resource API and the deployment-scoped token. The standalone orchestrator also reads `NEBULA_CLOUD_API` and `NEBULA_CLOUD_DEPLOYMENT_TOKEN`. See [The cloud worker host](/docs/guides/orchestrator-and-dashboard#the-cloud-worker-host). |
+| `-nebula-spawn-gateway true\|false` | orchestrator | Override `OrchestratorSpawnsGateway`. |
 | `-nebula-worker-exe <path>` | orchestrator | Select the executable used to start workers and the gateway. |
 | `-nebula-build-dir <path>` | orchestrator | Serve worker build files from this directory at `/build/`. |
 | `-nebula-ghost-band <metres>` | worker | Override `GhostBandMargin`. |
@@ -158,7 +164,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-reset false` | orchestrator | Restore the stored control plane instead of starting empty. The default resets this temporary registry state. |
 | `-nebula-verbose` | all roles | Write debug-level logs. |
 
-Cloud deployments also use `-nebula-cloud-*` options. Let `nebula deploy` supply them unless you run the orchestrator yourself. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner) for the supported values.
+Hetzner deployments also use the other `-nebula-cloud-*` options (location, type, image, network, ssh key, firewall, and the provider token). Let `nebula deploy` supply them unless you run the orchestrator yourself. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner) for the supported values.
 
 Unity's standard `-batchmode`, `-nographics`, and `-logFile <path>` options also apply.
 
@@ -199,7 +205,7 @@ Run `nebula init` to create `nebula.json` at the Unity project root. The CLI rea
 | `mesh.idlePoolSeconds` | Sets how long a retired worker stays parked in the idle pool. `0` uses the host's own answer. |
 | `mesh.dashboardPort`, `mesh.gatewayPort` | Set the ports used by a local mesh and by deployment firewalls. |
 | `mesh.database` | Select where the local orchestrator keeps the control plane and saved entities. Leave it out for `sqlite:Library/Nebula/nebula.db`. |
-| `deploy.target` | Selects the deployment provider. This release supports `hetzner`. |
+| `deploy.target` | Selects the deployment target: `hetzner` or `cloud` (see [Deploy to Nebula Cloud](/docs/deploy/cloud)). |
 | `deploy.meshName` | Sets the label and name prefix used for cloud resources. |
 | `deploy.database` | Selects the deployed orchestrator's database (`postgres://...` or `sqlite:<file on the VM>`). Leave it out to use `nebula config database`, else SQLite on the orchestrator VM. |
 | `deploy.workers` | Sets the default worker count for `nebula deploy`. |

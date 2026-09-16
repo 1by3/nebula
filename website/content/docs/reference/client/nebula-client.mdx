@@ -28,7 +28,7 @@ public State ConnectionState { get; }
 ### ClientId [#clientid]
 
 ```csharp
-public uint ClientId { get; }
+public ulong ClientId { get; }
 ```
 
 ### PlayerName [#playername]
@@ -52,6 +52,22 @@ public string AuthToken { get; set; } = "";
 ```
 
 An OpenID Connect ID token to present at the next connection: what your sign-in flow got from a provider the mesh trusts ([`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers)). Set it before [`ConnectTo`](#connectto). Empty (the default) presents the saved anonymous token, or asks the gateway for a new anonymous identity. `-nebula-auth-token` (or `?nebula-auth-token=` in a web build) seeds it.
+
+### SessionToken [#sessiontoken]
+
+```csharp
+public string SessionToken { get; set; } = "";
+```
+
+The session token from the last Welcome ([`WelcomeMsg.SessionToken`](/docs/reference/protocol/welcome-msg#sessiontoken)), presented on every reconnection so the gateway that answers, whichever one of the mesh it is, gives this client its session and pawn back. Kept for the life of the process; [`Disconnect`](#disconnect) keeps it too, so a deliberate reconnect continues the session. Clear it to start a new session on the next connection.
+
+### SessionReclaimed [#sessionreclaimed]
+
+```csharp
+public bool SessionReclaimed { get; }
+```
+
+True when the last Welcome reclaimed the session (the pawn is the one from before the reconnection).
 
 ### LocalPlayer [#localplayer]
 
@@ -232,6 +248,14 @@ public event Action<JoinState, int> JoinStateChanged;
 ```
 
 The join's state changed: (state, estimated seconds). Raised on the main thread.
+
+### GatewayDraining [#gatewaydraining]
+
+```csharp
+public event Action<int> GatewayDraining;
+```
+
+The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.
 
 ## Methods
 

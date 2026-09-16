@@ -1,0 +1,53 @@
+---
+title: "SessionTokens"
+description: "Issues and checks the session tokens a gateway gives every welcomed client (WelcomeMsg.SessionToken)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs)</div>
+
+```csharp
+public sealed class SessionTokens
+```
+
+Issues and checks the session tokens a gateway gives every welcomed client ([`WelcomeMsg.SessionToken`](/docs/reference/protocol/welcome-msg#sessiontoken)). A token is an HS256 JWT over the session id, identity, display name and generation, signed with a key every gateway of the mesh shares (derived from the player signing key, so one configured secret covers both), which is what lets a client reconnect through *another* gateway and get the same session back. A token says nothing about whether the session still exists: that is the worker's [`PlayerSessions`](/docs/reference/protocol/player-sessions) to decide.
+
+## Constructors
+
+### SessionTokens [#sessiontokens]
+
+```csharp
+public SessionTokens(byte[] key);
+```
+
+## Fields
+
+### Issuer [#issuer]
+
+```csharp
+public const string Issuer = "nebula-session";
+```
+
+## Methods
+
+### DeriveKey [#derivekey]
+
+```csharp
+public static byte[] DeriveKey(byte[] playerKey);
+```
+
+The session key for a mesh whose player signing key is `playerKey` (a different key for a different purpose, from one secret).
+
+### Issue [#issue]
+
+```csharp
+public string Issue(in SessionClaims claims);
+```
+
+### Verify [#verify]
+
+```csharp
+public bool Verify(string token, out SessionClaims claims, out string error);
+```
+
+True when the token was signed for this mesh and has not expired; `error` says why otherwise.
+
