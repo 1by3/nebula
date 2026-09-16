@@ -48,7 +48,11 @@ the environment points every command at another API host; --api stores one at lo
         string apiUrl = CliConfig.CloudSettings.ResolveApiUrl(ctx.Config.Cloud, args.Get("api") is { } a ? CliConfig.CloudSettings.NormalizeApiUrl(a) : null);
         if (Environment.GetEnvironmentVariable("NEBULA_CLOUD_API") is { Length: > 0 } && args.Has("api")) Ui.Warn("NEBULA_CLOUD_API is set and takes precedence over --api");
         var api = CloudApi.Anonymous(apiUrl);
-        Ui.Step($"logging in to Nebula Cloud ({apiUrl})");
+        string source = Environment.GetEnvironmentVariable("NEBULA_CLOUD_API") is { Length: > 0 } ? "NEBULA_CLOUD_API"
+            : args.Has("api") ? "--api"
+            : ctx.Config.Cloud?.ApiUrl is { Length: > 0 } ? "remembered from your last login; --api <url> changes it"
+            : "the default";
+        Ui.Step($"logging in to Nebula Cloud ({apiUrl}, {source})");
         var start = api.StartDeviceLogin();
         string url = start.VerificationUrlComplete ?? start.VerificationUrl;
         Ui.Blank();
@@ -73,6 +77,8 @@ the environment points every command at another API host; --api stores one at lo
         cloud.RefreshToken = null;
         cloud.ExpiresAt = null;
         cloud.User = null;
+        // The next login starts from the default API again (or --api / NEBULA_CLOUD_API).
+        cloud.ApiUrl = null;
         ctx.SaveConfig();
         Ui.Ok("logged out");
         return 0;

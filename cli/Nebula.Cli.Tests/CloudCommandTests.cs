@@ -197,6 +197,7 @@ public class CloudCommandTests
         Assert.That(r.Code, Is.EqualTo(0), r.All);
         Assert.That(_cloud.Of("POST", "/v1/auth/logout").Single().Json!["refreshToken"]!.ToString(), Is.EqualTo("ref1"));
         Assert.That(Config().Cloud!.IsLoggedIn, Is.False);
+        Assert.That(Config().Cloud!.ApiUrl, Is.Null, "logout forgets the API a previous --api stored");
     }
 
     // --- deploy ------------------------------------------------------------------------------------------------
