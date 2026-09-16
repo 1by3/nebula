@@ -88,17 +88,35 @@ public sealed class StatusCommand : Command
 {
     public override string Name => "status";
     public override string Summary => "Show workers, containers, entity counts, persistence, and recent events";
-    public override string Usage => "[--cloud]";
+    public override string Usage => "[--cloud] [--target hetzner|cloud] [--json]";
+    public override string? Details => @"
+Without --cloud, show the local mesh from its dashboard. With --cloud, show the deployed mesh: on Nebula Cloud the
+deployment's health, orchestrator, gateways (clients, traffic, CPU, loop lag, draining), workers and mesh totals; on
+Hetzner the servers plus the orchestrator's dashboard state.
+";
     public override OptionSpec[] Options => new[]
     {
-        new OptionSpec("cloud", false, "the deployed mesh (Hetzner servers + its Nebula Dashboard) instead of the local one"),
-        new OptionSpec("json", false, "print the raw /api/state JSON"),
+        new OptionSpec("cloud", false, "the deployed mesh (Nebula Cloud, or the Hetzner servers + their Nebula Dashboard) instead of the local one"),
+        CloudTarget.TargetOption,
+        new OptionSpec("json", false, "print the raw state JSON"),
+        CloudTarget.OrgOption, CloudTarget.CloudProjectOption, CloudTarget.DeploymentOption,
     };
+    public override string[] Examples => new[] { "nebula status", "nebula status --cloud", "nebula status --cloud --json" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
         var project = ctx.RequireProject();
         string url, gateway;
+        if (args.Has("cloud") && CloudTarget.IsCloud(args, project))
+        {
+            var api = CloudApi.Require(ctx);
+            var t = CloudTarget.Resolve(ctx, api, project, args, create: false);
+            var (status, raw) = api.GetStatus(t.Deployment.Id);
+            if (args.Has("json")) { Console.WriteLine(raw.ToJsonString(CliConfig.Json)); return 0; }
+            Ui.Blank();
+            CloudStatus.Print(status, project.File.Executable);
+            return status.Health is "down" ? 1 : 0;
+        }
         if (args.Has("cloud"))
         {
             var hz = ctx.Config.Hetzner;
@@ -138,20 +156,30 @@ public sealed class LogsCommand : Command
 {
     public override string Name => "logs";
     public override string Summary => "Read the log for the orchestrator, gateway, a worker, or a bot client";
-    public override string Usage => "[role] [--lines N] [--follow] [--cloud]";
+    public override string Usage => "[role] [--lines N] [--follow] [--cloud] [--instance x] [--since 10m]";
+    public override string? Details => @"
+Locally, the role is a log file next to the build: orchestrator, gateway, w1..wN, bot1... On Nebula Cloud the role
+is orchestrator, gateway, worker or all; a worker or gateway name (w1, gw2) selects that instance, as does
+--instance. --since takes a duration (10m, 2h) or an RFC 3339 time, and --follow streams new lines as they arrive.
+On Hetzner the CLI reads the files over ssh (no --follow).
+";
     public override OptionSpec[] Options => new[]
     {
         new OptionSpec("lines", true, "lines to show (default 60)", "N", "n"),
-        new OptionSpec("follow", false, "keep printing as the log grows (local only)", null, "f"),
-        new OptionSpec("cloud", false, "read the log from the deployed mesh over ssh"),
+        new OptionSpec("follow", false, "keep printing as the log grows (local and Nebula Cloud)", null, "f"),
+        new OptionSpec("cloud", false, "read the log of the deployed mesh"),
+        new OptionSpec("instance", true, "cloud: one instance (w1, gw2) of the role", "name"),
+        new OptionSpec("since", true, "cloud: only lines newer than a duration ago (10m, 2h) or a time (RFC 3339)", "when"),
+        CloudTarget.TargetOption, CloudTarget.OrgOption, CloudTarget.CloudProjectOption, CloudTarget.DeploymentOption,
     };
-    public override string[] Examples => new[] { "nebula logs", "nebula logs w2 -n 200", "nebula logs gateway --follow", "nebula logs --cloud w1" };
+    public override string[] Examples => new[] { "nebula logs", "nebula logs w2 -n 200", "nebula logs gateway --follow", "nebula logs --cloud w1", "nebula logs --cloud all --since 10m --follow" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
         var project = ctx.RequireProject();
         string role = args.Positional.Count > 0 ? args.Positional[0] : "orchestrator";
         int lines = args.GetInt("lines", 60);
+        if (args.Has("cloud") && CloudTarget.IsCloud(args, project)) return CloudLogs(ctx, project, args, role, lines);
         if (args.Has("cloud"))
         {
             var hz = ctx.Config.Hetzner;
@@ -190,5 +218,52 @@ public sealed class LogsCommand : Command
             Console.Write(r.ReadToEnd());
             offset = fs.Length;
         }
+    }
+
+    private static int CloudLogs(Context ctx, NebulaProject project, ParsedArgs args, string role, int lines)
+    {
+        var api = CloudApi.Require(ctx);
+        var t = CloudTarget.Resolve(ctx, api, project, args, create: false);
+        string? instance = args.Get("instance");
+        // w1 / gw2 name an instance; the role follows from the prefix.
+        if (System.Text.RegularExpressions.Regex.IsMatch(role, "^w[0-9]+$")) { instance ??= role; role = "worker"; }
+        else if (System.Text.RegularExpressions.Regex.IsMatch(role, "^gw[0-9]+$")) { instance ??= role; role = "gateway"; }
+        if (role is not ("orchestrator" or "gateway" or "worker" or "all")) throw new CliError($"unknown role '{role}'", "orchestrator, gateway, worker, all, or an instance like w1 or gw1");
+        DateTimeOffset? since = ParseSince(args.Get("since"));
+        var page = api.Logs(t.Deployment.Id, role, instance, since, lines);
+        string? lastAt = null;
+        foreach (var l in page.Lines ?? new List<CloudApi.LogLine>()) { PrintLine(l); lastAt = l.At ?? lastAt; }
+        if (!args.Has("follow")) return 0;
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+        api.StreamLogs(t.Deployment.Id, role, instance, l =>
+        {
+            // The stream may replay the tail the page already showed.
+            if (lastAt != null && l.At != null && string.CompareOrdinal(l.At, lastAt) <= 0) return;
+            PrintLine(l);
+        }, cts.Token);
+        return 0;
+    }
+
+    private static void PrintLine(CloudApi.LogLine l)
+    {
+        string time = l.At is { Length: >= 19 } t ? t.Substring(0, 19).Replace('T', ' ') : (l.At ?? "");
+        string who = l.Instance is { Length: > 0 } i ? i : l.Role ?? "";
+        Console.WriteLine($"{time} {who,-12} {(l.Level ?? "info").ToUpperInvariant(),-5} {l.Message}");
+    }
+
+    /// <summary>--since: 10m, 2h, 1d, 30s, or an RFC 3339 timestamp.</summary>
+    public static DateTimeOffset? ParseSince(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(value.Trim(), @"^(\d+(?:\.\d+)?)\s*([smhd])$");
+        if (m.Success)
+        {
+            double n = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            var span = m.Groups[2].Value switch { "s" => TimeSpan.FromSeconds(n), "m" => TimeSpan.FromMinutes(n), "h" => TimeSpan.FromHours(n), _ => TimeSpan.FromDays(n) };
+            return DateTimeOffset.UtcNow - span;
+        }
+        if (DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var at)) return at;
+        throw new CliError($"--since expects a duration like 10m or 2h, or an RFC 3339 time, not '{value}'");
     }
 }

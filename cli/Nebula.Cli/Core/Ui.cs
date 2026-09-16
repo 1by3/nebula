@@ -61,9 +61,12 @@ public static class Ui
 
     // --- prompts ---------------------------------------------------------------------------------
 
+    /// <summary>Tests feed prompts through Console.SetIn; this lets them past the redirected-input check.</summary>
+    internal static bool AssumeInteractive;
+
     private static void RequireInteractive(string what)
     {
-        if (Console.IsInputRedirected)
+        if (Console.IsInputRedirected && !AssumeInteractive)
             throw new CliError($"{what} needs an interactive terminal", "pass the value as an option, or run without redirected input");
     }
 

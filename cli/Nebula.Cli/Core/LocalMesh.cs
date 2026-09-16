@@ -238,6 +238,21 @@ public static class LocalMesh
         catch { return null; }
     }
 
+    /// <summary>POST a JSON body to the orchestrator's dashboard API; null on success, else the error text.</summary>
+    public static string? PostApi(string dashboardUrl, string path, object body)
+    {
+        try
+        {
+            using var content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+            using var resp = Http.PostAsync(dashboardUrl.TrimEnd('/') + path, content).GetAwaiter().GetResult();
+            if (resp.IsSuccessStatusCode) return null;
+            string text = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            try { text = JsonNode.Parse(text)?["error"]?.ToString() ?? text; } catch { }
+            return $"{(int)resp.StatusCode} {text}".Trim();
+        }
+        catch (Exception e) { return e.Message; }
+    }
+
     public static JsonNode? WaitForDashboard(string dashboardUrl, int seconds)
     {
         var deadline = DateTime.UtcNow.AddSeconds(seconds);

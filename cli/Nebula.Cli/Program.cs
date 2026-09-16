@@ -17,6 +17,11 @@ public static class Program
         new ConfigCommand(),
         new DeployCommand(),
         new DestroyCommand(),
+        new CloudCommand(),
+        new DeploymentsCommand(),
+        new ScaleCommand(),
+        new RollbackCommand(),
+        new DashboardCommand(),
         new VersionCommand(),
         new HelpCommand(),
     };

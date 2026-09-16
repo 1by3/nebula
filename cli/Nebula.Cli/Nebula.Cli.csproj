@@ -24,6 +24,10 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nebula.Cli.Tests" />
+  </ItemGroup>
+
   <!-- Shared with the runtime: the one way a database is named (sqlite:, postgres://, file:, memory). -->
   <ItemGroup>
     <Compile Include="../../Packages/com.1by3.nebula/Runtime/Core/DatabaseUrl.cs" Link="Core/DatabaseUrl.cs" />

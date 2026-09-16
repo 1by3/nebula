@@ -40,12 +40,19 @@ public sealed class HelpCommand : Command
         PrintRow("start", "run the mesh locally: orchestrator (with the control plane), gateway, workers");
         PrintRow("stop", "stop the local mesh");
         PrintRow("status", "show the mesh (local, or --cloud)");
-        PrintRow("logs", "show a role's log (orchestrator, gateway, w1, ...)");
+        PrintRow("logs", "show a role's log (orchestrator, gateway, w1, ...; --cloud for the deployed mesh)");
+        PrintRow("scale", "change the worker range of a running mesh (local, hetzner, or cloud)");
+        PrintRow("dashboard", "open the Nebula Dashboard (local, hetzner, or cloud)");
         Ui.Blank();
         Console.WriteLine("deploying");
         PrintRow("config", "configure a deploy target (hetzner), the deployed database, or the Unity editor path");
-        PrintRow("deploy", "build and run the mesh in the cloud");
-        PrintRow("destroy", "delete the mesh's cloud servers");
+        PrintRow("deploy", "build and run the mesh in the cloud (--target cloud for Nebula Cloud, hetzner for your own VMs)");
+        PrintRow("destroy", "delete the deployed mesh");
+        Ui.Blank();
+        Console.WriteLine("Nebula Cloud");
+        PrintRow("cloud", "log in (device code), log out, or show your account");
+        PrintRow("deployments", "list your deployments");
+        PrintRow("rollback", "return a deployment to its previous release");
         Ui.Blank();
         Console.WriteLine("other");
         PrintRow("version", "print the CLI version");
@@ -57,7 +64,7 @@ public sealed class HelpCommand : Command
         return 0;
     }
 
-    private static void PrintRow(string name, string text) => Console.WriteLine($"  {name,-10} {text}");
+    private static void PrintRow(string name, string text) => Console.WriteLine($"  {name,-11} {text}");
 
     /// <summary>Every command with its usage, options and examples, in the order of the help text. Machine-readable, for the docs.</summary>
     private static void PrintJson()
