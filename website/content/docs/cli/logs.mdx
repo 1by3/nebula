@@ -6,16 +6,24 @@ description: "Read the log for the orchestrator, gateway, a worker, or a bot cli
 To read the log for the orchestrator, gateway, a worker, or a bot client, run:
 
 ```bash
-nebula logs [role] [--lines N] [--follow] [--cloud]
+nebula logs [role] [--lines N] [--follow] [--cloud] [--instance x] [--since 10m]
 ```
+
+Locally, the role is a log file next to the build: orchestrator, gateway, w1..wN, bot1... On Nebula Cloud the role is orchestrator, gateway, worker or all; a worker or gateway name (w1, gw2) selects that instance, as does --instance. --since takes a duration (10m, 2h) or an RFC 3339 time, and --follow streams new lines as they arrive. On Hetzner the CLI reads the files over ssh (no --follow).
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `-n, --lines <N>` | Lines to show (default 60). |
-| `-f, --follow` | Keep printing as the log grows (local only). |
-| `--cloud` | Read the log from the deployed mesh over ssh. |
+| `-f, --follow` | Keep printing as the log grows (local and Nebula Cloud). |
+| `--cloud` | Read the log of the deployed mesh. |
+| `--instance <name>` | Cloud: one instance (w1, gw2) of the role. |
+| `--since <when>` | Cloud: only lines newer than a duration ago (10m, 2h) or a time (RFC 3339). |
+| `--target <name>` | Deploy target: hetzner or cloud (default from nebula.json deploy.target). |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
 
 ## Global options
 
@@ -34,4 +42,5 @@ nebula logs
 nebula logs w2 -n 200
 nebula logs gateway --follow
 nebula logs --cloud w1
+nebula logs --cloud all --since 10m --follow
 ```

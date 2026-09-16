@@ -9,7 +9,21 @@ description: "Accepts client connections and maintains a connection to every wor
 public sealed class NebulaGateway : MonoBehaviour
 ```
 
-Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities. The CLI runs this routing loop in a standalone .NET executable using exported container geometry. The Unity component remains available for compatibility and in-process tests.
+Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities.
+
+Any number of gateways can serve one mesh. Each has a persistent id and an incarnation that changes on every start; sessions get mesh-wide ids ([`SessionIds`](/docs/reference/gateway/session-ids)) and a signed session token ([`SessionTokens`](/docs/reference/gateway/session-tokens)) with which a client can reconnect through any gateway and keep its pawn. A gateway asked to drain refuses new clients and tells the ones it has to reconnect elsewhere. It reports its load on every control-plane heartbeat ([`GatewayStats`](/docs/reference/control-plane/gateway-stats)) for whoever sizes the fleet.
+
+The CLI runs this routing loop in a standalone .NET executable using exported container geometry. The Unity component remains available for compatibility and in-process tests.
+
+## Fields
+
+### SessionTokenLifetimeSeconds [#sessiontokenlifetimeseconds]
+
+```csharp
+public const long SessionTokenLifetimeSeconds = 24 * 3600;
+```
+
+How long a session token stays valid. The worker's reclaim grace ([`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds)) is what decides whether the pawn is still there.
 
 ## Properties
 
@@ -30,6 +44,16 @@ public IControlPlane ControlPlane { get; }
 ```csharp
 public string GatewayId { get; }
 ```
+
+The gateway's persistent id (`-nebula-gateway-id`, "gw1" by default). Unique per gateway of a mesh.
+
+### Incarnation [#incarnation]
+
+```csharp
+public uint Incarnation { get; }
+```
+
+This start of the process ([`SessionIds.NewIncarnation`](/docs/reference/gateway/session-ids#newincarnation)): part of every session id it issues, and reported to workers and the control plane.
 
 ### ClientCount [#clientcount]
 
@@ -57,6 +81,38 @@ public int WorkerCount { get; }
 public int EntityCount { get; }
 ```
 
+### IsReady [#isready]
+
+```csharp
+public bool IsReady { get; }
+```
+
+Registered with the control plane, connected to it, and not draining: fit to take clients.
+
+### Draining [#draining]
+
+```csharp
+public bool Draining { get; }
+```
+
+Taking itself out of service: new clients are refused, existing ones were told to reconnect elsewhere.
+
+### LoopPeriodSeconds [#loopperiodseconds]
+
+```csharp
+public double LoopPeriodSeconds { get; set; } = 1.0 / 60;
+```
+
+The loop period the host runs `Tick` at, for the loop-lag figure in [`GatewayStats`](/docs/reference/control-plane/gateway-stats). A gap between two ticks longer than this counts as lag. Unity: one frame; the standalone service sets its own.
+
+### LastStats [#laststats]
+
+```csharp
+public GatewayStats LastStats { get; }
+```
+
+What was last reported to the control plane ([`GatewayStats`](/docs/reference/control-plane/gateway-stats)).
+
 ### TokenValidator [#tokenvalidator]
 
 ```csharp
@@ -73,15 +129,40 @@ public AnonymousIdentityIssuer AnonymousIdentities { get; }
 
 Issues and checks anonymous identities, or null when [`NebulaConfig.AuthAnonymous`](/docs/reference/core/nebula-config#authanonymous) is off.
 
+### Sessions [#sessions]
+
+```csharp
+public SessionTokens Sessions { get; }
+```
+
+Issues and checks the session tokens clients reconnect with.
+
 ## Methods
 
 ### Initialize [#initialize]
 
 ```csharp
-public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null);
+public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null, string gatewayId = null);
 ```
 
 | Parameter | Description |
 | --- | --- |
 | `browserTransport` | A second transport clients arrive on, already listening: the standalone gateway's WebRTC listener for web builds. Null accepts UDP clients only. |
+| `gatewayId` | This gateway's id; null reads `-nebula-gateway-id` ("gw1" by default). |
+
+### Drain [#drain]
+
+```csharp
+public void Drain();
+```
+
+Take this gateway out of service: refuse new clients and tell the connected ones to reconnect within [`NebulaConfig.GatewayDrainReconnectSeconds`](/docs/reference/core/nebula-config#gatewaydrainreconnectseconds) (a load balancer hands them to another gateway, where their session token gets them their pawn back). Called when the control plane carries a drain request for this gateway ([`IControlPlane.SetGatewayDraining`](/docs/reference/control-plane/i-control-plane#setgatewaydraining)), or directly.
+
+### StopDraining [#stopdraining]
+
+```csharp
+public void StopDraining();
+```
+
+Cancel a drain (the fleet changed its mind): new clients are accepted again.
 

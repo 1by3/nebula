@@ -1,0 +1,46 @@
+---
+title: "nebula cloud"
+description: "Log in to Nebula Cloud, log out, or show your account"
+---
+
+To log in to Nebula Cloud, log out, or show your account, run:
+
+```bash
+nebula cloud <login|logout|account> [--api <url>] [--json]
+```
+
+login: sign in with a device code. The CLI prints a code and opens the Cloud Dashboard, where you approve it.
+
+logout: revoke the session and delete the stored credentials.
+
+account: show who you are logged in as and the organizations you belong to, with your role in each.
+
+Nebula Cloud is the hosted service for Nebula meshes. Once logged in, `nebula deploy --target cloud` builds the project, uploads it as a release and rolls it out to a deployment; `nebula status --cloud`, `nebula logs --cloud`, `nebula scale`, `nebula rollback`, `nebula destroy`, and `nebula dashboard` operate on it.
+
+The tokens are stored in ~/.nebula-cli/config.json (private to you) and refreshed as they expire. NEBULA\_CLOUD\_API in the environment points every command at another API host; --api stores one at login.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--api <url>` | Login: the Cloud API to use instead of the default (NEBULA\_CLOUD\_API in the environment always wins). |
+| `--no-browser` | Login: print the URL instead of opening a browser. |
+| `--json` | Account: print the /v1/me answer as JSON. |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula cloud login
+nebula cloud account
+nebula cloud logout
+```

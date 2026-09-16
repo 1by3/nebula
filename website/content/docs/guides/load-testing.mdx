@@ -1,0 +1,70 @@
+---
+title: Load testing a gateway fleet
+description: Run synthetic clients against one gateway or a load-balanced fleet with nebula-loadgen, and read its report.
+---
+
+`nebula-loadgen` is a console program that connects any number of synthetic clients to a gateway address, keeps them playing, and reports what happens to their sessions. Use it to size a gateway, to check that a load balancer keeps each client on one gateway, and to prove that draining or killing a gateway does not lose a player's session or pawn.
+
+It lives in the package's service sources and builds with the .NET SDK:
+
+```bash
+dotnet run --project Packages/com.1by3.nebula/Services~/Nebula.LoadGen -- --gateway 203.0.113.10:7000 --clients 300 --seconds 600
+```
+
+## What a synthetic client does
+
+Each client completes the same handshake a game client does: it connects, sends `Hello`, receives `Welcome` with its session id and session token, and is placed on a worker. It then sends an input every tick, pings every half second, and consumes the replication the gateway sends it.
+
+When the gateway tells it to reconnect (`GatewayDraining`), refuses it with a retry hint, or drops its link, the client reconnects to the same address with its session token. A load balancer in front of the fleet sends that reconnection to another gateway, which reclaims the session from the worker. The client records whether it got the same session id back and whether it kept its pawn.
+
+Inputs carry no game meaning. Workers decode them with your game's input type, so use `--bot` when your game mode treats bots differently, or point the tool at a mesh whose game ignores malformed input.
+
+## Options
+
+| Option | Meaning |
+| --- | --- |
+| `--gateway host:port` | The address clients connect to: a gateway or a load balancer. Default `127.0.0.1:7000`. |
+| `--clients N` | How many clients to run. Default 10. |
+| `--seconds S` | How long to run. Default 60. |
+| `--ramp S` | Spread the initial connections over this many seconds. Default 5. |
+| `--input-hz N` | Inputs per second per client. Default 60. |
+| `--reconnect-every S` | Drill: every client drops its own link about this often and reconnects with its token. Off by default. |
+| `--token <token>` | An identity token every client presents (an anonymous token or an ID token), for meshes that require sign-in. |
+| `--bot` | Mark the clients as bots in `Hello`. |
+| `--name-prefix P` | Player names are `P0`, `P1`, ... Default `load`. |
+| `--csv file` | Also write the per-second report as CSV. |
+| `--verbose` | Print each client's welcome, rejection, and drain events. |
+
+## Reading the report
+
+One line per second:
+
+```text
+t=   30s connected=15/15 joined=15 reconnects=15 sessionChanges=0 pawnLosses=0 rejected=135 in=1428 pkt/s 2.19 Mb/s out=510 pkt/s 0.13 Mb/s rtt p50=15.7 p95=16.4 ms gateways[9cd7ccce=15]
+```
+
+| Field | Meaning |
+| --- | --- |
+| `connected` | Clients with an open link. |
+| `joined` | Clients that have a pawn (`JoinState.Joined`). |
+| `reconnects` | Links dropped and reconnected so far, for any reason. |
+| `sessionChanges` | Reconnections that came back with a different session id. Zero means every reconnection reclaimed its session. |
+| `pawnLosses` | Reconnections that were not reclaimed while the client had a pawn: the worker had already despawned it. |
+| `rejected` | `JoinRejected` messages received. A draining gateway refuses with a retry hint, so a fleet without a load balancer shows retries here until the drain is cancelled. |
+| `in`, `out` | Packets and bits per second received from and sent to the gateways, over all clients. |
+| `rtt` | Round trip from the ping/pong exchange, over the last 200 samples per client. |
+| `gateways` | How many clients each gateway holds, keyed by the gateway's incarnation (the top 32 bits of the session id). |
+
+The program exits with 0 when `sessionChanges` and `pawnLosses` are both zero at the end, and 1 otherwise, so it can gate a fleet test.
+
+## Two checks worth running
+
+**Drain a gateway.** Run the tool against a fleet behind a load balancer, then ask the orchestrator to drain one gateway:
+
+```bash
+curl -X POST http://<orchestrator>:7080/api/gateways/drain -H "X-Nebula-Token: <mesh token>" -d '{"id":"gw2","draining":true}'
+```
+
+Within [`GatewayDrainReconnectSeconds`](/docs/guides/configuration) the `gateways` field shows that gateway's clients moving to the others, with `sessionChanges` and `pawnLosses` still zero.
+
+**Kill a gateway.** Stop a gateway process under load. Its clients' links drop, they reconnect through the load balancer, and the workers, which keep a pawn for [`SessionReclaimSeconds`](/docs/guides/configuration) after a link drops, hand the same pawns back. `pawnLosses` stays zero as long as the reconnection lands inside that window.

@@ -96,24 +96,36 @@ void UnregisterWorker(string workerId);
 ### RegisterGateway [#registergateway]
 
 ```csharp
-void RegisterGateway(string gatewayId, string address, ushort port);
-```
-
-### HeartbeatGateway [#heartbeatgateway]
-
-```csharp
-void HeartbeatGateway(string gatewayId, uint pendingJoins);
+void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0);
 ```
 
 | Parameter | Description |
 | --- | --- |
-| `pendingJoins` | Welcomed clients with nowhere to spawn yet ([`GatewayInfo.PendingJoins`](/docs/reference/control-plane/gateway-info#pendingjoins)). |
+| `incarnation` | This start of the gateway process ([`GatewayInfo.Incarnation`](/docs/reference/control-plane/gateway-info#incarnation)). A re-registration with a new incarnation clears a stale drain request. |
+
+### HeartbeatGateway [#heartbeatgateway]
+
+```csharp
+void HeartbeatGateway(string gatewayId, in GatewayStats stats);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `stats` | What the gateway reports about itself ([`GatewayStats`](/docs/reference/control-plane/gateway-stats)). |
 
 ### UnregisterGateway [#unregistergateway]
 
 ```csharp
 void UnregisterGateway(string gatewayId);
 ```
+
+### SetGatewayDraining [#setgatewaydraining]
+
+```csharp
+void SetGatewayDraining(string gatewayId, bool draining);
+```
+
+Ask a gateway to take itself out of service (or cancel that). The gateway refuses new clients and tells the ones it has to reconnect; whoever runs the fleet removes and stops it once [`GatewayStats.ActiveClients`](/docs/reference/control-plane/gateway-stats#activeclients) reaches zero or a drain timeout passes. Exposed by the orchestrator as `POST /api/gateways/drain`.
 
 ### HeartbeatOrchestrator [#heartbeatorchestrator]
 

@@ -16,8 +16,10 @@ Carries the welcome protocol message.
 ### ClientId [#clientid]
 
 ```csharp
-public uint ClientId;
+public ulong ClientId;
 ```
+
+The client's session id: unique across every gateway of the mesh and stable for as long as the session lives, including across a reconnection through another gateway (see [`SessionToken`](#sessiontoken)).
 
 ### TickRate [#tickrate]
 
@@ -46,6 +48,22 @@ public string Token;
 ```
 
 Set when the client presented no token: the anonymous token the gateway issued for [`Identity`](#identity). The client keeps it and presents it in its next [`HelloMsg`](/docs/reference/protocol/hello-msg) to be the same player again. Empty when the client's own token was accepted.
+
+### SessionToken [#sessiontoken]
+
+```csharp
+public string SessionToken;
+```
+
+A signed token naming this session ([`SessionTokens`](/docs/reference/gateway/session-tokens)). The client keeps it for the life of the process and presents it in [`HelloMsg.Session`](/docs/reference/protocol/hello-msg#session) when it reconnects, to any gateway of the mesh, to get the same [`ClientId`](#clientid) and pawn back.
+
+### Reclaimed [#reclaimed]
+
+```csharp
+public bool Reclaimed;
+```
+
+True when the session was reclaimed from a token: the pawn, when the worker still holds it, is the same one.
 
 ## Methods
 

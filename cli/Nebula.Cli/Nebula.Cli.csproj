@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>nebula</AssemblyName>
     <RootNamespace>Nebula.Cli</RootNamespace>
-    <Version>0.1.0-alpha.22</Version>
+    <Version>0.1.0-alpha.23</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <RollForward>LatestMajor</RollForward>
@@ -23,6 +23,10 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>none</DebugType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nebula.Cli.Tests" />
+  </ItemGroup>
 
   <!-- Shared with the runtime: the one way a database is named (sqlite:, postgres://, file:, memory). -->
   <ItemGroup>

@@ -25,6 +25,8 @@ namespace Nebula
     internal sealed class GatewayHttpServer : IDisposable
     {
         public const string SignalingPath = "/nebula/rtc";
+        /// <summary>Answers 200 while the gateway is ready for clients and 503 otherwise (draining, not registered): what a load balancer's health check polls.</summary>
+        public const string HealthPath = "/healthz";
         private const long MaxOfferBytes = 64 * 1024;
         private readonly WebApplication _app;
         private readonly WebRtcServerTransport _rtc;
@@ -66,6 +68,8 @@ namespace Nebula
 
         public string WebRoot => _webRoot;
         public bool Secure => _certificates != null;
+        /// <summary>Whether the gateway takes clients right now (<see cref="NebulaGateway.IsReady"/>); null answers "ready" at <see cref="HealthPath"/>.</summary>
+        public Func<bool> Ready { get; set; }
 
         public void Start() => _app.StartAsync().GetAwaiter().GetResult();
 
@@ -74,6 +78,20 @@ namespace Nebula
             var request = context.Request;
             var response = context.Response;
             string path = request.Path.Value ?? "/";
+            if (path == HealthPath)
+            {
+                bool ready = Ready == null || Ready();
+                response.StatusCode = ready ? 200 : 503;
+                response.Headers.CacheControl = "no-store";
+                response.ContentType = "text/plain";
+                await response.WriteAsync(ready ? "ok" : "not ready", context.RequestAborted);
+                return;
+            }
+            if (path == SignalingPath && _rtc == null)
+            {
+                response.StatusCode = 404;
+                return;
+            }
             if (path == SignalingPath)
             {
                 // A web build hosted on another origin still signals here.

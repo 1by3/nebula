@@ -165,19 +165,25 @@ public void UnregisterWorker(string workerId);
 ### RegisterGateway [#registergateway]
 
 ```csharp
-public void RegisterGateway(string gatewayId, string address, ushort port);
+public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0);
 ```
 
 ### HeartbeatGateway [#heartbeatgateway]
 
 ```csharp
-public void HeartbeatGateway(string gatewayId, uint pendingJoins);
+public void HeartbeatGateway(string gatewayId, in GatewayStats s);
 ```
 
 ### UnregisterGateway [#unregistergateway]
 
 ```csharp
 public void UnregisterGateway(string gatewayId);
+```
+
+### SetGatewayDraining [#setgatewaydraining]
+
+```csharp
+public void SetGatewayDraining(string gatewayId, bool draining);
 ```
 
 ### HeartbeatOrchestrator [#heartbeatorchestrator]

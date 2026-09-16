@@ -234,8 +234,8 @@ public static class UnityBuild
 
         if (linux)
         {
-            Ui.Info($"packing {project.LinuxTarball}{(File.Exists(project.WebIndex) ? " with the web client" : "")}");
-            PackTarball(project.LinuxBuildDir, project.LinuxTarball, project.WebBuildDir);
+            Ui.Info($"packing {project.LinuxTarball}");
+            PackTarball(project.LinuxBuildDir, project.LinuxTarball);
             Ui.Ok($"{Path.GetFileName(project.LinuxTarball)} ({new FileInfo(project.LinuxTarball).Length / 1024 / 1024} MB)");
             return project.LinuxTarball;
         }
@@ -243,10 +243,11 @@ public static class UnityBuild
     }
 
     /// <summary>
-    /// One flat tarball of the Linux build (no logs), extracted into /opt/nebula on every VM. A web client build in
-    /// <paramref name="webDir"/> goes in as Web/, where the gateway looks for the web build to serve.
+    /// One flat tarball of the Linux build (no logs, and never a web client: a deployed gateway carries game traffic
+    /// only; a web build is hosted by you and connects to the gateway over WebRTC), extracted into /opt/nebula on
+    /// every VM.
     /// </summary>
-    public static void PackTarball(string buildDir, string tarball, string? webDir = null)
+    public static void PackTarball(string buildDir, string tarball)
     {
         File.Delete(tarball);
         using var file = File.Create(tarball);
@@ -255,8 +256,6 @@ public static class UnityBuild
         var files = Directory.EnumerateFiles(buildDir, "*", SearchOption.AllDirectories)
             .Select(f => (Path: f, Rel: Path.GetRelativePath(buildDir, f).Replace('\\', '/')))
             .Where(f => !f.Rel.StartsWith("Web/"));
-        if (webDir != null && File.Exists(Path.Combine(webDir, "index.html")))
-            files = files.Concat(Directory.EnumerateFiles(webDir, "*", SearchOption.AllDirectories).Select(f => (Path: f, Rel: "Web/" + Path.GetRelativePath(webDir, f).Replace('\\', '/'))));
         foreach (var (f, rel) in files)
         {
             if (rel.StartsWith("Logs/") || rel.EndsWith(".log")) continue;

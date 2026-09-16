@@ -1,4 +1,4 @@
 {
   "title": "Gateway",
-  "pages": ["anonymous-identity-issuer", "auth-result", "json-web-token", "nebula-gateway", "oidc-token-validator", "player-identity"]
+  "pages": ["anonymous-identity-issuer", "auth-result", "json-web-token", "mesh-peer-auth", "nebula-gateway", "oidc-token-validator", "player-identity", "session-claims", "session-ids", "session-tokens"]
 }

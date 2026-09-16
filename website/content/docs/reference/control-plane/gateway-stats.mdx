@@ -1,0 +1,111 @@
+---
+title: "GatewayStats"
+description: "What a gateway reports about itself on every heartbeat."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlane.cs)</div>
+
+```csharp
+public struct GatewayStats
+```
+
+What a gateway reports about itself on every heartbeat. The orchestrator publishes it in `/api/state`; whoever runs the gateway fleet (a hosting platform, an operator) sizes the fleet from these numbers, since a connection count alone says nothing about replication cost.
+
+## Fields
+
+### PendingJoins [#pendingjoins]
+
+```csharp
+public uint PendingJoins;
+```
+
+Clients welcomed by this gateway that are still waiting for somewhere to spawn ([`JoinState.Starting`](/docs/reference/protocol/join-state#starting)). The orchestrator reads it as demand: a pending join at zero workers wakes the mesh at once, and no scale-in goes below one worker while it is non-zero.
+
+### ActiveClients [#activeclients]
+
+```csharp
+public uint ActiveClients;
+```
+
+Welcomed clients with a pawn.
+
+### JoiningClients [#joiningclients]
+
+```csharp
+public uint JoiningClients;
+```
+
+Links that sent Hello and are being authenticated or placed.
+
+### ReconnectingClients [#reconnectingclients]
+
+```csharp
+public uint ReconnectingClients;
+```
+
+Sessions whose link dropped and that are being held for a reconnect ([`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds)).
+
+### PacketsInPerSecond, PacketsOutPerSecond, BytesInPerSecond, BytesOutPerSecond [#packetsinpersecond-packetsoutpersecond-bytesinpersecond-bytesoutpersecond]
+
+```csharp
+public float PacketsInPerSecond, PacketsOutPerSecond, BytesInPerSecond, BytesOutPerSecond;
+```
+
+Client-facing traffic over the last heartbeat interval.
+
+### WorkerBytesInPerSecond, WorkerBytesOutPerSecond [#workerbytesinpersecond-workerbytesoutpersecond]
+
+```csharp
+public float WorkerBytesInPerSecond, WorkerBytesOutPerSecond;
+```
+
+Worker-facing traffic over the last heartbeat interval.
+
+### Cpu [#cpu]
+
+```csharp
+public float Cpu;
+```
+
+Process CPU over the interval as a fraction of one core (2.0 = two cores busy).
+
+### MemoryBytes [#memorybytes]
+
+```csharp
+public ulong MemoryBytes;
+```
+
+Working set in bytes.
+
+### LoopLagMs [#looplagms]
+
+```csharp
+public float LoopLagMs;
+```
+
+Longest gap between two ticks beyond the expected loop period, in milliseconds, over the interval.
+
+### WorkerConnections [#workerconnections]
+
+```csharp
+public uint WorkerConnections;
+```
+
+Worker links that completed the handshake.
+
+### Ready [#ready]
+
+```csharp
+public bool Ready;
+```
+
+Registered, connected to the control plane, and accepting clients.
+
+### Draining [#draining]
+
+```csharp
+public bool Draining;
+```
+
+The gateway is taking itself out of service: refusing new clients and asking the ones it has to reconnect elsewhere.
+

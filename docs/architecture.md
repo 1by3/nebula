@@ -84,7 +84,27 @@ Failure behavior
 
 Sim dies. Its lease TTL expires, containers go orphaned, the orchestrator assigns a warm node which hydrates from the last checkpoint. Transient state since the checkpoint is lost (velocities, in-flight projectiles, a few seconds of position). Players see a rubber-band, not a disconnect — the main payoff of stateless sims.
 
-Gateway dies. Client reconnects to another gateway and re-subscribes. Visible blip, no state loss; the gateway holds nothing authoritative.
+Gateway dies. Client reconnects to another gateway and re-subscribes. Visible blip, no state loss; the gateway holds nothing authoritative. (Implemented; see "Sessions and the gateway fleet" below.)
+
+Sessions and the gateway fleet
+
+Any number of gateways serve one mesh, behind a load balancer that Nebula does not provide. The pieces that make that safe (protocol 13, September 2026):
+
+Session ids. A gateway has a persistent id (-nebula-gateway-id, gw1 by default; the orchestrator launches gw1 itself) and draws a random 32-bit incarnation per start. Every client id on the wire is a 64-bit session id, incarnation << 32 | sequence (SessionIds), so two gateways or two starts of one gateway never collide without coordination. Workers key players by session id (PlayerSessions); game code sees it as PlayerInfo.ClientId / OwnerClientId (ulong).
+
+Session tokens. Every Welcome carries an HS256 JWT over session id, identity, name, bot flag and connection generation, 24 h validity, signed with a key derived from the player signing key (SessionTokens.DeriveKey) so every gateway of the mesh verifies it. A client presents it in Hello.Session on every reconnect (it does so by itself: 1 s after a lost link, at once on GatewayDraining, 1 s after JoinRejected{Retry}). The gateway that answers takes over the session id when the token verifies for the identity that just authenticated, mints a newer generation (max(unix ms, token generation + 1)), and claims the session from the worker with SpawnPlayer; the worker re-announces the pawn if it still has it (Welcome.Reclaimed). The token says nothing about whether the session still exists.
+
+Generation fencing. SpawnPlayer and DespawnPlayer carry the generation. A worker ignores a claim or a despawn older than the generation it holds, routes inputs and ServerRpcs only from the gateway (id#incarnation) that holds the session, and a handover carries SessionGeneration/SessionGateway so the receiving worker accepts the owner's gateway at once. This is what stops a gateway that lost the client from despawning the pawn the next gateway just reclaimed.
+
+Reclaim grace. On DespawnPlayer, or when a gateway link is lost, the worker orphans the sessions and keeps the pawns for NebulaConfig.SessionReclaimSeconds (30; 0 = despawn at once), then despawns them unless reclaimed. OnPlayerDespawn fires at expiry, not at disconnect.
+
+Draining. The control plane row carries DrainRequested (IControlPlane.SetGatewayDraining, POST /api/gateways/drain, dashboard Drain/Undrain). The gateway sees it on its own row (bound to its incarnation, so a restart clears a stale request), sends GatewayDraining{ReconnectWithinSeconds = GatewayDrainReconnectSeconds} to its clients, refuses new Hellos with JoinRejected{Retry=true}, reports Draining on its heartbeat and 503 on GET /healthz (the standalone gateway's HTTP server, so only with WebClients on). Whoever runs the fleet stops the process when ActiveClients reaches zero.
+
+Load reports. GatewayStats on every heartbeat (pending joins, active/joining/reconnecting clients, client packets and bytes per second in/out, worker bytes in/out, cpu, memory, loop lag, worker connections, ready, draining), flat on the control-plane row and in /api/state, for whoever sizes the fleet. Rows that miss heartbeats for 3 × WorkerTimeoutSeconds are removed by the orchestrator.
+
+Peer authentication. With a mesh token, gateways and workers put MeshPeerAuth credentials (unix seconds + HMAC over role|id|incarnation|time, key derived from the mesh token, 5 min window) in Hello.Token and refuse peers without them. Without a mesh token nothing changes. The player signing key must not be derived from the mesh token on a redeployed mesh (the gateway warns): nebula deploy to Hetzner generates NEBULA_AUTH_KEY once per orchestrator VM and carries it over.
+
+Worker host "cloud". CloudWorkerHost asks a deployment-scoped resource API (-nebula-cloud-api, -nebula-cloud-deployment-token, or the NEBULA_CLOUD_* environment) for machines instead of calling a provider; the orchestrator's own assignment, drain, park and scale-to-zero logic is unchanged.
 
 Control plane unavailable. Existing leases remain valid until TTL; the mesh keeps simulating with a frozen topology — no reassignment, no new containers, degraded but alive. The control plane must never be a hot-path dependency; if its outage stops the game, the design has failed its purpose. (The decentralized tick derivation supports this: no sim depends on the control plane, or any tick master, to know what time it is.)
 

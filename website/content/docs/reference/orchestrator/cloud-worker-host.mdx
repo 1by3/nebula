@@ -1,0 +1,121 @@
+---
+title: "CloudWorkerHost"
+description: "An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/CloudWorkerHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/CloudWorkerHost.cs)</div>
+
+```csharp
+public sealed class CloudWorkerHost : IWorkerHost
+```
+
+An [`IWorkerHost`](/docs/reference/orchestrator/i-worker-host) for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (`POST /d/workers`), polls the list for its state and private address, and deletes, parks and unparks through the same API. The service behind it holds the provider credentials and turns each request into a machine; the orchestrator's machine never sees an account-wide credential. Nebula's own assignment, drain, replacement and scale-to-zero logic is untouched: this host only changes where a worker comes from.
+
+The API is documented by the hosting platform; the shapes this class relies on are: a worker resource `{workerId, resourceId, index, state, privateAddress, size, reason, parkedUntil}` with states `launching | running | parked | exiting | exited | failed`, wrapped as `{"worker": …}` on single answers and `{"workers": […]}` on the list, and an error envelope `{"error": {"code", "message"}}`. A create answers 402 when the deployment reached its spend limit and 409 when it is at its worker ceiling.
+
+All HTTP work runs on the thread pool; results are applied in [`Tick`](#tick) on the main thread.
+
+## Constructors
+
+### CloudWorkerHost [#cloudworkerhost]
+
+```csharp
+public CloudWorkerHost(CloudWorkerHostSettings settings);
+```
+
+## Properties
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### SupportsParking [#supportsparking]
+
+```csharp
+public bool SupportsParking { get; }
+```
+
+The platform keeps a parked machine until the moment it stops being free, then deletes it itself; parking is always worth it.
+
+### TypicalBootSeconds [#typicalbootseconds]
+
+```csharp
+public float TypicalBootSeconds { get; }
+```
+
+A machine that boots an image and downloads a build: over a minute.
+
+### IsReady [#isready]
+
+```csharp
+public bool IsReady { get; }
+```
+
+### InitializationError [#initializationerror]
+
+```csharp
+public string InitializationError { get; } = "";
+```
+
+## Methods
+
+### Initialize [#initialize]
+
+```csharp
+public void Initialize(Action<string, string> log);
+```
+
+### Launch [#launch]
+
+```csharp
+public IWorkerHandle Launch(WorkerLaunchSpec spec);
+```
+
+### MapState [#mapstate]
+
+```csharp
+public static WorkerHandleState MapState(string state, WorkerHandleState current);
+```
+
+The API's state for a worker, onto the orchestrator's handle states.
+
+### Kill [#kill]
+
+```csharp
+public void Kill(IWorkerHandle handle);
+```
+
+### Park [#park]
+
+```csharp
+public void Park(IWorkerHandle handle, float idlePoolSeconds);
+```
+
+### Unpark [#unpark]
+
+```csharp
+public bool Unpark(IWorkerHandle handle);
+```
+
+Take a parked machine back. The machine never stopped, so the handle is Running at once; should the API answer that it already deleted the machine (410), the handle turns Exited and the orchestrator launches a fresh worker.
+
+### Tick [#tick]
+
+```csharp
+public void Tick();
+```
+
+### WriteHandleJson [#writehandlejson]
+
+```csharp
+public void WriteHandleJson(IWorkerHandle handle, JsonWriter w);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+

@@ -3,7 +3,7 @@ title: Authentication and player identity
 description: Give every player a stable identity across sessions, either anonymously or from an OpenID Connect provider such as Google, Auth0, Firebase, or Clerk.
 ---
 
-Nebula gives every connected player an **identity**: a 64-character string that stays the same each time that player connects, on every worker and client. Use it to key saved characters, inventories, and accounts. The connection's client ID changes every session; the identity does not.
+Nebula gives every connected player an **identity**: a 64-character string that stays the same each time that player connects, on every worker and client. Use it to key saved characters, inventories, and accounts. The client ID (`PlayerInfo.ClientId`, `NebulaClient.ClientId`) is a **session ID**: it lasts for one session, including a reconnection within that session, and a new session gets a new one. The identity lasts across sessions.
 
 The gateway establishes the identity when a client connects. There are two ways to get one:
 
@@ -22,7 +22,7 @@ Nebula never stores the provider's user ID, email, or name. If your game needs p
 
 ## Read the identity in your game
 
-On a worker, override the `PlayerInfo` overload of `OnSpawnPlayer`. `player.Identity` is the stable identity; `player.ClientId` is this session's connection ID.
+On a worker, override the `PlayerInfo` overload of `OnSpawnPlayer`. `player.Identity` is the stable identity; `player.ClientId` is the session ID, a `ulong` that stays the same when the player reconnects within the session (see [Sessions and reconnection](#sessions-and-reconnection)).
 
 ```csharp title="ExampleGameMode.cs"
 public sealed class ExampleGameMode : NebulaGameMode
@@ -45,7 +45,7 @@ public sealed class ExampleGameMode : NebulaGameMode
 }
 ```
 
-A game mode that overrides the four-argument `OnSpawnPlayer(worker, clientId, playerName, container)` keeps working: the `PlayerInfo` overload calls it by default. Override one or the other.
+A game mode that overrides the four-argument `OnSpawnPlayer(worker, ulong clientId, playerName, container)` keeps working: the `PlayerInfo` overload calls it by default. Override one or the other.
 
 Every spawned entity carries its owner's identity in `NetworkIdentity.OwnerIdentity`, on workers, ghosts, and clients alike. It is empty for entities no player owns.
 
@@ -63,13 +63,33 @@ Call `NebulaClient.ForgetStoredToken()` to drop the saved token. The next connec
 
 ### The signing key
 
-Anonymous tokens are signed with a key every gateway of a mesh must share. The gateway picks the key in this order:
+Anonymous tokens, and the session tokens described below, are signed with a key every gateway of a mesh must share. The gateway picks the key in this order:
 
 1. `NebulaConfig.AuthSigningKey`, or `-nebula-auth-key`, or the `NEBULA_AUTH_KEY` environment variable for the standalone gateway.
-2. Derived from `MeshToken` when one is set. `nebula deploy` sets a mesh token, so a deployed mesh needs no extra configuration.
+2. Derived from `MeshToken` when one is set. The gateway logs a warning in this case, because the mesh token changes with every deployment and every anonymous identity and session token changes with it. Set `AuthSigningKey` to a secret of its own for any mesh that is deployed more than once.
 3. A random key stored in `nebula-auth.key` next to the gateway executable. This is what `nebula start` uses. Delete the file to invalidate every anonymous identity.
 
+`nebula deploy` to Hetzner generates a `NEBULA_AUTH_KEY` the first time it writes the orchestrator VM's environment file and keeps that value across later deployments, so anonymous players keep their identities when you redeploy. See [Deploy to Hetzner Cloud](/docs/deploy/hetzner).
+
 If the key changes, every saved anonymous token stops verifying. The client notices the rejection, forgets its token, and reconnects as a new player.
+
+## Sessions and reconnection
+
+A **session** is one player's stay in the world, from the first welcome until the player leaves. The gateway that welcomes a client assigns it a session ID that is unique across every gateway of the mesh: the gateway's random 32-bit **incarnation**, drawn when the gateway process started, in the high half and a counter in the low half. Workers key player state by this ID, and it is what game code sees as `PlayerInfo.ClientId` and `NetworkIdentity.OwnerClientId`.
+
+Every welcome also carries a **session token**: a signed token that names the session (its ID, identity, display name, bot flag, and connection generation). It is signed with a key derived from the player signing key, so every gateway of the mesh can verify it, and it is valid for 24 hours. The client keeps it in `NebulaClient.SessionToken` for the life of the process and presents it whenever it reconnects. `Disconnect()` keeps it too, so a deliberate reconnect continues the session; clear it to start a new session.
+
+When a client presents a session token that verifies and belongs to the identity that just authenticated, the gateway that answers, whichever gateway of the mesh it is, welcomes the client with the same session ID, a newer connection generation, and `NebulaClient.SessionReclaimed` set. If a worker still holds the player's pawn, the client gets that pawn back; the worker re-announces it and routes the session's input through the new gateway from then on. If the pawn is gone, the gateway asks a worker to spawn the player again through `OnSpawnPlayer`, with the same session ID.
+
+A session token proves which session a client had. It does not prove that the session still exists, and it is not an identity: a token for another identity, an expired token, or one signed for another mesh is ignored and a new session starts. The gateway accepts it only together with the client's identity credential (the anonymous token or ID token), so a copied session token alone does not take over a session.
+
+### The reclaim grace
+
+When a client's link drops, or a gateway's link to a worker is lost, the worker keeps the affected pawns for `NebulaConfig.SessionReclaimSeconds` (default 30) and despawns them afterwards unless the session was reclaimed. During the grace the pawn stays in the world without input. `OnPlayerDespawn` fires when the grace expires, not when the link drops. Set the value to `0` to despawn at once.
+
+The client reconnects by itself: one second after a lost link, and at once when the gateway tells it that it is being taken out of service (see [Connecting clients](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway)). Each attempt presents the session token, so a player who comes back within the grace continues with the same pawn.
+
+Each reconnection carries a newer **connection generation**. A worker ignores a player claim or a despawn with an older generation than the one it holds, so a gateway that lost the client cannot undo what the gateway that gained it did, and it accepts input for a session only from the gateway that currently holds it. Game code does not see generations; they are described in the [wire protocol specification](/docs/specifications/wire-protocol#player-lifecycle).
 
 ## OpenID Connect providers
 
@@ -101,7 +121,7 @@ Nebula does not run the sign-in itself. A desktop build typically opens the prov
 
 ### When a join is rejected
 
-If the gateway cannot accept a token, it sends the reason and closes the connection. On the client, `NebulaClient.JoinRejected` fires with the reason, `LastError` shows it (the title screen displays `LastError`), and the client stops reconnecting. Common reasons:
+If the gateway cannot accept a token, it sends the reason and closes the connection. On the client, `NebulaClient.JoinRejected` fires with the reason, `LastError` shows it (the title screen displays `LastError`), and the client stops reconnecting. A rejection with the reason `gateway is draining` is about the gateway, not the client: the client retries after a second instead, and a load balancer hands the retry to another gateway. Common reasons:
 
 | Reason | Fix |
 | --- | --- |
@@ -112,10 +132,12 @@ If the gateway cannot accept a token, it sends the reason and closes the connect
 | `token signed with an unknown key` | The provider rotated keys and the refresh did not find the key ID. Check that `AuthIssuers` names the issuer that signs this token. |
 | `could not reach the identity provider` | The gateway could not download the provider's keys. Check the gateway host's outbound HTTPS access. |
 
-The gateway logs every rejection with the client's connection ID and the same reason.
+The gateway logs every rejection with the client's session ID and the same reason.
 
 ## What this does and does not protect
 
-Authentication answers "which player is this?" so that saved state follows the right person. It does not encrypt the client link on its own: LiteNetLib traffic is plain UDP, so a token can be read in transit on an untrusted network. WebRTC links from web builds are encrypted with DTLS. Anonymous tokens have no expiry; a copied token is that player until the signing key changes or the client forgets it.
+Authentication answers "which player is this?" so that saved state follows the right person. It does not encrypt the client link on its own: LiteNetLib traffic is plain UDP, so a token can be read in transit on an untrusted network. WebRTC links from web builds are encrypted with DTLS. Anonymous tokens have no expiry; a copied token is that player until the signing key changes or the client forgets it. Session tokens expire after 24 hours and are useless without the identity credential they were issued for.
+
+Gateways and workers authenticate each other only when the mesh has a `MeshToken`: each presents a credential derived from it when it connects, and a peer without one is refused. Without a mesh token every gateway and worker peer is accepted, which is fine on a development machine or a private network.
 
 The identity is not an authorization system. Deciding what a player may do, and validating their inputs, stays in your game code on the worker.

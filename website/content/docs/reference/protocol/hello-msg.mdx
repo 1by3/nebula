@@ -16,7 +16,7 @@ Carries the hello protocol message.
 ### ProtocolVersion [#protocolversion]
 
 ```csharp
-public const ushort ProtocolVersion = 12;
+public const ushort ProtocolVersion = 13;
 ```
 
 ### Role [#role]
@@ -49,7 +49,23 @@ public HelloFlags Flags;
 public string Token;
 ```
 
-Client only: the token that says who the player is. An OpenID Connect ID token from a provider the mesh trusts ([`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers)), the token a gateway issued in an earlier [`WelcomeMsg`](/docs/reference/protocol/welcome-msg), or empty to ask for a new anonymous identity. Workers and gateways leave it empty.
+Client only: the token that says who the player is. An OpenID Connect ID token from a provider the mesh trusts ([`NebulaConfig.AuthIssuers`](/docs/reference/core/nebula-config#authissuers)), the token a gateway issued in an earlier [`WelcomeMsg`](/docs/reference/protocol/welcome-msg), or empty to ask for a new anonymous identity. For a gateway or worker peer it is the infrastructure credential instead ([`MeshPeerAuth`](/docs/reference/gateway/mesh-peer-auth)), proving the peer holds the mesh token.
+
+### Session [#session]
+
+```csharp
+public string Session;
+```
+
+Client only: the session token from the last [`WelcomeMsg`](/docs/reference/protocol/welcome-msg), presented when reconnecting so the gateway (any gateway of the mesh) reclaims the same session and the worker keeps the pawn. Empty on a first connection.
+
+### Incarnation [#incarnation]
+
+```csharp
+public uint Incarnation;
+```
+
+Gateway and worker peers: a number that changes every time the process starts, so a peer that sees the same id twice can tell a restart from a reconnect. Clients send 0.
 
 ### Version [#version]
 

@@ -84,6 +84,11 @@ namespace Nebula
                     control.Connect();
                     gateway = new NebulaGateway();
                     gateway.Initialize(config, control, config.WebClients ? StartWebClients(config, out web) : null);
+                    gateway.LoopPeriodSeconds = NetworkTime.TickInterval / 4;
+                    // A load balancer needs a health check whether or not browsers are served: without web clients
+                    // the HTTP server still answers /healthz on the gateway port (tcp) and nothing else.
+                    if (web == null) web = StartHealthOnly(config);
+                    if (web != null) web.Ready = () => gateway.IsReady;
                 }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
@@ -212,6 +217,24 @@ namespace Nebula
         /// HTTP server for signaling and the web build (<see cref="NebulaConfig.WebPort"/>). A port that cannot be opened
         /// turns web clients off with a warning; UDP clients are not affected.
         /// </summary>
+        /// <summary>Only <c>/healthz</c>, on the port web clients would use, for a gateway that serves no browsers.</summary>
+        private static GatewayHttpServer StartHealthOnly(NebulaConfig c)
+        {
+            ushort tcpPort = c.WebPort != 0 ? c.WebPort : c.GatewayPort;
+            try
+            {
+                var http = new GatewayHttpServer(tcpPort, null, null, null);
+                http.Start();
+                NebulaLog.Info($"health check at http://{c.GatewayAddress}:{tcpPort}{GatewayHttpServer.HealthPath}");
+                return http;
+            }
+            catch (Exception e)
+            {
+                NebulaLog.Warn($"no health check endpoint (tcp/{tcpPort}): {e.GetBaseException().Message}");
+                return null;
+            }
+        }
+
         private static WebRtcServerTransport StartWebClients(NebulaConfig c, out GatewayHttpServer http)
         {
             http = null;

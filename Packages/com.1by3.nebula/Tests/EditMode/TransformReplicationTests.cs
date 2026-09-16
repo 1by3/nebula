@@ -402,12 +402,14 @@ namespace Nebula.Tests
                 var clientType = type.GetNestedType("ClientConn", BindingFlags.NonPublic);
                 var client = Activator.CreateInstance(clientType, true);
                 clientType.GetField("Welcomed").SetValue(client, true);
-                ((IDictionary)type.GetField("_clientsById", flags).GetValue(gateway)).Add(1u, client);
+                ((IDictionary)type.GetField("_clientsById", flags).GetValue(gateway)).Add(1UL, client);
                 Send(11); // (11 + netId % 12) % 12 != 0: a spectator would miss this update
                 Assert.AreEqual(-1, clientType.GetField("PendingSlot").GetValue(client));
+                // The first update also made the entity visible, which queued its spawn on the reliable batch.
+                ushort reliableBefore = (ushort)clientType.GetField("ReliableCount").GetValue(client);
                 entry.Fields |= TransformFields.Reliable;
                 Send(13); // also outside the distance slot, but recovery must arrive anyway
-                Assert.AreEqual((ushort)1, clientType.GetField("ReliableCount").GetValue(client));
+                Assert.AreEqual((ushort)(reliableBefore + 1), clientType.GetField("ReliableCount").GetValue(client));
             }
             finally { Object.DestroyImmediate(config); }
         }

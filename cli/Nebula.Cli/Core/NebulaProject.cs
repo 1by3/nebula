@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace Nebula.Cli.Core;
@@ -11,6 +12,22 @@ public sealed class ProjectFile
     public string Executable { get; set; } = "Nebula";
     public MeshSettings Mesh { get; set; } = new();
     public DeploySettings Deploy { get; set; } = new();
+    /// <summary>The Nebula Cloud deployment this project deploys to (written the first time `nebula deploy --target cloud` runs).</summary>
+    public CloudSettings? Cloud { get; set; }
+    /// <summary>Keys this CLI version does not know, kept as they were so a save never drops them.</summary>
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    public sealed class CloudSettings
+    {
+        /// <summary>Organization slug.</summary>
+        public string? Organization { get; set; }
+        /// <summary>Project slug inside the organization.</summary>
+        public string? Project { get; set; }
+        /// <summary>Deployment name inside the project, e.g. "production".</summary>
+        public string? Deployment { get; set; }
+
+        public bool IsComplete => !string.IsNullOrEmpty(Organization) && !string.IsNullOrEmpty(Project) && !string.IsNullOrEmpty(Deployment);
+    }
 
     public sealed class MeshSettings
     {
@@ -30,6 +47,7 @@ public sealed class ProjectFile
 
     public sealed class DeploySettings
     {
+        /// <summary>"hetzner" (your own Hetzner Cloud project) or "cloud" (Nebula Cloud).</summary>
         public string Target { get; set; } = "hetzner";
         /// <summary>Label every cloud resource of this mesh carries; one mesh per provider project.</summary>
         public string MeshName { get; set; } = "nebula";

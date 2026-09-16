@@ -1,6 +1,6 @@
 ---
 title: "SpawnPlayerMsg"
-description: "Carries the spawn player protocol message."
+description: "Gateway -> worker: a client wants a pawn."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,15 +9,17 @@ description: "Carries the spawn player protocol message."
 public struct SpawnPlayerMsg
 ```
 
-Carries the spawn player protocol message.
+Gateway -\> worker: a client wants a pawn. Doubles as the claim of a session by a gateway: a worker that already holds a pawn for [`ClientId`](#clientid) re-announces it to the sender and, when [`Generation`](#generation) is newer than the one it knew, routes the session through the sender from now on ([`PlayerSessions`](/docs/reference/protocol/player-sessions)).
 
 ## Fields
 
 ### ClientId [#clientid]
 
 ```csharp
-public uint ClientId;
+public ulong ClientId;
 ```
+
+The mesh-wide session id ([`WelcomeMsg.ClientId`](/docs/reference/protocol/welcome-msg#clientid)).
 
 ### Container [#container]
 
@@ -46,6 +48,14 @@ public string Identity;
 ```
 
 The player's [`PlayerIdentity`](/docs/reference/gateway/player-identity), as the gateway established it from the client's token.
+
+### Generation [#generation]
+
+```csharp
+public ulong Generation;
+```
+
+The session's connection generation: increases every time a client (re)claims the session. A worker ignores a claim or a despawn carrying an older generation than the one it holds, which fences a gateway that lost the client from undoing what the gateway that gained it did.
 
 ## Methods
 

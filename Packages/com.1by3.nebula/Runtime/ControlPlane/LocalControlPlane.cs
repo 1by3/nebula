@@ -113,26 +113,35 @@ namespace Nebula
             Touch();
         }
 
-        public void RegisterGateway(string gatewayId, string address, ushort port)
+        public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0)
         {
             GatewayInfo g = null;
             foreach (var x in _gateways) if (x.GatewayId == gatewayId) g = x;
             if (g == null) { g = new GatewayInfo { GatewayId = gatewayId }; _gateways.Add(g); }
+            // A fresh process under an old id: a drain asked of the previous incarnation does not apply to it.
+            if (incarnation != 0 && incarnation != g.Incarnation) { g.DrainRequested = false; g.Stats = default; }
+            g.Incarnation = incarnation;
             g.Address = address;
             g.Port = port;
             g.LastHeartbeat = Now;
             Touch();
         }
 
-        public void HeartbeatGateway(string gatewayId, uint pendingJoins)
+        public void HeartbeatGateway(string gatewayId, in GatewayStats stats)
         {
-            foreach (var g in _gateways) if (g.GatewayId == gatewayId) { g.LastHeartbeat = Now; g.PendingJoins = pendingJoins; }
+            foreach (var g in _gateways) if (g.GatewayId == gatewayId) { g.LastHeartbeat = Now; g.Stats = stats; }
             Touch();
         }
 
         public void UnregisterGateway(string gatewayId)
         {
             _gateways.RemoveAll(g => g.GatewayId == gatewayId);
+            Touch();
+        }
+
+        public void SetGatewayDraining(string gatewayId, bool draining)
+        {
+            foreach (var g in _gateways) if (g.GatewayId == gatewayId) g.DrainRequested = draining;
             Touch();
         }
 

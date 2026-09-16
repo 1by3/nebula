@@ -6,15 +6,21 @@ description: "Show workers, containers, entity counts, persistence, and recent e
 To show workers, containers, entity counts, persistence, and recent events, run:
 
 ```bash
-nebula status [--cloud]
+nebula status [--cloud] [--target hetzner|cloud] [--json]
 ```
+
+Without --cloud, show the local mesh from its dashboard. With --cloud, show the deployed mesh: on Nebula Cloud the deployment's health, orchestrator, gateways (clients, traffic, CPU, loop lag, draining), workers and mesh totals; on Hetzner the servers plus the orchestrator's dashboard state.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `--cloud` | The deployed mesh (Hetzner servers + its Nebula Dashboard) instead of the local one. |
-| `--json` | Print the raw /api/state JSON. |
+| `--cloud` | The deployed mesh (Nebula Cloud, or the Hetzner servers + their Nebula Dashboard) instead of the local one. |
+| `--target <name>` | Deploy target: hetzner or cloud (default from nebula.json deploy.target). |
+| `--json` | Print the raw state JSON. |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
 
 ## Global options
 
@@ -25,3 +31,11 @@ These work with every command and may appear before or after it.
 | `--project <path>` | Run against another Nebula project instead of the current folder. |
 | `-v, --verbose` | Print stack traces and the commands the CLI runs. |
 | `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula status
+nebula status --cloud
+nebula status --cloud --json
+```

@@ -45,6 +45,20 @@ Per-behaviour handover-only state ([`NetworkIdentity.WriteHandoverState`](/docs/
 public string[] GhostWorkers;
 ```
 
+### SessionGeneration [#sessiongeneration]
+
+```csharp
+public ulong SessionGeneration;
+```
+
+The owner's session as the sender knew it ([`PlayerSessions`](/docs/reference/protocol/player-sessions)), so the receiver accepts the owner's gateway at once. 0/"" for an unowned entity.
+
+### SessionGateway [#sessiongateway]
+
+```csharp
+public string SessionGateway;
+```
+
 ## Methods
 
 ### Write [#write]

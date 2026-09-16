@@ -139,7 +139,7 @@ public sealed class TutorialGameMode : NebulaGameMode
 {
     public GameObject PlayerPrefab;
 
-    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+    public override NetworkIdentity OnSpawnPlayer(NebulaWorker worker, ulong clientId, string playerName, Container container)
     {
         var area = SpawnArea(container);
         var position = NebulaContainerHelpers.RandomPointIn(area, margin: 2f, y: 0f);

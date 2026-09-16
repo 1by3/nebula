@@ -19,6 +19,9 @@ namespace Nebula
             public PeerRole Role;
             public string Id = "";
             public uint Index;
+            public uint Incarnation;
+            /// <summary>Gateways: id + incarnation (<see cref="PlayerSessions.GatewayKey"/>), what sessions are keyed on.</summary>
+            public string Key = "";
             public bool HelloReceived;
             public bool Outbound;
         }
@@ -39,6 +42,10 @@ namespace Nebula
         /// </summary>
         public NebulaPersistence Persistence { get; private set; }
         public string WorkerId { get; private set; }
+        /// <summary>This start of the process (<see cref="HelloMsg.Incarnation"/>), so peers can tell a restart from a reconnect.</summary>
+        public uint Incarnation { get; private set; }
+        /// <summary>Player sessions this worker knows about and which gateway currently speaks for each.</summary>
+        public PlayerSessions Sessions => _sessions;
         public ushort WorkerIndex { get; private set; }
         public ushort Port { get; private set; }
         public bool IsListening { get; private set; }
@@ -64,15 +71,19 @@ namespace Nebula
         private readonly Dictionary<string, Peer> _workerPeersById = new Dictionary<string, Peer>();
         private readonly Dictionary<uint, Peer> _workerPeersByIndex = new Dictionary<uint, Peer>();
         private readonly List<Peer> _gateways = new List<Peer>();
+        /// <summary>Which gateway speaks for each player session, and since which generation (see <see cref="PlayerSessions"/>).</summary>
+        private readonly PlayerSessions _sessions = new PlayerSessions();
+        private readonly List<ulong> _expiredSessions = new List<ulong>();
+        private byte[] _peerKey;
         private readonly HashSet<string> _dialing = new HashSet<string>();
 
         private readonly Dictionary<ulong, NetworkIdentity> _entities = new Dictionary<ulong, NetworkIdentity>();
         private readonly List<NetworkIdentity> _authoritative = new List<NetworkIdentity>();
-        private readonly Dictionary<uint, NetworkIdentity> _players = new Dictionary<uint, NetworkIdentity>();
+        private readonly Dictionary<ulong, NetworkIdentity> _players = new Dictionary<ulong, NetworkIdentity>();
         /// <summary>Clients the gateway told us are bots, so Spawn() can tag their pawns without a game-code API change.</summary>
-        private readonly HashSet<uint> _botClients = new HashSet<uint>();
+        private readonly HashSet<ulong> _botClients = new HashSet<ulong>();
         /// <summary>Client id -> the player's identity across sessions, as the gateway told us in SpawnPlayer.</summary>
-        private readonly Dictionary<uint, string> _playerIdentities = new Dictionary<uint, string>();
+        private readonly Dictionary<ulong, string> _playerIdentities = new Dictionary<ulong, string>();
         /// <summary>netId -> (workerId -> time last seen inside that worker's band)</summary>
         private readonly Dictionary<ulong, Dictionary<string, float>> _ghostTargets = new Dictionary<ulong, Dictionary<string, float>>();
         private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
@@ -248,6 +259,8 @@ namespace Nebula
             ControlPlane = controlPlane;
             WorkerIndex = (ushort)CommandLine.GetInt("nebula-worker-index", 1);
             WorkerId = CommandLine.Get("nebula-worker-id", $"w{WorkerIndex}");
+            Incarnation = SessionIds.NewIncarnation();
+            _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
             Port = (ushort)CommandLine.GetInt("nebula-port", config.WorkerBasePort + WorkerIndex);
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
@@ -460,6 +473,7 @@ namespace Nebula
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
             if (_registered) _telemetry?.Update(this);
+            ExpireSessions();
             if (_registered && Time.unscaledTime >= _nextScenePass)
             {
                 _nextScenePass = Time.unscaledTime + ScenePassSeconds;
@@ -833,7 +847,7 @@ namespace Nebula
         // ---------------------------------------------------------------------------------------- spawning API
 
         /// <summary>Allocate an id and make <paramref name="identity"/> live on this worker. Call after instantiating a network prefab.</summary>
-        public void Spawn(NetworkIdentity identity, Container container, uint ownerClientId = 0)
+        public void Spawn(NetworkIdentity identity, Container container, ulong ownerClientId = 0)
         {
             Spawn(identity, container, ownerClientId, false);
         }
@@ -849,7 +863,7 @@ namespace Nebula
             Spawn(identity, container, 0, true);
         }
 
-        private void Spawn(NetworkIdentity identity, Container container, uint ownerClientId, bool serverDriven)
+        private void Spawn(NetworkIdentity identity, Container container, ulong ownerClientId, bool serverDriven)
         {
             Spawn(identity, container, ownerClientId, serverDriven, 1);
         }
@@ -867,7 +881,7 @@ namespace Nebula
         /// The one spawn path. <paramref name="epoch"/> is 1 for a new entity and <c>record.Epoch + 1</c> for one
         /// restored from the store.
         /// </summary>
-        private void Spawn(NetworkIdentity identity, Container container, uint ownerClientId, bool serverDriven, uint epoch)
+        private void Spawn(NetworkIdentity identity, Container container, ulong ownerClientId, bool serverDriven, uint epoch)
         {
             if (identity == null) throw new ArgumentNullException(nameof(identity));
             if (identity.IsSpawned) throw new InvalidOperationException($"{identity} is already spawned");
@@ -901,7 +915,7 @@ namespace Nebula
             else NebulaLog.Debugf($"spawned {identity}");
         }
 
-        public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, uint ownerClientId = 0)
+        public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, ulong ownerClientId = 0)
         {
             var id = NetworkPrefabs.IdOf(prefab);
             var identity = NetworkPrefabs.Instantiate(id, position, rotation, container != null ? container.transform : null);
@@ -953,7 +967,7 @@ namespace Nebula
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
 
-        public NetworkIdentity FindPlayer(uint clientId) => _players.TryGetValue(clientId, out var e) ? e : null;
+        public NetworkIdentity FindPlayer(ulong clientId) => _players.TryGetValue(clientId, out var e) ? e : null;
 
         // ---------------------------------------------------------------------------------------- ghost band
 
@@ -1172,7 +1186,9 @@ namespace Nebula
             e.WriteHandoverState(_scratch);
             var handoverState = _scratch.ToArray();
             _writer.Reset();
-            new AuthorityTransferMsg { Entity = entity, NewEpoch = newEpoch, PendingInputs = pending, HandoverState = handoverState, GhostWorkers = ghostWorkers.ToArray() }.Write(_writer);
+            var transfer = new AuthorityTransferMsg { Entity = entity, NewEpoch = newEpoch, PendingInputs = pending, HandoverState = handoverState, GhostWorkers = ghostWorkers.ToArray() };
+            if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session)) { transfer.SessionGeneration = session.Generation; transfer.SessionGateway = session.Gateway; }
+            transfer.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
 
             // Become the ghost. The object stays; its transform will now be driven by the new owner's stream.
@@ -1240,7 +1256,12 @@ namespace Nebula
             SetGhostPhysics(e, false);
             _handedOff.Remove(e.NetId);
             if (!_authoritative.Contains(e)) _authoritative.Add(e);
-            if (e.OwnerClientId != 0) _players[e.OwnerClientId] = e;
+            if (e.OwnerClientId != 0)
+            {
+                _players[e.OwnerClientId] = e;
+                // The session came with the pawn: the owner's gateway is trusted here from the first input.
+                _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway);
+            }
             e.SetAuthority(true);
             // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
             // including for motionless entities that will never emit another pose update.
@@ -1522,6 +1543,13 @@ namespace Nebula
 
         private void OnSpawnPlayer(Peer gateway, SpawnPlayerMsg msg)
         {
+            var claim = _sessions.Register(msg.ClientId, msg.Generation, gateway.Key);
+            if (claim == PlayerSessions.Claim.Stale)
+            {
+                NebulaLog.Warn($"stale claim of session {msg.ClientId} by gateway {gateway.Id} (generation {msg.Generation}); ignored");
+                return;
+            }
+            if (claim == PlayerSessions.Claim.Reclaimed) NebulaLog.Info($"session {msg.ClientId} '{msg.Name}' now speaks through gateway {gateway.Id}");
             if (msg.IsBot) _botClients.Add(msg.ClientId); else _botClients.Remove(msg.ClientId);
             if (!string.IsNullOrEmpty(msg.Identity)) _playerIdentities[msg.ClientId] = msg.Identity; else _playerIdentities.Remove(msg.ClientId);
             if (_players.TryGetValue(msg.ClientId, out var existing) && existing != null)
@@ -1548,26 +1576,58 @@ namespace Nebula
 
         private void OnDespawnPlayer(Peer gateway, DespawnPlayerMsg msg)
         {
-            _playerIdentities.Remove(msg.ClientId);
-            var e = FindPlayer(msg.ClientId);
-            if (e == null) return;
-            if (e.HasAuthority)
+            if (!_sessions.Release(msg.ClientId, msg.Generation, Time.unscaledTime))
             {
-                _gameMode?.OnPlayerDespawn(this, e);
-                // A client disconnecting is not the entity ceasing to exist: a persistent pawn keeps its record so
-                // the player finds it again on the next connection.
-                Despawn(e, keepPersisted: e.Persistent != null);
+                NebulaLog.Info($"stale despawn of session {msg.ClientId} from gateway {gateway.Id} (generation {msg.Generation}); the session moved on");
+                return;
             }
-            else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
+            var e = FindPlayer(msg.ClientId);
+            if (e == null) { _sessions.Remove(msg.ClientId); _playerIdentities.Remove(msg.ClientId); return; }
+            if (!e.HasAuthority)
             {
-                _writer.Reset();
-                msg.Write(_writer);
-                Send(peer, Delivery.ReliableOrdered);
+                _sessions.Remove(msg.ClientId);
+                _playerIdentities.Remove(msg.ClientId);
+                if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
+                {
+                    _writer.Reset();
+                    msg.Write(_writer);
+                    Send(peer, Delivery.ReliableOrdered);
+                }
+                return;
+            }
+            // The pawn stays for the reclaim grace (SessionReclaimSeconds): the player may be reconnecting, here or
+            // through another gateway. ExpireSessions despawns it when nobody came back.
+            if (Config.SessionReclaimSeconds <= 0) DespawnPlayer(msg.ClientId);
+        }
+
+        /// <summary>The player is gone for good: tell the game, drop the pawn (a persistent pawn keeps its record for the next connection).</summary>
+        private void DespawnPlayer(ulong clientId)
+        {
+            _sessions.Remove(clientId);
+            _playerIdentities.Remove(clientId);
+            var e = FindPlayer(clientId);
+            if (e == null || !e.HasAuthority) return;
+            _gameMode?.OnPlayerDespawn(this, e);
+            // A client disconnecting is not the entity ceasing to exist: a persistent pawn keeps its record so
+            // the player finds it again on the next connection.
+            Despawn(e, keepPersisted: e.Persistent != null);
+        }
+
+        /// <summary>Sessions nobody reclaimed within <see cref="NebulaConfig.SessionReclaimSeconds"/> (their gateway went away, or their client left) lose their pawn.</summary>
+        private void ExpireSessions()
+        {
+            _expiredSessions.Clear();
+            _sessions.Expire(Time.unscaledTime, Config.SessionReclaimSeconds, _expiredSessions);
+            foreach (var id in _expiredSessions)
+            {
+                if (FindPlayer(id) is NetworkIdentity e && e.HasAuthority) NebulaLog.Info($"session {id} was not reclaimed; despawning {e}");
+                DespawnPlayer(id);
             }
         }
 
         private void OnClientInput(Peer from, ClientInputMsg msg)
         {
+            if (from.Role == PeerRole.Gateway && !_sessions.Accept(msg.ClientId, from.Key)) return;
             var e = FindPlayer(msg.ClientId);
             if (e == null) return;
             if (e.HasAuthority)
@@ -1595,6 +1655,7 @@ namespace Nebula
 
         private void OnServerRpc(Peer from, EntityRpcMsg msg)
         {
+            if (from.Role == PeerRole.Gateway && !_sessions.Accept(msg.ClientId, from.Key)) return;
             var e = Find(msg.NetId);
             if (e == null) return;
             if (e.HasAuthority)
@@ -1639,7 +1700,7 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
-        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius)
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius)
         {
             var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Radius = radius, Args = ToArray(args) };
             _writer.Reset();
@@ -1724,7 +1785,7 @@ namespace Nebula
                     }
                     // Both sides introduce themselves; the inbound side learns who this is from the Hello.
                     _writer.Reset();
-                    new HelloMsg { Role = PeerRole.Worker, Id = WorkerId, Index = WorkerIndex }.Write(_writer);
+                    new HelloMsg { Role = PeerRole.Worker, Id = WorkerId, Index = WorkerIndex, Incarnation = Incarnation, Token = MeshPeerAuth.Issue(Config.MeshToken, PeerRole.Worker, WorkerId, Incarnation) }.Write(_writer);
                     Send(peer, Delivery.ReliableOrdered);
                     break;
                 }
@@ -1753,7 +1814,11 @@ namespace Nebula
             if (peer.Role == PeerRole.Gateway)
             {
                 _gateways.Remove(peer);
-                NebulaLog.Warn($"gateway {peer.Id} disconnected");
+                // Its sessions wait for a reclaim (the same gateway coming back, or another one the clients moved to).
+                bool stillHere = false;
+                foreach (var g in _gateways) if (g.Key == peer.Key) stillHere = true;
+                if (!stillHere) _sessions.GatewayLost(peer.Key, Time.unscaledTime);
+                NebulaLog.Warn($"gateway {peer.Id} disconnected" + (stillHere ? "" : "; its players' pawns are kept for " + Config.SessionReclaimSeconds + " s"));
             }
             else if (peer.Role == PeerRole.Worker)
             {
@@ -1779,14 +1844,29 @@ namespace Nebula
             if (id == MsgId.Hello)
             {
                 var hello = HelloMsg.Read(r);
+                if (hello.Role != PeerRole.Gateway && hello.Role != PeerRole.Worker)
+                {
+                    NebulaLog.Warn($"peer '{hello.Id}' with role {hello.Role} refused: workers only talk to gateways and workers");
+                    _transport.Disconnect(peer.PeerId);
+                    return;
+                }
+                if (_peerKey != null && !MeshPeerAuth.Verify(_peerKey, hello.Role, hello.Id, hello.Incarnation, hello.Token, JsonWebToken.UnixNow(), out string authError))
+                {
+                    NebulaLog.Warn($"{hello.Role} '{hello.Id}' refused: {authError}");
+                    _transport.Disconnect(peer.PeerId);
+                    return;
+                }
                 peer.Role = hello.Role;
                 peer.Id = hello.Id;
                 peer.Index = hello.Index;
+                peer.Incarnation = hello.Incarnation;
                 peer.HelloReceived = true;
                 if (hello.Role == PeerRole.Gateway)
                 {
+                    peer.Key = PlayerSessions.GatewayKey(hello.Id, hello.Incarnation);
                     _gateways.Add(peer);
-                    NebulaLog.Info($"gateway {peer.Id} connected; announcing {_authoritative.Count} entities");
+                    _sessions.GatewayReturned(peer.Key);
+                    NebulaLog.Info($"gateway {peer.Id} (incarnation {hello.Incarnation:x8}) connected; announcing {_authoritative.Count} entities");
                     foreach (var e in _authoritative) SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.EntitySpawn);
                 }
                 else if (hello.Role == PeerRole.Worker)

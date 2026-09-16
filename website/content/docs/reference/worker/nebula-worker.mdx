@@ -73,6 +73,22 @@ Long-term storage for the entities that opted into it ([`PersistentEntity`](/doc
 public string WorkerId { get; }
 ```
 
+### Incarnation [#incarnation]
+
+```csharp
+public uint Incarnation { get; }
+```
+
+This start of the process ([`HelloMsg.Incarnation`](/docs/reference/protocol/hello-msg#incarnation)), so peers can tell a restart from a reconnect.
+
+### Sessions [#sessions]
+
+```csharp
+public PlayerSessions Sessions { get; }
+```
+
+Player sessions this worker knows about and which gateway currently speaks for each.
+
 ### WorkerIndex [#workerindex]
 
 ```csharp
@@ -336,7 +352,7 @@ Retire a runtime container this worker owns: its lease row is deleted, so every 
 ### Spawn [#spawn]
 
 ```csharp
-public void Spawn(NetworkIdentity identity, Container container, uint ownerClientId = 0);
+public void Spawn(NetworkIdentity identity, Container container, ulong ownerClientId = 0);
 ```
 
 Allocate an id and make `identity` live on this worker. Call after instantiating a network prefab.
@@ -352,7 +368,7 @@ Spawn a server-driven entity: one with no owning client whose [`PredictedBehavio
 ### SpawnPrefab [#spawnprefab]
 
 ```csharp
-public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, uint ownerClientId = 0);
+public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaternion rotation, Container container, ulong ownerClientId = 0);
 ```
 
 ### Despawn [#despawn]
@@ -372,7 +388,7 @@ public NetworkIdentity Find(ulong netId);
 ### FindPlayer [#findplayer]
 
 ```csharp
-public NetworkIdentity FindPlayer(uint clientId);
+public NetworkIdentity FindPlayer(ulong clientId);
 ```
 
 ## Nested types

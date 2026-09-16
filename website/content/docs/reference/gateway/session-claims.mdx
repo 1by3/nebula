@@ -1,0 +1,53 @@
+---
+title: "SessionClaims"
+description: "What a session token says about the session it names."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/Sessions.cs)</div>
+
+```csharp
+public struct SessionClaims
+```
+
+What a session token says about the session it names.
+
+## Fields
+
+### SessionId [#sessionid]
+
+```csharp
+public ulong SessionId;
+```
+
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+### Name [#name]
+
+```csharp
+public string Name;
+```
+
+### IsBot [#isbot]
+
+```csharp
+public bool IsBot;
+```
+
+### Generation [#generation]
+
+```csharp
+public ulong Generation;
+```
+
+The connection generation the session had when the token was issued ([`SpawnPlayerMsg.Generation`](/docs/reference/protocol/spawn-player-msg#generation)).
+
+### ExpiresAt [#expiresat]
+
+```csharp
+public long ExpiresAt;
+```
+

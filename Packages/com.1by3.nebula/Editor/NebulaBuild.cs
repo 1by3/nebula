@@ -131,7 +131,11 @@ namespace Nebula.Editor
                 locationPathName = location,
                 target = target,
                 subtarget = (int)subtarget,
-                options = BuildOptions.Development,
+                // CleanBuildCache: every script assembly is compiled from the current sources. The incremental pipeline
+                // has reused a game assembly compiled a day earlier while the package assembly was fresh (a build from a
+                // mirrored project), which the worker only reveals at run time as a MissingFieldException. A deploy
+                // build is worth the extra minute.
+                options = BuildOptions.Development | BuildOptions.CleanBuildCache,
             };
             Debug.Log($"[nebula] building {location} ({target}/{subtarget}) with scenes: {string.Join(", ", scenes)}");
             ServiceExport.Write(Path.GetDirectoryName(location), scenes);

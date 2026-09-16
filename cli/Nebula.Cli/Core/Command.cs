@@ -47,7 +47,7 @@ public sealed class Context
 }
 
 /// <summary>A user-facing failure: printed as one line (plus a hint), no stack trace.</summary>
-public sealed class CliError : Exception
+public class CliError : Exception
 {
     public string? Hint { get; }
     public int ExitCode { get; }

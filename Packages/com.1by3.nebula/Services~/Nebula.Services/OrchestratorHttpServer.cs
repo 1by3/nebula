@@ -171,5 +171,13 @@ namespace Nebula
             var m = Regex.Match(body, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
             return m.Success ? m.Groups[1].Value : "";
         }
+        public static bool TryGetBool(string body, string key, out bool value)
+        {
+            value = false; if (string.IsNullOrEmpty(body)) return false;
+            var m = Regex.Match(body, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(true|false)");
+            if (!m.Success) return false;
+            value = m.Groups[1].Value == "true";
+            return true;
+        }
     }
 }

@@ -170,6 +170,22 @@ public string AuthSigningKey = "";
 
 Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA\_AUTH\_KEY.
 
+### SessionReclaimSeconds [#sessionreclaimseconds]
+
+```csharp
+public float SessionReclaimSeconds = 30f;
+```
+
+Seconds a worker keeps a player's pawn after the player's connection drops, so the player can reconnect (through any gateway of the mesh) and continue with the same session and pawn. 0 despawns at once.
+
+### GatewayDrainReconnectSeconds [#gatewaydrainreconnectseconds]
+
+```csharp
+public float GatewayDrainReconnectSeconds = 10f;
+```
+
+When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.
+
 ### WorkerCount [#workercount]
 
 ```csharp

@@ -99,7 +99,9 @@ namespace Nebula
                 w.Prop("address", g.Address ?? "");
                 w.Prop("port", (int)g.Port);
                 w.Prop("lastHeartbeat", ToUnixMs(g.LastHeartbeat));
-                w.Prop("pendingJoins", (long)g.PendingJoins);
+                w.Prop("incarnation", (long)g.Incarnation);
+                w.Prop("drainRequested", g.DrainRequested);
+                WriteGatewayStats(w, g.Stats);
                 w.EndObject();
             }
             w.EndArray();
@@ -183,7 +185,9 @@ namespace Nebula
                         Address = Str(o, "address"),
                         Port = (ushort)Num(o, "port"),
                         LastHeartbeat = FromUnixMs(Num(o, "lastHeartbeat")),
-                        PendingJoins = (uint)Num(o, "pendingJoins"),
+                        Incarnation = (uint)Num(o, "incarnation"),
+                        DrainRequested = Bool(o, "drainRequested"),
+                        Stats = ReadGatewayStats(o),
                     });
                 }
             }
@@ -194,11 +198,52 @@ namespace Nebula
             return s;
         }
 
+        /// <summary>The gateway's self-report, flat on the row (and on the HeartbeatGateway op) so old and new readers agree on "pendingJoins".</summary>
+        public static void WriteGatewayStats(JsonWriter w, in GatewayStats s)
+        {
+            w.Prop("pendingJoins", (long)s.PendingJoins);
+            w.Prop("activeClients", (long)s.ActiveClients);
+            w.Prop("joiningClients", (long)s.JoiningClients);
+            w.Prop("reconnectingClients", (long)s.ReconnectingClients);
+            w.Prop("packetsIn", s.PacketsInPerSecond);
+            w.Prop("packetsOut", s.PacketsOutPerSecond);
+            w.Prop("bytesIn", s.BytesInPerSecond);
+            w.Prop("bytesOut", s.BytesOutPerSecond);
+            w.Prop("workerBytesIn", s.WorkerBytesInPerSecond);
+            w.Prop("workerBytesOut", s.WorkerBytesOutPerSecond);
+            w.Prop("cpu", s.Cpu);
+            w.Prop("memoryBytes", (long)s.MemoryBytes);
+            w.Prop("loopLagMs", s.LoopLagMs);
+            w.Prop("workerConnections", (long)s.WorkerConnections);
+            w.Prop("ready", s.Ready);
+            w.Prop("draining", s.Draining);
+        }
+
+        public static GatewayStats ReadGatewayStats(Dictionary<string, object> o) => new GatewayStats
+        {
+            PendingJoins = (uint)Num(o, "pendingJoins"),
+            ActiveClients = (uint)Num(o, "activeClients"),
+            JoiningClients = (uint)Num(o, "joiningClients"),
+            ReconnectingClients = (uint)Num(o, "reconnectingClients"),
+            PacketsInPerSecond = (float)Num(o, "packetsIn"),
+            PacketsOutPerSecond = (float)Num(o, "packetsOut"),
+            BytesInPerSecond = (float)Num(o, "bytesIn"),
+            BytesOutPerSecond = (float)Num(o, "bytesOut"),
+            WorkerBytesInPerSecond = (float)Num(o, "workerBytesIn"),
+            WorkerBytesOutPerSecond = (float)Num(o, "workerBytesOut"),
+            Cpu = (float)Num(o, "cpu"),
+            MemoryBytes = (ulong)Num(o, "memoryBytes"),
+            LoopLagMs = (float)Num(o, "loopLagMs"),
+            WorkerConnections = (uint)Num(o, "workerConnections"),
+            Ready = Bool(o, "ready"),
+            Draining = Bool(o, "draining"),
+        };
+
         // ---------------------------------------------------------------------------------------- writes
 
         /// <summary>Names of the writes, as they travel on the wire.</summary>
         public const string RegisterWorker = "RegisterWorker", HeartbeatWorker = "HeartbeatWorker", UnregisterWorker = "UnregisterWorker",
-            RegisterGateway = "RegisterGateway", HeartbeatGateway = "HeartbeatGateway", UnregisterGateway = "UnregisterGateway",
+            RegisterGateway = "RegisterGateway", HeartbeatGateway = "HeartbeatGateway", UnregisterGateway = "UnregisterGateway", SetGatewayDraining = "SetGatewayDraining",
             HeartbeatOrchestrator = "HeartbeatOrchestrator", SetSetting = "SetSetting",
             EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer",
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
@@ -216,6 +261,7 @@ namespace Nebula
             public OpWriter Arg(string name, long value) { _w.Prop(name, value); return this; }
             public OpWriter Arg(string name, ulong value) { _w.Prop(name, value); return this; }
             public OpWriter Arg(string name, uint value) { _w.Prop(name, value); return this; }
+            public OpWriter Arg(string name, bool value) { _w.Prop(name, value); return this; }
             public OpWriter Arg(string name, float value) { _w.Key(name); Num(_w, value); return this; }
             public OpWriter Arg(string name, Vector3 value) { _w.Key(name); Vec(_w, value); return this; }
             public string End() { _w.EndObject(); return _sb.ToString(); }
@@ -280,9 +326,10 @@ namespace Nebula
                     return null;
                 }
                 case UnregisterWorker: cp.UnregisterWorker(Str(o, "workerId")); return null;
-                case RegisterGateway: cp.RegisterGateway(Str(o, "gatewayId"), Str(o, "address"), (ushort)Num(o, "port")); return null;
-                case HeartbeatGateway: cp.HeartbeatGateway(Str(o, "gatewayId"), (uint)Num(o, "pendingJoins")); return null;
+                case RegisterGateway: cp.RegisterGateway(Str(o, "gatewayId"), Str(o, "address"), (ushort)Num(o, "port"), (uint)Num(o, "incarnation")); return null;
+                case HeartbeatGateway: cp.HeartbeatGateway(Str(o, "gatewayId"), ReadGatewayStats(o)); return null;
                 case UnregisterGateway: cp.UnregisterGateway(Str(o, "gatewayId")); return null;
+                case SetGatewayDraining: cp.SetGatewayDraining(Str(o, "gatewayId"), Bool(o, "draining")); return null;
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
                 case EnsureContainer: cp.EnsureContainer(Str(o, "containerId")); return null;

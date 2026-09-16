@@ -133,6 +133,14 @@ public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
 
 The World map's data: static container geometry and the latest telemetry each worker posted (see [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)).
 
+### Logs [#logs]
+
+```csharp
+public LogBuffer Logs { get; } = new LogBuffer();
+```
+
+Recent log lines of every process of the mesh, posted to and read from `/api/logs` (see [`LogBuffer`](/docs/reference/orchestrator/log-buffer)).
+
 ### Persistence [#persistence]
 
 ```csharp

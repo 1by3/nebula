@@ -1,0 +1,45 @@
+---
+title: "nebula scale"
+description: "Change the worker range of the running mesh"
+---
+
+To change the worker range of the running mesh, run:
+
+```bash
+nebula scale --min N --max N [--gateways-min N --gateways-max N] [--target local|hetzner|cloud]
+```
+
+Set the autoscaling band while the mesh runs: the orchestrator starts workers up to --min and never runs more than --max. --min 0 allows scaling to zero. On Nebula Cloud, --gateways-min and --gateways-max also bound the gateway fleet. The change applies at once and does not restart anything.
+
+For a local mesh (`nebula start`) or a Hetzner deployment the CLI sets the band through the orchestrator's dashboard API; for a Nebula Cloud deployment through the Cloud API. Pass --target local to address the local mesh from a project that deploys elsewhere.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--min <N>` | Fewest workers the orchestrator keeps running (0 allows scaling to zero). |
+| `--max <N>` | Most workers the orchestrator may run. |
+| `--gateways-min <N>` | Cloud: fewest gateways. |
+| `--gateways-max <N>` | Cloud: most gateways. |
+| `--target <name>` | Local, hetzner or cloud (default: nebula.json deploy.target; the local mesh when no cloud flags apply). |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula scale --min 1 --max 8
+nebula scale --min 0 --max 4 --gateways-max 2
+nebula scale --target local --min 2 --max 2
+```

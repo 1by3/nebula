@@ -22,6 +22,8 @@ namespace Nebula
         public string AuthAudience = "";
         public bool AuthAnonymous = true;
         public string AuthSigningKey = "";
+        public float SessionReclaimSeconds = 30f;
+        public float GatewayDrainReconnectSeconds = 10f;
         public int WorkerCount = 4;
         public int MaxWorkers = 32;
         public string AssignmentPolicy = "auto";

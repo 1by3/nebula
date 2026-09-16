@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -123,6 +124,8 @@ namespace Nebula
         public string DashboardUrl => _http != null ? _http.Url : "";
         /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
         public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
+        /// <summary>Recent log lines of every process of the mesh, posted to and read from <c>/api/logs</c> (see <see cref="LogBuffer"/>).</summary>
+        public LogBuffer Logs { get; } = new LogBuffer();
 
         /// <summary>
         /// The mesh's persistence store, so the dashboard can report how many entities are saved and wipe them
@@ -224,6 +227,9 @@ namespace Nebula
             {
                 case "hetzner":
                     return new HetznerWorkerHost(CloudHostSettings.FromCommandLine(OrchestratorId, config.WorkerAdvertiseAddress, config.DashboardPort));
+                case "cloud":
+                    // Managed hosting: workers come from a deployment-scoped resource API, not from a provider this process has credentials for.
+                    return new CloudWorkerHost(CloudWorkerHostSettings.FromCommandLine());
                 case "":
                 case "process":
                 case "local":
@@ -262,6 +268,21 @@ namespace Nebula
                 });
                 _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
                 _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
+                // Recent log lines from every process of the mesh (see LogBuffer): posted by the machines, read by
+                // whoever operates the mesh. With a mesh token both directions need it.
+                _http.MapDirect("POST", "/api/logs", req =>
+                {
+                    if (!string.IsNullOrEmpty(Config.MeshToken) && req.Token != Config.MeshToken) return OrchestratorHttpServer.Response.Error(401, "mesh token required");
+                    string error = Logs.Accept(req.Body, out int accepted);
+                    return error != null ? OrchestratorHttpServer.Response.Error(400, error) : OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"accepted\":{accepted}}}");
+                });
+                _http.MapDirect("GET", "/api/logs", req =>
+                {
+                    if (!string.IsNullOrEmpty(Config.MeshToken) && req.Token != Config.MeshToken) return OrchestratorHttpServer.Response.Error(401, "mesh token required");
+                    long.TryParse(req.GetQuery("since"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long since);
+                    int.TryParse(req.GetQuery("limit"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int limit);
+                    return OrchestratorHttpServer.Response.Json(200, Logs.Query(since, req.GetQuery("role"), req.GetQuery("instance"), limit));
+                });
                 // The control plane this orchestrator hosts: reads are served on the listener thread, writes come
                 // through the command pump (HandleCommand) so they land on the main thread.
                 if (ControlPlane is ControlPlaneHost host) host.Attach(_http);
@@ -512,6 +533,14 @@ namespace Nebula
         private void ReapDeadWorkers()
         {
             float now = Time.unscaledTime;
+            // A gateway that stopped heartbeating for good (killed, or its machine is gone) leaves the fleet list, so
+            // whoever reads /api/state sees the gateways that exist rather than every one that ever registered.
+            foreach (var g in ControlPlane.Gateways.ToList())
+            {
+                if ((ControlPlane.Now - g.LastHeartbeat).TotalSeconds <= Config.WorkerTimeoutSeconds * 3) continue;
+                Log("warn", $"gateway {g.GatewayId} missed heartbeats for {(ControlPlane.Now - g.LastHeartbeat).TotalSeconds:F0}s; removing it from the fleet");
+                ControlPlane.UnregisterGateway(g.GatewayId);
+            }
             // Forget retirements old enough that their control-plane row is certainly gone.
             foreach (var id in _retired.Where(kv => now - kv.Value > 15f).Select(kv => kv.Key).ToList()) _retired.Remove(id);
 
@@ -1224,6 +1253,18 @@ namespace Nebula
                     if (AtWorkerCeiling) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
                     AddWorker();
                     break;
+                case "/api/gateways/drain":
+                {
+                    // Whoever runs the gateway fleet takes a gateway out of service: it refuses new clients and asks
+                    // its clients to reconnect (to another gateway, through a load balancer). {"id": "gw2", "draining": false} cancels.
+                    string gatewayId = OrchestratorHttpServer.GetString(req.Body, "id");
+                    if (string.IsNullOrEmpty(gatewayId)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"id\": \"gateway id\", \"draining\": true|false}");
+                    if (ControlPlane.FindGateway(gatewayId) == null) return OrchestratorHttpServer.Response.Error(404, $"no gateway '{gatewayId}'");
+                    bool draining = !OrchestratorHttpServer.TryGetBool(req.Body, "draining", out bool flag) || flag;
+                    ControlPlane.SetGatewayDraining(gatewayId, draining);
+                    Log("info", draining ? $"gateway {gatewayId} asked to drain" : $"gateway {gatewayId} drain cancelled");
+                    break;
+                }
                 case "/api/containers/ensure":
                 {
                     if (!PersistenceJson.TryParseObject(req.Body, out var body, out string parseError)) return OrchestratorHttpServer.Response.Error(400, parseError);
@@ -1588,9 +1629,11 @@ namespace Nebula
             {
                 w.BeginObject();
                 w.Prop("id", g.GatewayId);
+                w.Prop("incarnation", g.Incarnation.ToString("x8"));
                 w.Prop("address", $"{g.Address}:{g.Port}");
                 w.Prop("heartbeatAgeSeconds", Math.Max(0.0, (ControlPlane.Now - g.LastHeartbeat).TotalSeconds));
-                w.Prop("pendingJoins", (int)g.PendingJoins);
+                w.Prop("drainRequested", g.DrainRequested);
+                ControlPlaneJson.WriteGatewayStats(w, g.Stats);
                 w.EndObject();
             }
             w.EndArray();

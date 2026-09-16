@@ -143,9 +143,10 @@ namespace Nebula
         public void RegisterWorker(string workerId, uint workerIndex, string address, ushort port) => _plane.RegisterWorker(workerId, workerIndex, address, port);
         public void HeartbeatWorker(string workerId, string status, in WorkerStats stats) => _plane.HeartbeatWorker(workerId, status, stats);
         public void UnregisterWorker(string workerId) => _plane.UnregisterWorker(workerId);
-        public void RegisterGateway(string gatewayId, string address, ushort port) => _plane.RegisterGateway(gatewayId, address, port);
-        public void HeartbeatGateway(string gatewayId, uint pendingJoins) => _plane.HeartbeatGateway(gatewayId, pendingJoins);
+        public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) => _plane.RegisterGateway(gatewayId, address, port, incarnation);
+        public void HeartbeatGateway(string gatewayId, in GatewayStats stats) => _plane.HeartbeatGateway(gatewayId, stats);
         public void UnregisterGateway(string gatewayId) => _plane.UnregisterGateway(gatewayId);
+        public void SetGatewayDraining(string gatewayId, bool draining) => _plane.SetGatewayDraining(gatewayId, draining);
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) => _plane.HeartbeatOrchestrator(orchestratorId, desiredWorkers);
         public void SetSetting(string key, string value) => _plane.SetSetting(key, value);
         public void EnsureContainer(string containerId) => _plane.EnsureContainer(containerId);

@@ -1,0 +1,38 @@
+---
+title: "nebula rollback"
+description: "Roll a Nebula Cloud deployment back to its previous release"
+---
+
+To roll a Nebula Cloud deployment back to its previous release, run:
+
+```bash
+nebula rollback [--release rel_id]
+```
+
+Roll out the release that ran before the current one (or the one named with --release) and follow the operation. A rollback restarts the orchestrator and recreates the workers like a deploy does; players are disconnected while it runs. Releases are immutable, so `nebula deploy --release rel\_id` and `nebula rollback --release rel\_id` do the same.
+
+## Options
+
+| Option | Description |
+| --- | --- |
+| `--release <rel_id>` | The release to return to (default: the previous one). |
+| `--org <slug>` | Cloud: organization slug (default from nebula.json). |
+| `--cloud-project <slug>` | Cloud: project slug inside the organization (default from nebula.json). |
+| `--deployment <name>` | Cloud: deployment name inside the project (default from nebula.json). |
+
+## Global options
+
+These work with every command and may appear before or after it.
+
+| Option | Description |
+| --- | --- |
+| `--project <path>` | Run against another Nebula project instead of the current folder. |
+| `-v, --verbose` | Print stack traces and the commands the CLI runs. |
+| `-y, --yes` | Answer every confirmation with yes. |
+
+## Examples
+
+```bash
+nebula rollback
+nebula rollback --release rel_01h...
+```

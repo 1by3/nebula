@@ -1,6 +1,6 @@
 ---
 title: "DespawnPlayerMsg"
-description: "Carries the despawn player protocol message."
+description: "Gateway -> worker: the session is over (or the gateway gave up waiting for it to reconnect)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,14 +9,20 @@ description: "Carries the despawn player protocol message."
 public struct DespawnPlayerMsg
 ```
 
-Carries the despawn player protocol message.
+Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). Fenced by [`Generation`](#generation) like [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg).
 
 ## Fields
 
 ### ClientId [#clientid]
 
 ```csharp
-public uint ClientId;
+public ulong ClientId;
+```
+
+### Generation [#generation]
+
+```csharp
+public ulong Generation;
 ```
 
 ## Methods

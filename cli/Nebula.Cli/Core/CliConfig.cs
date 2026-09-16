@@ -22,6 +22,8 @@ public sealed class CliConfig
     public UnitySettings Unity { get; set; } = new();
     public HetznerSettings? Hetzner { get; set; }
     public DatabaseSettings? Database { get; set; }
+    /// <summary>Credentials `nebula cloud login` stored for Nebula Cloud.</summary>
+    public CloudSettings? Cloud { get; set; }
 
     public sealed class UnitySettings
     {
@@ -61,6 +63,47 @@ public sealed class CliConfig
         {
             var env = Environment.GetEnvironmentVariable("NEBULA_DATABASE_URL");
             return !string.IsNullOrEmpty(env) ? env : settings?.Url;
+        }
+    }
+
+    /// <summary>The Nebula Cloud session: where the API is and the tokens `nebula cloud login` obtained.</summary>
+    public sealed class CloudSettings
+    {
+        public const string DefaultApiUrl = "https://api.nebula.1by3.co";
+
+        /// <summary>Origin of the Cloud API (no /v1); the CLI adds the version prefix.</summary>
+        public string? ApiUrl { get; set; }
+        public string? AccessToken { get; set; }
+        public string? RefreshToken { get; set; }
+        public DateTimeOffset? ExpiresAt { get; set; }
+        public CloudUser? User { get; set; }
+        public string? LoggedInAt { get; set; }
+
+        public bool IsLoggedIn => !string.IsNullOrEmpty(AccessToken) && !string.IsNullOrEmpty(RefreshToken);
+
+        /// <summary>NEBULA_CLOUD_API in the environment wins over the stored URL, which wins over the default.</summary>
+        public static string ResolveApiUrl(CloudSettings? settings, string? explicitUrl = null)
+        {
+            var env = Environment.GetEnvironmentVariable("NEBULA_CLOUD_API");
+            string url = !string.IsNullOrEmpty(env) ? env : explicitUrl ?? settings?.ApiUrl ?? DefaultApiUrl;
+            return NormalizeApiUrl(url);
+        }
+
+        /// <summary>Accept the documented base URL (…/v1) or its origin; the client appends /v1 itself.</summary>
+        public static string NormalizeApiUrl(string url)
+        {
+            url = url.Trim().TrimEnd('/');
+            if (url.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) url = url.Substring(0, url.Length - 3);
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                throw new CliError($"'{url}' is not an http(s) URL", "pass the Cloud API as https://host, or set NEBULA_CLOUD_API");
+            return url;
+        }
+
+        public sealed class CloudUser
+        {
+            public string? Id { get; set; }
+            public string? Email { get; set; }
+            public string? Name { get; set; }
         }
     }
 

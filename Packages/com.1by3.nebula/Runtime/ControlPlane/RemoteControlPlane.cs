@@ -167,10 +167,16 @@ namespace Nebula
                 .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).End());
 
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
-        public void RegisterGateway(string gatewayId, string address, ushort port) =>
-            Enqueue(_op.Op(ControlPlaneJson.RegisterGateway).Arg("gatewayId", gatewayId).Arg("address", address).Arg("port", (long)port).End());
-        public void HeartbeatGateway(string gatewayId, uint pendingJoins) => Enqueue(_op.Op(ControlPlaneJson.HeartbeatGateway).Arg("gatewayId", gatewayId).Arg("pendingJoins", (long)pendingJoins).End());
+        public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) =>
+            Enqueue(_op.Op(ControlPlaneJson.RegisterGateway).Arg("gatewayId", gatewayId).Arg("address", address).Arg("port", (long)port).Arg("incarnation", (long)incarnation).End());
+        public void HeartbeatGateway(string gatewayId, in GatewayStats s) =>
+            Enqueue(_op.Op(ControlPlaneJson.HeartbeatGateway).Arg("gatewayId", gatewayId)
+                .Arg("pendingJoins", (long)s.PendingJoins).Arg("activeClients", (long)s.ActiveClients).Arg("joiningClients", (long)s.JoiningClients).Arg("reconnectingClients", (long)s.ReconnectingClients)
+                .Arg("packetsIn", s.PacketsInPerSecond).Arg("packetsOut", s.PacketsOutPerSecond).Arg("bytesIn", s.BytesInPerSecond).Arg("bytesOut", s.BytesOutPerSecond)
+                .Arg("workerBytesIn", s.WorkerBytesInPerSecond).Arg("workerBytesOut", s.WorkerBytesOutPerSecond).Arg("cpu", s.Cpu).Arg("memoryBytes", (long)s.MemoryBytes)
+                .Arg("loopLagMs", s.LoopLagMs).Arg("workerConnections", (long)s.WorkerConnections).Arg("ready", s.Ready).Arg("draining", s.Draining).End());
         public void UnregisterGateway(string gatewayId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterGateway).Arg("gatewayId", gatewayId).End());
+        public void SetGatewayDraining(string gatewayId, bool draining) => Enqueue(_op.Op(ControlPlaneJson.SetGatewayDraining).Arg("gatewayId", gatewayId).Arg("draining", draining).End());
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatOrchestrator).Arg("orchestratorId", orchestratorId).Arg("desiredWorkers", desiredWorkers).End());
         public void SetSetting(string key, string value) => Enqueue(_op.Op(ControlPlaneJson.SetSetting).Arg("key", key).Arg("value", value ?? "").End());

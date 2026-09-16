@@ -25,7 +25,7 @@ For a large world, use [world partition](/docs/guides/world-partition). Each cel
 Run `nebula build` to build the Unity player and the standalone .NET services, then `nebula start` to launch the mesh:
 
 - A **worker** is a headless Unity process. It simulates the entities in its assigned containers at 60 ticks per second.
-- The **gateway** is a standalone .NET service that accepts client connections, routes input to workers, and sends worker state to clients.
+- The **gateway** is a standalone .NET service that accepts client connections, routes input to workers, and sends worker state to clients. A mesh can have several; each client's session is identified by a mesh-wide session ID and can move between gateways.
 - The **orchestrator** is a standalone .NET service that starts workers, assigns containers, and serves the Nebula Dashboard and its HTTP API.
 - A **client** sends input to the gateway, predicts its local player, and displays replicated entities.
 - The **control plane** is hosted by the orchestrator. It stores registrations, heartbeats, container assignments, and settings shared by the mesh, and the orchestrator keeps it in its database (SQLite or PostgreSQL) together with saved entities.
@@ -75,7 +75,7 @@ Nebula does not automatically validate a remote damage claim on the target's wor
 Design your game around the current failure behavior:
 
 - If a **worker** stops, the orchestrator reassigns its containers and starts a replacement. Entities that opted into [persistence](/docs/guides/persistence) come back from their last checkpoint when a worker gains the lease of their container. Every other entity on the stopped worker is lost. The gateway requests new player entities for affected clients.
-- If the **gateway** stops, clients lose their connection. The gateway does not own authoritative entity state, but automatic client reconnection and gateway failover are not provided.
+- If a **gateway** stops, its clients lose their connection and reconnect by themselves with their session tokens: through a load balancer to another gateway, or to the same address once a gateway is back. Workers keep the affected pawns for `SessionReclaimSeconds` (default 30 s); a client that returns within that time continues with its pawn, and a session nobody reclaimed is despawned. The gateway owns no authoritative entity state. Nebula does not provide the load balancer, and the orchestrator does not restart a gateway that exited.
 - If the **control plane** becomes unavailable, connected workers continue simulating with their last known assignments. The orchestrator cannot safely change assignments until the control plane returns.
 - If the **orchestrator** stops, existing workers and the gateway continue running. Automatic worker replacement, reassignment, and dashboard controls remain unavailable until you restart it.
 
@@ -87,6 +87,6 @@ The control plane stores none of this. Keep accounts, matchmaking records, and a
 
 Workers, the gateway, and native clients use LiteNetLib over UDP. Clients from a Unity Web build reach the gateway over WebRTC data channels (see [Build for the web](/docs/guides/web-builds)). Both provide reliable ordered delivery for messages that must arrive and unreliable sequenced delivery for frequently replaced state such as transforms.
 
-The worker-to-worker link and the UDP client link do not provide encryption or authentication. WebRTC encrypts a web client's link with DTLS, but the gateway does not authenticate any client. Run worker links on a trusted private network. Put public client traffic behind infrastructure that supplies the security and traffic protection your game requires.
+The worker-to-worker link and the UDP client link are not encrypted. WebRTC encrypts a web client's link with DTLS. The gateway identifies each player by an anonymous or OpenID Connect token (see [Authentication](/docs/guides/authentication)), and gateways and workers authenticate each other only when the mesh has a mesh token. Run worker links on a trusted private network. Put public client traffic behind infrastructure that supplies the security and traffic protection your game requires.
 
 Nebula announces replicated entities to clients allowed to observe their instance. See [instancing](/docs/guides/instancing) for private areas and outward views. The gateway reduces the state update rate for entities farther from the client's pawn, but it does not omit their spawn or state entirely. Configure the distance bands in `NebulaConfig`, then measure bandwidth and client load with your expected entity count.

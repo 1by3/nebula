@@ -60,6 +60,11 @@ Use these `NebulaClient` members to drive your UI:
 | `ConnectionState` and `ConnectionStateChanged` | Show `Disconnected`, `Connecting`, `Connected`, or `InGame`. |
 | `Join`, `JoinEstimatedSeconds` and `JoinStateChanged` | Show a "world starting" screen while the mesh boots a worker (see below). |
 | `LocalPlayer` and `LocalPlayerSpawned` | Hide your menu when the player's entity arrives. |
+| `ClientId` | Read the local session ID, a `ulong` the gateway assigned in its welcome. `NebulaRuntime.LocalClientId` holds the same value. It is `0` before the welcome. |
+| `Identity` | Read the player's identity across sessions (see [Authentication](/docs/guides/authentication)). |
+| `SessionToken` and `SessionReclaimed` | Keep or drop the session across reconnections (see below). |
+| `JoinRejected` | Show why the gateway refused the join. |
+| `GatewayDraining` | Tell the player that the client is switching gateways (see below). |
 | `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
 | `WantsConnection` | Tell whether the client is connecting or will retry. |
 | `ConnectsAutomatically` | Hide your menu when the command line already supplied the connection. |
@@ -81,6 +86,19 @@ client.JoinStateChanged += (state, seconds) =>
 
 `NebulaTitleScreen.TryParse` splits text such as `127.0.0.1:7000` into an address and port. You can use it to validate a single address field.
 
+### Reconnect after a lost link or a draining gateway
+
+The client keeps its **session** across a reconnection. The gateway's welcome carries a session token, which the client stores in `NebulaClient.SessionToken` and presents on every later connection. A gateway that verifies it, any gateway of the mesh, welcomes the client with the same `ClientId` and, when the worker still holds the pawn, the same pawn; `SessionReclaimed` is then `true`. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection) for what the token does and does not guarantee.
+
+Two situations trigger a reconnection without any code on your side:
+
+- **The link drops.** `ConnectionState` becomes `Disconnected`, `LastError` reads `disconnected from gateway (retrying)`, and the client reconnects to the same address after one second, then every two seconds, until it succeeds or you call `Disconnect()`. The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it.
+- **The gateway is being taken out of service.** The gateway sends `GatewayDraining` with the number of seconds it gives its clients, the `GatewayDraining` event fires with that number, and the client drops the link and reconnects at once with its session token. When the gateway address is a load balancer, the retry lands on another gateway; when it is one gateway, the client keeps retrying until that gateway is back in service. A gateway that is draining refuses a new join with the reason `gateway is draining`; the client retries after a second instead of giving up.
+
+The replicated world is cleared on every reconnection and replayed by the gateway that answers, so entities disappear for a moment and `LocalPlayerSpawned` fires again. Show a short "reconnecting" message from `ConnectionStateChanged` or `GatewayDraining` rather than returning to your main menu.
+
+To start a new session on purpose, for example when the player picks another character, clear `SessionToken` before connecting. `Disconnect()` keeps it, so a deliberate disconnect and reconnect continues the session.
+
 ## Connect from the command line
 
 A client connects to the gateway at startup when you pass one of these options:
@@ -99,6 +117,6 @@ For these clients, `ConnectsAutomatically` is `true`. See [Configuration](/docs/
 
 A web build connects to the gateway over WebRTC and reads the same options from the page's query string, such as `?nebula-name=Player&nebula-connect`. By default it connects to the gateway that served the page. See [Build for the web](/docs/guides/web-builds).
 
-<Callout type="warn" title="Connections are not authenticated">
-Nebula does not encrypt or authenticate client connections. Anyone who can reach the gateway address can connect.
+<Callout type="warn" title="UDP connections are not encrypted">
+Nebula does not encrypt the UDP client link. By default anyone who can reach the gateway address can join with an anonymous identity; to require a sign-in, see [Authentication](/docs/guides/authentication).
 </Callout>
