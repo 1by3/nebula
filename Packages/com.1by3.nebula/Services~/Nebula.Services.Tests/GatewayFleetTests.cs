@@ -462,6 +462,20 @@ public class GatewayFleetTests
     }
 
     [Test]
+    public void AGatewayRegistersAgainWhenTheControlPlaneForgetsIt()
+    {
+        using var fleet = new Fleet(1);
+        Assert.That(fleet.Run(() => fleet.Plane.FindGateway("gw1") is { } g && g.Stats.Ready), Is.True);
+        uint incarnation = fleet.Plane.FindGateway("gw1")!.Incarnation;
+
+        // The orchestrator restarted with a reset (or pruned the row): the gateway must come back by itself.
+        fleet.Plane.UnregisterGateway("gw1");
+        Assert.That(fleet.Plane.FindGateway("gw1"), Is.Null);
+        Assert.That(fleet.Run(() => fleet.Plane.FindGateway("gw1") is { } g && g.Incarnation == incarnation && g.Stats.WorkerConnections == 1), Is.True,
+            "the gateway re-registers with the same incarnation and keeps heartbeating");
+    }
+
+    [Test]
     public void PeersWithoutTheMeshTokenAreRefused()
     {
         using var honest = new Fleet(1, "secret");

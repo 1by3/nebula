@@ -488,6 +488,14 @@ namespace Nebula
         private void OnControlPlaneChanged()
         {
             var self = ControlPlane.FindGateway(GatewayId);
+            if (_registered && self == null && ControlPlane.IsConnected)
+            {
+                // The orchestrator forgot us (it restarted with a reset, or pruned the row while the link was down):
+                // register again, or the fleet never sees this gateway's clients and demand.
+                NebulaLog.Warn($"gateway {GatewayId} is no longer on the control plane; registering again");
+                ControlPlane.RegisterGateway(GatewayId, Config.GatewayAddress, Config.GatewayPort, Incarnation);
+                _nextHeartbeat = 0;
+            }
             if (self != null && (self.Incarnation == 0 || self.Incarnation == Incarnation))
             {
                 if (self.DrainRequested && !Draining) Drain();
