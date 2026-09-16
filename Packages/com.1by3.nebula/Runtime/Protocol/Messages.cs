@@ -230,9 +230,9 @@ namespace Nebula
     {
         public string Reason;
         /// <summary>
-        /// The refusal is about this gateway, not the client (it is draining or not ready): the client should try
-        /// again shortly, and a load balancer will hand it to another gateway. False means the client's credentials
-        /// were refused and retrying with the same ones is pointless.
+        /// The refusal is about this gateway, not the client (it is draining): the client should try again shortly,
+        /// and a load balancer will hand it to another gateway. False means the client's credentials were refused
+        /// and retrying with the same ones is pointless.
         /// </summary>
         public bool Retry;
 

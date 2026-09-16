@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -123,6 +124,8 @@ namespace Nebula
         public string DashboardUrl => _http != null ? _http.Url : "";
         /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
         public MeshTelemetry Telemetry { get; } = new MeshTelemetry();
+        /// <summary>Recent log lines of every process of the mesh, posted to and read from <c>/api/logs</c> (see <see cref="LogBuffer"/>).</summary>
+        public LogBuffer Logs { get; } = new LogBuffer();
 
         /// <summary>
         /// The mesh's persistence store, so the dashboard can report how many entities are saved and wipe them
@@ -265,6 +268,21 @@ namespace Nebula
                 });
                 _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
                 _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
+                // Recent log lines from every process of the mesh (see LogBuffer): posted by the machines, read by
+                // whoever operates the mesh. With a mesh token both directions need it.
+                _http.MapDirect("POST", "/api/logs", req =>
+                {
+                    if (!string.IsNullOrEmpty(Config.MeshToken) && req.Token != Config.MeshToken) return OrchestratorHttpServer.Response.Error(401, "mesh token required");
+                    string error = Logs.Accept(req.Body, out int accepted);
+                    return error != null ? OrchestratorHttpServer.Response.Error(400, error) : OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"accepted\":{accepted}}}");
+                });
+                _http.MapDirect("GET", "/api/logs", req =>
+                {
+                    if (!string.IsNullOrEmpty(Config.MeshToken) && req.Token != Config.MeshToken) return OrchestratorHttpServer.Response.Error(401, "mesh token required");
+                    long.TryParse(req.GetQuery("since"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long since);
+                    int.TryParse(req.GetQuery("limit"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int limit);
+                    return OrchestratorHttpServer.Response.Json(200, Logs.Query(since, req.GetQuery("role"), req.GetQuery("instance"), limit));
+                });
                 // The control plane this orchestrator hosts: reads are served on the listener thread, writes come
                 // through the command pump (HandleCommand) so they land on the main thread.
                 if (ControlPlane is ControlPlaneHost host) host.Attach(_http);
