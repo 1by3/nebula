@@ -260,7 +260,7 @@ public sealed class CloudApi
     public sealed record ArtifactUpload(string Method, string Url, Dictionary<string, string>? Headers, string? ExpiresAt);
     public sealed record ArtifactCreated(Artifact Artifact, ArtifactUpload? Upload);
     public sealed record GitInfo(string? Commit, string? Branch, bool Dirty);
-    public sealed record Release(string Id, string ProjectId, int Number, string? Label, string ArtifactId, string? Sha256, string? NebulaVersion, int? ProtocolVersion, GitInfo? Git, string? Notes, string? CreatedBy, string? CreatedAt);
+    public sealed record Release(string Id, string ProjectId, int Number, string? Label, string ArtifactId, string? Sha256, string? NebulaVersion, int? ProtocolVersion, GitInfo? Git, string? Notes, System.Text.Json.JsonElement? CreatedBy, string? CreatedAt);
 
     public ArtifactCreated CreateArtifact(string project, string sha256, long sizeBytes, string fileName) =>
         Send<ArtifactCreated>(HttpMethod.Post, $"/projects/{project}/artifacts", new { kind = "linux-server", sha256, sizeBytes, fileName }, "artifact-" + sha256);
@@ -363,7 +363,7 @@ public sealed class CloudApi
 
     public sealed record OperationError(string? Code, string? Message);
     public sealed record OperationStep(string Name, string State, string? StartedAt, string? FinishedAt, string? Message);
-    public sealed record Operation(string Id, string? DeploymentId, string Kind, string State, string? CreatedBy, string? CreatedAt, string? StartedAt, string? FinishedAt, OperationError? Error, List<OperationStep>? Steps)
+    public sealed record Operation(string Id, string? DeploymentId, string Kind, string State, System.Text.Json.JsonElement? CreatedBy, string? CreatedAt, string? StartedAt, string? FinishedAt, OperationError? Error, List<OperationStep>? Steps)
     {
         public bool IsFinished => State is "succeeded" or "failed" or "cancelled";
         public bool IsActive => State is "pending" or "running";
@@ -391,7 +391,7 @@ public sealed class CloudApi
     public sealed record OrchestratorStatus(string? State, string? Address, string? PublicIp, double? HeartbeatAgeSeconds, string? Version);
     public sealed record Counts(int? Active, int? Joining, int? Reconnecting);
     public sealed record Rate(double? In, double? Out, double? Workers);
-    public sealed record GatewayStatus(string Id, int? Incarnation, string? Address, string? PrivateAddress, string? State, bool? InLoadBalancer, Counts? Clients, Rate? PacketsPerSecond, Rate? BytesPerSecond, double? Cpu, long? MemoryBytes, double? LoopLagMs, int? WorkerConnections, double? HeartbeatAgeSeconds);
+    public sealed record GatewayStatus(string Id, string? Incarnation, string? Address, string? PrivateAddress, string? State, bool? InLoadBalancer, Counts? Clients, Rate? PacketsPerSecond, Rate? BytesPerSecond, double? Cpu, long? MemoryBytes, double? LoopLagMs, int? WorkerConnections, double? HeartbeatAgeSeconds);
     public sealed record WorkerStatus(string Id, int? Index, string? Size, string? State, string? PrivateAddress, double? TickMs, double? Utilization, int? Entities, int? Players, int? Bots, double? HeartbeatAgeSeconds);
     public sealed record MeshStatus(int? DesiredWorkers, int? LiveWorkers, int? Players, int? Bots, int? PendingJoins, int? Npcs, JsonElement? Scale);
     public sealed record LoadBalancerStatus(string? State, string? Ip, int? HealthyGateways);
