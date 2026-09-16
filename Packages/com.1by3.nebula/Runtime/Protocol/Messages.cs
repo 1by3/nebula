@@ -30,6 +30,12 @@ namespace Nebula
         /// verify, or the mesh requires one). The gateway disconnects right after sending it.
         /// </summary>
         JoinRejected = 6,
+        /// <summary>
+        /// Gateway -> client: this gateway is being taken out of service (<see cref="GatewayDrainingMsg"/>). The
+        /// client should reconnect, presenting its session token, so another gateway takes over its session
+        /// without the worker noticing more than a pause in input.
+        /// </summary>
+        GatewayDraining = 7,
 
         // Entity replication (worker -> gateway -> clients)
         EntitySpawn = 10,
@@ -103,7 +109,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 12;
+        public const ushort ProtocolVersion = 13;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -111,9 +117,21 @@ namespace Nebula
         /// <summary>
         /// Client only: the token that says who the player is. An OpenID Connect ID token from a provider the mesh
         /// trusts (<see cref="NebulaConfig.AuthIssuers"/>), the token a gateway issued in an earlier
-        /// <see cref="WelcomeMsg"/>, or empty to ask for a new anonymous identity. Workers and gateways leave it empty.
+        /// <see cref="WelcomeMsg"/>, or empty to ask for a new anonymous identity. For a gateway or worker peer it
+        /// is the infrastructure credential instead (<see cref="MeshPeerAuth"/>), proving the peer holds the mesh token.
         /// </summary>
         public string Token;
+        /// <summary>
+        /// Client only: the session token from the last <see cref="WelcomeMsg"/>, presented when reconnecting so
+        /// the gateway (any gateway of the mesh) reclaims the same session and the worker keeps the pawn. Empty on a
+        /// first connection.
+        /// </summary>
+        public string Session;
+        /// <summary>
+        /// Gateway and worker peers: a number that changes every time the process starts, so a peer that sees the
+        /// same id twice can tell a restart from a reconnect. Clients send 0.
+        /// </summary>
+        public uint Incarnation;
         public ushort Version;
 
         public void Write(NetworkWriter w)
@@ -125,6 +143,8 @@ namespace Nebula
             w.WriteUInt(Index);
             w.WriteByte((byte)Flags);
             w.WriteString(Token ?? "");
+            w.WriteString(Session ?? "");
+            w.WriteUInt(Incarnation);
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -136,13 +156,19 @@ namespace Nebula
             m.Index = r.ReadUInt();
             m.Flags = (HelloFlags)r.ReadByte();
             m.Token = r.ReadString() ?? "";
+            m.Session = r.ReadString() ?? "";
+            m.Incarnation = r.ReadUInt();
             return m;
         }
     }
 
     public struct WelcomeMsg
     {
-        public uint ClientId;
+        /// <summary>
+        /// The client's session id: unique across every gateway of the mesh and stable for as long as the session
+        /// lives, including across a reconnection through another gateway (see <see cref="SessionToken"/>).
+        /// </summary>
+        public ulong ClientId;
         public byte TickRate;
         public uint ServerTick;
         /// <summary>The player's identity for this and every later session (<see cref="PlayerIdentity"/>).</summary>
@@ -153,32 +179,71 @@ namespace Nebula
         /// Empty when the client's own token was accepted.
         /// </summary>
         public string Token;
+        /// <summary>
+        /// A signed token naming this session (<see cref="SessionTokens"/>). The client keeps it for the life of the
+        /// process and presents it in <see cref="HelloMsg.Session"/> when it reconnects, to any gateway of the
+        /// mesh, to get the same <see cref="ClientId"/> and pawn back.
+        /// </summary>
+        public string SessionToken;
+        /// <summary>True when the session was reclaimed from a token: the pawn, when the worker still holds it, is the same one.</summary>
+        public bool Reclaimed;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.Welcome);
-            w.WriteUInt(ClientId);
+            w.WriteULong(ClientId);
             w.WriteByte(TickRate);
             w.WriteUInt(ServerTick);
             w.WriteString(Identity ?? "");
             w.WriteString(Token ?? "");
+            w.WriteString(SessionToken ?? "");
+            w.WriteByte(Reclaimed ? (byte)1 : (byte)0);
         }
 
-        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg { ClientId = r.ReadUInt(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "" };
+        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg
+        {
+            ClientId = r.ReadULong(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "",
+            SessionToken = r.ReadString() ?? "", Reclaimed = r.ReadByte() != 0,
+        };
+    }
+
+    /// <summary>
+    /// Gateway -> client: the gateway is draining and will close this link. The client reconnects (through the
+    /// address it connected to, which a load balancer maps to another gateway) within <see cref="ReconnectWithinSeconds"/>,
+    /// presenting its session token so the session and pawn carry over.
+    /// </summary>
+    public struct GatewayDrainingMsg
+    {
+        public ushort ReconnectWithinSeconds;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.GatewayDraining);
+            w.WriteUShort(ReconnectWithinSeconds);
+        }
+
+        public static GatewayDrainingMsg Read(NetworkReader r) => new GatewayDrainingMsg { ReconnectWithinSeconds = r.ReadUShort() };
     }
 
     /// <summary>Gateway -> client: the join was refused; <see cref="Reason"/> is fit to show the player. The gateway disconnects after sending it.</summary>
     public struct JoinRejectedMsg
     {
         public string Reason;
+        /// <summary>
+        /// The refusal is about this gateway, not the client (it is draining or not ready): the client should try
+        /// again shortly, and a load balancer will hand it to another gateway. False means the client's credentials
+        /// were refused and retrying with the same ones is pointless.
+        /// </summary>
+        public bool Retry;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.JoinRejected);
             w.WriteString(Reason ?? "");
+            w.WriteByte(Retry ? (byte)1 : (byte)0);
         }
 
-        public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "" };
+        public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
     }
 
     /// <summary>How far a client's join has got. Reported by the gateway in <see cref="JoinStatusMsg"/>.</summary>
@@ -250,7 +315,7 @@ namespace Nebula
     {
         public ulong NetId;
         public ushort PrefabId;
-        public uint OwnerClientId;
+        public ulong OwnerClientId;
         /// <summary>The container the pose is expressed in (static index, or the carrier's net id for a dynamic container).</summary>
         public ContainerRef Container;
         public uint Epoch;
@@ -312,7 +377,7 @@ namespace Nebula
         {
             w.WriteULong(NetId);
             w.WriteUShort(PrefabId);
-            w.WriteUInt(OwnerClientId);
+            w.WriteULong(OwnerClientId);
             Container.Write(w);
             w.WriteUInt(Epoch);
             w.WriteUShort(OwnerWorkerIndex);
@@ -333,7 +398,7 @@ namespace Nebula
             {
                 NetId = r.ReadULong(),
                 PrefabId = r.ReadUShort(),
-                OwnerClientId = r.ReadUInt(),
+                OwnerClientId = r.ReadULong(),
                 Container = ContainerRef.Read(r),
                 Epoch = r.ReadUInt(),
                 OwnerWorkerIndex = r.ReadUShort(),
@@ -428,7 +493,7 @@ namespace Nebula
         public byte BehaviourIndex;
         public uint MethodHash;
         /// <summary>For ClientRpc: 0 = every client, otherwise only that client. For ServerRpc: the sending client (filled by the gateway).</summary>
-        public uint ClientId;
+        public ulong ClientId;
         /// <summary>For a ClientRpc broadcast: deliver only to clients whose pawn is within this many metres of the entity (0 = everyone). See ClientRpcAttribute.Radius.</summary>
         public float Radius;
         public byte[] Args;
@@ -440,7 +505,7 @@ namespace Nebula
             w.WriteUInt(Epoch);
             w.WriteByte(BehaviourIndex);
             w.WriteUInt(MethodHash);
-            w.WriteUInt(ClientId);
+            w.WriteULong(ClientId);
             w.WriteFloat(Radius);
             w.WriteBytes(Args);
         }
@@ -451,7 +516,7 @@ namespace Nebula
             Epoch = r.ReadUInt(),
             BehaviourIndex = r.ReadByte(),
             MethodHash = r.ReadUInt(),
-            ClientId = r.ReadUInt(),
+            ClientId = r.ReadULong(),
             Radius = r.ReadFloat(),
             Args = r.ReadBytes(),
         };
@@ -618,7 +683,7 @@ namespace Nebula
         /// nothing arrived.
         /// </summary>
         public sbyte InputLead;
-        public uint OwnerClientId;
+        public ulong OwnerClientId;
         /// <summary>The container the state's pose is expressed in, so the owner reconciles in the right frame on the tick it crosses a seam.</summary>
         public ContainerRef Container;
         public byte[] State;
@@ -633,7 +698,7 @@ namespace Nebula
             w.WriteUInt(Tick);
             w.WriteUInt(LastInputTick);
             w.WriteSByte(InputLead);
-            w.WriteUInt(OwnerClientId);
+            w.WriteULong(OwnerClientId);
             Container.Write(w);
             w.WriteBytes(State);
         }
@@ -645,7 +710,7 @@ namespace Nebula
             Tick = r.ReadUInt(),
             LastInputTick = r.ReadUInt(),
             InputLead = r.ReadSByte(),
-            OwnerClientId = r.ReadUInt(),
+            OwnerClientId = r.ReadULong(),
             Container = ContainerRef.Read(r),
             State = r.ReadBytes(),
         };
@@ -731,13 +796,13 @@ namespace Nebula
             public byte[] Payload;
         }
 
-        public uint ClientId;
+        public ulong ClientId;
         public List<Frame> Frames;
 
         public void Write(NetworkWriter w, MsgId id)
         {
             w.WriteByte((byte)id);
-            w.WriteUInt(ClientId);
+            w.WriteULong(ClientId);
             w.WriteByte((byte)Frames.Count);
             foreach (var f in Frames)
             {
@@ -748,7 +813,7 @@ namespace Nebula
 
         public static ClientInputMsg Read(NetworkReader r)
         {
-            var m = new ClientInputMsg { ClientId = r.ReadUInt() };
+            var m = new ClientInputMsg { ClientId = r.ReadULong() };
             int n = r.ReadByte();
             m.Frames = new List<Frame>(n);
             for (int i = 0; i < n; i++)
@@ -759,40 +824,56 @@ namespace Nebula
         }
     }
 
+    /// <summary>
+    /// Gateway -> worker: a client wants a pawn. Doubles as the claim of a session by a gateway: a worker that already
+    /// holds a pawn for <see cref="ClientId"/> re-announces it to the sender and, when <see cref="Generation"/> is
+    /// newer than the one it knew, routes the session through the sender from now on (<see cref="PlayerSessions"/>).
+    /// </summary>
     public struct SpawnPlayerMsg
     {
-        public uint ClientId;
+        /// <summary>The mesh-wide session id (<see cref="WelcomeMsg.ClientId"/>).</summary>
+        public ulong ClientId;
         /// <summary>The container the gateway picked for the pawn (baked or runtime).</summary>
         public ContainerRef Container;
         public string Name;
         public bool IsBot;
         /// <summary>The player's <see cref="PlayerIdentity"/>, as the gateway established it from the client's token.</summary>
         public string Identity;
+        /// <summary>
+        /// The session's connection generation: increases every time a client (re)claims the session. A worker
+        /// ignores a claim or a despawn carrying an older generation than the one it holds, which fences a gateway
+        /// that lost the client from undoing what the gateway that gained it did.
+        /// </summary>
+        public ulong Generation;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.SpawnPlayer);
-            w.WriteUInt(ClientId);
+            w.WriteULong(ClientId);
             Container.Write(w);
             w.WriteString(Name);
             w.WriteByte(IsBot ? (byte)1 : (byte)0);
             w.WriteString(Identity ?? "");
+            w.WriteULong(Generation);
         }
 
-        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadUInt(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0, Identity = r.ReadString() ?? "" };
+        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadULong(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0, Identity = r.ReadString() ?? "", Generation = r.ReadULong() };
     }
 
+    /// <summary>Gateway -> worker: the session is over (or the gateway gave up waiting for it to reconnect). Fenced by <see cref="Generation"/> like <see cref="SpawnPlayerMsg"/>.</summary>
     public struct DespawnPlayerMsg
     {
-        public uint ClientId;
+        public ulong ClientId;
+        public ulong Generation;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.DespawnPlayer);
-            w.WriteUInt(ClientId);
+            w.WriteULong(ClientId);
+            w.WriteULong(Generation);
         }
 
-        public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadUInt() };
+        public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong() };
     }
 
     /// <summary>
@@ -807,6 +888,9 @@ namespace Nebula
         /// <summary>Per-behaviour handover-only state (<see cref="NetworkIdentity.WriteHandoverState"/>).</summary>
         public byte[] HandoverState;
         public string[] GhostWorkers;
+        /// <summary>The owner's session as the sender knew it (<see cref="PlayerSessions"/>), so the receiver accepts the owner's gateway at once. 0/"" for an unowned entity.</summary>
+        public ulong SessionGeneration;
+        public string SessionGateway;
 
         public void Write(NetworkWriter w)
         {
@@ -817,6 +901,8 @@ namespace Nebula
             w.WriteBytes(HandoverState);
             w.WriteUShort((ushort)(GhostWorkers?.Length ?? 0));
             if (GhostWorkers != null) foreach (var worker in GhostWorkers) w.WriteString(worker);
+            w.WriteULong(SessionGeneration);
+            w.WriteString(SessionGateway ?? "");
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r) => new AuthorityTransferMsg
@@ -826,6 +912,8 @@ namespace Nebula
             PendingInputs = r.ReadBytes(),
             HandoverState = r.ReadBytes(),
             GhostWorkers = ReadGhostWorkers(r),
+            SessionGeneration = r.ReadULong(),
+            SessionGateway = r.ReadString() ?? "",
         };
 
         private static string[] ReadGhostWorkers(NetworkReader r)

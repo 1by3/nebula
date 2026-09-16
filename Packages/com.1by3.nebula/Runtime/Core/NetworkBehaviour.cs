@@ -37,7 +37,7 @@ namespace Nebula
         public bool HasAuthority => IsServer && Identity != null && Identity.HasAuthority;
         /// <summary>Server side: this worker holds a non-authoritative replica driven by a neighbouring worker.</summary>
         public bool IsGhost => IsServer && Identity != null && !Identity.HasAuthority;
-        public uint OwnerClientId => Identity != null ? Identity.OwnerClientId : 0;
+        public ulong OwnerClientId => Identity != null ? Identity.OwnerClientId : 0;
         public Container Container => Identity != null ? Identity.Container : null;
 
         // ---- lifecycle hooks --------------------------------------------------------------------------
@@ -169,7 +169,7 @@ namespace Nebula
 
         private static readonly NetworkWriter RpcWriter = new NetworkWriter(512);
 
-        private void SendRpc(RpcKind kind, string methodName, object[] args, uint targetClientId = 0)
+        private void SendRpc(RpcKind kind, string methodName, object[] args, ulong targetClientId = 0)
         {
             var m = RpcRegistry.Require(GetType(), methodName);
             if (m.Kind != kind)

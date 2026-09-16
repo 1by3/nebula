@@ -275,6 +275,17 @@ namespace Nebula
             var m = Regex.Match(body, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
             return m.Success ? m.Groups[1].Value : "";
         }
+
+        /// <summary>Reads a boolean property from a flat JSON object body; false (and false) when absent.</summary>
+        public static bool TryGetBool(string body, string key, out bool value)
+        {
+            value = false;
+            if (string.IsNullOrEmpty(body)) return false;
+            var m = Regex.Match(body, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(true|false)");
+            if (!m.Success) return false;
+            value = m.Groups[1].Value == "true";
+            return true;
+        }
     }
 
 #endif

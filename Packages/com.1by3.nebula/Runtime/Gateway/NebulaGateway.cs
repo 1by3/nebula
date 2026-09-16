@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 #if NEBULA_SERVICE
 using Nebula.ServicePrimitives;
 #else
@@ -13,6 +14,13 @@ namespace Nebula
     /// worker currently owns that client's entity, and fans the workers' replication streams out to the clients,
     /// de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative:
     /// if the gateway dies, clients reconnect and the workers re-announce their entities.
+    /// <para>
+    /// Any number of gateways can serve one mesh. Each has a persistent id and an incarnation that changes on every
+    /// start; sessions get mesh-wide ids (<see cref="SessionIds"/>) and a signed session token
+    /// (<see cref="SessionTokens"/>) with which a client can reconnect through any gateway and keep its pawn. A
+    /// gateway asked to drain refuses new clients and tells the ones it has to reconnect elsewhere. It reports its
+    /// load on every control-plane heartbeat (<see cref="GatewayStats"/>) for whoever sizes the fleet.
+    /// </para>
     /// The CLI runs this routing loop in a standalone .NET executable using exported container geometry.
     /// The Unity component remains available for compatibility and in-process tests.
     /// </summary>
@@ -24,10 +32,15 @@ namespace Nebula
         private sealed class ClientConn
         {
             public int PeerId;
-            public uint ClientId;
+            /// <summary>The mesh-wide session id (<see cref="SessionIds"/>); the same across a reconnection with a session token.</summary>
+            public ulong ClientId;
+            /// <summary>The session's connection generation: bumped on every (re)claim, fences stale gateways at the worker.</summary>
+            public ulong Generation;
             public string Name = "";
             public bool IsBot;
             public bool Welcomed;
+            /// <summary>The session was reclaimed from a token rather than started fresh.</summary>
+            public bool Reclaimed;
             /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>), set when the Hello's token was accepted.</summary>
             public string Identity = "";
             /// <summary>Hello received; its token is being checked against an OpenID provider's keys.</summary>
@@ -55,12 +68,15 @@ namespace Nebula
 
         /// <summary>Flush a client's reliable batch once it holds this many bytes (ReliableOrdered fragments above the MTU, so this is about latency, not size).</summary>
         private const int ReliableBatchBytes = 1100;
+        /// <summary>How long a session token stays valid. The worker's reclaim grace (<see cref="NebulaConfig.SessionReclaimSeconds"/>) is what decides whether the pawn is still there.</summary>
+        public const long SessionTokenLifetimeSeconds = 24 * 3600;
 
         private sealed class WorkerConn
         {
             public int PeerId;
             public string WorkerId = "";
             public ushort Index;
+            public uint Incarnation;
             public bool Ready;
             public bool Outbound;
         }
@@ -70,7 +86,7 @@ namespace Nebula
             public ulong NetId;
             public uint Epoch;
             public ushort OwnerWorkerIndex;
-            public uint OwnerClientId;
+            public ulong OwnerClientId;
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
@@ -113,7 +129,10 @@ namespace Nebula
 
         public NebulaConfig Config { get; private set; }
         public IControlPlane ControlPlane { get; private set; }
+        /// <summary>The gateway's persistent id (<c>-nebula-gateway-id</c>, "gw1" by default). Unique per gateway of a mesh.</summary>
         public string GatewayId { get; private set; }
+        /// <summary>This start of the process (<see cref="SessionIds.NewIncarnation"/>): part of every session id it issues, and reported to workers and the control plane.</summary>
+        public uint Incarnation { get; private set; }
         public int ClientCount => _clientsById.Count;
         /// <summary>
         /// Welcomed clients with nowhere to spawn yet: the mesh has no worker holding an active lease, so they are
@@ -131,10 +150,21 @@ namespace Nebula
         }
         public int WorkerCount => _workersById.Count;
         public int EntityCount => _entities.Count;
+        /// <summary>Registered with the control plane, connected to it, and not draining: fit to take clients.</summary>
+        public bool IsReady => _registered && ControlPlane != null && ControlPlane.IsConnected && !Draining;
+        /// <summary>Taking itself out of service: new clients are refused, existing ones were told to reconnect elsewhere.</summary>
+        public bool Draining { get; private set; }
+        /// <summary>
+        /// The loop period the host runs <see cref="Tick"/> at, for the loop-lag figure in <see cref="GatewayStats"/>.
+        /// A gap between two ticks longer than this counts as lag. Unity: one frame; the standalone service sets its own.
+        /// </summary>
+        public double LoopPeriodSeconds { get; set; } = 1.0 / 60;
+        /// <summary>What was last reported to the control plane (<see cref="GatewayStats"/>).</summary>
+        public GatewayStats LastStats => _lastStats;
 
         private ITransport _transport;
         private readonly Dictionary<int, ClientConn> _clientsByPeer = new Dictionary<int, ClientConn>();
-        private readonly Dictionary<uint, ClientConn> _clientsById = new Dictionary<uint, ClientConn>();
+        private readonly Dictionary<ulong, ClientConn> _clientsById = new Dictionary<ulong, ClientConn>();
         private readonly Dictionary<int, WorkerConn> _workersByPeer = new Dictionary<int, WorkerConn>();
         private readonly Dictionary<string, WorkerConn> _workersById = new Dictionary<string, WorkerConn>();
         private readonly Dictionary<ushort, WorkerConn> _workersByIndex = new Dictionary<ushort, WorkerConn>();
@@ -142,6 +172,8 @@ namespace Nebula
         private readonly Dictionary<ulong, EntityRecord> _entities = new Dictionary<ulong, EntityRecord>();
         private readonly List<ContainerOwnershipEntry> _ownership = new List<ContainerOwnershipEntry>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
+        /// <summary>Sessions whose link dropped recently, with when: counted as reconnecting until the worker's grace has passed.</summary>
+        private readonly List<KeyValuePair<ulong, float>> _recentlyLost = new List<KeyValuePair<ulong, float>>();
 
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkReader _reader = new NetworkReader();
@@ -206,14 +238,25 @@ namespace Nebula
             {
                 if (!client.Welcomed || !client.Visible.Contains(entity.NetId) || !CanObserve(client, entity)) continue;
                 if (delivery == Delivery.ReliableOrdered) AppendReliable(client, segment);
-                else _transport.Send(client.PeerId, delivery, segment);
+                else Send(client.PeerId, delivery, segment);
             }
         }
-        private uint _nextClientId = 1;
+        private uint _nextSequence = 1;
         private bool _registered;
         private float _nextHeartbeat;
         private OidcTokenValidator _oidc;
         private AnonymousIdentityIssuer _anonymous;
+        private SessionTokens _sessions;
+        private byte[] _peerKey;
+
+        // Load figures for the heartbeat (GatewayStats): traffic counted per direction and per side, CPU from the
+        // process clock, loop lag from a stopwatch around Tick.
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private double _lastTickAt = -1, _statsSince;
+        private long _clientPacketsIn, _clientPacketsOut, _clientBytesIn, _clientBytesOut, _workerBytesIn, _workerBytesOut;
+        private float _maxLoopLagMs;
+        private TimeSpan _lastCpu;
+        private GatewayStats _lastStats;
 
         /// <summary>
         /// The OpenID token checker built from <see cref="NebulaConfig.AuthIssuers"/>, or null when the mesh trusts no
@@ -222,25 +265,33 @@ namespace Nebula
         public OidcTokenValidator TokenValidator { get => _oidc; set => _oidc = value; }
         /// <summary>Issues and checks anonymous identities, or null when <see cref="NebulaConfig.AuthAnonymous"/> is off.</summary>
         public AnonymousIdentityIssuer AnonymousIdentities => _anonymous;
+        /// <summary>Issues and checks the session tokens clients reconnect with.</summary>
+        public SessionTokens Sessions => _sessions;
 
         /// <param name="browserTransport">A second transport clients arrive on, already listening: the standalone
         /// gateway's WebRTC listener for web builds. Null accepts UDP clients only.</param>
-        public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null)
+        /// <param name="gatewayId">This gateway's id; null reads <c>-nebula-gateway-id</c> ("gw1" by default).</param>
+        public void Initialize(NebulaConfig config, IControlPlane controlPlane, ITransport browserTransport = null, string gatewayId = null)
         {
             Config = config;
             ControlPlane = controlPlane;
-            GatewayId = CommandLine.Get("nebula-gateway-id", "gw1");
+            GatewayId = gatewayId ?? CommandLine.Get("nebula-gateway-id", "gw1");
+            Incarnation = SessionIds.NewIncarnation();
+            _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
             var udp = new LiteNetTransport("gateway");
             udp.Listen(config.GatewayPort);
             _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
             ControlPlane.Changed += OnControlPlaneChanged;
-            NebulaLog.Info($"gateway {GatewayId} listening on udp/{config.GatewayPort}");
+            NebulaLog.Info($"gateway {GatewayId} (incarnation {Incarnation:x8}) listening on udp/{config.GatewayPort}" + (_peerKey == null ? "; no mesh token: any worker is trusted" : ""));
             InitializeAuth(config);
+            _statsSince = _clock.Elapsed.TotalSeconds;
+            _lastCpu = ProcessorTime();
         }
 
         /// <summary>
         /// Who may join and how they are identified: tokens from the configured OpenID providers, anonymous
         /// identities the gateway issues itself, or both (the default: anonymous only, since no issuer is configured).
+        /// The same player key also signs session tokens, so one secret shared by every gateway covers both.
         /// </summary>
         private void InitializeAuth(NebulaConfig config)
         {
@@ -250,27 +301,33 @@ namespace Nebula
                 _oidc = new OidcTokenValidator(issuers, config.AuthAudience);
                 NebulaLog.Info($"auth: accepting ID tokens from {string.Join(", ", issuers)}" + (string.IsNullOrEmpty(config.AuthAudience) ? " (no audience check: set AuthAudience to your client id)" : $" for audience '{config.AuthAudience}'"));
             }
+            byte[] key;
+            string source;
+            if (!string.IsNullOrEmpty(config.AuthSigningKey)) { key = AnonymousIdentityIssuer.DeriveKey(config.AuthSigningKey); source = "AuthSigningKey"; }
+            else if (!string.IsNullOrEmpty(config.MeshToken))
+            {
+                key = AnonymousIdentityIssuer.DeriveKey(config.MeshToken);
+                source = "the mesh token";
+                NebulaLog.Warn("auth: the player signing key is derived from the mesh token, so anonymous identities and session tokens change whenever the mesh token does; set AuthSigningKey (NEBULA_AUTH_KEY) to a secret of its own");
+            }
+            else
+            {
+#if NEBULA_SERVICE
+                string path = System.IO.Path.Combine(AppContext.BaseDirectory, "nebula-auth.key");
+#else
+                string path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-auth.key");
+#endif
+                key = AnonymousIdentityIssuer.LoadOrCreateKeyFile(path);
+                source = path;
+            }
+            _sessions = new SessionTokens(SessionTokens.DeriveKey(key));
             if (config.AuthAnonymous)
             {
-                byte[] key;
-                string source;
-                if (!string.IsNullOrEmpty(config.AuthSigningKey)) { key = AnonymousIdentityIssuer.DeriveKey(config.AuthSigningKey); source = "AuthSigningKey"; }
-                else if (!string.IsNullOrEmpty(config.MeshToken)) { key = AnonymousIdentityIssuer.DeriveKey(config.MeshToken); source = "the mesh token"; }
-                else
-                {
-#if NEBULA_SERVICE
-                    string path = System.IO.Path.Combine(AppContext.BaseDirectory, "nebula-auth.key");
-#else
-                    string path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-auth.key");
-#endif
-                    key = AnonymousIdentityIssuer.LoadOrCreateKeyFile(path);
-                    source = path;
-                }
                 _anonymous = new AnonymousIdentityIssuer(key);
                 NebulaLog.Info($"auth: anonymous identities on, signing key from {source}");
             }
             else if (_oidc == null) NebulaLog.Warn("auth: anonymous identities are off and no AuthIssuers are configured: no client can join");
-            else NebulaLog.Info("auth: anonymous identities off; every client needs an ID token");
+            else NebulaLog.Info($"auth: anonymous identities off; every client needs an ID token (session key from {source})");
         }
 
 #if NEBULA_SERVICE
@@ -297,6 +354,14 @@ namespace Nebula
         private void Update()
 #endif
         {
+            double now = _clock.Elapsed.TotalSeconds;
+            if (_lastTickAt >= 0)
+            {
+                float lag = (float)((now - _lastTickAt - LoopPeriodSeconds) * 1000);
+                if (lag > _maxLoopLagMs) _maxLoopLagMs = lag;
+            }
+            _lastTickAt = now;
+
             _transport.Poll(HandleTransportEvent);
             _oidc?.Tick();
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
@@ -306,13 +371,13 @@ namespace Nebula
 
             if (!_registered && ControlPlane.IsConnected)
             {
-                ControlPlane.RegisterGateway(GatewayId, Config.GatewayAddress, Config.GatewayPort);
+                ControlPlane.RegisterGateway(GatewayId, Config.GatewayAddress, Config.GatewayPort, Incarnation);
                 _registered = true;
             }
             if (_registered && Time.unscaledTime >= _nextHeartbeat)
             {
                 _nextHeartbeat = Time.unscaledTime + Config.WorkerHeartbeatSeconds;
-                ControlPlane.HeartbeatGateway(GatewayId, (uint)PendingJoinCount);
+                ControlPlane.HeartbeatGateway(GatewayId, CollectStats());
             }
 
             // Players without a pawn get one as soon as a worker is available.
@@ -323,10 +388,112 @@ namespace Nebula
             }
         }
 
+        // ---------------------------------------------------------------------------------------- load report
+
+        private static TimeSpan ProcessorTime()
+        {
+            try { return Process.GetCurrentProcess().TotalProcessorTime; } catch { return TimeSpan.Zero; }
+        }
+
+        private static ulong WorkingSet()
+        {
+            try { return (ulong)Math.Max(0L, Process.GetCurrentProcess().WorkingSet64); } catch { return 0; }
+        }
+
+        /// <summary>The numbers for one heartbeat: rates since the previous one, then the counters start over.</summary>
+        private GatewayStats CollectStats()
+        {
+            double now = _clock.Elapsed.TotalSeconds;
+            double interval = Math.Max(1e-3, now - _statsSince);
+            var cpu = ProcessorTime();
+            uint active = 0, joining = 0;
+            foreach (var c in _clientsById.Values)
+            {
+                if (c.Welcomed && c.PawnNetId != 0) active++;
+                else if (!c.Welcomed && c.DisconnectAt == 0) joining++;
+            }
+            _recentlyLost.RemoveAll(kv => Time.unscaledTime - kv.Value > Config.SessionReclaimSeconds);
+            uint workers = 0;
+            foreach (var w in _workersById.Values) if (w.Ready) workers++;
+            var stats = new GatewayStats
+            {
+                PendingJoins = (uint)PendingJoinCount,
+                ActiveClients = active,
+                JoiningClients = joining,
+                ReconnectingClients = (uint)_recentlyLost.Count,
+                PacketsInPerSecond = (float)(_clientPacketsIn / interval),
+                PacketsOutPerSecond = (float)(_clientPacketsOut / interval),
+                BytesInPerSecond = (float)(_clientBytesIn / interval),
+                BytesOutPerSecond = (float)(_clientBytesOut / interval),
+                WorkerBytesInPerSecond = (float)(_workerBytesIn / interval),
+                WorkerBytesOutPerSecond = (float)(_workerBytesOut / interval),
+                Cpu = (float)Math.Max(0.0, (cpu - _lastCpu).TotalSeconds / interval),
+                MemoryBytes = WorkingSet(),
+                LoopLagMs = Math.Max(0f, _maxLoopLagMs),
+                WorkerConnections = workers,
+                Ready = IsReady,
+                Draining = Draining,
+            };
+            _statsSince = now;
+            _lastCpu = cpu;
+            _clientPacketsIn = _clientPacketsOut = _clientBytesIn = _clientBytesOut = _workerBytesIn = _workerBytesOut = 0;
+            _maxLoopLagMs = 0;
+            _lastStats = stats;
+            return stats;
+        }
+
+        /// <summary>Every send goes through here so the heartbeat can say how much left for clients and for workers.</summary>
+        private void Send(int peerId, Delivery delivery, ArraySegment<byte> payload)
+        {
+            if (_workersByPeer.ContainsKey(peerId)) _workerBytesOut += payload.Count;
+            else { _clientPacketsOut++; _clientBytesOut += payload.Count; }
+            _transport.Send(peerId, delivery, payload);
+        }
+
+        // ---------------------------------------------------------------------------------------- draining
+
+        /// <summary>
+        /// Take this gateway out of service: refuse new clients and tell the connected ones to reconnect within
+        /// <see cref="NebulaConfig.GatewayDrainReconnectSeconds"/> (a load balancer hands them to another gateway,
+        /// where their session token gets them their pawn back). Called when the control plane carries a drain
+        /// request for this gateway (<see cref="IControlPlane.SetGatewayDraining"/>), or directly.
+        /// </summary>
+        public void Drain()
+        {
+            if (Draining) return;
+            Draining = true;
+            ushort within = (ushort)Mathf.Clamp(Mathf.RoundToInt(Config.GatewayDrainReconnectSeconds), 1, ushort.MaxValue);
+            NebulaLog.Warn($"gateway {GatewayId} draining: {_clientsById.Count} client(s) told to reconnect within {within} s");
+            _writer.Reset();
+            new GatewayDrainingMsg { ReconnectWithinSeconds = within }.Write(_writer);
+            _toDrop.Clear();
+            foreach (var c in _clientsById.Values)
+            {
+                if (c.Welcomed) AppendReliable(c, _writer.ToSegment());
+                else if (c.DisconnectAt == 0) _toDrop.Add(c);
+            }
+            foreach (var c in _toDrop) Reject(c, "gateway is draining", true);
+        }
+
+        /// <summary>Cancel a drain (the fleet changed its mind): new clients are accepted again.</summary>
+        public void StopDraining()
+        {
+            if (!Draining) return;
+            Draining = false;
+            NebulaLog.Info($"gateway {GatewayId} back in service");
+        }
+
         // ---------------------------------------------------------------------------------------- control plane
 
         private void OnControlPlaneChanged()
         {
+            var self = ControlPlane.FindGateway(GatewayId);
+            if (self != null && (self.Incarnation == 0 || self.Incarnation == Incarnation))
+            {
+                if (self.DrainRequested && !Draining) Drain();
+                else if (!self.DrainRequested && Draining) StopDraining();
+            }
+
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             _ownership.Clear();
             foreach (var lease in ControlPlane.Leases)
@@ -380,8 +547,8 @@ namespace Nebula
                     if (_workersByPeer.TryGetValue(ev.PeerId, out var w))
                     {
                         _writer.Reset();
-                        new HelloMsg { Role = PeerRole.Gateway, Id = GatewayId, Index = 0 }.Write(_writer);
-                        _transport.Send(ev.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                        new HelloMsg { Role = PeerRole.Gateway, Id = GatewayId, Index = 0, Incarnation = Incarnation, Token = MeshPeerAuth.Issue(Config.MeshToken, PeerRole.Gateway, GatewayId, Incarnation) }.Write(_writer);
+                        Send(ev.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     }
                     // Inbound links are clients until proven otherwise; they must send Hello first.
                     break;
@@ -397,8 +564,8 @@ namespace Nebula
                     _reader.Set(ev.Data);
                     try
                     {
-                        if (_workersByPeer.TryGetValue(ev.PeerId, out var w)) DispatchWorker(w, _reader);
-                        else DispatchClient(ev.PeerId, _reader);
+                        if (_workersByPeer.TryGetValue(ev.PeerId, out var w)) { _workerBytesIn += ev.Data.Count; DispatchWorker(w, _reader); }
+                        else { _clientPacketsIn++; _clientBytesIn += ev.Data.Count; DispatchClient(ev.PeerId, _reader); }
                     }
                     catch (Exception e) { NebulaLog.Error($"bad packet from peer {ev.PeerId}: {e}"); }
                     break;
@@ -408,14 +575,26 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- workers
 
+        /// <summary>A worker's Hello must carry a credential minted with the mesh token (when the mesh has one).</summary>
+        private bool AcceptWorkerHello(int peerId, in HelloMsg hello)
+        {
+            if (_peerKey == null) return true;
+            if (MeshPeerAuth.Verify(_peerKey, PeerRole.Worker, hello.Id, hello.Incarnation, hello.Token, JsonWebToken.UnixNow(), out string error)) return true;
+            NebulaLog.Warn($"worker '{hello.Id}' refused: {error}");
+            _transport.Disconnect(peerId);
+            return false;
+        }
+
         private void DispatchWorker(WorkerConn w, NetworkReader r)
         {
             var id = (MsgId)r.ReadByte();
             if (id == MsgId.Hello)
             {
                 var hello = HelloMsg.Read(r);
+                if (hello.Role != PeerRole.Worker || !AcceptWorkerHello(w.PeerId, hello)) return;
                 w.WorkerId = hello.Id;
                 w.Index = (ushort)hello.Index;
+                w.Incarnation = hello.Incarnation;
                 w.Ready = true;
                 _workersById[w.WorkerId] = w;
                 _workersByIndex[w.Index] = w;
@@ -677,7 +856,7 @@ namespace Nebula
         {
             if (c.PendingSlot < 0) return;
             WorldStateMsg.End(c.Pending, c.PendingSlot, c.PendingCount);
-            _transport.Send(c.PeerId, Delivery.Sequenced, c.Pending.ToSegment());
+            Send(c.PeerId, Delivery.Sequenced, c.Pending.ToSegment());
             c.PendingSlot = -1;
             c.PendingCount = 0;
         }
@@ -778,7 +957,7 @@ namespace Nebula
             if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c)) return;
             _writer.Reset();
             msg.Write(_writer);
-            _transport.Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
+            Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
         }
 
         // ---------------------------------------------------------------------------------------- clients
@@ -799,22 +978,31 @@ namespace Nebula
                 if (hello.Role == PeerRole.Worker)
                 {
                     // A worker dialled us (not the normal direction, but harmless): treat it as a worker link.
-                    var w = new WorkerConn { PeerId = peerId, WorkerId = hello.Id, Index = (ushort)hello.Index, Ready = true };
+                    if (!AcceptWorkerHello(peerId, hello)) return;
+                    var w = new WorkerConn { PeerId = peerId, WorkerId = hello.Id, Index = (ushort)hello.Index, Incarnation = hello.Incarnation, Ready = true };
                     _workersByPeer[peerId] = w;
                     _workersById[w.WorkerId] = w;
                     _workersByIndex[w.Index] = w;
                     return;
                 }
+                if (hello.Role == PeerRole.Gateway)
+                {
+                    NebulaLog.Warn($"gateway '{hello.Id}' dialled this gateway; disconnecting");
+                    _transport.Disconnect(peerId);
+                    return;
+                }
                 if (c == null)
                 {
-                    c = new ClientConn { PeerId = peerId, ClientId = _nextClientId++ };
+                    // A provisional id until the session is known: a reclaimed session keeps its old id instead.
+                    c = new ClientConn { PeerId = peerId, ClientId = SessionIds.Make(Incarnation, _nextSequence++) };
                     _clientsByPeer[peerId] = c;
                     _clientsById[c.ClientId] = c;
                 }
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
-                c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{c.ClientId}" : hello.Id;
+                c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
-                Authenticate(c, hello.Token ?? "");
+                if (Draining) { Reject(c, "gateway is draining", true); return; }
+                Authenticate(c, hello.Token ?? "", hello.Session ?? "");
                 return;
             }
             if (c == null || !c.Welcomed) return;
@@ -829,7 +1017,7 @@ namespace Nebula
                     if (!_workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w)) return;
                     _writer.Reset();
                     msg.Write(_writer, MsgId.ClientInput);
-                    _transport.Send(w.PeerId, Delivery.Sequenced, _writer.ToSegment());
+                    Send(w.PeerId, Delivery.Sequenced, _writer.ToSegment());
                     break;
                 }
                 case MsgId.InstanceReady:
@@ -838,7 +1026,7 @@ namespace Nebula
                     if (preparation.EntityId != c.PawnNetId || !_entities.TryGetValue(c.PawnNetId, out var pawn) ||
                         pawn.OwnerWorkerIndex != preparation.SourceWorker || !_workersByIndex.TryGetValue(preparation.SourceWorker, out var source)) break;
                     _writer.Reset(); preparation.Write(_writer, MsgId.InstanceReady);
-                    _transport.Send(source.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                    Send(source.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 }
                 case MsgId.ServerRpc:
@@ -849,7 +1037,7 @@ namespace Nebula
                     if (!_workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w)) return;
                     _writer.Reset();
                     msg.Write(_writer, MsgId.ServerRpc);
-                    _transport.Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                    Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 }
                 case MsgId.Ping:
@@ -857,7 +1045,7 @@ namespace Nebula
                     var ping = PingMsg.Read(r);
                     _writer.Reset();
                     new PongMsg { ClientTime = ping.ClientTime, ServerTick = NetworkTime.DerivedTick }.Write(_writer);
-                    _transport.Send(peerId, Delivery.Sequenced, _writer.ToSegment());
+                    Send(peerId, Delivery.Sequenced, _writer.ToSegment());
                     break;
                 }
                 default:
@@ -879,7 +1067,7 @@ namespace Nebula
             c.JoinEstimate = estimate;
             _writer.Reset();
             new JoinStatusMsg { State = state, EstimatedSeconds = estimate }.Write(_writer);
-            _transport.Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             if (state == JoinState.Starting)
                 NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting for the world to start" + (estimate > 0 ? $" (about {estimate} s)" : ""));
         }
@@ -889,22 +1077,23 @@ namespace Nebula
         /// <summary>
         /// Decide who this client is from the token in its Hello: none = a fresh anonymous identity (when allowed),
         /// one of ours = checked here, anything else = an ID token for <see cref="TokenValidator"/>, which may
-        /// answer later once the provider's keys are fetched.
+        /// answer later once the provider's keys are fetched. <paramref name="session"/> is the session token of an
+        /// earlier connection, honoured once the identity is known (<see cref="WelcomeClient"/>).
         /// </summary>
-        private void Authenticate(ClientConn c, string token)
+        private void Authenticate(ClientConn c, string token, string session)
         {
             if (token.Length == 0)
             {
                 if (_anonymous == null) { Reject(c, "this game requires signing in"); return; }
                 string issued = _anonymous.Issue(out string subject);
-                WelcomeClient(c, AuthResult.Accept(PlayerIdentity.AnonymousIssuer, subject), issued);
+                WelcomeClient(c, AuthResult.Accept(PlayerIdentity.AnonymousIssuer, subject), issued, session);
                 return;
             }
             if (AnonymousIdentityIssuer.IsAnonymousToken(token))
             {
                 if (_anonymous == null) { Reject(c, "anonymous players are not allowed on this game"); return; }
                 var result = _anonymous.Verify(token);
-                if (result.Ok) WelcomeClient(c, result, "");
+                if (result.Ok) WelcomeClient(c, result, "", session);
                 else Reject(c, result.Error);
                 return;
             }
@@ -916,18 +1105,18 @@ namespace Nebula
                 c.AuthPending = false;
                 // The link may have gone away while the keys were fetched.
                 if (!_clientsByPeer.TryGetValue(peerId, out var current) || current != c || c.Welcomed || c.DisconnectAt != 0) return;
-                if (result.Ok) WelcomeClient(c, result, "");
+                if (result.Ok) WelcomeClient(c, result, "", session);
                 else Reject(c, result.Error);
             });
         }
 
         /// <summary>Tell the client why and drop the link a moment later, once the message has had time to go out.</summary>
-        private void Reject(ClientConn c, string reason)
+        private void Reject(ClientConn c, string reason, bool retry = false)
         {
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
             _writer.Reset();
-            new JoinRejectedMsg { Reason = reason }.Write(_writer);
-            _transport.Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            new JoinRejectedMsg { Reason = reason, Retry = retry }.Write(_writer);
+            Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             c.DisconnectAt = Time.unscaledTime + 0.5f;
         }
 
@@ -946,21 +1135,75 @@ namespace Nebula
             }
         }
 
-        /// <summary>The client is who it says it is: welcome it, replay the world, and ask a worker for a pawn.</summary>
-        private void WelcomeClient(ClientConn c, in AuthResult auth, string issuedToken)
+        /// <summary>A generation that is newer than anything the session had before: the clock, but never below what the token said.</summary>
+        private static ulong NextGeneration(ulong previous)
+        {
+            ulong now = (ulong)Math.Max(0L, (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds);
+            return Math.Max(now, previous + 1);
+        }
+
+        /// <summary>
+        /// A client presented a session token: when it is ours, unexpired and for the identity that just
+        /// authenticated, the session id is taken over (with a newer generation) instead of the provisional one, and
+        /// a link that still holds that session on this gateway is dropped. The pawn, if the worker still has it,
+        /// is found through the session id on the worker's next announcement or in what this gateway already knows.
+        /// </summary>
+        private void TryReclaim(ClientConn c, string session)
+        {
+            if (session.Length == 0 || _sessions == null) return;
+            if (!_sessions.Verify(session, out var claims, out string error))
+            {
+                NebulaLog.Info($"client '{c.Name}': session token ignored ({error}); starting a new session");
+                return;
+            }
+            if (claims.Identity != c.Identity)
+            {
+                NebulaLog.Warn($"client '{c.Name}': session token belongs to another identity; starting a new session");
+                return;
+            }
+            if (_clientsById.TryGetValue(claims.SessionId, out var previous) && previous != c)
+            {
+                NebulaLog.Info($"client {claims.SessionId} '{c.Name}' reconnected while its old link is still open; dropping the old link");
+                _clientsByPeer.Remove(previous.PeerId);
+                _clientsById.Remove(previous.ClientId);
+                _transport.Disconnect(previous.PeerId);
+                if (previous.PawnNetId != 0) c.PawnNetId = previous.PawnNetId;
+            }
+            _clientsById.Remove(c.ClientId);
+            c.ClientId = claims.SessionId;
+            c.Generation = NextGeneration(claims.Generation);
+            c.Reclaimed = true;
+            _clientsById[c.ClientId] = c;
+            if (c.PawnNetId == 0)
+            {
+                foreach (var rec in _entities.Values)
+                    if (rec.OwnerClientId == c.ClientId) { c.PawnNetId = rec.NetId; break; }
+            }
+            _recentlyLost.RemoveAll(kv => kv.Key == c.ClientId);
+        }
+
+        /// <summary>The client is who it says it is: welcome it, replay the world, and ask a worker for a pawn (or for the one it had).</summary>
+        private void WelcomeClient(ClientConn c, in AuthResult auth, string issuedToken, string session)
         {
             int peerId = c.PeerId;
             c.Identity = auth.Identity ?? "";
+            c.Generation = NextGeneration(0);
+            TryReclaim(c, session);
             c.Welcomed = true;
             string how = auth.Issuer == PlayerIdentity.AnonymousIssuer ? (issuedToken.Length > 0 ? "new anonymous identity" : "anonymous") : auth.Issuer;
-            NebulaLog.Info($"client {c.ClientId} '{c.Name}'{(c.IsBot ? " (bot)" : "")} connected as {ShortIdentity(c.Identity)} ({how})");
+            NebulaLog.Info($"client {c.ClientId} '{c.Name}'{(c.IsBot ? " (bot)" : "")} connected as {ShortIdentity(c.Identity)} ({how}{(c.Reclaimed ? ", session reclaimed" : "")})");
 
+            string sessionToken = _sessions.Issue(new SessionClaims
+            {
+                SessionId = c.ClientId, Identity = c.Identity, Name = c.Name, IsBot = c.IsBot, Generation = c.Generation,
+                ExpiresAt = JsonWebToken.UnixNow() + SessionTokenLifetimeSeconds,
+            });
             _writer.Reset();
-            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken }.Write(_writer);
-            _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed }.Write(_writer);
+            Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             _writer.Reset();
             ContainerOwnershipMsg.Write(_writer, _ownership);
-            _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             // Carriers before their contents: a passenger's spawn names the ship's container, which the client
             // can only resolve once it has the ship (it holds the spawn otherwise, but this keeps that rare).
             _replayOrder.Clear();
@@ -973,7 +1216,15 @@ namespace Nebula
                 rec.RefreshSpawnState(_scratch);
                 _writer.Reset();
                 rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);
-                _transport.Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            }
+            if (c.PawnNetId != 0)
+            {
+                // The pawn is still around: claim it from its worker, which re-announces it and routes the session here.
+                SendJoinStatus(c, JoinState.Joined);
+                if (_entities.TryGetValue(c.PawnNetId, out var pawn) && _workersByIndex.TryGetValue(pawn.OwnerWorkerIndex, out var owner))
+                    SendClaim(c, owner, pawn.Container);
+                return;
             }
             SendJoinStatus(c, JoinState.Starting);
             TryRequestSpawn(c);
@@ -986,12 +1237,24 @@ namespace Nebula
             _clientsByPeer.Remove(c.PeerId);
             _clientsById.Remove(c.ClientId);
             NebulaLog.Info($"client {c.ClientId} '{c.Name}' disconnected");
+            if (!c.Welcomed) return;
+            // The worker keeps the pawn for SessionReclaimSeconds in case the client comes back (here or elsewhere);
+            // the despawn carries the generation so a gateway that has since claimed the session is not undone.
             if (c.PawnNetId != 0 && _entities.TryGetValue(c.PawnNetId, out var rec) && _workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w))
             {
                 _writer.Reset();
-                new DespawnPlayerMsg { ClientId = c.ClientId }.Write(_writer);
-                _transport.Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                new DespawnPlayerMsg { ClientId = c.ClientId, Generation = c.Generation }.Write(_writer);
+                Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                if (Config.SessionReclaimSeconds > 0) _recentlyLost.Add(new KeyValuePair<ulong, float>(c.ClientId, Time.unscaledTime));
             }
+        }
+
+        private void SendClaim(ClientConn c, WorkerConn worker, ContainerRef container)
+        {
+            c.SpawnWorkerId = worker.WorkerId;
+            _writer.Reset();
+            new SpawnPlayerMsg { ClientId = c.ClientId, Container = container, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity, Generation = c.Generation }.Write(_writer);
+            Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }
 
         private void TryRequestSpawn(ClientConn c)
@@ -1010,16 +1273,13 @@ namespace Nebula
                 NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet; holding the join (world starting)");
                 return;
             }
-            #if NEBULA_SERVICE
+#if NEBULA_SERVICE
             var pick = candidates[System.Random.Shared.Next(candidates.Count)];
 #else
             var pick = candidates[UnityEngine.Random.Range(0, candidates.Count)];
 #endif
             var worker = _workersById[pick.OwnerWorkerId];
-            c.SpawnWorkerId = worker.WorkerId;
-            _writer.Reset();
-            new SpawnPlayerMsg { ClientId = c.ClientId, Container = pick.Ref, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity }.Write(_writer);
-            _transport.Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            SendClaim(c, worker, pick.Ref);
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
         }
 
@@ -1041,7 +1301,7 @@ namespace Nebula
             {
                 if (!c.Welcomed) continue;
                 if (delivery == Delivery.ReliableOrdered) AppendReliable(c, seg);
-                else _transport.Send(c.PeerId, delivery, seg);
+                else Send(c.PeerId, delivery, seg);
             }
         }
 
@@ -1070,7 +1330,7 @@ namespace Nebula
         {
             if (c.ReliableSlot < 0) return;
             c.Reliable.PatchUShort(c.ReliableSlot, c.ReliableCount);
-            _transport.Send(c.PeerId, Delivery.ReliableOrdered, c.Reliable.ToSegment());
+            Send(c.PeerId, Delivery.ReliableOrdered, c.Reliable.ToSegment());
             c.ReliableSlot = -1;
             c.ReliableCount = 0;
         }

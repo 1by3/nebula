@@ -33,7 +33,7 @@ namespace Nebula
         public bool IsSceneEntity => SceneId != 0;
 
         public ulong NetId { get; internal set; }
-        public uint OwnerClientId { get; internal set; }
+        public ulong OwnerClientId { get; internal set; }
         /// <summary>
         /// The owning player's identity across sessions (<see cref="PlayerIdentity"/>): the same string every time
         /// that player connects, on every worker and client. Empty for entities no player owns. Key player records

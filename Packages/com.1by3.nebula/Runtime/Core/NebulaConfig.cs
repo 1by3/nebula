@@ -59,6 +59,10 @@ namespace Nebula
         public bool AuthAnonymous = true;
         [Tooltip("Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA_AUTH_KEY.")]
         public string AuthSigningKey = "";
+        [Tooltip("Seconds a worker keeps a player's pawn after the player's connection drops, so the player can reconnect (through any gateway of the mesh) and continue with the same session and pawn. 0 despawns at once.")]
+        public float SessionReclaimSeconds = 30f;
+        [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
+        public float GatewayDrainReconnectSeconds = 10f;
 
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]

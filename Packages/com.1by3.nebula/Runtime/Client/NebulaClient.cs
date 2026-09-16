@@ -15,7 +15,7 @@ namespace Nebula
 
         public NebulaConfig Config { get; private set; }
         public State ConnectionState { get; private set; }
-        public uint ClientId { get; private set; }
+        public ulong ClientId { get; private set; }
         public string PlayerName { get; private set; } = "";
         /// <summary>
         /// The local player's identity across sessions (<see cref="PlayerIdentity"/>), from the gateway's Welcome:
@@ -30,6 +30,15 @@ namespace Nebula
         /// <c>-nebula-auth-token</c> (or <c>?nebula-auth-token=</c> in a web build) seeds it.
         /// </summary>
         public string AuthToken { get; set; } = "";
+        /// <summary>
+        /// The session token from the last Welcome (<see cref="WelcomeMsg.SessionToken"/>), presented on every
+        /// reconnection so the gateway that answers, whichever one of the mesh it is, gives this client its session
+        /// and pawn back. Kept for the life of the process; <see cref="Disconnect"/> keeps it too, so a deliberate
+        /// reconnect continues the session. Clear it to start a new session on the next connection.
+        /// </summary>
+        public string SessionToken { get; set; } = "";
+        /// <summary>True when the last Welcome reclaimed the session (the pawn is the one from before the reconnection).</summary>
+        public bool SessionReclaimed { get; private set; }
         public NetworkIdentity LocalPlayer { get; private set; }
         /// <summary>
         /// How far the join has got, as the gateway sees it. A mesh with <see cref="NebulaConfig.MinWorkers"/> at 0
@@ -66,6 +75,8 @@ namespace Nebula
         public event Action<string> JoinRejected;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
+        /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
+        public event Action<int> GatewayDraining;
 
         private ITransport _transport;
         private int _gatewayPeer = -1;
@@ -468,7 +479,7 @@ namespace Nebula
                     _writer.Reset();
                     string token = !string.IsNullOrEmpty(AuthToken) ? AuthToken : _storedToken;
                     _presentedStoredToken = string.IsNullOrEmpty(AuthToken) && token.Length > 0;
-                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token }.Write(_writer);
+                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "" }.Write(_writer);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:
@@ -526,15 +537,25 @@ namespace Nebula
                     Identity = w.Identity ?? "";
                     NebulaRuntime.LocalIdentity = Identity;
                     if (!string.IsNullOrEmpty(w.Token)) RememberIssuedToken(w.Token);
+                    if (!string.IsNullOrEmpty(w.SessionToken)) SessionToken = w.SessionToken;
+                    SessionReclaimed = w.Reclaimed;
                     NoteServerTick(w.ServerTick);
                     SetState(State.InGame);
-                    NebulaLog.Info($"welcome: clientId={ClientId} identity={(Identity.Length > 12 ? Identity.Substring(0, 12) : Identity)} serverTick={w.ServerTick}");
+                    NebulaLog.Info($"welcome: clientId={ClientId} identity={(Identity.Length > 12 ? Identity.Substring(0, 12) : Identity)} serverTick={w.ServerTick}" + (w.Reclaimed ? " (session reclaimed)" : ""));
                     break;
                 }
                 case MsgId.JoinRejected:
                 {
                     var rejected = JoinRejectedMsg.Read(r);
-                    if (_presentedStoredToken)
+                    if (rejected.Retry)
+                    {
+                        // The gateway, not this client, is the problem (draining, not ready): try again shortly; a
+                        // load balancer hands the retry to another gateway.
+                        LastError = "gateway unavailable: " + rejected.Reason + " (retrying)";
+                        NebulaLog.Warn(LastError);
+                        _nextConnectAttempt = Time.unscaledTime + 1f;
+                    }
+                    else if (_presentedStoredToken)
                     {
                         // The mesh no longer honours the saved anonymous token (a new signing key, or anonymous
                         // players were turned off): start over as a new player rather than loop on the same token.
@@ -548,6 +569,18 @@ namespace Nebula
                         NebulaLog.Warn(LastError);
                     }
                     JoinRejected?.Invoke(rejected.Reason);
+                    break;
+                }
+                case MsgId.GatewayDraining:
+                {
+                    var draining = GatewayDrainingMsg.Read(r);
+                    // Reconnect now, keeping the session token: the next gateway reclaims the session and the pawn.
+                    NebulaLog.Warn($"gateway is draining; reconnecting within {draining.ReconnectWithinSeconds} s with the session token");
+                    GatewayDraining?.Invoke(draining.ReconnectWithinSeconds);
+                    if (_gatewayPeer >= 0) { try { _transport.Disconnect(_gatewayPeer); } catch { } _gatewayPeer = -1; }
+                    ClearWorld();
+                    SetState(State.Disconnected);
+                    _nextConnectAttempt = Time.unscaledTime + 0.2f;
                     break;
                 }
                 case MsgId.JoinStatus:
@@ -962,7 +995,7 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- IRpcSink
 
-        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius)
+        void IRpcSink.SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius)
         {
             NebulaLog.Warn("ClientRpc sent from a client; ignored");
         }

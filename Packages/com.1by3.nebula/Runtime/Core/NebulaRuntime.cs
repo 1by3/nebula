@@ -5,7 +5,7 @@ namespace Nebula
     /// <summary>Where RPCs and state changes go once a behaviour has produced them. Implemented by the worker and the client.</summary>
     public interface IRpcSink
     {
-        void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, uint targetClientId, float radius);
+        void SendClientRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, ulong targetClientId, float radius);
         void SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
         void SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
     }
@@ -15,7 +15,7 @@ namespace Nebula
     {
         public static bool IsServer { get; internal set; }
         public static bool IsClient { get; internal set; }
-        public static uint LocalClientId { get; internal set; }
+        public static ulong LocalClientId { get; internal set; }
         /// <summary>Client side: the local player's identity across sessions (<see cref="PlayerIdentity"/>), once welcomed. Empty before that and on workers.</summary>
         public static string LocalIdentity { get; internal set; } = "";
         public static string LocalWorkerId { get; internal set; } = "";

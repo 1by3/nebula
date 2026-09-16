@@ -12,7 +12,7 @@ namespace Nebula
         /// Create and spawn the player's entity inside <paramref name="container"/>. Return the spawned identity.
         /// Override this or the <see cref="PlayerInfo"/> overload (which also gets the player's identity across sessions).
         /// </summary>
-        public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, uint clientId, string playerName, Container container)
+        public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, ulong clientId, string playerName, Container container)
         {
             NebulaLog.Error($"{GetType().Name} overrides neither OnSpawnPlayer overload; client {clientId} gets no pawn");
             return null;
@@ -35,8 +35,11 @@ namespace Nebula
     /// <summary>Who is joining, as the gateway told the worker (<see cref="NebulaGameMode.OnSpawnPlayer(NebulaWorker, in PlayerInfo, Container)"/>).</summary>
     public readonly struct PlayerInfo
     {
-        /// <summary>This session's connection id. Changes every time the player connects.</summary>
-        public readonly uint ClientId;
+        /// <summary>
+        /// The player's session id: unique across every gateway of the mesh, and kept across a reconnection with a
+        /// session token (the player continues with the same pawn). A new session gets a new id.
+        /// </summary>
+        public readonly ulong ClientId;
         /// <summary>The display name the client asked for.</summary>
         public readonly string Name;
         /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>): from the OpenID token they presented, or the anonymous token the gateway issued them.</summary>
@@ -44,7 +47,7 @@ namespace Nebula
         /// <summary>The client is a headless bot.</summary>
         public readonly bool IsBot;
 
-        public PlayerInfo(uint clientId, string name, string identity, bool isBot)
+        public PlayerInfo(ulong clientId, string name, string identity, bool isBot)
         {
             ClientId = clientId;
             Name = name ?? "";

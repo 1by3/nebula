@@ -71,19 +71,61 @@ namespace Nebula
         public ContainerHint Hint = ContainerHint.Default;
     }
 
-    /// <summary>Describes a gateway registered with the control plane.</summary>
-    public sealed class GatewayInfo
+    /// <summary>
+    /// What a gateway reports about itself on every heartbeat. The orchestrator publishes it in <c>/api/state</c>;
+    /// whoever runs the gateway fleet (a hosting platform, an operator) sizes the fleet from these numbers, since a
+    /// connection count alone says nothing about replication cost.
+    /// </summary>
+    public struct GatewayStats
     {
-        public string GatewayId;
-        public string Address;
-        public ushort Port;
-        public DateTime LastHeartbeat;
         /// <summary>
         /// Clients welcomed by this gateway that are still waiting for somewhere to spawn
         /// (<see cref="JoinState.Starting"/>). The orchestrator reads it as demand: a pending join at zero workers
         /// wakes the mesh at once, and no scale-in goes below one worker while it is non-zero.
         /// </summary>
         public uint PendingJoins;
+        /// <summary>Welcomed clients with a pawn.</summary>
+        public uint ActiveClients;
+        /// <summary>Links that sent Hello and are being authenticated or placed.</summary>
+        public uint JoiningClients;
+        /// <summary>Sessions whose link dropped and that are being held for a reconnect (<see cref="NebulaConfig.SessionReclaimSeconds"/>).</summary>
+        public uint ReconnectingClients;
+        /// <summary>Client-facing traffic over the last heartbeat interval.</summary>
+        public float PacketsInPerSecond, PacketsOutPerSecond, BytesInPerSecond, BytesOutPerSecond;
+        /// <summary>Worker-facing traffic over the last heartbeat interval.</summary>
+        public float WorkerBytesInPerSecond, WorkerBytesOutPerSecond;
+        /// <summary>Process CPU over the interval as a fraction of one core (2.0 = two cores busy).</summary>
+        public float Cpu;
+        /// <summary>Working set in bytes.</summary>
+        public ulong MemoryBytes;
+        /// <summary>Longest gap between two ticks beyond the expected loop period, in milliseconds, over the interval.</summary>
+        public float LoopLagMs;
+        /// <summary>Worker links that completed the handshake.</summary>
+        public uint WorkerConnections;
+        /// <summary>Registered, connected to the control plane, and accepting clients.</summary>
+        public bool Ready;
+        /// <summary>The gateway is taking itself out of service: refusing new clients and asking the ones it has to reconnect elsewhere.</summary>
+        public bool Draining;
+    }
+
+    /// <summary>Describes a gateway registered with the control plane.</summary>
+    public sealed class GatewayInfo
+    {
+        public string GatewayId;
+        /// <summary>Changes on every start of the gateway process (<see cref="HelloMsg.Incarnation"/>); 0 for a row written by an older gateway.</summary>
+        public uint Incarnation;
+        public string Address;
+        public ushort Port;
+        public DateTime LastHeartbeat;
+        /// <summary>What the gateway last reported about itself.</summary>
+        public GatewayStats Stats;
+        /// <summary>
+        /// Somebody asked this gateway to drain (<see cref="IControlPlane.SetGatewayDraining"/>). The gateway sees
+        /// the flag on its own row and stops accepting clients; <see cref="GatewayStats.Draining"/> is its acknowledgement.
+        /// </summary>
+        public bool DrainRequested;
+        /// <summary>Shorthand for <see cref="GatewayStats.PendingJoins"/>.</summary>
+        public uint PendingJoins { get => Stats.PendingJoins; set => Stats.PendingJoins = value; }
     }
 
     /// <summary>Provides the states used by a container lease.</summary>
@@ -158,10 +200,17 @@ namespace Nebula
         void HeartbeatWorker(string workerId, string status, in WorkerStats stats);
         void UnregisterWorker(string workerId);
 
-        void RegisterGateway(string gatewayId, string address, ushort port);
-        /// <param name="pendingJoins">Welcomed clients with nowhere to spawn yet (<see cref="GatewayInfo.PendingJoins"/>).</param>
-        void HeartbeatGateway(string gatewayId, uint pendingJoins);
+        /// <param name="incarnation">This start of the gateway process (<see cref="GatewayInfo.Incarnation"/>). A re-registration with a new incarnation clears a stale drain request.</param>
+        void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0);
+        /// <param name="stats">What the gateway reports about itself (<see cref="GatewayStats"/>).</param>
+        void HeartbeatGateway(string gatewayId, in GatewayStats stats);
         void UnregisterGateway(string gatewayId);
+        /// <summary>
+        /// Ask a gateway to take itself out of service (or cancel that). The gateway refuses new clients and tells the
+        /// ones it has to reconnect; whoever runs the fleet removes and stops it once <see cref="GatewayStats.ActiveClients"/>
+        /// reaches zero or a drain timeout passes. Exposed by the orchestrator as <c>POST /api/gateways/drain</c>.
+        /// </summary>
+        void SetGatewayDraining(string gatewayId, bool draining);
 
         void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers);
 
@@ -208,6 +257,12 @@ namespace Nebula
         public static WorkerInfo FindWorker(this IControlPlane cp, string workerId)
         {
             foreach (var w in cp.Workers) if (w.WorkerId == workerId) return w;
+            return null;
+        }
+
+        public static GatewayInfo FindGateway(this IControlPlane cp, string gatewayId)
+        {
+            foreach (var g in cp.Gateways) if (g.GatewayId == gatewayId) return g;
             return null;
         }
 

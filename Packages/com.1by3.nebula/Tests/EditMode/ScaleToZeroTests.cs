@@ -100,7 +100,7 @@ namespace Nebula.Tests
             var cp = new LocalControlPlane();
             cp.Connect();
             cp.RegisterGateway("gw1", "203.0.113.9", 7000);
-            cp.HeartbeatGateway("gw1", 3);
+            cp.HeartbeatGateway("gw1", new GatewayStats { PendingJoins = 3 });
             Assert.AreEqual(3u, cp.Gateways[0].PendingJoins);
 
             var parsed = ControlPlaneJson.Parse(cp.ToJson());

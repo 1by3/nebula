@@ -38,13 +38,13 @@ public class InstanceTests
 
     private static LeaseInfo Lease(ulong id, ulong scope) => new() { ContainerId = "rt_" + id, HasBounds = true,
         BoundsSize = new(10,10,10), Instance = new() { InstanceId = scope, ObservePublic = true, ObservationSize = new(30,30,30) } };
-    private object Client(uint id)
+    private object Client(ulong id)
     {
         var client = Nested("ClientConn"); Set(client,"ClientId",id); Set(client,"PeerId",(int)id); Set(client,"Welcomed",true);
         ((IDictionary)Field(gateway,"_clientsById")).Add(id,client);
         return client;
     }
-    private void Spawn(ulong id, uint client, ContainerRef container, uint epoch = 1) => Call("OnEntitySpawn", worker,
+    private void Spawn(ulong id, ulong client, ContainerRef container, uint epoch = 1) => Call("OnEntitySpawn", worker,
         new EntitySpawnMsg { NetId=id, OwnerClientId=client, Container=container, Epoch=epoch, LocalRotation=Quaternion.identity, LocalScale=Vector3.one });
     private static HashSet<ulong> Visible(object client) => (HashSet<ulong>)Field(client,"Visible");
     private void Flush() { Call("FlushReliable",outside); Call("FlushReliable",inside); Call("FlushReliable",other); }

@@ -512,6 +512,14 @@ namespace Nebula
         private void ReapDeadWorkers()
         {
             float now = Time.unscaledTime;
+            // A gateway that stopped heartbeating for good (killed, or its machine is gone) leaves the fleet list, so
+            // whoever reads /api/state sees the gateways that exist rather than every one that ever registered.
+            foreach (var g in ControlPlane.Gateways.ToList())
+            {
+                if ((ControlPlane.Now - g.LastHeartbeat).TotalSeconds <= Config.WorkerTimeoutSeconds * 3) continue;
+                Log("warn", $"gateway {g.GatewayId} missed heartbeats for {(ControlPlane.Now - g.LastHeartbeat).TotalSeconds:F0}s; removing it from the fleet");
+                ControlPlane.UnregisterGateway(g.GatewayId);
+            }
             // Forget retirements old enough that their control-plane row is certainly gone.
             foreach (var id in _retired.Where(kv => now - kv.Value > 15f).Select(kv => kv.Key).ToList()) _retired.Remove(id);
 
@@ -1224,6 +1232,18 @@ namespace Nebula
                     if (AtWorkerCeiling) return OrchestratorHttpServer.Response.Error(409, $"at most {MaxWorkers} workers");
                     AddWorker();
                     break;
+                case "/api/gateways/drain":
+                {
+                    // Whoever runs the gateway fleet takes a gateway out of service: it refuses new clients and asks
+                    // its clients to reconnect (to another gateway, through a load balancer). {"id": "gw2", "draining": false} cancels.
+                    string gatewayId = OrchestratorHttpServer.GetString(req.Body, "id");
+                    if (string.IsNullOrEmpty(gatewayId)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"id\": \"gateway id\", \"draining\": true|false}");
+                    if (ControlPlane.FindGateway(gatewayId) == null) return OrchestratorHttpServer.Response.Error(404, $"no gateway '{gatewayId}'");
+                    bool draining = !OrchestratorHttpServer.TryGetBool(req.Body, "draining", out bool flag) || flag;
+                    ControlPlane.SetGatewayDraining(gatewayId, draining);
+                    Log("info", draining ? $"gateway {gatewayId} asked to drain" : $"gateway {gatewayId} drain cancelled");
+                    break;
+                }
                 case "/api/containers/ensure":
                 {
                     if (!PersistenceJson.TryParseObject(req.Body, out var body, out string parseError)) return OrchestratorHttpServer.Response.Error(400, parseError);
@@ -1588,9 +1608,11 @@ namespace Nebula
             {
                 w.BeginObject();
                 w.Prop("id", g.GatewayId);
+                w.Prop("incarnation", g.Incarnation.ToString("x8"));
                 w.Prop("address", $"{g.Address}:{g.Port}");
                 w.Prop("heartbeatAgeSeconds", Math.Max(0.0, (ControlPlane.Now - g.LastHeartbeat).TotalSeconds));
-                w.Prop("pendingJoins", (int)g.PendingJoins);
+                w.Prop("drainRequested", g.DrainRequested);
+                ControlPlaneJson.WriteGatewayStats(w, g.Stats);
                 w.EndObject();
             }
             w.EndArray();

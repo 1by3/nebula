@@ -84,6 +84,8 @@ namespace Nebula
                     control.Connect();
                     gateway = new NebulaGateway();
                     gateway.Initialize(config, control, config.WebClients ? StartWebClients(config, out web) : null);
+                    gateway.LoopPeriodSeconds = NetworkTime.TickInterval / 4;
+                    if (web != null) web.Ready = () => gateway.IsReady;
                 }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
