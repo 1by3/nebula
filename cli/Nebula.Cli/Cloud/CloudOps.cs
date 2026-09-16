@@ -215,12 +215,17 @@ public static class CloudDeploy
         else
         {
             if (created.Upload == null) throw new CliError($"artifact {artifact.Id} is {artifact.State} and the API offered no upload");
-            var progress = new UploadProgress(size);
-            api.Upload(created.Upload, tarball, progress.Report);
-            progress.Done();
-            artifact = api.CompleteArtifact(projectId, artifact.Id);
+            // A deploy interrupted after its upload left the bytes in storage: verify those before sending them again.
+            artifact = VerifyExisting(api, projectId, artifact);
             if (artifact.State != "verified")
-                throw new CliError($"the upload of artifact {artifact.Id} did not verify (state {artifact.State})", "run `nebula deploy` again");
+            {
+                var progress = new UploadProgress(size);
+                api.Upload(created.Upload, tarball, progress.Report);
+                progress.Done();
+                artifact = WaitForVerification(api, projectId, api.CompleteArtifact(projectId, artifact.Id));
+                if (artifact.State != "verified")
+                    throw new CliError($"the upload of artifact {artifact.Id} did not verify ({artifact.Error ?? artifact.State})", "run `nebula deploy` again");
+            }
             Ui.Ok($"artifact {artifact.Id} verified");
         }
 
@@ -229,6 +234,46 @@ public static class CloudDeploy
         var release = api.CreateRelease(projectId, artifact.Id, manifest, label, null, Platform.CliVersion, protocol, git);
         Ui.Ok($"release #{release.Number} {release.Id} (nebula {release.NebulaVersion ?? Platform.CliVersion}, protocol {protocol?.ToString() ?? "unknown"}{(git?.Commit != null ? $", {git.Branch}@{git.Commit.Substring(0, Math.Min(8, git.Commit.Length))}{(git.Dirty ? " dirty" : "")}" : "")})");
         return release;
+    }
+
+    /// <summary>
+    /// Ask the API to verify whatever storage holds for the artifact. A 400 means nothing usable is there (not
+    /// uploaded, or the wrong size) and the caller uploads; otherwise the verification is followed to its end and a
+    /// "failed" result (corrupt bytes) also makes the caller upload.
+    /// </summary>
+    private static CloudApi.Artifact VerifyExisting(CloudApi api, string projectId, CloudApi.Artifact artifact)
+    {
+        CloudApi.Artifact started;
+        try { started = api.CompleteArtifact(projectId, artifact.Id); }
+        catch (CloudApiError e) when (e.Status == 400) { return artifact; }
+        if (started.State == "verified") { Ui.Ok($"artifact {artifact.Id} already uploaded (same content)"); return started; }
+        Ui.Info("an earlier upload of these bytes is in storage; verifying it instead of uploading again");
+        return WaitForVerification(api, projectId, started);
+    }
+
+    /// <summary>
+    /// The API reads the whole object back from storage through SHA-256 in the background (minutes for a game
+    /// build); poll until it settles. Ctrl-C is safe: the verification keeps running and the next deploy resumes.
+    /// </summary>
+    private static CloudApi.Artifact WaitForVerification(CloudApi api, string projectId, CloudApi.Artifact artifact)
+    {
+        if (artifact.State is not ("verifying" or "pending")) return artifact;
+        Ui.Info($"verifying on the server: the API reads the {artifact.SizeBytes / 1024.0 / 1024.0:F0} MB back from storage (a few minutes)");
+        var started = DateTime.UtcNow;
+        var lastNote = started;
+        while (artifact.State is "verifying" or "pending")
+        {
+            if (DateTime.UtcNow - started > TimeSpan.FromMinutes(30))
+                throw new CliError($"artifact {artifact.Id} is still {artifact.State} after 30 minutes", "run `nebula deploy` again; it resumes from the uploaded bytes");
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+            artifact = api.GetArtifact(projectId, artifact.Id);
+            if (DateTime.UtcNow - lastNote >= TimeSpan.FromSeconds(30))
+            {
+                Ui.Info($"still verifying ({(DateTime.UtcNow - started).TotalSeconds:F0} s)");
+                lastNote = DateTime.UtcNow;
+            }
+        }
+        return artifact;
     }
 
     private sealed class UploadProgress

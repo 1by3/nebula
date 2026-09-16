@@ -256,7 +256,7 @@ public sealed class CloudApi
 
     // --- artifacts and releases ------------------------------------------------------------------------------------
 
-    public sealed record Artifact(string Id, string ProjectId, string Kind, string Sha256, long SizeBytes, string State, string? CreatedAt, string? VerifiedAt);
+    public sealed record Artifact(string Id, string ProjectId, string Kind, string Sha256, long SizeBytes, string State, string? CreatedAt, string? VerifiedAt, string? Error = null);
     public sealed record ArtifactUpload(string Method, string Url, Dictionary<string, string>? Headers, string? ExpiresAt);
     public sealed record ArtifactCreated(Artifact Artifact, ArtifactUpload? Upload);
     public sealed record GitInfo(string? Commit, string? Branch, bool Dirty);
@@ -265,8 +265,11 @@ public sealed class CloudApi
     public ArtifactCreated CreateArtifact(string project, string sha256, long sizeBytes, string fileName) =>
         Send<ArtifactCreated>(HttpMethod.Post, $"/projects/{project}/artifacts", new { kind = "linux-server", sha256, sizeBytes, fileName }, "artifact-" + sha256);
 
+    /// <summary>Ask the API to verify what is in storage. 202 "verifying" (poll <see cref="GetArtifact"/>), 200 "verified", or a 400 <see cref="CloudApiError"/> when nothing usable is there.</summary>
     public Artifact CompleteArtifact(string project, string artifact) =>
-        Send<Artifact>(HttpMethod.Post, $"/projects/{project}/artifacts/{artifact}/complete", new { }, "artifact-complete-" + artifact);
+        Send<Artifact>(HttpMethod.Post, $"/projects/{project}/artifacts/{artifact}/complete", new { });
+
+    public Artifact GetArtifact(string project, string artifact) => Send<Artifact>(HttpMethod.Get, $"/projects/{project}/artifacts/{artifact}");
 
     public Release CreateRelease(string project, string artifactId, JsonNode manifest, string? label, string? notes, string nebulaVersion, int? protocolVersion, GitInfo? git) =>
         Send<Release>(HttpMethod.Post, $"/projects/{project}/releases",

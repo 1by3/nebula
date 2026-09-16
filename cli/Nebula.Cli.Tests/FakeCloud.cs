@@ -245,9 +245,20 @@ internal sealed class FakeCloud : IDisposable
         {
             var art = Artifacts.First(x => x["id"]!.ToString() == mm.Groups[2].Value);
             var (size, sha) = ArtifactExpectations[mm.Groups[2].Value];
-            bool ok = Uploads.TryGetValue(mm.Groups[2].Value, out var bytes) && bytes.Length == size && Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() == sha;
-            art["state"] = ok ? "verified" : "failed";
-            Reply(ctx, 200, art); return;
+            if (art["state"]!.ToString() == "verified") { Reply(ctx, 200, art); return; }
+            if (!Uploads.TryGetValue(mm.Groups[2].Value, out var bytes) || bytes.Length != size)
+            {
+                art["state"] = "failed"; art["error"] = bytes == null ? "object not found" : "size mismatch";
+                Reply(ctx, 400, Error("invalid", "artifact verification failed: " + art["error"])); return;
+            }
+            // The real API answers 202 "verifying" and settles in the background; the fake settles at once.
+            bool ok = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() == sha;
+            art["state"] = ok ? "verified" : "failed"; art["error"] = ok ? null : "sha256 mismatch";
+            Reply(ctx, 202, art); return;
+        }
+        if ((mm = Regex.Match(path, "^/projects/([^/]+)/artifacts/([^/]+)$")).Success && m == "GET")
+        {
+            Reply(ctx, 200, Artifacts.First(x => x["id"]!.ToString() == mm.Groups[2].Value)); return;
         }
         if ((mm = Regex.Match(path, "^/projects/([^/]+)/releases$")).Success && m == "POST")
         {

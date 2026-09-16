@@ -215,7 +215,8 @@ public class CloudCommandTests
         Assert.That(artifact["kind"]!.ToString(), Is.EqualTo("linux-server"));
         Assert.That(_cloud.Uploads["art_1"], Is.EqualTo(File.ReadAllBytes(tarball)));
         Assert.That(_cloud.Of("PUT", "/upload/art_1").Single().Header("Content-Type"), Is.EqualTo("application/gzip"));
-        Assert.That(_cloud.Of("POST", "/v1/projects/prj_1/artifacts/art_1/complete").Count(), Is.EqualTo(1));
+        // Once before the upload (storage is empty: 400, so the CLI uploads) and once after it.
+        Assert.That(_cloud.Of("POST", "/v1/projects/prj_1/artifacts/art_1/complete").Count(), Is.EqualTo(2));
 
         var release = _cloud.Of("POST", "/v1/projects/prj_1/releases").Single().Json!;
         Assert.That(release["artifactId"]!.ToString(), Is.EqualTo("art_1"));
