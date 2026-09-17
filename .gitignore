@@ -76,5 +76,8 @@ website/next-env.d.ts
 # Claude Code worktrees
 .claude/worktrees/
 
+# Amp orb runtime state
+.amp/portals/*
+
 # Standalone service projects
 !/Packages/com.1by3.nebula/Services~/**/*.csproj

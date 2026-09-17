@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+missing_packages=()
+command -v curl >/dev/null 2>&1 || missing_packages+=(curl)
+command -v zip >/dev/null 2>&1 || missing_packages+=(zip)
+if ((${#missing_packages[@]})); then
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq "${missing_packages[@]}"
+fi
+
+mkdir -p "$HOME/.local/bin"
+if ! command -v dotnet >/dev/null 2>&1 || ! dotnet --list-sdks | grep -q '^10\.'; then
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$installer"
+  bash "$installer" --channel 10.0 --install-dir "$HOME/.dotnet"
+  ln -sfn "$HOME/.dotnet/dotnet" "$HOME/.local/bin/dotnet"
+fi
+export PATH="$HOME/.local/bin:$HOME/.dotnet:$PATH"
+
+npm ci --prefix website
