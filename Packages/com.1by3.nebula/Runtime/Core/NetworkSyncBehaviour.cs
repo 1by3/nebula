@@ -29,6 +29,7 @@ namespace Nebula
 
         private float _ownerSendAccumulator;
         private uint _ownerSends;
+        private ContainerRef _ownerFrame = ContainerRef.None;
         private static readonly NetworkWriter OwnerWriter = new NetworkWriter(512);
 
         public AuthorityMode Authority
@@ -74,12 +75,15 @@ namespace Nebula
             // One tick's worth per interval; a long frame catches up on the next ones rather than bursting.
             _ownerSendAccumulator = Mathf.Min(_ownerSendAccumulator - NetworkTime.TickInterval, NetworkTime.TickInterval);
             AuthorityTick(NetworkTime.Tick, NetworkTime.TickInterval);
-            if (!SyncDirty) return;
-            bool full = _ownerSends == 0 || _ownerSends % NetworkIdentity.SyncKeyframeInterval == 0;
+            var frame = Identity.ContainerRef;
+            if (!SyncDirty && frame == _ownerFrame) return;
+            bool full = _ownerSends == 0 || frame != _ownerFrame || _ownerSends % NetworkIdentity.SyncKeyframeInterval == 0;
             _ownerSends++;
             OwnerWriter.Reset();
+            frame.Write(OwnerWriter);
             WriteSyncState(OwnerWriter, full);
             ServerRpc(RpcOwnerSyncState, OwnerWriter.ToArray(), full);
+            _ownerFrame = frame;
             SyncDirty = false;
             OnSyncStateSent();
         }
@@ -89,7 +93,15 @@ namespace Nebula
         {
             if (!IsRelayingWorker) return; // mode changed, or an NPC: the worker is the authority and ignores clients
             var reader = new NetworkReader(chunk);
-            ApplyOwnerState(reader, full);
+            var frame = ContainerRef.Read(reader);
+            var container = ContainerRegistry.Resolve(frame);
+            if (!frame.IsNone && container == null) return; // never decode an unknown frame as world space
+            // A queued owner update may still name the previous container after handover.
+            // Decode in the sender's frame without changing authoritative membership.
+            var previous = Identity.SyncContainer;
+            Identity.SyncContainer = container;
+            try { ApplyOwnerState(reader, full); }
+            finally { Identity.SyncContainer = previous; }
             MarkSyncDirty();
         }
 

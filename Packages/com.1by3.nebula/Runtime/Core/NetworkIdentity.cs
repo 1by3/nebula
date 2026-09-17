@@ -123,6 +123,13 @@ namespace Nebula
             OwnerWorkerIndex = worker;
             LastStateTick = tick;
             HasStateTick = true;
+            if (RootTransform != null && RootTransform.IsOwnerAuthoritative && RootTransform.IsOwner)
+            {
+                // The owner never consumes the root interpolation buffer. Adopt the worker's
+                // container/epoch while preserving the more recent locally simulated world pose.
+                SetContainer(container);
+                return true;
+            }
             bool location = (entry.Fields & TransformFields.Location) != 0;
             // An interpolating root transform carries a container change through its buffer (see
             // NetworkTransform.ReceiveRoot); placing the object here as well would jump it to the newest sample.
@@ -464,7 +471,7 @@ namespace Nebula
         /// The container the sync chunks currently being read were expressed in (world-space NetworkTransform values
         /// are container-local on the wire). Valid only inside <see cref="NetworkBehaviour.ReadSyncState"/>.
         /// </summary>
-        public Container SyncContainer { get; private set; }
+        public Container SyncContainer { get; internal set; }
 
         /// <summary>Non-authoritative copies: hand each chunk to its behaviour. Chunks for unknown indices are skipped.</summary>
         public void ReadSyncState(NetworkReader reader, uint tick, Container container)

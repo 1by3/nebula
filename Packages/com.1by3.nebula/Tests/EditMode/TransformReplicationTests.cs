@@ -85,6 +85,65 @@ namespace Nebula.Tests
             Assert.AreEqual(new Vector3(4, 5, 6), go.transform.localScale);
         }
 
+
+        [Test] public void OwnerTransformRpcUsesSenderFrameAfterWorkerChangesContainer()
+        {
+            var a = ContainerRegistry.RegisterRuntime(700, new Bounds(new Vector3(256, 0, 256), new Vector3(512, 512, 512)));
+            var b = ContainerRegistry.RegisterRuntime(701, new Bounds(new Vector3(768, 0, 256), new Vector3(512, 512, 512)));
+            var sender = Entity(); sender.SetContainer(a);
+            sender.transform.position = new Vector3(515, 2, 12);
+            var receiver = Entity(); receiver.SetContainer(b); receiver.OwnerClientId = 1;
+            receiver.RootTransform.Authority = AuthorityMode.Owner;
+            var w = new NetworkWriter();
+            a.Ref.Write(w);
+            sender.RootTransform.WriteSyncState(w, true);
+            var rpc = RpcRegistry.Require(typeof(NetworkTransform), "RpcOwnerSyncState");
+            var args = new NetworkWriter();
+            RpcRegistry.WriteArgs(args, rpc, new object[] { w.ToArray(), true });
+            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()));
+            Assert.Less(Vector3.Distance(sender.transform.position, receiver.transform.position), 0.001f);
+            Assert.AreSame(b, receiver.Container, "decoding a frame must not change authoritative membership");
+            Assert.IsNull(receiver.SyncContainer, "RPC frame context must not leak into another message");
+        }
+
+        [Test] public void OwnerTransformRpcRejectsMissingFrame()
+        {
+            var receiver = Entity(); receiver.OwnerClientId = 1;
+            receiver.RootTransform.Authority = AuthorityMode.Owner;
+            receiver.transform.position = new Vector3(10, 2, 3);
+            var w = new NetworkWriter();
+            ContainerRef.Runtime(99999).Write(w);
+            receiver.RootTransform.WriteSyncState(w, true);
+            var rpc = RpcRegistry.Require(typeof(NetworkTransform), "RpcOwnerSyncState");
+            var args = new NetworkWriter();
+            RpcRegistry.WriteArgs(args, rpc, new object[] { w.ToArray(), true });
+            RpcRegistry.Invoke(receiver.RootTransform, rpc.Hash, new NetworkReader(args.ToSegment()));
+            Assert.AreEqual(new Vector3(10, 2, 3), receiver.transform.position);
+            Assert.IsNull(receiver.SyncContainer);
+        }
+
+        [Test] public void InterpolatedOwnerAcceptsNewContainerWithoutRewindingItsPose()
+        {
+            NebulaRuntime.IsServer = false; NebulaRuntime.IsClient = true;
+            var a = ContainerRegistry.RegisterRuntime(800, new Bounds(Vector3.right * 256, Vector3.one * 512));
+            var b = ContainerRegistry.RegisterRuntime(801, new Bounds(Vector3.right * 768, Vector3.one * 512));
+            var owner = Entity(true, false);
+            owner.OwnerClientId = 1; owner.IsLocalPlayer = true;
+            owner.RootTransform.Authority = AuthorityMode.Owner;
+            owner.RootTransform.Interpolate = true;
+            owner.SetContainer(a);
+            owner.transform.position = Vector3.right * 520;
+            var entry = EntityStateEntry.Snapshot(owner);
+            entry.Container = b.Ref;
+            entry.LocalPosition = Vector3.right * -250; // older server position: 518
+            entry.Fields |= TransformFields.Location | TransformFields.Reliable;
+            Assert.IsTrue(owner.ReceiveState(10, 3, entry));
+            owner.RemoteTick(10);
+            Assert.AreSame(b, owner.Container);
+            Assert.AreEqual(520, owner.transform.position.x);
+            Assert.AreEqual(3, owner.OwnerWorkerIndex);
+        }
+
         private sealed class CaptureTransport : ITransport
         {
             public readonly List<(Delivery delivery, byte[] bytes)> Sent = new List<(Delivery, byte[])>();

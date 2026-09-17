@@ -79,6 +79,7 @@ namespace Nebula
 
         private readonly Dictionary<ulong, NetworkIdentity> _entities = new Dictionary<ulong, NetworkIdentity>();
         private readonly List<NetworkIdentity> _authoritative = new List<NetworkIdentity>();
+        private readonly Dictionary<ulong, object> _pendingPlayerSpawns = new Dictionary<ulong, object>();
         private readonly Dictionary<ulong, NetworkIdentity> _players = new Dictionary<ulong, NetworkIdentity>();
         /// <summary>Clients the gateway told us are bots, so Spawn() can tag their pawns without a game-code API change.</summary>
         private readonly HashSet<ulong> _botClients = new HashSet<ulong>();
@@ -428,6 +429,7 @@ namespace Nebula
 
         private void OnDestroy()
         {
+            _pendingPlayerSpawns.Clear();
             // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
             Persistence?.Shutdown();
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
@@ -1568,10 +1570,22 @@ namespace Nebula
                 NebulaLog.Error($"cannot spawn player {msg.ClientId}: gameMode={(_gameMode != null)} container={container}");
                 return;
             }
-            var identity = _gameMode.OnSpawnPlayer(this, new PlayerInfo(msg.ClientId, msg.Name, msg.Identity, msg.IsBot), container);
-            if (identity == null) NebulaLog.Error($"game mode returned no entity for client {msg.ClientId}");
-            else if (!identity.IsSpawned) Spawn(identity, container, msg.ClientId);
-            else if (identity.OwnerClientId != msg.ClientId) NebulaLog.Error($"game mode spawned {identity} but not for client {msg.ClientId}");
+            if (claim == PlayerSessions.Claim.Repeat && _pendingPlayerSpawns.ContainsKey(msg.ClientId)) return;
+            var pending = new object();
+            _pendingPlayerSpawns[msg.ClientId] = pending;
+            _gameMode.BeginSpawnPlayer(this, new PlayerInfo(msg.ClientId, msg.Name, msg.Identity, msg.IsBot), container,
+                create => CompletePlayerSpawn(msg.ClientId, pending, container, create));
+        }
+
+        private void CompletePlayerSpawn(ulong clientId, object pending, Container container, Func<NetworkIdentity> create)
+        {
+            if (this == null || !_pendingPlayerSpawns.TryGetValue(clientId, out var current) || current != pending) return;
+            _pendingPlayerSpawns.Remove(clientId);
+            if (!_sessions.TryGet(clientId, out var session) || session.Orphaned) return;
+            var identity = create?.Invoke();
+            if (identity == null) NebulaLog.Error($"game mode returned no entity for client {clientId}");
+            else if (!identity.IsSpawned) Spawn(identity, identity.GetComponentInParent<Container>() ?? container, clientId);
+            else if (identity.OwnerClientId != clientId) NebulaLog.Error($"game mode spawned {identity} but not for client {clientId}");
         }
 
         private void OnDespawnPlayer(Peer gateway, DespawnPlayerMsg msg)
@@ -1581,6 +1595,7 @@ namespace Nebula
                 NebulaLog.Info($"stale despawn of session {msg.ClientId} from gateway {gateway.Id} (generation {msg.Generation}); the session moved on");
                 return;
             }
+            _pendingPlayerSpawns.Remove(msg.ClientId);
             var e = FindPlayer(msg.ClientId);
             if (e == null) { _sessions.Remove(msg.ClientId); _playerIdentities.Remove(msg.ClientId); return; }
             if (!e.HasAuthority)
@@ -1603,6 +1618,7 @@ namespace Nebula
         /// <summary>The player is gone for good: tell the game, drop the pawn (a persistent pawn keeps its record for the next connection).</summary>
         private void DespawnPlayer(ulong clientId)
         {
+            _pendingPlayerSpawns.Remove(clientId);
             _sessions.Remove(clientId);
             _playerIdentities.Remove(clientId);
             var e = FindPlayer(clientId);

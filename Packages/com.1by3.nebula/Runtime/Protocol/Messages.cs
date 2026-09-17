@@ -109,7 +109,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 13;
+        public const ushort ProtocolVersion = 14;
         public PeerRole Role;
         public string Id;
         public uint Index;

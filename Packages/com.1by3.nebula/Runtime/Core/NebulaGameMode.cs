@@ -25,6 +25,15 @@ namespace Nebula
         /// </summary>
         public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container) => OnSpawnPlayer(worker, player.ClientId, player.Name, container);
 
+        // The completion factory runs on the main thread only while this join is still
+        // current. Games may wait for storage before completing; cancelled joins never
+        // instantiate a pawn. The synchronous hook remains the default.
+        public virtual void BeginSpawnPlayer(NebulaWorker worker, PlayerInfo player, Container container,
+            System.Action<System.Func<NetworkIdentity>> complete)
+        {
+            complete(() => OnSpawnPlayer(worker, player, container));
+        }
+
         /// <summary>The player's client went away; the worker despawns the entity after this returns.</summary>
         public virtual void OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player) { }
 
