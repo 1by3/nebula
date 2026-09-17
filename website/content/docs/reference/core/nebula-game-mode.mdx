@@ -22,6 +22,12 @@ public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, in PlayerInfo 
 
 Create and spawn the player's entity inside `container`. Return the spawned identity. Override this or the [`PlayerInfo`](/docs/reference/core/player-info) overload (which also gets the player's identity across sessions).
 
+### BeginSpawnPlayer [#beginspawnplayer]
+
+```csharp
+public virtual void BeginSpawnPlayer(NebulaWorker worker, PlayerInfo player, Container container, System.Action<System.Func<NetworkIdentity>> complete);
+```
+
 ### OnPlayerDespawn [#onplayerdespawn]
 
 ```csharp
@@ -37,4 +43,10 @@ public virtual void OnWorkerStarted(NebulaWorker worker);
 ```
 
 Called once the worker is listening and registered with the control plane.
+
+### PrepareSpatialFrame [#preparespatialframe]
+
+```csharp
+public virtual void PrepareSpatialFrame(NetworkIdentity entity);
+```
 

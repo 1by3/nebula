@@ -79,6 +79,12 @@ public static float RuntimeBucketSize { get; set; }
 
 Edge length, in metres, of the buckets runtime containers are hashed into. Set it before the first [`RegisterRuntime`](#registerruntime) (a chunk size or a small multiple of it is right); changing it later rehashes.
 
+### RuntimeBoundsInFrame [#runtimeboundsinframe]
+
+```csharp
+public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
+```
+
 ## Events
 
 ### Rebuilt [#rebuilt]
