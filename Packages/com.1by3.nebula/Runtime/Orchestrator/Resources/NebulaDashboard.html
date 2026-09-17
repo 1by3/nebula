@@ -7,90 +7,130 @@
 <style>
   :root {
     --bg: #12141a; --panel: #1a1d26; --panel-2: #21252f; --line: #2c313d;
-    --ink: #e8eaf0; --ink-2: #a8adbb; --ink-3: #6f7585;
-    --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a; --accent: #7aa2ff;
+    --ink: #e8eaf0; --ink-2: #a8adbb; --ink-3: #9aa2b2;
+    --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a;
+    --accent: hsl(258, 90%, 72%); --accent-ink: hsl(258, 60%, 12%);
+    --ok-bg: #1c3a2b; --bad-bg: #3a1f22; --warn-bg: #3a3320;
     --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8; --panel: #fff; --panel-2: #eef0f4; --line: #d9dde5;
+      --ink: #171a21; --ink-2: #4b5160; --ink-3: #626c7e;
+      --ok: #16804e; --warn: #916013; --bad: #d0343a;
+      --accent: hsl(258, 80%, 52%); --accent-ink: #fff;
+      --ok-bg: #e2f5ea; --bad-bg: #fbe4e5; --warn-bg: #fbf1d9;
+      color-scheme: light;
+    }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header { display: flex; min-height: 64px; align-items: center; gap: 14px; padding: 0 max(16px, calc((100% - 1400px) / 2)); border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: -.1px; white-space: nowrap; }
   header .sub { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); white-space: nowrap; }
-  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 0; font-size: 12px; border: 1px solid var(--line); color: var(--ink-2); background: var(--panel-2); white-space: nowrap; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 0; background: var(--ink-3); }
   .pill.ok .dot { background: var(--ok); } .pill.warn .dot { background: var(--warn); } .pill.bad .dot { background: var(--bad); }
-  main { padding: 18px 22px 40px; display: grid; gap: 18px; max-width: 1400px; margin: 0 auto; }
-  .row { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .card h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-3); font-weight: 600; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
-  .stat { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; }
-  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
-  .stat .l { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+  main { padding: 24px 16px 40px; display: grid; gap: 16px; max-width: 1440px; margin: 0 auto; }
+  .row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .data-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .data-row .wide { grid-column: 1 / -1; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 0; padding: 20px; min-width: 0; overflow: auto; }
+  .card h2 { margin: -20px -20px 20px; padding: 16px 20px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--ink); font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .stat { display: flex; flex-direction: column; background: var(--panel-2); border-radius: 0; padding: 12px; min-width: 0; }
+  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: 8px; overflow-wrap: anywhere; }
+  .stat .l { order: -1; color: var(--ink-2); font-size: 13px; font-weight: 500; }
+  #sEntities { font-size: 20px; white-space: nowrap; }
   .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel-2); }
-  .stepper button { width: 38px; height: 38px; font-size: 20px; }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 0; overflow: hidden; background: var(--panel-2); }
+  .stepper button { width: 36px; height: 36px; padding: 0; border-width: 0 1px 0 0; font-size: 18px; }
+  .stepper button:last-child { border-width: 0 0 0 1px; }
   .stepper .n { min-width: 56px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: 8px 12px; font: inherit; }
-  button:hover { border-color: var(--accent); }
+  button { min-height: 36px; cursor: pointer; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 0; padding: 8px 16px; font: inherit; font-weight: 500; transition: background-color .15s, border-color .15s; }
+  button:hover { background: var(--panel-2); }
   button:disabled { opacity: .45; cursor: default; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #0b1020; font-weight: 600; }
-  button.danger:hover { border-color: var(--bad); color: var(--bad); }
-  button.small { padding: 5px 9px; font-size: 12px; }
-  .workers { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
-  .worker { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 12px 20px; overflow: hidden; }
-  .worker::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--wc, #555); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(.94); }
+  button.danger { color: var(--bad); }
+  button.danger:hover { background: var(--bad-bg); border-color: var(--bad); }
+  button.small { min-height: 32px; padding: 6px 12px; font-size: 12px; }
+  .workers { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  .worker { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 0; padding: 20px 20px 16px 24px; overflow: hidden; }
+  .worker::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--wc, #555); }
   .worker.dim { opacity: .6; }
   .worker .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
   .worker .name { font-weight: 600; font-size: 16px; font-family: var(--mono); }
   .worker .meta { color: var(--ink-3); font-size: 12px; font-family: var(--mono); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; margin: 6px 0 10px; }
-  .chip { font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); }
+  .chip { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 0; background: var(--panel-2); border: 1px solid var(--line); }
   .chip.empty { color: var(--ink-3); border-style: dashed; }
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+  .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
   .metric .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
   .metric .l { color: var(--ink-3); font-size: 11px; }
   .actions { display: flex; gap: 8px; justify-content: flex-end; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
-  td { padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--ink-3); background: var(--panel-2); font-weight: 500; font-size: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  td { padding: 14px 16px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   td.mono, .mono { font-family: var(--mono); }
   .hintcell { cursor: pointer; border-bottom: 1px dotted var(--muted); }
   #hintNote { color: var(--warn); }
   .idcell { display: flex; align-items: center; min-width: 0; }
   .idcell .sw { flex: 0 0 auto; }
   .idcell span:last-child { overflow-wrap: anywhere; }
-  input, select { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input, select { height: 36px; font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 0; padding: 7px 12px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
   input::placeholder { color: var(--ink-3); }
-  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 7px; background: var(--wc, #555); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 0; vertical-align: -1px; margin-right: 7px; background: var(--wc, #555); }
   .log { font-family: var(--mono); font-size: 12px; max-height: 320px; overflow: auto; }
   .log div { padding: 2px 0; border-bottom: 1px solid #1f232d; display: grid; grid-template-columns: 78px 1fr; gap: 10px; }
   .log .t { color: var(--ink-3); }
   .log .warn { color: var(--warn); } .log .error { color: var(--bad); }
-  #banner { display: none; background: #3a1f22; color: #ffb4b7; border-bottom: 1px solid #5a2a2e; padding: 8px 22px; font-size: 13px; }
+  #banner { display: none; background: var(--bad-bg); color: var(--bad); border-bottom: 1px solid var(--bad); padding: 10px 16px; font-size: 13px; }
   #banner.show { display: block; }
-  #toast { position: fixed; right: 20px; bottom: 20px; background: #3a1f22; color: #ffb4b7; border: 1px solid #5a2a2e; padding: 10px 14px; border-radius: 8px; display: none; max-width: 420px; }
+  #toast { position: fixed; right: 20px; bottom: 20px; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); padding: 12px 16px; border-radius: 0; display: none; max-width: 420px; }
   #toast.show { display: block; }
-  #toast.ok { background: #1c3a2b; color: #b4f0cf; border-color: #2a5a40; }
+  #toast.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
   .muted { color: var(--ink-3); }
   .warnText { color: var(--warn); }
   .util { margin-bottom: 8px; }
-  .util .bar { height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .util .bar { height: 6px; border-radius: 0; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
   .util .fill { height: 100%; background: var(--ok, #4ec9a0); }
   .util.warn .fill { background: var(--warn); }
   .util.bad .fill { background: var(--bad); }
-  .gateway { display: inline-flex; align-items: center; gap: 8px; padding: 3px 3px 3px 11px; border: 1px solid var(--accent); border-radius: 9px; background: var(--panel-2); }
-  .gateway .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+  .gateway { display: inline-flex; align-items: center; gap: 8px; padding: 3px 3px 3px 11px; border: 1px solid var(--line); border-radius: 0; background: var(--panel-2); }
+  .gateway .dot { width: 8px; height: 8px; border-radius: 0; background: var(--ink-3); }
   .gateway.ok .dot { background: var(--ok); } .gateway.bad .dot { background: var(--bad); }
   .gateway .label { font-size: 12px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .6px; }
-  .gateway input { width: 22ch; height: 30px; padding: 0 8px; font: 600 15px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  .gateway input { width: 22ch; height: 30px; padding: 0 8px; font: 600 15px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 0; }
   .gateway input:disabled { opacity: 1; -webkit-text-fill-color: var(--ink); }
   .gateway button { height: 30px; padding: 0 12px; }
-  nav.tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
-  nav.tabs a { color: var(--ink-2); text-decoration: none; font-size: 13px; padding: 4px 11px; border-radius: 6px; }
-  nav.tabs a.on { background: var(--bg); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  nav.tabs { align-self: stretch; display: inline-flex; gap: 4px; overflow-x: auto; }
+  nav.tabs a { display: flex; align-items: center; color: var(--ink-3); text-decoration: none; font-size: 14px; font-weight: 500; padding: 0 14px; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav.tabs a.on { color: var(--ink); border-bottom-color: var(--accent); }
   nav.tabs a:hover:not(.on) { color: var(--ink); }
+  #updated { display: none; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  @media (min-width: 640px) { main { padding-left: 24px; padding-right: 24px; } }
+  @media (min-width: 1024px) { main { padding: 32px 32px 48px; } }
+  @media (max-width: 1100px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 760px) {
+    header { padding: 10px 16px; gap: 10px; }
+    header .sub { display: none; }
+    nav.tabs { order: 5; width: 100%; height: 42px; }
+    nav.tabs a { padding: 0 12px; }
+    .gateway { width: 100%; max-width: 100%; }
+    .gateway .label { display: none; }
+    .gateway input { flex: 1; width: auto; min-width: 0; }
+    .workers { grid-template-columns: minmax(0, 1fr); }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .data-row { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
@@ -132,19 +172,22 @@
   <section class="card">
     <h2>Workers</h2>
     <div class="controls">
-      <span class="muted">Desired workers</span>
-      <span class="stepper">
-        <button id="btnMinus" title="Remove one worker (highest index drains first)">−</button>
-        <span class="n" id="desiredN">–</span>
-        <button id="btnPlus" title="Launch another worker">+</button>
+      <span class="controls" id="workerScaleControls">
+        <span class="muted">Desired workers</span>
+        <span class="stepper">
+          <button id="btnMinus" title="Remove one worker (highest index drains first)">−</button>
+          <span class="n" id="desiredN">–</span>
+          <button id="btnPlus" title="Launch another worker">+</button>
+        </span>
+        <button id="btnAdd" class="primary">Add worker</button>
+        <span class="muted">Autoscale between</span>
+        <input id="scaleMin" type="number" min="0" step="1" style="width:64px" title="MinWorkers: the fewest workers autoscaling leaves running (0 allows scaling to zero)">
+        <span class="muted">and</span>
+        <input id="scaleMax" type="number" min="1" step="1" style="width:64px" title="MaxWorkers: the most workers the orchestrator will ever run">
+        <button id="btnLimits">Set</button>
       </span>
-      <button id="btnAdd" class="primary">Add worker</button>
+      <span class="muted" id="cloudScaleNote" hidden>Worker scaling is managed by Nebula Cloud. Use <b>Scale</b> in the deployment controls.</span>
       <button id="btnRebalance">Rebalance now</button>
-      <span class="muted">Autoscale between</span>
-      <input id="scaleMin" type="number" min="0" step="1" style="width:64px" title="MinWorkers: the fewest workers autoscaling leaves running (0 allows scaling to zero)">
-      <span class="muted">and</span>
-      <input id="scaleMax" type="number" min="1" step="1" style="width:64px" title="MaxWorkers: the most workers the orchestrator will ever run">
-      <button id="btnLimits">Set</button>
       <span class="muted" id="hint" style="margin-left:auto; font-size:12px">Changing the count launches or drains processes; containers move to keep the load even.</span>
     </div>
     <div class="muted" id="scaleLine" style="margin-top:8px; font-size:12px">–</div>
@@ -160,18 +203,23 @@
 
   <section class="card">
     <h2>Settings</h2>
-    <div class="muted" style="font-size:12px; margin-bottom:8px">Mesh-wide key/value settings that your game can read on every worker. Your game defines what each setting means.</div>
-    <div id="settings"></div>
+    <div id="settingsControls">
+      <div class="muted" style="font-size:12px; margin-bottom:8px">Mesh-wide key/value settings that your game can read on every worker. Your game defines what each setting means.</div>
+      <div id="settings"></div>
+      <div class="controls" style="margin-top:8px">
+        <input id="newKey" placeholder="key" style="width:140px">
+        <input id="newValue" placeholder="value" style="width:200px">
+        <button id="btnNewSetting">Set</button>
+      </div>
+    </div>
+    <div class="muted" id="cloudSettingsNote" hidden>Mesh settings are managed by Nebula Cloud. Use the deployment <b>Settings</b> page.</div>
     <div class="controls" style="margin-top:8px">
-      <input id="newKey" placeholder="key" style="width:140px">
-      <input id="newValue" placeholder="value" style="width:200px">
-      <button id="btnNewSetting">Set</button>
       <span class="muted" id="persistState" style="margin-left:auto; font-size:12px"></span>
       <button id="btnClearPersistence" class="danger" title="Delete every saved entity. The running mesh keeps what it is simulating; nothing comes back after a restart.">Clear persistence</button>
     </div>
   </section>
 
-  <div class="row">
+  <div class="row data-row">
     <section class="card">
       <h2>Containers</h2>
       <div class="warn" id="hintNote" style="display:none; font-size:12px; margin-bottom:8px"></div>
@@ -189,7 +237,7 @@
         <tbody id="carried"></tbody>
       </table>
     </section>
-    <section class="card">
+    <section class="card wide">
       <h2>Gateways</h2>
       <table>
         <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Clients</th><th>Joining</th><th>Out</th><th>CPU</th><th>Lag</th><th>State</th><th></th></tr></thead>
@@ -245,6 +293,12 @@
   function render(s) {
     if (!s || !s.totals) return; // first snapshot may not be published yet
     lastState = s;
+    const cloudManaged = s.host === 'cloud';
+    $('workerScaleControls').hidden = cloudManaged;
+    $('cloudScaleNote').hidden = !cloudManaged;
+    $('settingsControls').hidden = cloudManaged;
+    $('cloudSettingsNote').hidden = !cloudManaged;
+    $('hint').hidden = cloudManaged;
     $('orchId').textContent = s.orchestratorId + ' · host ' + (s.host || 'process') + (s.hostReady ? '' : (s.hostError ? ' (error: ' + s.hostError + ')' : ' (starting)')) + (s.localControlPlane ? ' · local control plane' : '');
     const cp = $('cpPill'); cp.className = 'pill ' + (s.controlPlaneConnected ? 'ok' : 'bad');
     cp.lastElementChild.textContent = s.controlPlaneConnected ? 'control plane connected' : 'control plane disconnected';
@@ -312,14 +366,16 @@
         <span class="sw" style="--wc:${esc(w.color)}"></span>
         <span class="n mono" style="min-width:60px">${esc(w.id)}</span>
         <span class="muted" style="font-size:12px">#${w.index}${w.instance ? ' · ' + esc(w.instance) : ''} · parked ${fmtSecs(w.parkedSeconds)}${w.paidSecondsRemaining >= 0 ? ' · paid for another ' + fmtSecs(w.paidSecondsRemaining) : ''}</span>
-        <button class="small" data-park="resume" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Take this worker back into service; it is warm, so it starts holding containers at once">Resume</button>
-        <button class="small danger" data-park="delete" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Drop it now instead of waiting for the host to let it go">Delete</button>
+        ${cloudManaged ? '' : `<button class="small" data-park="resume" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Take this worker back into service; it is warm, so it starts holding containers at once">Resume</button>
+        <button class="small danger" data-park="delete" data-id="${esc(w.id)}" ${busy ? 'disabled' : ''} title="Drop it now instead of waiting for the host to let it go">Delete</button>`}
       </div>`).join('')
       : '<div class="muted">The idle pool is empty.</div>';
 
     const ws = $('workers');
     if (!s.workers.length) {
-      ws.innerHTML = '<div class="card muted">No workers. Use <b>Add worker</b> to launch one.</div>';
+      ws.innerHTML = cloudManaged
+        ? '<div class="card muted">No workers are reporting. Use <b>Scale</b> in Nebula Cloud to change capacity.</div>'
+        : '<div class="card muted">No workers. Use <b>Add worker</b> to launch one.</div>';
     } else {
       ws.innerHTML = s.workers.map(w => `
         <article class="worker ${w.alive ? '' : 'dim'}" style="--wc:${esc(w.color)}">
@@ -337,10 +393,10 @@
           </div>
           ${utilBar(w, s)}
           <div class="meta" style="margin-bottom:8px">heartbeat ${fmtAge(w.heartbeatAgeSeconds)} · ${esc(w.address || 'not registered')} · tick ${w.tickCount}</div>
-          <div class="actions">
+          ${cloudManaged ? '' : `<div class="actions">
             <button class="small danger" data-act="kill" data-id="${esc(w.id)}" ${(!w.managed || !w.instance || busy) ? 'disabled' : ''} title="Kill the process / delete the VM to simulate a crash; the orchestrator relaunches it">Kill</button>
             <button class="small" data-act="remove" data-id="${esc(w.id)}" ${(w.retiring || busy) ? 'disabled' : ''} title="Drain this worker's containers to the others, then shut it down">Remove</button>
-          </div>
+          </div>`}
         </article>`).join('');
     }
 
