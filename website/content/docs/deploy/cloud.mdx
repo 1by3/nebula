@@ -3,13 +3,13 @@ title: Deploy to Nebula Cloud
 description: Log in to Nebula Cloud, deploy a project from the CLI, and operate the deployment with status, logs, scale, rollback, and destroy.
 ---
 
-Run `nebula deploy --target cloud` to run your mesh on Nebula Cloud, the hosted service for Nebula. Nebula Cloud provisions the machines, the load-balanced gateways, and the database for each deployment, and keeps every release you upload so you can roll back. You need a Nebula Cloud account and the `nebula` CLI; you do not need a cloud provider account or ssh.
+Run `nebula deploy --target cloud` to run your mesh on [Nebula Cloud](https://cloud.nebula.1by3.co), the hosted service for Nebula. Nebula Cloud provisions the machines, the load-balanced gateways, and the database for each deployment, and keeps every release you upload so you can roll back. You need a Nebula Cloud account and the `nebula` CLI; you do not need a cloud provider account or ssh.
 
 A **deployment** is one running mesh with its own gateways, orchestrator, workers, and database. A **release** is one uploaded build together with its service manifest and version numbers; releases are immutable. A **rollout** is the operation that makes a deployment run a release. Deployments belong to a **project**, and projects belong to an **organization** that holds the members and the billing.
 
 ## Prerequisites
 
-- A Nebula Cloud account. Sign up in the Cloud Dashboard before you log in from the CLI.
+- A Nebula Cloud account. [Sign up in the Cloud Dashboard](https://cloud.nebula.1by3.co/login) before you log in from the CLI.
 - The `nebula` CLI and a project with `nebula.json` (see [Install](/docs/getting-started/install)).
 - **Unity with Linux Dedicated Server support** installed for the project's Unity version. `nebula deploy` builds `Builds/Linux64/<executable>.x86_64` with the Server subtarget; without the module the build fails.
 - Git on your `PATH` if you want each release to record the commit it was built from. Without it, releases have no git information.

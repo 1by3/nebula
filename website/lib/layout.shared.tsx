@@ -1,5 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { BookOpen, TerminalSquare, Braces, Newspaper } from 'lucide-react';
+import { BookOpen, TerminalSquare, Braces, Cloud, Newspaper } from 'lucide-react';
 import { GithubInfo } from 'fumadocs-ui/components/github-info';
 import { appName, repo } from './shared';
 
@@ -19,6 +19,7 @@ export function baseOptions(): BaseLayoutProps {
       { icon: <BookOpen />, text: 'Docs', url: '/docs', active: 'nested-url' },
       { icon: <TerminalSquare />, text: 'CLI', url: '/docs/cli', active: 'nested-url' },
       { icon: <Braces />, text: 'API', url: '/docs/reference', active: 'nested-url' },
+      { icon: <Cloud />, text: 'Nebula Cloud', url: 'https://cloud.nebula.1by3.co', external: true },
       { type: 'custom', children: <GithubInfo owner={repo.owner} repo={repo.name} />, secondary: true },
     ],
   };
