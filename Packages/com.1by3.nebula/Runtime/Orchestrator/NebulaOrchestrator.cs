@@ -471,6 +471,7 @@ namespace Nebula
             if (!string.IsNullOrEmpty(Config.AuthAudience)) args += $" -nebula-auth-audience {Config.AuthAudience}";
             if (!Config.AuthAnonymous) args += " -nebula-auth-anonymous false";
             if (!string.IsNullOrEmpty(Config.AuthSigningKey)) args += $" -nebula-auth-key {Config.AuthSigningKey}";
+            if (!Config.SingleSessionPerPlayer) args += " -nebula-single-session false";
             // Workers keep their persistent entities through this orchestrator's store, or not at all.
             args += $" -nebula-persistence-mode {(Persistence != null ? "remote" : "off")}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";

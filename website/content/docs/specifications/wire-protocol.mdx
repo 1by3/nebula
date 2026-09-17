@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 13, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 15, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 13. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 15. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `13`. Every `Hello` carries that version.
+The current protocol version is `15`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `13`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `15`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -113,7 +113,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 13 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 15 sender MUST write them as zero.
 
 ## Message registry
 
@@ -128,6 +128,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 5 | `JoinStatus` | `G-C` | Reliable ordered | [`JoinStatus`](#hello-and-session-messages) |
 | 6 | `JoinRejected` | `G-C` | Reliable ordered | [`JoinRejected`](#hello-and-session-messages) |
 | 7 | `GatewayDraining` | `G-C` | Reliable ordered | [`GatewayDraining`](#hello-and-session-messages) |
+| 8 | `SessionReplaced` | `G-C` | Reliable ordered | [`SessionReplaced`](#hello-and-session-messages) |
 | 10 | `EntitySpawn` | `W-G-C` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 11 | `EntityDespawn` | `W-G-C` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
 | 12 | `EntityVars` | `W-G-C` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -143,6 +144,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 21 | `ServerRpc` | `C-G-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
 | 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
+| 32 | `EndSession` | `W-G` | Reliable ordered | [`EndSession`](#player-lifecycle) |
 | 40 | `GhostSpawn` | `W-W` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 41 | `GhostState` | `W-W` | Conditional | [`StateBatchBody`](#batched-transform-state) |
 | 42 | `GhostVars` | `W-W` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -153,7 +155,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 
-IDs not listed in this table are reserved. A version 13 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 15 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -169,6 +171,7 @@ Welcome         := u64 client_id, u8 tick_rate, u32 server_tick, string identity
 JoinStatus      := u8 state, u16 estimated_seconds
 JoinRejected    := string reason, bool retry
 GatewayDraining := u16 reconnect_within_seconds
+SessionReplaced := string reason
 Ping            := f64 client_time
 Pong            := f64 client_time, u32 server_tick
 ```
@@ -184,6 +187,8 @@ The gateway assigns the client ID, a mesh-wide session ID, and sends the fixed t
 A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. `retry` set means the refusal is about the gateway, not the client: it is draining, and the client SHOULD reconnect after a short delay, which a load balancer then hands to another gateway. `retry` clear means the client's credentials were refused and retrying with the same ones is pointless.
 
 `GatewayDraining` tells a connected client that the gateway is leaving service. The client SHOULD reconnect within `reconnect_within_seconds`, presenting its session token, so the session and pawn carry over to the gateway that answers.
+
+`SessionReplaced` tells a client that the player it signed in as connected again elsewhere and that the newer connection now holds the session and the pawn. The gateway closes the link after sending it. The client SHOULD show `reason`, discard its session token, and stay out of the world until the player asks to return; reconnecting on its own would take the session back from the other connection, which would then take it back in turn. See [One connection per player](/docs/guides/authentication#one-connection-per-player).
 
 `Pong.client_time` echoes `Ping.client_time`. `server_tick` is the gateway's current derived tick.
 
@@ -359,6 +364,7 @@ Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and 
 ```text
 SpawnPlayer   := u64 client_id, ContainerRef container, string name, bool is_bot, string identity, u64 generation
 DespawnPlayer := u64 client_id, u64 generation
+EndSession    := u64 client_id, u64 generation, string reason
 ```
 
 The gateway selects a currently assigned container and asks its worker to spawn the player. `identity` is the player's identity as the gateway established it from the client's `Hello`. The game supplies the actual spawn behavior.
@@ -366,6 +372,8 @@ The gateway selects a currently assigned container and asks its worker to spawn 
 `SpawnPlayer` is also the message by which a gateway claims a session. `generation` is the session's connection generation: every time a client connects or reconnects, the gateway sets it to a value newer than any the session had before. A worker that already holds a pawn for `client_id` re-announces it to the sender with `EntitySpawn` and, when `generation` is newer than the one it holds, routes the session's input and RPCs through the sender from then on. A worker MUST ignore a `SpawnPlayer` or `DespawnPlayer` whose `generation` is older than the one it holds. This fences a gateway that lost the client from undoing what the gateway that gained it did.
 
 On `DespawnPlayer`, or when a gateway's link is lost, a worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30) and despawns it afterwards unless a newer `SpawnPlayer` reclaimed the session. With the setting at `0` it despawns the pawn at once.
+
+A mesh with `NebulaConfig.SingleSessionPerPlayer` set, the default, keeps one connection per player. A gateway that welcomes a client for an identity it can already find in the world — in another connection of its own, or on the owner of any entity it knows — claims that session again instead of asking for a second pawn, and closes the connection that held it with `SessionReplaced`. A worker whose session is claimed by a different gateway sends `EndSession` to the gateway that held it, naming the claim's `generation`, so that gateway lets its client go the same way and MUST NOT despawn the pawn. A gateway MUST ignore an `EndSession` whose `generation` is older than the one it holds for the session. A worker that receives claims for one identity under two sessions keeps the one whose `generation` is newer and despawns the other's pawn. With the setting clear, every connection gets its own session and pawn.
 
 ### Authority transfer
 
@@ -383,7 +391,7 @@ AuthorityTransfer :=
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 13. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 15. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,

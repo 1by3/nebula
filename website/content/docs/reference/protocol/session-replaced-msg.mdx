@@ -1,0 +1,35 @@
+---
+title: "SessionReplacedMsg"
+description: "Gateway -> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct SessionReplacedMsg
+```
+
+Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The gateway closes the link right after sending it. The client keeps its identity but must not reconnect by itself, or the two connections would take the player from each other in turn; [`Reason`](#reason) is fit to show the player.
+
+## Fields
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static SessionReplacedMsg Read(NetworkReader r);
+```
+

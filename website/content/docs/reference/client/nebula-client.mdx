@@ -257,6 +257,14 @@ public event Action<int> GatewayDraining;
 
 The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.
 
+### SessionReplaced [#sessionreplaced]
+
+```csharp
+public event Action<string> SessionReplaced;
+```
+
+This player connected again somewhere else and that newer connection took the session and the pawn ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The client has left the world and does not reconnect by itself: show the reason (the argument, also in [`LastError`](#lasterror)) and let the player choose to take the session back with [`Connect`](#connect). Raised on the main thread.
+
 ## Methods
 
 ### Initialize [#initialize]

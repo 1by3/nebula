@@ -1,0 +1,49 @@
+---
+title: "EndSessionMsg"
+description: "Worker -> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway (NebulaConfig.SingleSessionPerPlayer)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EndSessionMsg
+```
+
+Worker -\> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The gateway lets its client go with a [`SessionReplacedMsg`](/docs/reference/protocol/session-replaced-msg) and does not despawn the pawn, which the new connection has taken over. Fenced by [`Generation`](#generation) the same way [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg) is: a gateway that has since claimed the session with a newer generation ignores it.
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+### Generation [#generation]
+
+```csharp
+public ulong Generation;
+```
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+Why the session ended, fit to show the player.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static EndSessionMsg Read(NetworkReader r);
+```
+

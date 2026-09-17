@@ -97,7 +97,11 @@ public class GatewayFleetTests
         Assert.That(s.Accept(10, a), Is.True);
         Assert.That(s.Accept(10, b), Is.False, "another gateway may not drive the session");
 
-        Assert.That(s.Register(10, 200, b), Is.EqualTo(PlayerSessions.Claim.Reclaimed));
+        Assert.That(s.Register(10, 200, b, out string lostBy), Is.EqualTo(PlayerSessions.Claim.Reclaimed));
+        Assert.That(lostBy, Is.EqualTo(a), "the reclaim names the gateway it was taken from, so that gateway can let its client go");
+        Assert.That(s.Register(99, 1, b, out lostBy), Is.EqualTo(PlayerSessions.Claim.New));
+        Assert.That(lostBy, Is.Empty, "a session nobody held was taken from nobody");
+        s.Remove(99);
         Assert.That(s.Accept(10, b), Is.True);
         Assert.That(s.Accept(10, a), Is.False, "the old gateway is fenced");
         Assert.That(s.Register(10, 150, a), Is.EqualTo(PlayerSessions.Claim.Stale));
@@ -189,6 +193,7 @@ public class GatewayFleetTests
         public readonly List<string> Refused = new();
         public readonly List<ClientInputMsg> Inputs = new();
         private readonly Dictionary<ulong, ulong> _pawns = new();
+        private readonly Dictionary<ulong, string> _identities = new();
         private readonly string _meshToken;
         private ulong _nextNetId = 1000;
         private readonly NetworkWriter _w = new NetworkWriter();
@@ -225,8 +230,10 @@ public class GatewayFleetTests
                     {
                         var msg = SpawnPlayerMsg.Read(r);
                         Claims.Add(msg);
+                        _identities[msg.ClientId] = msg.Identity ?? "";
                         if (!_pawns.TryGetValue(msg.ClientId, out ulong netId)) { netId = _nextNetId++; _pawns[msg.ClientId] = netId; }
-                        SendSpawn(e.PeerId, netId, msg.ClientId);
+                        // A worker announces every entity to every gateway it is linked to, not only the claimant.
+                        foreach (int peer in Gateways.Keys) SendSpawn(peer, netId, msg.ClientId);
                         break;
                     }
                     case MsgId.DespawnPlayer: Despawns.Add(DespawnPlayerMsg.Read(r)); break;
@@ -236,10 +243,32 @@ public class GatewayFleetTests
             Transport.Flush();
         }
 
+        /// <summary>The distinct pawns handed out, by session. A duplicate player shows up here as two entries.</summary>
+        public IReadOnlyDictionary<ulong, ulong> Pawns => _pawns;
+
+        /// <summary>What a real worker sends a gateway whose session has moved to another gateway.</summary>
+        public void EndSession(string gatewayId, ulong clientId, ulong generation, string reason)
+        {
+            foreach (var kv in Gateways)
+            {
+                if (kv.Value != gatewayId) continue;
+                _w.Reset();
+                new EndSessionMsg { ClientId = clientId, Generation = generation, Reason = reason }.Write(_w);
+                Transport.Send(kv.Key, Delivery.ReliableOrdered, _w.ToSegment());
+                Transport.Flush();
+                return;
+            }
+            throw new InvalidOperationException("no link to gateway " + gatewayId);
+        }
+
         private void SendSpawn(int peer, ulong netId, ulong owner)
         {
             _w.Reset();
-            new EntitySpawnMsg { NetId = netId, OwnerClientId = owner, Epoch = 1, Container = new ContainerRef(0), LocalRotation = Quaternion.identity, LocalScale = Vector3.one }.Write(_w, MsgId.EntitySpawn);
+            new EntitySpawnMsg
+            {
+                NetId = netId, OwnerClientId = owner, OwnerIdentity = _identities.TryGetValue(owner, out string identity) ? identity : "",
+                Epoch = 1, Container = new ContainerRef(0), LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
+            }.Write(_w, MsgId.EntitySpawn);
             Transport.Send(peer, Delivery.ReliableOrdered, _w.ToSegment());
         }
 
@@ -252,6 +281,7 @@ public class GatewayFleetTests
         public readonly LiteNetTransport Transport = new LiteNetTransport("fake-client");
         public WelcomeMsg? Welcome;
         public JoinRejectedMsg? Rejected;
+        public string? Replaced;
         public JoinState Join;
         public int DrainWithin = -1;
         public bool Disconnected;
@@ -301,6 +331,7 @@ public class GatewayFleetTests
                 }
                 case MsgId.Welcome: Welcome = WelcomeMsg.Read(r); break;
                 case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
+                case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
                 case MsgId.JoinStatus: Join = JoinStatusMsg.Read(r).State; break;
                 case MsgId.GatewayDraining: DrainWithin = GatewayDrainingMsg.Read(r).ReconnectWithinSeconds; break;
                 case MsgId.EntitySpawn: Spawned.Add(EntitySpawnMsg.Read(r).NetId); break;
@@ -320,7 +351,7 @@ public class GatewayFleetTests
         public readonly List<FakeClient> Clients = new();
         private readonly string _meshToken;
 
-        public Fleet(int gateways, string meshToken = "", float reclaimSeconds = 30f)
+        public Fleet(int gateways, string meshToken = "", float reclaimSeconds = 30f, bool singleSession = true)
         {
             _meshToken = meshToken;
             Plane.Connect();
@@ -334,7 +365,7 @@ public class GatewayFleetTests
                 using var reserve = new UdpClient(0);
                 int port = ((IPEndPoint)reserve.Client.LocalEndPoint!).Port; reserve.Close();
                 var gw = new NebulaGateway();
-                gw.Initialize(new NebulaConfig { GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = meshToken, WebClients = false, SessionReclaimSeconds = reclaimSeconds, GatewayDrainReconnectSeconds = 7 }, Plane, null, "gw" + (i + 1));
+                gw.Initialize(new NebulaConfig { GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = meshToken, WebClients = false, SessionReclaimSeconds = reclaimSeconds, SingleSessionPerPlayer = singleSession, GatewayDrainReconnectSeconds = 7 }, Plane, null, "gw" + (i + 1));
                 Gateways.Add(gw);
                 Ports.Add(port);
             }
@@ -504,5 +535,93 @@ public class GatewayFleetTests
         Assert.That(refused, Is.True);
         Assert.That(honest.Worker.Refused, Has.Count.EqualTo(1));
         Assert.That(honest.Worker.Refused[0], Does.Contain("no mesh credential"));
+    }
+
+    [Test]
+    public void ASecondConnectionOfTheSamePlayerTakesTheSessionAndClosesTheFirst()
+    {
+        using var fleet = new Fleet(1);
+        var first = fleet.Connect(0, "ann");
+        Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
+        var welcome = first.Welcome!.Value;
+
+        // The same player again, with the identity token but no session token: a second client on the account, or a
+        // client that restarted and kept only its identity. It must not become a second player.
+        var second = fleet.Connect(0, "ann", welcome.Token);
+        Assert.That(fleet.Run(() => second.Join == JoinState.Joined), Is.True);
+        Assert.That(second.Welcome!.Value.ClientId, Is.EqualTo(welcome.ClientId), "the newer connection took the session over");
+        Assert.That(second.Welcome.Value.Reclaimed, Is.True);
+        Assert.That(second.Spawned, Does.Contain(1000ul), "and the pawn that was already in the world");
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1), "one player, one pawn");
+
+        Assert.That(fleet.Run(() => first.Replaced != null && first.Disconnected), Is.True, "the earlier connection is told why and closed");
+        Assert.That(first.Replaced, Does.Contain("connected again"));
+        Assert.That(fleet.Worker.Despawns, Is.Empty, "the pawn belongs to the connection that took over, so it is not despawned");
+        Assert.That(fleet.Gateways[0].ClientCount, Is.EqualTo(1));
+        Assert.That(fleet.Worker.Claims.Last().Generation, Is.GreaterThan(fleet.Worker.Claims.First().Generation), "the takeover outranks the connection it replaced");
+    }
+
+    [Test]
+    public void ReconnectingWithoutASessionTokenFindsThePlayersPawn()
+    {
+        using var fleet = new Fleet(1);
+        var first = fleet.Connect(0, "ann");
+        Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
+        var welcome = first.Welcome!.Value;
+
+        first.Disconnect();
+        Assert.That(fleet.Run(() => fleet.Worker.Despawns.Count == 1), Is.True, "the link is gone, so the worker holds the pawn for the reclaim grace");
+
+        // A restarted client: PlayerPrefs kept the identity token, the session token was in memory only.
+        var back = fleet.Connect(0, "ann", welcome.Token);
+        Assert.That(fleet.Run(() => back.Join == JoinState.Joined), Is.True);
+        Assert.That(back.Welcome!.Value.ClientId, Is.EqualTo(welcome.ClientId), "the player is back in the session the pawn belongs to");
+        Assert.That(back.Welcome.Value.Reclaimed, Is.True);
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AnotherGatewayTakesThePlayerOverFromThePawnItCanSee()
+    {
+        using var fleet = new Fleet(2);
+        var first = fleet.Connect(0, "ann");
+        Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
+        var welcome = first.Welcome!.Value;
+        Assert.That(fleet.Run(() => fleet.Gateways[1].EntityCount == 1), Is.True, "every gateway is told about every entity");
+
+        // No session token, and gw2 has never seen this client: the pawn's identity is what identifies the player.
+        var second = fleet.Connect(1, "ann", welcome.Token);
+        Assert.That(fleet.Run(() => second.Join == JoinState.Joined), Is.True);
+        Assert.That(second.Welcome!.Value.ClientId, Is.EqualTo(welcome.ClientId));
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1), "one pawn, now driven through the other gateway");
+        ulong generation = fleet.Worker.Claims.Last().Generation;
+
+        // A real worker reports the move to the gateway that lost the session; gw1 then lets its client go without
+        // despawning the pawn, which gw2's connection holds.
+        fleet.Worker.EndSession("gw1", welcome.ClientId, generation, "this player connected again somewhere else");
+        Assert.That(fleet.Run(() => first.Replaced != null && first.Disconnected), Is.True);
+        Assert.That(fleet.Gateways[0].ClientCount, Is.Zero);
+        Assert.That(fleet.Worker.Despawns, Is.Empty);
+        Assert.That(second.Disconnected, Is.False, "the connection that holds the player is untouched");
+
+        // Stale news about a session the gateway has since claimed again is ignored.
+        var third = fleet.Connect(0, "ann", welcome.Token);
+        Assert.That(fleet.Run(() => third.Join == JoinState.Joined), Is.True);
+        fleet.Worker.EndSession("gw1", welcome.ClientId, generation, "stale");
+        Assert.That(fleet.Run(() => third.Disconnected, seconds: 1), Is.False);
+        Assert.That(third.Replaced, Is.Null);
+    }
+
+    [Test]
+    public void TurningTheSingleSessionRuleOffLetsOnePlayerHoldSeveralPawns()
+    {
+        using var fleet = new Fleet(1, singleSession: false);
+        var first = fleet.Connect(0, "load0");
+        Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
+        var second = fleet.Connect(0, "load1", first.Welcome!.Value.Token);
+        Assert.That(fleet.Run(() => second.Join == JoinState.Joined), Is.True);
+        Assert.That(second.Welcome!.Value.ClientId, Is.Not.EqualTo(first.Welcome.Value.ClientId));
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(2), "a bot fleet may share one account on purpose");
+        Assert.That(first.Disconnected, Is.False);
     }
 }

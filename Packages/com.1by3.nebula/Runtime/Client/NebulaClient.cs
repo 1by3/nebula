@@ -77,6 +77,13 @@ namespace Nebula
         public event Action<JoinState, int> JoinStateChanged;
         /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
         public event Action<int> GatewayDraining;
+        /// <summary>
+        /// This player connected again somewhere else and that newer connection took the session and the pawn
+        /// (<see cref="NebulaConfig.SingleSessionPerPlayer"/>). The client has left the world and does not reconnect
+        /// by itself: show the reason (the argument, also in <see cref="LastError"/>) and let the player choose to
+        /// take the session back with <see cref="Connect"/>. Raised on the main thread.
+        /// </summary>
+        public event Action<string> SessionReplaced;
 
         private ITransport _transport;
         private int _gatewayPeer = -1;
@@ -569,6 +576,20 @@ namespace Nebula
                         NebulaLog.Warn(LastError);
                     }
                     JoinRejected?.Invoke(rejected.Reason);
+                    break;
+                }
+                case MsgId.SessionReplaced:
+                {
+                    var replaced = SessionReplacedMsg.Read(r);
+                    // Someone is playing this player now. Reconnecting on our own would take the session back from
+                    // them, and they would take it back from us: stay out until the player says otherwise. The
+                    // session token names a session that is no longer ours, so it goes too.
+                    LastError = replaced.Reason;
+                    NebulaLog.Warn("left the world: " + replaced.Reason);
+                    SessionToken = "";
+                    Disconnect();
+                    try { SessionReplaced?.Invoke(replaced.Reason); }
+                    catch (Exception e) { NebulaLog.Error($"SessionReplaced handler threw: {e}"); }
                     break;
                 }
                 case MsgId.GatewayDraining:

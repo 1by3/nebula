@@ -36,6 +36,11 @@ namespace Nebula
         /// without the worker noticing more than a pause in input.
         /// </summary>
         GatewayDraining = 7,
+        /// <summary>
+        /// Gateway -> client: a newer connection for this player took the session over
+        /// (<see cref="SessionReplacedMsg"/>). The gateway disconnects right after sending it.
+        /// </summary>
+        SessionReplaced = 8,
 
         // Entity replication (worker -> gateway -> clients)
         EntitySpawn = 10,
@@ -63,6 +68,10 @@ namespace Nebula
         // Gateway -> worker
         SpawnPlayer = 30,
         DespawnPlayer = 31,
+
+        // Worker -> gateway
+        /// <summary>The session moved to another gateway, so this one must let its client go (<see cref="EndSessionMsg"/>).</summary>
+        EndSession = 32,
 
         // Worker <-> worker
         GhostSpawn = 40,
@@ -109,7 +118,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 14;
+        public const ushort ProtocolVersion = 15;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -244,6 +253,25 @@ namespace Nebula
         }
 
         public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
+    }
+
+    /// <summary>
+    /// Gateway -> client: the player this client signed in as connected again elsewhere, and that newer connection
+    /// now holds the session and the pawn (<see cref="NebulaConfig.SingleSessionPerPlayer"/>). The gateway closes the
+    /// link right after sending it. The client keeps its identity but must not reconnect by itself, or the two
+    /// connections would take the player from each other in turn; <see cref="Reason"/> is fit to show the player.
+    /// </summary>
+    public struct SessionReplacedMsg
+    {
+        public string Reason;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.SessionReplaced);
+            w.WriteString(Reason ?? "");
+        }
+
+        public static SessionReplacedMsg Read(NetworkReader r) => new SessionReplacedMsg { Reason = r.ReadString() ?? "" };
     }
 
     /// <summary>How far a client's join has got. Reported by the gateway in <see cref="JoinStatusMsg"/>.</summary>
@@ -874,6 +902,31 @@ namespace Nebula
         }
 
         public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong() };
+    }
+
+    /// <summary>
+    /// Worker -> gateway: this gateway no longer speaks for the session, because the player connected again through
+    /// another gateway (<see cref="NebulaConfig.SingleSessionPerPlayer"/>). The gateway lets its client go with a
+    /// <see cref="SessionReplacedMsg"/> and does not despawn the pawn, which the new connection has taken over.
+    /// Fenced by <see cref="Generation"/> the same way <see cref="SpawnPlayerMsg"/> is: a gateway that has since
+    /// claimed the session with a newer generation ignores it.
+    /// </summary>
+    public struct EndSessionMsg
+    {
+        public ulong ClientId;
+        public ulong Generation;
+        /// <summary>Why the session ended, fit to show the player.</summary>
+        public string Reason;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.EndSession);
+            w.WriteULong(ClientId);
+            w.WriteULong(Generation);
+            w.WriteString(Reason ?? "");
+        }
+
+        public static EndSessionMsg Read(NetworkReader r) => new EndSessionMsg { ClientId = r.ReadULong(), Generation = r.ReadULong(), Reason = r.ReadString() ?? "" };
     }
 
     /// <summary>

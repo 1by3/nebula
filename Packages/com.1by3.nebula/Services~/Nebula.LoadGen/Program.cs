@@ -17,6 +17,8 @@ namespace Nebula.LoadGen;
 /// nebula-loadgen --gateway 203.0.113.10:7000 --clients 300 --seconds 600 [--ramp 30] [--input-hz 60] [--name-prefix load]
 ///                [--bot] [--token &lt;identity token&gt;] [--reconnect-every 120] [--csv out.csv]
 /// </code>
+/// Clients take an anonymous identity each unless <c>--token</c> gives them all the same one, which needs a mesh
+/// started with <c>-nebula-single-session false</c> (<see cref="NebulaConfig.SingleSessionPerPlayer"/>).
 /// </summary>
 public static class Program
 {
@@ -75,6 +77,10 @@ public static class Program
         Console.WriteLine($"nebula-loadgen: {o.Clients} clients -> {o.Host}:{o.Port} for {o.Seconds:0} s (ramp {o.RampSeconds:0} s, inputs {o.InputHz} Hz{(o.ReconnectEvery > 0 ? $", reconnect drill every {o.ReconnectEvery:0} s" : "")})");
         var clients = new List<Client>();
         for (int i = 0; i < o.Clients; i++) clients.Add(new Client(i, $"{o.NamePrefix}{i}", o.Token));
+        // One token is one player, and a mesh with NebulaConfig.SingleSessionPerPlayer on (the default) keeps only
+        // that player's newest connection: the rest are closed as soon as they are welcomed.
+        if (o.Clients > 1 && o.Token.Length > 0)
+            Console.WriteLine("nebula-loadgen: warning: --token makes every client the same player. Give the mesh -nebula-single-session false, or a token per client, or the gateway will keep only the newest connection.");
         StreamWriter? csv = o.Csv != null ? new StreamWriter(o.Csv) : null;
         csv?.WriteLine("t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,gateways");
 
@@ -327,5 +333,6 @@ public static class Program
     {
         Console.WriteLine("nebula-loadgen --gateway <host:port> --clients <n> --seconds <s> [--ramp <s>] [--input-hz <n>] [--name-prefix <p>] [--bot] [--token <identity token>] [--reconnect-every <s>] [--csv <file>] [--verbose]");
         Console.WriteLine("Synthetic clients for a gateway fleet: connect, send inputs, reconnect with the session token when told to, and report per second. Exit 0 when no session id changed and no pawn was lost across reconnects.");
+        Console.WriteLine("--token gives every client the same identity, so it needs a mesh started with -nebula-single-session false. Without it, clients get an anonymous identity each.");
     }
 }

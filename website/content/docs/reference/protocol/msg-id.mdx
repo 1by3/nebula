@@ -22,6 +22,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `JoinStatus` | `5` | Gateway -\> client: how the join is going ([`JoinStatusMsg`](/docs/reference/protocol/join-status-msg)). Sent once the client is welcomed and again whenever the answer changes, so a mesh that has scaled to zero can hold the client in a "world starting" state instead of leaving it welcomed with no pawn and no explanation. |
 | `JoinRejected` | `6` | Gateway -\> client: the join was refused ([`JoinRejectedMsg`](/docs/reference/protocol/join-rejected-msg): the token in `Hello` did not verify, or the mesh requires one). The gateway disconnects right after sending it. |
 | `GatewayDraining` | `7` | Gateway -\> client: this gateway is being taken out of service ([`GatewayDrainingMsg`](/docs/reference/protocol/gateway-draining-msg)). The client should reconnect, presenting its session token, so another gateway takes over its session without the worker noticing more than a pause in input. |
+| `SessionReplaced` | `8` | Gateway -\> client: a newer connection for this player took the session over ([`SessionReplacedMsg`](/docs/reference/protocol/session-replaced-msg)). The gateway disconnects right after sending it. |
 | `EntitySpawn` | `10` |  |
 | `EntityDespawn` | `11` |  |
 | `EntityVars` | `12` |  |
@@ -37,6 +38,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `InstanceReady` | `22` |  |
 | `SpawnPlayer` | `30` |  |
 | `DespawnPlayer` | `31` |  |
+| `EndSession` | `32` | The session moved to another gateway, so this one must let its client go ([`EndSessionMsg`](/docs/reference/protocol/end-session-msg)). |
 | `GhostSpawn` | `40` |  |
 | `GhostState` | `41` |  |
 | `GhostVars` | `42` |  |

@@ -83,11 +83,32 @@ When a client presents a session token that verifies and belongs to the identity
 
 A session token proves which session a client had. It does not prove that the session still exists, and it is not an identity: a token for another identity, an expired token, or one signed for another mesh is ignored and a new session starts. The gateway accepts it only together with the client's identity credential (the anonymous token or ID token), so a copied session token alone does not take over a session.
 
+### One connection per player
+
+A player has one connection. When someone who is already in the world connects again, the gateway that welcomes them gives the new connection the session they already had, with a newer connection generation, and closes the earlier connection. The player keeps the pawn they left; no second pawn is created, and no second copy of their saved character is written.
+
+The gateway finds the earlier session in the client's session token, in another connection it is serving for the same identity, or in the identity on a pawn anywhere in the mesh — every worker announces every entity to every gateway, so this works when the earlier connection was welcomed by another gateway, and when its link is already gone and a worker is holding the pawn for the reclaim grace.
+
+The connection that loses the player gets a `SessionReplaced` message with a reason fit to show, and its link is closed. On that client, `NebulaClient.SessionReplaced` fires with the reason, `LastError` holds it, the session token is cleared, and the client stops reconnecting: it does not compete for the player. Call `Connect()` to take the player back, which closes the other connection in the same way.
+
+```csharp title="ConnectionUi.cs"
+client.SessionReplaced += reason =>
+{
+    // "this player connected again somewhere else"
+    message.text = reason;
+    reconnectButton.gameObject.SetActive(true);
+};
+```
+
+A game that wants one identity to hold several pawns at once — a fleet of bots signed in to one account, a spectator client beside a player — sets `NebulaConfig.SingleSessionPerPlayer` to `false` (or passes `-nebula-single-session false`). Every connection then gets its own session and its own pawn, as before. Anonymous players are unaffected either way: each anonymous identity is issued once, so two clients are two players unless they share a saved token.
+
 ### The reclaim grace
 
 When a client's link drops, or a gateway's link to a worker is lost, the worker keeps the affected pawns for `NebulaConfig.SessionReclaimSeconds` (default 30) and despawns them afterwards unless the session was reclaimed. During the grace the pawn stays in the world without input. `OnPlayerDespawn` fires when the grace expires, not when the link drops. Set the value to `0` to despawn at once.
 
 The client reconnects by itself: one second after a lost link, and at once when the gateway tells it that it is being taken out of service (see [Connecting clients](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway)). Each attempt presents the session token, so a player who comes back within the grace continues with the same pawn.
+
+A player who connects again while in the world takes their session over rather than starting a new one (see [One connection per player](#one-connection-per-player)), so the reclaim grace is about a player who is away, not about a player who came back.
 
 Each reconnection carries a newer **connection generation**. A worker ignores a player claim or a despawn with an older generation than the one it holds, so a gateway that lost the client cannot undo what the gateway that gained it did, and it accepts input for a session only from the gateway that currently holds it. Game code does not see generations; they are described in the [wire protocol specification](/docs/specifications/wire-protocol#player-lifecycle).
 
