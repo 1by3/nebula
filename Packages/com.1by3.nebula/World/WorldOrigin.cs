@@ -29,8 +29,10 @@ namespace Nebula.World
         /// <summary>Delta every frame position gets when the origin moves from <paramref name="from"/> to <paramref name="to"/>.</summary>
         public static Vector3 ShiftDelta(WorldDefinition definition, Vector3Int from, Vector3Int to)
         {
-            var d = from - to;
-            return new Vector3(d.x * definition.CellSize.x, d.y * definition.CellSize.y, d.z * definition.CellSize.z);
+            return new Vector3(
+                (float)(((long)from.x - to.x) * (double)definition.CellSize.x),
+                (float)(((long)from.y - to.y) * (double)definition.CellSize.y),
+                (float)(((long)from.z - to.z) * (double)definition.CellSize.z));
         }
 
         internal static void Apply(Vector3Int newCell, Vector3 delta)

@@ -39,6 +39,10 @@ namespace Nebula
 
         /// <summary>Called once the worker is listening and registered with the control plane.</summary>
         public virtual void OnWorkerStarted(NebulaWorker worker) { }
+
+        // Runs before worker membership queries. Procedural worlds may rebase around
+        // this entity so a worker hosting distant regions resolves seams precisely.
+        public virtual void PrepareSpatialFrame(NetworkIdentity entity) { }
     }
 
     /// <summary>Who is joining, as the gateway told the worker (<see cref="NebulaGameMode.OnSpawnPlayer(NebulaWorker, in PlayerInfo, Container)"/>).</summary>

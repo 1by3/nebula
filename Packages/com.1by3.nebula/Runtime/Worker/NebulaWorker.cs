@@ -792,6 +792,7 @@ namespace Nebula
             foreach (var e in _scratchEntities)
             {
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
+                _gameMode?.PrepareSpatialFrame(e);
                 InstanceBoundary.Tick(this, e);
                 // A carrier never resolves into the container it carries (its origin is inside its own box).
                 var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e.Carried);

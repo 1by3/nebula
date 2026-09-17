@@ -343,6 +343,10 @@ namespace Nebula
         /// <summary>The runtime container registered as <paramref name="id"/> on this process, or null.</summary>
         public static Container GetRuntime(ulong id) => RuntimeById.TryGetValue(id, out var c) ? c : null;
 
+        // Optional procedural-world mapping from a stable ID to bounds in the current frame.
+        // Avoids rounding a distant absolute float position before subtracting the origin.
+        public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
+
         /// <summary>
         /// Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk
         /// coordinate hash, a plot number) and axis-aligned in this process's frame. Legal at any time after boot,
@@ -354,6 +358,7 @@ namespace Nebula
         /// </summary>
         public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null)
         {
+            if (instance == null && RuntimeBoundsInFrame != null) frameBounds = RuntimeBoundsInFrame(id, frameBounds);
             if (RuntimeById.TryGetValue(id, out var existing))
             {
                 if (existing.WorldBounds != frameBounds)
@@ -504,7 +509,10 @@ namespace Nebula
             if (RuntimeList.Count == 0) return;
             for (int i = 0; i < RuntimeList.Count; i++)
             {
-                RuntimeList[i].transform.position += delta;
+                var c = RuntimeList[i];
+                c.transform.position = c.InstanceId == 0 && RuntimeBoundsInFrame != null
+                    ? RuntimeBoundsInFrame(c.RuntimeId, c.WorldBounds).center
+                    : c.transform.position + delta;
                 RuntimeList[i].RefreshCache();
             }
             RehashRuntime();

@@ -96,8 +96,10 @@ namespace Nebula.World
         /// <summary>Where cell <paramref name="coord"/>'s centre sits in the frame whose origin cell is <paramref name="origin"/>.</summary>
         public Vector3 FrameOrigin(Vector3Int coord, Vector3Int origin)
         {
-            var d = coord - origin;
-            return new Vector3(d.x * CellSize.x, d.y * CellSize.y, d.z * CellSize.z);
+            return new Vector3(
+                (float)(((long)coord.x - origin.x) * (double)CellSize.x),
+                (float)(((long)coord.y - origin.y) * (double)CellSize.y),
+                (float)(((long)coord.z - origin.z) * (double)CellSize.z));
         }
 
         public Bounds FrameBounds(Vector3Int coord, Vector3Int origin) => new Bounds(FrameOrigin(coord, origin), CellSize);

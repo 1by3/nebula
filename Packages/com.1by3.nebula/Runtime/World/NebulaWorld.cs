@@ -35,7 +35,7 @@ namespace Nebula
             Manifest = manifest;
             WorldOrigin.Reset(manifest.World);
             Root = new GameObject("Nebula World");
-            Object.DontDestroyOnLoad(Root);
+            if (Application.isPlaying) Object.DontDestroyOnLoad(Root);
             Streamer = Root.AddComponent<WorldStreamer>();
             Streamer.Definition = manifest.World;
             Streamer.AutoShiftOrigin = false; // NebulaWorldStreaming decides when to shift, per role
@@ -79,6 +79,21 @@ namespace Nebula
             NebulaLog.Info($"world '{manifest.World.WorldName}': {manifest.World.Cells.Count} cells, {ordered.Count} containers, cell size {manifest.World.CellSize}");
         }
 
+        // Enable origin shifts for a procedural world without loading authored cell scenes.
+        // The game owns the shift policy and calls Streamer.ShiftOrigin before local simulation.
+        public static void LoadRuntime(WorldDefinition definition)
+        {
+            Unload();
+            if (definition == null) throw new System.ArgumentNullException(nameof(definition));
+            WorldOrigin.Reset(definition);
+            Root = new GameObject("Nebula Runtime World");
+            if (Application.isPlaying) Object.DontDestroyOnLoad(Root);
+            Streamer = Root.AddComponent<WorldStreamer>();
+            Streamer.Definition = definition;
+            Streamer.AutoShiftOrigin = false;
+            Streamer.Passive = true;
+            WorldOrigin.Shifted += OnOriginShifted;
+        }
         private static void Fill(Container c, WorldContainerManifest.Entry e)
         {
             c.ContainerId = e.Id;
@@ -95,6 +110,7 @@ namespace Nebula
             Streamer = null;
             Root = null;
             Manifest = null;
+            WorldOrigin.Reset(null);
             CellContainers.Clear();
             Scratch.Clear();
         }
@@ -103,10 +119,11 @@ namespace Nebula
         {
             if (Streamer != null) Streamer.CellLoaded -= OnCellLoaded;
             WorldOrigin.Shifted -= OnOriginShifted;
-            if (Root != null) Object.Destroy(Root);
+            if (Root != null) { if (Application.isPlaying) Object.Destroy(Root); else Object.DestroyImmediate(Root); }
             Root = null;
             Streamer = null;
             Manifest = null;
+            WorldOrigin.Reset(null);
             CellContainers.Clear();
         }
 
