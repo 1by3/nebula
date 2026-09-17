@@ -61,6 +61,8 @@ namespace Nebula
         public string AuthSigningKey = "";
         [Tooltip("Seconds a worker keeps a player's pawn after the player's connection drops, so the player can reconnect (through any gateway of the mesh) and continue with the same session and pawn. 0 despawns at once.")]
         public float SessionReclaimSeconds = 30f;
+        [Tooltip("One connection per player: when someone who is already in the world connects again, the new connection takes over their session and their pawn, and the earlier connection is closed. Off lets one identity hold several pawns at once (a fleet of bots sharing one account). -nebula-single-session overrides.")]
+        public bool SingleSessionPerPlayer = true;
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
 

@@ -137,6 +137,7 @@ namespace Nebula
             c.AuthAudience = CommandLine.Get("nebula-auth-audience", c.AuthAudience);
             c.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", c.AuthAnonymous);
             c.AuthSigningKey = CommandLine.Get("nebula-auth-key", Environment.GetEnvironmentVariable("NEBULA_AUTH_KEY") is { Length: > 0 } authKey ? authKey : c.AuthSigningKey);
+            c.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", c.SingleSessionPerPlayer);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);
             c.MinWorkers = CommandLine.GetInt("nebula-min-workers", c.MinWorkers);
             c.MaxWorkers = CommandLine.GetInt("nebula-max-workers", c.MaxWorkers);

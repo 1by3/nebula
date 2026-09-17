@@ -29,7 +29,7 @@ Inputs carry no game meaning. Workers decode them with your game's input type, s
 | `--ramp S` | Spread the initial connections over this many seconds. Default 5. |
 | `--input-hz N` | Inputs per second per client. Default 60. |
 | `--reconnect-every S` | Drill: every client drops its own link about this often and reconnects with its token. Off by default. |
-| `--token <token>` | An identity token every client presents (an anonymous token or an ID token), for meshes that require sign-in. |
+| `--token <token>` | An identity token every client presents (an anonymous token or an ID token), for meshes that require sign-in. One token is one player, so a mesh that keeps [one connection per player](/docs/guides/authentication#one-connection-per-player) closes all but the newest client. Start that mesh with `-nebula-single-session false`, or give each client its own token. |
 | `--bot` | Mark the clients as bots in `Hello`. |
 | `--name-prefix P` | Player names are `P0`, `P1`, ... Default `load`. |
 | `--csv file` | Also write the per-second report as CSV. |

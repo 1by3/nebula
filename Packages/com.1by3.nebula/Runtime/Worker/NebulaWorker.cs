@@ -74,6 +74,7 @@ namespace Nebula
         /// <summary>Which gateway speaks for each player session, and since which generation (see <see cref="PlayerSessions"/>).</summary>
         private readonly PlayerSessions _sessions = new PlayerSessions();
         private readonly List<ulong> _expiredSessions = new List<ulong>();
+        private readonly List<ulong> _duplicateSessions = new List<ulong>();
         private byte[] _peerKey;
         private readonly HashSet<string> _dialing = new HashSet<string>();
 
@@ -1546,15 +1547,22 @@ namespace Nebula
 
         private void OnSpawnPlayer(Peer gateway, SpawnPlayerMsg msg)
         {
-            var claim = _sessions.Register(msg.ClientId, msg.Generation, gateway.Key);
+            var claim = _sessions.Register(msg.ClientId, msg.Generation, gateway.Key, out string lostBy);
             if (claim == PlayerSessions.Claim.Stale)
             {
                 NebulaLog.Warn($"stale claim of session {msg.ClientId} by gateway {gateway.Id} (generation {msg.Generation}); ignored");
                 return;
             }
-            if (claim == PlayerSessions.Claim.Reclaimed) NebulaLog.Info($"session {msg.ClientId} '{msg.Name}' now speaks through gateway {gateway.Id}");
+            if (claim == PlayerSessions.Claim.Reclaimed)
+            {
+                NebulaLog.Info($"session {msg.ClientId} '{msg.Name}' now speaks through gateway {gateway.Id}");
+                // The gateway that held it may still have the old link open (the player connected again elsewhere
+                // instead of leaving first): it has to let that client go, and must not despawn the pawn.
+                if (lostBy.Length > 0 && lostBy != gateway.Key) EndSessionOnGateway(lostBy, msg.ClientId, msg.Generation, SingleSessionReason);
+            }
             if (msg.IsBot) _botClients.Add(msg.ClientId); else _botClients.Remove(msg.ClientId);
             if (!string.IsNullOrEmpty(msg.Identity)) _playerIdentities[msg.ClientId] = msg.Identity; else _playerIdentities.Remove(msg.ClientId);
+            if (!ResolveDuplicatePlayer(gateway, msg.ClientId, msg.Identity, msg.Generation)) return;
             if (_players.TryGetValue(msg.ClientId, out var existing) && existing != null)
             {
                 if (existing.HasAuthority)
@@ -1614,6 +1622,56 @@ namespace Nebula
             // The pawn stays for the reclaim grace (SessionReclaimSeconds): the player may be reconnecting, here or
             // through another gateway. ExpireSessions despawns it when nobody came back.
             if (Config.SessionReclaimSeconds <= 0) DespawnPlayer(msg.ClientId);
+        }
+
+        /// <summary>What a replaced connection is told, here and at the gateway.</summary>
+        private const string SingleSessionReason = "this player connected again somewhere else";
+
+        /// <summary>
+        /// One pawn per player (<see cref="NebulaConfig.SingleSessionPerPlayer"/>). A gateway that finds a player
+        /// already in the world claims that player's session again, so a second session for one identity only ever
+        /// reaches a worker when two connections were welcomed at the same moment, by different gateways. The newer
+        /// claim wins - generations are wall-clock milliseconds, so they compare across the mesh - and the older
+        /// session is ended: its gateway lets its client go and its pawn (or pending spawn) is dropped. False when
+        /// this claim is itself the older one; the claiming gateway is then the one that lets its client go, so
+        /// neither connection is left waiting for a pawn it will never get.
+        /// </summary>
+        private bool ResolveDuplicatePlayer(Peer gateway, ulong clientId, string identity, ulong generation)
+        {
+            if (!Config.SingleSessionPerPlayer || string.IsNullOrEmpty(identity)) return true;
+            _duplicateSessions.Clear();
+            foreach (var kv in _playerIdentities)
+                if (kv.Key != clientId && kv.Value == identity) _duplicateSessions.Add(kv.Key);
+            foreach (var other in _duplicateSessions)
+            {
+                if (_sessions.TryGet(other, out var held) && held.Generation > generation)
+                {
+                    NebulaLog.Warn($"session {clientId} claims a player that session {other} already holds with a newer connection; ignored");
+                    EndSessionOnGateway(gateway?.Key, clientId, generation, SingleSessionReason);
+                    _sessions.Remove(clientId);
+                    _playerIdentities.Remove(clientId);
+                    _pendingPlayerSpawns.Remove(clientId);
+                    return false;
+                }
+                NebulaLog.Info($"session {other} is replaced by session {clientId}: the same player connected twice");
+                if (held != null) EndSessionOnGateway(held.Gateway, other, held.Generation, SingleSessionReason);
+                DespawnPlayer(other);
+            }
+            return true;
+        }
+
+        /// <summary>Tell a gateway that a session is not its to speak for any more (<see cref="EndSessionMsg"/>).</summary>
+        private void EndSessionOnGateway(string gatewayKey, ulong clientId, ulong generation, string reason)
+        {
+            if (string.IsNullOrEmpty(gatewayKey)) return;
+            foreach (var g in _gateways)
+            {
+                if (g.Key != gatewayKey) continue;
+                _writer.Reset();
+                new EndSessionMsg { ClientId = clientId, Generation = generation, Reason = reason }.Write(_writer);
+                Send(g, Delivery.ReliableOrdered);
+                return;
+            }
         }
 
         /// <summary>The player is gone for good: tell the game, drop the pawn (a persistent pawn keeps its record for the next connection).</summary>

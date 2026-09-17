@@ -47,8 +47,17 @@ namespace Nebula
         public bool TryGet(ulong id, out Session session) => _sessions.TryGetValue(id, out session);
 
         /// <summary>A gateway claims the session with <paramref name="generation"/>. See <see cref="Claim"/> for what happened.</summary>
-        public Claim Register(ulong id, ulong generation, string gateway)
+        public Claim Register(ulong id, ulong generation, string gateway) => Register(id, generation, gateway, out _);
+
+        /// <summary>
+        /// A gateway claims the session with <paramref name="generation"/>. See <see cref="Claim"/> for what
+        /// happened. <paramref name="previousGateway"/> is the gateway that spoke for the session until now (empty
+        /// for <see cref="Claim.New"/>), so a <see cref="Claim.Reclaimed"/> can be reported to the gateway that
+        /// just lost the session.
+        /// </summary>
+        public Claim Register(ulong id, ulong generation, string gateway, out string previousGateway)
         {
+            previousGateway = "";
             if (!_sessions.TryGetValue(id, out var s))
             {
                 _sessions[id] = new Session { Id = id, Generation = generation, Gateway = gateway ?? "" };
@@ -56,6 +65,7 @@ namespace Nebula
             }
             if (generation < s.Generation) return Claim.Stale;
             bool same = generation == s.Generation && s.Gateway == (gateway ?? "");
+            previousGateway = s.Gateway;
             s.Generation = generation;
             s.Gateway = gateway ?? "";
             s.Orphaned = false;

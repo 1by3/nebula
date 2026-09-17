@@ -43,6 +43,7 @@ public bool TryGet(ulong id, out Session session);
 
 ```csharp
 public Claim Register(ulong id, ulong generation, string gateway);
+public Claim Register(ulong id, ulong generation, string gateway, out string previousGateway);
 ```
 
 A gateway claims the session with `generation`. See [`Claim`](#claim) for what happened.

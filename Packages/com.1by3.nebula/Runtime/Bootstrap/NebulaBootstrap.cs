@@ -333,6 +333,7 @@ namespace Nebula
             cfg.AuthAudience = CommandLine.Get("nebula-auth-audience", cfg.AuthAudience);
             cfg.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", cfg.AuthAnonymous);
             cfg.AuthSigningKey = CommandLine.Get("nebula-auth-key", cfg.AuthSigningKey);
+            cfg.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", cfg.SingleSessionPerPlayer);
             cfg.DatabaseUrl = CommandLine.Get("nebula-database", cfg.DatabaseUrl);
             cfg.WorkerCount = CommandLine.GetInt("nebula-workers", cfg.WorkerCount);
             cfg.MinWorkers = CommandLine.GetInt("nebula-min-workers", cfg.MinWorkers);

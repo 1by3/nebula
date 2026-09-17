@@ -79,6 +79,7 @@ autoscaling grow it towards `B`.
 | `DeadWorkerReplaceDelaySeconds` | `8` | Wait this long before starting a replacement for a dead worker. |
 | `WorkerDrainTimeoutSeconds` | `10` | Give a retiring worker this long to transfer its entities before stopping it. |
 | `SessionReclaimSeconds` | `30` | Keep a player's pawn this long after the player's link drops, so the player can reconnect (through any gateway of the mesh) with the same session and pawn. `0` despawns at once. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection). |
+| `SingleSessionPerPlayer` | `true` | Keep one connection per player: when someone who is already in the world connects again, the new connection takes over their session and pawn and the earlier one is closed. Turn it off to let one identity hold several pawns at once. See [One connection per player](/docs/guides/authentication#one-connection-per-player). |
 | `GatewayDrainReconnectSeconds` | `10` | Tell the clients of a draining gateway that they have this long to reconnect before it closes their links. |
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
@@ -141,6 +142,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-token <secret>` | server roles | Override `MeshToken`. The standalone services also read `NEBULA_MESH_TOKEN`. With a token set, gateways and workers refuse peers that cannot present a credential derived from it. |
 | `-nebula-auth-issuers <urls>`, `-nebula-auth-audience <id>`, `-nebula-auth-anonymous true\|false` | gateway, orchestrator | Override `AuthIssuers`, `AuthAudience`, and `AuthAnonymous`. The orchestrator passes them to the gateway it starts. See [Authentication](/docs/guides/authentication). |
 | `-nebula-auth-key <secret>` | gateway, orchestrator | Override `AuthSigningKey`, the key anonymous identity tokens and session tokens are signed with. The standalone gateway also reads `NEBULA_AUTH_KEY`. Every gateway of a mesh needs the same key. |
+| `-nebula-single-session true\|false` | gateway, worker, orchestrator | Override `SingleSessionPerPlayer`. The orchestrator passes it to the gateway and workers it starts. |
 | `-nebula-database <url>` | orchestrator | Override `DatabaseUrl`. The standalone orchestrator also reads `NEBULA_DATABASE_URL`. |
 | `-nebula-local-control-plane` | server roles | Use the in-process control plane. |
 | `-nebula-persistence-mode auto\|database\|remote\|local\|memory\|off` | worker, orchestrator | Override `PersistenceMode`. |

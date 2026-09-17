@@ -87,6 +87,8 @@ namespace Nebula
             public uint Epoch;
             public ushort OwnerWorkerIndex;
             public ulong OwnerClientId;
+            /// <summary>The owner's player identity (<see cref="EntitySpawnMsg.OwnerIdentity"/>): which player's pawn this is, across sessions.</summary>
+            public string OwnerIdentity = "";
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
@@ -174,6 +176,11 @@ namespace Nebula
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Sessions whose link dropped recently, with when: counted as reconnecting until the worker's grace has passed.</summary>
         private readonly List<KeyValuePair<ulong, float>> _recentlyLost = new List<KeyValuePair<ulong, float>>();
+        /// <summary>
+        /// Peers of clients whose session has moved on (<see cref="EndPlayerLink"/>): already forgotten, so nothing
+        /// is despawned on their behalf, and closed at the given time so the notice has gone out first.
+        /// </summary>
+        private readonly List<KeyValuePair<int, float>> _closingPeers = new List<KeyValuePair<int, float>>();
 
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkReader _reader = new NetworkReader();
@@ -368,6 +375,7 @@ namespace Nebula
             _transport.Flush();
             ReportWorldStateStats();
             DropRejectedClients();
+            CloseReplacedLinks();
 
             if (!_registered && ControlPlane.IsConnected)
             {
@@ -383,7 +391,7 @@ namespace Nebula
             // Players without a pawn get one as soon as a worker is available.
             foreach (var c in _clientsById.Values)
             {
-                if (!c.Welcomed || c.PawnNetId != 0 || Time.unscaledTime < c.NextSpawnAttempt) continue;
+                if (!c.Welcomed || c.DisconnectAt != 0 || c.PawnNetId != 0 || Time.unscaledTime < c.NextSpawnAttempt) continue;
                 TryRequestSpawn(c);
             }
         }
@@ -630,6 +638,7 @@ namespace Nebula
                 case MsgId.WorldState: OnWorldState(w, r); break;
                 case MsgId.EntityState: OnEntityState(w, EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(w, r); break;
+                case MsgId.EndSession: OnEndSession(EndSessionMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -677,6 +686,7 @@ namespace Nebula
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
             rec.OwnerClientId = msg.OwnerClientId;
+            rec.OwnerIdentity = msg.OwnerIdentity ?? "";
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
@@ -1151,35 +1161,72 @@ namespace Nebula
         }
 
         /// <summary>
-        /// A client presented a session token: when it is ours, unexpired and for the identity that just
-        /// authenticated, the session id is taken over (with a newer generation) instead of the provisional one, and
-        /// a link that still holds that session on this gateway is dropped. The pawn, if the worker still has it,
-        /// is found through the session id on the worker's next announcement or in what this gateway already knows.
+        /// The session this player already has, if any: the one its session token names, or - with
+        /// <see cref="NebulaConfig.SingleSessionPerPlayer"/> - the one it is in the world as right now, which is how
+        /// a player that reconnects without a usable token (a restarted client, a second client on the same
+        /// account) returns to the pawn it left instead of getting a second one. 0 for a player who is not in the
+        /// world. <paramref name="how"/> says which of the three answered, for the log.
+        /// </summary>
+        private ulong EarlierSessionOf(ClientConn c, string session, out ulong generation, out string how)
+        {
+            generation = 0;
+            how = "";
+            if (session.Length > 0 && _sessions != null)
+            {
+                if (!_sessions.Verify(session, out var claims, out string error))
+                    NebulaLog.Info($"client '{c.Name}': session token ignored ({error}); starting a new session");
+                else if (claims.Identity != c.Identity)
+                    NebulaLog.Warn($"client '{c.Name}': session token belongs to another identity; starting a new session");
+                else
+                {
+                    generation = claims.Generation;
+                    how = "session token";
+                    return claims.SessionId;
+                }
+            }
+            if (!Config.SingleSessionPerPlayer || c.Identity.Length == 0) return 0;
+            // A link of this player's that is still open here; its generation is the newest this gateway knows.
+            foreach (var other in _clientsById.Values)
+            {
+                if (other == c || !other.Welcomed || other.DisconnectAt != 0 || other.Identity != c.Identity) continue;
+                generation = other.Generation;
+                how = "already connected here";
+                return other.ClientId;
+            }
+            // Otherwise a pawn of this player's anywhere in the mesh: every worker announces every entity to every
+            // gateway, so this finds the session even when another gateway welcomed it, or when its link is gone
+            // and the worker is still holding the pawn for a reconnect.
+            foreach (var rec in _entities.Values)
+            {
+                if (rec.OwnerClientId == 0 || rec.OwnerIdentity != c.Identity) continue;
+                how = "pawn still in the world";
+                return rec.OwnerClientId;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Give the client the session this player already had, when there is one: its id is taken over (with a
+        /// newer generation, which fences whoever held it at the worker) instead of the provisional one, and a link
+        /// that still holds that session on this gateway is let go. The pawn, if the worker still has it, is found
+        /// through the session id on the worker's next announcement or in what this gateway already knows.
         /// </summary>
         private void TryReclaim(ClientConn c, string session)
         {
-            if (session.Length == 0 || _sessions == null) return;
-            if (!_sessions.Verify(session, out var claims, out string error))
+            ulong sessionId = EarlierSessionOf(c, session, out ulong generation, out string how);
+            if (sessionId == 0) return;
+            if (_clientsById.TryGetValue(sessionId, out var previous) && previous != c)
             {
-                NebulaLog.Info($"client '{c.Name}': session token ignored ({error}); starting a new session");
-                return;
-            }
-            if (claims.Identity != c.Identity)
-            {
-                NebulaLog.Warn($"client '{c.Name}': session token belongs to another identity; starting a new session");
-                return;
-            }
-            if (_clientsById.TryGetValue(claims.SessionId, out var previous) && previous != c)
-            {
-                NebulaLog.Info($"client {claims.SessionId} '{c.Name}' reconnected while its old link is still open; dropping the old link");
+                NebulaLog.Info($"player {ShortIdentity(c.Identity)} connected again as '{c.Name}' ({how}); closing the earlier link of session {sessionId}");
                 _clientsByPeer.Remove(previous.PeerId);
                 _clientsById.Remove(previous.ClientId);
-                _transport.Disconnect(previous.PeerId);
+                EndPlayerLink(previous, ReplacedReason);
                 if (previous.PawnNetId != 0) c.PawnNetId = previous.PawnNetId;
             }
+            else NebulaLog.Debugf($"client '{c.Name}' continues session {sessionId} ({how})");
             _clientsById.Remove(c.ClientId);
-            c.ClientId = claims.SessionId;
-            c.Generation = NextGeneration(claims.Generation);
+            c.ClientId = sessionId;
+            c.Generation = NextGeneration(generation);
             c.Reclaimed = true;
             _clientsById[c.ClientId] = c;
             if (c.PawnNetId == 0)
@@ -1188,6 +1235,48 @@ namespace Nebula
                     if (rec.OwnerClientId == c.ClientId) { c.PawnNetId = rec.NetId; break; }
             }
             _recentlyLost.RemoveAll(kv => kv.Key == c.ClientId);
+        }
+
+        /// <summary>What a client is told when a newer connection for the same player took its session.</summary>
+        private const string ReplacedReason = "this player connected again somewhere else";
+
+        /// <summary>
+        /// The session is not this link's any more: tell the client why, then close the link a moment later, once
+        /// the notice has had time to go out. The caller has already forgotten the connection, so nothing is
+        /// despawned on its behalf - the connection that took the session over holds the pawn now.
+        /// </summary>
+        private void EndPlayerLink(ClientConn c, string reason)
+        {
+            _writer.Reset();
+            new SessionReplacedMsg { Reason = reason }.Write(_writer);
+            Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+            _transport.Flush();
+            _closingPeers.Add(new KeyValuePair<int, float>(c.PeerId, Time.unscaledTime + 0.5f));
+        }
+
+        private void CloseReplacedLinks()
+        {
+            for (int i = _closingPeers.Count - 1; i >= 0; i--)
+            {
+                if (Time.unscaledTime < _closingPeers[i].Value) continue;
+                // A peer id the transport has since handed to a new link belongs to that client, not to this one.
+                if (!_clientsByPeer.ContainsKey(_closingPeers[i].Key)) _transport.Disconnect(_closingPeers[i].Key);
+                _closingPeers.RemoveAt(i);
+            }
+        }
+
+        /// <summary>
+        /// A worker says the session has moved to another gateway (<see cref="EndSessionMsg"/>) because the player
+        /// connected again there. Let the client go without despawning its pawn, which the new connection holds.
+        /// </summary>
+        private void OnEndSession(EndSessionMsg msg)
+        {
+            if (!_clientsById.TryGetValue(msg.ClientId, out var c)) return;
+            if (c.Generation > msg.Generation) return; // the player came back here since, so this news is stale
+            NebulaLog.Info($"client {c.ClientId} '{c.Name}': {msg.Reason}; closing the link");
+            _clientsByPeer.Remove(c.PeerId);
+            _clientsById.Remove(c.ClientId);
+            EndPlayerLink(c, string.IsNullOrEmpty(msg.Reason) ? ReplacedReason : msg.Reason);
         }
 
         /// <summary>The client is who it says it is: welcome it, replay the world, and ask a worker for a pawn (or for the one it had).</summary>
