@@ -63,6 +63,7 @@
   .note { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
   .note.warn { color: var(--warn); }
   .note code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .note kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); background: var(--panel-2); padding: 0 4px; color: var(--ink-2); }
   .seg { display: flex; border: 1px solid var(--line); border-radius: 0; overflow: hidden; background: var(--panel-2); padding: 4px; }
   .seg button { flex: 1; border: 0; border-radius: 0; background: var(--panel-2); color: var(--ink-2); padding: 6px 4px; }
   .seg button + button { border-left: 0; }
@@ -94,12 +95,14 @@
   .field { position: relative; overflow: hidden; background: var(--field); }
   canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   canvas.dragging { cursor: grabbing; }
+  canvas.panning { cursor: move; }
   .ov { position: absolute; z-index: 2; }
   .panel { background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 0; box-shadow: 0 4px 12px rgba(0, 0, 0, .25); }
   #inspector { top: 12px; right: 12px; width: 318px; max-height: calc(100% - 24px); overflow: auto; padding: 12px 14px 14px; }
   #hud { left: 12px; bottom: 12px; padding: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); pointer-events: none; }
   #scale { right: 12px; bottom: 12px; padding: 6px 10px 8px; text-align: right; pointer-events: none; }
   #scale .n { font-family: var(--mono); font-size: 12px; }
+  #scale .l { font-size: 10.5px; color: var(--ink-3); }
   #scale .b { height: 5px; border: 1px solid var(--ink-2); border-top: 0; margin: 3px 0 0 auto; }
   #overlayMsg { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 18px; max-width: 440px; text-align: center; color: var(--ink-2); font-size: 13px; display: none; }
   #overlayMsg.show { display: block; }
@@ -123,6 +126,7 @@
   .chip.static { cursor: default; }
   .chip.static:hover { border-color: var(--line); color: var(--ink-2); }
   .ihint { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+  .ihint kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); background: var(--panel-2); padding: 0 4px; color: var(--ink-2); }
   .iactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   ::selection { background: var(--accent); color: var(--accent-ink); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
@@ -186,7 +190,10 @@
       <div class="btnrow" style="margin-top:10px">
         <button class="small" id="btnFit" title="Fit the containers (F)">Fit containers</button>
         <button class="small" id="btnFitWorld" title="Fit every cell of the world">Fit world</button>
+        <button class="small" id="btnTop" title="Look straight down (T)">Top down</button>
+        <button class="small" id="btnIso" title="Back to the angled view (R)">Angled</button>
       </div>
+      <p class="note">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> fits, <kbd>T</kbd> looks down, <kbd>R</kbd> restores the angle.</p>
     </section>
 
     <section>
@@ -207,10 +214,10 @@
         <span><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.8 12.2 7 7 12.2 1.8 7Z" fill="#a8adbb"/></svg>Bot</span>
         <span><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="3" fill="#a8adbb"/></svg>Server-driven</span>
         <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="4" y="4" width="6" height="6" fill="none" stroke="#a8adbb" stroke-width="1.5"/></svg>Other entity</span>
-        <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="2.5" y="1.5" width="9" height="11" rx="1" fill="rgba(168,173,187,.3)" stroke="#a8adbb" stroke-width="1.5"/></svg>Carried</span>
-        <span><svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" fill="none" stroke="#6f7585" stroke-dasharray="3 2"/></svg>Cell</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 4.5 7 2.2l4.5 2.3v5L7 11.8 2.5 9.5Z" fill="rgba(168,173,187,.3)" stroke="#a8adbb" stroke-width="1.3" stroke-linejoin="round"/></svg>Carried</span>
+        <span><svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 4.5 7 1.5l5.5 3v5L7 12.5 1.5 9.5Z" fill="none" stroke="#6f7585" stroke-dasharray="3 2"/></svg>Cell</span>
       </div>
-      <p class="note">Entities, ships and containers take the colour of the worker simulating them. A pinned interior shows its own worker's colour inside the hull's.</p>
+      <p class="note">Every container is drawn as its real box, so its height reads as well as its footprint. Entities, ships and containers take the colour of the worker simulating them. A pinned interior shows its own worker's colour inside the hull's.</p>
     </section>
   </aside>
 
@@ -218,7 +225,7 @@
     <canvas id="map" aria-label="World map"></canvas>
     <div class="ov panel" id="inspector"></div>
     <div class="ov panel" id="hud">—</div>
-    <div class="ov panel" id="scale"><div class="n" id="scaleN">—</div><div class="b" id="scaleB" style="width:80px"></div></div>
+    <div class="ov panel" id="scale"><div class="n" id="scaleN">—</div><div class="b" id="scaleB" style="width:80px"></div><div class="l">at the focus point</div></div>
     <div class="ov panel" id="overlayMsg"></div>
   </main>
 </div>
@@ -243,19 +250,28 @@
   const STALE_SECONDS = 3;
   const UNASSIGNED = '#596070';
   const KIND_NAME = { p: 'Player', b: 'Bot', n: 'Server-driven', v: 'Carrier', o: 'Entity' };
+  const D2R = Math.PI / 180;
+  const DEFAULT_PITCH = 34, DEFAULT_YAW = -30;
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem('nebula.map.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('nebula.map.' + k, JSON.stringify(v)); } catch (e) { } },
   };
 
+  const angles = store.get('angles', {});
   const S = {
     geometry: null, geometryVersion: -1, statics: [], staticById: new Map(), childrenOf: new Map(), drawOrder: [],
     state: null, map: null, mapMissing: false, lastMapAt: 0,
     workers: new Map(), lease: new Map(), carriedLease: new Map(), counts: new Map(),
     carried: [], carriedById: new Map(),
     entities: new Map(), shipPose: new Map(), timing: new Map(), generation: 0,
-    view: { cx: 0, cz: 0, ppm: 2 }, fitted: false,
+    // The camera orbits a focus point: yaw/pitch in degrees, dist in metres from that point.
+    cam: {
+      tx: 0, ty: 0, tz: 0, dist: 200, fov: 45,
+      yaw: clamp(Number(angles.yaw) || DEFAULT_YAW, -180, 180),
+      pitch: clamp(Number(angles.pitch) || DEFAULT_PITCH, -85, 89),
+    },
+    view: { ppm: 2 }, fitted: false,
     hover: null, pinned: null, follow: null, hoverWorker: null, soloWorker: null,
     colour: store.get('colour', 'owner'),
     layers: Object.assign({ cells: true, containers: true, ships: true, entities: true, band: false, labels: true }, store.get('layers', {})),
@@ -269,37 +285,56 @@
     const tx = 2 * (qy * v[2] - qz * v[1]), ty = 2 * (qz * v[0] - qx * v[2]), tz = 2 * (qx * v[1] - qy * v[0]);
     return [v[0] + qw * tx + (qy * tz - qz * ty), v[1] + qw * ty + (qz * tx - qx * tz), v[2] + qw * tz + (qx * ty - qy * tx)];
   }
-  function hull(pts) {
-    pts = pts.slice().sort((a, b) => a.x - b.x || a.z - b.z);
-    if (pts.length < 3) return pts;
-    const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
-    const lower = [], upper = [];
-    for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 1e-9) lower.pop(); lower.push(p); }
-    for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 1e-9) upper.pop(); upper.push(p); }
-    upper.pop(); lower.pop();
-    return lower.concat(upper);
-  }
-  /** The top-down outline of a rotated box: its eight corners projected onto x/z. */
-  function footprint(center, size, rotation) {
-    const pts = [];
-    for (const sx of [-.5, .5]) for (const sy of [-.5, .5]) for (const sz of [-.5, .5]) {
-      const r = qrot(rotation, [sx * size[0], sy * size[1], sz * size[2]]);
-      pts.push({ x: center[0] + r[0], z: center[2] + r[2] });
+  const IDENTITY = [0, 0, 0, 1];
+
+  // Corner i of a unit box carries the signs (i>>2, i>>1, i) &1 on x, y and z, so two corners share an edge exactly
+  // when their indices differ in one bit.
+  const CORNER_SIGNS = [];
+  for (const sx of [-.5, .5]) for (const sy of [-.5, .5]) for (const sz of [-.5, .5]) CORNER_SIGNS.push([sx, sy, sz]);
+  const FACES = [
+    { ring: [0, 1, 3, 2], axis: 0, sign: -1 }, { ring: [4, 5, 7, 6], axis: 0, sign: 1 },
+    { ring: [0, 1, 5, 4], axis: 1, sign: -1 }, { ring: [2, 3, 7, 6], axis: 1, sign: 1 },
+    { ring: [0, 2, 6, 4], axis: 2, sign: -1 }, { ring: [1, 3, 7, 5], axis: 2, sign: 1 },
+  ];
+  const EDGES = [];
+  for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) { const j = i ^ bit; if (j > i) EDGES.push([i, j]); }
+
+  function boxCorners(center, size, rotation) {
+    const out = new Array(8);
+    for (let i = 0; i < 8; i++) {
+      const s = CORNER_SIGNS[i];
+      const r = qrot(rotation, [s[0] * size[0], s[1] * size[1], s[2] * size[2]]);
+      out[i] = [center[0] + r[0], center[1] + r[1], center[2] + r[2]];
     }
-    return hull(pts);
+    return out;
   }
-  function aabbOf(poly) {
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (const p of poly) { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z; }
-    return { x0, x1, z0, z1 };
-  }
-  function inPoly(poly, x, z) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const a = poly[i], b = poly[j];
-      if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) inside = !inside;
+  function boxAxes(rotation) { return [qrot(rotation, [1, 0, 0]), qrot(rotation, [0, 1, 0]), qrot(rotation, [0, 0, 1])]; }
+  function aabbOf(corners) {
+    const a = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z0: Infinity, z1: -Infinity };
+    for (const p of corners) {
+      if (p[0] < a.x0) a.x0 = p[0]; if (p[0] > a.x1) a.x1 = p[0];
+      if (p[1] < a.y0) a.y0 = p[1]; if (p[1] > a.y1) a.y1 = p[1];
+      if (p[2] < a.z0) a.z0 = p[2]; if (p[2] > a.z1) a.z1 = p[2];
     }
-    return inside;
+    return a;
+  }
+  /** Distance along `ray` to the near face of an oriented box, 0 when the ray starts inside, null when it misses. */
+  function rayBox(ray, center, size, rotation) {
+    const inv = [-rotation[0], -rotation[1], -rotation[2], rotation[3]];
+    const o = qrot(inv, [ray.o[0] - center[0], ray.o[1] - center[1], ray.o[2] - center[2]]);
+    const d = qrot(inv, ray.d);
+    let t0 = -Infinity, t1 = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const h = size[i] / 2;
+      if (Math.abs(d[i]) < 1e-9) { if (o[i] < -h || o[i] > h) return null; continue; }
+      let a = (-h - o[i]) / d[i], b = (h - o[i]) / d[i];
+      if (a > b) { const t = a; a = b; b = t; }
+      if (a > t0) t0 = a;
+      if (b < t1) t1 = b;
+      if (t0 > t1) return null;
+    }
+    if (t1 < 0) return null;
+    return t0 >= 0 ? t0 : 0;
   }
   function yawOf(q) {
     const f = qrot(q, [0, 0, 1]);
@@ -310,12 +345,13 @@
     S.geometry = g;
     const margin = g.ghostBandMargin || 0;
     S.statics = (g.containers || []).map(c => {
-      const poly = footprint(c.center, c.size, c.rotation);
+      const rotation = c.rotation || IDENTITY;
+      const corners = boxCorners(c.center, c.size, rotation);
       const inner = [Math.max(0, c.size[0] - 2 * margin), c.size[1], Math.max(0, c.size[2] - 2 * margin)];
       return {
         type: 'static', id: c.id, index: c.index, isCell: !!c.isCell, cell: c.cell || null, center: c.center, size: c.size,
-        rotation: c.rotation, parent: c.parent || '', neighbors: c.neighbors || [], poly, aabb: aabbOf(poly),
-        band: margin > 0 && !c.isCell && inner[0] > 0 && inner[2] > 0 ? footprint(c.center, inner, c.rotation) : null,
+        rotation, parent: c.parent || '', neighbors: c.neighbors || [], corners, axes: boxAxes(rotation), aabb: aabbOf(corners),
+        band: margin > 0 && !c.isCell && inner[0] > 0 && inner[2] > 0 ? boxCorners(c.center, inner, rotation) : null,
         volume: c.size[0] * c.size[1] * c.size[2], depth: 0,
       };
     });
@@ -466,7 +502,7 @@
   const ownerOf = (s) => { const l = S.lease.get(s.id); return l && l.worker ? l.worker : ''; };
   const countsOf = (id) => S.counts.get(id) || zeroCounts();
 
-  // ------------------------------------------------------------------------------------------ canvas
+  // ------------------------------------------------------------------------------------------ camera
 
   const cv = $('map');
   const ctx = cv.getContext('2d');
@@ -479,10 +515,132 @@
     warn: css.getPropertyValue('--warn').trim(), bad: css.getPropertyValue('--bad').trim(),
   };
 
-  const sx = (x) => (x - S.view.cx) * S.view.ppm + W / 2;
-  const sy = (z) => H / 2 - (z - S.view.cz) * S.view.ppm;
-  const wx = (px) => (px - W / 2) / S.view.ppm + S.view.cx;
-  const wz = (py) => (H / 2 - py) / S.view.ppm + S.view.cz;
+  // Camera basis, rebuilt from S.cam before anything projects through it. Unity is left-handed, so right = up × forward.
+  let EYE = [0, 0, 0], RX = [1, 0, 0], UY = [0, 1, 0], FZ = [0, 0, 1], FOC = 1, MPP = 1, NEAR = 0.05;
+  function updateCamera() {
+    const cam = S.cam;
+    const cp = Math.cos(cam.pitch * D2R), sp = Math.sin(cam.pitch * D2R);
+    const sy = Math.sin(cam.yaw * D2R), cy = Math.cos(cam.yaw * D2R);
+    const off = [-sy * cp * cam.dist, sp * cam.dist, -cy * cp * cam.dist];
+    EYE = [cam.tx + off[0], cam.ty + off[1], cam.tz + off[2]];
+    const n = Math.hypot(off[0], off[1], off[2]) || 1;
+    FZ = [-off[0] / n, -off[1] / n, -off[2] / n];
+    const rn = Math.hypot(FZ[2], FZ[0]) || 1;
+    RX = [FZ[2] / rn, 0, -FZ[0] / rn];
+    UY = [FZ[1] * RX[2] - FZ[2] * RX[1], FZ[2] * RX[0] - FZ[0] * RX[2], FZ[0] * RX[1] - FZ[1] * RX[0]];
+    FOC = (H / 2) / Math.tan(cam.fov * D2R / 2);
+    MPP = cam.dist / FOC;           // metres per pixel on the plane through the focus point
+    NEAR = Math.max(0.02, cam.dist * 1e-3);
+    S.view.ppm = 1 / MPP;
+  }
+  /** Ground plane direction the screen's vertical axis maps to; RX is always horizontal, so this is too. */
+  const groundForward = () => [-RX[2], 0, RX[0]];
+
+  function toView(p) {
+    const dx = p[0] - EYE[0], dy = p[1] - EYE[1], dz = p[2] - EYE[2];
+    return [dx * RX[0] + dz * RX[2], dx * UY[0] + dy * UY[1] + dz * UY[2], dx * FZ[0] + dy * FZ[1] + dz * FZ[2]];
+  }
+  const vsx = (v) => W / 2 + v[0] * FOC / v[2];
+  const vsy = (v) => H / 2 - v[1] * FOC / v[2];
+  /** Screen point of a world point, or null when it sits behind the near plane. */
+  function project(p) {
+    const v = toView(p);
+    return v[2] < NEAR ? null : { x: vsx(v), y: vsy(v), depth: v[2] };
+  }
+
+  /** Sutherland–Hodgman against the single near plane: enough, because the canvas clips the sides for us. */
+  function clipNear(vs) {
+    const out = [];
+    for (let i = 0; i < vs.length; i++) {
+      const a = vs[i], b = vs[(i + 1) % vs.length];
+      const ain = a[2] >= NEAR, bin = b[2] >= NEAR;
+      if (ain) out.push(a);
+      if (ain !== bin) {
+        const t = (NEAR - a[2]) / (b[2] - a[2]);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]);
+      }
+    }
+    return out;
+  }
+  function pathV(vs) {
+    const c = clipNear(vs);
+    if (c.length < 3) return false;
+    ctx.beginPath();
+    for (let i = 0; i < c.length; i++) { const x = vsx(c[i]), y = vsy(c[i]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.closePath();
+    return true;
+  }
+  function lineV(a, b) {
+    let A = a, B = b;
+    if (A[2] < NEAR && B[2] < NEAR) return;
+    if (A[2] < NEAR) { const t = (NEAR - A[2]) / (B[2] - A[2]); A = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, NEAR]; }
+    else if (B[2] < NEAR) { const t = (NEAR - B[2]) / (A[2] - B[2]); B = [B[0] + (A[0] - B[0]) * t, B[1] + (A[1] - B[1]) * t, NEAR]; }
+    ctx.moveTo(vsx(A), vsy(A)); ctx.lineTo(vsx(B), vsy(B));
+  }
+  function strokeWorld(points, close) {
+    const vs = points.map(toView);
+    ctx.beginPath();
+    for (let i = 0; i + 1 < vs.length; i++) lineV(vs[i], vs[i + 1]);
+    if (close && vs.length > 2) lineV(vs[vs.length - 1], vs[0]);
+    ctx.stroke();
+  }
+
+  /** Where a box lands on screen: its bounding rectangle, its depth, and whether any of it is in front of the camera. */
+  function screenSpan(corners) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, depth = Infinity, front = 0, behind = 0;
+    for (const p of corners) {
+      const v = toView(p);
+      if (v[2] < depth) depth = v[2];
+      if (v[2] < NEAR) { behind++; continue; }
+      front++;
+      const x = vsx(v), y = vsy(v);
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    return { x0, y0, x1, y1, depth, front, clipped: behind > 0 };
+  }
+  function visible(span, pad) {
+    if (!span.front) return false;
+    if (span.clipped) return true;
+    pad = pad === undefined ? 40 : pad;
+    return !(span.x1 < -pad || span.x0 > W + pad || span.y1 < -pad || span.y0 > H + pad);
+  }
+
+  /**
+   * A box as three filled far walls plus its full wireframe: the near walls stay open so nested containers and the
+   * entities inside stay readable, and the filled far walls give the volume its depth.
+   */
+  function drawBox(box, opt) {
+    const vs = box.corners.map(toView);
+    if (opt.fill) {
+      const back = [];
+      for (const f of FACES) {
+        const n = box.axes[f.axis], s = f.sign;
+        const away = (n[0] * s) * (box.center[0] - EYE[0]) + (n[1] * s) * (box.center[1] - EYE[1]) + (n[2] * s) * (box.center[2] - EYE[2]);
+        if (away > 0) back.push(f);
+      }
+      ctx.fillStyle = opt.fill;
+      for (const f of back) if (pathV(f.ring.map(i => vs[i]))) ctx.fill();
+    }
+    if (opt.stroke) {
+      ctx.strokeStyle = opt.stroke;
+      ctx.lineWidth = opt.lw || 1;
+      if (opt.dash) ctx.setLineDash(opt.dash);
+      ctx.beginPath();
+      for (const [a, b] of EDGES) lineV(vs[a], vs[b]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  function strokeEdges(corners, colour, lw, dash) {
+    const vs = corners.map(toView);
+    ctx.strokeStyle = colour; ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    for (const [a, b] of EDGES) lineV(vs[a], vs[b]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -490,21 +648,12 @@
     W = Math.max(1, Math.floor(r.width)); H = Math.max(1, Math.floor(r.height));
     cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    updateCamera();
     if (S.geometry) fitOnce();
     S.dirty = true;
     updateHud();
   }
 
-  function trace(poly) {
-    ctx.beginPath();
-    ctx.moveTo(sx(poly[0].x), sy(poly[0].z));
-    for (let i = 1; i < poly.length; i++) ctx.lineTo(sx(poly[i].x), sy(poly[i].z));
-    ctx.closePath();
-  }
-  function onScreen(a, pad) {
-    pad = pad || 40;
-    return !(sx(a.x1) < -pad || sx(a.x0) > W + pad || sy(a.z0) < -pad || sy(a.z1) > H + pad);
-  }
   function alpha(hex, a) {
     const h = hex.replace('#', '');
     const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
@@ -530,16 +679,20 @@
     for (const s of steps) if (s * S.view.ppm >= 48) return s;
     return steps[steps.length - 1];
   }
+  /** The ground plane, drawn as a bounded patch around the focus point: a perspective floor has no far edge. */
   function drawGrid(step) {
-    const x0 = wx(0), x1 = wx(W), z0 = wz(H), z1 = wz(0);
+    const cam = S.cam;
+    const reach = Math.min(cam.dist * 4 + 200 * MPP, step * 90);
+    const x0 = Math.ceil((cam.tx - reach) / step) * step, x1 = cam.tx + reach;
+    const z0 = Math.ceil((cam.tz - reach) / step) * step, z1 = cam.tz + reach;
     ctx.lineWidth = 1;
-    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
-      ctx.strokeStyle = Math.abs(x) < 1e-6 ? 'rgba(122,162,255,.18)' : (Math.round(x / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
-      const p = Math.round(sx(x)) + .5; ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, H); ctx.stroke();
+    for (let x = x0; x <= x1; x += step) {
+      ctx.strokeStyle = Math.abs(x) < 1e-6 ? 'rgba(122,162,255,.22)' : (Math.round(x / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
+      ctx.beginPath(); lineV(toView([x, 0, z0]), toView([x, 0, z1])); ctx.stroke();
     }
-    for (let z = Math.ceil(z0 / step) * step; z <= z1; z += step) {
-      ctx.strokeStyle = Math.abs(z) < 1e-6 ? 'rgba(122,162,255,.18)' : (Math.round(z / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
-      const p = Math.round(sy(z)) + .5; ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(W, p); ctx.stroke();
+    for (let z = z0; z <= z1; z += step) {
+      ctx.strokeStyle = Math.abs(z) < 1e-6 ? 'rgba(122,162,255,.22)' : (Math.round(z / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
+      ctx.beginPath(); lineV(toView([x0, 0, z]), toView([x1, 0, z])); ctx.stroke();
     }
   }
 
@@ -554,14 +707,24 @@
     return null;
   }
 
-  function carriedPoly(c, now) {
+  /** The box a carried container occupies right now, interpolated towards its newest reported pose. */
+  function carriedBox(c, now) {
     if (!c.pose || !c.size) return null;
     const p = shipAt(c.pose, now);
-    const poly = footprint(p.center, c.size, p.rotation);
-    return { poly, aabb: aabbOf(poly), center: p.center, rotation: p.rotation };
+    const corners = boxCorners(p.center, c.size, p.rotation);
+    return { corners, axes: boxAxes(p.rotation), aabb: aabbOf(corners), center: p.center, rotation: p.rotation, size: c.size };
   }
 
+  function cellBox(cell, cs) {
+    const center = [cell.coord[0] * cs[0], cell.coord[1] * cs[1], cell.coord[2] * cs[2]];
+    const corners = boxCorners(center, cs, IDENTITY);
+    return { center, size: cs, rotation: IDENTITY, corners, axes: boxAxes(IDENTITY), aabb: aabbOf(corners) };
+  }
+
+  // ------------------------------------------------------------------------------------------ draw
+
   function draw(now) {
+    updateCamera();
     ctx.fillStyle = C.field;
     ctx.fillRect(0, 0, W, H);
     const step = gridStep();
@@ -571,6 +734,7 @@
     const focus = focusWorker();
     const sel = selection();
     const L = S.layers;
+    const labels = [];   // drawn after the geometry so no box paints over a name
 
     // Cells of a partitioned world, with a chip per worker that has the cell loaded.
     if (g && g.partitioned && g.world && L.cells) {
@@ -579,24 +743,35 @@
       for (const w of S.workers.values()) for (const c of (w.report && w.report.loadedCells) || []) {
         const k = c.join(','); if (!loaders.has(k)) loaders.set(k, []); loaders.get(k).push(w.id);
       }
+      const drawn = [];
       for (const cell of g.world.cells) {
-        const [cx, cy, cz] = cell.coord;
-        const a = { x0: (cx - .5) * cs[0], x1: (cx + .5) * cs[0], z0: (cz - .5) * cs[2], z1: (cz + .5) * cs[2] };
-        if (!onScreen(a)) continue;
-        const X = sx(a.x0), Y = sy(a.z1), w = (a.x1 - a.x0) * ppm, h = (a.z1 - a.z0) * ppm;
-        ctx.setLineDash([6, 5]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(168,173,187,.35)';
-        ctx.strokeRect(X + .5, Y + .5, w, h); ctx.setLineDash([]);
-        if (w > 90 && L.labels) {
-          label(`cell ${cell.coord.join(', ')}`, X + 8, Y + 12, C.ink3, '11px ui-monospace, Consolas, monospace', 'left');
-          (loaders.get(cell.coord.join(',')) || []).forEach((id, i) => { ctx.fillStyle = colorOf(id); ctx.fillRect(X + 8 + i * 14, Y + 22, 11, 4); });
+        const box = cellBox(cell, cs);
+        const span = screenSpan(box.corners);
+        if (!visible(span)) continue;
+        drawn.push({ cell, box, span });
+      }
+      drawn.sort((a, b) => b.span.depth - a.span.depth);
+      for (const d of drawn) {
+        drawBox(d.box, { fill: 'rgba(168,173,187,.035)', stroke: 'rgba(168,173,187,.32)', lw: 1, dash: [6, 5] });
+        if (L.labels && d.span.x1 - d.span.x0 > 90) {
+          const top = project([d.box.center[0], d.box.aabb.y1, d.box.center[2]]);
+          const on = loaders.get(d.cell.coord.join(',')) || [];
+          const text = `cell ${d.cell.coord.join(', ')}`;
+          if (top) labels.push({
+            depth: d.span.depth, alpha: 1, draw: () => {
+              label(text, top.x, top.y - 10, C.ink3, '11px ui-monospace, Consolas, monospace');
+              const x = top.x - (on.length * 14 - 3) / 2;
+              on.forEach((id, i) => { ctx.fillStyle = colorOf(id); ctx.fillRect(x + i * 14, top.y + 1, 11, 4); });
+            }
+          });
         }
       }
     }
 
-    // Static containers: cells first, then larger boxes under smaller ones.
+    // Static and carried containers in one pass, far to near, with cells behind everything they enclose.
     let maxLoad = 1;
     if (S.colour === 'load') for (const s of S.statics) if (!s.isCell) maxLoad = Math.max(maxLoad, countsOf(s.id).auth);
-    const highlight = new Set(), related = new Set();
+    const related = new Set();
     if (sel && sel.type === 'static') {
       // Seam neighbours, not the boxes it merely sits in (the cell touches everything inside it).
       const ancestors = new Set();
@@ -607,99 +782,126 @@
     }
     if (sel && sel.type === 'carried' && sel.enclosing) related.add(sel.enclosing);
     if (sel && sel.type === 'entity' && sel.container) related.add(sel.container);
+
+    const solids = [];
+    for (const c of S.carried) c.drawn = null;
     for (const s of S.drawOrder) {
       if (s.isCell ? !L.cells : !L.containers) continue;
-      if (!onScreen(s.aabb)) continue;
-      const owner = ownerOf(s);
-      const dim = focus && owner !== focus;
-      const col = colorOf(owner);
-      trace(s.poly);
-      if (S.colour === 'load' && !s.isCell) ctx.fillStyle = heat(countsOf(s.id).auth / maxLoad);
-      else ctx.fillStyle = alpha(col, s.isCell ? .04 : Math.min(.34, .13 + s.depth * .04));
-      if (dim) ctx.globalAlpha = .25;
-      ctx.fill();
-      ctx.lineWidth = s.isCell ? 1 : 1.25;
-      ctx.strokeStyle = alpha(col, s.isCell ? .45 : .9);
-      if (s.isCell) ctx.setLineDash([2, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (L.band && s.band && (g.ghostBandMargin || 0) * ppm >= 2) {
-        trace(s.band); ctx.setLineDash([3, 3]); ctx.lineWidth = 1; ctx.strokeStyle = alpha(col, .55); ctx.stroke(); ctx.setLineDash([]);
-      }
-      ctx.globalAlpha = 1;
-      if (related.has(s.id)) { trace(s.poly); ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = C.accent; ctx.stroke(); ctx.setLineDash([]); }
+      const span = screenSpan(s.corners);
+      if (!visible(span)) continue;
+      solids.push({ kind: 'static', s, box: s, span });
     }
-    if (L.labels) {
-      for (const s of S.drawOrder) {
-        if (s.isCell || !L.containers || !onScreen(s.aabb, 0)) continue;
-        const wpx = (s.aabb.x1 - s.aabb.x0) * ppm, hpx = (s.aabb.z1 - s.aabb.z0) * ppm;
-        if (wpx < 70 || hpx < 34) continue;
-        const dim = focus && ownerOf(s) !== focus;
-        ctx.globalAlpha = dim ? .35 : 1;
-        const cxp = sx((s.aabb.x0 + s.aabb.x1) / 2), top = sy(s.aabb.z1) + 12;
-        label(s.id, cxp, top, C.ink2, '12px system-ui, sans-serif');
-        const k = countsOf(s.id);
-        if (k.auth > 0 && hpx > 64 && wpx > 96) label(`${k.auth} here${k.ghosts ? ' · ' + k.ghosts + ' ghost' + (k.ghosts === 1 ? '' : 's') : ''}`, cxp, top + 15, C.ink3, '11px system-ui, sans-serif');
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // Carried containers, where their carriers are this frame.
-    const shipsDrawn = [];
     if (L.ships) {
       for (const c of S.carried) {
-        const p = carriedPoly(c, now);
-        if (!p) continue;
-        c.drawn = p;
-        shipsDrawn.push(c);
-        if (!onScreen(p.aabb)) continue;
+        const box = carriedBox(c, now);
+        c.drawn = box;
+        if (!box) continue;
+        const span = screenSpan(box.corners);
+        if (!visible(span)) continue;
+        solids.push({ kind: 'carried', c, box, span });
+      }
+    }
+    // Cells first so their wireframes never sit on top of what they hold; the rest painter-sorted, bigger boxes first
+    // when two share a depth.
+    solids.sort((a, b) => ((b.kind === 'static' && b.s.isCell) - (a.kind === 'static' && a.s.isCell))
+      || (b.span.depth - a.span.depth)
+      || (volumeOf(b) - volumeOf(a)));
+
+    for (const it of solids) {
+      if (it.kind === 'static') {
+        const s = it.s;
+        const owner = ownerOf(s);
+        const dim = focus && owner !== focus;
+        const col = colorOf(owner);
+        ctx.globalAlpha = dim ? .25 : 1;
+        const fill = S.colour === 'load' && !s.isCell ? heat(countsOf(s.id).auth / maxLoad) : alpha(col, s.isCell ? .05 : Math.min(.3, .1 + s.depth * .035));
+        drawBox(s, { fill, stroke: alpha(col, s.isCell ? .45 : .9), lw: s.isCell ? 1 : 1.25, dash: s.isCell ? [2, 4] : null });
+        if (L.band && s.band && (g.ghostBandMargin || 0) * ppm >= 2) strokeEdges(s.band, alpha(col, .55), 1, [3, 3]);
+        ctx.globalAlpha = 1;
+        if (related.has(s.id)) strokeEdges(s.corners, C.accent, 1.5, [5, 4]);
+        if (L.labels && !s.isCell) {
+          const wpx = it.span.x1 - it.span.x0, hpx = it.span.y1 - it.span.y0;
+          if (wpx >= 70 && hpx >= 26) {
+            const top = project([(s.aabb.x0 + s.aabb.x1) / 2, s.aabb.y1, (s.aabb.z0 + s.aabb.z1) / 2]);
+            if (top) {
+              const k = countsOf(s.id);
+              const second = k.auth > 0 && hpx > 56 && wpx > 96 ? `${k.auth} here${k.ghosts ? ' · ' + k.ghosts + ' ghost' + (k.ghosts === 1 ? '' : 's') : ''}` : '';
+              labels.push({
+                depth: it.span.depth, alpha: dim ? .35 : 1, draw: () => {
+                  label(s.id, top.x, top.y - 12, C.ink2, '12px system-ui, sans-serif');
+                  if (second) label(second, top.x, top.y + 3, C.ink3, '11px system-ui, sans-serif');
+                }
+              });
+            }
+          }
+        }
+      } else {
+        const c = it.c, box = it.box;
         const dim = focus && c.interiorWorker !== focus && c.hullWorker !== focus;
         ctx.globalAlpha = dim ? .3 : 1;
         const hull = colorOf(c.hullWorker), interior = colorOf(c.interiorWorker);
-        const wpx = (p.aabb.x1 - p.aabb.x0) * ppm;
-        if (wpx < 9) {
-          const X = sx(p.center[0]), Y = sy(p.center[2]);
-          ctx.beginPath(); ctx.moveTo(X, Y - 7); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 7); ctx.lineTo(X - 7, Y); ctx.closePath();
-          ctx.fillStyle = alpha(interior, .5); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke();
+        const wpx = it.span.x1 - it.span.x0, hpx = it.span.y1 - it.span.y0;
+        if (Math.max(wpx, hpx) < 9) {
+          const p = project(box.center);
+          if (p) {
+            ctx.beginPath(); ctx.moveTo(p.x, p.y - 7); ctx.lineTo(p.x + 7, p.y); ctx.lineTo(p.x, p.y + 7); ctx.lineTo(p.x - 7, p.y); ctx.closePath();
+            ctx.fillStyle = alpha(interior, .5); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke();
+          }
         } else {
-          trace(p.poly);
-          ctx.fillStyle = alpha(interior, .32); ctx.fill();
-          if (c.pinned) { ctx.lineWidth = 5; ctx.strokeStyle = interior; ctx.stroke(); ctx.setLineDash([6, 4]); }
-          ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke(); ctx.setLineDash([]);
-          // Heading: a chevron at the front (+z) of the box.
-          const f = qrot(p.rotation, [0, 0, c.size[2] / 2]), rt = qrot(p.rotation, [c.size[0] * .3, 0, 0]);
-          const tip = [p.center[0] + f[0], p.center[2] + f[2]];
-          const back = qrot(p.rotation, [0, 0, -Math.min(c.size[2] * .25, 6)]);
-          ctx.beginPath();
-          ctx.moveTo(sx(tip[0] + back[0] - rt[0]), sy(tip[1] + back[2] - rt[2]));
-          ctx.lineTo(sx(tip[0]), sy(tip[1]));
-          ctx.lineTo(sx(tip[0] + back[0] + rt[0]), sy(tip[1] + back[2] + rt[2]));
-          ctx.lineWidth = 2; ctx.strokeStyle = hull; ctx.stroke();
-        }
-        if (L.labels) {
-          const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
-          label(`${c.id}${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}${c.pinned ? ' · pinned' : ''}`, sx(p.center[0]), sy(p.aabb.z0) + 14, C.ink, '600 12px system-ui, sans-serif');
+          drawBox(box, { fill: alpha(interior, .22), stroke: hull, lw: 2 });
+          if (c.pinned) strokeEdges(box.corners, interior, 4, [6, 4]);
+          // Heading: a chevron laid on the roof, pointing at the front (+z) of the box.
+          const r = box.rotation, sz = box.size;
+          const up = qrot(r, [0, sz[1] / 2, 0]), fwd = qrot(r, [0, 0, sz[2] / 2]);
+          const rt = qrot(r, [sz[0] * .3, 0, 0]), back = qrot(r, [0, 0, -Math.min(sz[2] * .25, 6)]);
+          const tip = [box.center[0] + up[0] + fwd[0], box.center[1] + up[1] + fwd[1], box.center[2] + up[2] + fwd[2]];
+          ctx.lineWidth = 2; ctx.strokeStyle = hull;
+          strokeWorld([
+            [tip[0] + back[0] - rt[0], tip[1] + back[1] - rt[1], tip[2] + back[2] - rt[2]],
+            tip,
+            [tip[0] + back[0] + rt[0], tip[1] + back[1] + rt[1], tip[2] + back[2] + rt[2]],
+          ], false);
         }
         ctx.globalAlpha = 1;
+        if (related.has(c.id)) strokeEdges(box.corners, C.accent, 1.5, [5, 4]);
+        if (L.labels) {
+          const top = project([box.center[0], box.aabb.y1, box.center[2]]);
+          if (top) {
+            const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
+            const text = `${c.id}${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}${c.pinned ? ' · pinned' : ''}`;
+            labels.push({ depth: it.span.depth, alpha: dim ? .3 : 1, draw: () => label(text, top.x, top.y - 12, C.ink, '600 12px system-ui, sans-serif') });
+          }
+        }
       }
     }
 
-    // Entities.
+    // Entities, at their real height above the ground.
     if (L.entities) {
       const names = ppm >= 2.5 && L.labels;
+      const drawn = [];
       for (const v of S.entities.values()) {
+        v.px = undefined;
         if (v.kind === 'v' && L.ships) continue;
         const p = entityAt(v, now);
-        const X = sx(p.x), Y = sy(p.z);
-        v.px = undefined;
-        if (X < -10 || X > W + 10 || Y < -10 || Y > H + 10) continue;
-        v.px = X; v.py = Y;
+        const s = project([p.x, p.y, p.z]);
+        if (!s || s.x < -10 || s.x > W + 10 || s.y < -10 || s.y > H + 10) continue;
+        v.px = s.x; v.py = s.y;
+        drawn.push({ v, p, s });
+      }
+      drawn.sort((a, b) => b.s.depth - a.s.depth);
+      for (const d of drawn) {
+        const v = d.v, X = d.s.x, Y = d.s.y;
         const col = colorOf(v.worker);
         ctx.globalAlpha = focus && v.worker !== focus ? .2 : 1;
         if (v.kind === 'p' || v.kind === 'b') {
-          const a = p.yaw * Math.PI / 180;
-          ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + Math.sin(a) * 10, Y - Math.cos(a) * 10);
-          ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+          // The facing whisker follows the world yaw, so it turns with the camera.
+          const a = d.p.yaw * D2R;
+          const tip = project([d.p.x + Math.sin(a) * 1.6, d.p.y, d.p.z + Math.cos(a) * 1.6]);
+          if (tip) {
+            const dx = tip.x - X, dy = tip.y - Y, n = Math.hypot(dx, dy) || 1;
+            ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + dx / n * 11, Y + dy / n * 11);
+            ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+          }
           ctx.beginPath();
           if (v.kind === 'p') ctx.arc(X, Y, 4.5, 0, Math.PI * 2);
           else { ctx.moveTo(X, Y - 5); ctx.lineTo(X + 5, Y); ctx.lineTo(X, Y + 5); ctx.lineTo(X - 5, Y); ctx.closePath(); }
@@ -715,27 +917,41 @@
       ctx.globalAlpha = 1;
     }
 
-    // Selection on top.
+    // Labels on top of the geometry, nearest last.
+    labels.sort((a, b) => b.depth - a.depth);
+    for (const l of labels) { ctx.globalAlpha = l.alpha; l.draw(); }
+    ctx.globalAlpha = 1;
+
+    // Selection above everything else.
     if (sel) {
-      ctx.lineWidth = 2.5; ctx.strokeStyle = C.accent;
-      if (sel.type === 'static') { trace(sel.poly); ctx.stroke(); }
-      else if (sel.type === 'carried' && sel.drawn) { trace(sel.drawn.poly); ctx.stroke(); }
+      if (sel.type === 'static') strokeEdges(sel.corners, C.accent, 2.5);
+      else if (sel.type === 'carried' && sel.drawn) strokeEdges(sel.drawn.corners, C.accent, 2.5);
       else if (sel.type === 'entity') {
         const p = entityAt(S.entities.get(sel.id), now);
-        ctx.beginPath(); ctx.arc(sx(p.x), sy(p.z), 9, 0, Math.PI * 2); ctx.stroke();
+        const s = project([p.x, p.y, p.z]);
+        if (s) {
+          ctx.lineWidth = 2.5; ctx.strokeStyle = C.accent;
+          ctx.beginPath(); ctx.arc(s.x, s.y, 9, 0, Math.PI * 2); ctx.stroke();
+          // A stalk down to the ground, so its height is readable.
+          const foot = project([p.x, 0, p.z]);
+          if (foot && Math.abs(p.y) > .5) {
+            ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.strokeStyle = alpha('#a8adbb', .55);
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(foot.x, foot.y); ctx.stroke(); ctx.setLineDash([]);
+          }
+        }
       }
     }
 
-    const px = step * ppm;
     $('scaleN').textContent = fmtLen(step);
-    $('scaleB').style.width = Math.round(px) + 'px';
+    $('scaleB').style.width = Math.round(step * ppm) + 'px';
   }
+  function volumeOf(it) { return it.kind === 'static' ? it.s.volume : (it.box.size[0] * it.box.size[1] * it.box.size[2]); }
 
   function render(now) {
     if (S.follow) {
       const c = S.carriedById.get(S.follow);
-      const p = c && carriedPoly(c, now);
-      if (p) { S.view.cx = p.center[0]; S.view.cz = p.center[2]; S.dirty = true; }
+      const p = c && carriedBox(c, now);
+      if (p) { S.cam.tx = p.center[0]; S.cam.ty = p.center[1]; S.cam.tz = p.center[2]; S.dirty = true; }
     }
     if (!S.dirty && now > S.animUntil) return;
     S.dirty = false;
@@ -753,6 +969,34 @@
 
   // ------------------------------------------------------------------------------------------ picking
 
+  function rayFrom(px, py) {
+    updateCamera();
+    const vx = (px - W / 2) / FOC, vy = (H / 2 - py) / FOC;
+    const d = [
+      RX[0] * vx + UY[0] * vy + FZ[0],
+      RX[1] * vx + UY[1] * vy + FZ[1],
+      RX[2] * vx + UY[2] * vy + FZ[2],
+    ];
+    const n = Math.hypot(d[0], d[1], d[2]) || 1;
+    return { o: EYE, d: [d[0] / n, d[1] / n, d[2] / n] };
+  }
+  /** Where the cursor meets the ground plane, which is what the coordinate readout and zoom-to-cursor use. */
+  function groundHit(px, py) {
+    const r = rayFrom(px, py);
+    if (Math.abs(r.d[1]) < 1e-6) return null;
+    const t = (0 - r.o[1]) / r.d[1];
+    if (t <= 0 || t > 1e7) return null;
+    return { x: r.o[0] + r.d[0] * t, y: 0, z: r.o[2] + r.d[2] * t };
+  }
+  /** The point the camera should pivot zoom around: the ground under the cursor, else the focus plane under it. */
+  function zoomAnchor(px, py) {
+    const g = groundHit(px, py);
+    if (g) return [g.x, g.y, g.z];
+    const r = rayFrom(px, py);
+    const t = S.cam.dist / Math.max(1e-6, r.d[0] * FZ[0] + r.d[1] * FZ[1] + r.d[2] * FZ[2]);
+    return [r.o[0] + r.d[0] * t, r.o[1] + r.d[1] * t, r.o[2] + r.d[2] * t];
+  }
+
   function pick(px, py) {
     const now = performance.now();
     if (S.layers.entities) {
@@ -764,18 +1008,22 @@
       }
       if (best) return { type: 'entity', id: best.id };
     }
-    const x = wx(px), z = wz(py);
+    const ray = rayFrom(px, py);
     if (S.layers.ships) {
+      let best = null, bt = Infinity;
       for (const c of S.carried) {
-        const p = carriedPoly(c, now);
-        if (!p) continue;
-        if (inPoly(p.poly, x, z) || Math.hypot(sx(p.center[0]) - px, sy(p.center[2]) - py) < 9) return { type: 'carried', id: c.id };
+        const box = carriedBox(c, now);
+        if (!box) continue;
+        const t = rayBox(ray, box.center, box.size, box.rotation);
+        if (t !== null && t < bt) { bt = t; best = c; }
       }
+      if (best) return { type: 'carried', id: best.id };
     }
+    // Among every box the ray passes through, the innermost one wins, exactly as it did looking straight down.
     let best = null;
     for (const s of S.statics) {
       if (s.isCell ? !S.layers.cells : !S.layers.containers) continue;
-      if (x < s.aabb.x0 || x > s.aabb.x1 || z < s.aabb.z0 || z > s.aabb.z1 || !inPoly(s.poly, x, z)) continue;
+      if (rayBox(ray, s.center, s.size, s.rotation) === null) continue;
       if (!best || (best.isCell && !s.isCell) || (best.isCell === s.isCell && s.volume < best.volume)) best = s;
     }
     return best ? { type: 'static', id: best.id } : null;
@@ -809,7 +1057,8 @@
       const n = S.statics.length;
       insp.innerHTML = `<div class="ik"><span>Inspector</span><span>${n} container${n === 1 ? '' : 's'}</span></div>
         <div class="it">Nothing selected</div>
-        <p class="ihint">Hover a container, a ship or an entity to see who simulates it and what is inside; click to pin it. Drag to pan, scroll to zoom, <b>F</b> fits.</p>
+        <p class="ihint">Hover a container, a ship or an entity to see who simulates it and what is inside; click to pin it.</p>
+        <p class="ihint">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> fits, <kbd>T</kbd> looks straight down.</p>
         ${telemetry ? '' : '<p class="ihint" style="color:var(--warn)">No worker telemetry yet: containers show their owners, but not what is inside them.</p>'}`;
       return;
     }
@@ -847,7 +1096,7 @@
       h += `<dl class="kv"><dt>Interior</dt><dd>${workerLabel(sel.interiorWorker)}</dd><dt>Hull simulated by</dt><dd>${workerLabel(sel.hullWorker)}</dd>`;
       h += `<dt>Lease</dt><dd>${sel.lease ? (sel.pinned ? 'pinned' : 'follows carrier') + ' · epoch ' + sel.lease.epoch : 'none'}</dd>`;
       h += `<dt>Carrier</dt><dd>#${esc(sel.carrier)}</dd>`;
-      const drawn = carriedPoly(sel, performance.now());
+      const drawn = carriedBox(sel, performance.now());
       if (drawn) h += `<dt>Heading</dt><dd>${fmt(yawOf(drawn.rotation), 0)}°</dd><dt>Centre</dt><dd>${vec(drawn.center)}</dd>`;
       if (v !== null) h += `<dt>Speed</dt><dd>${fmt(v, 1)} m/s</dd>`;
       if (sel.size) h += `<dt>Size</dt><dd>${sel.size.map(n => fmt(n, 1)).join(' × ')} m</dd>`;
@@ -982,28 +1231,49 @@
 
   // ------------------------------------------------------------------------------------------ view
 
-  function flyTo(cx, cz, ppm) {
+  const MIN_DIST = 0.5, MAX_DIST = 5e6;
+  function saveAngles() { store.set('angles', { yaw: S.cam.yaw, pitch: S.cam.pitch }); }
+
+  let flyGen = 0;
+  function flyTo(to) {
     S.follow = null;
-    const from = Object.assign({}, S.view), t0 = performance.now(), dur = 450;
+    const gen = ++flyGen;
+    const cam = S.cam;
+    const from = { tx: cam.tx, ty: cam.ty, tz: cam.tz, dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch };
+    const end = Object.assign({}, from, to);
+    // Take the short way round the yaw circle.
+    end.yaw = from.yaw + (((end.yaw - from.yaw) % 360) + 540) % 360 - 180;
+    const t0 = performance.now(), dur = 450;
     const tick = (t) => {
+      if (gen !== flyGen) return;
       const u = Math.min(1, (t - t0) / dur), e = u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
-      S.view.cx = lerp(from.cx, cx, e); S.view.cz = lerp(from.cz, cz, e);
-      S.view.ppm = Math.exp(lerp(Math.log(from.ppm), Math.log(ppm), e));
+      cam.tx = lerp(from.tx, end.tx, e); cam.ty = lerp(from.ty, end.ty, e); cam.tz = lerp(from.tz, end.tz, e);
+      cam.yaw = lerp(from.yaw, end.yaw, e); cam.pitch = lerp(from.pitch, end.pitch, e);
+      cam.dist = Math.exp(lerp(Math.log(from.dist), Math.log(end.dist), e));
       S.dirty = true;
-      if (u < 1) nextFrame(tick);
+      if (u < 1) nextFrame(tick); else { cam.yaw = ((cam.yaw + 540) % 360) - 180; saveAngles(); }
     };
     nextFrame(tick);
   }
-  function fitBounds(a, pad, instant) {
+  /** Frame a world-space box: pull back far enough that its bounding sphere fits both screen axes. */
+  function fitBounds(a, pad, instant, angles) {
     if (!a || !isFinite(a.x0)) return;
-    const w = Math.max(10, a.x1 - a.x0), h = Math.max(10, a.z1 - a.z0);
-    const ppm = clamp(Math.min(W / (w * pad), H / (h * pad)), 0.0005, 400);
-    if (instant) { S.view = { cx: (a.x0 + a.x1) / 2, cz: (a.z0 + a.z1) / 2, ppm }; S.dirty = true; }
-    else flyTo((a.x0 + a.x1) / 2, (a.z0 + a.z1) / 2, ppm);
+    const cx = (a.x0 + a.x1) / 2, cy = (a.y0 + a.y1) / 2, cz = (a.z0 + a.z1) / 2;
+    const radius = Math.max(1, Math.hypot((a.x1 - a.x0) / 2, (a.y1 - a.y0) / 2, (a.z1 - a.z0) / 2));
+    const halfV = S.cam.fov * D2R / 2;
+    const halfH = Math.atan(Math.tan(halfV) * Math.max(0.2, W / Math.max(1, H)));
+    const dist = clamp(radius * (pad || 1) / Math.sin(Math.min(halfV, halfH)), MIN_DIST, MAX_DIST);
+    const to = Object.assign({ tx: cx, ty: cy, tz: cz, dist }, angles || {});
+    if (instant) { flyGen++; Object.assign(S.cam, to); S.follow = null; updateCamera(); S.dirty = true; }
+    else flyTo(to);
   }
   function union(list) {
-    const a = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
-    for (const b of list) { a.x0 = Math.min(a.x0, b.x0); a.x1 = Math.max(a.x1, b.x1); a.z0 = Math.min(a.z0, b.z0); a.z1 = Math.max(a.z1, b.z1); }
+    const a = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z0: Infinity, z1: -Infinity };
+    for (const b of list) {
+      a.x0 = Math.min(a.x0, b.x0); a.x1 = Math.max(a.x1, b.x1);
+      a.y0 = Math.min(a.y0, b.y0); a.y1 = Math.max(a.y1, b.y1);
+      a.z0 = Math.min(a.z0, b.z0); a.z1 = Math.max(a.z1, b.z1);
+    }
     return a;
   }
   function fit(world, instant) {
@@ -1011,55 +1281,127 @@
     let boxes = [];
     if (world && g && g.partitioned && g.world) {
       const cs = g.world.cellSize;
-      boxes = g.world.cells.map(c => ({ x0: (c.coord[0] - .5) * cs[0], x1: (c.coord[0] + .5) * cs[0], z0: (c.coord[2] - .5) * cs[2], z1: (c.coord[2] + .5) * cs[2] }));
+      boxes = g.world.cells.map(c => cellBox(c, cs).aabb);
     }
     if (!boxes.length) boxes = S.statics.filter(s => !s.isCell).map(s => s.aabb);
     if (!boxes.length) boxes = S.statics.map(s => s.aabb);
-    if (!boxes.length) boxes = [{ x0: -100, x1: 100, z0: -100, z1: 100 }];
+    if (!boxes.length) boxes = [{ x0: -100, x1: 100, y0: -20, y1: 20, z0: -100, z1: 100 }];
     fitBounds(union(boxes), 1.12, instant);
   }
   function goTo(ref) {
-    if (ref.type === 'static') { const s = S.staticById.get(ref.id); if (s) fitBounds(s.aabb, s.isCell ? 1.1 : 2.2); }
-    else if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); const p = c && carriedPoly(c, performance.now()); if (p) fitBounds(p.aabb, 5); }
+    if (ref.type === 'static') { const s = S.staticById.get(ref.id); if (s) fitBounds(s.aabb, s.isCell ? 1.15 : 1.8); }
+    else if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); const b = c && carriedBox(c, performance.now()); if (b) fitBounds(b.aabb, 3); }
   }
 
-  let dragging = false, moved = false, lastX = 0, lastY = 0;
-  cv.addEventListener('pointerdown', (e) => { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; cv.setPointerCapture(e.pointerId); });
+  // Left drag orbits, right/middle/Shift drag pans, two fingers pinch and pan; a press that never moves selects.
+  const pointers = new Map();
+  let mode = null, moved = false, lastX = 0, lastY = 0, pinchDist = 0, pinchX = 0, pinchY = 0;
+
+  const panBy = (dx, dy) => {
+    const gf = groundForward();
+    S.cam.tx += (-RX[0] * dx + gf[0] * dy) * MPP;
+    S.cam.tz += (-RX[2] * dx + gf[2] * dy) * MPP;
+  };
+  const orbitBy = (dx, dy) => {
+    S.cam.yaw = (((S.cam.yaw - dx * 0.35) + 540) % 360) - 180;
+    S.cam.pitch = clamp(S.cam.pitch + dy * 0.3, -85, 89);
+  };
+  // Scale the whole camera about the point under the cursor, so that point keeps the pixel it is on.
+  const dolly = (factor, px, py) => {
+    const cam = S.cam;
+    const a = S.follow ? null : zoomAnchor(px, py);
+    const before = cam.dist;
+    cam.dist = clamp(cam.dist * factor, MIN_DIST, MAX_DIST);
+    const k = cam.dist / before;
+    if (k === 1 || !a) return;
+    cam.tx = a[0] + (cam.tx - a[0]) * k;
+    cam.ty = a[1] + (cam.ty - a[1]) * k;
+    cam.tz = a[2] + (cam.tz - a[2]) * k;
+  };
+  const localXY = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());
+  cv.addEventListener('pointerdown', (e) => {
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      pinchX = (a.x + b.x) / 2; pinchY = (a.y + b.y) / 2;
+      mode = 'pinch'; moved = true;
+      cv.classList.remove('dragging'); cv.classList.add('panning');
+      return;
+    }
+    if (pointers.size > 2) return;
+    moved = false;
+    lastX = e.clientX; lastY = e.clientY;
+    mode = (e.button === 0 && !e.shiftKey) ? 'orbit' : 'pan';
+  });
   cv.addEventListener('pointermove', (e) => {
-    const r = cv.getBoundingClientRect();
-    const px = e.clientX - r.left, py = e.clientY - r.top;
-    S.cursor = { x: wx(px), z: wz(py) };
+    const p = pointers.get(e.pointerId);
+    if (p) { p.x = e.clientX; p.y = e.clientY; }
+    const [px, py] = localXY(e);
+    const g = groundHit(px, py);
+    S.cursor = g ? { x: g.x, z: g.z } : null;
     updateHud();
-    if (dragging) {
+
+    if (mode === 'pinch' && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const r = cv.getBoundingClientRect();
+      panBy(mx - pinchX, my - pinchY);
+      dolly(pinchDist / d, mx - r.left, my - r.top);
+      pinchDist = d; pinchX = mx; pinchY = my;
+      S.follow = null;
+      S.dirty = true; updateHud();
+      return;
+    }
+    if (mode && pointers.has(e.pointerId)) {
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) { moved = true; cv.classList.add('dragging'); S.follow = null; renderRail(); }
-      if (moved) { S.view.cx -= dx / S.view.ppm; S.view.cz += dy / S.view.ppm; S.dirty = true; }
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) {
+        moved = true;
+        cv.classList.add(mode === 'pan' ? 'panning' : 'dragging');
+        if (mode === 'pan') { S.follow = null; renderRail(); }
+      }
+      if (moved) {
+        if (mode === 'pan') panBy(dx, dy); else orbitBy(dx, dy);
+        updateCamera();
+        const g2 = groundHit(px, py);
+        S.cursor = g2 ? { x: g2.x, z: g2.z } : null;
+        updateHud();
+        S.dirty = true;
+      }
       lastX = e.clientX; lastY = e.clientY;
       return;
     }
     const hit = pick(px, py);
     if (!sameRef(hit, S.hover)) { S.hover = hit; if (!S.pinned) renderInspector(); S.dirty = true; }
   });
-  cv.addEventListener('pointerup', (e) => {
-    dragging = false; cv.classList.remove('dragging');
-    if (moved) return;
-    const r = cv.getBoundingClientRect();
-    const hit = pick(e.clientX - r.left, e.clientY - r.top);
+  function endPointer(e) {
+    const was = mode, hadMoved = moved;
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) { mode = null; cv.classList.remove('dragging', 'panning'); }
+    else if (pointers.size === 1) { mode = null; cv.classList.remove('dragging', 'panning'); }
+    if (was === 'orbit' || was === 'pan') saveAngles();
+    if (hadMoved || was === 'pinch' || pointers.size) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    const [px, py] = localXY(e);
+    const hit = pick(px, py);
     S.pinned = hit && !sameRef(hit, S.pinned) ? hit : null;
     renderInspector(); S.dirty = true;
-  });
+  }
+  cv.addEventListener('pointerup', endPointer);
+  cv.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); mode = null; cv.classList.remove('dragging', 'panning'); });
   cv.addEventListener('pointerleave', () => {
-    dragging = false; cv.classList.remove('dragging');
     S.cursor = null; updateHud();
     if (S.hover) { S.hover = null; if (!S.pinned) renderInspector(); S.dirty = true; }
   });
   cv.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const r = cv.getBoundingClientRect();
-    const px = e.clientX - r.left, py = e.clientY - r.top;
-    const bx = wx(px), bz = wz(py);
-    S.view.ppm = clamp(S.view.ppm * Math.exp(-e.deltaY * 0.0015), 0.0005, 400);
-    if (!S.follow) { S.view.cx = bx - (px - W / 2) / S.view.ppm; S.view.cz = bz + (py - H / 2) / S.view.ppm; }
+    const [px, py] = localXY(e);
+    dolly(Math.exp(e.deltaY * 0.0015), px, py);
+    updateCamera();
     S.dirty = true;
     updateHud();
   }, { passive: false });
@@ -1067,22 +1409,28 @@
     if (e.target.closest && e.target.closest('input, select, textarea')) return;
     if (e.key === 'Escape') { S.pinned = null; S.follow = null; renderInspector(); renderRail(); S.dirty = true; }
     else if (e.key === 'f' || e.key === 'F') fit(false);
+    else if (e.key === 't' || e.key === 'T') flyTo({ pitch: 89, yaw: 0 });
+    else if (e.key === 'r' || e.key === 'R') flyTo({ pitch: DEFAULT_PITCH, yaw: DEFAULT_YAW });
   });
 
   function updateHud() {
     const c = S.cursor;
     const g = S.geometry;
-    if (!c) { $('hud').textContent = `zoom ${fmt(S.view.ppm, S.view.ppm < 1 ? 3 : 1)} px/m`; return; }
+    const cam = S.cam;
+    const angle = `${fmt((cam.yaw + 360) % 360, 0)}° · tilt ${fmt(cam.pitch, 0)}° · ${fmtLen(cam.dist)} out`;
+    if (!c) { $('hud').textContent = angle; return; }
     let cell = '';
     if (g && g.partitioned && g.world) {
       const cs = g.world.cellSize;
       cell = ` · cell x ${Math.floor(c.x / cs[0] + .5)} z ${Math.floor(c.z / cs[2] + .5)}`;
     }
-    $('hud').textContent = `x ${fmt(c.x, 1)} · z ${fmt(c.z, 1)}${cell}`;
+    $('hud').textContent = `x ${fmt(c.x, 1)} · z ${fmt(c.z, 1)}${cell} · ${angle}`;
   }
 
   $('btnFit').onclick = () => fit(false);
   $('btnFitWorld').onclick = () => fit(true);
+  $('btnTop').onclick = () => flyTo({ pitch: 89, yaw: 0 });
+  $('btnIso').onclick = () => flyTo({ pitch: DEFAULT_PITCH, yaw: DEFAULT_YAW });
   $('segColour').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-colour]');
     if (!b) return;

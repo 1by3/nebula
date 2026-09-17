@@ -208,15 +208,15 @@ Stopping a worker with **Kill** simulates a crash. The orchestrator reassigns it
 
 ## Inspect the world map
 
-Open `/map` from the dashboard to see the mesh from above. The map shows:
+Open `/map` from the dashboard to see the mesh in 3D. Every container is drawn as the box it really is, so its height reads as clearly as its footprint. The map shows:
 
 - Static and world-partition cell containers.
 - The worker that controls each container.
 - Dynamic containers and their carriers.
-- Authoritative entities and ghost copies.
+- Authoritative entities and ghost copies, at their real height.
 - Loaded world cells and container boundaries.
 
-Drag to pan, scroll to zoom, and select an item to inspect it. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
+Drag to orbit the camera, right-drag or **Shift**-drag to pan, and scroll to zoom toward the cursor. Press **F** to fit the containers, **T** to look straight down, and **R** to return to the angled view. Select an item to inspect it. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
 
 Workers send summary telemetry once per second. While someone has the map open, workers send detailed entity positions every half second, up to 4,096 authoritative entities per worker. Pass `-nebula-telemetry off` to a manually started worker to disable this telemetry.
 
