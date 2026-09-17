@@ -35,6 +35,7 @@ namespace Nebula.Tests
                 NebulaWorld.Streamer.ShiftOrigin(new Vector3Int(-1000000, 0, 0));
                 Assert.AreEqual(new Vector3(.125f, 1, -.375f), child.transform.localPosition);
             }
+            Assert.AreSame(definition, NebulaWorld.Definition);
             Assert.IsFalse(NebulaWorld.IsActive, "No authored-scene gate is enabled");
             Assert.IsTrue(NebulaWorld.IsContentLoaded(container));
         }

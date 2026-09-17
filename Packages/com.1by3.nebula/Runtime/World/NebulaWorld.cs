@@ -15,7 +15,7 @@ namespace Nebula
     public static class NebulaWorld
     {
         public static WorldContainerManifest Manifest { get; private set; }
-        public static WorldDefinition Definition => Manifest != null ? Manifest.World : null;
+        public static WorldDefinition Definition => Streamer != null ? Streamer.Definition : null;
         public static WorldStreamer Streamer { get; private set; }
         public static bool IsActive => Manifest != null && Streamer != null;
         public static GameObject Root { get; private set; }
