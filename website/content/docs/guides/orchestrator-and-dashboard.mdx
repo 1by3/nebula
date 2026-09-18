@@ -216,7 +216,11 @@ Open `/map` from the dashboard to see the mesh in 3D. Every container is drawn a
 - Authoritative entities and ghost copies, at their real height.
 - Loaded world cells and container boundaries.
 
-Drag to orbit the camera, right-drag or **Shift**-drag to pan, and scroll to zoom toward the cursor. Press **F** to fit the containers, **T** to look straight down, and **R** to return to the angled view. Select an item to inspect it. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
+Drag to orbit the camera, right-drag or **Shift**-drag to pan, and scroll to zoom toward the cursor. Select an item to inspect it. Press **F** to zoom to the selected item, or the one under the cursor. A player, bot, or carried container stays centred as it moves until you pan or press **Esc**. With nothing selected, **F** fits the containers. Press **T** to look straight down and **R** to return to the angled view. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
+
+As you zoom in, **Focus fade** dims whatever lies well away from the point under the cursor, along with boxes much larger than the view, such as the cell around the camera. Players stay on top of other entities, and labels that would overlap are dropped, with player names kept first. Turn off **Focus fade** to see everything at full strength.
+
+Crowds are thinned to keep the map fast and readable. Each small patch of the screen shows at most a few markers, with at most 2,500 in view. The selected or followed entity is always shown. Players come next, then bots, then everything else, and the same entities stay chosen from frame to frame. The rest appear as faint specks. Zoom in to spread a crowd out and reveal more. A note above the coordinates says how many entities in view are shown.
 
 Workers send summary telemetry once per second. While someone has the map open, workers send detailed entity positions every half second, up to 4,096 authoritative entities per worker. Pass `-nebula-telemetry off` to a manually started worker to disable this telemetry.
 

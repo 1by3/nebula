@@ -99,6 +99,8 @@
   .ov { position: absolute; z-index: 2; }
   .panel { background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 0; box-shadow: 0 4px 12px rgba(0, 0, 0, .25); }
   #inspector { top: 12px; right: 12px; width: 318px; max-height: calc(100% - 24px); overflow: auto; padding: 12px 14px 14px; }
+  #lod { left: 12px; bottom: 48px; padding: 5px 10px; font-size: 12px; color: var(--ink-2); pointer-events: none; display: none; }
+  #lod.show { display: block; }
   #hud { left: 12px; bottom: 12px; padding: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); pointer-events: none; }
   #scale { right: 12px; bottom: 12px; padding: 6px 10px 8px; text-align: right; pointer-events: none; }
   #scale .n { font-family: var(--mono); font-size: 12px; }
@@ -186,14 +188,15 @@
         <label><input type="checkbox" data-layer="entities" checked> Entities</label>
         <label><input type="checkbox" data-layer="band"> Ghost band</label>
         <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+        <label title="Zoomed in, fade what lies away from the point you zoomed on"><input type="checkbox" data-layer="focus" checked> Focus fade</label>
       </div>
       <div class="btnrow" style="margin-top:10px">
-        <button class="small" id="btnFit" title="Fit the containers (F)">Fit containers</button>
+        <button class="small" id="btnFit" title="Fit the containers (F with nothing selected)">Fit containers</button>
         <button class="small" id="btnFitWorld" title="Fit every cell of the world">Fit world</button>
         <button class="small" id="btnTop" title="Look straight down (T)">Top down</button>
         <button class="small" id="btnIso" title="Back to the angled view (R)">Angled</button>
       </div>
-      <p class="note">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> fits, <kbd>T</kbd> looks down, <kbd>R</kbd> restores the angle.</p>
+      <p class="note">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> zooms to the selection and follows it (with nothing selected, fits the containers), <kbd>T</kbd> looks down, <kbd>R</kbd> restores the angle. With focus fade on, zooming in fades what lies away from the point under the cursor.</p>
     </section>
 
     <section>
@@ -224,6 +227,7 @@
   <main class="field" id="field">
     <canvas id="map" aria-label="World map"></canvas>
     <div class="ov panel" id="inspector"></div>
+    <div class="ov panel" id="lod"></div>
     <div class="ov panel" id="hud">—</div>
     <div class="ov panel" id="scale"><div class="n" id="scaleN">—</div><div class="b" id="scaleB" style="width:80px"></div><div class="l">at the focus point</div></div>
     <div class="ov panel" id="overlayMsg"></div>
@@ -260,7 +264,7 @@
 
   const angles = store.get('angles', {});
   const S = {
-    geometry: null, geometryVersion: -1, statics: [], staticById: new Map(), childrenOf: new Map(), drawOrder: [],
+    geometry: null, geometryVersion: -1, statics: [], cellBoxes: [], staticById: new Map(), childrenOf: new Map(), drawOrder: [],
     state: null, map: null, mapMissing: false, lastMapAt: 0,
     workers: new Map(), lease: new Map(), carriedLease: new Map(), counts: new Map(),
     carried: [], carriedById: new Map(),
@@ -274,8 +278,10 @@
     view: { ppm: 2 }, fitted: false,
     hover: null, pinned: null, follow: null, hoverWorker: null, soloWorker: null,
     colour: store.get('colour', 'owner'),
-    layers: Object.assign({ cells: true, containers: true, ships: true, entities: true, band: false, labels: true }, store.get('layers', {})),
-    cursor: null, dirty: true, animUntil: 0, lastFrameAt: 0, online: true, busy: false,
+    layers: Object.assign({ cells: true, containers: true, ships: true, entities: true, band: false, labels: true, focus: true }, store.get('layers', {})),
+    cursor: null, dirty: true, animUntil: 0, lastFrameAt: 0, lastRenderAt: 0, online: true, busy: false,
+    // The pixel the focus fade centres on, easing towards focusGoal (null: the middle of the view).
+    focusPx: { x: 0, y: 0 }, focusGoal: null,
   };
 
   // ------------------------------------------------------------------------------------------ geometry
@@ -364,6 +370,7 @@
       if (s.parent) { if (!S.childrenOf.has(s.parent)) S.childrenOf.set(s.parent, []); S.childrenOf.get(s.parent).push(s.id); }
     }
     S.drawOrder = S.statics.slice().sort((a, b) => (b.isCell - a.isCell) || (b.volume - a.volume));
+    S.cellBoxes = g.partitioned && g.world ? g.world.cells.map(c => ({ cell: c, key: c.coord.join(','), box: cellBox(c, g.world.cellSize) })) : [];
     const cells = g.partitioned && g.world ? g.world.cells.length : 0;
     $('geoSummary').textContent = g.partitioned ? `${g.world.name} · ${cells} cell${cells === 1 ? '' : 's'}` : 'single scene';
     fitOnce();
@@ -516,7 +523,10 @@
   };
 
   // Camera basis, rebuilt from S.cam before anything projects through it. Unity is left-handed, so right = up × forward.
-  let EYE = [0, 0, 0], RX = [1, 0, 0], UY = [0, 1, 0], FZ = [0, 0, 1], FOC = 1, MPP = 1, NEAR = 0.05;
+  let EYE = [0, 0, 0], RX = [1, 0, 0], UY = [0, 1, 0], FZ = [0, 0, 1], FOC = 1, MPP = 1, NEAR = 0.05, KX = 1, KY = 1;
+  // How far outside the canvas, in pixels, clipped geometry may still reach: enough that line caps and joins at the
+  // edge stay out of sight.
+  const GUARD = 48;
   function updateCamera() {
     const cam = S.cam;
     const cp = Math.cos(cam.pitch * D2R), sp = Math.sin(cam.pitch * D2R);
@@ -531,6 +541,7 @@
     FOC = (H / 2) / Math.tan(cam.fov * D2R / 2);
     MPP = cam.dist / FOC;           // metres per pixel on the plane through the focus point
     NEAR = Math.max(0.02, cam.dist * 1e-3);
+    KX = (W / 2 + GUARD) / FOC; KY = (H / 2 + GUARD) / FOC;
     S.view.ppm = 1 / MPP;
   }
   /** Ground plane direction the screen's vertical axis maps to; RX is always horizontal, so this is too. */
@@ -548,34 +559,90 @@
     return v[2] < NEAR ? null : { x: vsx(v), y: vsy(v), depth: v[2] };
   }
 
-  /** Sutherland–Hodgman against the single near plane: enough, because the canvas clips the sides for us. */
-  function clipNear(vs) {
-    const out = [];
-    for (let i = 0; i < vs.length; i++) {
-      const a = vs[i], b = vs[(i + 1) % vs.length];
-      const ain = a[2] >= NEAR, bin = b[2] >= NEAR;
-      if (ain) out.push(a);
-      if (ain !== bin) {
-        const t = (NEAR - a[2]) / (b[2] - a[2]);
-        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]);
-      }
+  /*
+   * Everything is clipped in view space to the near plane and to four side planes a guard band outside the canvas,
+   * before it is projected. Clipping only at the near plane let an edge passing close to the camera project millions of
+   * pixels long, and the canvas rasterises every dash of such a line: a box around the camera cost hundreds of
+   * milliseconds a frame. The side planes pass through the eye, so each plane's value is linear along a segment.
+   */
+  function planeV(i, v) {
+    switch (i) {
+      case 0: return v[2] - NEAR;
+      case 1: return KX * v[2] - v[0];
+      case 2: return KX * v[2] + v[0];
+      case 3: return KY * v[2] - v[1];
+      default: return KY * v[2] + v[1];
     }
-    return out;
+  }
+  const lerpV = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  /** Liang–Barsky: the visible parameter range [CT0, CT1] of segment a→b, false when none of it is in view. */
+  let CT0 = 0, CT1 = 1;
+  function clipT(a, b) {
+    let t0 = 0, t1 = 1;
+    for (let i = 0; i < 5; i++) {
+      const fa = planeV(i, a), fb = planeV(i, b);
+      if (fa < 0 && fb < 0) return false;
+      if (fa < 0) t0 = Math.max(t0, fa / (fa - fb));
+      else if (fb < 0) t1 = Math.min(t1, fa / (fa - fb));
+    }
+    CT0 = t0; CT1 = t1;
+    return t0 < t1;
+  }
+  /** Sutherland–Hodgman against the same five planes. */
+  function clipPoly(vs) {
+    let cur = vs;
+    for (let i = 0; i < 5 && cur.length >= 3; i++) {
+      const out = [];
+      for (let k = 0; k < cur.length; k++) {
+        const a = cur[k], b = cur[(k + 1) % cur.length];
+        const fa = planeV(i, a), fb = planeV(i, b);
+        if (fa >= 0) out.push(a);
+        if ((fa >= 0) !== (fb >= 0)) out.push(lerpV(a, b, fa / (fa - fb)));
+      }
+      cur = out;
+    }
+    return cur;
   }
   function pathV(vs) {
-    const c = clipNear(vs);
+    const c = clipPoly(vs);
     if (c.length < 3) return false;
     ctx.beginPath();
     for (let i = 0; i < c.length; i++) { const x = vsx(c[i]), y = vsy(c[i]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
     ctx.closePath();
     return true;
   }
+  /** Adds the visible part of a view-space segment to the current path. */
   function lineV(a, b) {
-    let A = a, B = b;
-    if (A[2] < NEAR && B[2] < NEAR) return;
-    if (A[2] < NEAR) { const t = (NEAR - A[2]) / (B[2] - A[2]); A = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, NEAR]; }
-    else if (B[2] < NEAR) { const t = (NEAR - B[2]) / (A[2] - B[2]); B = [B[0] + (A[0] - B[0]) * t, B[1] + (A[1] - B[1]) * t, NEAR]; }
+    if (!clipT(a, b)) return;
+    const A = CT0 > 0 ? lerpV(a, b, CT0) : a, B = CT1 < 1 ? lerpV(a, b, CT1) : b;
     ctx.moveTo(vsx(A), vsy(A)); ctx.lineTo(vsx(B), vsy(B));
+  }
+  /**
+   * Strokes view-space segments (pairs of points in `vs`, by index pairs `idx`). A dashed segment clipped at its start
+   * is stroked on its own, with the dash offset it would have had drawn from where it enters the view frustum's near
+   * side, so the dashes stay put on the edge rather than sliding along it as the camera moves.
+   */
+  function strokeSegsV(vs, idx, dash) {
+    const late = [];
+    const period = dash ? dash.reduce((a, b) => a + b, 0) * (dash.length % 2 ? 2 : 1) : 0;
+    ctx.beginPath();
+    for (const [i, j] of idx) {
+      const a = vs[i], b = vs[j];
+      if (!clipT(a, b)) continue;
+      const A = CT0 > 0 ? lerpV(a, b, CT0) : a, B = CT1 < 1 ? lerpV(a, b, CT1) : b;
+      if (period && CT0 > 0) {
+        const s = a[2] >= NEAR ? a : lerpV(a, b, (NEAR - a[2]) / (b[2] - a[2]));
+        const phase = Math.hypot(vsx(A) - vsx(s), vsy(A) - vsy(s)) % period;
+        if (phase > 1e-3) { late.push(A, B, phase); continue; }
+      }
+      ctx.moveTo(vsx(A), vsy(A)); ctx.lineTo(vsx(B), vsy(B));
+    }
+    ctx.stroke();
+    for (let k = 0; k < late.length; k += 3) {
+      ctx.lineDashOffset = late[k + 2];
+      ctx.beginPath(); ctx.moveTo(vsx(late[k]), vsy(late[k])); ctx.lineTo(vsx(late[k + 1]), vsy(late[k + 1])); ctx.stroke();
+    }
+    ctx.lineDashOffset = 0;
   }
   function strokeWorld(points, close) {
     const vs = points.map(toView);
@@ -626,20 +693,16 @@
       ctx.strokeStyle = opt.stroke;
       ctx.lineWidth = opt.lw || 1;
       if (opt.dash) ctx.setLineDash(opt.dash);
-      ctx.beginPath();
-      for (const [a, b] of EDGES) lineV(vs[a], vs[b]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      strokeSegsV(vs, EDGES, opt.dash);
+      if (opt.dash) ctx.setLineDash([]);
     }
   }
   function strokeEdges(corners, colour, lw, dash) {
     const vs = corners.map(toView);
     ctx.strokeStyle = colour; ctx.lineWidth = lw;
     if (dash) ctx.setLineDash(dash);
-    ctx.beginPath();
-    for (const [a, b] of EDGES) lineV(vs[a], vs[b]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    strokeSegsV(vs, EDGES, dash);
+    if (dash) ctx.setLineDash([]);
   }
 
   function resize() {
@@ -648,6 +711,7 @@
     W = Math.max(1, Math.floor(r.width)); H = Math.max(1, Math.floor(r.height));
     cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (!S.focusGoal) S.focusPx = { x: W / 2, y: H / 2 };
     updateCamera();
     if (S.geometry) fitOnce();
     S.dirty = true;
@@ -685,6 +749,7 @@
     const reach = Math.min(cam.dist * 4 + 200 * MPP, step * 90);
     const x0 = Math.ceil((cam.tx - reach) / step) * step, x1 = cam.tx + reach;
     const z0 = Math.ceil((cam.tz - reach) / step) * step, z1 = cam.tz + reach;
+    // A stroke per line: one translucent path of crossing lines is rasterised as a coverage mask, many times slower.
     ctx.lineWidth = 1;
     for (let x = x0; x <= x1; x += step) {
       ctx.strokeStyle = Math.abs(x) < 1e-6 ? 'rgba(122,162,255,.22)' : (Math.round(x / step) % 5 === 0 ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.035)');
@@ -721,10 +786,118 @@
     return { center, size: cs, rotation: IDENTITY, corners, axes: boxAxes(IDENTITY), aabb: aabbOf(corners) };
   }
 
+  // ------------------------------------------------------------------------------------------ focus fade
+
+  /*
+   * Zoomed in on a point, the map fades what lies well away from it, and boxes so large next to the view that they are
+   * only backdrop (the cell around the camera, the building it is inside), so the players and bots near the point stay
+   * legible. Distances are measured against the camera's distance to the point, so the fade follows the zoom: framing
+   * the whole world, nothing is far enough from the point to fade. The point is the world under S.focusPx, which moves
+   * to the cursor on a zoom and back to the middle of the view on an orbit, pan or fit.
+   */
+  const FOCUS = { p: [0, 0, 0], r: 1, on: false };
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const fadeTo = (floor, k) => floor + (1 - floor) * k;
+  function updateFocus() {
+    FOCUS.on = !!S.layers.focus;
+    if (!FOCUS.on) return;
+    FOCUS.p = zoomAnchor(S.focusPx.x, S.focusPx.y);
+    FOCUS.r = Math.max(1e-3, Math.hypot(FOCUS.p[0] - EYE[0], FOCUS.p[1] - EYE[1], FOCUS.p[2] - EYE[2]));
+  }
+  /** 1 close to the focus point, easing to 0 a little over a camera distance away from it. */
+  function nearness(x, y, z) {
+    if (!FOCUS.on) return 1;
+    return 1 - smooth(.5, 1.6, Math.hypot(x - FOCUS.p[0], y - FOCUS.p[1], z - FOCUS.p[2]) / FOCUS.r);
+  }
+  /** The same for a box, from its nearest point, times how far it is from dwarfing the view. */
+  function boxNearness(a, size) {
+    if (!FOCUS.on) return 1;
+    const f = FOCUS.p;
+    const dx = Math.max(a.x0 - f[0], 0, f[0] - a.x1), dy = Math.max(a.y0 - f[1], 0, f[1] - a.y1), dz = Math.max(a.z0 - f[2], 0, f[2] - a.z1);
+    const big = Math.max(size[0], size[1], size[2]) / FOCUS.r;
+    return (1 - smooth(.5, 1.6, Math.hypot(dx, dy, dz) / FOCUS.r)) * (1 - smooth(1.5, 5, big));
+  }
+  /** Eases the focus pixel towards where it is headed; true while it is still moving. */
+  function stepFocus(dt) {
+    const goal = S.focusGoal || { x: W / 2, y: H / 2 }, fp = S.focusPx;
+    const dx = goal.x - fp.x, dy = goal.y - fp.y;
+    if (Math.abs(dx) + Math.abs(dy) < .5) { fp.x = goal.x; fp.y = goal.y; return false; }
+    const k = 1 - Math.exp(-dt / 120);
+    fp.x += dx * k; fp.y += dy * k;
+    return true;
+  }
+
+  // ------------------------------------------------------------------------------------------ labels
+
+  const textWidths = new Map();
+  function textWidth(text, font) {
+    const key = font + '|' + text;
+    let w = textWidths.get(key);
+    if (w === undefined) {
+      if (textWidths.size > 4000) textWidths.clear();
+      ctx.font = font; w = ctx.measureText(text).width; textWidths.set(key, w);
+    }
+    return w;
+  }
+  /** Screen rectangle of a label centred on (x, y). */
+  const labelRect = (text, font, x, y, h) => { const w = textWidth(text, font) / 2 + 3; return [x - w, y - h / 2 - 1, x + w, y + h / 2 + 1]; };
+  const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  /**
+   * Keeps the labels that fit without overlapping, most important first (lowest rank, then nearest), and draws them
+   * far to near. In a crowd that is the difference between a readable name per player and a smear of text.
+   */
+  function drawLabels(labels) {
+    labels.sort((a, b) => (a.rank - b.rank) || (a.depth - b.depth));
+    const kept = [];
+    for (const l of labels) if (!kept.some(o => overlaps(o.rect, l.rect))) kept.push(l);
+    kept.sort((a, b) => b.depth - a.depth);
+    for (const l of kept) { ctx.globalAlpha = l.alpha; l.draw(); }
+    ctx.globalAlpha = 1;
+  }
+  const RANK = { selected: 0, player: 1, carried: 2, bot: 3, container: 4, cell: 5 };
+
+  // ------------------------------------------------------------------------------------------ entity detail
+
+  /*
+   * A game can pack thousands of entities into one container: drawing every marker costs frame time and reads as a
+   * smear anyway. The view is split into ENTITY_BIN-pixel bins that show at most ENTITY_PER_BIN markers each, with
+   * ENTITY_BUDGET markers in all. Which ones win: the selected or followed entity, then players, bots, server-driven and
+   * other entities, and within a class a fixed per-entity hash, so the same ones stay shown from frame to frame.
+   * Zooming in spreads a crowd over more bins, so more of it shows; the rest are drawn as faint specks.
+   */
+  const ENTITY_BIN = 24, ENTITY_PER_BIN = 4, ENTITY_BUDGET = 2500;
+  const KIND_RANK = { p: 1, b: 2, n: 3 };
+  function idHash(id) {
+    let h = 2166136261;
+    const str = String(id);
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ((h >>> 0) % 1000003) / 1000003;
+  }
+  let binCounts = new Uint8Array(0);
+  /** Splits on-screen entities (each with .v and .s) into those drawn as markers and those drawn as specks. */
+  function thinEntities(list, keep) {
+    for (const d of list) {
+      const v = d.v;
+      if (v.hash === undefined) v.hash = idHash(v.id);
+      d.rank = (keep(v) ? 0 : (KIND_RANK[v.kind] || 4)) + v.hash;
+    }
+    list.sort((a, b) => a.rank - b.rank);
+    const cols = Math.ceil((W + 20) / ENTITY_BIN) + 1, rows = Math.ceil((H + 20) / ENTITY_BIN) + 1;
+    if (binCounts.length < cols * rows) binCounts = new Uint8Array(cols * rows); else binCounts.fill(0, 0, cols * rows);
+    const shown = [], specks = [];
+    for (const d of list) {
+      const b = Math.floor((d.s.x + 10) / ENTITY_BIN) + Math.floor((d.s.y + 10) / ENTITY_BIN) * cols;
+      if (d.rank < 1 || (shown.length < ENTITY_BUDGET && binCounts[b] < ENTITY_PER_BIN)) { binCounts[b]++; shown.push(d); }
+      else specks.push(d);
+    }
+    return { shown, specks };
+  }
+
   // ------------------------------------------------------------------------------------------ draw
 
   function draw(now) {
     updateCamera();
+    updateFocus();
     ctx.fillStyle = C.field;
     ctx.fillRect(0, 0, W, H);
     const step = gridStep();
@@ -738,27 +911,29 @@
 
     // Cells of a partitioned world, with a chip per worker that has the cell loaded.
     if (g && g.partitioned && g.world && L.cells) {
-      const cs = g.world.cellSize;
       const loaders = new Map();
       for (const w of S.workers.values()) for (const c of (w.report && w.report.loadedCells) || []) {
         const k = c.join(','); if (!loaders.has(k)) loaders.set(k, []); loaders.get(k).push(w.id);
       }
       const drawn = [];
-      for (const cell of g.world.cells) {
-        const box = cellBox(cell, cs);
+      for (const { cell, key, box } of S.cellBoxes) {
         const span = screenSpan(box.corners);
         if (!visible(span)) continue;
-        drawn.push({ cell, box, span });
+        drawn.push({ cell, key, box, span });
       }
       drawn.sort((a, b) => b.span.depth - a.span.depth);
       for (const d of drawn) {
+        const k = boxNearness(d.box.aabb, d.box.size);
+        ctx.globalAlpha = fadeTo(.15, k);
         drawBox(d.box, { fill: 'rgba(168,173,187,.035)', stroke: 'rgba(168,173,187,.32)', lw: 1, dash: [6, 5] });
-        if (L.labels && d.span.x1 - d.span.x0 > 90) {
+        ctx.globalAlpha = 1;
+        if (L.labels && k > .5 && d.span.x1 - d.span.x0 > 90) {
           const top = project([d.box.center[0], d.box.aabb.y1, d.box.center[2]]);
-          const on = loaders.get(d.cell.coord.join(',')) || [];
+          const on = loaders.get(d.key) || [];
           const text = `cell ${d.cell.coord.join(', ')}`;
           if (top) labels.push({
-            depth: d.span.depth, alpha: 1, draw: () => {
+            rank: RANK.cell, rect: labelRect(text, '11px ui-monospace, Consolas, monospace', top.x, top.y - 4, 20),
+            depth: d.span.depth, alpha: k, draw: () => {
               label(text, top.x, top.y - 10, C.ink3, '11px ui-monospace, Consolas, monospace');
               const x = top.x - (on.length * 14 - 3) / 2;
               on.forEach((id, i) => { ctx.fillStyle = colorOf(id); ctx.fillRect(x + i * 14, top.y + 1, 11, 4); });
@@ -789,6 +964,8 @@
       if (s.isCell ? !L.cells : !L.containers) continue;
       const span = screenSpan(s.corners);
       if (!visible(span)) continue;
+      // A box a couple of pixels across (a room in a building across the world) reads as nothing; what holds it stands in.
+      if (!s.isCell && !span.clipped && Math.max(span.x1 - span.x0, span.y1 - span.y0) < 3) continue;
       solids.push({ kind: 'static', s, box: s, span });
     }
     if (L.ships) {
@@ -813,21 +990,24 @@
         const owner = ownerOf(s);
         const dim = focus && owner !== focus;
         const col = colorOf(owner);
-        ctx.globalAlpha = dim ? .25 : 1;
+        const k = related.has(s.id) || (sel && sel.id === s.id) ? 1 : boxNearness(s.aabb, s.size);
+        ctx.globalAlpha = (dim ? .25 : 1) * fadeTo(s.isCell ? .15 : .12, k);
         const fill = S.colour === 'load' && !s.isCell ? heat(countsOf(s.id).auth / maxLoad) : alpha(col, s.isCell ? .05 : Math.min(.3, .1 + s.depth * .035));
         drawBox(s, { fill, stroke: alpha(col, s.isCell ? .45 : .9), lw: s.isCell ? 1 : 1.25, dash: s.isCell ? [2, 4] : null });
         if (L.band && s.band && (g.ghostBandMargin || 0) * ppm >= 2) strokeEdges(s.band, alpha(col, .55), 1, [3, 3]);
         ctx.globalAlpha = 1;
         if (related.has(s.id)) strokeEdges(s.corners, C.accent, 1.5, [5, 4]);
-        if (L.labels && !s.isCell) {
+        if (L.labels && !s.isCell && k > .5) {
           const wpx = it.span.x1 - it.span.x0, hpx = it.span.y1 - it.span.y0;
           if (wpx >= 70 && hpx >= 26) {
             const top = project([(s.aabb.x0 + s.aabb.x1) / 2, s.aabb.y1, (s.aabb.z0 + s.aabb.z1) / 2]);
             if (top) {
-              const k = countsOf(s.id);
-              const second = k.auth > 0 && hpx > 56 && wpx > 96 ? `${k.auth} here${k.ghosts ? ' · ' + k.ghosts + ' ghost' + (k.ghosts === 1 ? '' : 's') : ''}` : '';
+              const n = countsOf(s.id);
+              const second = n.auth > 0 && hpx > 56 && wpx > 96 ? `${n.auth} here${n.ghosts ? ' · ' + n.ghosts + ' ghost' + (n.ghosts === 1 ? '' : 's') : ''}` : '';
+              const rect = labelRect(s.id, '12px system-ui, sans-serif', top.x, top.y - 12, 14);
+              if (second) { const r2 = labelRect(second, '11px system-ui, sans-serif', top.x, top.y + 3, 13); rect[0] = Math.min(rect[0], r2[0]); rect[2] = Math.max(rect[2], r2[2]); rect[3] = r2[3]; }
               labels.push({
-                depth: it.span.depth, alpha: dim ? .35 : 1, draw: () => {
+                rank: RANK.container, rect, depth: it.span.depth, alpha: (dim ? .35 : 1) * k, draw: () => {
                   label(s.id, top.x, top.y - 12, C.ink2, '12px system-ui, sans-serif');
                   if (second) label(second, top.x, top.y + 3, C.ink3, '11px system-ui, sans-serif');
                 }
@@ -838,7 +1018,8 @@
       } else {
         const c = it.c, box = it.box;
         const dim = focus && c.interiorWorker !== focus && c.hullWorker !== focus;
-        ctx.globalAlpha = dim ? .3 : 1;
+        const k = related.has(c.id) || (sel && sel.id === c.id) ? 1 : boxNearness(box.aabb, box.size);
+        ctx.globalAlpha = (dim ? .3 : 1) * fadeTo(.3, k);
         const hull = colorOf(c.hullWorker), interior = colorOf(c.interiorWorker);
         const wpx = it.span.x1 - it.span.x0, hpx = it.span.y1 - it.span.y0;
         if (Math.max(wpx, hpx) < 9) {
@@ -864,18 +1045,23 @@
         }
         ctx.globalAlpha = 1;
         if (related.has(c.id)) strokeEdges(box.corners, C.accent, 1.5, [5, 4]);
-        if (L.labels) {
+        if (L.labels && k > .5) {
           const top = project([box.center[0], box.aabb.y1, box.center[2]]);
           if (top) {
             const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
             const text = `${c.id}${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}${c.pinned ? ' · pinned' : ''}`;
-            labels.push({ depth: it.span.depth, alpha: dim ? .3 : 1, draw: () => label(text, top.x, top.y - 12, C.ink, '600 12px system-ui, sans-serif') });
+            const font = '600 12px system-ui, sans-serif';
+            labels.push({
+              rank: RANK.carried, rect: labelRect(text, font, top.x, top.y - 12, 14),
+              depth: it.span.depth, alpha: (dim ? .3 : 1) * k, draw: () => label(text, top.x, top.y - 12, C.ink, font),
+            });
           }
         }
       }
     }
 
     // Entities, at their real height above the ground.
+    let hiddenEntities = 0, inViewEntities = 0;
     if (L.entities) {
       const names = ppm >= 2.5 && L.labels;
       const drawn = [];
@@ -885,14 +1071,28 @@
         const p = entityAt(v, now);
         const s = project([p.x, p.y, p.z]);
         if (!s || s.x < -10 || s.x > W + 10 || s.y < -10 || s.y > H + 10) continue;
-        v.px = s.x; v.py = s.y;
         drawn.push({ v, p, s });
       }
-      drawn.sort((a, b) => b.s.depth - a.s.depth);
-      for (const d of drawn) {
+      const selId = sel && sel.type === 'entity' ? sel.id : null;
+      const followId = S.follow && S.follow.type === 'entity' ? S.follow.id : null;
+      const { shown, specks } = thinEntities(drawn, (v) => v.id === selId || v.id === followId);
+      hiddenEntities = specks.length; inViewEntities = drawn.length;
+      // Only a drawn marker can be hovered or clicked.
+      for (const d of shown) { d.v.px = d.s.x; d.v.py = d.s.y; }
+      if (specks.length) {
+        ctx.globalAlpha = .45; ctx.fillStyle = C.ink3;
+        ctx.beginPath();
+        for (const d of specks) ctx.rect(d.s.x - .75, d.s.y - .75, 1.5, 1.5);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      // Players over everything else, so one stays findable in a crowd of bots; far to near within each.
+      shown.sort((a, b) => ((a.v.kind === 'p') - (b.v.kind === 'p')) || (b.s.depth - a.s.depth));
+      for (const d of shown) {
         const v = d.v, X = d.s.x, Y = d.s.y;
         const col = colorOf(v.worker);
-        ctx.globalAlpha = focus && v.worker !== focus ? .2 : 1;
+        const k = v.id === selId ? 1 : nearness(d.p.x, d.p.y, d.p.z);
+        ctx.globalAlpha = (focus && v.worker !== focus ? .2 : 1) * fadeTo(v.kind === 'p' ? .5 : v.kind === 'b' ? .2 : .12, k);
         if (v.kind === 'p' || v.kind === 'b') {
           // The facing whisker follows the world yaw, so it turns with the camera.
           const a = d.p.yaw * D2R;
@@ -907,7 +1107,14 @@
           else { ctx.moveTo(X, Y - 5); ctx.lineTo(X + 5, Y); ctx.lineTo(X, Y + 5); ctx.lineTo(X - 5, Y); ctx.closePath(); }
           ctx.fillStyle = col; ctx.fill();
           ctx.lineWidth = 1.5; ctx.strokeStyle = v.kind === 'p' ? '#fff' : 'rgba(255,255,255,.55)'; ctx.stroke();
-          if (names && v.name) label(v.name, X, Y - 13, C.ink, '11px system-ui, sans-serif');
+          if (names && v.name && k > .5) {
+            const a = ctx.globalAlpha, text = v.name;
+            labels.push({
+              rank: v.id === selId ? RANK.selected : v.kind === 'p' ? RANK.player : RANK.bot,
+              rect: labelRect(text, '11px system-ui, sans-serif', X, Y - 13, 13),
+              depth: d.s.depth, alpha: a, draw: () => label(text, X, Y - 13, C.ink, '11px system-ui, sans-serif'),
+            });
+          }
         } else if (v.kind === 'o' || v.kind === 'v') {
           ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.strokeRect(X - 2.5, Y - 2.5, 5, 5);
         } else {
@@ -917,10 +1124,13 @@
       ctx.globalAlpha = 1;
     }
 
-    // Labels on top of the geometry, nearest last.
-    labels.sort((a, b) => b.depth - a.depth);
-    for (const l of labels) { ctx.globalAlpha = l.alpha; l.draw(); }
-    ctx.globalAlpha = 1;
+    // Labels on top of the geometry.
+    drawLabels(labels);
+
+    const lod = $('lod');
+    lod.classList.toggle('show', hiddenEntities > 0);
+    const lodText = hiddenEntities ? `${(inViewEntities - hiddenEntities).toLocaleString()} of ${inViewEntities.toLocaleString()} entities in view shown · zoom in for more` : '';
+    if (lod.textContent !== lodText) lod.textContent = lodText;
 
     // Selection above everything else.
     if (sel) {
@@ -949,10 +1159,12 @@
 
   function render(now) {
     if (S.follow) {
-      const c = S.carriedById.get(S.follow);
-      const p = c && carriedBox(c, now);
-      if (p) { S.cam.tx = p.center[0]; S.cam.ty = p.center[1]; S.cam.tz = p.center[2]; S.dirty = true; }
+      const p = trackedPoint(S.follow, now);
+      if (p && (p[0] !== S.cam.tx || p[1] !== S.cam.ty || p[2] !== S.cam.tz)) { S.cam.tx = p[0]; S.cam.ty = p[1]; S.cam.tz = p[2]; S.dirty = true; }
     }
+    const dt = Math.min(50, Math.max(0, now - S.lastRenderAt));
+    S.lastRenderAt = now;
+    if (stepFocus(dt)) S.dirty = true;
     if (!S.dirty && now > S.animUntil) return;
     S.dirty = false;
     draw(now);
@@ -1058,7 +1270,7 @@
       insp.innerHTML = `<div class="ik"><span>Inspector</span><span>${n} container${n === 1 ? '' : 's'}</span></div>
         <div class="it">Nothing selected</div>
         <p class="ihint">Hover a container, a ship or an entity to see who simulates it and what is inside; click to pin it.</p>
-        <p class="ihint">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> fits, <kbd>T</kbd> looks straight down.</p>
+        <p class="ihint">Drag to orbit, right-drag or <kbd>Shift</kbd>-drag to pan, scroll to zoom. <kbd>F</kbd> zooms to what is selected or under the cursor and follows it, <kbd>T</kbd> looks straight down.</p>
         ${telemetry ? '' : '<p class="ihint" style="color:var(--warn)">No worker telemetry yet: containers show their owners, but not what is inside them.</p>'}`;
       return;
     }
@@ -1104,7 +1316,7 @@
       h += `<div class="is">Authoritative inside · ${sel.counts.auth}</div>${metrics(sel.counts)}`;
       h += `<div class="is">By worker</div>${byWorker(sel.counts)}`;
       h += `<div class="iactions">`;
-      h += `<button class="small ${S.follow === sel.id ? 'on' : ''}" data-act="follow" data-id="${esc(sel.id)}">${S.follow === sel.id ? 'Stop following' : 'Follow'}</button>`;
+      h += `<button class="small ${isFollowing('carried', sel.id) ? 'on' : ''}" data-act="follow" data-id="${esc(sel.id)}">${isFollowing('carried', sel.id) ? 'Stop following' : 'Follow'}</button>`;
       if (sel.lease) {
         h += sel.pinned
           ? `<button class="small" data-act="unpin" data-id="${esc(sel.id)}" ${S.busy ? 'disabled' : ''} title="Let the interior follow its carrier's worker again">Unpin</button>`
@@ -1119,7 +1331,7 @@
       h += `<p class="ip">${sel.container ? 'in ' + (S.carriedById.has(sel.container) ? chip('carried', sel.container) : chip('static', sel.container)) : 'outside every container'}</p>`;
       h += `<dl class="kv"><dt>Authority</dt><dd>${workerLabel(sel.worker)}</dd><dt>Position</dt><dd>${fmt(p.x, 1)}, ${fmt(p.y, 1)}, ${fmt(p.z, 1)}</dd><dt>Heading</dt><dd>${fmt((p.yaw + 360) % 360, 0)}°</dd></dl>`;
     }
-    if (S.pinned) h += `<p class="ihint">Pinned. Click empty ground or press Esc to release.</p>`;
+    if (S.pinned) h += `<p class="ihint">Pinned. ${isFollowing(sel.type, sel.id) ? 'Following: pan or press Esc to stop. ' : sel.type === 'static' ? 'Press F to zoom to it. ' : 'Press F to zoom in and follow it. '}Click empty ground or press Esc to release.</p>`;
     insp.innerHTML = h;
   }
 
@@ -1131,7 +1343,7 @@
     if (c) { S.pinned = { type: c.dataset.type, id: c.dataset.id }; goTo(S.pinned); renderInspector(); S.dirty = true; return; }
     const b = ev.target.closest('button[data-act]');
     if (!b || b.disabled) return;
-    if (b.dataset.act === 'follow') { S.follow = S.follow === b.dataset.id ? null : b.dataset.id; renderInspector(); renderRail(); S.dirty = true; }
+    if (b.dataset.act === 'follow') { S.follow = isFollowing('carried', b.dataset.id) ? null : { type: 'carried', id: b.dataset.id }; S.focusGoal = null; renderInspector(); renderRail(); S.dirty = true; }
     else if (b.dataset.act === 'unpin') post('/api/containers/unpin', { containerId: b.dataset.id });
   });
   insp.addEventListener('change', (ev) => {
@@ -1174,7 +1386,7 @@
       note.className = 'note' + (stale.length || silent.length ? ' warn' : '');
       note.textContent = stale.length || silent.length
         ? `${[...stale.map(w => w.id + ' stale'), ...silent.map(w => w.id + ' silent')].join(', ')}.`
-        : (detail ? `Every live worker reporting; ${S.entities.size} entit${S.entities.size === 1 ? 'y' : 'ies'} drawn.` : 'Every live worker reporting; entity positions arrive within a second of opening the map.');
+        : (detail ? `Every live worker reporting; ${S.entities.size} entit${S.entities.size === 1 ? 'y' : 'ies'} on the map.` : 'Every live worker reporting; entity positions arrive within a second of opening the map.');
     }
 
     const ws = [...S.workers.values()].sort((a, b) => (a.index || 0) - (b.index || 0));
@@ -1193,12 +1405,12 @@
     $('carriedCount').textContent = S.carried.length ? S.carried.length : '';
     setHtml($('carriedRows'), S.carried.length ? S.carried.map(c => {
       const v = c.velocity ? Math.hypot(c.velocity[0], c.velocity[1], c.velocity[2]) : 0;
-      return `<div class="row ${S.follow === c.id ? 'on' : ''}" data-carried="${esc(c.id)}" style="--wc:${esc(colorOf(c.interiorWorker))}">
+      return `<div class="row ${isFollowing('carried', c.id) ? 'on' : ''}" data-carried="${esc(c.id)}" style="--wc:${esc(colorOf(c.interiorWorker))}">
         <span class="bar"></span>
         <div style="min-width:0"><div class="name">${esc(c.id)}</div>
           <div class="meta">${c.interiorWorker ? esc(c.interiorWorker) : 'unowned'}${c.pinned && c.hullWorker && c.hullWorker !== c.interiorWorker ? ' · hull ' + esc(c.hullWorker) : ''} · ${c.counts.auth} aboard${v >= .5 ? ' · ' + fmt(v, 0) + ' m/s' : ''}</div></div>
         <div class="side">${c.pinned ? '<span class="tag accent">pinned</span>' : ''}${c.pose ? '' : '<span class="tag warn">no pose</span>'}
-          <button class="small ${S.follow === c.id ? 'on' : ''}" data-follow="${esc(c.id)}" ${c.pose ? '' : 'disabled'}>${S.follow === c.id ? 'Following' : 'Follow'}</button></div></div>`;
+          <button class="small ${isFollowing('carried', c.id) ? 'on' : ''}" data-follow="${esc(c.id)}" ${c.pose ? '' : 'disabled'}>${isFollowing('carried', c.id) ? 'Following' : 'Follow'}</button></div></div>`;
     }).join('') : '<div class="empty">No carried containers. Create a dynamic container in your game to see it here.</div>');
   }
 
@@ -1224,7 +1436,7 @@
   $('carriedRows').addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
     const b = ev.target.closest('button[data-follow]');
-    if (b) { S.follow = S.follow === b.dataset.follow ? null : b.dataset.follow; if (S.follow) S.pinned = { type: 'carried', id: S.follow }; renderRail(); renderInspector(); S.dirty = true; return; }
+    if (b) { S.follow = isFollowing('carried', b.dataset.follow) ? null : { type: 'carried', id: b.dataset.follow }; S.focusGoal = null; if (S.follow) S.pinned = S.follow; renderRail(); renderInspector(); S.dirty = true; return; }
     const r = ev.target.closest('.row[data-carried]');
     if (r) { S.pinned = { type: 'carried', id: r.dataset.carried }; goTo(S.pinned); renderInspector(); S.dirty = true; }
   });
@@ -1235,8 +1447,10 @@
   function saveAngles() { store.set('angles', { yaw: S.cam.yaw, pitch: S.cam.pitch }); }
 
   let flyGen = 0;
-  function flyTo(to) {
+  /** Fly the camera to `to`; with `follow`, aim at where that item is on every step and keep following it on arrival. */
+  function flyTo(to, follow) {
     S.follow = null;
+    S.focusGoal = null;
     const gen = ++flyGen;
     const cam = S.cam;
     const from = { tx: cam.tx, ty: cam.ty, tz: cam.tz, dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch };
@@ -1246,25 +1460,35 @@
     const t0 = performance.now(), dur = 450;
     const tick = (t) => {
       if (gen !== flyGen) return;
+      const at = follow && trackedPoint(follow, t);
+      if (at) { end.tx = at[0]; end.ty = at[1]; end.tz = at[2]; }
       const u = Math.min(1, (t - t0) / dur), e = u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
       cam.tx = lerp(from.tx, end.tx, e); cam.ty = lerp(from.ty, end.ty, e); cam.tz = lerp(from.tz, end.tz, e);
       cam.yaw = lerp(from.yaw, end.yaw, e); cam.pitch = lerp(from.pitch, end.pitch, e);
       cam.dist = Math.exp(lerp(Math.log(from.dist), Math.log(end.dist), e));
-      S.dirty = true;
-      if (u < 1) nextFrame(tick); else { cam.yaw = ((cam.yaw + 540) % 360) - 180; saveAngles(); }
+      S.dirty = true; updateHud();
+      if (u < 1) nextFrame(tick);
+      else {
+        cam.yaw = ((cam.yaw + 540) % 360) - 180; saveAngles();
+        if (follow) { S.follow = follow; renderRail(); renderInspector(); }
+      }
     };
     nextFrame(tick);
   }
-  /** Frame a world-space box: pull back far enough that its bounding sphere fits both screen axes. */
-  function fitBounds(a, pad, instant, angles) {
-    if (!a || !isFinite(a.x0)) return;
-    const cx = (a.x0 + a.x1) / 2, cy = (a.y0 + a.y1) / 2, cz = (a.z0 + a.z1) / 2;
+  /** How far back the camera must be for a box's bounding sphere to fit both screen axes. */
+  function fitDist(a, pad) {
     const radius = Math.max(1, Math.hypot((a.x1 - a.x0) / 2, (a.y1 - a.y0) / 2, (a.z1 - a.z0) / 2));
     const halfV = S.cam.fov * D2R / 2;
     const halfH = Math.atan(Math.tan(halfV) * Math.max(0.2, W / Math.max(1, H)));
-    const dist = clamp(radius * (pad || 1) / Math.sin(Math.min(halfV, halfH)), MIN_DIST, MAX_DIST);
+    return clamp(radius * (pad || 1) / Math.sin(Math.min(halfV, halfH)), MIN_DIST, MAX_DIST);
+  }
+  /** Frame a world-space box. */
+  function fitBounds(a, pad, instant, angles) {
+    if (!a || !isFinite(a.x0)) return;
+    const cx = (a.x0 + a.x1) / 2, cy = (a.y0 + a.y1) / 2, cz = (a.z0 + a.z1) / 2;
+    const dist = fitDist(a, pad);
     const to = Object.assign({ tx: cx, ty: cy, tz: cz, dist }, angles || {});
-    if (instant) { flyGen++; Object.assign(S.cam, to); S.follow = null; updateCamera(); S.dirty = true; }
+    if (instant) { flyGen++; Object.assign(S.cam, to); S.follow = null; S.focusGoal = null; updateCamera(); S.dirty = true; }
     else flyTo(to);
   }
   function union(list) {
@@ -1291,6 +1515,31 @@
   function goTo(ref) {
     if (ref.type === 'static') { const s = S.staticById.get(ref.id); if (s) fitBounds(s.aabb, s.isCell ? 1.15 : 1.8); }
     else if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); const b = c && carriedBox(c, performance.now()); if (b) fitBounds(b.aabb, 3); }
+  }
+
+  // Close enough to a player or bot that names show and its neighbours are in view.
+  const ENTITY_VIEW = 24;
+  const isFollowing = (type, id) => !!S.follow && S.follow.type === type && S.follow.id === id;
+  /** Where a followable item (a carried container or an entity) is right now, or null when it has no pose. */
+  function trackedPoint(ref, now) {
+    if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); const b = c && carriedBox(c, now); return b ? b.center : null; }
+    if (ref.type === 'entity') { const v = S.entities.get(ref.id); if (!v) return null; const p = entityAt(v, now); return [p.x, p.y, p.z]; }
+    return null;
+  }
+  /**
+   * F: zoom in on the selection (or what is under the cursor) and, if it moves, keep it centred until you pan or
+   * press Esc. With nothing selected, fit the containers.
+   */
+  function focusSelection() {
+    const ref = S.pinned || S.hover;
+    if (!ref) { fit(false); return; }
+    S.pinned = ref; renderInspector(); S.dirty = true;
+    if (ref.type === 'static') { goTo(ref); return; }
+    const now = performance.now();
+    if (!trackedPoint(ref, now)) return;
+    let dist = Math.min(S.cam.dist, ENTITY_VIEW);
+    if (ref.type === 'carried') { const c = S.carriedById.get(ref.id); dist = fitDist(carriedBox(c, now).aabb, 3); }
+    flyTo({ dist }, ref);
   }
 
   // Left drag orbits, right/middle/Shift drag pans, two fingers pinch and pan; a press that never moves selects.
@@ -1352,6 +1601,7 @@
       const r = cv.getBoundingClientRect();
       panBy(mx - pinchX, my - pinchY);
       dolly(pinchDist / d, mx - r.left, my - r.top);
+      S.focusGoal = { x: mx - r.left, y: my - r.top };
       pinchDist = d; pinchX = mx; pinchY = my;
       S.follow = null;
       S.dirty = true; updateHud();
@@ -1362,6 +1612,7 @@
       if (!moved && Math.abs(dx) + Math.abs(dy) > 3) {
         moved = true;
         cv.classList.add(mode === 'pan' ? 'panning' : 'dragging');
+        S.focusGoal = null;
         if (mode === 'pan') { S.follow = null; renderRail(); }
       }
       if (moved) {
@@ -1401,6 +1652,7 @@
     e.preventDefault();
     const [px, py] = localXY(e);
     dolly(Math.exp(e.deltaY * 0.0015), px, py);
+    S.focusGoal = S.follow ? null : { x: px, y: py };
     updateCamera();
     S.dirty = true;
     updateHud();
@@ -1408,7 +1660,7 @@
   window.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('input, select, textarea')) return;
     if (e.key === 'Escape') { S.pinned = null; S.follow = null; renderInspector(); renderRail(); S.dirty = true; }
-    else if (e.key === 'f' || e.key === 'F') fit(false);
+    else if (e.key === 'f' || e.key === 'F') focusSelection();
     else if (e.key === 't' || e.key === 'T') flyTo({ pitch: 89, yaw: 0 });
     else if (e.key === 'r' || e.key === 'R') flyTo({ pitch: DEFAULT_PITCH, yaw: DEFAULT_YAW });
   });
