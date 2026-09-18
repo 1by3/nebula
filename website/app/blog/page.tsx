@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    href: '/blog/2026-09-18-progress-update',
+    title: 'Nebula progress update: September 18, 2026',
+    description:
+      'Five alpha releases add Nebula Cloud deploys, multiple gateways, one connection per player, a 3D world map, and confirmed saves.',
+    date: 'September 18, 2026',
+    dateTime: '2026-09-18',
+  },
+  {
     href: '/blog/2026-09-15-progress-update',
     title: 'Nebula progress update: September 15, 2026',
     description:
