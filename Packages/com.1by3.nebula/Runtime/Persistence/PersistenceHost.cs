@@ -9,7 +9,9 @@ namespace Nebula
     /// a worker needs no database driver of its own (<see cref="RemotePersistenceStore"/> is its client). Every
     /// request is handled on the main thread from the orchestrator's command pump, which is where the store's
     /// callbacks land: a read returns <see cref="OrchestratorHttpServer.Response.Pending"/> and completes when the
-    /// store answers, usually on the next tick.
+    /// store answers, usually on the next tick. A write answers the same way, once the store's
+    /// <see cref="IPersistenceStore.WhenWritten"/> barrier says the backend has it, so a worker's
+    /// <see cref="RemotePersistenceStore.WhenWritten"/> is a real durability barrier and not just proof of delivery.
     /// <list type="bullet">
     /// <item><c>POST /api/store/save</c> <c>{"records":[...]}</c>, <c>POST /api/store/delete</c> <c>{"keys":[...]}</c>, <c>POST /api/store/clear</c></item>
     /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/container?id=</c>, <c>GET /api/store/carried?key=</c>, <c>GET /api/store/all</c></item>
@@ -53,7 +55,11 @@ namespace Nebula
                     try { records = PersistedRecordJson.ParseList(body); }
                     catch (Exception e) { response = OrchestratorHttpServer.Response.Error(400, "malformed record: " + e.Message); return true; }
                     foreach (var r in records) _store.Save(r);
-                    response = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"saved\":{records.Count.ToString(CultureInfo.InvariantCulture)}}}");
+                    // Answer only once the backing store has the writes: the worker's RemotePersistenceStore turns a
+                    // 2xx here into its own WhenWritten barrier, so acking early would promise a durability it lacks.
+                    var saved = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"saved\":{records.Count.ToString(CultureInfo.InvariantCulture)}}}");
+                    _store.WhenWritten(() => req.Complete(saved));
+                    response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
                 case "POST delete":
@@ -64,12 +70,15 @@ namespace Nebula
                     {
                         foreach (var k in keys) if (k is string key && key.Length > 0) { _store.Delete(key); n++; }
                     }
-                    response = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"deleted\":{n.ToString(CultureInfo.InvariantCulture)}}}");
+                    var deleted = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"deleted\":{n.ToString(CultureInfo.InvariantCulture)}}}");
+                    _store.WhenWritten(() => req.Complete(deleted));
+                    response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
                 case "POST clear":
                     _store.Clear();
-                    response = OrchestratorHttpServer.Response.Json(200, "{\"ok\":true}");
+                    _store.WhenWritten(() => req.Complete(OrchestratorHttpServer.Response.Json(200, "{\"ok\":true}")));
+                    response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET record":
                     _store.Load(req.GetQuery("key"), r => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteOne(r))));
