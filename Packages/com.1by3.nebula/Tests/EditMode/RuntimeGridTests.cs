@@ -8,8 +8,7 @@ namespace Nebula.Tests
 {
     /// <summary>
     /// <see cref="RuntimeGrid"/>: the opt-in helper for a procedural, unbounded grid of runtime containers. The id
-    /// packing is pinned against known pairs because it must stay bit-for-bit identical to Holospace's
-    /// <c>WorldChunks.IdOf</c>/<c>CoordOf</c> (ids are already persisted).
+    /// packing is pinned against known pairs because existing ids are already persisted and must stay stable.
     /// </summary>
     public sealed class RuntimeGridTests
     {
@@ -30,7 +29,7 @@ namespace Nebula.Tests
             Object.DestroyImmediate(definition);
         }
 
-        // Known pairs, pinned against Holospace's WorldChunks.IdOf/CoordOf (three signed 21-bit fields, x high).
+        // Known persisted pairs for three signed 21-bit fields, x high.
         [TestCase(0ul, 0, 0, 0)]
         [TestCase(2097151ul, 0, 0, -1)]
         [TestCase(9223367638808264704ul, -1, 0, 0)]

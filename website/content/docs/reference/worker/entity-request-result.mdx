@@ -1,0 +1,43 @@
+---
+title: "EntityRequestResult"
+description: "Outcome of one EntityRequests.Request call."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs)</div>
+
+```csharp
+public readonly struct EntityRequestResult
+```
+
+Outcome of one [`EntityRequests.Request`](/docs/reference/worker/entity-requests#request) call.
+
+## Constructors
+
+### EntityRequestResult [#entityrequestresult]
+
+```csharp
+public EntityRequestResult(EntityRequestStatus status, byte[] reply);
+```
+
+## Properties
+
+### Status [#status]
+
+```csharp
+public EntityRequestStatus Status { get; }
+```
+
+### Reply [#reply]
+
+```csharp
+public byte[] Reply { get; }
+```
+
+The reply bytes when [`Status`](#status) is [`EntityRequestStatus.Replied`](/docs/reference/worker/entity-request-status#replied); empty otherwise.
+
+### Succeeded [#succeeded]
+
+```csharp
+public bool Succeeded { get; }
+```
+

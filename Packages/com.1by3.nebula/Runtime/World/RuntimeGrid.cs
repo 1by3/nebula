@@ -12,9 +12,9 @@ namespace Nebula.World
     /// current floating-origin frame, and neighbourhood queries.
     /// <para>
     /// The id packing (three signed 21-bit fields) is fixed and must never change: ids are persisted (a runtime
-    /// container id is a control-plane lease key and may be a database key in a game's own persistence). It matches
-    /// what Holospace's <c>WorldChunks.IdOf</c>/<c>CoordOf</c> already produce, so existing persisted ids keep
-    /// resolving to the same cell after adopting this type.
+    /// container id is a control-plane lease key and may be a database key in a game's own persistence). The format
+    /// preserves the established three-axis packing used by existing projects, so persisted ids keep resolving to
+    /// the same cell after adopting this type.
     /// </para>
     /// </summary>
     public sealed class RuntimeGrid
@@ -42,8 +42,8 @@ namespace Nebula.World
 
         /// <summary>
         /// Pack a grid coordinate into a stable 64-bit runtime container id: three signed 21-bit fields, x in the
-        /// high bits. Bit-for-bit identical to Holospace's <c>WorldChunks.IdOf</c> (pinned by
-        /// <c>RuntimeGridTests</c>) because ids are already persisted; this packing must never change.
+        /// high bits. The known values are pinned by <c>RuntimeGridTests</c> because ids are already persisted; this
+        /// packing must never change.
         /// </summary>
         public static ulong PackId(Vector3Int coord)
         {

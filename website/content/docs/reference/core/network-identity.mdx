@@ -229,6 +229,14 @@ The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this 
 public bool HasSyncState { get; }
 ```
 
+### ReceivingHandover [#receivinghandover]
+
+```csharp
+public bool ReceivingHandover { get; }
+```
+
+Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
+
 ### SyncContainer [#synccontainer]
 
 ```csharp
@@ -294,8 +302,6 @@ Handover-only state from every behaviour (see [`NetworkBehaviour.WriteHandoverSt
 ```csharp
 public void ReadHandoverState(NetworkReader reader);
 ```
-
-Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
 
 ### ClearDirty [#cleardirty]
 

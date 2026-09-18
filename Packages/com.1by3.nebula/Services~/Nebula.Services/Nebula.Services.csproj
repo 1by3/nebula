@@ -23,5 +23,6 @@
     <Compile Include="../../World/WorldGrid.cs" />
     <EmbeddedResource Include="../../Runtime/Orchestrator/Resources/*.html" LogicalName="%(Filename)%(Extension)" />
     <InternalsVisibleTo Include="Nebula.Services.Tests" />
+    <InternalsVisibleTo Include="Nebula.Persistence.Benchmarks" />
   </ItemGroup>
 </Project>

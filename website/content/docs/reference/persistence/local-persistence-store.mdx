@@ -11,7 +11,7 @@ public sealed class LocalPersistenceStore : IPersistenceStore
 
 In-process [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) with the exact write rules of the persistence module (epoch check, version bump), optionally backed by a file so a single-process run survives a restart. This is what `-nebula-persistence-mode local` uses (and what the tests use); a mesh wants the orchestrator's database instead ([`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store) on every worker), because every worker needs to see the same records.
 
-Writes land in memory at once and the file is rewritten at most once per [`WriteIntervalSeconds`](#writeintervalseconds) from [`Tick`](#tick), so a busy checkpoint pass costs no disk I/O. Callbacks are queued and delivered from [`Tick`](#tick) like the remote stores, so game code sees the same ordering whichever store it runs on.
+Writes land in memory at once. Ordinary writes are debounced by [`WriteIntervalSeconds`](#writeintervalseconds); durability barriers are grouped for [`WriteBarrierIntervalSeconds`](#writebarrierintervalseconds) and share a background rewrite from an immutable snapshot. Callbacks are delivered from [`Tick`](#tick) after that rewrite has completed, so game code sees the same main-thread ordering whichever store it runs on.
 
 ## Constructors
 
@@ -33,6 +33,14 @@ public float WriteIntervalSeconds = 1f;
 ```
 
 Seconds between rewrites of the backing file while records keep changing.
+
+### WriteBarrierIntervalSeconds [#writebarrierintervalseconds]
+
+```csharp
+public float WriteBarrierIntervalSeconds = 0.1f;
+```
+
+Time used to gather nearby durability barriers before starting each rewrite.
 
 ## Properties
 
@@ -62,6 +70,30 @@ public string FilePath { get; }
 
 Where the records are written, or "" for an in-memory store.
 
+### FileWriteCount [#filewritecount]
+
+```csharp
+public long FileWriteCount { get; }
+```
+
+Successful full-file rewrites during this store's lifetime (useful for diagnostics).
+
+### TotalFileWriteMilliseconds [#totalfilewritemilliseconds]
+
+```csharp
+public double TotalFileWriteMilliseconds { get; }
+```
+
+Total milliseconds spent in successful full-file rewrites during this store's lifetime.
+
+### LastFileWriteMilliseconds [#lastfilewritemilliseconds]
+
+```csharp
+public double LastFileWriteMilliseconds { get; }
+```
+
+Milliseconds spent in the most recent successful full-file rewrite.
+
 ## Methods
 
 ### Connect [#connect]
@@ -86,6 +118,12 @@ public void Save(PersistedEntityRecord record);
 
 ```csharp
 public void Delete(string key);
+```
+
+### WhenWritten [#whenwritten]
+
+```csharp
+public void WhenWritten(Action onWritten);
 ```
 
 ### Load [#load]

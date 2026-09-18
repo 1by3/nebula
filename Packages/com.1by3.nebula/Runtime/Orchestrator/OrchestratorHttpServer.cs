@@ -199,7 +199,12 @@ namespace Nebula
                     using (var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8)) body = reader.ReadToEnd();
                     var cmd = new Request { Method = req.HttpMethod, Path = path, Body = body, Query = req.Url.Query.TrimStart('?'), Token = req.Headers["X-Nebula-Token"] ?? "" };
                     _commands.Enqueue(cmd);
-                    resp = cmd.Done.Wait(TimeSpan.FromSeconds(3)) ? cmd.Result : Response.Error(503, "orchestrator did not answer in time");
+                    if (cmd.Done.Wait(TimeSpan.FromSeconds(3))) resp = cmd.Result;
+                    else
+                    {
+                        resp = Response.Error(503, "orchestrator did not answer in time");
+                        cmd.Complete(resp);
+                    }
                 }
                 else
                 {

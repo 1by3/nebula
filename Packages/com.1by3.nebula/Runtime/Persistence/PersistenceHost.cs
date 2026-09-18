@@ -58,7 +58,7 @@ namespace Nebula
                     // Answer only once the backing store has the writes: the worker's RemotePersistenceStore turns a
                     // 2xx here into its own WhenWritten barrier, so acking early would promise a durability it lacks.
                     var saved = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"saved\":{records.Count.ToString(CultureInfo.InvariantCulture)}}}");
-                    _store.WhenWritten(() => req.Complete(saved));
+                    CompleteWhenWritten(req, saved);
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
@@ -71,13 +71,13 @@ namespace Nebula
                         foreach (var k in keys) if (k is string key && key.Length > 0) { _store.Delete(key); n++; }
                     }
                     var deleted = OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"deleted\":{n.ToString(CultureInfo.InvariantCulture)}}}");
-                    _store.WhenWritten(() => req.Complete(deleted));
+                    CompleteWhenWritten(req, deleted);
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
                 case "POST clear":
                     _store.Clear();
-                    _store.WhenWritten(() => req.Complete(OrchestratorHttpServer.Response.Json(200, "{\"ok\":true}")));
+                    CompleteWhenWritten(req, OrchestratorHttpServer.Response.Json(200, "{\"ok\":true}"));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET record":
@@ -100,6 +100,17 @@ namespace Nebula
                     response = OrchestratorHttpServer.Response.Error(404, $"no store endpoint '{req.Method} {op}'");
                     return true;
             }
+        }
+
+        private void CompleteWhenWritten(OrchestratorHttpServer.Request request, OrchestratorHttpServer.Response response)
+        {
+            // The HTTP host gives up after three seconds. Do not keep its request/context alive indefinitely if the
+            // store is no longer ticking; a retry will receive the durable acknowledgement once writing resumes.
+            var weak = new WeakReference<OrchestratorHttpServer.Request>(request);
+            _store.WhenWritten(() =>
+            {
+                if (weak.TryGetTarget(out var pending)) pending.Complete(response);
+            });
         }
     }
 }

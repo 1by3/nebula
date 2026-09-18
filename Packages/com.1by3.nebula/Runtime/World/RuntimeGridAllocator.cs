@@ -8,9 +8,9 @@ namespace Nebula.World
     /// Opt-in worker-side allocator for a game built on <see cref="RuntimeGrid"/>: keeps a ring of cells requested
     /// around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. the origin),
     /// re-touches them every tick so a neighbour's owner does not retire them, and retires cells this worker owns
-    /// once nobody has wanted them for a while and nothing occupies them. This is the same policy Holospace's
-    /// (game-side) <c>ChunkAllocator</c> and the nebula-virtualworld sample's <c>ChunkAllocator</c> already hand
-    /// write; a game adopting <see cref="RuntimeGrid"/> can use this instead of writing it again.
+    /// once nobody has wanted them for a while and nothing occupies them. This packages the allocation policy that
+    /// procedural-world games otherwise implement themselves; a game adopting <see cref="RuntimeGrid"/> can use it
+    /// instead of writing the same logic again.
     /// <para>
     /// Plain C# class, not a <c>MonoBehaviour</c>: construct one and call <see cref="Tick"/> from whatever the game
     /// already updates every frame (its own <c>MonoBehaviour</c>, a worker-side manager, ...). Nothing here is

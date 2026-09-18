@@ -22,6 +22,14 @@ Puts a Unity `Rigidbody` under the mesh's authority model. On the worker that ow
 public Rigidbody Body { get; }
 ```
 
+### Simulate [#simulate]
+
+```csharp
+public bool Simulate { get; set; }
+```
+
+The game's say in whether the authoritative body is handed to the solver: clear it while the ground under the prop is not streamed in, or for a prop that is not physical right now. Local to this process and not carried by a handover - each owner decides for itself. The body's own kinematic flag is kept underneath and comes back when the gate opens.
+
 ## Methods
 
 ### OnNetworkSpawn [#onnetworkspawn]

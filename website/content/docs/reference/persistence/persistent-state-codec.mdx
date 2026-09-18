@@ -65,6 +65,22 @@ public static void Read(byte[] state, NetworkIdentity identity);
 
 Apply a blob to `identity`. Entries are matched by name: unknown ones are skipped and missing ones leave the entity's own defaults. Reading a variable fires its `OnValueChanged`, which is what a restored entity wants.
 
+### TryReadEntry [#tryreadentry]
+
+```csharp
+public static bool TryReadEntry(byte[] state, string name, out ArraySegment<byte> entry);
+```
+
+Read one named entry out of a state blob without an entity to apply it to: the bytes a behaviour wrote (name [`StateNameOf`](#statenameof), i.e. `TypeName#state`) or one persisted variable, exactly as [`Read`](#read) would have handed them over. For a game inspecting a [`PersistedEntityRecord`](/docs/reference/persistence/persisted-entity-record) it loaded — an entity not spawned on this worker, or not spawned at all — instead of duplicating the blob layout. Returns false for a null/empty blob, a blob written by a newer build, or a name that is not present.
+
+### TryReadBehaviourState [#tryreadbehaviourstate]
+
+```csharp
+public static bool TryReadBehaviourState(byte[] state, string behaviourTypeName, out ArraySegment<byte> entry);
+```
+
+[`TryReadEntry`](#tryreadentry) for a behaviour's own state chunk, named by behaviour type name (without the [`BehaviourStateSuffix`](#behaviourstatesuffix)).
+
 ### HasDirtyVars [#hasdirtyvars]
 
 ```csharp

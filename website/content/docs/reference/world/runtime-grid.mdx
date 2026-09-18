@@ -1,0 +1,149 @@
+---
+title: "RuntimeGrid"
+description: "Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an \"infinite chunked world\") rather than a fixed set the game enumerates itself."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/RuntimeGrid.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/RuntimeGrid.cs)</div>
+
+```csharp
+public sealed class RuntimeGrid
+```
+
+Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. Nebula still does not decide the game's world architecture (that stays the game's job, see `docs/dynamic-worlds.md`); this only packages the arithmetic every such game was writing by hand: a stable 64-bit id per cell, cell bounds in the current floating-origin frame, and neighbourhood queries.
+
+The id packing (three signed 21-bit fields) is fixed and must never change: ids are persisted (a runtime container id is a control-plane lease key and may be a database key in a game's own persistence). The format preserves the established three-axis packing used by existing projects, so persisted ids keep resolving to the same cell after adopting this type.
+
+## Constructors
+
+### RuntimeGrid [#runtimegrid]
+
+```csharp
+public RuntimeGrid(float cellSize);
+public RuntimeGrid(Vector3 cellSize);
+```
+
+## Fields
+
+### MinCoordinate [#mincoordinate]
+
+```csharp
+public const int MinCoordinate = -(1 << 20);
+```
+
+Coordinates outside \[MinCoordinate, MaxCoordinate\] on any axis cannot be packed into a runtime id.
+
+### MaxCoordinate [#maxcoordinate]
+
+```csharp
+public const int MaxCoordinate = (1 << 20) - 1;
+```
+
+## Properties
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize { get; }
+```
+
+Size of one cell in metres, per axis.
+
+## Methods
+
+### IsValid [#isvalid]
+
+```csharp
+public static bool IsValid(Vector3Int c);
+```
+
+Whether a coordinate is within the range that [`PackId`](#packid) can represent.
+
+### PackId [#packid]
+
+```csharp
+public static ulong PackId(Vector3Int coord);
+```
+
+Pack a grid coordinate into a stable 64-bit runtime container id: three signed 21-bit fields, x in the high bits. The known values are pinned by `RuntimeGridTests` because ids are already persisted; this packing must never change.
+
+### UnpackId [#unpackid]
+
+```csharp
+public static Vector3Int UnpackId(ulong id);
+```
+
+Inverse of [`PackId`](#packid).
+
+### CoordOf [#coordof]
+
+```csharp
+public Vector3Int CoordOf(Vector3 framePosition);
+public Vector3Int CoordOf(NetworkIdentity entity);
+```
+
+Which cell a position in the current floating-origin frame falls in.
+
+### CenterOf [#centerof]
+
+```csharp
+public Vector3 CenterOf(Vector3Int coord);
+```
+
+Centre of a cell in the current floating-origin frame.
+
+### BoundsOf [#boundsof]
+
+```csharp
+public Bounds BoundsOf(Vector3Int coord);
+```
+
+Box of a cell in the current floating-origin frame.
+
+### BoundsOfId [#boundsofid]
+
+```csharp
+public Bounds BoundsOfId(ulong id, Bounds fallback);
+```
+
+[`BoundsOf`](#boundsof) of the cell a packed runtime id names. Matches the [`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/container-registry#runtimeboundsinframe) delegate signature; see [`UseAsRuntimeBounds`](#useasruntimebounds).
+
+### IsNear [#isnear]
+
+```csharp
+public static bool IsNear(Vector3Int a, Vector3Int b, int ring);
+```
+
+Chebyshev (ring) distance between two coordinates, independent of cell size.
+
+### Neighborhood [#neighborhood]
+
+```csharp
+public static IEnumerable<Vector3Int> Neighborhood(Vector3Int center, int ring);
+```
+
+Every valid coordinate within `ring` cells of `center` on every axis (a cube).
+
+### UseAsRuntimeBounds [#useasruntimebounds]
+
+```csharp
+public void UseAsRuntimeBounds();
+```
+
+Point [`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/container-registry#runtimeboundsinframe) at this grid, so a game that registers runtime containers by [`PackId`](#packid)'d coordinate no longer needs to supply the bounds hook itself. Games with their own container shape keep using the hook directly; this is purely opt-in and touches nothing else. Call once at boot (mirrors the pattern a game previously wrote inline), and clear (`ContainerRegistry.RuntimeBoundsInFrame = null`) on shutdown if another hook should take over.
+
+### ShiftOriginTo [#shiftoriginto]
+
+```csharp
+public static void ShiftOriginTo(Vector3Int target);
+```
+
+Opt-in floating-origin policy for a grid world: shift the origin to `target` (a no-op when it is already there, or when no runtime world is loaded), suspending enabled `CharacterController`s on entities of runtime containers across the shift and syncing physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the shift. Call from the game's own update once it has decided where the origin belongs, or use [`KeepOriginNear`](#keeporiginnear) for the usual policy.
+
+### KeepOriginNear [#keeporiginnear]
+
+```csharp
+public void KeepOriginNear(NetworkIdentity entity, int ring = 1);
+```
+
+Keep the floating origin within `ring` cells of `entity` — the usual policy for a client following its local player. Shifts through [`ShiftOriginTo`](#shiftoriginto) when the entity leaves that ring around [`WorldOrigin.Cell`](/docs/reference/world/world-origin#cell), and does nothing otherwise.
+

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Nebula
 {
@@ -12,9 +13,10 @@ namespace Nebula
     /// the orchestrator's database instead (<see cref="RemotePersistenceStore"/> on every worker), because every
     /// worker needs to see the same records.
     /// <para>
-    /// Writes land in memory at once and the file is rewritten at most once per <see cref="WriteIntervalSeconds"/>
-    /// from <see cref="Tick"/>, so a busy checkpoint pass costs no disk I/O. Callbacks are queued and delivered from
-    /// <see cref="Tick"/> like the remote stores, so game code sees the same ordering whichever store it runs on.
+    /// Writes land in memory at once. Ordinary writes are debounced by <see cref="WriteIntervalSeconds"/>; durability
+    /// barriers are grouped for <see cref="WriteBarrierIntervalSeconds"/> and share a background rewrite from an
+    /// immutable snapshot. Callbacks are delivered from <see cref="Tick"/> after that rewrite has completed, so game
+    /// code sees the same main-thread ordering whichever store it runs on.
     /// </para>
     /// </summary>
     public sealed class LocalPersistenceStore : IPersistenceStore
@@ -25,13 +27,27 @@ namespace Nebula
 
         /// <summary>Seconds between rewrites of the backing file while records keep changing.</summary>
         public float WriteIntervalSeconds = 1f;
+        /// <summary>Time used to gather nearby durability barriers before starting each rewrite.</summary>
+        public float WriteBarrierIntervalSeconds = 0.1f;
 
         private readonly Dictionary<string, PersistedEntityRecord> _records = new Dictionary<string, PersistedEntityRecord>();
         private readonly Queue<Action> _callbacks = new Queue<Action>();
+        private readonly List<(long Version, Action Done)> _writeBarriers = new List<(long, Action)>();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private readonly string _filePath;
         private bool _fileDirty;
         private double _nextWrite;
+        private double _barrierWriteAt = double.PositiveInfinity;
+        private long _changeVersion;
+        private long _durableVersion;
+        private Task<WriteResult> _writeTask;
+
+        private sealed class WriteResult
+        {
+            public long Version;
+            public double Milliseconds;
+            public Exception Error;
+        }
 
         /// <summary>An in-memory store that forgets everything when the process ends.</summary>
         public LocalPersistenceStore() : this(null) { }
@@ -47,6 +63,12 @@ namespace Nebula
         public int KnownCount => _records.Count;
         /// <summary>Where the records are written, or "" for an in-memory store.</summary>
         public string FilePath => _filePath ?? "";
+        /// <summary>Successful full-file rewrites during this store's lifetime (useful for diagnostics).</summary>
+        public long FileWriteCount { get; private set; }
+        /// <summary>Total milliseconds spent in successful full-file rewrites during this store's lifetime.</summary>
+        public double TotalFileWriteMilliseconds { get; private set; }
+        /// <summary>Milliseconds spent in the most recent successful full-file rewrite.</summary>
+        public double LastFileWriteMilliseconds { get; private set; }
 
         public void Connect()
         {
@@ -58,6 +80,7 @@ namespace Nebula
 
         public void Tick()
         {
+            FinishBackgroundWrite(false);
             while (_callbacks.Count > 0)
             {
                 var cb = _callbacks.Dequeue();
@@ -66,9 +89,8 @@ namespace Nebula
             }
             if (!_fileDirty || _filePath == null) return;
             double now = _clock.Elapsed.TotalSeconds;
-            if (now < _nextWrite) return;
-            _nextWrite = now + WriteIntervalSeconds;
-            WriteFile();
+            if (_writeTask != null || now < _nextWrite && now < _barrierWriteAt) return;
+            StartBackgroundWrite();
         }
 
         public void Save(PersistedEntityRecord record)
@@ -87,21 +109,26 @@ namespace Nebula
             else record.Version = 1;
             record.SavedAt = DateTime.UtcNow;
             _records[record.Key] = record.Clone();
-            _fileDirty = true;
+            Changed();
         }
 
         public void Delete(string key)
         {
             if (string.IsNullOrEmpty(key)) return;
-            if (_records.Remove(key)) _fileDirty = true;
+            if (_records.Remove(key)) Changed();
         }
 
         public void WhenWritten(Action onWritten)
         {
             if (onWritten == null) return;
-            // The barrier promises the backend has the writes: skip the debounce so they are on disk, not just in memory.
-            if (_fileDirty && _filePath != null) WriteFile();
-            _callbacks.Enqueue(onWritten);
+            if (_filePath == null || _durableVersion >= _changeVersion)
+            {
+                _callbacks.Enqueue(onWritten);
+                return;
+            }
+            _writeBarriers.Add((_changeVersion, onWritten));
+            if (double.IsPositiveInfinity(_barrierWriteAt))
+                _barrierWriteAt = _clock.Elapsed.TotalSeconds + Math.Max(0, WriteBarrierIntervalSeconds);
         }
 
         public void Load(string key, Action<PersistedEntityRecord> onLoaded)
@@ -136,47 +163,111 @@ namespace Nebula
         {
             if (_records.Count == 0 && !_fileDirty) return;
             _records.Clear();
-            _fileDirty = true;
-            if (_filePath != null) WriteFile();
+            Changed();
         }
 
         public void Dispose()
         {
-            if (_fileDirty && _filePath != null) WriteFile();
+            FinishBackgroundWrite(true);
+            if (_fileDirty && _filePath != null) WriteFileSynchronously();
             IsConnected = false;
             _callbacks.Clear();
+            _writeBarriers.Clear();
         }
 
         /// <summary>Write the backing file now instead of waiting for the debounce (shutdown, tests).</summary>
         public void Flush()
         {
-            if (_filePath != null) WriteFile();
+            FinishBackgroundWrite(true);
+            if (_filePath != null && _fileDirty) WriteFileSynchronously();
         }
 
         // ---------------------------------------------------------------------------------------- file backing
 
-        private void WriteFile()
+        private void Changed()
         {
-            _fileDirty = false;
+            _changeVersion++;
+            if (!_fileDirty)
+            {
+                _fileDirty = true;
+                _nextWrite = _clock.Elapsed.TotalSeconds + Math.Max(0, WriteIntervalSeconds);
+            }
+        }
+
+        private void StartBackgroundWrite()
+        {
+            var snapshot = new List<PersistedEntityRecord>(_records.Values);
+            long version = _changeVersion;
+            string path = _filePath;
+            _barrierWriteAt = double.PositiveInfinity;
+            _writeTask = Task.Run(() => WriteSnapshot(path, snapshot, version));
+        }
+
+        private void FinishBackgroundWrite(bool wait)
+        {
+            if (_writeTask == null || !wait && !_writeTask.IsCompleted) return;
+            WriteResult result = _writeTask.GetAwaiter().GetResult();
+            _writeTask = null;
+            ApplyWriteResult(result);
+        }
+
+        private void WriteFileSynchronously()
+        {
+            var result = WriteSnapshot(_filePath, new List<PersistedEntityRecord>(_records.Values), _changeVersion);
+            ApplyWriteResult(result);
+        }
+
+        private void ApplyWriteResult(WriteResult result)
+        {
+            if (result.Error != null)
+            {
+                NebulaLog.Warn($"persistence: writing {_filePath} failed: {result.Error.Message}");
+                double retry = Math.Max(0.05, WriteBarrierIntervalSeconds);
+                _nextWrite = _clock.Elapsed.TotalSeconds + retry;
+                if (_writeBarriers.Count > 0) _barrierWriteAt = _nextWrite;
+                return;
+            }
+            LastFileWriteMilliseconds = result.Milliseconds;
+            TotalFileWriteMilliseconds += result.Milliseconds;
+            FileWriteCount++;
+            if (result.Version > _durableVersion) _durableVersion = result.Version;
+            _fileDirty = _durableVersion < _changeVersion;
+            _nextWrite = _clock.Elapsed.TotalSeconds + Math.Max(0, WriteIntervalSeconds);
+            for (int i = 0; i < _writeBarriers.Count;)
+            {
+                if (_writeBarriers[i].Version > _durableVersion) { i++; continue; }
+                _callbacks.Enqueue(_writeBarriers[i].Done);
+                _writeBarriers.RemoveAt(i);
+            }
+            // Writes accepted while the snapshot was being serialized need another commit. Give them a fresh group
+            // window instead of starting a full rewrite on every tick while the disk is saturated.
+            if (_fileDirty && _writeBarriers.Count > 0)
+                _barrierWriteAt = _clock.Elapsed.TotalSeconds + Math.Max(0, WriteBarrierIntervalSeconds);
+        }
+
+        private static WriteResult WriteSnapshot(string path, IReadOnlyList<PersistedEntityRecord> records, long version)
+        {
+            var result = new WriteResult { Version = version };
+            var timer = Stopwatch.StartNew();
             try
             {
-                var dir = Path.GetDirectoryName(_filePath);
+                var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 var w = new NetworkWriter(4096);
                 w.WriteUInt(FileMagic);
                 w.WriteByte(FileVersion);
-                w.WriteInt(_records.Count);
-                foreach (var kv in _records) WriteRecord(w, kv.Value);
+                w.WriteInt(records.Count);
+                for (int i = 0; i < records.Count; i++) WriteRecord(w, records[i]);
                 // Write beside the file and move into place: a half-written save is worse than yesterday's.
-                string temp = _filePath + ".tmp";
+                string temp = path + ".tmp";
                 File.WriteAllBytes(temp, w.ToArray());
-                if (File.Exists(_filePath)) File.Delete(_filePath);
-                File.Move(temp, _filePath);
+                if (File.Exists(path)) File.Replace(temp, path, null);
+                else File.Move(temp, path);
             }
-            catch (Exception ex)
-            {
-                NebulaLog.Warn($"persistence: writing {_filePath} failed: {ex.Message}");
-            }
+            catch (Exception ex) { result.Error = ex; }
+            timer.Stop();
+            result.Milliseconds = timer.Elapsed.TotalMilliseconds;
+            return result;
         }
 
         private void LoadFile()

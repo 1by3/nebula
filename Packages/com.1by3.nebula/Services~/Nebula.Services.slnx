@@ -4,4 +4,5 @@
   <Project Path="Nebula.Gateway/Nebula.Gateway.csproj" />
   <Project Path="Nebula.Services.Tests/Nebula.Services.Tests.csproj" />
   <Project Path="Nebula.LoadGen/Nebula.LoadGen.csproj" />
+  <Project Path="Nebula.Persistence.Benchmarks/Nebula.Persistence.Benchmarks.csproj" />
 </Solution>

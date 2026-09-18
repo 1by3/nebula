@@ -1,0 +1,102 @@
+---
+title: "RuntimeGridAllocator"
+description: "Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/RuntimeGridAllocator.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/RuntimeGridAllocator.cs)</div>
+
+```csharp
+public sealed class RuntimeGridAllocator
+```
+
+Opt-in worker-side allocator for a game built on [`RuntimeGrid`](/docs/reference/world/runtime-grid): keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. the origin), re-touches them every tick so a neighbour's owner does not retire them, and retires cells this worker owns once nobody has wanted them for a while and nothing occupies them. This packages the allocation policy that procedural-world games otherwise implement themselves; a game adopting [`RuntimeGrid`](/docs/reference/world/runtime-grid) can use it instead of writing the same logic again.
+
+Plain C# class, not a `MonoBehaviour`: construct one and call [`Tick`](#tick) from whatever the game already updates every frame (its own `MonoBehaviour`, a worker-side manager, ...). Nothing here is wired in automatically; a game that does not construct one sees no behaviour change.
+
+## Constructors
+
+### RuntimeGridAllocator [#runtimegridallocator]
+
+```csharp
+public RuntimeGridAllocator(NebulaWorker worker, RuntimeGrid grid);
+```
+
+## Properties
+
+### Ring [#ring]
+
+```csharp
+public int Ring { get; set; } = 1;
+```
+
+Ring radius (Chebyshev distance in cells) requested around every anchor and owned entity.
+
+### RetireAfterSeconds [#retireafterseconds]
+
+```csharp
+public float RetireAfterSeconds { get; set; } = 60f;
+```
+
+How long an owned, unwanted, unoccupied cell sits idle before it is released.
+
+### TickIntervalSeconds [#tickintervalseconds]
+
+```csharp
+public float TickIntervalSeconds { get; set; } = 0.25f;
+```
+
+How often [`Tick`](#tick) actually recomputes interest; calls between are no-ops.
+
+### WantedIds [#wantedids]
+
+```csharp
+public IReadOnlyCollection<ulong> WantedIds { get; }
+```
+
+The interest set as of the last [`Tick`](#tick): every cell id currently requested.
+
+## Methods
+
+### AddAnchor [#addanchor]
+
+```csharp
+public void AddAnchor(Vector3Int coord);
+```
+
+Fixed coordinates kept wanted regardless of where entities are, e.g. the origin cell(s).
+
+### RemoveAnchor [#removeanchor]
+
+```csharp
+public void RemoveAnchor(Vector3Int coord);
+```
+
+### ClearAnchors [#clearanchors]
+
+```csharp
+public void ClearAnchors();
+```
+
+### IsWanted [#iswanted]
+
+```csharp
+public bool IsWanted(Vector3Int coord);
+public bool IsWanted(ulong id);
+```
+
+### Tick [#tick]
+
+```csharp
+public void Tick(float unscaledTime);
+```
+
+Recompute interest and touch/retire containers accordingly. Cheap to call every frame: the actual work only runs every [`TickIntervalSeconds`](#tickintervalseconds). `unscaledTime` is the caller's own clock (e.g. `Time.unscaledTime`); passed in rather than read here so this stays testable without a running player loop.
+
+### EnsureContainer [#ensurecontainer]
+
+```csharp
+public void EnsureContainer(Vector3Int coord, Action<Container> onReady);
+```
+
+Request the container at `coord` and call `onReady` once it is registered (immediately, if it already is). Event-driven, not polling: replaces the request-then-poll-every-0.1s loops a game otherwise writes by hand at every call site that needs a container to exist before acting on it. [`ContainerRegistry.RuntimeRegistered`](/docs/reference/containers/container-registry#runtimeregistered) is a static, mesh-wide event, so this fires for a container any worker or the control plane registers, not only ones this allocator itself requested.
+

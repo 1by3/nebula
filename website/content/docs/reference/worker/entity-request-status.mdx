@@ -1,0 +1,21 @@
+---
+title: "EntityRequestStatus"
+description: "Where a EntityRequests call ended up."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs)</div>
+
+```csharp
+public enum EntityRequestStatus
+```
+
+Where a [`EntityRequests`](/docs/reference/worker/entity-requests) call ended up.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Replied` |  | The worker with authority answered. [`EntityRequestResult.Reply`](/docs/reference/worker/entity-request-result#reply) holds its bytes. |
+| `NotFound` |  | No connected worker (this one included) has authority over the key, after one retry. |
+| `TimedOut` |  | Nobody answered before the deadline. The handler may still be holding the request open. |
+

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -157,6 +159,61 @@ namespace Nebula.Tests
             Assert.AreEqual(new Vector3(1, 2, 3), crate.LocalPosition);
             Assert.AreEqual("ship-1", Loaded(reopened, "cargo-1").CarrierKey);
             reopened.Dispose();
+        }
+
+        [Test]
+        public void LocalStoreGroupsBarriersAndOnlyAnswersAfterTheSnapshotIsDurable()
+        {
+            _tempDir = Path.Combine(Path.GetTempPath(), "nebula-persist-" + Guid.NewGuid().ToString("N"));
+            string file = Path.Combine(_tempDir, "world.bin");
+            var store = new LocalPersistenceStore(file) { WriteBarrierIntervalSeconds = 0.02f };
+            store.Connect();
+            bool first = false, second = false;
+            store.Save(Record("crate-1"));
+            store.WhenWritten(() => first = true);
+            store.Save(Record("crate-2"));
+            store.WhenWritten(() => second = true);
+
+            Assert.IsFalse(first || second, "a barrier must not answer from memory");
+            var timeout = Stopwatch.StartNew();
+            while (!first || !second)
+            {
+                store.Tick();
+                if (timeout.Elapsed.TotalSeconds > 3) Assert.Fail("barriers did not finish");
+                Thread.Sleep(1);
+            }
+            Assert.AreEqual(1, store.FileWriteCount, "barriers in one group share a full-file rewrite");
+
+            var reopened = new LocalPersistenceStore(file);
+            reopened.Connect();
+            Assert.IsNotNull(Loaded(reopened, "crate-1"));
+            Assert.IsNotNull(Loaded(reopened, "crate-2"));
+            reopened.Dispose();
+            store.Dispose();
+        }
+
+        [Test]
+        public void LocalStoreDoesNotAnswerABarrierWhenTheFileWriteFails()
+        {
+            _tempDir = Path.Combine(Path.GetTempPath(), "nebula-persist-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_tempDir);
+            string unwritableFile = Path.Combine(_tempDir, "is-a-directory");
+            Directory.CreateDirectory(unwritableFile);
+            var store = new LocalPersistenceStore(unwritableFile) { WriteBarrierIntervalSeconds = 0f };
+            store.Connect();
+            store.Save(Record("crate-1"));
+            bool answered = false;
+            store.WhenWritten(() => answered = true);
+            store.Tick();
+            var timeout = Stopwatch.StartNew();
+            while (timeout.Elapsed.TotalSeconds < 0.2)
+            {
+                store.Tick();
+                Thread.Sleep(1);
+            }
+            Assert.IsFalse(answered, "a failed disk write cannot satisfy a durability barrier");
+            Assert.AreEqual(0, store.FileWriteCount);
+            store.Dispose();
         }
 
         // ---------------------------------------------------------------------------------------- the state blob

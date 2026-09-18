@@ -267,6 +267,22 @@ public event Action<NetworkIdentity, string> AuthorityReceived;
 
 ## Methods
 
+### RegisterEntityRequestHandler [#registerentityrequesthandler]
+
+```csharp
+public void RegisterEntityRequestHandler(ushort kind, EntityRequests.Handler handler);
+```
+
+Answer entity requests of `kind` whenever this worker has authority over the target key. See [`EntityRequests.RegisterHandler`](/docs/reference/worker/entity-requests#registerhandler).
+
+### RequestEntity [#requestentity]
+
+```csharp
+public uint RequestEntity(string persistentKey, ushort kind, byte[] payload, Action<EntityRequestResult> onDone, float timeoutSeconds = 5f);
+```
+
+Ask whichever worker has authority over `persistentKey` and get a reply. See [`EntityRequests.Request`](/docs/reference/worker/entity-requests#request).
+
 ### RegisterMessageHandler [#registermessagehandler]
 
 ```csharp

@@ -197,6 +197,27 @@ public class StorageAndHostTests
         third.Dispose();
     }
 
+    [Test]
+    public void SqlPersistenceBarrierRunsAfterTheQueuedWrite()
+    {
+        using var db = NebulaDatabase.Open(DatabaseUrl.Parse("sqlite:" + Path.Combine(directory, "barrier.db"), ""));
+        var store = new SqlPersistenceStore(db);
+        store.Connect();
+        bool written = false;
+        store.Save(Record("durable", "c1"));
+        store.WhenWritten(() => written = true);
+        Assert.That(written, Is.False);
+        WaitUntil(() => written, store.Tick);
+        store.Dispose();
+
+        var reopened = new SqlPersistenceStore(db);
+        reopened.Connect();
+        PersistedEntityRecord? record = null;
+        reopened.Load("durable", r => record = r);
+        WaitUntil(() => record != null, reopened.Tick);
+        reopened.Dispose();
+    }
+
     // ---------------------------------------------------------------------------------------- hosts over HTTP
 
     [Test]
@@ -352,6 +373,34 @@ public class StorageAndHostTests
             backing.Dispose();
             http.Dispose();
         }
+    }
+
+    [Test]
+    public void LocalPersistenceHostGroupsWriteRequestsIntoOneDurableRewrite()
+    {
+        string file = Path.Combine(directory, "entities.bin");
+        var backing = new LocalPersistenceStore(file) { WriteBarrierIntervalSeconds = 0.02f };
+        backing.Connect();
+        var host = new PersistenceHost(backing, null);
+        var requests = Enumerable.Range(0, 8).Select(i => new OrchestratorHttpServer.Request
+        {
+            Method = "POST",
+            Path = PersistenceHost.Prefix + "/save",
+            Body = PersistedRecordJson.WriteList(new[] { Record("entity-" + i, "c1") })
+        }).ToArray();
+        foreach (var request in requests)
+        {
+            Assert.That(host.TryHandle(request, out var response), Is.True);
+            Assert.That(response.IsPending, Is.True);
+        }
+        WaitUntil(() => requests.All(r => r.Completion.Task.IsCompleted), backing.Tick);
+        Assert.That(backing.FileWriteCount, Is.EqualTo(1));
+        backing.Dispose();
+
+        var reopened = new LocalPersistenceStore(file);
+        reopened.Connect();
+        Assert.That(reopened.KnownCount, Is.EqualTo(8));
+        reopened.Dispose();
     }
 
     [Test]

@@ -1,0 +1,122 @@
+---
+title: "EntityRequests"
+description: "Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/EntityRequests.cs)</div>
+
+```csharp
+public sealed class EntityRequests : IDisposable
+```
+
+Asks whichever worker currently has authority over a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this worker's containers. Unlike [`WorkerQuery`](/docs/reference/worker/worker-query), the answering side's handler may hold the request open for several ticks (a database round trip, a cooldown check) before it replies, so this does not reuse WorkerQuery's synchronous request/reply plumbing; it tracks the request on the asking side until a reply, a decline from every connected worker (twice - see [`Request`](#request)), or the deadline settles it.
+
+The worker holding authority answers in-process, with no network round trip. Every other connected worker answers "not mine" immediately, so the asker does not wait out the full timeout just to learn nobody has it.
+
+## Constructors
+
+### EntityRequests [#entityrequests]
+
+```csharp
+public EntityRequests(IWorkerMessaging worker, Func<string, NetworkIdentity> resolveAuthority, Func<IEnumerable<ushort>> connectedTargets, Func<float> clock = null);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `worker` | The worker to send and receive through. |
+| `resolveAuthority` | The local, live entity for a persistent key, or null when this worker holds none. |
+| `connectedTargets` | Worker indices to ask when this worker is not the authority (excluding itself). |
+| `clock` | Seconds, for the deadline; `Time.unscaledTime` by default. |
+
+## Fields
+
+### RequestMessageKind [#requestmessagekind]
+
+```csharp
+public const ushort RequestMessageKind = 65020;
+```
+
+Worker-message kinds this feature answers on. Chosen high in the ushort range so a game's own kinds (typically small, hand-picked numbers - see the worker-messages guide) do not collide with them.
+
+### DeclineMessageKind [#declinemessagekind]
+
+```csharp
+public const ushort DeclineMessageKind = 65021;
+```
+
+### ReplyMessageKind [#replymessagekind]
+
+```csharp
+public const ushort ReplyMessageKind = 65022;
+```
+
+### RetryDelaySeconds [#retrydelayseconds]
+
+```csharp
+public const float RetryDelaySeconds = 0.2f;
+```
+
+How long to wait, after every connected worker has declined, before asking again: long enough for a handover that was already in flight to land, short enough that a genuinely absent entity does not cost much beyond one round trip. A request that lands exactly inside a handover can still occasionally conclude [`EntityRequestStatus.NotFound`](/docs/reference/worker/entity-request-status#notfound) if the second round is also declined everywhere.
+
+## Properties
+
+### PendingCount [#pendingcount]
+
+```csharp
+public int PendingCount { get; }
+```
+
+Requests still waiting on an answer, a retry, or their deadline.
+
+## Methods
+
+### RegisterHandler [#registerhandler]
+
+```csharp
+public void RegisterHandler(ushort kind, Handler handler);
+```
+
+Answer requests of `kind` whenever this worker has authority over the target key. One handler per kind; registering again replaces it.
+
+### Request [#request]
+
+```csharp
+public uint Request(string persistentKey, ushort kind, byte[] payload, Action<EntityRequestResult> onDone, float timeoutSeconds = 5f);
+```
+
+Ask whichever worker has authority over `persistentKey`. Local-first: if this worker currently holds authority, the handler runs in-process with no network round trip. Otherwise every connected worker is asked; a worker without authority answers "not mine" at once, so [`EntityRequestStatus.NotFound`](/docs/reference/worker/entity-request-status#notfound) does not wait out the full timeout once everyone has declined. The first declined round is retried once, after [`RetryDelaySeconds`](#retrydelayseconds), before concluding NotFound - see the type doc for why. `onDone` runs exactly once, on the caller's thread (the same thread every worker-message callback runs on: whatever calls `Update`).
+
+### Cancel [#cancel]
+
+```csharp
+public bool Cancel(uint id);
+```
+
+Forget request `id`; its callback never runs. True when it was still pending.
+
+### Update [#update]
+
+```csharp
+public void Update();
+```
+
+Settle requests whose deadline passed, and re-ask requests whose retry delay elapsed. Call once a frame.
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+Unregister the three message kinds; pending requests are dropped without callbacks.
+
+## Nested types
+
+### Handler [#handler]
+
+```csharp
+public delegate void Handler(NetworkIdentity entity, ArraySegment<byte> payload, Action<byte[]> reply);
+```
+
+Handles a request on the worker that has authority over `entity`. Call `reply` once, from this tick or a later one; calls after the first are ignored.
+
