@@ -96,6 +96,14 @@ namespace Nebula
             if (_records.Remove(key)) _fileDirty = true;
         }
 
+        public void WhenWritten(Action onWritten)
+        {
+            if (onWritten == null) return;
+            // The barrier promises the backend has the writes: skip the debounce so they are on disk, not just in memory.
+            if (_fileDirty && _filePath != null) WriteFile();
+            _callbacks.Enqueue(onWritten);
+        }
+
         public void Load(string key, Action<PersistedEntityRecord> onLoaded)
         {
             if (onLoaded == null) return;

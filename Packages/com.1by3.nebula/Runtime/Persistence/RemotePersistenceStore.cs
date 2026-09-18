@@ -35,6 +35,9 @@ namespace Nebula
         private readonly Dictionary<string, PersistedEntityRecord> _pendingSaves = new Dictionary<string, PersistedEntityRecord>();
         private readonly List<string> _pendingDeletes = new List<string>();
         private bool _pendingClear;
+        // Every write bumps _writeSeq; _flushedSeq trails it and catches up when a batch that emptied the queue is posted.
+        private long _writeSeq, _flushedSeq;
+        private readonly List<(long Seq, Action Done)> _barriers = new List<(long, Action)>();
         private readonly List<Action> _callbacks = new List<Action>();
         private readonly List<Action> _draining = new List<Action>();
         private Thread _sender;
@@ -105,6 +108,7 @@ namespace Nebula
             if (record == null || string.IsNullOrEmpty(record.Key)) return;
             lock (_gate)
             {
+                _writeSeq++;
                 _pendingSaves[record.Key] = record.Clone();
                 _pendingDeletes.Remove(record.Key);
                 Monitor.PulseAll(_gate);
@@ -116,6 +120,7 @@ namespace Nebula
             if (string.IsNullOrEmpty(key)) return;
             lock (_gate)
             {
+                _writeSeq++;
                 _pendingSaves.Remove(key);
                 if (!_pendingDeletes.Contains(key)) _pendingDeletes.Add(key);
                 Monitor.PulseAll(_gate);
@@ -128,8 +133,19 @@ namespace Nebula
             {
                 _pendingSaves.Clear();
                 _pendingDeletes.Clear();
+                _writeSeq++;
                 _pendingClear = true;
                 Monitor.PulseAll(_gate);
+            }
+        }
+
+        public void WhenWritten(Action onWritten)
+        {
+            if (onWritten == null) return;
+            lock (_gate)
+            {
+                if (_flushedSeq >= _writeSeq) _callbacks.Add(onWritten);
+                else _barriers.Add((_writeSeq, onWritten));
             }
         }
 
@@ -242,6 +258,7 @@ namespace Nebula
                     Probe();
                 }
                 bool clear;
+                long takenSeq;
                 lock (_gate)
                 {
                     if (_pendingSaves.Count == 0 && _pendingDeletes.Count == 0 && !_pendingClear)
@@ -266,8 +283,9 @@ namespace Nebula
                         if (saves.Count >= MaxBatch) break;
                     }
                     foreach (var r in saves) _pendingSaves.Remove(r.Key);
+                    takenSeq = _pendingSaves.Count == 0 ? _writeSeq : _flushedSeq;
                 }
-                if (clear && !Post(PersistenceHost.Prefix + "/clear", "{}")) { lock (_gate) _pendingClear = true; Sleep(RetrySeconds); continue; }
+                if (clear && !Post(PersistenceHost.Prefix + "/clear", "{}")) { lock (_gate) _pendingClear = true; Requeue(saves, deletes); Sleep(RetrySeconds); continue; }
                 if (deletes.Count > 0)
                 {
                     var sb = new StringBuilder("{\"keys\":[");
@@ -275,7 +293,7 @@ namespace Nebula
                     sb.Append("]}");
                     if (!Post(PersistenceHost.Prefix + "/delete", sb.ToString()))
                     {
-                        lock (_gate) foreach (var k in deletes) if (!_pendingSaves.ContainsKey(k) && !_pendingDeletes.Contains(k)) _pendingDeletes.Add(k);
+                        Requeue(saves, deletes);
                         Sleep(RetrySeconds);
                         continue;
                     }
@@ -283,9 +301,30 @@ namespace Nebula
                 if (saves.Count > 0 && !Post(PersistenceHost.Prefix + "/save", PersistedRecordJson.WriteList(saves)))
                 {
                     // Put them back unless a newer checkpoint of the same entity arrived meanwhile.
-                    lock (_gate) foreach (var r in saves) if (!_pendingSaves.ContainsKey(r.Key) && !_pendingDeletes.Contains(r.Key)) _pendingSaves[r.Key] = r;
+                    Requeue(saves, null);
                     Sleep(RetrySeconds);
+                    continue;
                 }
+                lock (_gate)
+                {
+                    if (takenSeq > _flushedSeq) _flushedSeq = takenSeq;
+                    for (int i = _barriers.Count - 1; i >= 0; i--)
+                    {
+                        if (_barriers[i].Seq > _flushedSeq) continue;
+                        _callbacks.Add(_barriers[i].Done);
+                        _barriers.RemoveAt(i);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Put a batch that was not delivered back, unless something newer for the same key arrived meanwhile.</summary>
+        private void Requeue(List<PersistedEntityRecord> saves, List<string> deletes)
+        {
+            lock (_gate)
+            {
+                if (deletes != null) foreach (var k in deletes) if (!_pendingSaves.ContainsKey(k) && !_pendingDeletes.Contains(k)) _pendingDeletes.Add(k);
+                foreach (var r in saves) if (!_pendingSaves.ContainsKey(r.Key) && !_pendingDeletes.Contains(r.Key)) _pendingSaves[r.Key] = r;
             }
         }
 

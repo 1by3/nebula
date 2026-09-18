@@ -390,7 +390,17 @@ namespace Nebula
         /// Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is
         /// logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
         /// </summary>
+        /// <summary>True while an incoming handover blob is applied: authority lands right after, so variable writes are the new owner's.</summary>
+        public bool ReceivingHandover { get; private set; }
+
         public void ReadHandoverState(NetworkReader reader)
+        {
+            ReceivingHandover = true;
+            try { ReadHandoverBehaviours(reader); }
+            finally { ReceivingHandover = false; }
+        }
+
+        private void ReadHandoverBehaviours(NetworkReader reader)
         {
             int count = reader.ReadByte();
             for (int i = 0; i < count; i++)

@@ -172,6 +172,19 @@ namespace Nebula
         private readonly Dictionary<ushort, WorkerMessageHandler> _messageHandlers = new Dictionary<ushort, WorkerMessageHandler>();
         private readonly NetworkWriter _messageWriter = new NetworkWriter(1024);
 
+        /// <summary>
+        /// Reaches whichever worker has authority over a <see cref="PersistentEntity"/> key, with a reply - even
+        /// when this worker holds no ghost of the entity. See <see cref="EntityRequests"/>.
+        /// </summary>
+        private EntityRequests _entityRequests;
+
+        /// <summary>Answer entity requests of <paramref name="kind"/> whenever this worker has authority over the target key. See <see cref="EntityRequests.RegisterHandler"/>.</summary>
+        public void RegisterEntityRequestHandler(ushort kind, EntityRequests.Handler handler) => _entityRequests.RegisterHandler(kind, handler);
+
+        /// <summary>Ask whichever worker has authority over <paramref name="persistentKey"/> and get a reply. See <see cref="EntityRequests.Request"/>.</summary>
+        public uint RequestEntity(string persistentKey, ushort kind, byte[] payload, Action<EntityRequestResult> onDone, float timeoutSeconds = 5f) =>
+            _entityRequests.Request(persistentKey, kind, payload, onDone, timeoutSeconds);
+
         /// <summary>Receive worker messages of <paramref name="kind"/>. One handler per kind; registering again replaces it.</summary>
         public void RegisterMessageHandler(ushort kind, WorkerMessageHandler handler)
         {
@@ -273,6 +286,7 @@ namespace Nebula
             _transport = new LiteNetTransport($"worker:{WorkerId}");
             _transport.Listen(Port);
             IsListening = true;
+            _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
             ControlPlane.Changed += OnControlPlaneChanged;
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
@@ -430,6 +444,7 @@ namespace Nebula
         private void OnDestroy()
         {
             _pendingPlayerSpawns.Clear();
+            _entityRequests?.Dispose();
             // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
             Persistence?.Shutdown();
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
@@ -483,6 +498,7 @@ namespace Nebula
             }
             // Checkpoints and restores run here, off the tick, bounded per frame.
             Persistence?.Update();
+            _entityRequests?.Update();
         }
 
         // ---------------------------------------------------------------------------------------- scene entities

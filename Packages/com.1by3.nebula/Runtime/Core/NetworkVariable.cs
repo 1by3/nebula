@@ -54,7 +54,7 @@ namespace Nebula
             get => _value;
             set
             {
-                if (Owner != null && Owner.Identity != null && Owner.Identity.IsSpawned && !Owner.HasAuthority)
+                if (Owner != null && Owner.Identity != null && Owner.Identity.IsSpawned && !Owner.HasAuthority && !Owner.Identity.ReceivingHandover)
                 {
                     NebulaLog.Warn($"NetworkVariable on {Owner.GetType().Name} written without authority (netId {Owner.NetId}); ignored");
                     return;

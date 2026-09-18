@@ -150,6 +150,13 @@ namespace Nebula
             });
         }
 
+        public void WhenWritten(Action onWritten)
+        {
+            if (onWritten == null) return;
+            // Jobs run in order on one connection, so this one runs after every write queued before it.
+            Enqueue("barrier", c => Deliver(onWritten));
+        }
+
         public void Clear()
         {
             Enqueue("clear", c =>

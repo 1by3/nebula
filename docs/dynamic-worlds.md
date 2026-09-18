@@ -91,6 +91,39 @@ shooter) is the exit test for the whole plan and the template for Holospace's Ne
 - The gateway logs world-state relay counters once a second under `-nebula-verbose`.
 - Bots turn back once 150 m from the origin so a player near the spawn can find them.
 
+## Opt-in helpers for a procedural, unbounded grid (2026-09-18)
+
+Holospace's continuous chunked landscape and the nebula-virtualworld sample both hand-wrote the same
+thing on top of runtime containers: pack a grid coordinate into a stable id, get a cell's bounds in
+the current floating-origin frame, keep a ring of cells requested around every player, and wait for
+a container to exist before acting on it. `Nebula.World.RuntimeGrid` and `RuntimeGridAllocator`
+(`Runtime/World/RuntimeGrid.cs`, `RuntimeGridAllocator.cs`) package that, opt-in: a game that does not
+construct one sees no behaviour change, and every seam they touch (`ContainerRegistry.RuntimeBoundsInFrame`,
+`NebulaWorker.RequestRuntimeContainer`/`ReleaseRuntimeContainer`, `ContainerRegistry.RuntimeRegistered`)
+already existed. No wire or protocol change.
+
+- `RuntimeGrid`: cell-size configuration (uniform or per-axis) plus pure helpers - `PackId`/`UnpackId`
+  (three signed 21-bit fields, x high; bit-for-bit identical to Holospace's `WorldChunks.IdOf`/`CoordOf`
+  because ids are already persisted), `IsValid`, `CoordOf` (a frame position or a `NetworkIdentity`),
+  `CenterOf`/`BoundsOf`, `IsNear` (Chebyshev ring distance) and `Neighborhood` (a ring of coordinates).
+  `UseAsRuntimeBounds()` points `ContainerRegistry.RuntimeBoundsInFrame` at the grid, so a game that
+  adopts it no longer supplies that hook itself; games with their own container shape keep using the
+  hook directly, untouched.
+- `RuntimeGridAllocator`: a plain class (not a `MonoBehaviour`) wrapping a `NebulaWorker` and a
+  `RuntimeGrid`. `Tick(unscaledTime)` - called from whatever the game already updates every frame -
+  requests a ring around every player-owned authoritative entity and any fixed anchor coordinates,
+  re-touches them so a neighbour's owner does not retire them, and releases owned/unwanted/unoccupied
+  cells after `RetireAfterSeconds`; the same policy Holospace's and nebula-virtualworld's hand-written
+  `ChunkAllocator`s already ran. `IsWanted`/`WantedIds` expose the current interest set so a game stops
+  recomputing it for its own loader. `EnsureContainer(coord, onReady)` requests a container and calls
+  back once `ContainerRegistry.RuntimeRegistered` fires for it (immediately if it already exists) -
+  event-driven, replacing the request-then-poll-every-0.1s loops a game otherwise writes at each call
+  site that needs a container before acting on it.
+
+Games with a different chunk shape, packing, or allocation policy are unaffected: nothing here is
+wired in automatically, and the underlying primitives (`ContainerRegistry.RegisterRuntime`/`GetRuntime`,
+`NebulaWorker.RequestRuntimeContainer`/`ReleaseRuntimeContainer`) are unchanged.
+
 ## Follow-ups
 
 - Holospace: the bundle loader and allow-list, Linux server bundle variants, placement permissions.

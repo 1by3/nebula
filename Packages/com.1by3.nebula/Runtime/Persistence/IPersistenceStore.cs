@@ -67,7 +67,7 @@ namespace Nebula
     /// and tests.
     /// <para>
     /// The contract is request/response on purpose (no subscriptions), so a relational backend fits behind it. Every
-    /// callback lands on the main thread from <see cref="Tick"/>. Writes are fire-and-forget: a save is accepted by
+    /// callback lands on the main thread from <see cref="Tick"/>. Writes are fire-and-forget (<see cref="WhenWritten"/> is the barrier for the few callers that must wait): a save is accepted by
     /// the backend when its epoch is not older than the stored one, otherwise dropped, and the caller never waits.
     /// The store is never on the per-tick path: if it is unreachable the mesh keeps simulating and saves are retried
     /// on the next checkpoint.
@@ -90,6 +90,12 @@ namespace Nebula
         void Save(PersistedEntityRecord record);
         /// <summary>Delete the record for <paramref name="key"/>, if any.</summary>
         void Delete(string key);
+        /// <summary>
+        /// Calls <paramref name="onWritten"/> on the main thread once every save and delete issued before this call has
+        /// reached the backend. It says the writes were delivered, not that each was kept (a stale epoch is still
+        /// dropped): follow it with one <see cref="Load"/> when the outcome matters, instead of polling.
+        /// </summary>
+        void WhenWritten(Action onWritten);
 
         /// <summary>The record for <paramref name="key"/> (null when there is none).</summary>
         void Load(string key, Action<PersistedEntityRecord> onLoaded);

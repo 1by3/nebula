@@ -18,12 +18,47 @@ namespace Nebula
         private Rigidbody _body;
         private Vector3 _handoverAngularVelocity;
         private bool _handoverKinematic, _handoverSleeping;
+        private bool _simulate = true, _gated, _gatedKinematic;
 
         public Rigidbody Body => _body != null ? _body : (_body = GetComponent<Rigidbody>());
+
+        /// <summary>
+        /// The game's say in whether the authoritative body is handed to the solver: clear it while the ground under
+        /// the prop is not streamed in, or for a prop that is not physical right now. Local to this process and not
+        /// carried by a handover - each owner decides for itself. The body's own kinematic flag is kept underneath
+        /// and comes back when the gate opens.
+        /// </summary>
+        public bool Simulate
+        {
+            get => _simulate;
+            set
+            {
+                if (_simulate == value) return;
+                _simulate = value;
+                if (!HasAuthority) return;
+                if (!value) { Gate(Body.isKinematic); return; }
+                if (!_gated) return;
+                _gated = false;
+                if (_gatedKinematic) return;
+                SyncBodyPose();
+                Body.isKinematic = false;
+            }
+        }
+
+        /// <summary>
+        /// Hold the body kinematic and remember the flag underneath. Authority can land before or after the spawn
+        /// callback, so only the first call records it: the second would read back the flag this one forced.
+        /// </summary>
+        private void Gate(bool underlying)
+        {
+            if (!_gated) { _gated = true; _gatedKinematic = underlying; }
+            Body.isKinematic = true;
+        }
 
         public override void OnNetworkSpawn()
         {
             _handoverKinematic = Body.isKinematic;
+            if (HasAuthority && !_simulate) { Gate(Body.isKinematic); return; }
             if (HasAuthority) SyncBodyPose();
             Body.isKinematic = !HasAuthority;
             if (HasAuthority) Body.linearVelocity = Identity.Motion.Velocity;
@@ -43,6 +78,7 @@ namespace Nebula
 
         public override void OnGainedAuthority()
         {
+            if (!_simulate) { Gate(_handoverKinematic); return; }
             if (!_handoverKinematic) SyncBodyPose();
             Body.isKinematic = _handoverKinematic;
             if (Body.isKinematic) return;
@@ -54,6 +90,7 @@ namespace Nebula
 
         public override void OnLostAuthority()
         {
+            _gated = false;
             Body.isKinematic = true;
         }
 
@@ -66,7 +103,7 @@ namespace Nebula
         {
             writer.WriteVector3(Body.linearVelocity);
             writer.WriteVector3(Body.angularVelocity);
-            writer.WriteBool(Body.isKinematic);
+            writer.WriteBool(_gated ? _gatedKinematic : Body.isKinematic);
             writer.WriteBool(Body.IsSleeping());
         }
 
