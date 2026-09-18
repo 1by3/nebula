@@ -1,6 +1,6 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { BookOpen, TerminalSquare, Braces, Cloud, Newspaper } from 'lucide-react';
-import { GithubInfo } from 'fumadocs-ui/components/github-info';
+import { GithubInfo } from '@/components/github-info';
 import { appName, repo } from './shared';
 
 export function baseOptions(): BaseLayoutProps {
