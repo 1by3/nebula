@@ -27,7 +27,7 @@ namespace Nebula
     /// which is fine on a private network or a development machine. Reads are answered on the listener thread from
     /// the last published document, so the orchestrator's main thread never waits on a subscriber.
     /// </summary>
-    public sealed class ControlPlaneHost : IControlPlane
+    public sealed partial class ControlPlaneHost : IControlPlane
     {
         public const string Path = "/api/control-plane";
         public const string TokenHeader = "X-Nebula-Token";
@@ -57,6 +57,7 @@ namespace Nebula
             _storage = storage ?? new MemoryControlPlaneStorage();
             _token = string.IsNullOrEmpty(token) ? null : token;
             _restore = restore;
+            _plane.SessionDirectory.Store = _storage as IGatewaySessionStore;
         }
 
         /// <summary>The state machine itself, for tests.</summary>
@@ -78,6 +79,7 @@ namespace Nebula
 
         public void Connect()
         {
+            if (CommandLine.GetBool("nebula-reset-sessions", false)) _plane.SessionDirectory.Reset();
             if (_restore)
             {
                 try
@@ -175,6 +177,16 @@ namespace Nebula
         public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpServer.Response response)
         {
             response = default;
+            if (req.Method == "POST" && req.Path.TrimEnd('/') == GatewaySessionDirectory.Path)
+            {
+                if (!Authorized(req)) response = OrchestratorHttpServer.Response.Error(401, "missing or wrong mesh token");
+                else
+                {
+                    try { response = OrchestratorHttpServer.Response.Json(200, GatewaySessionWire.Write(_plane.SessionDirectory.Handle(GatewaySessionWire.ReadRequest(req.Body)))); }
+                    catch (Exception e) { response = OrchestratorHttpServer.Response.Error(400, e.Message); }
+                }
+                return true;
+            }
             if (req.Method != "POST" || req.Path.TrimEnd('/') != Path) return false;
             if (!Authorized(req)) { response = OrchestratorHttpServer.Response.Error(401, "missing or wrong mesh token"); return true; }
             string reason = ControlPlaneJson.ApplyBatch(req.Body, _plane);

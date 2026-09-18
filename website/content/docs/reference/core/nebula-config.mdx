@@ -184,7 +184,7 @@ Seconds a worker keeps a player's pawn after the player's connection drops, so t
 public bool SingleSessionPerPlayer = true;
 ```
 
-One connection per player: when someone who is already in the world connects again, the new connection takes over their session and their pawn, and the earlier connection is closed. Off lets one identity hold several pawns at once (a fleet of bots sharing one account). -nebula-single-session overrides.
+Coordinate one connection per player through the gateway fleet. A replacement waits until the previous gateway confirms disconnection; if that cannot be coordinated, the new join is rejected. Off lets one identity hold several pawns at once. -nebula-single-session overrides.
 
 ### GatewayDrainReconnectSeconds [#gatewaydrainreconnectseconds]
 
@@ -515,4 +515,3 @@ Every prefab that can be spawned over the network. The index is the prefab id on
 ```csharp
 public static NebulaConfig Load();
 ```
-

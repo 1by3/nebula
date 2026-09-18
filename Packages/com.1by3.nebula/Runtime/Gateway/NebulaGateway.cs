@@ -24,7 +24,7 @@ namespace Nebula
     /// The CLI runs this routing loop in a standalone .NET executable using exported container geometry.
     /// The Unity component remains available for compatibility and in-process tests.
     /// </summary>
-    public sealed class NebulaGateway
+    public sealed partial class NebulaGateway
 #if !NEBULA_SERVICE
         : MonoBehaviour
 #endif
@@ -54,6 +54,11 @@ namespace Nebula
             public ushort JoinEstimate;
             public float NextSpawnAttempt;
             public string SpawnWorkerId = "";
+            public ContainerRef SpawnContainer = ContainerRef.None;
+            public string CoordinationClaim = "";
+            public Action RetryCoordination;
+            public bool CoordinationInFlight;
+            public double CoordinationDeadline, NextCoordination;
             /// <summary>World-state entries filtered for this client, coalesced across a worker's batches of one tick (see FlushWorldState).</summary>
             public NetworkWriter Pending;
             public int PendingSlot = -1;
@@ -87,8 +92,6 @@ namespace Nebula
             public uint Epoch;
             public ushort OwnerWorkerIndex;
             public ulong OwnerClientId;
-            /// <summary>The owner's player identity (<see cref="EntitySpawnMsg.OwnerIdentity"/>): which player's pawn this is, across sessions.</summary>
-            public string OwnerIdentity = "";
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
@@ -352,6 +355,9 @@ namespace Nebula
                 }
             }
             _transport?.Dispose();
+            if (SessionCoordinator != null)
+                foreach (var client in _sessionClients.Values)
+                    SessionCoordinator.SessionRequest(SessionRequestFor(client, "release"), _ => { });
             _oidc?.Dispose();
         }
 
@@ -376,6 +382,7 @@ namespace Nebula
             ReportWorldStateStats();
             DropRejectedClients();
             CloseReplacedLinks();
+            TickSessionCoordination();
 
             if (!_registered && ControlPlane.IsConnected)
             {
@@ -686,7 +693,6 @@ namespace Nebula
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
             rec.OwnerClientId = msg.OwnerClientId;
-            rec.OwnerIdentity = msg.OwnerIdentity ?? "";
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
@@ -1161,11 +1167,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// The session this player already has, if any: the one its session token names, or - with
-        /// <see cref="NebulaConfig.SingleSessionPerPlayer"/> - the one it is in the world as right now, which is how
-        /// a player that reconnects without a usable token (a restarted client, a second client on the same
-        /// account) returns to the pawn it left instead of getting a second one. 0 for a player who is not in the
-        /// world. <paramref name="how"/> says which of the three answered, for the log.
+        /// Validate token-based reconnection when identity-wide session coordination is disabled.
+        /// Returns zero when the token does not identify a session belonging to this authenticated player.
         /// </summary>
         private ulong EarlierSessionOf(ClientConn c, string session, out ulong generation, out string how)
         {
@@ -1183,24 +1186,6 @@ namespace Nebula
                     how = "session token";
                     return claims.SessionId;
                 }
-            }
-            if (!Config.SingleSessionPerPlayer || c.Identity.Length == 0) return 0;
-            // A link of this player's that is still open here; its generation is the newest this gateway knows.
-            foreach (var other in _clientsById.Values)
-            {
-                if (other == c || !other.Welcomed || other.DisconnectAt != 0 || other.Identity != c.Identity) continue;
-                generation = other.Generation;
-                how = "already connected here";
-                return other.ClientId;
-            }
-            // Otherwise a pawn of this player's anywhere in the mesh: every worker announces every entity to every
-            // gateway, so this finds the session even when another gateway welcomed it, or when its link is gone
-            // and the worker is still holding the pawn for a reconnect.
-            foreach (var rec in _entities.Values)
-            {
-                if (rec.OwnerClientId == 0 || rec.OwnerIdentity != c.Identity) continue;
-                how = "pawn still in the world";
-                return rec.OwnerClientId;
             }
             return 0;
         }
@@ -1282,10 +1267,23 @@ namespace Nebula
         /// <summary>The client is who it says it is: welcome it, replay the world, and ask a worker for a pawn (or for the one it had).</summary>
         private void WelcomeClient(ClientConn c, in AuthResult auth, string issuedToken, string session)
         {
+            if (Config.SingleSessionPerPlayer)
+            {
+                BeginCoordinatedWelcome(c, auth, issuedToken, session);
+                return;
+            }
+            FinishWelcomeClient(c, auth, issuedToken, session);
+        }
+
+        private void FinishWelcomeClient(ClientConn c, in AuthResult auth, string issuedToken, string session)
+        {
             int peerId = c.PeerId;
             c.Identity = auth.Identity ?? "";
-            c.Generation = NextGeneration(0);
-            TryReclaim(c, session);
+            if (c.CoordinationClaim.Length == 0)
+            {
+                c.Generation = NextGeneration(0);
+                TryReclaim(c, session);
+            }
             c.Welcomed = true;
             string how = auth.Issuer == PlayerIdentity.AnonymousIssuer ? (issuedToken.Length > 0 ? "new anonymous identity" : "anonymous") : auth.Issuer;
             NebulaLog.Info($"client {c.ClientId} '{c.Name}'{(c.IsBot ? " (bot)" : "")} connected as {ShortIdentity(c.Identity)} ({how}{(c.Reclaimed ? ", session reclaimed" : "")})");
@@ -1331,13 +1329,19 @@ namespace Nebula
 
         private void OnClientLost(ClientConn c)
         {
+            ReleaseCoordinatedSession(c);
             _clientsByPeer.Remove(c.PeerId);
             _clientsById.Remove(c.ClientId);
             NebulaLog.Info($"client {c.ClientId} '{c.Name}' disconnected");
             if (!c.Welcomed) return;
             // The worker keeps the pawn for SessionReclaimSeconds in case the client comes back (here or elsewhere);
             // the despawn carries the generation so a gateway that has since claimed the session is not undone.
-            if (c.PawnNetId != 0 && _entities.TryGetValue(c.PawnNetId, out var rec) && _workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out var w))
+            WorkerConn w = null;
+            if (c.PawnNetId != 0 && _entities.TryGetValue(c.PawnNetId, out var rec))
+                _workersByIndex.TryGetValue(rec.OwnerWorkerIndex, out w);
+            else if (!string.IsNullOrEmpty(c.SpawnWorkerId))
+                _workersById.TryGetValue(c.SpawnWorkerId, out w);
+            if (w != null)
             {
                 _writer.Reset();
                 new DespawnPlayerMsg { ClientId = c.ClientId, Generation = c.Generation }.Write(_writer);
@@ -1349,6 +1353,7 @@ namespace Nebula
         private void SendClaim(ClientConn c, WorkerConn worker, ContainerRef container)
         {
             c.SpawnWorkerId = worker.WorkerId;
+            c.SpawnContainer = container;
             _writer.Reset();
             new SpawnPlayerMsg { ClientId = c.ClientId, Container = container, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity, Generation = c.Generation }.Write(_writer);
             Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
@@ -1357,6 +1362,13 @@ namespace Nebula
         private void TryRequestSpawn(ClientConn c)
         {
             c.NextSpawnAttempt = Time.unscaledTime + 3f;
+            if (c.CoordinationInFlight) return;
+            if (c.CoordinationClaim.Length > 0 && !string.IsNullOrEmpty(c.SpawnWorkerId) &&
+                _workersById.TryGetValue(c.SpawnWorkerId, out var reserved) && reserved.Ready)
+            {
+                ReserveCoordinatedSpawn(c, reserved, c.SpawnContainer);
+                return;
+            }
             // Any container with an active lease whose worker we are connected to.
             var candidates = new List<Container>();
             CollectSpawnCandidates(ContainerRegistry.All, candidates);
@@ -1376,6 +1388,11 @@ namespace Nebula
             var pick = candidates[UnityEngine.Random.Range(0, candidates.Count)];
 #endif
             var worker = _workersById[pick.OwnerWorkerId];
+            if (c.CoordinationClaim.Length > 0)
+            {
+                ReserveCoordinatedSpawn(c, worker, pick.Ref);
+                return;
+            }
             SendClaim(c, worker, pick.Ref);
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
         }

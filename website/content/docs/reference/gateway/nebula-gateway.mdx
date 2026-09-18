@@ -6,7 +6,7 @@ description: "Accepts client connections and maintains a connection to every wor
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaGateway.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaGateway.cs)</div>
 
 ```csharp
-public sealed class NebulaGateway : MonoBehaviour
+public sealed partial class NebulaGateway : MonoBehaviour
 ```
 
 Accepts client connections and maintains a connection to every worker. It forwards each client's inputs to the worker currently owns that client's entity, and fans the workers' replication streams out to the clients, de-duplicating by authority epoch so a handover is invisible to the client. Nothing here is authoritative: if the gateway dies, clients reconnect and the workers re-announce their entities.
@@ -165,4 +165,3 @@ public void StopDraining();
 ```
 
 Cancel a drain (the fleet changed its mind): new clients are accepted again.
-

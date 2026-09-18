@@ -138,7 +138,7 @@ public static class Program
             {
                 string page = Kebab(t.Name);
                 pages.Add(page);
-                File.WriteAllText(Path.Combine(dir, page + ".mdx"), Lf(renderer.RenderType(t)), new UTF8Encoding(false));
+                File.WriteAllText(Path.Combine(dir, page + ".mdx"), Lf(renderer.RenderType(t)).TrimEnd() + "\n", new UTF8Encoding(false));
                 indexPage.AppendLine($"| [{Escape(t.DisplayName)}](/docs/reference/{slug}/{page}) | {Escape(t.Kind)}. {Escape(renderer.Description(t.Node))} |");
             }
             indexPage.AppendLine();

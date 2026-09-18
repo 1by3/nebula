@@ -9,7 +9,7 @@ description: "The standalone orchestrator's database: SQLite (a file next to the
 public sealed class NebulaDatabase : IDisposable
 ```
 
-The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. It holds two tables: `nebula_control_plane` (the control plane document, see [`SqlControlPlaneStorage`](/docs/reference/storage/sql-control-plane-storage)) and `nebula_entity` (saved entities, see [`SqlPersistenceStore`](/docs/reference/storage/sql-persistence-store)). [`EnsureSchema`](#ensureschema) creates both if they are missing; every SQL statement is written once and differs only in the few type names the two engines disagree on.
+The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. It holds three tables: `nebula_control_plane` (the control plane document, see [`SqlControlPlaneStorage`](/docs/reference/storage/sql-control-plane-storage)) and `nebula_entity` (saved entities, see [`SqlPersistenceStore`](/docs/reference/storage/sql-persistence-store)), and `nebula_gateway_session` (gateway admission claims). [`EnsureSchema`](#ensureschema) creates them if they are missing; every SQL statement is written once and differs only in the few type names the two engines disagree on.
 
 ## Properties
 
@@ -77,4 +77,3 @@ public static DbCommand Command(DbConnection c, string sql, params (string name,
 ```csharp
 public void Dispose();
 ```
-

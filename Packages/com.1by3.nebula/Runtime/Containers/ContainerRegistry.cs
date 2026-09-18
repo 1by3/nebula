@@ -114,6 +114,7 @@ namespace Nebula
             DynamicUnregistering = null;
             RuntimeRegistered = null;
             RuntimeUnregistering = null;
+            RuntimeBoundsInFrame = null;
             WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
         }
 
@@ -343,8 +344,12 @@ namespace Nebula
         /// <summary>The runtime container registered as <paramref name="id"/> on this process, or null.</summary>
         public static Container GetRuntime(ulong id) => RuntimeById.TryGetValue(id, out var c) ? c : null;
 
-        // Optional procedural-world mapping from a stable ID to bounds in the current frame.
-        // Avoids rounding a distant absolute float position before subtracting the origin.
+        /// <summary>
+        /// Optional mapping from a public runtime container's stable ID to bounds in the current origin frame.
+        /// Called during registration and origin shifts. Calculate the center from precise coordinates before
+        /// converting to floats. Origin shifts use only the returned center; container sizes remain unchanged.
+        /// Clear this callback when its world unloads. It is reset when a new play session starts.
+        /// </summary>
         public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
 
         /// <summary>

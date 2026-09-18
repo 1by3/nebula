@@ -11,4 +11,3 @@ public sealed class AuthorityRpcAttribute : Attribute
 ```
 
 Runs on the worker that has authority over the entity. If the caller has authority, Nebula runs the method directly. If the caller holds only a ghost, Nebula sends the call to the authoritative worker. Use it for cross-container interactions such as damage requests.
-

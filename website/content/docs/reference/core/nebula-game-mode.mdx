@@ -28,6 +28,8 @@ Create and spawn the player's entity inside `container`. Return the spawned iden
 public virtual void BeginSpawnPlayer(NebulaWorker worker, PlayerInfo player, Container container, System.Action<System.Func<NetworkIdentity>> complete);
 ```
 
+Begin creating a player, optionally waiting for game-owned storage or content loading. Call `complete` on the Unity main thread with a factory that creates the pawn. Nebula invokes the factory only if this join is still current and connected, at most once. The default completes synchronously through [`OnSpawnPlayer`](#onspawnplayer).
+
 ### OnPlayerDespawn [#onplayerdespawn]
 
 ```csharp
@@ -50,3 +52,4 @@ Called once the worker is listening and registered with the control plane.
 public virtual void PrepareSpatialFrame(NetworkIdentity entity);
 ```
 
+Called for each authoritative entity before worker container membership queries. Procedural worlds may shift their origin here so distant regions resolve container boundaries precisely. The default does nothing. Keep this per-entity simulation callback inexpensive.

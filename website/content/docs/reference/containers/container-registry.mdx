@@ -85,6 +85,8 @@ Edge length, in metres, of the buckets runtime containers are hashed into. Set i
 public static Func<ulong, Bounds, Bounds> RuntimeBoundsInFrame { get; set; }
 ```
 
+Optional mapping from a public runtime container's stable ID to bounds in the current origin frame. Called during registration and origin shifts. Calculate the center from precise coordinates before converting to floats. Origin shifts use only the returned center; container sizes remain unchanged. Clear this callback when its world unloads. It is reset when a new play session starts.
+
 ## Events
 
 ### Rebuilt [#rebuilt]
@@ -367,4 +369,3 @@ public static void NotifyLeasesChanged();
 ```
 
 Tell listeners (world streaming, overlays) that a batch of [`ApplyLease`](#applylease) calls is complete.
-

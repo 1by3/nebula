@@ -25,9 +25,12 @@ namespace Nebula
         /// </summary>
         public virtual NetworkIdentity OnSpawnPlayer(NebulaWorker worker, in PlayerInfo player, Container container) => OnSpawnPlayer(worker, player.ClientId, player.Name, container);
 
-        // The completion factory runs on the main thread only while this join is still
-        // current. Games may wait for storage before completing; cancelled joins never
-        // instantiate a pawn. The synchronous hook remains the default.
+        /// <summary>
+        /// Begin creating a player, optionally waiting for game-owned storage or content loading.
+        /// Call <paramref name="complete"/> on the Unity main thread with a factory that creates the pawn.
+        /// Nebula invokes the factory only if this join is still current and connected, at most once.
+        /// The default completes synchronously through <see cref="OnSpawnPlayer(NebulaWorker, in PlayerInfo, Container)"/>.
+        /// </summary>
         public virtual void BeginSpawnPlayer(NebulaWorker worker, PlayerInfo player, Container container,
             System.Action<System.Func<NetworkIdentity>> complete)
         {
@@ -40,8 +43,11 @@ namespace Nebula
         /// <summary>Called once the worker is listening and registered with the control plane.</summary>
         public virtual void OnWorkerStarted(NebulaWorker worker) { }
 
-        // Runs before worker membership queries. Procedural worlds may rebase around
-        // this entity so a worker hosting distant regions resolves seams precisely.
+        /// <summary>
+        /// Called for each authoritative entity before worker container membership queries.
+        /// Procedural worlds may shift their origin here so distant regions resolve container boundaries precisely.
+        /// The default does nothing. Keep this per-entity simulation callback inexpensive.
+        /// </summary>
         public virtual void PrepareSpatialFrame(NetworkIdentity entity) { }
     }
 

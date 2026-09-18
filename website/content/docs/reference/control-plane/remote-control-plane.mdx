@@ -6,7 +6,7 @@ description: "IControlPlane for a worker or gateway: a mirror of the control pla
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/RemoteControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/RemoteControlPlane.cs)</div>
 
 ```csharp
-public sealed class RemoteControlPlane : IControlPlane
+public sealed partial class RemoteControlPlane : IControlPlane
 ```
 
 [`IControlPlane`](/docs/reference/control-plane/i-control-plane) for a worker or gateway: a mirror of the control plane the orchestrator hosts ([`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host)), reached over HTTP at the orchestrator's dashboard address.
@@ -257,4 +257,3 @@ public void RemoveContainer(string containerId);
 ```csharp
 public void ResetControlPlane();
 ```
-

@@ -164,4 +164,3 @@ public static string BuildCloudInit(string buildUrl, string workerArgs);
 ```
 
 Boot script for a worker VM. Waits for the private interface, fetches the build from the orchestrator, and runs the worker as a systemd unit. `$PRIVATE_IP` in `workerArgs` expands on the machine.
-

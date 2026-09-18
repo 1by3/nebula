@@ -79,7 +79,7 @@ autoscaling grow it towards `B`.
 | `DeadWorkerReplaceDelaySeconds` | `8` | Wait this long before starting a replacement for a dead worker. |
 | `WorkerDrainTimeoutSeconds` | `10` | Give a retiring worker this long to transfer its entities before stopping it. |
 | `SessionReclaimSeconds` | `30` | Keep a player's pawn this long after the player's link drops, so the player can reconnect (through any gateway of the mesh) with the same session and pawn. `0` despawns at once. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection). |
-| `SingleSessionPerPlayer` | `true` | Keep one connection per player: when someone who is already in the world connects again, the new connection takes over their session and pawn and the earlier one is closed. Turn it off to let one identity hold several pawns at once. See [One connection per player](/docs/guides/authentication#one-connection-per-player). |
+| `SingleSessionPerPlayer` | `true` | Gateways coordinate one connection per identity. A replacement waits for the previous gateway to acknowledge disconnection; admission fails if coordination is unavailable. Turn it off on every gateway to allow multiple sessions per identity. See [One connection per player](/docs/guides/authentication#one-connection-per-player). |
 | `GatewayDrainReconnectSeconds` | `10` | Tell the clients of a draining gateway that they have this long to reconnect before it closes their links. |
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |

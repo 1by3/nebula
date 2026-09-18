@@ -6,7 +6,7 @@ description: "IControlPlaneStorage in the orchestrator's database: the document 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/SqlControlPlaneStorage.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Services~/Nebula.Services/Storage/SqlControlPlaneStorage.cs)</div>
 
 ```csharp
-public sealed class SqlControlPlaneStorage : IControlPlaneStorage
+public sealed class SqlControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore
 ```
 
 [`IControlPlaneStorage`](/docs/reference/control-plane/i-control-plane-storage) in the orchestrator's database: the document sits in the single row of `nebula_control_plane`, replaced on every save. Each call opens its own connection (pooled), so the host's background save and the persistence store's writer never share one.
@@ -46,4 +46,3 @@ public void Save(string json);
 ```csharp
 public void Dispose();
 ```
-

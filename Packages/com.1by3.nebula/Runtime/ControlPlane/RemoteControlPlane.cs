@@ -25,7 +25,7 @@ namespace Nebula
     /// go). <see cref="Now"/> is the orchestrator's clock as of the last document plus the time since.
     /// </para>
     /// </summary>
-    public sealed class RemoteControlPlane : IControlPlane
+    public sealed partial class RemoteControlPlane : IControlPlane
     {
         /// <summary>Seconds a read waits on the orchestrator for a change before it returns the unchanged document.</summary>
         public const int LongPollSeconds = 10;
@@ -99,6 +99,7 @@ namespace Nebula
 
         public void Tick()
         {
+            while (_sessionCallbacks.TryDequeue(out var sessionCallback)) sessionCallback();
             ControlPlaneJson.Snapshot incoming;
             lock (_gate)
             {

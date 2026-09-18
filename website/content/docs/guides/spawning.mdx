@@ -55,6 +55,12 @@ Setting `NetworkVariable` values between `Instantiate` and `Spawn` is the normal
 
 If your game uses authored spawn points, find one inside the `container` passed to `OnSpawnPlayer`. Nebula provides container geometry, but it does not provide a spawn-point component or placement rules.
 
+## Wait for player data before spawning
+
+Override `BeginSpawnPlayer` when a player needs saved data or game content before entering the world. Start the load, then call its `complete` callback on the Unity main thread with a factory that creates and returns the player's `NetworkIdentity`. Put entity creation inside that factory. Nebula skips the factory if the join was cancelled or replaced and invokes an accepted factory at most once.
+
+Apply saved state inside the factory before spawning or returning the entity. Nebula does not move callbacks from background threads to the main thread; your loading code must arrange that. The default `BeginSpawnPlayer` calls the existing `OnSpawnPlayer` hook synchronously, so existing game modes need no change.
+
 ## Registering prefabs
 
 Add `NetworkTransform` to each moving prefab's root before registration. A bare `NetworkIdentity` receives its full initial placement, including scale, but does not send ongoing movement. Predicted controllers, `NetworkRigidbody`, and `DynamicContainer` require an enabled root transform component. Keep static entities opted out unless their transform must change remotely. See [NetworkTransform](/docs/guides/network-transform) for component choices.

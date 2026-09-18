@@ -78,6 +78,31 @@ public class StorageAndHostTests
 
     // ---------------------------------------------------------------------------------------- database
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void SessionClaimsSurviveStorageReopenAndResetPreservesTopology(bool sqlite)
+    {
+        using var db = NebulaDatabase.Open(DatabaseUrl.Parse("sqlite:" + Path.Combine(directory, "sessions.db"), ""));
+        IControlPlaneStorage Open() => sqlite ? new SqlControlPlaneStorage(db) : new FileControlPlaneStorage(Path.Combine(directory, "plane.json"));
+        using (var storage = Open())
+        {
+            storage.Save("topology");
+            var sessions = new GatewaySessionDirectory(_ => true) { Store = (IGatewaySessionStore)storage };
+            var first = sessions.Handle(new GatewaySessionRequest { Operation = "claim", Identity = "player", Gateway = "g1", Claim = "first", SessionId = ulong.MaxValue });
+            Assert.That(first.Status, Is.EqualTo("granted"));
+        }
+        using (var storage = Open())
+        {
+            var sessions = new GatewaySessionDirectory(_ => true) { Store = (IGatewaySessionStore)storage };
+            var next = new GatewaySessionRequest { Operation = "claim", Identity = "player", Gateway = "g2", Claim = "next", SessionId = 2 };
+            Assert.That(sessions.Handle(next).Status, Is.EqualTo("pending"));
+            Assert.That(sessions.Handle(new GatewaySessionRequest { Operation = "poll", Gateway = "g1" }).Revocations.Single().SessionId, Is.EqualTo(ulong.MaxValue));
+            sessions.Reset();
+            Assert.That(storage.Load(), Is.EqualTo("topology"));
+            Assert.That(sessions.Handle(next).Status, Is.EqualTo("granted"));
+        }
+    }
+
     [Test]
     public void DatabaseUrlParsesEveryScheme()
     {
@@ -203,6 +228,19 @@ public class StorageAndHostTests
             WaitUntil(() => remote.IsConnected && remote.Leases.Count == 1, Pump);
             Assert.That(remote.Leases[0].ContainerId, Is.EqualTo("cell-1"));
             Assert.That(changes, Is.EqualTo(1));
+
+            GatewaySessionReply admission = null;
+            int callbackThread = -1, callingThread = Thread.CurrentThread.ManagedThreadId;
+            var claim = new GatewaySessionRequest { Operation = "claim", Identity = "http-player", Gateway = "gw1#1", Claim = "http-claim", SessionId = ulong.MaxValue - 9 };
+            ((IGatewaySessionControlPlane)remote).SessionRequest(claim, reply => { admission = reply; callbackThread = Thread.CurrentThread.ManagedThreadId; });
+            WaitUntil(() => admission != null, Pump);
+            Assert.That(admission.Status, Is.EqualTo("granted"));
+            Assert.That(admission.Session.SessionId, Is.EqualTo(claim.SessionId));
+            Assert.That(callbackThread, Is.EqualTo(callingThread), "admission callbacks run from Tick");
+            admission = null;
+            ((IGatewaySessionControlPlane)wrongToken).SessionRequest(claim, reply => admission = reply);
+            WaitUntil(() => admission != null, Pump);
+            Assert.That(admission.Status, Is.EqualTo("error"), "the session endpoint requires the mesh token");
 
             // A worker registers and heartbeats through the mirror; the host applies both in order and every mirror sees it.
             remote.RegisterWorker("w1", 1, "10.0.0.5", 7101);

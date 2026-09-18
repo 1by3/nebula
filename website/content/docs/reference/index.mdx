@@ -161,9 +161,12 @@ Register processes and share container assignments and settings through the cont
 | [ControlPlaneJson](/docs/reference/control-plane/control-plane-json) | Static class. The control plane as one JSON document, and one control-plane write as one JSON object. |
 | [FileControlPlaneStorage](/docs/reference/control-plane/file-control-plane-storage) | Class. The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy. |
 | [GatewayInfo](/docs/reference/control-plane/gateway-info) | Class. Describes a gateway registered with the control plane. |
+| [GatewaySessionReply](/docs/reference/control-plane/gateway-session-reply) | Class. The result of a gateway admission operation. |
+| [GatewaySessionRequest](/docs/reference/control-plane/gateway-session-request) | Class. An operation on one player's admission claim. |
 | [GatewayStats](/docs/reference/control-plane/gateway-stats) | Struct. What a gateway reports about itself on every heartbeat. |
 | [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Provides process registration, container assignments with epochs, and game-defined settings. |
 | [IControlPlaneStorage](/docs/reference/control-plane/i-control-plane-storage) | Interface. Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup. |
+| [IGatewaySessionControlPlane](/docs/reference/control-plane/i-gateway-session-control-plane) | Interface. Optional control-plane extension for single-session gateway admission. |
 | [LeaseInfo](/docs/reference/control-plane/lease-info) | Class. Describes the current worker assignment for one container. |
 | [LeaseState](/docs/reference/control-plane/lease-state) | Static class. Provides the states used by a container lease. |
 | [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. |

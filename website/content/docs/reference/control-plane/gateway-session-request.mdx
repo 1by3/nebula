@@ -1,0 +1,86 @@
+---
+title: "GatewaySessionRequest"
+description: "An operation on one player's admission claim."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs)</div>
+
+```csharp
+public sealed class GatewaySessionRequest
+```
+
+An operation on one player's admission claim. Transport must preserve all 64 bits of each ID.
+
+## Fields
+
+### Operation [#operation]
+
+```csharp
+public string Operation = "";
+```
+
+claim, poll, release, cancel, or reserve. Poll returns disconnect requests for the named gateway.
+
+### Identity [#identity]
+
+```csharp
+public string Identity = "";
+```
+
+Authenticated player identity; empty only for poll.
+
+### Gateway [#gateway]
+
+```csharp
+public string Gateway = "";
+```
+
+Gateway ID and process incarnation, formatted by [`PlayerSessions.GatewayKey`](/docs/reference/protocol/player-sessions#gatewaykey).
+
+### Claim [#claim]
+
+```csharp
+public string Claim = "";
+```
+
+Unique ID for this connection's claim. Retries reuse it; releases match both gateway and claim.
+
+### Worker [#worker]
+
+```csharp
+public string Worker = "";
+```
+
+Worker reserved for a pending spawn or currently owning the pawn.
+
+### SessionId [#sessionid]
+
+```csharp
+public ulong SessionId;
+```
+
+Proposed ID on an initial claim. The coordinator preserves an existing session's ID.
+
+### Generation [#generation]
+
+```csharp
+public ulong Generation;
+```
+
+Minimum generation from a verified token. A replacement receives a strictly newer generation.
+
+### Container [#container]
+
+```csharp
+public ContainerRef Container = ContainerRef.None;
+```
+
+Container for the spawn reservation or observed pawn.
+
+### ObservedPawn [#observedpawn]
+
+```csharp
+public bool ObservedPawn;
+```
+
+The route came from an existing authoritative pawn announcement rather than a proposed spawn.

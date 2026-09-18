@@ -20,4 +20,3 @@ public const string BootSeconds = "nebula.bootSeconds";
 ```
 
 Roughly how long this mesh's worker host takes to boot a worker, in seconds ([`IWorkerHost.TypicalBootSeconds`](/docs/reference/orchestrator/i-worker-host#typicalbootseconds)). Seeded by the orchestrator; read by the gateway, which passes it to a client it is holding in [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) so the game can say how long.
-

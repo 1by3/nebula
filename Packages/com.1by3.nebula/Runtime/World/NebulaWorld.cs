@@ -79,8 +79,12 @@ namespace Nebula
             NebulaLog.Info($"world '{manifest.World.WorldName}': {manifest.World.Cells.Count} cells, {ordered.Count} containers, cell size {manifest.World.CellSize}");
         }
 
-        // Enable origin shifts for a procedural world without loading authored cell scenes.
-        // The game owns the shift policy and calls Streamer.ShiftOrigin before local simulation.
+        /// <summary>
+        /// Replace the current world with a procedural world that supports origin shifts without authored cell scenes.
+        /// The game registers runtime containers and calls <see cref="WorldStreamer.ShiftOrigin"/> before local simulation.
+        /// <see cref="Definition"/> returns this definition; <see cref="IsActive"/> remains false because no authored
+        /// scene loading is active. The definition must not be null.
+        /// </summary>
         public static void LoadRuntime(WorldDefinition definition)
         {
             Unload();

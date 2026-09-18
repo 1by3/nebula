@@ -46,4 +46,3 @@ public static float UtilizationOf(AssignmentInput input, string containerId);
 ```
 
 Attributed utilization of one container as the planner weighs it: what was measured, scaled by [`ContainerHint.CostMultiplier`](/docs/reference/containers/container-hint#costmultiplier). 0 when nothing was reported for it. Every place that adds up predicted load goes through here, so a hinted container is as heavy in a dry run as it is in a deal.
-

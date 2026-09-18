@@ -1,0 +1,46 @@
+---
+title: "GatewaySessionReply"
+description: "The result of a gateway admission operation."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs)</div>
+
+```csharp
+public sealed class GatewaySessionReply
+```
+
+The result of a gateway admission operation.
+
+## Fields
+
+### Status [#status]
+
+```csharp
+public string Status = "";
+```
+
+granted, pending, ok, gone, stale, or error. Only granted permits admission or a spawn reservation.
+
+### Error [#error]
+
+```csharp
+public string Error = "";
+```
+
+Player-readable failure reason for an error result.
+
+### Session [#session]
+
+```csharp
+public GatewaySessionRequest Session;
+```
+
+The granted session and reserved route, when present.
+
+### Revocations [#revocations]
+
+```csharp
+public readonly List<GatewaySessionRequest> Revocations = new List<GatewaySessionRequest>();
+```
+
+Connections to disconnect before acknowledging their release. Returned by poll.

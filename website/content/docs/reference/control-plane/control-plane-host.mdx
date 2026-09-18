@@ -6,7 +6,7 @@ description: "The control plane as the orchestrator hosts it: a LocalControlPlan
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneHost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ControlPlaneHost.cs)</div>
 
 ```csharp
-public sealed class ControlPlaneHost : IControlPlane
+public sealed partial class ControlPlaneHost : IControlPlane
 ```
 
 The control plane as the orchestrator hosts it: a [`LocalControlPlane`](/docs/reference/control-plane/local-control-plane) that is the source of truth, served to workers and gateways over the orchestrator's HTTP server and kept in an [`IControlPlaneStorage`](/docs/reference/control-plane/i-control-plane-storage) between runs.
@@ -283,4 +283,3 @@ public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpSe
 ```
 
 Main thread: apply a batch of writes when `req` is one. Returns false for any other request so the caller can handle it.
-

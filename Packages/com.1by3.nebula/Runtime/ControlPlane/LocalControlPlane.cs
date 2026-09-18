@@ -14,7 +14,7 @@ namespace Nebula
     /// <see cref="Tick"/>. On its own it serves single-process runs and tests; <see cref="ControlPlaneHost"/> wraps
     /// it on the orchestrator, where it is the source of truth every <see cref="RemoteControlPlane"/> mirrors.
     /// </summary>
-    public sealed class LocalControlPlane : IControlPlane
+    public sealed partial class LocalControlPlane : IControlPlane
     {
         private readonly List<WorkerInfo> _workers = new List<WorkerInfo>();
         private readonly List<LeaseInfo> _leases = new List<LeaseInfo>();

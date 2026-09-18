@@ -6,7 +6,7 @@ description: "The control plane's state machine: registrations, heartbeats, leas
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/LocalControlPlane.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/LocalControlPlane.cs)</div>
 
 ```csharp
-public sealed class LocalControlPlane : IControlPlane
+public sealed partial class LocalControlPlane : IControlPlane
 ```
 
 The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. Changes are applied synchronously and [`Changed`](#changed) fires on the next [`Tick`](#tick). On its own it serves single-process runs and tests; [`ControlPlaneHost`](/docs/reference/control-plane/control-plane-host) wraps it on the orchestrator, where it is the source of truth every [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) mirrors.
@@ -214,4 +214,3 @@ public void RemoveContainer(string containerId);
 ```csharp
 public void ResetControlPlane();
 ```
-

@@ -7,7 +7,7 @@ public sealed class StartCommand : Command
 {
     public override string Name => "start";
     public override string Summary => "Start the orchestrator, gateway, and workers on this computer";
-    public override string Usage => "[--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]";
+    public override string Usage => "[--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence] [--reset-sessions]";
     public override string? Details => @"
 Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and
 starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client
@@ -21,6 +21,9 @@ The orchestrator keeps the control plane and every saved entity in one database,
 Library/Nebula/nebula.db (mesh.database in nebula.json changes it: `sqlite:<file>`, `postgres://...` or `memory`).
 The control plane starts empty on every run because it only holds which processes are running; saved entities
 stay across restarts unless you pass --reset-persistence.
+
+--reset-sessions clears held player-session claims without deleting saved entities. Use it only after every
+gateway of this mesh has stopped, to recover claims whose previous gateway cannot acknowledge disconnection.
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -31,6 +34,7 @@ stay across restarts unless you pass --reset-persistence.
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
+        new OptionSpec("reset-sessions", false, "clear player-session claims; stop every gateway of this mesh first"),
     };
     public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence" };
 
@@ -43,7 +47,7 @@ stay across restarts unless you pass --reset-persistence.
         var band = WorkerBand.Resolve(args, mesh.Workers, mesh.MinWorkers, mesh.MaxWorkers);
         LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
             band.Start, band.Min, band.Max, args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
-            args.Has("open-ui"), args.Has("reset-persistence")));
+            args.Has("open-ui"), args.Has("reset-persistence"), args.Has("reset-sessions")));
         return 0;
     }
 }

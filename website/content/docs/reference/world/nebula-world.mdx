@@ -59,6 +59,8 @@ Instantiate the manifest and populate [`ContainerRegistry`](/docs/reference/cont
 public static void LoadRuntime(WorldDefinition definition);
 ```
 
+Replace the current world with a procedural world that supports origin shifts without authored cell scenes. The game registers runtime containers and calls [`WorldStreamer.ShiftOrigin`](/docs/reference/world/world-streamer#shiftorigin) before local simulation. [`Definition`](#definition) returns this definition; [`IsActive`](#isactive) remains false because no authored scene loading is active. The definition must not be null.
+
 ### Unload [#unload]
 
 ```csharp
@@ -80,4 +82,3 @@ public static bool IsContentLoaded(Container container);
 ```
 
 Whether the content of the cell holding `container` is loaded in this process.
-

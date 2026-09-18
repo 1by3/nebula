@@ -1,0 +1,22 @@
+---
+title: "IGatewaySessionControlPlane"
+description: "Optional control-plane extension for single-session gateway admission."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/GatewaySessionCoordination.cs)</div>
+
+```csharp
+public interface IGatewaySessionControlPlane
+```
+
+Optional control-plane extension for single-session gateway admission. Serialize claims per identity and grant a takeover only after the previous gateway releases its claim. Failure blocks admission without disconnecting existing clients. Keep session records separate from topology snapshots.
+
+## Methods
+
+### SessionRequest [#sessionrequest]
+
+```csharp
+void SessionRequest(GatewaySessionRequest request, Action<GatewaySessionReply> complete);
+```
+
+Submit an idempotent operation. Invoke the callback on the caller's main thread, normally from [`IControlPlane.Tick`](/docs/reference/control-plane/i-control-plane#tick). Return an error reply on failure.

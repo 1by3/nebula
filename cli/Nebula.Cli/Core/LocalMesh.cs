@@ -24,7 +24,7 @@ public static class LocalMesh
     /// <param name="Workers">Workers to start with.</param>
     /// <param name="MinWorkers">Autoscaling floor; equal to <paramref name="Workers"/> for a fixed mesh.</param>
     /// <param name="MaxWorkers">Autoscaling ceiling; equal to <paramref name="Workers"/> for a fixed mesh.</param>
-    public sealed record StartOptions(int Workers, int MinWorkers, int MaxWorkers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false);
+    public sealed record StartOptions(int Workers, int MinWorkers, int MaxWorkers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false, bool ResetSessions = false);
 
     public static void Start(Context ctx, NebulaProject project, StartOptions o)
     {
@@ -61,6 +61,7 @@ public static class LocalMesh
             "-logFile", Path.Combine(logs, "orchestrator.log"),
         };
         if (o.ResetPersistence) orch.Add("-nebula-reset-persistence");
+        if (o.ResetSessions) orch.Add("-nebula-reset-sessions");
         if (ctx.Verbose) orch.Add("-nebula-verbose");
         Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null);
 

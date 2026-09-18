@@ -7,7 +7,7 @@ namespace Nebula
     /// <c>nebula_control_plane</c>, replaced on every save. Each call opens its own connection (pooled), so the
     /// host's background save and the persistence store's writer never share one.
     /// </summary>
-    public sealed class SqlControlPlaneStorage : IControlPlaneStorage
+    public sealed class SqlControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore
     {
         private readonly NebulaDatabase _db;
 
@@ -35,5 +35,28 @@ namespace Nebula
         }
 
         public void Dispose() { }
+
+        string IGatewaySessionStore.LoadSession(string identity)
+        {
+            using var c = _db.Open();
+            using var cmd = NebulaDatabase.Command(c, "SELECT state FROM nebula_gateway_session WHERE identity = @identity", ("@identity", identity));
+            return cmd.ExecuteScalar() as string;
+        }
+
+        void IGatewaySessionStore.SaveSession(string identity, string value)
+        {
+            using var c = _db.Open();
+            if (value == null)
+                NebulaDatabase.Execute(c, "DELETE FROM nebula_gateway_session WHERE identity = @identity", ("@identity", identity));
+            else
+                NebulaDatabase.Execute(c, "INSERT INTO nebula_gateway_session (identity, state) VALUES (@identity, @state) ON CONFLICT (identity) DO UPDATE SET state = excluded.state",
+                    ("@identity", identity), ("@state", value));
+        }
+
+        void IGatewaySessionStore.ClearSessions()
+        {
+            using var c = _db.Open();
+            NebulaDatabase.Execute(c, "DELETE FROM nebula_gateway_session");
+        }
     }
 }

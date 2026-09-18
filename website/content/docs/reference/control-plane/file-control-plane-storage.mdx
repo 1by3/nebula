@@ -6,7 +6,7 @@ description: "The document in one file, written beside it and moved into place s
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/IControlPlaneStorage.cs)</div>
 
 ```csharp
-public sealed class FileControlPlaneStorage : IControlPlaneStorage
+public sealed class FileControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore
 ```
 
 The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy.
@@ -52,4 +52,3 @@ public void Save(string json);
 ```csharp
 public void Dispose();
 ```
-

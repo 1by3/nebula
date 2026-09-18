@@ -54,6 +54,13 @@ namespace Nebula.Tests
             Assert.IsNull(WorldOrigin.Definition);
             Assert.AreEqual(0, WorldOrigin.ShiftCount);
         }
+        [Test] public void NewSessionClearsProceduralBoundsCallback()
+        {
+            ContainerRegistry.RuntimeBoundsInFrame = (id, bounds) => bounds;
+            ContainerRegistry.ResetForNewSession();
+            Assert.IsNull(ContainerRegistry.RuntimeBoundsInFrame);
+        }
+
         [Test] public void OppositeSignedCellExtremesDoNotOverflow()
         {
             var a = new Vector3Int(1500000000, 0, -1500000000);

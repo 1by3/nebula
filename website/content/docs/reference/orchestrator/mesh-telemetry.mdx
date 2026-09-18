@@ -162,4 +162,3 @@ public static void ToAbsolute(Vector3 frame, Vector3Int originCell, Vector3 cell
 ```
 
 Absolute world position of a position in this process's frame. Without a partitioned world the frame is the world. With one, every process keeps its own floating origin ([`WorldOrigin`](/docs/reference/world/world-origin)), so the origin cell's offset is added back: two workers report the same place with the same numbers.
-

@@ -132,4 +132,3 @@ public bool Sample(double renderTick, out Vector3 position, out Quaternion rotat
 ```
 
 Interpolated pose at `renderTick`, in the space of `container` (the newer sample's container; null means world). Falls back to extrapolating from the newest sample by its velocity (capped) when asked for a time we have not received yet. Apply it with [`NetworkIdentity.SetLocalPose`](/docs/reference/core/network-identity#setlocalpose) so an entity under a moving container lands where the container is this frame.
-

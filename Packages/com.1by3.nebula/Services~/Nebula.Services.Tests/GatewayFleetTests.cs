@@ -192,6 +192,7 @@ public class GatewayFleetTests
         public readonly Dictionary<int, string> Gateways = new();
         public readonly List<string> Refused = new();
         public readonly List<ClientInputMsg> Inputs = new();
+        public bool DeferSpawns;
         private readonly Dictionary<ulong, ulong> _pawns = new();
         private readonly Dictionary<ulong, string> _identities = new();
         private readonly string _meshToken;
@@ -230,6 +231,7 @@ public class GatewayFleetTests
                     {
                         var msg = SpawnPlayerMsg.Read(r);
                         Claims.Add(msg);
+                        if (DeferSpawns) break;
                         _identities[msg.ClientId] = msg.Identity ?? "";
                         if (!_pawns.TryGetValue(msg.ClientId, out ulong netId)) { netId = _nextNetId++; _pawns[msg.ClientId] = netId; }
                         // A worker announces every entity to every gateway it is linked to, not only the claimant.
@@ -349,6 +351,7 @@ public class GatewayFleetTests
         public readonly List<NebulaGateway> Gateways = new();
         public readonly List<int> Ports = new();
         public readonly List<FakeClient> Clients = new();
+        public readonly HashSet<NebulaGateway> PausedGateways = new();
         private readonly string _meshToken;
 
         public Fleet(int gateways, string meshToken = "", float reclaimSeconds = 30f, bool singleSession = true)
@@ -387,7 +390,7 @@ public class GatewayFleetTests
             {
                 Plane.HeartbeatWorker("w1", WorkerStatus.Ready, new WorkerStats());
                 Plane.Tick();
-                foreach (var g in Gateways) g.Tick();
+                foreach (var g in Gateways) if (!PausedGateways.Contains(g)) g.Tick();
                 Worker.Poll();
                 foreach (var c in Clients) c.Poll();
                 Thread.Sleep(5);
@@ -431,6 +434,23 @@ public class GatewayFleetTests
     }
 
     [Test]
+    public void DisconnectWhileSpawnIsDeferredReleasesThePendingSession()
+    {
+        using var fleet = new Fleet(1);
+        fleet.Worker.DeferSpawns = true;
+        var client = fleet.Connect(0, "waiting-player");
+        Assert.That(fleet.Run(() => fleet.Worker.Claims.Count == 1), Is.True);
+        var claim = fleet.Worker.Claims[0];
+
+        client.Disconnect();
+
+        Assert.That(fleet.Run(() => fleet.Worker.Despawns.Count == 1), Is.True);
+        Assert.That(fleet.Worker.Despawns[0].ClientId, Is.EqualTo(claim.ClientId));
+        Assert.That(fleet.Worker.Despawns[0].Generation, Is.EqualTo(claim.Generation));
+        Assert.That(fleet.Worker.Pawns, Is.Empty);
+    }
+
+    [Test]
     public void ASessionTokenReclaimsTheSameSessionOnAnotherGateway()
     {
         using var fleet = new Fleet(2);
@@ -450,7 +470,7 @@ public class GatewayFleetTests
         Assert.That(second.Welcome.Value.Identity, Is.EqualTo(welcome.Identity));
         Assert.That(second.Welcome.Value.Reclaimed, Is.True);
         Assert.That(second.Welcome.Value.SessionToken, Is.Not.EqualTo(welcome.SessionToken), "a fresh token for the new generation");
-        Assert.That(fleet.Worker.Claims.Count, Is.EqualTo(2));
+        Assert.That(fleet.Run(() => fleet.Worker.Claims.Count == 2), Is.True, "the worker receives the reclaim after the gateway welcomes the client");
         Assert.That(fleet.Worker.Claims[1].ClientId, Is.EqualTo(welcome.ClientId));
         Assert.That(fleet.Worker.Claims[1].Generation, Is.GreaterThan(generation), "the reclaim outranks the old gateway");
         Assert.That(second.Spawned, Does.Contain(1000ul), "the worker re-announced the same pawn, not a new one");
@@ -481,12 +501,13 @@ public class GatewayFleetTests
         Assert.That(late.Rejected.Value.Reason, Does.Contain("draining"));
         Assert.That(fleet.Run(() => fleet.Plane.FindGateway("gw1")!.Stats.Draining), Is.True, "the heartbeat acknowledges the drain");
 
-        // The client moves to gw2 with its token; the draining gateway's later despawn is fenced by the generation.
+        // The old gateway acknowledges disconnection before the replacement is admitted.
         var moved = fleet.Connect(1, "ann", a.Welcome!.Value.Token, a.Welcome.Value.SessionToken);
         Assert.That(fleet.Run(() => moved.Join == JoinState.Joined), Is.True);
+        Assert.That(a.Disconnected, Is.True);
         a.Disconnect();
-        Assert.That(fleet.Run(() => fleet.Worker.Despawns.Count == 1), Is.True);
-        Assert.That(fleet.Worker.Despawns[0].Generation, Is.LessThan(fleet.Worker.Claims.Last().Generation));
+        Assert.That(fleet.Run(() => fleet.Worker.Despawns.Count > 0, seconds: 0.2), Is.False, "takeover keeps the pawn");
+        Assert.That(fleet.Worker.Claims.Last().Generation, Is.GreaterThan(fleet.Worker.Claims.First().Generation));
 
         fleet.Plane.SetGatewayDraining("gw1", false);
         Assert.That(fleet.Run(() => !fleet.Gateways[0].Draining), Is.True, "a drain can be cancelled");
@@ -610,6 +631,42 @@ public class GatewayFleetTests
         fleet.Worker.EndSession("gw1", welcome.ClientId, generation, "stale");
         Assert.That(fleet.Run(() => third.Disconnected, seconds: 1), Is.False);
         Assert.That(third.Replaced, Is.Null);
+    }
+
+    [Test]
+    public void TokenlessTakeoverWaitsForAcknowledgmentBeforeAnyPawnExists()
+    {
+        using var fleet = new Fleet(2);
+        fleet.Worker.DeferSpawns = true;
+        var first = fleet.Connect(0, "loading");
+        Assert.That(fleet.Run(() => first.Welcome != null && fleet.Worker.Claims.Count == 1), Is.True);
+        fleet.PausedGateways.Add(fleet.Gateways[0]);
+        var second = fleet.Connect(1, "loading", first.Welcome.Value.Token);
+        Assert.That(fleet.Run(() => second.Welcome != null, seconds: 1), Is.False, "no welcome without the old gateway's acknowledgment");
+        Assert.That(fleet.Worker.Claims, Has.Count.EqualTo(1), "no second worker spawn request during coordination");
+        Assert.That(first.Disconnected, Is.False);
+
+        fleet.PausedGateways.Clear();
+        Assert.That(fleet.Run(() => second.Welcome != null && fleet.Worker.Claims.Count >= 2), Is.True);
+        Assert.That(first.Disconnected, Is.True);
+        Assert.That(second.Welcome.Value.ClientId, Is.EqualTo(first.Welcome.Value.ClientId));
+        Assert.That(fleet.Worker.Claims.Select(c => c.ClientId).Distinct().Count(), Is.EqualTo(1));
+        Assert.That(fleet.Worker.Despawns, Is.Empty);
+    }
+
+    [Test]
+    public void UnreachablePreviousGatewayBlocksTheNewConnection()
+    {
+        using var fleet = new Fleet(2);
+        var first = fleet.Connect(0, "playing");
+        Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
+        fleet.PausedGateways.Add(fleet.Gateways[0]);
+        var second = fleet.Connect(1, "playing", first.Welcome.Value.Token);
+        Assert.That(fleet.Run(() => second.Rejected != null, seconds: 12), Is.True);
+        Assert.That(second.Welcome, Is.Null);
+        Assert.That(second.Rejected.Value.Reason, Does.Contain("could not be disconnected"));
+        Assert.That(first.Disconnected, Is.False);
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1));
     }
 
     [Test]

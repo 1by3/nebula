@@ -7,6 +7,14 @@ Use Nebula's optional **world partition** when a level is too large for one Unit
 
 You can use the world-partition package without Nebula networking. You can also use Nebula networking with a single scene.
 
+## Use a procedural world
+
+Call `NebulaWorld.LoadRuntime(definition)` to enable origin shifts without loading authored cell scenes. Your game supplies the `WorldDefinition`, registers containers through `ContainerRegistry.RegisterRuntime`, and chooses when to call `NebulaWorld.Streamer.ShiftOrigin`. `NebulaWorld.Definition` returns the runtime definition. `IsActive` remains false because it indicates authored scene streaming.
+
+For distant regions, set `ContainerRegistry.RuntimeBoundsInFrame` to calculate each public runtime container's bounds from its stable ID and the current origin. Subtract precise coordinates before converting the result to floats. The callback runs during registration and origin shifts; shifts use its center and preserve the container's size. Clear the callback when unloading your world.
+
+Override `NebulaGameMode.PrepareSpatialFrame` if workers need to shift the origin before checking an entity's container membership. This hook runs for each authoritative entity, so avoid expensive work in it. Game code remains responsible for procedural content and the origin-shift policy.
+
 ## The model
 
 Create a `WorldDefinition` asset to define a three-dimensional grid of cells. Each cell uses the same `CellSize` and its own additive scene. The default cell size is 256 meters on each axis.
