@@ -24,12 +24,26 @@ namespace Nebula
         public override void OnNetworkSpawn()
         {
             _handoverKinematic = Body.isKinematic;
+            if (HasAuthority) SyncBodyPose();
             Body.isKinematic = !HasAuthority;
             if (HasAuthority) Body.linearVelocity = Identity.Motion.Velocity;
         }
 
+        /// <summary>
+        /// PhysX keeps its own copy of the pose. One written through the transform while the body was kinematic (a
+        /// restore, a handover, the ghost stream) has not reached it until the next transform sync, and a body that
+        /// turns dynamic before that simulates from the stale pose - the prefab's spawn point - and drags the
+        /// transform back to it. Push the pose across before the body is handed to the solver.
+        /// </summary>
+        private void SyncBodyPose()
+        {
+            Body.position = transform.position;
+            Body.rotation = transform.rotation;
+        }
+
         public override void OnGainedAuthority()
         {
+            if (!_handoverKinematic) SyncBodyPose();
             Body.isKinematic = _handoverKinematic;
             if (Body.isKinematic) return;
             Body.linearVelocity = Identity.Motion.Velocity;
