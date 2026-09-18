@@ -252,6 +252,33 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ASingleEntryCanBeReadOutOfABlobWithoutAnEntity()
+        {
+            var a = MakeChest("a", true);
+            a.GetComponent<Chest>().Lock = 4242;
+            a.GetComponent<Chest>().Coins.Value = 19;
+            a.GetComponent<Banner>().Text.Value = "hello";
+            var blob = PersistentStateCodec.Write(a);
+
+            // What a game does with a record it loaded for an entity that is not spawned here.
+            Assert.IsTrue(PersistentStateCodec.TryReadBehaviourState(blob, "Chest", out var chest));
+            Assert.AreEqual(4242, new NetworkReader(chest).ReadUShort());
+            Assert.IsTrue(PersistentStateCodec.TryReadEntry(blob, "Banner.Text", out var banner));
+            Assert.AreEqual("hello", new NetworkReader(banner).ReadString());
+            Assert.IsTrue(PersistentStateCodec.TryReadEntry(blob, "Chest.Coins", out var coins));
+            Assert.AreEqual(19, new NetworkReader(coins).ReadInt());
+
+            Assert.IsFalse(PersistentStateCodec.TryReadEntry(blob, "Chest.Sparkle", out _), "an unpersisted variable is not in the blob");
+            Assert.IsFalse(PersistentStateCodec.TryReadEntry(blob, "Nothing#state", out _));
+            Assert.IsFalse(PersistentStateCodec.TryReadEntry(null, "Chest#state", out _));
+            Assert.IsFalse(PersistentStateCodec.TryReadEntry(System.Array.Empty<byte>(), "Chest#state", out _));
+
+            var newer = (byte[])blob.Clone();
+            newer[0] = PersistentStateCodec.Version + 1;
+            Assert.IsFalse(PersistentStateCodec.TryReadEntry(newer, "Chest#state", out _), "a blob from a newer build is not parsed");
+        }
+
+        [Test]
         public void ABehaviourThatReadsPastItsChunkIsIsolated()
         {
             var a = MakeChest("a", true);

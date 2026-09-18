@@ -109,6 +109,13 @@ already existed. No wire or protocol change.
   `UseAsRuntimeBounds()` points `ContainerRegistry.RuntimeBoundsInFrame` at the grid, so a game that
   adopts it no longer supplies that hook itself; games with their own container shape keep using the
   hook directly, untouched.
+- Floating-origin policy, also on `RuntimeGrid`: `static ShiftOriginTo(Vector3Int)` performs the shift
+  the way a PhysX game needs it - enabled `CharacterController`s on runtime-container entities are
+  suspended across `NebulaWorld.Streamer.ShiftOrigin` (a controller must be reinserted at the new pose,
+  not sweep over the shift) and `Physics.SyncTransforms()` runs after. `KeepOriginNear(entity, ring)`
+  is the usual policy on top: shift when the followed entity leaves `ring` cells of `WorldOrigin.Cell`.
+  Both are no-ops without a loaded runtime world; a game that keeps its own policy calls
+  `Streamer.ShiftOrigin` as before.
 - `RuntimeGridAllocator`: a plain class (not a `MonoBehaviour`) wrapping a `NebulaWorker` and a
   `RuntimeGrid`. `Tick(unscaledTime)` - called from whatever the game already updates every frame -
   requests a ring around every player-owned authoritative entity and any fixed anchor coordinates,
@@ -119,6 +126,13 @@ already existed. No wire or protocol change.
   back once `ContainerRegistry.RuntimeRegistered` fires for it (immediately if it already exists) -
   event-driven, replacing the request-then-poll-every-0.1s loops a game otherwise writes at each call
   site that needs a container before acting on it.
+
+Inspecting a persisted record without the entity: `PersistentStateCodec.TryReadEntry(state, name, out
+ArraySegment<byte>)` returns one named entry of a state blob - a behaviour's chunk
+(`TryReadBehaviourState(state, "WorldObject", out ...)`, i.e. the `WorldObject#state` entry) or one
+persisted variable (`"Chest.Coins"`) - so a game that loads a `PersistedEntityRecord` for an entity no
+worker has spawned reads it through the codec instead of re-implementing the blob layout. False for a
+null/empty blob, a blob from a newer build, or a name the blob does not hold. Read-only, no format change.
 
 Games with a different chunk shape, packing, or allocation policy are unaffected: nothing here is
 wired in automatically, and the underlying primitives (`ContainerRegistry.RegisterRuntime`/`GetRuntime`,

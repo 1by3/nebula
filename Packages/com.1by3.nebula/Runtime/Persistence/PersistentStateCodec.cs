@@ -156,6 +156,41 @@ namespace Nebula
             Read(new NetworkReader(new ArraySegment<byte>(state)), identity);
         }
 
+        /// <summary>
+        /// Read one named entry out of a state blob without an entity to apply it to: the bytes a behaviour wrote
+        /// (name <see cref="StateNameOf"/>, i.e. <c>TypeName#state</c>) or one persisted variable, exactly as
+        /// <see cref="Read(NetworkReader, NetworkIdentity)"/> would have handed them over. For a game inspecting a
+        /// <see cref="PersistedEntityRecord"/> it loaded — an entity not spawned on this worker, or not spawned at
+        /// all — instead of duplicating the blob layout.
+        /// Returns false for a null/empty blob, a blob written by a newer build, or a name that is not present.
+        /// </summary>
+        public static bool TryReadEntry(byte[] state, string name, out ArraySegment<byte> entry)
+        {
+            entry = default;
+            if (state == null || state.Length == 0 || string.IsNullOrEmpty(name)) return false;
+            try
+            {
+                var reader = new NetworkReader(new ArraySegment<byte>(state));
+                if (reader.ReadByte() > Version) return false;
+                int count = reader.ReadUShort();
+                for (int i = 0; i < count; i++)
+                {
+                    string entryName = reader.ReadString();
+                    var chunk = reader.ReadSegment(reader.ReadUShort());
+                    if (entryName != name) continue;
+                    entry = chunk;
+                    return true;
+                }
+            }
+            catch (Exception ex) { NebulaLog.Error($"reading persisted entry '{name}' threw: {ex.Message}"); }
+            return false;
+        }
+
+        /// <summary><see cref="TryReadEntry"/> for a behaviour's own state chunk, named by behaviour type name
+        /// (without the <see cref="BehaviourStateSuffix"/>).</summary>
+        public static bool TryReadBehaviourState(byte[] state, string behaviourTypeName, out ArraySegment<byte> entry) =>
+            TryReadEntry(state, behaviourTypeName + BehaviourStateSuffix, out entry);
+
         /// <summary>True when any <see cref="PersistAttribute"/> variable of <paramref name="identity"/> changed since the last <see cref="Write(NetworkIdentity)"/>.</summary>
         public static bool HasDirtyVars(NetworkIdentity identity)
         {

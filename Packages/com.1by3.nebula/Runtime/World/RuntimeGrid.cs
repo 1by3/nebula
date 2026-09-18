@@ -118,5 +118,44 @@ namespace Nebula.World
         /// (<c>ContainerRegistry.RuntimeBoundsInFrame = null</c>) on shutdown if another hook should take over.
         /// </summary>
         public void UseAsRuntimeBounds() => ContainerRegistry.RuntimeBoundsInFrame = BoundsOfId;
+
+        private static readonly List<CharacterController> Suspended = new List<CharacterController>();
+
+        /// <summary>
+        /// Opt-in floating-origin policy for a grid world: shift the origin to <paramref name="target"/> (a no-op
+        /// when it is already there, or when no runtime world is loaded), suspending enabled
+        /// <see cref="CharacterController"/>s on entities of runtime containers across the shift and syncing
+        /// physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the
+        /// shift. Call from the game's own update once it has decided where the origin belongs, or use
+        /// <see cref="KeepOriginNear"/> for the usual policy.
+        /// </summary>
+        public static void ShiftOriginTo(Vector3Int target)
+        {
+            if (NebulaWorld.Streamer == null || target == WorldOrigin.Cell) return;
+            Suspended.Clear();
+            foreach (var c in ContainerRegistry.Runtime)
+                foreach (var entity in c.Entities)
+                {
+                    if (entity == null) continue;
+                    var controller = entity.GetComponent<CharacterController>();
+                    if (controller != null && controller.enabled) { controller.enabled = false; Suspended.Add(controller); }
+                }
+            NebulaWorld.Streamer.ShiftOrigin(target);
+            foreach (var controller in Suspended) if (controller != null) controller.enabled = true;
+            Suspended.Clear();
+            Physics.SyncTransforms();
+        }
+
+        /// <summary>
+        /// Keep the floating origin within <paramref name="ring"/> cells of <paramref name="entity"/> — the usual
+        /// policy for a client following its local player. Shifts through <see cref="ShiftOriginTo"/> when the
+        /// entity leaves that ring around <see cref="WorldOrigin.Cell"/>, and does nothing otherwise.
+        /// </summary>
+        public void KeepOriginNear(NetworkIdentity entity, int ring = 1)
+        {
+            if (entity == null) return;
+            var cell = CoordOf(entity);
+            if (!IsNear(cell, WorldOrigin.Cell, ring)) ShiftOriginTo(cell);
+        }
     }
 }
