@@ -18,4 +18,3 @@ Where a [`EntityRequests`](/docs/reference/worker/entity-requests) call ended up
 | `Replied` |  | The worker with authority answered. [`EntityRequestResult.Reply`](/docs/reference/worker/entity-request-result#reply) holds its bytes. |
 | `NotFound` |  | No connected worker (this one included) has authority over the key, after one retry. |
 | `TimedOut` |  | Nobody answered before the deadline. The handler may still be holding the request open. |
-

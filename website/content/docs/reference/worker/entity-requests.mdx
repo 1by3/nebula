@@ -119,4 +119,3 @@ public delegate void Handler(NetworkIdentity entity, ArraySegment<byte> payload,
 ```
 
 Handles a request on the worker that has authority over `entity`. Call `reply` once, from this tick or a later one; calls after the first are ignored.
-

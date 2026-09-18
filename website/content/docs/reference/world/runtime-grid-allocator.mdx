@@ -99,4 +99,3 @@ public void EnsureContainer(Vector3Int coord, Action<Container> onReady);
 ```
 
 Request the container at `coord` and call `onReady` once it is registered (immediately, if it already is). Event-driven, not polling: replaces the request-then-poll-every-0.1s loops a game otherwise writes by hand at every call site that needs a container to exist before acting on it. [`ContainerRegistry.RuntimeRegistered`](/docs/reference/containers/container-registry#runtimeregistered) is a static, mesh-wide event, so this fires for a container any worker or the control plane registers, not only ones this allocator itself requested.
-

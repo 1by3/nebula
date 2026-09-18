@@ -146,4 +146,3 @@ public void KeepOriginNear(NetworkIdentity entity, int ring = 1);
 ```
 
 Keep the floating origin within `ring` cells of `entity` — the usual policy for a client following its local player. Shifts through [`ShiftOriginTo`](#shiftoriginto) when the entity leaves that ring around [`WorldOrigin.Cell`](/docs/reference/world/world-origin#cell), and does nothing otherwise.
-

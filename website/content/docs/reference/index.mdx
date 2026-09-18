@@ -87,7 +87,6 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. Defines the worker messaging operations used by WorkerQuery. |
 | [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
-| [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Provides the nebula worker API. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |

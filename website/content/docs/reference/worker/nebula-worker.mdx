@@ -407,6 +407,63 @@ public NetworkIdentity Find(ulong netId);
 public NetworkIdentity FindPlayer(ulong clientId);
 ```
 
+### InstanceKey [#instancekey]
+
+```csharp
+public static ulong InstanceKey(string key);
+```
+
+Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.
+
+### PrepareInstance [#prepareinstance]
+
+```csharp
+public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin);
+```
+
+Create or find stable instance container leases. Resolve the returned references after the control-plane update. This does not automatically persist entity state.
+
+| Parameter | Description |
+| --- | --- |
+| `template` | Layout with a stable ID, unique part IDs, and positive-size bounds. |
+| `key` | Game-selected home, party, or run key. The same template ID and key select the same scope. |
+| `origin` | Instance origin in this process's world frame. Existing keys must retain their bounds and content resource. |
+
+### TryCommitTransfers [#trycommittransfers]
+
+```csharp
+public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation);
+```
+
+Commit a group only when every member is ready. Each member must have its own preparation and admission check.
+
+| Parameter | Description |
+| --- | --- |
+| `transfers` | Distinct entity preparations owned by this worker. This is not a cross-worker transaction. |
+| `translation` | World-space displacement applied to each member, preserving its rotation. |
+
+### PrepareTransfer [#preparetransfer]
+
+```csharp
+public InstanceTransfer PrepareTransfer(NetworkIdentity entity, Container destination, float timeoutSeconds = 15);
+```
+
+Prepare an authorized crossing. The game must check admission before calling. Preparation grants no visibility of destination entities.
+
+| Parameter | Description |
+| --- | --- |
+| `entity` | Spawned entity simulated by this worker. Authored scene entities cannot commit a crossing. |
+| `destination` | Static destination container with a current owning lease. |
+| `timeoutSeconds` | Preparation timeout in unscaled seconds, clamped to at least one second. |
+
+### TryCommitTransfer [#trycommittransfer]
+
+```csharp
+public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quaternion rotation);
+```
+
+Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.
+
 ## Nested types
 
 ### WorkerMessageHandler [#workermessagehandler]

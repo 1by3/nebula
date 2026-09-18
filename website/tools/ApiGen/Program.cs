@@ -41,6 +41,27 @@ public static class Program
 
     private static readonly HashSet<string> StrippedMemberAttributes = new() { "Tooltip", "Header", "SerializeField", "Space", "TextArea" };
 
+    // A partial type declared across several files becomes one page: the declaration with a base list or doc comment
+    // leads (it supplies the header and summary), and the other declarations contribute their members and nested types.
+    private static List<TypeInfo> MergePartials(List<TypeInfo> types)
+    {
+        var merged = new List<TypeInfo>();
+        foreach (var same in types.GroupBy(t => t.Namespace + "." + t.Name))
+        {
+            var all = same.ToList();
+            var lead = all.OrderByDescending(t => t.Node is TypeDeclarationSyntax { BaseList: not null })
+                .ThenByDescending(t => t.Node.HasLeadingTrivia && t.Node.GetLeadingTrivia().Any(x => x.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)))
+                .ThenByDescending(t => (t.Node as TypeDeclarationSyntax)?.Members.Count ?? 0).First();
+            foreach (var other in all.Where(t => t != lead))
+            {
+                if (other.Node is TypeDeclarationSyntax td) lead.Partials.Add(td);
+                lead.NestedTypes.AddRange(other.NestedTypes);
+            }
+            merged.Add(lead);
+        }
+        return merged;
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 2)
@@ -87,6 +108,7 @@ public static class Program
                 types.Add(TypeInfo.From(decl, group, Path.GetRelativePath(root, path).Replace('\\', '/')));
             }
         }
+        types = MergePartials(types);
         if (types.Count == 0)
         {
             Console.Error.WriteLine("no public types found under " + root);
@@ -229,6 +251,10 @@ public sealed class TypeInfo
     public required string Namespace;
     public required BaseTypeDeclarationSyntax Node;
     public List<TypeInfo> NestedTypes = new();
+    public List<TypeDeclarationSyntax> Partials = new();
+
+    public IEnumerable<MemberDeclarationSyntax> Members =>
+        Node is TypeDeclarationSyntax td ? td.Members.Concat(Partials.SelectMany(p => p.Members)) : Enumerable.Empty<MemberDeclarationSyntax>();
 
     public static TypeInfo From(BaseTypeDeclarationSyntax decl, string group, string file)
     {
@@ -284,9 +310,8 @@ public sealed class Renderer
     {
         _current = type;
         _currentMembers.Clear();
-        if (type.Node is TypeDeclarationSyntax td)
-            foreach (var m in td.Members)
-                foreach (var name in MemberNames(m)) _currentMembers.Add(name);
+        foreach (var m in type.Members)
+            foreach (var name in MemberNames(m)) _currentMembers.Add(name);
 
         var sb = new StringBuilder();
         sb.AppendLine("---");
@@ -331,7 +356,7 @@ public sealed class Renderer
         var props = new List<MemberDeclarationSyntax>();
         var events = new List<MemberDeclarationSyntax>();
         var methods = new List<MemberDeclarationSyntax>();
-        foreach (var m in td.Members)
+        foreach (var m in type.Members)
         {
             if (m is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax) continue;
             if (!Program.IsAccessible(m.Modifiers, isInterface)) continue;

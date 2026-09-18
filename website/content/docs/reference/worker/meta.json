@@ -1,4 +1,4 @@
 {
   "title": "Worker",
-  "pages": ["entity-request-result", "entity-request-status", "entity-requests", "i-worker-messaging", "instance-transfer", "nebula-worker", "nebula-worker", "worker-query", "worker-telemetry"]
+  "pages": ["entity-request-result", "entity-request-status", "entity-requests", "i-worker-messaging", "instance-transfer", "nebula-worker", "worker-query", "worker-telemetry"]
 }
