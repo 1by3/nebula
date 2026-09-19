@@ -11,6 +11,7 @@
     "concepts/architecture",
     "concepts/containers-and-handover",
     "concepts/roles-and-wire-protocol",
+    "concepts/comparison",
     "---Networked entities---",
     "guides/network-behaviour",
     "guides/spawning",

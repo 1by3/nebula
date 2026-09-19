@@ -1,0 +1,129 @@
+---
+title: Nebula and other Unity networking libraries
+description: An honest comparison of Nebula with Netcode for GameObjects, Mirror, FishNet, and Photon Fusion, and the gaps Nebula intends to close.
+---
+
+Read this page to decide whether Nebula fits your game. It also serves as a roadmap: every gap listed here is one we intend to close, and the [last section](#gaps-we-intend-to-close) collects them.
+
+The comparison was last reviewed on 2026-09-18 against Netcode for GameObjects 2.x, Mirror, FishNet, and Photon Fusion 2. These libraries change; check their documentation before you rely on a cell in the matrix, and [open an issue](https://github.com/1by3/nebula/issues) if one is wrong.
+
+## Understand the difference in kind
+
+Netcode for GameObjects (NGO), Mirror, FishNet, and Photon Fusion are **replication libraries**. One server process, or one player acting as host, runs one session. Your world is limited to what that process can simulate. To go further you shard or instance the game, and you build the code that connects the shards.
+
+Nebula is a **server mesh**. You divide the world into [containers](/docs/concepts/architecture), many Unity workers simulate them, and entities move between workers while clients stay connected to a gateway. The orchestrator, the dashboard, the CLI, and [Nebula Cloud](/docs/deploy/cloud) are part of the same product.
+
+Most of the advantages and disadvantages below follow from this difference.
+
+## Choose Nebula when
+
+- Your game is a persistent or large shared world that will outgrow one server process.
+- You want server authority with prediction, and you do not want players to host.
+- You want hosting, scaling, deploys, and rollback from the same tool that runs the mesh on your machine, without hiring for operations.
+- You want the option to host it yourself. The library is open source, and Nebula Cloud is optional.
+
+## Choose another library when
+
+- Your game is session based with a small number of players: co-op, party games, arena matches. A player host or a relay is simpler and costs almost nothing to run. Nebula has neither.
+- You need a library that has shipped many games today. Nebula is in alpha.
+- Your game depends on fine-grained interest management, built-in lag-compensated hit detection, or deterministic simulation. See the matrix.
+- You use Unity ECS. Use Netcode for Entities.
+
+## Feature matrix
+
+"Yours to build" means the library does not prevent it, but you write and operate it.
+
+### World scale and topology
+
+| | Nebula | NGO | Mirror | FishNet | Photon Fusion |
+| --- | --- | --- | --- | --- | --- |
+| One world across many server processes | Yes, with entity handover | No | No | No | No |
+| Player host or peer-to-peer mode | No | Yes, plus distributed authority | Yes | Yes | Yes, host and shared modes |
+| Relay for games without servers | No | Unity Relay | Third party | Third party | Photon Cloud |
+| Dedicated server mode | Required | Yes | Yes | Yes | Yes |
+| Moving spaces with local coordinates (ships, trains) | Yes, [dynamic containers](/docs/guides/dynamic-containers) | Yours to build | Yours to build | Yours to build | Yours to build |
+| Large-world streaming and floating origin | Yes, [world partition](/docs/guides/world-partition) | Yours to build | Yours to build | Yours to build | Yours to build |
+| Private instances inside a shared world | Yes, [instancing](/docs/guides/instancing) | Separate sessions | Separate sessions or scenes | Separate sessions or scenes | Separate sessions |
+
+### Gameplay networking
+
+| | Nebula | NGO | Mirror | FishNet | Photon Fusion |
+| --- | --- | --- | --- | --- | --- |
+| Client prediction and reconciliation | Yes, input based | Anticipation building blocks only | Experimental | Yes, mature | Yes, mature |
+| Prediction continues across a server change | Yes, pending input moves with authority | Not applicable | Not applicable | Not applicable | Not applicable |
+| Lag compensation | Pose history; validation is yours to build | Yours to build | Beta | Yes | Yes, hitbox rewind built in |
+| Interest management | Instance visibility and distance-based update rate; no spatial culling | Manual show and hide | Yes, several strategies | Yes, observer conditions | Yes, area of interest |
+| RPC routed to whichever server owns the target | Yes, `[AuthorityRpc]` | Not applicable | Not applicable | Not applicable | Not applicable |
+| Deterministic simulation | No | No | No | No | No (Photon Quantum) |
+| Web clients | Yes, WebRTC | Yes, WebSocket | Yes, WebSocket | Yes, WebSocket | Yes |
+
+### Operations
+
+| | Nebula | NGO | Mirror | FishNet | Photon Fusion |
+| --- | --- | --- | --- | --- | --- |
+| Orchestration and worker autoscaling | Included, scales to zero | Yours to build. Unity's Multiplay hosting closed in March 2026 | Yours to build | Yours to build | Photon Cloud for relayed modes; dedicated servers are yours to host |
+| Same topology on your machine and in production | Yes, `nebula start` and `nebula deploy` | Not applicable | Not applicable | Not applicable | Not applicable |
+| Managed hosting from the same vendor | Nebula Cloud (beta) | No | No | No | Photon Cloud |
+| Host it yourself without a vendor account | Yes | Yes | Yes | Yes | No, sessions are licensed per concurrent user |
+| Releases, rollback, protocol-change guard | Yes, on Nebula Cloud | Yours to build | Yours to build | Yours to build | Yours to build |
+| Live dashboard and per-process metrics | Included | Profiler tools in the Editor | Yours to build | Yours to build | Photon dashboard |
+| Entity persistence | Opt in, SQLite or PostgreSQL | Yours to build | Yours to build | Yours to build | Yours to build |
+| Recovery when a server process stops | Containers are reassigned, persistent entities are restored, sessions are reclaimed | Session ends, or host migration in distributed authority | Session ends | Session ends | Host migration in host mode |
+| Player authentication | Anonymous and OpenID Connect at the gateway | Unity Authentication | Authenticator hooks | Authenticator hooks | Custom authentication service |
+| Lobbies, matchmaking, voice | No | Unity Gaming Services | Third party | Third party | Photon services |
+
+### Security and maturity
+
+| | Nebula | NGO | Mirror | FishNet | Photon Fusion |
+| --- | --- | --- | --- | --- | --- |
+| Encrypted client link | Web clients only (DTLS). Native UDP is not encrypted | Yes, DTLS in Unity Transport | With an encryption transport | Depends on the transport | Yes |
+| Clients never see game server addresses | Yes, the gateway fronts them | No | No | No | In relayed modes |
+| Production track record | None yet, alpha | Many games | Many games, about a decade | Many games | Many games |
+| Community, tutorials, Asset Store integrations | Small | Large | Large | Large | Large |
+| Stable wire protocol between releases | No, a protocol change disconnects clients | Yes | Yes | Yes | Yes |
+
+## What Nebula does that the others do not
+
+**Entity handover between servers.** An [authority transfer](/docs/concepts/containers-and-handover) carries the pose, every `NetworkVariable`, the input the worker has not simulated yet, and your own handover state. Ghosts let a worker raycast and collide against entities it does not control, and authority epochs stop a previous owner from overwriting newer state. This is the hard part of a meshed world, and no replication library attempts it.
+
+**Operations are part of the product.** The orchestrator assigns containers, scales workers on measured utilization, drains a worker before it retires, and replaces one that stops. The mesh you run with `nebula start` has the same roles as the one you deploy.
+
+**Nebula Cloud closes the loop.** `nebula deploy --target cloud` provisions machines, load-balanced gateways, and the database without a cloud provider account or ssh. Releases are immutable, a failed rollout leaves the previous release running, a spend limit refuses scale-out but never ends running sessions, and you can leave for your own machines at any time.
+
+**Failure behavior is documented.** [Architecture](/docs/concepts/architecture#understand-process-failures) states what happens when each role stops. In a replication library the answer is usually that the session ends.
+
+## What Nebula costs you
+
+**A higher floor.** The smallest mesh is an orchestrator, a gateway, a worker, and a database. A four-player co-op game does not need any of that.
+
+**More concepts.** You author container boundaries by hand. A ghost does not run `NetworkTick`. State that lives outside `NetworkVariable` crosses a boundary only if you write it in `WriteHandoverState`. Replication libraries ask for none of this.
+
+**An extra hop.** Every client packet passes through the gateway before it reaches a worker.
+
+**Alpha software.** One maintainer, no shipped titles, and a wire protocol that still changes.
+
+## Gaps we intend to close
+
+We treat the matrix as a work list. These are the gaps, roughly in the order we expect them to matter to a game that fits Nebula. None has a date yet.
+
+| Gap | Today | Where we want to be |
+| --- | --- | --- |
+| Interest management | The gateway lowers the update rate with distance, but every observer of an instance receives every spawn. | Spatial culling at the gateway so a client receives only the entities near it. |
+| Hit validation | `TryGetPoseAt` returns past poses. Rewinding colliders and validating a claim from another worker are yours to build. | A lag-compensated query API that works across container boundaries. |
+| Remote damage claims | `[AuthorityRpc]` delivers the call; it does not validate it. | Validation hooks on the target's worker, with a documented pattern. |
+| Encryption | Native UDP clients and worker links are not encrypted. | Encrypted client links on every transport, and authenticated, encrypted worker links. |
+| Rollouts | A rollout restarts the orchestrator and disconnects players. | Rolling updates that drain workers and gateways without ending sessions. |
+| Protocol stability | A protocol change disconnects every client and locks out old builds. | Versioned negotiation so a release can accept the previous client version. |
+| Container boundaries | Authored by hand; the orchestrator balances containers, not the space inside one. | Tools that show load per container and suggest splits. Automatic splitting is further out. |
+| Gateway recovery | The orchestrator does not restart a gateway outside Nebula Cloud. | Gateway supervision on every worker host. |
+| Session games | No host mode, relay, lobby, or matchmaking. | Not planned. Use a replication library; we would rather do one thing well. |
+| Nebula Cloud | Beta, a small set of regions, no service level agreement. | General availability with more regions and a published agreement. |
+| Ecosystem | Few samples, no integrations. | More samples, and guides for common character controllers and assets. |
+
+If a gap blocks your game, [tell us](https://github.com/1by3/nebula/issues). It changes the order.
+
+<Cards>
+  <Card title="Architecture" href="/docs/concepts/architecture" description="The parts of a mesh and the guarantees they provide." />
+  <Card title="Tutorial" href="/docs/getting-started/tutorial" description="Build a small meshed game and run it locally." />
+  <Card title="Deploy to Nebula Cloud" href="/docs/deploy/cloud" description="Run the mesh on the hosted service." />
+</Cards>
