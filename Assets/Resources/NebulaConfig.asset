@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Nebula.Runtime::Nebula.NebulaConfig
   GameScene: 
   WorldManifest: {fileID: 0}
+  RuntimeWorld: {fileID: 0}
   ClientLoadRadiusCells: 1
   WorkerLoadRingCells: 1
   OriginShiftThresholdCells: 4

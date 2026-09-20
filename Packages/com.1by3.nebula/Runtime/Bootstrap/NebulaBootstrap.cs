@@ -81,6 +81,13 @@ namespace Nebula
             NebulaRuntime.Reset();
             Config = ApplyCommandLineOverrides(Config);
             NebulaRuntime.Config = Config;
+            if (Config.WorldManifest != null && Config.RuntimeWorld != null)
+                NebulaLog.Error("both WorldManifest and RuntimeWorld are assigned; using the baked WorldManifest");
+
+            // A runtime world has no scene objects to wait for. Load its coordinate frame before ordinary game
+            // scripts awake so they can construct RuntimeGrid helpers from NebulaWorld.Definition.
+            if (Config.WorldManifest == null && Config.RuntimeWorld != null)
+                NebulaWorld.LoadRuntime(Config.RuntimeWorld);
 
             Roles = ResolveRoles();
             if ((Roles & NebulaRoles.Client) != 0 && (Roles & NebulaRoles.Worker) != 0)
@@ -132,9 +139,9 @@ namespace Nebula
         {
             if (_started) return;
             _started = true;
-            if (Config.WorldManifest != null) NebulaWorld.Load(Config.WorldManifest);
-            else ContainerRegistry.Rebuild();
-            NebulaLog.Info($"containers: {ContainerRegistry.Count}{(NebulaWorld.IsActive ? " (partitioned world)" : "")}");
+            ConfigureWorld(Config);
+            string worldKind = Config.WorldManifest != null ? " (partitioned world)" : Config.RuntimeWorld != null ? " (runtime world)" : "";
+            NebulaLog.Info($"containers: {ContainerRegistry.Count}{worldKind}");
 
             bool needsControlPlane = (Roles & (NebulaRoles.Worker | NebulaRoles.Gateway | NebulaRoles.Orchestrator)) != 0;
             if (needsControlPlane)
@@ -196,6 +203,25 @@ namespace Nebula
                 WorldStreaming = gameObject.AddComponent<NebulaWorldStreaming>();
                 WorldStreaming.Initialize(Config, Worker, Client);
             }
+        }
+
+        /// <summary>Apply the configured baked, runtime, or single-scene world before a role starts.</summary>
+        internal static void ConfigureWorld(NebulaConfig config)
+        {
+            if (config.WorldManifest != null)
+            {
+                NebulaWorld.Load(config.WorldManifest);
+                return;
+            }
+            if (config.RuntimeWorld != null)
+            {
+                if (NebulaWorld.Definition != config.RuntimeWorld) NebulaWorld.LoadRuntime(config.RuntimeWorld);
+                // Authored scene containers do not move with a runtime floating origin. Runtime containers arrive
+                // from control-plane leases, so start with an intentionally empty static registry.
+                ContainerRegistry.Load(Array.Empty<Container>(), gridded: false);
+                return;
+            }
+            ContainerRegistry.Rebuild();
         }
 
         /// <summary>Per-role cell streaming policy; null unless <see cref="NebulaConfig.WorldManifest"/> is set.</summary>

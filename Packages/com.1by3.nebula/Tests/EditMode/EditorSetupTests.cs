@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Nebula.Editor;
+using Nebula.World;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -78,6 +80,22 @@ namespace Nebula.Tests
             var level = Make("level");
             level.AddComponent<MeshRenderer>();
             Assert.IsFalse(WorldSetup.StaysInHub(level));
+        }
+
+        [Test]
+        public void RuntimeWorldDoesNotRequireAuthoredContainers()
+        {
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            var world = ScriptableObject.CreateInstance<WorldDefinition>();
+            var method = typeof(NebulaValidator).GetMethod("RequiresAuthoredContainers", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.NotNull(method);
+
+            Assert.IsTrue((bool)method.Invoke(null, new object[] { config }));
+            config.RuntimeWorld = world;
+            Assert.IsFalse((bool)method.Invoke(null, new object[] { config }));
+
+            Object.DestroyImmediate(world);
+            Object.DestroyImmediate(config);
         }
     }
 }

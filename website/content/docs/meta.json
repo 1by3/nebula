@@ -31,6 +31,7 @@
     "guides/world-partition",
     "guides/dynamic-containers",
     "guides/runtime-containers",
+    "guides/infinite-runtime-world",
     "guides/instancing",
     "---Running a mesh---",
     "guides/configuration",

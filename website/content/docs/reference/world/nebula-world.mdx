@@ -1,6 +1,6 @@
 ---
 title: "NebulaWorld"
-description: "Nebula's side of a partitioned world (WorldDefinition + WorldContainerManifest): instantiates the manifest's container tree for the registry, owns the WorldStreamer, keeps the virtual containers and every entity's cached positions in ste..."
+description: "Nebula's floating-origin world state."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/NebulaWorld.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaWorld.cs)</div>
@@ -9,7 +9,7 @@ description: "Nebula's side of a partitioned world (WorldDefinition + WorldConta
 public static class NebulaWorld
 ```
 
-Nebula's side of a partitioned world ([`WorldDefinition`](/docs/reference/world/world-definition) + [`WorldContainerManifest`](/docs/reference/world/world-container-manifest)): instantiates the manifest's container tree for the registry, owns the [`WorldStreamer`](/docs/reference/world/world-streamer), keeps the virtual containers and every entity's cached positions in step with origin shifts, and strips the authoring [`Container`](/docs/reference/containers/container) components out of cell scenes as they stream in. Inactive (everything behaves as a single scene) when [`NebulaConfig.WorldManifest`](/docs/reference/core/nebula-config#worldmanifest) is unset.
+Nebula's floating-origin world state. A baked world ([`WorldDefinition`](/docs/reference/world/world-definition) + [`WorldContainerManifest`](/docs/reference/world/world-container-manifest)) instantiates the manifest's container tree, streams authored cell scenes, and strips their authoring [`Container`](/docs/reference/containers/container) components. A runtime world owns the same origin frame but leaves container registration and procedural content to the game. Both modes keep containers and every entity's cached positions in step with origin shifts. [`IsActive`](#isactive) specifically reports authored scene streaming.
 
 ## Properties
 

@@ -125,6 +125,7 @@ namespace Nebula.Editor
                 if (createContainers)
                 {
                     if (config.WorldManifest != null) report.Did("containers: the world manifest provides them (partitioned world)");
+                    else if (config.RuntimeWorld != null) report.Did("containers: the game registers them while the runtime world runs");
                     else EnsureContainers(scene, report);
                 }
             }

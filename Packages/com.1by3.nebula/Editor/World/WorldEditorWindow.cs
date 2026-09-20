@@ -110,7 +110,7 @@ namespace Nebula.Editor
                 }
             }
             var cfg = NebulaConfig.Load();
-            if (_manifest != null && cfg != null && cfg.WorldManifest != _manifest)
+            if (_manifest != null && cfg != null && (cfg.WorldManifest != _manifest || cfg.RuntimeWorld != null))
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -118,6 +118,7 @@ namespace Nebula.Editor
                     if (GUILayout.Button("Use in NebulaConfig", GUILayout.Width(140), GUILayout.Height(38)))
                     {
                         cfg.WorldManifest = _manifest;
+                        cfg.RuntimeWorld = null;
                         EditorUtility.SetDirty(cfg);
                         AssetDatabase.SaveAssets();
                     }

@@ -9,7 +9,11 @@ You can use the world-partition package without Nebula networking. You can also 
 
 ## Use a procedural world
 
-Call `NebulaWorld.LoadRuntime(definition)` to enable origin shifts without loading authored cell scenes. Your game supplies the `WorldDefinition`, registers containers through `ContainerRegistry.RegisterRuntime`, and chooses when to call `NebulaWorld.Streamer.ShiftOrigin`. `NebulaWorld.Definition` returns the runtime definition. `IsActive` remains false because it indicates authored scene streaming.
+Assign a `WorldDefinition` to `NebulaConfig.RuntimeWorld` to enable origin shifts without loading authored cell scenes. Nebula loads the definition before game scripts initialize. Your game registers containers through `ContainerRegistry.RegisterRuntime` and chooses when to call `NebulaWorld.Streamer.ShiftOrigin`. `NebulaWorld.Definition` returns the runtime definition. `IsActive` remains false because it indicates authored scene streaming.
+
+Leave `NebulaConfig.WorldManifest` empty for a runtime world. When both fields are assigned, the baked manifest takes precedence and **Nebula > Validate Project** reports the conflict. Code that uses world partition without Nebula networking can call `NebulaWorld.LoadRuntime(definition)` directly instead.
+
+For a complete runtime-grid example with on-demand chunk leases, role-specific content loading, a predicted player, floating-origin shifts, and persistent placement, follow [Build an infinite runtime world](/docs/guides/infinite-runtime-world).
 
 For distant regions, set `ContainerRegistry.RuntimeBoundsInFrame` to calculate each public runtime container's bounds from its stable ID and the current origin. Subtract precise coordinates before converting the result to floats. The callback runs during registration and origin shifts; shifts use its center and preserve the container's size. Clear the callback when unloading your world.
 

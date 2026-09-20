@@ -76,7 +76,10 @@ namespace Nebula.Editor
 
             CheckScenes(config, issues);
             CheckPrefabs(config, issues);
+            if (config.WorldManifest != null && config.RuntimeWorld != null)
+                issues.Add(new Issue(Severity.Error, "NebulaConfig has both WorldManifest and RuntimeWorld assigned; choose a baked world or a runtime world", config));
             if (config.WorldManifest != null) CheckWorld(config, issues);
+            else if (config.RuntimeWorld != null) CheckRuntimeWorld(config, issues);
             CheckSceneEntities(issues);
             return issues;
         }
@@ -107,7 +110,7 @@ namespace Nebula.Editor
             if (!NebulaSetup.SceneContains<NebulaGameMode>(game.path) && !NebulaSetup.SceneContains<NebulaGameMode>(boot))
                 issues.Add(new Issue(Severity.Warning, $"no NebulaGameMode in '{config.GameScene}': workers cannot spawn players", AssetDatabase.LoadAssetAtPath<SceneAsset>(game.path)));
 
-            if (config.WorldManifest != null) return;
+            if (!RequiresAuthoredContainers(config)) return;
             var open = SceneManager.GetSceneByPath(game.path);
             if (!open.IsValid() || !open.isLoaded)
             {
@@ -122,6 +125,21 @@ namespace Nebula.Editor
                 issues.Add(new Issue(Severity.Info, $"'{config.GameScene}' has a single container, so one worker simulates everything", containers[0]));
             foreach (var dup in containers.GroupBy(c => c.ContainerId).Where(g => g.Count() > 1))
                 issues.Add(new Issue(Severity.Error, $"container id '{dup.Key}' is used by {dup.Count()} containers; ids must be unique", dup.First()));
+        }
+
+        internal static bool RequiresAuthoredContainers(NebulaConfig config) => config.WorldManifest == null && config.RuntimeWorld == null;
+
+        private static void CheckRuntimeWorld(NebulaConfig config, List<Issue> issues)
+        {
+            var world = config.RuntimeWorld;
+            if (world.Cells.Count > 0)
+                issues.Add(new Issue(Severity.Warning, $"runtime world '{world.WorldName}' defines {world.Cells.Count} authored cell scene(s), but runtime worlds do not stream them; clear the cell list or use a WorldManifest", world));
+
+            var hub = SceneManager.GetSceneByName(config.GameScene);
+            if (!hub.IsValid() || !hub.isLoaded) return;
+            var containers = NebulaSetup.FindInScene<Container>(hub);
+            if (containers.Count > 0)
+                issues.Add(new Issue(Severity.Warning, $"{containers.Count} authored Container(s) in the game scene are ignored by runtime world '{world.WorldName}'; remove them and register runtime containers from game code", containers[0]));
         }
 
         private static void CheckPrefabs(NebulaConfig config, List<Issue> issues)

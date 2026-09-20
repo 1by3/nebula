@@ -1,0 +1,486 @@
+---
+title: Build an infinite runtime world
+description: Create procedural chunks on demand, shift the floating origin, move a predicted player, and place persistent blocks.
+---
+
+Build a procedural world whose chunks appear as players explore, retire when nobody needs them, and return with their saved entities. This tutorial uses Nebula World Partition's runtime grid and floating origin with Nebula's runtime containers, prediction, remote procedure calls (RPCs), and persistence.
+
+The example uses a 3D chunk grid with 64 m square ground cells generated in its `y = 0` layer. A player can walk without a fixed world boundary and press F to place a block. Blocks are authoritative worker entities and survive chunk retirement, worker failure, and a mesh restart.
+
+The implementation uses public Nebula APIs. It does not create containers locally behind the control plane, move networked entities outside Nebula's container model, or add absolute positions to the wire protocol.
+
+## Understand the pieces
+
+This tutorial combines four systems:
+
+| System | Responsibility |
+| --- | --- |
+| `RuntimeGrid` | Converts signed 3D chunk coordinates to stable 64-bit IDs, calculates chunk bounds in the current origin frame, and shifts the origin. |
+| Runtime containers | Put an on-demand chunk in the control plane so the orchestrator can lease it to a worker. Each process reconstructs the same box from the lease. |
+| Game-owned chunk content | Creates the floor and colliders for registered chunks. Nebula manages the box and authority; your game generates the terrain. |
+| `PersistentEntity` | Saves each placed block's prefab, container, pose, and opted-in state, then restores it when that chunk returns. |
+
+The **floating origin** is the chunk coordinate currently represented by Unity coordinates near `(0, 0, 0)`. An origin shift moves registered containers, their child content, networked entities, interpolation history, and prediction history together.
+
+Nebula calls this an infinite world because no authored extent or fixed list of chunks exists. `RuntimeGrid` is not mathematically infinite: each axis has signed 21-bit coordinates, from `-1,048,576` through `1,048,575`. At 64 m per chunk, the addressable span is about 134 million meters per axis.
+
+## Prerequisites
+
+Start from a project that has:
+
+- Unity 6 with the Input System package enabled;
+- Nebula installed with `nebula init`;
+- a game scene set up with **Nebula > Set Up Active Scene**; and
+- `NebulaConfig.WorldManifest` left empty. A baked manifest is for authored cell scenes, while this tutorial creates its containers at runtime.
+
+You can also start from the [main tutorial](/docs/getting-started/tutorial), but remove its authored `Container` objects before following this guide.
+
+<Steps>
+<Step>
+
+### Create an empty world definition
+
+In the Project window, select **Create > Nebula > World Definition** and name the asset `InfiniteWorld`.
+
+Set these fields:
+
+| Field | Value |
+| --- | --- |
+| `WorldName` | `InfiniteWorld` |
+| `CellSize` | `(64, 256, 64)` |
+| `Cells` | Empty |
+
+The empty cell list is intentional. `WorldDefinition` supplies the cell size and origin-shift math, but the runtime grid supplies chunk coordinates as players explore. The 256 m Y size gives a ground-level container enough vertical room for players and placed objects.
+
+Select `Resources/NebulaConfig` and assign this asset to `RuntimeWorld`. Leave `WorldManifest` empty. Nebula now loads the floating-origin frame before game scripts initialize, starts with no authored containers, and expects workers to register runtime containers.
+
+</Step>
+<Step>
+
+### Start the runtime world on every Unity process
+
+Add this component to an `Infinite World` object in the game scene. Assign the `InfiniteWorld` definition and a material for the generated ground.
+
+```csharp title="InfiniteWorldRuntime.cs"
+using System.Collections.Generic;
+using Nebula;
+using Nebula.World;
+using UnityEngine;
+
+[DefaultExecutionOrder(-500)]
+public sealed class InfiniteWorldRuntime : MonoBehaviour
+{
+    public static InfiniteWorldRuntime Instance { get; private set; }
+    public RuntimeGrid Grid { get; private set; }
+
+    [SerializeField] private Material groundMaterial;
+    [SerializeField] private int contentRadius = 1;
+
+    private readonly Dictionary<ulong, GameObject> loadedGround = new();
+    private readonly HashSet<ulong> wantedGround = new();
+    private readonly List<ulong> remove = new();
+    private float nextRefresh;
+
+    private void Awake()
+    {
+        Instance = this;
+        Grid = new RuntimeGrid(NebulaWorld.Definition.CellSize);
+
+        // Recalculate every public runtime container from its stable grid ID after an origin shift.
+        Grid.UseAsRuntimeBounds();
+
+        ContainerRegistry.RuntimeRegistered += OnRuntimeRegistered;
+        ContainerRegistry.RuntimeUnregistering += OnRuntimeUnregistering;
+        ContainerRegistry.LeasesChanged += RefreshContent;
+    }
+
+    private void Update()
+    {
+        var client = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Client : null;
+        if (client != null && client.LocalPlayer != null)
+            Grid.KeepOriginNear(client.LocalPlayer, ring: 1);
+
+        if (Time.unscaledTime >= nextRefresh)
+        {
+            nextRefresh = Time.unscaledTime + 0.25f;
+            RefreshContent();
+        }
+    }
+
+    private void OnRuntimeRegistered(Container container) => RefreshContent();
+
+    private void OnRuntimeUnregistering(Container container)
+    {
+        if (!loadedGround.Remove(container.RuntimeId, out var ground)) return;
+        if (ground != null) Destroy(ground);
+    }
+
+    private void RefreshContent()
+    {
+        wantedGround.Clear();
+
+        foreach (var container in ContainerRegistry.Runtime)
+        {
+            var coord = RuntimeGrid.UnpackId(container.RuntimeId);
+            if (coord.y != 0 || !ShouldLoadContent(container, coord)) continue;
+
+            wantedGround.Add(container.RuntimeId);
+            if (!loadedGround.ContainsKey(container.RuntimeId))
+                loadedGround[container.RuntimeId] = CreateGround(container, coord);
+        }
+
+        remove.Clear();
+        foreach (var pair in loadedGround)
+            if (!wantedGround.Contains(pair.Key)) remove.Add(pair.Key);
+
+        foreach (var id in remove)
+        {
+            var ground = loadedGround[id];
+            loadedGround.Remove(id);
+            if (ground != null) Destroy(ground);
+        }
+    }
+
+    private bool ShouldLoadContent(Container container, Vector3Int coord)
+    {
+        var bootstrap = NebulaBootstrap.Instance;
+        if (bootstrap == null) return false;
+
+        if (bootstrap.Worker != null)
+        {
+            string workerId = bootstrap.Worker.WorkerId;
+            if (container.IsOwnedBy(workerId)) return true;
+            foreach (var neighbor in container.Neighbors)
+                if (neighbor.IsOwnedBy(workerId)) return true;
+            return false;
+        }
+
+        var player = bootstrap.Client != null ? bootstrap.Client.LocalPlayer : null;
+        if (player == null) return false;
+        var playerCoord = Grid.CoordOf(player);
+        return coord.y == playerCoord.y && RuntimeGrid.IsNear(coord, playerCoord, contentRadius);
+    }
+
+    private GameObject CreateGround(Container container, Vector3Int coord)
+    {
+        var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ground.name = $"Ground {coord}";
+        ground.transform.SetParent(container.transform, false);
+        ground.transform.localPosition = new Vector3(0f, -container.Size.y * 0.5f - 0.5f, 0f);
+        ground.transform.localScale = new Vector3(container.Size.x, 1f, container.Size.z);
+
+        var renderer = ground.GetComponent<Renderer>();
+        if (NebulaRuntime.IsClient && groundMaterial != null)
+            renderer.sharedMaterial = groundMaterial;
+        else if (!NebulaRuntime.IsClient)
+            renderer.enabled = false;
+
+        return ground;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance != this) return;
+        ContainerRegistry.RuntimeRegistered -= OnRuntimeRegistered;
+        ContainerRegistry.RuntimeUnregistering -= OnRuntimeUnregistering;
+        ContainerRegistry.LeasesChanged -= RefreshContent;
+        if (ContainerRegistry.RuntimeBoundsInFrame == Grid.BoundsOfId)
+            ContainerRegistry.RuntimeBoundsInFrame = null;
+        NebulaWorld.Unload();
+        Instance = null;
+    }
+}
+```
+
+`NebulaBootstrap` runs at execution order `-1000` and loads `NebulaConfig.RuntimeWorld` in `Awake`. This component therefore finds `NebulaWorld.Definition` ready when its own `Awake` runs. Put the component in the game scene, not only in a client-only boot scene: workers and clients both need the same grid and bounds callback.
+
+The content policy is role-specific:
+
+- A worker creates colliders for chunks it owns and their immediate neighbors. That supplies collision geometry for authoritative entities and ghosts near a seam.
+- A client creates visible ground only around its local player. Runtime container records are mesh-wide, but a client does not need to render every active chunk around every player.
+- The generated ground is parented to the container. Nebula therefore moves it automatically when the floating origin shifts.
+
+Replace `CreateGround` with your deterministic terrain, voxel, or content loader. Generate the same collision surface on the worker that the client presents to the player. Do not put `NetworkIdentity` or `NetworkBehaviour` components on content created as children after the container registers. Spawn interactive networked objects as registered prefabs instead.
+
+</Step>
+<Step>
+
+### Create the player input and controller
+
+Create the input value that the owning client sends every tick:
+
+```csharp title="PlayerInput.cs"
+using Nebula;
+using UnityEngine;
+
+public struct PlayerInput : INetworkInput
+{
+    public Vector2 Move;
+    public float Yaw;
+
+    public void Serialize(NetworkWriter writer)
+    {
+        writer.WriteVector2(Move);
+        writer.WriteFloat(Yaw);
+    }
+
+    public void Deserialize(NetworkReader reader)
+    {
+        Move = reader.ReadVector2();
+        Yaw = reader.ReadFloat();
+    }
+}
+```
+
+Then create the predicted controller. Movement travels through Nebula's input and reconciliation path. Pressing F sends a reliable `ServerRpc` to the authoritative worker, which validates the request and spawns the block.
+
+```csharp title="PlayerController.cs"
+using Nebula;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public sealed class PlayerController : PredictedBehaviour<PlayerInput>
+{
+    [SerializeField] private GameObject blockPrefab;
+    [SerializeField] private float speed = 6f;
+    [SerializeField] private float placementDistance = 2.5f;
+
+    private float yaw;
+    private float nextPlacementAt;
+
+    private void Update()
+    {
+        if (!IsOwner) return;
+        var mouse = Mouse.current;
+        if (mouse != null) yaw += mouse.delta.ReadValue().x * 0.08f;
+
+        var keyboard = Keyboard.current;
+        if (keyboard != null && keyboard.fKey.wasPressedThisFrame)
+            ServerRpc(RpcPlaceBlock);
+    }
+
+    protected override PlayerInput GatherInput()
+    {
+        var keyboard = Keyboard.current;
+        var move = Vector2.zero;
+        if (keyboard != null)
+        {
+            move.x = (keyboard.dKey.isPressed ? 1f : 0f) -
+                     (keyboard.aKey.isPressed ? 1f : 0f);
+            move.y = (keyboard.wKey.isPressed ? 1f : 0f) -
+                     (keyboard.sKey.isPressed ? 1f : 0f);
+        }
+
+        return new PlayerInput
+        {
+            Move = Vector2.ClampMagnitude(move, 1f),
+            Yaw = yaw,
+        };
+    }
+
+    protected override void Simulate(uint tick, in PlayerInput input, float deltaTime)
+    {
+        transform.rotation = Quaternion.Euler(0f, input.Yaw, 0f);
+        var velocity =
+            (transform.right * input.Move.x + transform.forward * input.Move.y) * speed;
+        transform.position += velocity * deltaTime;
+        Identity.Motion.Velocity = velocity;
+    }
+
+    [ServerRpc]
+    private void RpcPlaceBlock()
+    {
+        if (!HasAuthority || Time.unscaledTime < nextPlacementAt) return;
+        nextPlacementAt = Time.unscaledTime + 0.15f;
+
+        var position = transform.position + transform.forward * placementDistance;
+        position.x = Mathf.Round(position.x - 0.5f) + 0.5f;
+        position.y = 0.5f;
+        position.z = Mathf.Round(position.z - 0.5f) + 0.5f;
+
+        var container = ContainerRegistry.Find(position);
+        if (container == null || !container.IsRuntime) return;
+        if (RuntimeGrid.UnpackId(container.RuntimeId).y != 0) return;
+        if (!container.Contains(position)) return;
+        if (Physics.CheckBox(position, Vector3.one * 0.45f, Quaternion.identity,
+                Physics.AllLayers, QueryTriggerInteraction.Ignore)) return;
+
+        var worker = NebulaBootstrap.Instance.Worker;
+        var block = worker.SpawnPrefab(
+            blockPrefab,
+            position,
+            Quaternion.identity,
+            container);
+
+        // New persistent entities are checkpointed automatically. SaveNow narrows the window
+        // between confirming the placement and its first durable checkpoint.
+        worker.Persistence?.SaveNow(block);
+    }
+}
+```
+
+The client never instantiates a networked block. It only asks through `ServerRpc`; the worker checks authority, rate-limits the request, rejects overlaps, selects the runtime container, and calls `SpawnPrefab`. Add your game's permissions, inventory cost, reach test, and placement rules in the same handler.
+
+The position is in the worker's current floating-origin frame. Nebula converts it to container-local placement when it spawns the entity, so the block remains stable across later origin shifts.
+
+</Step>
+<Step>
+
+### Create the player and block prefabs
+
+Create a capsule prefab named `Player` with these root components:
+
+- `NetworkIdentity`
+- `NetworkTransform`
+- `PlayerController`
+
+On `NetworkTransform`, keep server authority, position and rotation synchronization, interpolation, and unreliable deltas enabled. Assign the block prefab in `PlayerController` after creating it.
+
+Create a 1 m cube prefab named `Block` with these root components:
+
+- `NetworkIdentity`
+- `PersistentEntity`
+
+Leave `PersistentEntity.PersistPose` enabled. The block does not move after placement, so it does not need `NetworkTransform`; its spawn includes its complete initial pose. Leave the persistence key empty so Nebula generates a unique key on the first save.
+
+Add both prefabs to `NebulaConfig.NetworkPrefabs`, or run **Nebula > Network Prefabs > Register All Network Prefabs**. Open each prefab and confirm that `NetworkIdentity.SceneId` is `0`.
+
+</Step>
+<Step>
+
+### Allocate chunks and spawn players from the game mode
+
+Add this game mode to one `Game` object in the game scene and assign the player prefab:
+
+```csharp title="InfiniteWorldGameMode.cs"
+using Nebula;
+using Nebula.World;
+using UnityEngine;
+
+public sealed class InfiniteWorldGameMode : NebulaGameMode
+{
+    [SerializeField] private GameObject playerPrefab;
+    private RuntimeGridAllocator allocator;
+
+    public override void OnWorkerStarted(NebulaWorker worker)
+    {
+        allocator = new RuntimeGridAllocator(worker, InfiniteWorldRuntime.Instance.Grid)
+        {
+            Ring = 1,
+            RetireAfterSeconds = 60f,
+            TickIntervalSeconds = 0.25f,
+        };
+        allocator.AddAnchor(Vector3Int.zero);
+    }
+
+    private void Update()
+    {
+        allocator?.Tick(Time.unscaledTime);
+    }
+
+    public override NetworkIdentity OnSpawnPlayer(
+        NebulaWorker worker,
+        ulong clientId,
+        string playerName,
+        Container requestedContainer)
+    {
+        ulong spawnId = RuntimeGrid.PackId(Vector3Int.zero);
+        var spawnContainer = ContainerRegistry.GetRuntime(spawnId) ?? requestedContainer;
+        var bounds = spawnContainer.WorldBounds;
+        var position = new Vector3(bounds.center.x, bounds.min.y + 1f, bounds.center.z);
+
+        var player = worker.SpawnPrefab(
+            playerPrefab,
+            position,
+            Quaternion.identity,
+            spawnContainer,
+            clientId);
+        player.name = $"Player {playerName} ({clientId})";
+        return player;
+    }
+
+    public override void PrepareSpatialFrame(NetworkIdentity entity)
+    {
+        InfiniteWorldRuntime.Instance.Grid.KeepOriginNear(entity, ring: 2);
+    }
+}
+```
+
+`RuntimeGridAllocator` requests a 3D ring around each player-owned authoritative entity. `Ring = 1` keeps the surrounding 3 × 3 × 3 group available. The origin anchor also keeps that group available before the first player joins. The worker API queues requests made before registration and sends them once the control plane knows the worker.
+
+Repeated requests create a missing lease or touch an existing lease so its owner knows another worker still needs the chunk. After a chunk remains unwanted, unoccupied, and idle for `RetireAfterSeconds`, the allocator checkpoints its persistent entities, despawns its contents, and releases its lease.
+
+The gateway may ask a worker to spawn into any currently leased chunk. This example deliberately spawns everyone in chunk `(0, 0, 0)`. If that chunk belongs to another worker, Nebula transfers the new player to its owner on the next tick.
+
+`PrepareSpatialFrame` keeps worker-side membership checks precise in distant regions. The client follows its own local player in `InfiniteWorldRuntime.Update`.
+
+</Step>
+<Step>
+
+### Configure persistence and run the mesh
+
+Keep `NebulaConfig.PersistenceMode` at `auto`. For a local mesh, the standalone orchestrator stores blocks in the SQLite database configured by `mesh.database`, which defaults to `Library/Nebula/nebula.db`.
+
+Run **Nebula > Validate Project**. A configured `RuntimeWorld` tells the validator that the game intentionally has no authored containers. Fix any prefab, game-mode, scene, or transform issues it reports.
+
+From the Unity project root, build and start the mesh:
+
+```bash
+nebula build
+nebula start --workers 2 --open-ui
+```
+
+Press Play in the Editor as a client and connect to `127.0.0.1:7000`. Walk with WASD, turn with the mouse, and press F to place blocks.
+
+Use the dashboard's World map to watch `rt_<id>` containers appear and move between workers. Cross a chunk edge and confirm that the player keeps moving while the overlay's container and worker values change.
+
+</Step>
+<Step>
+
+### Verify chunk retirement and restore
+
+Place a block, walk more than one chunk away, and wait longer than `RetireAfterSeconds`. The owning worker releases the old chunk. Nebula checkpoints and despawns the block before removing the lease.
+
+Walk back. The allocator requests the chunk again, the control plane leases it, and persistence restores the block into the same runtime container at its saved pose. The restore starts after `PersistenceRestoreGraceSeconds`, which defaults to 3 seconds, so wait briefly before treating a missing block as a failure.
+
+To verify restart persistence:
+
+```bash
+nebula stop
+nebula start --workers 2 --open-ui
+```
+
+Blocks in the spawn ring return after workers acquire those chunk leases. Blocks elsewhere return when a player approaches and the allocator requests their chunks.
+
+Do not pass `--reset-persistence` during this test. That option deletes every saved entity before the mesh starts.
+
+</Step>
+</Steps>
+
+## What Nebula handles
+
+Once the game supplies allocation and procedural content, Nebula handles:
+
+- stable runtime-container identity and control-plane leases;
+- cost-balanced chunk assignment across workers;
+- ghosting and authority handover across registered neighboring chunks;
+- container-local network poses;
+- client prediction and correction across handover;
+- floating-origin updates to containers, entities, interpolation, and prediction history; and
+- checkpoint and restore of opted-in persistent entities when a runtime chunk retires or changes owner.
+
+Your game still owns terrain generation, asset streaming, placement rules, permissions, and the policy that decides which chunks should exist.
+
+## Current boundaries
+
+- **Runtime-grid IDs have a fixed coordinate range.** Keep coordinates within `RuntimeGrid.MinCoordinate` and `RuntimeGrid.MaxCoordinate`. Changing the packing later would break persisted chunk IDs.
+- **Procedural content is not network state.** Every role that needs terrain or colliders must generate or load it from the stable chunk ID. Network interactive objects must be registered prefabs spawned by a worker.
+- **Persistence is opt-in per entity and field.** The block exists and keeps its pose because it has `PersistentEntity`. Add `[Persist]` to any `NetworkVariable` whose value must also survive. Ordinary fields and transient entities are not restored.
+- **One Unity worker has one floating-origin frame.** `PrepareSpatialFrame` can shift before each authoritative entity's membership query, and the cost policy tends to give a worker spatially neighboring chunks. A game that expects one worker to simulate many extremely distant active regions should measure the cost of repeated shifts.
+
+<Cards>
+  <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Understand runtime leases, retirement, assignment, and balancing hints." />
+  <Card title="World partition" href="/docs/guides/world-partition" description="Use authored cell scenes or inspect the lower-level floating-origin model." />
+  <Card title="Persistence" href="/docs/guides/persistence" description="Choose saved variables, checkpoint timing, stores, and reset behavior." />
+  <Card title="Prediction" href="/docs/guides/prediction" description="Extend the player controller with collision, jumping, and reconciliation state." />
+</Cards>

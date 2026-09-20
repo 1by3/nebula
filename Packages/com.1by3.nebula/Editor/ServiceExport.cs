@@ -109,7 +109,7 @@ namespace Nebula.Editor
                         manifest.Containers.Add(new Box { ContainerId = e.Id, Center = e.Center, Size = e.Size, Cell = e.Cell, IsCell = e.IsCell, Hint = e.Hint, transform = ExportFrame(Matrix4x4.TRS(position, rotation, scale), position, rotation, scale) });
                     }
                 }
-                else
+                else if (config.RuntimeWorld == null)
                 {
                     foreach (var c in scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<Container>(false)).Where(c => c.gameObject.activeInHierarchy && c.GetComponent<DynamicContainer>() == null && !c.IsRuntime).OrderBy(c => c.ContainerId, StringComparer.Ordinal))
                     {

@@ -6,11 +6,11 @@ using UnityEngine.SceneManagement;
 namespace Nebula
 {
     /// <summary>
-    /// Nebula's side of a partitioned world (<see cref="WorldDefinition"/> + <see cref="WorldContainerManifest"/>):
-    /// instantiates the manifest's container tree for the registry, owns the <see cref="WorldStreamer"/>, keeps the
-    /// virtual containers and every entity's cached positions in step with origin shifts, and strips the authoring
-    /// <see cref="Container"/> components out of cell scenes as they stream in. Inactive (everything behaves as a
-    /// single scene) when <see cref="NebulaConfig.WorldManifest"/> is unset.
+    /// Nebula's floating-origin world state. A baked world (<see cref="WorldDefinition"/> +
+    /// <see cref="WorldContainerManifest"/>) instantiates the manifest's container tree, streams authored cell scenes,
+    /// and strips their authoring <see cref="Container"/> components. A runtime world owns the same origin frame but
+    /// leaves container registration and procedural content to the game. Both modes keep containers and every entity's
+    /// cached positions in step with origin shifts. <see cref="IsActive"/> specifically reports authored scene streaming.
     /// </summary>
     public static class NebulaWorld
     {

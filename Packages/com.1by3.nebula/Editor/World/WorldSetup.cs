@@ -77,10 +77,11 @@ namespace Nebula.Editor
             report.Did($"baked {AssetDatabase.GetAssetPath(manifest)}: {bake}");
             foreach (var w in bake.Warnings) report.Warn($"bake: {w}");
 
-            if (config.WorldManifest != manifest)
+            if (config.WorldManifest != manifest || config.RuntimeWorld != null)
             {
                 Undo.RecordObject(config, "Use world manifest");
                 config.WorldManifest = manifest;
+                config.RuntimeWorld = null;
                 EditorUtility.SetDirty(config);
                 AssetDatabase.SaveAssetIfDirty(config);
                 report.Did("NebulaConfig.WorldManifest set: the partition is on");

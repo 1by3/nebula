@@ -28,7 +28,15 @@ Scene containing the Container volumes and gameplay. Loaded by workers and clien
 public WorldContainerManifest WorldManifest;
 ```
 
-Baked container manifest of a partitioned world (Nebula \> World). Unset = the game scene is the whole world.
+Baked container manifest of an authored partitioned world (Nebula \> World). Leave empty for a single scene or a RuntimeWorld.
+
+### RuntimeWorld [#runtimeworld]
+
+```csharp
+public WorldDefinition RuntimeWorld;
+```
+
+Definition of a procedural world whose containers are registered while the mesh runs. Nebula loads its floating-origin frame without authored cell scenes. Leave [`WorldManifest`](#worldmanifest) unset: a baked manifest takes precedence when both are assigned.
 
 ### ClientLoadRadiusCells [#clientloadradiuscells]
 

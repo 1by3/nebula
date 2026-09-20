@@ -64,7 +64,7 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | Type | Summary |
 | --- | --- |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
-| [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's side of a partitioned world (WorldDefinition + WorldContainerManifest): instantiates the manifest's container tree for the registry, owns the WorldStreamer, keeps the virtual containers and every entity's cached positions in ste... |
+| [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
 | [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |

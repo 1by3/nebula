@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Nebula.World;
 using UnityEngine;
 
 namespace Nebula
@@ -15,8 +16,15 @@ namespace Nebula
         public string GameScene = "Arena";
 
         [Header("World partition (optional)")]
-        [Tooltip("Baked container manifest of a partitioned world (Nebula > World). Unset = the game scene is the whole world.")]
+        [Tooltip("Baked container manifest of an authored partitioned world (Nebula > World). Leave empty for a single scene or a RuntimeWorld.")]
         public WorldContainerManifest WorldManifest;
+        /// <summary>
+        /// Definition of a procedural world whose containers are registered while the mesh runs. Nebula loads its
+        /// floating-origin frame without authored cell scenes. Leave <see cref="WorldManifest"/> unset: a baked
+        /// manifest takes precedence when both are assigned.
+        /// </summary>
+        [Tooltip("World definition for a procedural runtime-container world. Loads the floating origin without authored cell scenes; leave WorldManifest empty.")]
+        public WorldDefinition RuntimeWorld;
         [Tooltip("Clients keep this many cells around the local pawn loaded (1 = the 3x3x3 block).")]
         public int ClientLoadRadiusCells = 1;
         [Tooltip("Workers keep this many rings of neighboring cells loaded around every cell they control. Ghosts and boundary physics need this geometry.")]

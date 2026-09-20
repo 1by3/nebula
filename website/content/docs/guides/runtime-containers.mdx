@@ -5,6 +5,8 @@ description: Register containers while the mesh runs, so a world whose shape is 
 
 Use a **runtime container** when the game decides where the containers are while the mesh runs. A chunked landscape that grows as players explore it, plots that appear when someone buys land, or an instance that exists while a group is inside are all runtime containers. Baked containers (authored in the scene or in a world manifest) and dynamic containers (carried by an entity) keep working alongside them.
 
+For an end-to-end procedural grid with floating-origin shifts and persistent player-placed blocks, follow [Build an infinite runtime world](/docs/guides/infinite-runtime-world).
+
 A runtime container is a static box named by a 64-bit id the game chooses. Its lease row on the control plane carries the box, so every process registers the same container from the row alone; nothing about the world's shape is baked into a build. On the wire it is ten bytes (a marker index plus the id), where a baked container is two. Baked containers are unaffected.
 
 To create separate private copies with isolated visibility and physics, follow [Create private instances](/docs/guides/instancing). An ordinary runtime container remains in the public scope unless it carries instance metadata.

@@ -48,6 +48,7 @@ namespace Nebula.Tests
         {
             foreach (var o in _objects) if (o != null) Object.DestroyImmediate(o);
             _objects.Clear();
+            NebulaWorld.Unload();
             WorldOrigin.Reset(null);
             ContainerRegistry.Rebuild();
         }
@@ -225,6 +226,24 @@ namespace Nebula.Tests
             Assert.AreEqual(new Vector3(-98, 2, 3), interp.LatestPosition);
             Assert.IsTrue(interp.Sample(10.5, out var pos, out _));
             Assert.AreEqual(new Vector3(-98.5f, 2, 3), pos);
+        }
+
+        [Test]
+        public void RuntimeWorldStartsWithAnEmptyStaticRegistry()
+        {
+            var authored = MakeContainer("authored-ignored", Vector3Int.zero, Vector3.zero, Vector3.one * 10f, false, null);
+            ContainerRegistry.Rebuild();
+            Assert.AreSame(authored, ContainerRegistry.FindById("authored-ignored"));
+
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            config.RuntimeWorld = _world;
+            _objects.Add(config);
+
+            NebulaBootstrap.ConfigureWorld(config);
+
+            Assert.AreSame(_world, NebulaWorld.Definition);
+            Assert.IsFalse(NebulaWorld.IsActive, "runtime worlds do not stream authored cell scenes");
+            Assert.AreEqual(0, ContainerRegistry.Count);
         }
     }
 }

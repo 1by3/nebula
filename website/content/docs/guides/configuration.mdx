@@ -22,7 +22,8 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | --- | --- | --- |
 | `GameScene` | `Arena` | Select the scene that contains your containers and gameplay. |
 | `NetworkPrefabs` | empty | Add every prefab that Nebula can spawn. The list index becomes the prefab ID sent over the network. |
-| `WorldManifest` | none | Assign a baked manifest when you [partition a large world](/docs/guides/world-partition). Leave it empty to load the whole game scene. |
+| `WorldManifest` | none | Assign a baked manifest when you [partition a large world](/docs/guides/world-partition). Leave it empty for a single scene or a `RuntimeWorld`. |
+| `RuntimeWorld` | none | Assign a `WorldDefinition` for a procedural world whose containers are registered at runtime. Leave `WorldManifest` empty. |
 | `ClientLoadRadiusCells` | `1` | Choose how many cells clients load around their pawn. A value of `1` loads a 3 × 3 × 3 group of cells. |
 | `WorkerLoadRingCells` | `1` | Choose how many neighboring cell rings a worker loads around its leased cells. |
 | `OriginShiftThresholdCells` | `4` | Move the floating origin after the client pawn or worker lease center crosses this many cells. |
