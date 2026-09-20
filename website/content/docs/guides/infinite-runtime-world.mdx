@@ -52,7 +52,7 @@ Set these fields:
 
 The empty cell list is intentional. `WorldDefinition` supplies the cell size and origin-shift math, but the runtime grid supplies chunk coordinates as players explore. The 256 m Y size gives a ground-level container enough vertical room for players and placed objects.
 
-Select `Resources/NebulaConfig` and assign this asset to `RuntimeWorld`. Leave `WorldManifest` empty. Nebula now loads the floating-origin frame before game scripts initialize, starts with no authored containers, and expects workers to register runtime containers.
+Select `Resources/NebulaConfig`. In the Inspector, assign this asset to **Runtime World** (`NebulaConfig.RuntimeWorld`) and leave **World Manifest** (`NebulaConfig.WorldManifest`) empty. Nebula now loads the floating-origin frame before game scripts initialize, starts with no authored containers, and expects workers to register runtime containers.
 
 </Step>
 <Step>
