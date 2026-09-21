@@ -1,0 +1,48 @@
+---
+title: "ConfigIssue"
+description: "One problem found in a configuration, named by field so an inspector or nebula doctor can point at it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs)</div>
+
+```csharp
+public readonly struct ConfigIssue
+```
+
+One problem found in a configuration, named by field so an inspector or `nebula doctor` can point at it.
+
+## Constructors
+
+### ConfigIssue [#configissue]
+
+```csharp
+public ConfigIssue(ConfigSeverity severity, string field, string message);
+```
+
+## Fields
+
+### Severity [#severity]
+
+```csharp
+public readonly ConfigSeverity Severity;
+```
+
+### Field [#field]
+
+```csharp
+public readonly string Field;
+```
+
+### Message [#message]
+
+```csharp
+public readonly string Message;
+```
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

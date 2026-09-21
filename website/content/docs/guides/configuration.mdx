@@ -97,11 +97,48 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `PersistenceCheckpointSeconds` | `5` | Choose how often an authoritative persistent entity is checkpointed. A change or a move saves sooner. |
 | `PersistenceRestoreGraceSeconds` | `3` | Wait this long after gaining a container lease before restoring that container's saved entities. |
 
+### Interest management
+
+[Interest management](/docs/guides/interest-management) decides which entities a client hears about at all. These fields are on `NebulaConfig`; see that guide for the full explanation, the policy API, and the observability fields.
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `InterestRadius` | `120` m | How far a client hears about an entity. A prefab's `RelevanceRadius` overrides it per entity. |
+| `InterestExitMargin` | `16` m | Extra distance past `InterestRadius` an entity must cross before it leaves a client's set. |
+| `InterestLingerSeconds` | `1` s | How long an entity must stay past the exit radius before the client is told to despawn it. |
+| `InterestCellSize` | `64` m | Edge length of one interest region. Snapped to an integer divisor of the world's cell size when a world definition exists. |
+| `InterestPlanar` | `true` | Regions are infinite columns; height does not affect the region key. Turn off for a volumetric or space game. |
+| `InterestEvalHz` | `4` | How often each client's interest set is re-evaluated per second. |
+| `InterestSubscribeMargin` | `32` m | Extra distance of regions a gateway subscribes beyond a focus, ahead of a client's exact filter needing them. |
+| `InterestRegionLingerSeconds` | `3` s | How long a region stays subscribed after the last client needed it. |
+| `InterestLinkLingerSeconds` | `10` s | How long a gateway keeps a worker connection after the last reason to hold it is gone. |
+| `InterestResyncSeconds` | `30` s | How often a gateway resends its whole subscription as an audit. |
+| `InterestMaxRadius` | `1024` m | Ceiling on a prefab's `RelevanceRadius`, and the farthest a wide entity may reach. Never uncapped: a value of 0 or less is reported and replaced with `InterestRadius`. |
+| `InterestMaxFoci` | `8` | Most foci one client may have at once. |
+| `InterestHintMaxDistance` | `60` m | How far a client's focus hint may sit from its pawn before it is clamped. |
+| `InterestHintMaxHz` | `5` | Most focus hints accepted from one client per second. |
+| `InterestMaxExplicitPerClient` | `16` | Most entities one client's policy may subscribe to by ID. |
+| `InterestMaxFocusSpeed` | `12` m/s | The fastest a player is expected to travel, used to check `InterestSubscribeMargin`. |
+| `PartitionWarnEntities` | `2000` | A worker warns when one container holds more entities than this. `0` disables the warning. |
+| `PartitionWarnFilterMs` | `2` ms | A worker warns when per-gateway filtering takes longer than this per tick. `0` disables the warning. |
+
+`NebulaConfig.Validate` enforces these relationships, clamping and warning rather than silently misbehaving: `InterestNearRadius <= InterestFarRadius <= InterestRadius`; `InterestExitMargin > 0`; `InterestCellSize > 0`, snapped to an integer divisor of the world cell size when a world definition exists; `InterestSubscribeMargin` at least one evaluation of travel at `InterestMaxFocusSpeed`; `GhostBandMargin` smaller than `InterestCellSize`; `ClientLoadRadiusCells × cell size` at least `InterestRadius + InterestExitMargin` (raised automatically otherwise); and `InterestMaxRadius >= InterestRadius`, with a non-positive value set to `InterestRadius` rather than treated as uncapped — it is the ceiling on what a prefab may ask a gateway to send, so it is never off. The runtime chunk allocator's ring needs no check: `NebulaChunkedWorld` builds it as [`NearCells`](/docs/guides/interest-management#one-notion-of-near) + 1. Only a non-positive `InterestRadius` or `InterestCellSize` blocks start-up; every other violation is clamped and logged as a warning.
+
+### Turnkey chunked world
+
+See [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for the full setup.
+
+| Field | Default | What to set |
+| --- | --- | --- |
+| `ChunkedWorld` | `false` | Turn on the turnkey unbounded chunked world: with `RuntimeWorld` assigned, Nebula builds the chunk grid from its cell size, leases chunks around every pawn on workers, keeps the floating origin near the pawn on clients, and raises `NebulaChunks.Loaded`/`Unloading` on every role. |
+| `ChunkPlanar` | `true` | Chunks are columns: the grid has one layer at `y = 0` and `RuntimeWorld.CellSize.y` is the column height. Turn off for a volumetric world. |
+| `ChunkRetireSeconds` | `30` | Seconds a chunk nobody needs stays leased before the worker retires it. Its persistent contents are checkpointed and restored when the chunk is requested again. |
+
 ### Client update rates and prediction
 
 | Field | Default | What to set |
 | --- | --- | --- |
-| `InterestNearRadius` | `30` m | Forward each available unreliable root update inside this distance from the client's pawn. |
+| `InterestNearRadius` | `30` m | Forward each available unreliable root update inside this distance from the client's pawn. This throttles update rate for entities already in the client's interest set; it does not decide whether they are in it. See [Interest management](/docs/guides/interest-management). |
 | `InterestFarRadius` | `80` m | Use the middle update rate between the near and far distances. |
 | `InterestMidDivisor` | `4` | Forward available unreliable root updates on every fourth tick in the middle band. Use `1` to forward each available update. |
 | `InterestFarDivisor` | `12` | Forward available unreliable root updates on every twelfth tick beyond the far distance. Clients without a pawn also use this filter. |
@@ -164,6 +201,8 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-build-dir <path>` | orchestrator | Serve worker build files from this directory at `/build/`. |
 | `-nebula-ghost-band <metres>` | worker | Override `GhostBandMargin`. |
 | `-nebula-hysteresis <metres>` | worker | Override `HandoverHysteresis`. |
+| `-nebula-interest-radius <metres>` | gateway, worker | Override `InterestRadius`. See [Interest management](/docs/guides/interest-management). |
+| `-nebula-interest-cell <metres>` | gateway, worker | Override `InterestCellSize`. |
 | `-nebula-reset false` | orchestrator | Restore the stored control plane instead of starting empty. The default resets this temporary registry state. |
 | `-nebula-verbose` | all roles | Write debug-level logs. |
 

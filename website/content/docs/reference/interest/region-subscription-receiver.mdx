@@ -1,0 +1,122 @@
+---
+title: "RegionSubscriptionReceiver"
+description: "The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs)</div>
+
+```csharp
+public sealed class RegionSubscriptionReceiver
+```
+
+The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. Everything about applying a message is defensive, because a set that quietly drifts apart from the gateway's would show up as entities that never spawn rather than as an error: a delta applies only against the sequence it was built on, the result must match the sender's (count, hash), and anything else keeps the old set and asks for a Full snapshot.
+
+## Properties
+
+### Grid [#grid]
+
+```csharp
+public InterestGrid Grid { get; set; }
+```
+
+The grid this worker made its own region ids with. When it is valid, a message built with a different grid is rejected (design D2): filtering with ids that mean something else would silently hide entities. Leave it default to adopt the sender's.
+
+### Seq [#seq]
+
+```csharp
+public uint Seq { get; }
+```
+
+The sequence of the set currently held. Sent back in [`InterestResyncMsg`](/docs/reference/protocol/interest-resync-msg).
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+### Hash [#hash]
+
+```csharp
+public ulong Hash { get; }
+```
+
+### IsStaging [#isstaging]
+
+```csharp
+public bool IsStaging { get; }
+```
+
+True while a chunked update is part-applied; the set is still the one the gateway last committed.
+
+### Added [#added]
+
+```csharp
+public IReadOnlyList<ulong> Added { get; }
+```
+
+Regions added by the last committed apply; a worker sends spawns for the entities in these.
+
+### Removed [#removed]
+
+```csharp
+public IReadOnlyList<ulong> Removed { get; }
+```
+
+Regions removed by the last committed apply. Nothing is sent for them: the gateway drops its own cache.
+
+### FociRegions [#fociregions]
+
+```csharp
+public IReadOnlyList<ulong> FociRegions { get; }
+```
+
+The gateway's focus regions, for matching wide entities.
+
+### Entities [#entities]
+
+```csharp
+public IReadOnlyList<ulong> Entities { get; }
+```
+
+Entity ids this gateway subscribed explicitly.
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+public event Action<RegionSubscriptionReceiver> Changed;
+```
+
+Raised after every committed apply, once [`Added`](#added) and [`Removed`](#removed) describe it.
+
+## Methods
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong region);
+```
+
+### GetEnumerator [#getenumerator]
+
+```csharp
+public HashSet<ulong>.Enumerator GetEnumerator();
+```
+
+### Reset [#reset]
+
+```csharp
+public void Reset();
+```
+
+Forget the set (the link dropped, or the gateway restarted). The next Full snapshot rebuilds it.
+
+### Apply [#apply]
+
+```csharp
+public bool Apply(in InterestSubscribeMsg msg, out string rejection);
+```
+
+Apply one message. Returns false when the worker must answer [`InterestResyncMsg`](/docs/reference/protocol/interest-resync-msg) with [`Seq`](#seq); `rejection` then says why, which is worth logging loudly.

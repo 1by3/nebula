@@ -165,7 +165,7 @@ namespace Nebula
         public void HeartbeatWorker(string workerId, string status, in WorkerStats s) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatWorker).Arg("workerId", workerId).Arg("status", status)
                 .Arg("tickCount", s.TickCount).Arg("tickMs", s.TickMs).Arg("entityCount", s.EntityCount).Arg("authoritativeCount", s.AuthoritativeCount)
-                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).End());
+                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities).End());
 
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
         public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) =>
@@ -175,7 +175,16 @@ namespace Nebula
                 .Arg("pendingJoins", (long)s.PendingJoins).Arg("activeClients", (long)s.ActiveClients).Arg("joiningClients", (long)s.JoiningClients).Arg("reconnectingClients", (long)s.ReconnectingClients)
                 .Arg("packetsIn", s.PacketsInPerSecond).Arg("packetsOut", s.PacketsOutPerSecond).Arg("bytesIn", s.BytesInPerSecond).Arg("bytesOut", s.BytesOutPerSecond)
                 .Arg("workerBytesIn", s.WorkerBytesInPerSecond).Arg("workerBytesOut", s.WorkerBytesOutPerSecond).Arg("cpu", s.Cpu).Arg("memoryBytes", (long)s.MemoryBytes)
-                .Arg("loopLagMs", s.LoopLagMs).Arg("workerConnections", (long)s.WorkerConnections).Arg("ready", s.Ready).Arg("draining", s.Draining).End());
+                .Arg("loopLagMs", s.LoopLagMs).Arg("workerConnections", (long)s.WorkerConnections).Arg("ready", s.Ready).Arg("draining", s.Draining)
+                // The interest half of GatewayStats (design §12). ReadGatewayStats on the orchestrator has
+                // always expected these keys; without them every interest field in /api/state reads zero for a
+                // gateway that reaches the control plane over HTTP, which is every gateway in a real mesh.
+                .Arg("interestSetAvg", s.InterestSetAvg).Arg("interestSetMax", (long)s.InterestSetMax)
+                .Arg("cachedEntities", (long)s.CachedEntities).Arg("subscribedRegions", (long)s.SubscribedRegions)
+                .Arg("workerLinks", (long)s.WorkerLinks).Arg("workerLinkReasons", s.WorkerLinkReasons ?? "")
+                .Arg("spawnsPerSecond", s.SpawnsPerSecond).Arg("despawnsPerSecond", s.DespawnsPerSecond)
+                .Arg("interestEvalMsAvg", s.InterestEvalMsAvg).Arg("interestEvalMsMax", s.InterestEvalMsMax)
+                .Arg("bytesPerClientAvg", s.BytesPerClientAvg).Arg("bytesPerClientMax", s.BytesPerClientMax).End());
         public void UnregisterGateway(string gatewayId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterGateway).Arg("gatewayId", gatewayId).End());
         public void SetGatewayDraining(string gatewayId, bool draining) => Enqueue(_op.Op(ControlPlaneJson.SetGatewayDraining).Arg("gatewayId", gatewayId).Arg("draining", draining).End());
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>

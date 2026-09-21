@@ -25,6 +25,14 @@ public ulong NetId;
 public uint Epoch;
 ```
 
+### ViewSeq [#viewseq]
+
+```csharp
+public ushort ViewSeq;
+```
+
+Gateway -\> client: the view this despawn ends (see [`EntitySpawnMsg.ViewSeq`](/docs/reference/protocol/entity-spawn-msg#viewseq)). A client drops a despawn older than the view it currently holds, so a late leave cannot kill a re-entered replica. Workers send 0.
+
 ## Methods
 
 ### Write [#write]

@@ -48,11 +48,46 @@ namespace Nebula
             /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
             public float DisconnectAt;
             public ulong PawnNetId;
+            /// <summary>The interest set: exactly the entities this client has replicas of (design §4).</summary>
             public readonly HashSet<ulong> Visible = new HashSet<ulong>();
+            /// <summary>The set's state machine (hysteresis, linger, authorization). Created on the first evaluation.</summary>
+            public ClientInterest<EntityRecord, InterestSource> Interest;
+            /// <summary>Reused between evaluations, so a policy that asks for the same things allocates nothing.</summary>
+            public InterestQuery Query;
+            /// <summary>Regions this client's foci cover at the subscribe radius: what the gateway asks workers for.</summary>
+            public readonly HashSet<ulong> Regions = new HashSet<ulong>();
+            /// <summary>Scratch for the region diff, kept per client so the diff allocates nothing.</summary>
+            public readonly HashSet<ulong> NextRegions = new HashSet<ulong>();
+            /// <summary>Per-netId view sequence (design D4): a late despawn of an older view cannot kill a re-entered replica.</summary>
+            public readonly Dictionary<ulong, ushort> ViewSeq = new Dictionary<ulong, ushort>();
+            /// <summary>Container rows this client has been sent, so ownership travels as a delta and not as the lease table.</summary>
+            public readonly HashSet<string> KnownContainers = new HashSet<string>();
+            /// <summary>Evaluate at the next tick rather than at the scheduled time (pawn, instance, carrier, focus region or policy changed).</summary>
+            public bool InterestDirty = true;
+            public double NextInterestEval;
+            /// <summary>A game-set tag a policy filters on (<see cref="NebulaGateway.SetClientTag"/>).</summary>
+            public byte Team;
+            /// <summary>The client's validated focus hint, if it has sent one (<see cref="FocusHintFilter"/>).</summary>
+            public bool HasHint;
+            public double HintX, HintY, HintZ;
+            /// <summary>The newest hint generation seen (<see cref="ClientFocusHintMsg.Generation"/>); older hints are late arrivals.</summary>
+            public byte HintGeneration;
+            /// <summary>False until the first hint message: a reconnecting client's counter does not restart at zero.</summary>
+            public bool HintGenerationKnown;
+            /// <summary>Bytes sent to this client since the last heartbeat, for the per-client figure in <see cref="GatewayStats"/>.</summary>
+            public long BytesOut;
             /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
             public JoinState Join;
             public ushort JoinEstimate;
             public float NextSpawnAttempt;
+            /// <summary>
+            /// When the gateway first found itself unable to place this client's pawn (no record, or a record
+            /// whose owner it cannot reach). Zero while all is well. Interest subscribes the pawn by name on
+            /// every live worker while it is set, and gives up and asks for a new pawn if nobody answers.
+            /// </summary>
+            public double PawnLostSince;
+            /// <summary>Whether the by-name recovery above is running, so it is announced once and not four times a second.</summary>
+            public bool PawnRecovering;
             public string SpawnWorkerId = "";
             public ContainerRef SpawnContainer = ContainerRef.None;
             public string CoordinationClaim = "";
@@ -91,12 +126,35 @@ namespace Nebula
             public ulong NetId;
             public uint Epoch;
             public ushort OwnerWorkerIndex;
+            /// <summary>
+            /// Set while <see cref="OwnerWorkerIndex"/> is only what an <see cref="EntityRedirectMsg"/> said and
+            /// no spawn from that worker has confirmed it. A chain of handovers can outrun the gateway's dialling
+            /// (the second redirect is sent over a link the gateway does not have yet), which leaves the record
+            /// pointing at a worker that no longer owns the entity. For a client's own pawn that is fatal, so
+            /// interest recovers it by name until somebody answers (see <see cref="NebulaGateway.RecoverPawn"/>).
+            /// </summary>
+            public bool OwnerUnconfirmed;
             public ulong OwnerClientId;
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
             public uint LastStateTick;
             public bool HasStateTick;
+            /// <summary>
+            /// Absolute world position, cached and refreshed only when a pose or container changes. Interest asks
+            /// for it several times per client per second; resolving the container chain each time would put the
+            /// cost back into the loop interest management exists to take it out of.
+            /// </summary>
+            public double AbsX, AbsY, AbsZ;
+            /// <summary>The region this record is bucketed in (0 when it is wide or global).</summary>
+            public ulong Region;
+            public InterestPlacement Placement;
+            /// <summary>From the spawn message, clamped by the gateway's <see cref="InterestSettings.MaxRadius"/>.</summary>
+            public float RelevanceRadius;
+            public bool AlwaysRelevant;
+            public byte InterestGroup;
+            /// <summary>The clients that hold a replica: the exact audience of every message about this entity.</summary>
+            public readonly List<ClientConn> Observers = new List<ClientConn>();
             /// <summary>Newest keyframe per behaviour index, assembled into LastSpawn.State for late joiners.</summary>
             public Dictionary<byte, byte[]> SyncKeyframes;
 
@@ -188,7 +246,6 @@ namespace Nebula
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         private readonly NetworkReader _reader = new NetworkReader();
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
-        private readonly NetworkWriter _visibilityWriter = new NetworkWriter(1024);
 
         private Container ScopeContainer(ContainerRef reference)
         {
@@ -216,37 +273,29 @@ namespace Nebula
                 .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition, 0));
         }
 
-        private bool ReconcileVisibility(ClientConn client, EntityRecord entity)
-        {
-            bool visible = CanObserve(client, entity);
-            if (visible && client.Visible.Add(entity.NetId))
-            {
-                entity.RefreshSpawnState(_scratch);
-                _visibilityWriter.Reset();
-                entity.LastSpawn.Write(_visibilityWriter, MsgId.EntitySpawn);
-                AppendReliable(client, _visibilityWriter.ToSegment());
-            }
-            else if (!visible && client.Visible.Remove(entity.NetId))
-            {
-                _visibilityWriter.Reset();
-                new EntityDespawnMsg { NetId = entity.NetId, Epoch = entity.Epoch }.Write(_visibilityWriter, MsgId.EntityDespawn);
-                AppendReliable(client, _visibilityWriter.ToSegment());
-            }
-            return visible;
-        }
-
+        /// <summary>
+        /// Re-evaluate one client's whole interest set now. Interest normally runs on its own schedule
+        /// (<see cref="TickInterest"/>); this is the immediate path for the things that invalidate a set outright
+        /// — the pawn moved instance, a carrier changed, a test wants the answer without pumping ticks.
+        /// </summary>
         private void ReconcileView(ClientConn client)
         {
-            // Preserve replicas visible on both sides of a crossing, including the public hallway.
-            foreach (var entity in _entities.Values) ReconcileVisibility(client, entity);
+            if (!client.Welcomed) return;
+            EvaluateClient(client, InterestNow);
         }
 
+        /// <summary>
+        /// Send what is already in <see cref="_writer"/> to the clients that hold a replica of this entity. Every
+        /// message about an entity goes through here or through <see cref="EntityRecord.Observers"/> directly, so
+        /// per-tick cost is Σ(entries × observers) — what is near the players — and never clients × world.
+        /// </summary>
         private void BroadcastEntity(EntityRecord entity, Delivery delivery)
         {
             var segment = _writer.ToSegment();
-            foreach (var client in _clientsById.Values)
+            for (int i = entity.Observers.Count - 1; i >= 0; i--)
             {
-                if (!client.Welcomed || !client.Visible.Contains(entity.NetId) || !CanObserve(client, entity)) continue;
+                var client = entity.Observers[i];
+                if (!client.Welcomed) continue;
                 if (delivery == Delivery.ReliableOrdered) AppendReliable(client, segment);
                 else Send(client.PeerId, delivery, segment);
             }
@@ -264,6 +313,7 @@ namespace Nebula
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private double _lastTickAt = -1, _statsSince;
         private long _clientPacketsIn, _clientPacketsOut, _clientBytesIn, _clientBytesOut, _workerBytesIn, _workerBytesOut;
+        private long _maxClientBytesOut;
         private float _maxLoopLagMs;
         private TimeSpan _lastCpu;
         private GatewayStats _lastStats;
@@ -291,6 +341,7 @@ namespace Nebula
             var udp = new LiteNetTransport("gateway");
             udp.Listen(config.GatewayPort);
             _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
+            InitializeInterest();
             ControlPlane.Changed += OnControlPlaneChanged;
             NebulaLog.Info($"gateway {GatewayId} (incarnation {Incarnation:x8}) listening on udp/{config.GatewayPort}" + (_peerKey == null ? "; no mesh token: any worker is trusted" : ""));
             InitializeAuth(config);
@@ -377,6 +428,7 @@ namespace Nebula
 
             _transport.Poll(HandleTransportEvent);
             _oidc?.Tick();
+            TickInterest();
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
             _transport.Flush();
             ReportWorldStateStats();
@@ -449,6 +501,9 @@ namespace Nebula
                 Ready = IsReady,
                 Draining = Draining,
             };
+            FillInterestStats(ref stats, interval);
+            foreach (var c in _clientsById.Values) c.BytesOut = 0;
+            _maxClientBytesOut = 0;
             _statsSince = now;
             _lastCpu = cpu;
             _clientPacketsIn = _clientPacketsOut = _clientBytesIn = _clientBytesOut = _workerBytesIn = _workerBytesOut = 0;
@@ -461,7 +516,18 @@ namespace Nebula
         private void Send(int peerId, Delivery delivery, ArraySegment<byte> payload)
         {
             if (_workersByPeer.ContainsKey(peerId)) _workerBytesOut += payload.Count;
-            else { _clientPacketsOut++; _clientBytesOut += payload.Count; }
+            else
+            {
+                _clientPacketsOut++;
+                _clientBytesOut += payload.Count;
+                // Per-client bytes is the figure that says whether one client is being sent the world; the total
+                // divided by the client count hides exactly the case worth catching.
+                if (_clientsByPeer.TryGetValue(peerId, out var to))
+                {
+                    to.BytesOut += payload.Count;
+                    if (to.BytesOut > _maxClientBytesOut) _maxClientBytesOut = to.BytesOut;
+                }
+            }
             _transport.Send(peerId, delivery, payload);
         }
 
@@ -519,6 +585,7 @@ namespace Nebula
 
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             _ownership.Clear();
+            _ownershipById.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
                 // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
@@ -530,7 +597,7 @@ namespace Nebula
                 ushort idx = w != null ? (ushort)w.WorkerIndex : ushort.MaxValue;
                 string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
                 if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
-                _ownership.Add(new ContainerOwnershipEntry
+                var entry = new ContainerOwnershipEntry
                 {
                     ContainerIndex = c != null ? c.Index : ContainerRef.DynamicIndex,
                     ContainerId = lease.ContainerId,
@@ -542,21 +609,17 @@ namespace Nebula
                     BoundsCenter = lease.BoundsCenter,
                     BoundsSize = lease.BoundsSize,
                     Instance = lease.Instance,
-                });
+                };
+                _ownership.Add(entry);
+                if (!string.IsNullOrEmpty(entry.ContainerId)) _ownershipById[entry.ContainerId] = entry;
             }
-            _writer.Reset();
-            ContainerOwnershipMsg.Write(_writer, _ownership);
-            BroadcastToClients(Delivery.ReliableOrdered);
-
-            foreach (var w in ControlPlane.Workers)
-            {
-                if (w.Status == WorkerStatus.Dead || !ControlPlane.IsWorkerAlive(w, Config.WorkerTimeoutSeconds)) continue;
-                if (_workersById.ContainsKey(w.WorkerId) || _dialing.Contains(w.WorkerId)) continue;
-                int peerId = _transport.Connect(w.Address, w.Port);
-                _workersByPeer[peerId] = new WorkerConn { PeerId = peerId, WorkerId = w.WorkerId, Index = (ushort)w.WorkerIndex, Outbound = true };
-                _dialing.Add(w.WorkerId);
-                NebulaLog.Info($"dialing worker {w.WorkerId} at {w.Address}:{w.Port}");
-            }
+            // Ownership is a per-client delta now (design §8): only the rows a client already holds are refreshed,
+            // and a client learns of a new container when something it can see needs it.
+            RefreshOwnership();
+            // Leases moved, so a region may belong to a different worker: re-resolve, and let the subscription
+            // pass link the new owner before the link linger lets the old one go.
+            _regionWorkers.Clear();
+            _subscriptionsDirty = true;
         }
 
         // ---------------------------------------------------------------------------------------- transport
@@ -623,6 +686,9 @@ namespace Nebula
                 _workersByIndex[w.Index] = w;
                 _dialing.Remove(w.WorkerId);
                 NebulaLog.Info($"worker {w.WorkerId} (index {w.Index}) connected");
+                // A worker announces nothing on our Hello any more (design §5): what we hear about is exactly
+                // what we subscribe, so the first thing over a new link is our subscription.
+                if (_links.TryGetValue(w.WorkerId, out var link)) { link.Index = w.Index; link.Linked = false; FlushSubscription(link); }
                 return;
             }
             if (!w.Ready) return;
@@ -646,6 +712,9 @@ namespace Nebula
                 case MsgId.EntityState: OnEntityState(w, EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(w, r); break;
                 case MsgId.EndSession: OnEndSession(EndSessionMsg.Read(r)); break;
+                case MsgId.InterestResync: OnInterestResync(w, InterestResyncMsg.Read(r)); break;
+                case MsgId.EntityForget: OnEntityForget(w, EntityForgetMsg.Read(r)); break;
+                case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -665,18 +734,21 @@ namespace Nebula
             foreach (var netId in _scratchIds)
             {
                 var rec = _entities[netId];
-                _entities.Remove(netId);
-                _writer.Reset();
-                new EntityDespawnMsg { NetId = netId, Epoch = rec.Epoch }.Write(_writer, MsgId.EntityDespawn);
-                foreach (var client in _clientsById.Values)
-                    if (client.Visible.Remove(netId)) AppendReliable(client, _writer.ToSegment());
-                if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == netId)
+                ulong owner = rec.OwnerClientId;
+                ForgetEntity(netId);
+                if (owner != 0 && _clientsById.TryGetValue(owner, out var c) && c.PawnNetId == netId)
                 {
                     c.PawnNetId = 0;
+                    c.InterestDirty = true;
                     SendJoinStatus(c, JoinState.Starting);
                     c.NextSpawnAttempt = Time.unscaledTime + 1f; // give the orchestrator a moment to reassign
                 }
             }
+            // The link is gone, so whatever the worker believed about our subscription is gone with it; the
+            // replacement (or the same worker coming back) gets a Full snapshot on its next Hello.
+            if (!string.IsNullOrEmpty(w.WorkerId) && _links.TryGetValue(w.WorkerId, out var link)) { link.Linked = false; link.Sub.Reset(); }
+            _regionWorkers.Clear();
+            _subscriptionsDirty = true;
         }
 
         private void OnEntitySpawn(WorkerConn w, EntitySpawnMsg msg)
@@ -690,46 +762,56 @@ namespace Nebula
                 rec = new EntityRecord { NetId = msg.NetId };
                 _entities[msg.NetId] = rec;
             }
+            bool containerChanged = rec.Container != msg.Container;
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
+            // A spawn from a worker is the one thing that confirms who owns an entity; a redirect only promised.
+            rec.OwnerUnconfirmed = false;
             rec.OwnerClientId = msg.OwnerClientId;
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
             rec.HasStateTick = false;
             rec.SeedKeyframes(msg.State);
+            // The prefab's interest facts travel in the spawn (the standalone gateway has no prefabs) and are
+            // clamped here: a prefab may not reach further than this mesh's InterestMaxRadius, which
+            // InterestSettings.Validate guarantees is a real ceiling (>= InterestRadius > 0) and never "off".
+            rec.RelevanceRadius = Math.Min(msg.RelevanceRadius, _interest.MaxRadius);
+            rec.AlwaysRelevant = (msg.InterestFlags & EntityInterestFlags.AlwaysRelevant) != 0;
+            rec.InterestGroup = msg.InterestGroup;
+            IndexEntity(rec);
             if (msg.OwnerClientId != 0 && _clientsById.TryGetValue(msg.OwnerClientId, out var c))
             {
                 c.PawnNetId = msg.NetId;
+                c.InterestDirty = true;
                 SendJoinStatus(c, JoinState.Joined);
             }
-            foreach (var client in _clientsById.Values)
+            // The observers it already has are told about the new state in place; everyone else learns of it only
+            // if it is near them, which is one test per client whose focus regions cover its region.
+            if (rec.Observers.Count > 0)
             {
-                bool alreadyVisible = client.Visible.Contains(rec.NetId);
-                if (ReconcileVisibility(client, rec) && alreadyVisible)
-                {
-                    _writer.Reset();
-                    msg.Write(_writer, MsgId.EntitySpawn);
-                    AppendReliable(client, _writer.ToSegment());
-                }
-                if (client.PawnNetId == rec.NetId) ReconcileView(client);
+                // A handover announcement is also how an entity's container changes (the new owner names the
+                // cell it landed in). The row has to be there before the spawn that names it, or the client
+                // cannot resolve the frame and holds the entity where it was - for its own pawn, for ever.
+                if (containerChanged) SendOwnershipForContainerChange(rec);
+                _writer.Reset();
+                msg.Write(_writer, MsgId.EntitySpawn);
+                BroadcastEntity(rec, Delivery.ReliableOrdered);
             }
+            OnEntityArrived(rec);
         }
 
         private void OnEntityDespawn(WorkerConn w, EntityDespawnMsg msg)
         {
             if (!_entities.TryGetValue(msg.NetId, out var rec)) return;
             if (msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
-            _entities.Remove(msg.NetId);
             if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == msg.NetId)
             {
                 c.PawnNetId = 0;
+                c.InterestDirty = true;
                 c.NextSpawnAttempt = Time.unscaledTime + 0.5f;
             }
-            _writer.Reset();
-            msg.Write(_writer, MsgId.EntityDespawn);
-            foreach (var client in _clientsById.Values)
-                if (client.Visible.Remove(msg.NetId)) AppendReliable(client, _writer.ToSegment());
+            ForgetEntity(msg.NetId);
         }
 
         private void OnEntityVars(WorkerConn w, EntityVarsMsg msg, NetworkReader r)
@@ -764,18 +846,21 @@ namespace Nebula
             msg.Write(_writer, MsgId.EntityRpc);
             if (msg.ClientId == 0 && msg.Radius > 0f)
             {
-                // A spatial RPC (a tracer, a footstep): only clients whose pawn is within its radius of the entity.
-                var at = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
-                float r2 = msg.Radius * msg.Radius;
+                // A spatial RPC (a tracer, a footstep): of the clients that hold a replica, the ones whose pawn is
+                // within its radius. The observer list is the candidate set, so the radius only narrows it.
+                double r2 = (double)msg.Radius * msg.Radius;
                 var seg = _writer.ToSegment();
-                foreach (var c in _clientsById.Values)
+                for (int i = rec.Observers.Count - 1; i >= 0; i--)
                 {
-                    if (!c.Welcomed || !c.Visible.Contains(rec.NetId) || !CanObserve(c, rec) || !TryGetPawnPosition(c, out var pawnPos)) continue;
-                    if ((pawnPos - at).sqrMagnitude <= r2) AppendReliable(c, seg);
+                    var c = rec.Observers[i];
+                    if (!c.Welcomed || c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var pawn)) continue;
+                    var root = RootOf(pawn);
+                    double dx = root.AbsX - rec.AbsX, dy = root.AbsY - rec.AbsY, dz = root.AbsZ - rec.AbsZ;
+                    if (dx * dx + dy * dy + dz * dz <= r2) AppendReliable(c, seg);
                 }
             }
             else if (msg.ClientId == 0) BroadcastEntity(rec, Delivery.ReliableOrdered);
-            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Visible.Contains(rec.NetId) && CanObserve(c, rec)) AppendReliable(c, _writer.ToSegment());
+            else if (_clientsById.TryGetValue(msg.ClientId, out var c) && c.Visible.Contains(rec.NetId)) AppendReliable(c, _writer.ToSegment());
         }
 
         private readonly List<EntityStateEntry> _scratchEntries = new List<EntityStateEntry>();
@@ -788,7 +873,11 @@ namespace Nebula
         {
             if (!NebulaLog.Verbose || Time.unscaledTime < _nextWsReport) return;
             _nextWsReport = Time.unscaledTime + 1f;
+            long setSum = 0, setMax = 0;
+            foreach (var c in _clientsById.Values) { setSum += c.Visible.Count; if (c.Visible.Count > setMax) setMax = c.Visible.Count; }
+            int clients = Math.Max(1, _clientsById.Count);
             NebulaLog.Debugf($"worldstate: {_wsPackets} packets {_wsEntries} entries in; dropped unknown={_wsUnknown} stale={_wsStale} wrongOwner={_wsWrongOwner}; {_wsSent} entries sent to {_clientsById.Count} client(s); {_entities.Count} entities known");
+            NebulaLog.Debugf($"interest: set {setSum / clients}/{setMax} per client, cache {_entities.Count}, regions {_subscribedRegions.Count}, links {_links.Count} ({DescribeLinkReasons()}), spawns {_spawnsSent} despawns {_despawnsSent} since the last heartbeat, eval {(_evalCount > 0 ? _evalMsSum / _evalCount : 0):0.00}/{_evalMsMax:0.00} ms");
             _wsPackets = _wsEntries = _wsUnknown = _wsStale = _wsWrongOwner = _wsSent = 0;
         }
 
@@ -819,34 +908,50 @@ namespace Nebula
                     rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity, 0)) * rotation;
                 }
                 bool changedScope = ScopeContainer(rec.Container)?.InstanceId != ScopeContainer(entry.Container)?.InstanceId;
+                bool changedCarrier = rec.Container.IsDynamic != entry.Container.IsDynamic || rec.Container.NetId != entry.Container.NetId;
+                bool changedContainer = rec.Container != entry.Container;
                 rec.Container = entry.Container;
                 rec.LastSpawn.Container = entry.Container;
                 entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
-                if (changedScope)
-                    foreach (var observer in _clientsById.Values) ReconcileView(observer);
+                // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
+                // has to be rebucketed, and only when its region key actually changed.
+                if (changedCarrier) _index.SetCarrier(rec.NetId, entry.Container.IsDynamic ? entry.Container.NetId : 0);
+                // The observers that already hold this entity need the new container's lease row, or they cannot
+                // resolve the frame the pose that follows is expressed in. Entering a set is not the only way an
+                // entity comes to name a container a client has never heard of: walking into the next chunk is.
+                if (changedContainer) SendOwnershipForContainerChange(rec);
+                RebucketIfMoved(rec);
+                if (changedScope || changedCarrier)
+                {
+                    for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].InterestDirty = true;
+                    if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var moved)) moved.InterestDirty = true;
+                    OnEntityArrived(rec);
+                }
                 _scratchEntries.Add(entry);
             }
             if (_scratchEntries.Count == 0) return;
 
-            foreach (var c in _clientsById.Values)
+            // One pass over the entries, fanning each out to its own observers: the clients × all-entities loop
+            // this used to be is what interest management replaces.
+            for (int i = 0; i < _scratchEntries.Count; i++)
             {
-                if (!c.Welcomed) continue;
-                bool hasPawn = TryGetPawnPosition(c, out var pawnPos);
-                for (int i = 0; i < _scratchEntries.Count; i++)
+                var entry = _scratchEntries[i];
+                if (!_entities.TryGetValue(entry.NetId, out var rec)) continue;
+                if (entry.Reliable)
                 {
-                    var entry = _scratchEntries[i];
-                    if (!ReconcileVisibility(c, _entities[entry.NetId])) continue;
-                    if (entry.Reliable)
-                    {
-                        _writer.Reset();
-                        int slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, w.Index);
-                        entry.Write(_writer);
-                        WorldStateMsg.End(_writer, slot, 1);
-                        AppendReliable(c, _writer.ToSegment());
-                        _wsSent++;
-                        continue;
-                    }
-                    if (!WantsThisTick(entry, tick, hasPawn, pawnPos, c.PawnNetId)) continue;
+                    _writer.Reset();
+                    int slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, w.Index);
+                    entry.Write(_writer);
+                    WorldStateMsg.End(_writer, slot, 1);
+                    var reliable = _writer.ToSegment();
+                    for (int o = rec.Observers.Count - 1; o >= 0; o--) { AppendReliable(rec.Observers[o], reliable); _wsSent++; }
+                    continue;
+                }
+                for (int o = rec.Observers.Count - 1; o >= 0; o--)
+                {
+                    var c = rec.Observers[o];
+                    if (!c.Welcomed) continue;
+                    if (!WantsThisTick(rec, entry, tick, c)) continue;
                     AppendWorldState(c, tick, w.Index, entry);
                     _wsSent++;
                 }
@@ -892,28 +997,34 @@ namespace Nebula
         /// with no pawn yet (spectating the title screen) gets the far rate for everything; the client's own pawn
         /// always gets every tick (it is what reconciliation compares against).
         /// </summary>
-        private bool WantsThisTick(in EntityStateEntry entry, uint tick, bool hasPawn, Vector3 pawnPos, ulong pawnNetId)
+        private bool WantsThisTick(EntityRecord rec, in EntityStateEntry entry, uint tick, ClientConn c)
         {
+            // A client with no pawn has PawnNetId 0, which must not make every record match "this is my pawn".
+            if (c.PawnNetId != 0 && rec.NetId == c.PawnNetId) return true;
+            // Distance is measured from the client's cached foci to the record's cached absolute position: no
+            // container walk, no transform maths, per (entity, observer) pair.
+            double best = double.MaxValue;
+            var foci = c.Interest?.Foci;
+            if (foci != null)
+                for (int i = 0; i < foci.Count; i++)
+                {
+                    double d2 = foci[i].SqrDistanceTo(rec.AbsX, rec.AbsY, rec.AbsZ);
+                    if (d2 < best) best = d2;
+                }
             int divisor;
-            if (entry.NetId == pawnNetId) return true;
-            if (!hasPawn) divisor = Config.InterestFarDivisor;
-            else
-            {
-                var position = _entities.TryGetValue(entry.NetId, out var record) ? record.LastSpawn.LocalPosition : entry.LocalPosition;
-                var pos = WorldPosition(entry.Container, position, 0);
-                float d2 = (pos - pawnPos).sqrMagnitude;
-                if (d2 <= Config.InterestNearRadius * Config.InterestNearRadius) return true;
-                divisor = d2 <= Config.InterestFarRadius * Config.InterestFarRadius ? Config.InterestMidDivisor : Config.InterestFarDivisor;
-            }
+            if (best == double.MaxValue) divisor = _interest.FarDivisor;
+            else if (best <= (double)_interest.NearRadius * _interest.NearRadius) return true;
+            else divisor = best <= (double)_interest.FarRadius * _interest.FarRadius ? _interest.MidDivisor : _interest.FarDivisor;
             if (divisor <= 1) return true;
-            return (tick + (uint)(entry.NetId % (ulong)divisor)) % (uint)divisor == 0;
+            return (tick + (uint)(rec.NetId % (ulong)divisor)) % (uint)divisor == 0;
         }
 
         private bool TryGetPawnPosition(ClientConn c, out Vector3 position)
         {
             position = default;
             if (c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var rec)) return false;
-            position = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
+            var root = RootOf(rec);
+            position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
             return true;
         }
 
@@ -959,26 +1070,13 @@ namespace Nebula
             return c != null ? c.ToLocal(world) : world;
         }
 
-        /// <summary>How many carriers an entity's container sits inside (0 in a static container), so a late joiner gets carriers before their contents.</summary>
-        private int CarrierDepth(EntityRecord rec)
-        {
-            int depth = 0;
-            var r = rec.Container;
-            while (r.IsDynamic && depth < 8 && _entities.TryGetValue(r.NetId, out var carrier))
-            {
-                depth++;
-                r = carrier.Container;
-            }
-            return depth;
-        }
-
-        private readonly List<EntityRecord> _replayOrder = new List<EntityRecord>();
-
         private void OnOwnerState(WorkerConn w, NetworkReader r)
         {
             var msg = OwnerStateMsg.Read(r);
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
-            if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c)) return;
+            // Owner state is for the client's own prediction, so it only means anything while that client holds
+            // a replica. An owned entity is always in its owner's set, so this only ever drops a stale message.
+            if (!_clientsById.TryGetValue(msg.OwnerClientId, out var c) || !c.Visible.Contains(msg.NetId)) return;
             _writer.Reset();
             msg.Write(_writer);
             Send(c.PeerId, Delivery.Sequenced, _writer.ToSegment());
@@ -1064,6 +1162,7 @@ namespace Nebula
                     Send(w.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 }
+                case MsgId.ClientFocusHint: OnClientFocusHint(c, ClientFocusHintMsg.Read(r)); break;
                 case MsgId.Ping:
                 {
                     var ping = PingMsg.Read(r);
@@ -1155,6 +1254,7 @@ namespace Nebula
             {
                 _clientsByPeer.Remove(c.PeerId);
                 _clientsById.Remove(c.ClientId);
+                ForgetClientInterest(c);
                 _transport.Disconnect(c.PeerId);
             }
         }
@@ -1205,6 +1305,7 @@ namespace Nebula
                 NebulaLog.Info($"player {ShortIdentity(c.Identity)} connected again as '{c.Name}' ({how}); closing the earlier link of session {sessionId}");
                 _clientsByPeer.Remove(previous.PeerId);
                 _clientsById.Remove(previous.ClientId);
+                ForgetClientInterest(previous);
                 EndPlayerLink(previous, ReplacedReason);
                 if (previous.PawnNetId != 0) c.PawnNetId = previous.PawnNetId;
             }
@@ -1261,6 +1362,7 @@ namespace Nebula
             NebulaLog.Info($"client {c.ClientId} '{c.Name}': {msg.Reason}; closing the link");
             _clientsByPeer.Remove(c.PeerId);
             _clientsById.Remove(c.ClientId);
+            ForgetClientInterest(c);
             EndPlayerLink(c, string.IsNullOrEmpty(msg.Reason) ? ReplacedReason : msg.Reason);
         }
 
@@ -1296,23 +1398,20 @@ namespace Nebula
             _writer.Reset();
             new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed }.Write(_writer);
             Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-            _writer.Reset();
-            ContainerOwnershipMsg.Write(_writer, _ownership);
-            Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-            // Carriers before their contents: a passenger's spawn names the ship's container, which the client
-            // can only resolve once it has the ship (it holds the spawn otherwise, but this keeps that rare).
-            _replayOrder.Clear();
-            _replayOrder.AddRange(_entities.Values);
-            _replayOrder.Sort((a, b) => CarrierDepth(a).CompareTo(CarrierDepth(b)));
-            foreach (var rec in _replayOrder)
-            {
-                if (!CanObserve(c, rec)) continue;
-                c.Visible.Add(rec.NetId);
-                rec.RefreshSpawnState(_scratch);
-                _writer.Reset();
-                rec.LastSpawn.Write(_writer, MsgId.EntitySpawn);
-                Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
-            }
+            // A session taken over through identity coordination rather than a token never went through
+            // TryReclaim, so the pawn it already owns has to be found here. With interest management the pawn is
+            // what gives the client a focus at all: without it the first evaluation would find nothing.
+            if (c.PawnNetId == 0)
+                foreach (var rec in _entities.Values)
+                    if (rec.OwnerClientId == c.ClientId) { c.PawnNetId = rec.NetId; break; }
+            // There is no replay: a reclaimed session starts with an empty set and its first evaluation is the
+            // replay, so the client is told exactly what it should have and nothing else (design §5).
+            c.Interest = null;
+            c.Visible.Clear();
+            c.ViewSeq.Clear();
+            c.InterestDirty = true;
+            SendOwnershipFull(c);
+            ReconcileView(c);
             if (c.PawnNetId != 0)
             {
                 // The pawn is still around: claim it from its worker, which re-announces it and routes the session here.
@@ -1332,6 +1431,7 @@ namespace Nebula
             ReleaseCoordinatedSession(c);
             _clientsByPeer.Remove(c.PeerId);
             _clientsById.Remove(c.ClientId);
+            ForgetClientInterest(c);
             NebulaLog.Info($"client {c.ClientId} '{c.Name}' disconnected");
             if (!c.Welcomed) return;
             // The worker keeps the pawn for SessionReclaimSeconds in case the client comes back (here or elsewhere);
@@ -1405,17 +1505,6 @@ namespace Nebula
                 if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
                 if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) continue;
                 candidates.Add(container);
-            }
-        }
-
-        private void BroadcastToClients(Delivery delivery)
-        {
-            var seg = _writer.ToSegment();
-            foreach (var c in _clientsById.Values)
-            {
-                if (!c.Welcomed) continue;
-                if (delivery == Delivery.ReliableOrdered) AppendReliable(c, seg);
-                else Send(c.PeerId, delivery, seg);
             }
         }
 

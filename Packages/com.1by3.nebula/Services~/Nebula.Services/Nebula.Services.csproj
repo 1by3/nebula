@@ -12,6 +12,7 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <Compile Include="../../Runtime/Orchestrator/**/*.cs" />
     <Compile Include="../../Runtime/Gateway/**/*.cs" />
+    <Compile Include="../../Runtime/Interest/**/*.cs" />
     <Compile Include="../../Runtime/ControlPlane/**/*.cs" />
     <Compile Include="../../Runtime/Protocol/**/*.cs" />
     <Compile Include="../../Runtime/Transport/**/*.cs" />

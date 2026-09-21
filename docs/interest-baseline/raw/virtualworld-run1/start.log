@@ -1,0 +1,19 @@
+==> control plane and saved entities in sqlite:C:\Dev\nebula-virtualworld\Library\Nebula\nebula.db
+==> starting the orchestrator with 4 worker(s) (fixed) and the game-defined 'npcs' setting at 0
+  . detach: nebula-orchestrator.exe -nebula-worker-exe C:\Dev\nebula-virtualworld\Builds\Win64\Nebula.exe -nebula-service-manifest C:\Dev\nebula-virtualworld\Builds\Win64\nebula-services.json -nebula-gateway 127.0.0.1:7200 -nebula-workers 4 -nebula-min-workers 4 -nebula-max-workers 4 -nebula-idle-pool 0 -nebula-settings npcs=0 -nebula-dashboard-port 7180 -nebula-database sqlite:C:\Dev\nebula-virtualworld\Library\Nebula\nebula.db -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\orchestrator.log -nebula-verbose
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot1 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot1.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot2 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot2.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot3 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot3.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot4 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot4.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot5 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot5.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot6 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot6.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot7 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot7.log
+  . detach: Nebula.exe -batchmode -nographics -nebula-role client -nebula-bot -nebula-name bot8 -nebula-gateway 127.0.0.1:7200 -logFile C:\Dev\nebula-virtualworld\Builds\Win64\Logs\bot8.log
+    started 8 bot client(s)
+    waiting for the dashboard...
+  + mesh is up: 0 live worker(s), 0 player(s), 0 bot(s), 0 NPC(s), desired 4
+
+    dashboard   http://localhost:7180/
+    gateway     127.0.0.1:7200  (press Play in the Editor, or run the client build)
+    logs        C:\Dev\nebula-virtualworld\Builds\Win64\Logs  (`nebula logs orchestrator|gateway|w1`)
+    stop        nebula stop

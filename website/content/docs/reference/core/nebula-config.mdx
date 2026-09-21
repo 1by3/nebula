@@ -7,7 +7,7 @@ description: "Project-wide Nebula settings."
 
 ```csharp
 [CreateAssetMenu(menuName = "Nebula/Config", fileName = "NebulaConfig")]
-public sealed class NebulaConfig : ScriptableObject
+public sealed partial class NebulaConfig : ScriptableObject
 ```
 
 Project-wide Nebula settings. Workers and clients load Resources/NebulaConfig. Builds export its settings to nebula-services.json for the standalone orchestrator and gateway. Command-line switches override fields at runtime.
@@ -444,6 +444,174 @@ public float SceneEntityGraceSeconds = 2f;
 
 After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.
 
+### InterestRadius [#interestradius]
+
+```csharp
+public float InterestRadius = 120f;
+```
+
+How far a client hears about an entity, in metres. A prefab's RelevanceRadius overrides it per entity. This bounds what a client is sent, not what the mesh simulates. -nebula-interest-radius overrides.
+
+### InterestExitMargin [#interestexitmargin]
+
+```csharp
+public float InterestExitMargin = 16f;
+```
+
+Extra metres an entity must travel past InterestRadius before it leaves a client's set. Stops an entity on the boundary from spawning and despawning repeatedly.
+
+### InterestLingerSeconds [#interestlingerseconds]
+
+```csharp
+public float InterestLingerSeconds = 1f;
+```
+
+Seconds an entity must stay past the exit radius before the client is told to despawn it.
+
+### InterestCellSize [#interestcellsize]
+
+```csharp
+public float InterestCellSize = 64f;
+```
+
+Edge of one interest region, in metres. With a world definition this is snapped to an integer division of the cell size so region edges fall on cell edges. -nebula-interest-cell overrides.
+
+### InterestPlanar [#interestplanar]
+
+```csharp
+public bool InterestPlanar = true;
+```
+
+Regions are infinite columns: height does not take part in the region key. Right for a surface world; turn it off for a space or volume game.
+
+### InterestEvalHz [#interestevalhz]
+
+```csharp
+public float InterestEvalHz = 4f;
+```
+
+How often each client's interest set is re-evaluated, in times per second. Evaluations are staggered across ticks, and a client is also evaluated at once when its focus crosses a region edge.
+
+### InterestSubscribeMargin [#interestsubscribemargin]
+
+```csharp
+public float InterestSubscribeMargin = 32f;
+```
+
+Extra metres of regions a gateway subscribes around a focus, so entities are already arriving before the client can see them. Must cover the distance a focus travels between two evaluations.
+
+### InterestRegionLingerSeconds [#interestregionlingerseconds]
+
+```csharp
+public float InterestRegionLingerSeconds = 3f;
+```
+
+Seconds a region stays subscribed after the last client needed it, so a player pacing along a region edge does not make a worker start and stop sending.
+
+### InterestLinkLingerSeconds [#interestlinklingerseconds]
+
+```csharp
+public float InterestLinkLingerSeconds = 10f;
+```
+
+Seconds a gateway keeps a worker connection after the last reason to hold it has gone.
+
+### InterestResyncSeconds [#interestresyncseconds]
+
+```csharp
+public float InterestResyncSeconds = 30f;
+```
+
+Seconds between the audit snapshots a gateway sends of its whole subscription, whatever the deltas said.
+
+### InterestMaxRadius [#interestmaxradius]
+
+```csharp
+public float InterestMaxRadius = 1024f;
+```
+
+Ceiling on a prefab's RelevanceRadius, in metres. Also how far a wide entity may reach, which bounds the work of matching it against every client. It is never uncapped: a value of 0 or less is reported by Validate and replaced with InterestRadius.
+
+### InterestMaxFoci [#interestmaxfoci]
+
+```csharp
+public int InterestMaxFoci = 8;
+```
+
+Most places one client may be interested in at once (an RTS camera plus owned units, a spectator's target). Foci beyond this are dropped.
+
+### InterestHintMaxDistance [#interesthintmaxdistance]
+
+```csharp
+public float InterestHintMaxDistance = 60f;
+```
+
+How far a client's focus hint may sit from its pawn, in metres. A further hint is clamped to this distance; a hint is an input, never authority.
+
+### InterestHintMaxHz [#interesthintmaxhz]
+
+```csharp
+public float InterestHintMaxHz = 5f;
+```
+
+Most focus hints accepted from one client per second. The rest are dropped.
+
+### InterestMaxExplicitPerClient [#interestmaxexplicitperclient]
+
+```csharp
+public int InterestMaxExplicitPerClient = 16;
+```
+
+Most entities one client's policy may subscribe by id (party members, quest targets).
+
+### InterestMaxFocusSpeed [#interestmaxfocusspeed]
+
+```csharp
+public float InterestMaxFocusSpeed = 12f;
+```
+
+The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.
+
+### PartitionWarnEntities [#partitionwarnentities]
+
+```csharp
+public int PartitionWarnEntities = 2000;
+```
+
+A worker warns when one container holds more than this many entities: the world wants partitioning, because one container is one worker's simulation budget. 0 turns the warning off.
+
+### PartitionWarnFilterMs [#partitionwarnfilterms]
+
+```csharp
+public float PartitionWarnFilterMs = 2f;
+```
+
+A worker warns when filtering its entities for the gateways takes longer than this many milliseconds per tick. 0 turns the warning off.
+
+### ChunkedWorld [#chunkedworld]
+
+```csharp
+public bool ChunkedWorld = false;
+```
+
+Turnkey unbounded chunked world: with a RuntimeWorld assigned, Nebula builds the chunk grid from its cell size, leases chunks around every pawn on workers, keeps the floating origin near the pawn on clients, and raises NebulaChunks.Loaded/Unloading on every role. The game only supplies chunk content.
+
+### ChunkPlanar [#chunkplanar]
+
+```csharp
+public bool ChunkPlanar = true;
+```
+
+Chunks are columns: the grid has one layer at y = 0 and RuntimeWorld's CellSize.y is the column height. Right for a surface world; turn it off for a volumetric one.
+
+### ChunkRetireSeconds [#chunkretireseconds]
+
+```csharp
+public float ChunkRetireSeconds = 30f;
+```
+
+Seconds a chunk nobody needs stays leased before the worker retires it (its persistent contents are checkpointed and come back).
+
 ### InterestNearRadius [#interestnearradius]
 
 ```csharp
@@ -523,3 +691,45 @@ Every prefab that can be spawned over the network. The index is the prefab id on
 ```csharp
 public static NebulaConfig Load();
 ```
+
+### ToInterestSettings [#tointerestsettings]
+
+```csharp
+public InterestSettings ToInterestSettings();
+public InterestSettings ToInterestSettings(float worldCellSize);
+```
+
+The resolved, clamped interest settings. Repairs are silent here — [`Validate`](#validate) is where they are reported — so that a role can start with values that work even when nobody is reading the log.
+
+### RawInterestSettings [#rawinterestsettings]
+
+```csharp
+public InterestSettings RawInterestSettings();
+```
+
+The settings exactly as configured, before any repair. Validation works on this.
+
+### Validate [#validate]
+
+```csharp
+public void Validate(List<ConfigIssue> issues);
+public void Validate(List<ConfigIssue> issues, float worldCellSize);
+```
+
+Everything wrong with this configuration, worst last-resort first: an [`ConfigSeverity.Error`](/docs/reference/interest/config-severity#error) is a value no clamp can rescue and start-up should stop on, a [`ConfigSeverity.Warning`](/docs/reference/interest/config-severity#warning) is a value that was repaired and will not behave as typed.
+
+### ResolveWorldCellSize [#resolveworldcellsize]
+
+```csharp
+public float ResolveWorldCellSize();
+```
+
+The world definition's cell size, or 0 when the game has no world definition. Everything that has to agree on one notion of "near" (design §8) — content streaming, the allocator ring, the container window a client is told about — derives from this and [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells).
+
+### ToInterestGrid [#tointerestgrid]
+
+```csharp
+public InterestGrid ToInterestGrid();
+```
+
+The interest grid this mesh uses: the resolved settings snapped onto the world's cells so a region never straddles a cell edge (design §3). Both ends derive it from this, which is what lets the worker reject a subscription built with a different one instead of filtering with ids that mean something else.

@@ -1,0 +1,246 @@
+---
+title: "InterestSettings"
+description: "The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs)</div>
+
+```csharp
+public struct InterestSettings
+```
+
+The interest knobs, resolved from [`NebulaConfig`](/docs/reference/core/nebula-config) and already clamped into a set of values that work together (see [`Validate`](#validate)). Everything downstream — grid, per-client evaluation, subscription margins, worker publishing — reads this and nothing else, so the standalone gateway and the Unity worker cannot drift apart over what "near" means.
+
+## Fields
+
+### Radius [#radius]
+
+```csharp
+public float Radius;
+```
+
+Metres a client hears about an entity at, unless the entity's prefab overrides it.
+
+### ExitMargin [#exitmargin]
+
+```csharp
+public float ExitMargin;
+```
+
+Extra metres an entity must travel past [`Radius`](#radius) before it leaves the set (hysteresis).
+
+### LingerSeconds [#lingerseconds]
+
+```csharp
+public float LingerSeconds;
+```
+
+Seconds an entity must stay outside `Radius + ExitMargin` before it is despawned.
+
+### CellSize [#cellsize]
+
+```csharp
+public float CellSize;
+```
+
+Region edge in metres, before the alignment snap of design §3.
+
+### Planar [#planar]
+
+```csharp
+public bool Planar;
+```
+
+Regions are columns: Y does not enter a region key. True for surface worlds.
+
+### EvalHz [#evalhz]
+
+```csharp
+public float EvalHz;
+```
+
+How often a client's interest set is re-evaluated, in hertz.
+
+### SubscribeMargin [#subscribemargin]
+
+```csharp
+public float SubscribeMargin;
+```
+
+Extra metres of regions subscribed beyond the exit radius, so a moving client is never late.
+
+### RegionLingerSeconds [#regionlingerseconds]
+
+```csharp
+public float RegionLingerSeconds;
+```
+
+Seconds a region stays subscribed after it stops being needed (anti-thrash along an edge).
+
+### LinkLingerSeconds [#linklingerseconds]
+
+```csharp
+public float LinkLingerSeconds;
+```
+
+Seconds a worker link is kept after the last reason to hold it has gone.
+
+### ResyncSeconds [#resyncseconds]
+
+```csharp
+public float ResyncSeconds;
+```
+
+How often a gateway re-sends a Full subscription snapshot as an audit.
+
+### MaxRadius [#maxradius]
+
+```csharp
+public float MaxRadius;
+```
+
+Ceiling on a prefab's `RelevanceRadius`; also how far a wide entity may reach.
+
+### MaxFoci [#maxfoci]
+
+```csharp
+public int MaxFoci;
+```
+
+Most foci one client may have (RTS camera plus owned units, spectators).
+
+### HintMaxDistance [#hintmaxdistance]
+
+```csharp
+public float HintMaxDistance;
+```
+
+Metres a client's focus hint may sit from its pawn before it is clamped.
+
+### HintMaxHz [#hintmaxhz]
+
+```csharp
+public float HintMaxHz;
+```
+
+Most focus hints accepted from one client per second; the rest are dropped.
+
+### MaxExplicitPerClient [#maxexplicitperclient]
+
+```csharp
+public int MaxExplicitPerClient;
+```
+
+Most explicit per-entity subscriptions one client's policy may ask for.
+
+### MaxFocusSpeed [#maxfocusspeed]
+
+```csharp
+public float MaxFocusSpeed;
+```
+
+The fastest a focus is expected to move, in metres per second. Only used to validate [`SubscribeMargin`](#subscribemargin).
+
+### NearRadius [#nearradius]
+
+```csharp
+public float NearRadius;
+```
+
+Rate tier inside the set: entities within this radius get every tick.
+
+### FarRadius [#farradius]
+
+```csharp
+public float FarRadius;
+```
+
+Rate tier inside the set: entities beyond this radius get every [`FarDivisor`](#fardivisor)-th tick.
+
+### MidDivisor [#middivisor]
+
+```csharp
+public int MidDivisor;
+```
+
+### FarDivisor [#fardivisor]
+
+```csharp
+public int FarDivisor;
+```
+
+### ClientLoadRadiusCells [#clientloadradiuscells]
+
+```csharp
+public int ClientLoadRadiusCells;
+```
+
+Cells of content a client keeps loaded; raised to cover the interest radius (design §8).
+
+### PartitionWarnEntities [#partitionwarnentities]
+
+```csharp
+public int PartitionWarnEntities;
+```
+
+Entities in one container above which the worker warns that the world wants partitioning.
+
+### PartitionWarnFilterMs [#partitionwarnfilterms]
+
+```csharp
+public float PartitionWarnFilterMs;
+```
+
+Milliseconds of per-gateway filtering per tick above which the worker warns the same way.
+
+## Properties
+
+### Default [#default]
+
+```csharp
+public static InterestSettings Default { get; }
+```
+
+The shipped defaults (design §9). A game that sets nothing gets these.
+
+### ExitRadius [#exitradius]
+
+```csharp
+public float ExitRadius { get; }
+```
+
+Metres an entity must be outside before the linger clock even starts.
+
+### SubscribeRadius [#subscriberadius]
+
+```csharp
+public float SubscribeRadius { get; }
+```
+
+Metres of regions a gateway subscribes around a focus: the exit radius plus the pre-subscription margin.
+
+### EvalInterval [#evalinterval]
+
+```csharp
+public float EvalInterval { get; }
+```
+
+Seconds between two evaluations of one client.
+
+## Methods
+
+### NearCells [#nearcells]
+
+```csharp
+public int NearCells(float cellSize);
+```
+
+One notion of "near" (design §8): the cells of content that must exist before interest needs them. Content streaming, the runtime allocator ring and the container window a client is told about all derive from this, so a client can never be spawned an entity standing on geometry it does not have.
+
+### Validate [#validate]
+
+```csharp
+public InterestSettings Validate(List<ConfigIssue> issues, float worldCellSize = 0f, float ghostBandMargin = 0f);
+```
+
+Check the relationships design §9 requires and return the values that will actually be used. Anything that can be repaired is repaired and reported as a [`ConfigSeverity.Warning`](/docs/reference/interest/config-severity#warning); only a non-positive size is an [`ConfigSeverity.Error`](/docs/reference/interest/config-severity#error), because no clamp of it would be what the game asked for. `worldCellSize` is the world definition's cell size (0 = none) and `ghostBandMargin` the meshing band, both of which constrain the region size.

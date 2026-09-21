@@ -1,0 +1,3 @@
+﻿[typecheck] building 6 assemblies: LiteNetLib, VirtualWorld.Editor, Nebula.Runtime, VirtualWorld, Nebula.Editor, Nebula.World
+[typecheck] FAILED (1 errors)
+  C:\Dev\nebula-virtualworld\Assets\VirtualWorld\Scripts\VirtualWorldGameMode.cs(48,41): error CS0115: 'VirtualWorldGameMode.OnSpawnPlayer(NebulaWorker, uint, string, Container)': no suitable method found to override

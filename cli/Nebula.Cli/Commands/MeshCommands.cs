@@ -7,7 +7,7 @@ public sealed class StartCommand : Command
 {
     public override string Name => "start";
     public override string Summary => "Start the orchestrator, gateway, and workers on this computer";
-    public override string Usage => "[--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence] [--reset-sessions]";
+    public override string Usage => "[--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--bot-args \"...\"] [--open-ui] [--reset-persistence] [--reset-sessions]";
     public override string? Details => @"
 Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and
 starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client
@@ -24,6 +24,10 @@ stay across restarts unless you pass --reset-persistence.
 
 --reset-sessions clears held player-session claims without deleting saved entities. Use it only after every
 gateway of this mesh has stopped, to recover claims whose previous gateway cannot acknowledge disconnection.
+
+--bots starts headless client processes with -nebula-bot; what they do is the game's code. --bot-args appends
+its value to every one of those command lines unchanged, which is how a game selects a deterministic bot
+behaviour for a soak run (`nebula start --bots 4 --bot-args ""-vw-bot-line""`).
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -32,11 +36,12 @@ gateway of this mesh has stopped, to recover claims whose previous gateway canno
         WorkerBand.MinOption, WorkerBand.MaxOption,
         new OptionSpec("npcs", true, "set the game-defined 'npcs' mesh setting at startup (default 0)", "N"),
         new OptionSpec("bots", true, "start headless clients with the bot flag; the game supplies their behavior (default 0)", "N"),
+        new OptionSpec("bot-args", true, "extra command-line arguments appended to every bot client, e.g. --bot-args \"-mygame-bot-line\"; the game reads them itself", "ARGS"),
         new OptionSpec("open-ui", false, "open the Nebula Dashboard in the browser once it is up"),
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
         new OptionSpec("reset-sessions", false, "clear player-session claims; stop every gateway of this mesh first"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence", "nebula start --bots 3 --bot-args \"-vw-bot-line\"" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {
@@ -47,7 +52,7 @@ gateway of this mesh has stopped, to recover claims whose previous gateway canno
         var band = WorkerBand.Resolve(args, mesh.Workers, mesh.MinWorkers, mesh.MaxWorkers);
         LocalMesh.Start(ctx, project, new LocalMesh.StartOptions(
             band.Start, band.Min, band.Max, args.GetInt("npcs", mesh.Npcs), args.GetInt("bots", 0),
-            args.Has("open-ui"), args.Has("reset-persistence"), args.Has("reset-sessions")));
+            args.Has("open-ui"), args.Has("reset-persistence"), args.Has("reset-sessions"), args.Get("bot-args")));
         return 0;
     }
 }

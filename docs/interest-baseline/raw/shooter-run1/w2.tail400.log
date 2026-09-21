@@ -1,0 +1,400 @@
+﻿UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[nebula] ghost Starhopper(Clone)#281474976710707(e71,outdoor-west-south,auth) -> w1
+[nebula] handover IN  Starhopper(Clone)#281474976710707(e71,outdoor-west-south,auth) <- w1 (epoch 71, tick 1364121846)
+[nebula] ghost Npc(Clone)#281474976710666(e8,barracks-row,auth) -> w1
+[nebula] ghost Npc(Clone)#281474976710666(e8,barracks-row,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710666(e8,barracks-row,auth) <- w1 (epoch 8, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03 (1)#562949953421328(e7,barracks-row,auth,scene 4108636478) -> w1
+[nebula] ghost SM_Bld_Door_Single_03 (1)#562949953421328(e7,barracks-row,auth,scene 4108636478) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03 (1)#562949953421328(e7,barracks-row,auth,scene 4108636478) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03 (4)#562949953421329(e7,barracks-row,auth,scene 4092531097) -> w1
+[nebula] ghost SM_Bld_Door_Single_03 (4)#562949953421329(e7,barracks-row,auth,scene 4092531097) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03 (4)#562949953421329(e7,barracks-row,auth,scene 4092531097) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03 (5)#562949953421330(e7,barracks-row,auth,scene 3373461316) -> w1
+[nebula] ghost SM_Bld_Door_Single_03 (5)#562949953421330(e7,barracks-row,auth,scene 3373461316) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03 (5)#562949953421330(e7,barracks-row,auth,scene 3373461316) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03 (2)#562949953421334(e7,barracks-row,auth,scene 355796500) -> w1
+[nebula] ghost SM_Bld_Door_Single_03 (2)#562949953421334(e7,barracks-row,auth,scene 355796500) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03 (2)#562949953421334(e7,barracks-row,auth,scene 355796500) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03#562949953421339(e7,barracks-row,auth,scene 571471080) -> w1
+[nebula] ghost SM_Bld_Door_Single_03#562949953421339(e7,barracks-row,auth,scene 571471080) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03#562949953421339(e7,barracks-row,auth,scene 571471080) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03 (3)#562949953421341(e7,barracks-row,auth,scene 1403603119) -> w1
+[nebula] ghost SM_Bld_Door_Single_03 (3)#562949953421341(e7,barracks-row,auth,scene 1403603119) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03 (3)#562949953421341(e7,barracks-row,auth,scene 1403603119) <- w1 (epoch 7, tick 1364121846)
+[nebula] ghost Player(Clone)#844424930132006(e10,barracks-row,auth) -> w1
+[nebula] ghost Player(Clone)#844424930132006(e10,barracks-row,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930132006(e10,barracks-row,auth) <- w1 (epoch 10, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Double_01 (4)#562949953421344(e3,explorer-dome,auth,scene 2293373018) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (4)#562949953421344(e3,explorer-dome,auth,scene 2293373018) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Double_01 (6)#562949953421350(e3,explorer-dome,auth,scene 4060373325) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (6)#562949953421350(e3,explorer-dome,auth,scene 4060373325) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Double_04#562949953421354(e3,explorer-dome,auth,scene 3251823986) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_04#562949953421354(e3,explorer-dome,auth,scene 3251823986) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Double_01 (2)#562949953421357(e3,explorer-dome,auth,scene 2140525166) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (2)#562949953421357(e3,explorer-dome,auth,scene 2140525166) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Double_01 (5)#562949953421358(e3,explorer-dome,auth,scene 753146858) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (5)#562949953421358(e3,explorer-dome,auth,scene 753146858) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost Player bot2 (15706508737898348549)#562949953421367(e3,explorer-dome,auth) -> w1
+[nebula] handover IN  Player bot2 (15706508737898348549)#562949953421367(e3,explorer-dome,auth) <- w1 (epoch 3, tick 1364121846)
+[nebula] ghost Npc(Clone)#281474976710658(e8,explorer-labs-southeast,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710658(e8,explorer-labs-southeast,auth) <- w1 (epoch 8, tick 1364121846)
+[nebula] ghost Npc(Clone)#281474976710668(e8,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710668(e8,cell_0_0_n2,auth) <- w1 (epoch 8, tick 1364121846)
+[nebula] ghost Npc(Clone)#281474976710708(e8,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710708(e8,cell_0_0_n2,auth) <- w1 (epoch 8, tick 1364121846)
+[nebula] ghost Npc(Clone)#562949953421318(e9,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421318(e9,explorer-outdoor-se,auth) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_02 (1)#562949953421342(e9,explorer-pods-south,auth,scene 421260561) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_02 (1)#562949953421342(e9,explorer-pods-south,auth,scene 421260561) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_01 (5)#562949953421346(e9,explorer-pods-south,auth,scene 3872273153) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_01 (5)#562949953421346(e9,explorer-pods-south,auth,scene 3872273153) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_02 (2)#562949953421355(e9,explorer-pods-south,auth,scene 2179225276) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_02 (2)#562949953421355(e9,explorer-pods-south,auth,scene 2179225276) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost SM_Bld_Door_Single_03#562949953421356(e9,explorer-labs-southeast,auth,scene 1075474036) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_03#562949953421356(e9,explorer-labs-southeast,auth,scene 1075474036) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost Npc(Clone)#281474976710664(e8,explorer-dome,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710664(e8,explorer-dome,auth) <- w1 (epoch 8, tick 1364121846)
+[nebula] ghost Npc(Clone)#562949953421313(e9,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421313(e9,cell_0_0_n2,auth) <- w1 (epoch 9, tick 1364121846)
+[nebula] ghost Player(Clone)#562949953421366(e11,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Player(Clone)#562949953421366(e11,explorer-outdoor-se,auth) <- w1 (epoch 11, tick 1364121846)
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/outdoor-west-south/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/outdoor-west-south/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+[nebula] ghost Npc(Clone)#281474976710666(e8,barracks-row,auth) -> w4
+[nebula] ghost SM_Bld_Door_Single_03 (1)#562949953421328(e7,barracks-row,auth,scene 4108636478) -> w4
+[nebula] ghost SM_Bld_Door_Single_03 (4)#562949953421329(e7,barracks-row,auth,scene 4092531097) -> w4
+[nebula] ghost SM_Bld_Door_Single_03 (5)#562949953421330(e7,barracks-row,auth,scene 3373461316) -> w4
+[nebula] ghost SM_Bld_Door_Single_03 (2)#562949953421334(e7,barracks-row,auth,scene 355796500) -> w4
+[nebula] ghost SM_Bld_Door_Single_03#562949953421339(e7,barracks-row,auth,scene 571471080) -> w4
+[nebula] ghost SM_Bld_Door_Single_03 (3)#562949953421341(e7,barracks-row,auth,scene 1403603119) -> w4
+[nebula] ghost Player(Clone)#844424930132006(e10,barracks-row,auth) -> w4
+[nebula] handover OUT Starhopper(Clone)#281474976710707(e72,outdoor-west-south,ghost) -> w1 (epoch 72, tick 1364121875)
+[nebula] handover OUT Npc(Clone)#281474976710666(e9,barracks-row,ghost) -> w1 (epoch 9, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03 (1)#562949953421328(e8,barracks-row,ghost,scene 4108636478) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03 (4)#562949953421329(e8,barracks-row,ghost,scene 4092531097) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03 (5)#562949953421330(e8,barracks-row,ghost,scene 3373461316) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03 (2)#562949953421334(e8,barracks-row,ghost,scene 355796500) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03#562949953421339(e8,barracks-row,ghost,scene 571471080) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_03 (3)#562949953421341(e8,barracks-row,ghost,scene 1403603119) -> w1 (epoch 8, tick 1364121875)
+[nebula] handover OUT Player(Clone)#844424930132006(e11,barracks-row,ghost) -> w1 (epoch 11, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_02 (1)#562949953421342(e10,explorer-pods-south,ghost,scene 421260561) -> w1 (epoch 10, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_01 (5)#562949953421346(e10,explorer-pods-south,ghost,scene 3872273153) -> w1 (epoch 10, tick 1364121875)
+[nebula] handover OUT SM_Bld_Door_Single_02 (2)#562949953421355(e10,explorer-pods-south,ghost,scene 2179225276) -> w1 (epoch 10, tick 1364121875)
+[nebula] ghost Npc(Clone)#281474976710660(e7,market-outdoor-nw,auth) -> w1
+[nebula] ghost Npc(Clone)#281474976710660(e7,market-outdoor-nw,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710660(e7,market-outdoor-nw,auth) <- w3 (epoch 7, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_05#562949953421359(e11,market-crates-west,auth,scene 2629873348) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05#562949953421359(e11,market-crates-west,auth,scene 2629873348) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_05#562949953421360(e11,market-crates-west,auth,scene 13748600) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05#562949953421360(e11,market-crates-west,auth,scene 13748600) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_04#562949953421361(e11,market-crates-west,auth,scene 3819297610) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_04#562949953421361(e11,market-crates-west,auth,scene 3819297610) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_05#844424930132001(e8,market-crates-overhang,auth,scene 3619022602) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05#844424930132001(e8,market-crates-overhang,auth,scene 3619022602) <- w3 (epoch 8, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_05 (1)#562949953421362(e11,market-crates-west,auth,scene 448879760) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05 (1)#562949953421362(e11,market-crates-west,auth,scene 448879760) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_03#844424930132002(e8,market-crates-overhang,auth,scene 3566868718) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_03#844424930132002(e8,market-crates-overhang,auth,scene 3566868718) <- w3 (epoch 8, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_04 (1)#562949953421363(e11,market-crates-west,auth,scene 3394510325) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_04 (1)#562949953421363(e11,market-crates-west,auth,scene 3394510325) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_05#562949953421364(e11,market-crates-west,auth,scene 3438323027) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05#562949953421364(e11,market-crates-west,auth,scene 3438323027) <- w3 (epoch 11, tick 1364121875)
+[nebula] ghost SM_Bld_Door_Single_01#562949953421365(e11,market-crates-west,auth,scene 2753229898) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_01#562949953421365(e11,market-crates-west,auth,scene 2753229898) <- w3 (epoch 11, tick 1364121875)
+[nebula] handover OUT Npc(Clone)#281474976710669(e3,explorer-outdoor-se,ghost) -> w1 (epoch 3, tick 1364121906)
+[nebula] handover OUT Npc(Clone)#281474976710658(e9,explorer-labs-southeast,ghost) -> w1 (epoch 9, tick 1364121906)
+[nebula] handover OUT Npc(Clone)#281474976710668(e9,cell_0_0_n2,ghost) -> w1 (epoch 9, tick 1364121906)
+[nebula] handover OUT Npc(Clone)#281474976710708(e9,cell_0_0_n2,ghost) -> w1 (epoch 9, tick 1364121906)
+[nebula] handover OUT Npc(Clone)#562949953421318(e10,explorer-outdoor-se,ghost) -> w1 (epoch 10, tick 1364121906)
+[nebula] handover OUT SM_Bld_Door_Single_03#562949953421356(e10,explorer-labs-southeast,ghost,scene 1075474036) -> w1 (epoch 10, tick 1364121906)
+[nebula] handover OUT Npc(Clone)#562949953421313(e10,cell_0_0_n2,ghost) -> w1 (epoch 10, tick 1364121906)
+[nebula] handover OUT Player(Clone)#562949953421366(e12,explorer-outdoor-se,ghost) -> w1 (epoch 12, tick 1364121906)
+[nebula] spawned NPC npc-1#562949953421369(e1,explorer-dome,auth)
+[nebula] NPC total 60: mesh has 56 on 4 worker(s), spawned 1/1 here (rank 1)
+[nebula] ghost Npc(Clone)#562949953421316(e5,market-crates-north,auth) -> w3
+[nebula] handover IN  Npc(Clone)#562949953421316(e5,market-crates-north,auth) <- w3 (epoch 5, tick 1364121906)
+[nebula] ghost SM_Bld_Door_Single_01#844424930132000(e4,market-crates-north,auth,scene 2626293685) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_01#844424930132000(e4,market-crates-north,auth,scene 2626293685) <- w3 (epoch 4, tick 1364121906)
+[nebula] ghost SM_Bld_Door_Single_04#844424930132004(e4,market-crates-north,auth,scene 4274335500) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_04#844424930132004(e4,market-crates-north,auth,scene 4274335500) <- w3 (epoch 4, tick 1364121906)
+[nebula] ghost Npc(Clone)#281474976710659(e4,explorer-outdoor-ne,auth) -> w1
+[nebula] handover OUT Npc(Clone)#281474976710659(e5,cell_0_0_n2,ghost) -> w1 (epoch 5, tick 1364121954)
+[nebula] handover OUT Npc(Clone)#281474976710664(e9,explorer-outdoor-se,ghost) -> w1 (epoch 9, tick 1364121972)
+[nebula] ghost Npc(Clone)#562949953421319(e3,explorer-roundhouse,auth) -> w1
+[nebula] handover OUT SM_Bld_Door_Double_01 (1)#562949953421343(e2,explorer-hab-north,ghost,scene 2213808032) -> w1 (epoch 2, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Single_04 (2)#562949953421345(e2,explorer-hab-north,ghost,scene 4130954835) -> w1 (epoch 2, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Single_04#562949953421351(e2,explorer-hab-north,ghost,scene 1065894492) -> w1 (epoch 2, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Double_01 (4)#562949953421344(e4,explorer-dome,ghost,scene 2293373018) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Double_01 (6)#562949953421350(e4,explorer-dome,ghost,scene 4060373325) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Double_04#562949953421354(e4,explorer-dome,ghost,scene 3251823986) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Double_01 (2)#562949953421357(e4,explorer-dome,ghost,scene 2140525166) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT SM_Bld_Door_Double_01 (5)#562949953421358(e4,explorer-dome,ghost,scene 753146858) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT Player bot2 (15706508737898348549)#562949953421367(e4,explorer-dome,ghost) -> w1 (epoch 4, tick 1364121998)
+[nebula] handover OUT NPC npc-1#562949953421369(e2,explorer-dome,ghost) -> w1 (epoch 2, tick 1364121998)
+[nebula] ghost SM_Bld_Door_Single_05 (4)#844424930131998(e2,market-vendor-hall,auth,scene 1301811477) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05 (4)#844424930131998(e2,market-vendor-hall,auth,scene 1301811477) <- w3 (epoch 2, tick 1364121998)
+[nebula] ghost SM_Bld_Door_Single_05#844424930131999(e2,market-vendor-hall,auth,scene 2777501286) -> w1
+[nebula] ghost SM_Bld_Door_Single_05#844424930131999(e2,market-vendor-hall,auth,scene 2777501286) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05#844424930131999(e2,market-vendor-hall,auth,scene 2777501286) <- w3 (epoch 2, tick 1364121998)
+[nebula] ghost SM_Bld_Door_Single_05 (2)#844424930132003(e2,market-vendor-hall,auth,scene 1424048872) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05 (2)#844424930132003(e2,market-vendor-hall,auth,scene 1424048872) <- w3 (epoch 2, tick 1364121998)
+[nebula] ghost SM_Bld_Door_Single_05 (1)#844424930132005(e2,market-vendor-hall,auth,scene 423767540) -> w3
+[nebula] handover IN  SM_Bld_Door_Single_05 (1)#844424930132005(e2,market-vendor-hall,auth,scene 423767540) <- w3 (epoch 2, tick 1364121998)
+[nebula] ghost Npc(Clone)#844424930131980(e4,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131980(e4,cell_n2_0_0,auth) <- w3 (epoch 4, tick 1364121998)
+[nebula] ghost Npc(Clone)#281474976710661(e5,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710661(e5,cell_n2_0_0,auth) <- w3 (epoch 5, tick 1364121998)
+[nebula] ghost Npc(Clone)#844424930131970(e8,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131970(e8,cell_n2_0_0,auth) <- w3 (epoch 8, tick 1364121998)
+[nebula] ghost Npc(Clone)#844424930131979(e22,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131979(e22,cell_n2_0_0,auth) <- w3 (epoch 22, tick 1364121998)
+[nebula] ghost Npc(Clone)#844424930131974(e10,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131974(e10,cell_n2_0_0,auth) <- w3 (epoch 10, tick 1364121998)
+[nebula] ghost Npc(Clone)#281474976710667(e5,cell_n2_0_0,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710667(e5,cell_n2_0_0,auth) <- w3 (epoch 5, tick 1364121998)
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 3.2ms dup 0 skip 0 gc 8 auth 40 ghosts 24 | npc.brain=0.05(3100) npc.move=0.27(3341) npc.fire=0.00(6) npc.path=0.00(71) npc.presence=0.01(80) poll=0.12 ghosts=0.07 physics.sync=0.13 simulate=0.65 poses=0.08 containers=0.24 band=0.10 publish=0.03 gap=15.20
+[nebula] kill: npc-25 killed npc-5
+[nebula] handover OUT Npc(Clone)#281474976710660(e8,market-outdoor-nw,ghost) -> w3 (epoch 8, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_05#844424930132001(e9,market-crates-overhang,ghost,scene 3619022602) -> w3 (epoch 9, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_03#844424930132002(e9,market-crates-overhang,ghost,scene 3566868718) -> w3 (epoch 9, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#562949953421316(e6,market-crates-north,ghost) -> w3 (epoch 6, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_01#844424930132000(e5,market-crates-north,ghost,scene 2626293685) -> w3 (epoch 5, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_04#844424930132004(e5,market-crates-north,ghost,scene 4274335500) -> w3 (epoch 5, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_05 (4)#844424930131998(e3,market-vendor-hall,ghost,scene 1301811477) -> w3 (epoch 3, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_05#844424930131999(e3,market-vendor-hall,ghost,scene 2777501286) -> w3 (epoch 3, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_05 (2)#844424930132003(e3,market-vendor-hall,ghost,scene 1424048872) -> w3 (epoch 3, tick 1364122151)
+[nebula] handover OUT SM_Bld_Door_Single_05 (1)#844424930132005(e3,market-vendor-hall,ghost,scene 423767540) -> w3 (epoch 3, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#844424930131980(e5,cell_n2_0_0,ghost) -> w3 (epoch 5, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#281474976710661(e6,cell_n2_0_0,ghost) -> w3 (epoch 6, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#844424930131970(e9,cell_n2_0_0,ghost) -> w3 (epoch 9, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#844424930131979(e23,cell_n2_0_0,ghost) -> w3 (epoch 23, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#844424930131974(e11,cell_n2_0_0,ghost) -> w3 (epoch 11, tick 1364122151)
+[nebula] handover OUT Npc(Clone)#281474976710667(e6,cell_n2_0_0,ghost) -> w3 (epoch 6, tick 1364122151)
+[nebula] ghost SM_Bld_Door_Single_04#562949953421331(e3,radar,auth,scene 3491910054) -> w4
+[nebula] ghost SM_Bld_Door_Single_05#562949953421359(e11,market-crates-west,auth,scene 2629873348) -> w3
+[nebula] ghost SM_Bld_Door_Single_05#562949953421360(e11,market-crates-west,auth,scene 13748600) -> w3
+[nebula] ghost SM_Bld_Door_Single_04#562949953421361(e11,market-crates-west,auth,scene 3819297610) -> w3
+[nebula] ghost SM_Bld_Door_Single_05 (1)#562949953421362(e11,market-crates-west,auth,scene 448879760) -> w3
+[nebula] ghost SM_Bld_Door_Single_04 (1)#562949953421363(e11,market-crates-west,auth,scene 3394510325) -> w3
+[nebula] ghost SM_Bld_Door_Single_05#562949953421364(e11,market-crates-west,auth,scene 3438323027) -> w3
+[nebula] ghost SM_Bld_Door_Single_01#562949953421365(e11,market-crates-west,auth,scene 2753229898) -> w3
+[nebula] ghost SM_Bld_Door_Single_02 (1)#562949953421342(e11,explorer-pods-south,auth,scene 421260561) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_02 (1)#562949953421342(e11,explorer-pods-south,auth,scene 421260561) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Single_01 (5)#562949953421346(e11,explorer-pods-south,auth,scene 3872273153) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_01 (5)#562949953421346(e11,explorer-pods-south,auth,scene 3872273153) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Single_02 (2)#562949953421355(e11,explorer-pods-south,auth,scene 2179225276) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_02 (2)#562949953421355(e11,explorer-pods-south,auth,scene 2179225276) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost Npc(Clone)#281474976710669(e4,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710669(e4,explorer-outdoor-se,auth) <- w1 (epoch 4, tick 1364122152)
+[nebula] ghost Npc(Clone)#281474976710658(e10,explorer-labs-southeast,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710658(e10,explorer-labs-southeast,auth) <- w1 (epoch 10, tick 1364122152)
+[nebula] ghost Npc(Clone)#281474976710708(e10,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710708(e10,cell_0_0_n2,auth) <- w1 (epoch 10, tick 1364122152)
+[nebula] ghost Npc(Clone)#562949953421318(e11,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421318(e11,explorer-outdoor-se,auth) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Single_03#562949953421356(e11,explorer-labs-southeast,auth,scene 1075474036) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_03#562949953421356(e11,explorer-labs-southeast,auth,scene 1075474036) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost Npc(Clone)#562949953421313(e11,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421313(e11,cell_0_0_n2,auth) <- w1 (epoch 11, tick 1364122152)
+[nebula] ghost Player(Clone)#562949953421366(e13,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Player(Clone)#562949953421366(e13,explorer-outdoor-se,auth) <- w1 (epoch 13, tick 1364122152)
+[nebula] ghost Npc(Clone)#281474976710659(e6,cell_0_0_n2,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710659(e6,cell_0_0_n2,auth) <- w1 (epoch 6, tick 1364122152)
+[nebula] ghost Npc(Clone)#281474976710664(e10,explorer-outdoor-se,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710664(e10,explorer-outdoor-se,auth) <- w1 (epoch 10, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_01 (1)#562949953421343(e3,explorer-hab-north,auth,scene 2213808032) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (1)#562949953421343(e3,explorer-hab-north,auth,scene 2213808032) <- w1 (epoch 3, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Single_04 (2)#562949953421345(e3,explorer-hab-north,auth,scene 4130954835) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_04 (2)#562949953421345(e3,explorer-hab-north,auth,scene 4130954835) <- w1 (epoch 3, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Single_04#562949953421351(e3,explorer-hab-north,auth,scene 1065894492) -> w1
+[nebula] handover IN  SM_Bld_Door_Single_04#562949953421351(e3,explorer-hab-north,auth,scene 1065894492) <- w1 (epoch 3, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_01 (4)#562949953421344(e5,explorer-dome,auth,scene 2293373018) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (4)#562949953421344(e5,explorer-dome,auth,scene 2293373018) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_01 (6)#562949953421350(e5,explorer-dome,auth,scene 4060373325) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (6)#562949953421350(e5,explorer-dome,auth,scene 4060373325) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_04#562949953421354(e5,explorer-dome,auth,scene 3251823986) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_04#562949953421354(e5,explorer-dome,auth,scene 3251823986) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_01 (2)#562949953421357(e5,explorer-dome,auth,scene 2140525166) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (2)#562949953421357(e5,explorer-dome,auth,scene 2140525166) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost SM_Bld_Door_Double_01 (5)#562949953421358(e5,explorer-dome,auth,scene 753146858) -> w1
+[nebula] handover IN  SM_Bld_Door_Double_01 (5)#562949953421358(e5,explorer-dome,auth,scene 753146858) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost Player bot2 (15706508737898348549)#562949953421367(e5,explorer-dome,auth) -> w1
+[nebula] handover IN  Player bot2 (15706508737898348549)#562949953421367(e5,explorer-dome,auth) <- w1 (epoch 5, tick 1364122152)
+[nebula] ghost NPC npc-1#562949953421369(e3,explorer-dome,auth) -> w1
+[nebula] handover IN  NPC npc-1#562949953421369(e3,explorer-dome,auth) <- w1 (epoch 3, tick 1364122152)
+[nebula] ghost Player(Clone)#844424930132006(e12,landing-pad-south,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930132006(e12,landing-pad-south,auth) <- w1 (epoch 12, tick 1364122301)
+[nebula] ghost Player(Clone)#844424930132006(e12,landing-pad-south,auth) -> w4
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 4.2ms dup 0 skip 0 gc 7 auth 47 ghosts 15 | npc.brain=0.05(3292) npc.move=0.40(3600) npc.fire=0.00(4) npc.path=0.00(76) npc.presence=0.00(80) poll=0.07 ghosts=0.05 physics.sync=0.12 simulate=0.81 poses=0.07 containers=0.26 band=0.09 publish=0.03 gap=15.05
+[nebula] ghost Npc(Clone)#281474976710660(e9,market-crates-west,auth) -> w1
+[nebula] ghost Npc(Clone)#281474976710660(e9,market-crates-west,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710660(e9,market-crates-west,auth) <- w3 (epoch 9, tick 1364122446)
+[nebula] local handover Npc(Clone)#281474976710664(e10,explorer-dome,auth) explorer-outdoor-se -> explorer-dome
+[nebula] ghost Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) <- w1 (epoch 3, tick 1364122455)
+[nebula] handover OUT Npc(Clone)#281474976710660(e10,market-outdoor-nw,ghost) -> w3 (epoch 10, tick 1364122470)
+[nebula] kill: bot7 killed npc-48
+[nebula] handover OUT Player(Clone)#844424930132006(e13,outdoor-west-south,ghost) -> w1 (epoch 13, tick 1364122535)
+[nebula] ghost Npc(Clone)#281474976710660(e11,market-crates-west,auth) -> w1
+[nebula] ghost Npc(Clone)#281474976710660(e11,market-crates-west,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710660(e11,market-crates-west,auth) <- w3 (epoch 11, tick 1364122543)
+[nebula] npc-12 engages npc-26 on worker 1 at 7 m (not held here)
+[nebula] handover OUT Npc(Clone)#281474976710660(e12,market-outdoor-nw,ghost) -> w3 (epoch 12, tick 1364122555)
+[nebula] ghost Npc(Clone)#281474976710660(e13,market-crates-west,auth) -> w1
+[nebula] ghost Npc(Clone)#281474976710660(e13,market-crates-west,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710660(e13,market-crates-west,auth) <- w3 (epoch 13, tick 1364122565)
+[nebula] kill: npc-26 killed npc-12
+[nebula] cross-worker hit: npc-26 (via w1) -> npc-12 Kill
+[nebula] kill: npc-44 killed npc-9
+[nebula] cross-worker hit: npc-44 (via w1) -> npc-9 Kill
+[nebula] ghost Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) <- w1 (epoch 10, tick 1364122628)
+[nebula] profile 300 ticks/5s 300 frames avg 1.8ms max 4.8ms dup 0 skip 0 gc 6 auth 49 ghosts 15 | npc.brain=0.05(3680) npc.move=0.47(4139) npc.fire=0.01(18) npc.path=0.00(58) npc.presence=0.01(80) poll=0.05 ghosts=0.04 physics.sync=0.12 simulate=0.94 poses=0.06 containers=0.29 band=0.08 publish=0.05 gap=14.91
+[nebula] kill: npc-5 killed npc-25
+[nebula] local handover Npc(Clone)#281474976710669(e4,explorer-pods-south,auth) explorer-outdoor-se -> explorer-pods-south
+[nebula] ghost Npc(Clone)#281474976710669(e4,explorer-pods-south,auth) -> w1
+[nebula] kill: npc-48 killed bot7
+[nebula] kill: npc-28 killed npc-1
+[nebula] profile 300 ticks/5s 300 frames avg 1.9ms max 4.9ms dup 0 skip 0 gc 6 auth 49 ghosts 14 | npc.brain=0.07(4200) npc.move=0.61(4188) npc.fire=0.01(20) npc.path=0.00(84) npc.presence=0.01(80) poll=0.05 ghosts=0.03 physics.sync=0.12 simulate=1.11 poses=0.07 containers=0.30 band=0.09 publish=0.03 gap=14.73
+[nebula] local handover Npc(Clone)#562949953421318(e11,explorer-dome,auth) explorer-outdoor-se -> explorer-dome
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-hab-north,auth) explorer-outdoor-ne -> explorer-hab-north
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-landing-pad,auth) explorer-outdoor-ne -> explorer-landing-pad
+[nebula] handover OUT Npc(Clone)#281474976710669(e5,explorer-outdoor-sw,ghost) -> w1 (epoch 5, tick 1364123031)
+[nebula] kill: npc-25 killed npc-5
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) explorer-landing-pad -> explorer-outdoor-ne
+[nebula] profile 300 ticks/5s 300 frames avg 1.8ms max 4.1ms dup 0 skip 0 gc 6 auth 48 ghosts 15 | npc.brain=0.06(3967) npc.move=0.47(4273) npc.fire=0.01(19) npc.path=0.00(80) npc.presence=0.01(80) poll=0.03 ghosts=0.03 physics.sync=0.12 simulate=0.95 poses=0.06 containers=0.29 band=0.08 publish=0.04 gap=14.91
+[nebula] kill: bot2 killed npc-28
+[nebula] kill: npc-1 killed bot2
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-lab-north,auth) explorer-outdoor-ne -> explorer-lab-north
+[nebula] kill: npc-5 killed npc-25
+[nebula] ghost Npc(Clone)#562949953421313(e11,cell_0_0_n2,auth) -> w1
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) explorer-hab-north -> explorer-outdoor-ne
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) explorer-lab-north -> explorer-outdoor-ne
+[nebula] handover OUT Npc(Clone)#562949953421313(e12,explorer-outdoor-nw,ghost) -> w1 (epoch 12, tick 1364123455)
+[nebula] profile 300 ticks/5s 300 frames avg 1.7ms max 5.9ms dup 0 skip 0 gc 6 auth 47 ghosts 16 | npc.brain=0.07(3791) npc.move=0.40(3815) npc.fire=0.01(18) npc.path=0.00(86) npc.presence=0.01(80) poll=0.04 ghosts=0.04 physics.sync=0.13 simulate=0.87 poses=0.06 containers=0.30 band=0.08 publish=0.04 gap=14.96
+[nebula] ghost Npc(Clone)#562949953421313(e13,explorer-outdoor-ne,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421313(e13,explorer-outdoor-ne,auth) <- w1 (epoch 13, tick 1364123620)
+[nebula] kill: npc-8 killed npc-1
+[nebula] kill: npc-25 killed npc-5
+[nebula] local handover Npc(Clone)#281474976710659(e6,explorer-outdoor-ne,auth) cell_0_0_n2 -> explorer-outdoor-ne
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-lab-north,auth) explorer-outdoor-ne -> explorer-lab-north
+[nebula] local handover Player bot2 (15706508737898348549)#562949953421367(e5,explorer-hab-north,auth) explorer-dome -> explorer-hab-north
+[nebula] local handover Npc(Clone)#562949953421313(e13,explorer-landing-pad,auth) explorer-outdoor-ne -> explorer-landing-pad
+[nebula] profile 300 ticks/5s 300 frames avg 1.8ms max 4.5ms dup 0 skip 0 gc 5 auth 48 ghosts 15 | npc.brain=0.06(3844) npc.move=0.49(4086) npc.fire=0.01(20) npc.path=0.00(113) npc.presence=0.01(80) poll=0.04 ghosts=0.04 physics.sync=0.12 simulate=0.98 poses=0.06 containers=0.28 band=0.08 publish=0.04 gap=14.89
+[nebula] ghost Npc(Clone)#281474976710659(e6,explorer-outdoor-ne,auth) -> w1
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-hab-north,auth) explorer-outdoor-ne -> explorer-hab-north
+[nebula] local handover Player(Clone)#562949953421366(e13,explorer-dome,auth) explorer-outdoor-se -> explorer-dome
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) explorer-hab-north -> explorer-outdoor-ne
+[nebula] local handover Npc(Clone)#562949953421313(e13,explorer-outdoor-ne,auth) explorer-landing-pad -> explorer-outdoor-ne
+[nebula] kill: bot7 killed npc-21
+[nebula] kill: npc-5 killed npc-25
+[nebula] profile 300 ticks/5s 300 frames avg 2.0ms max 5.4ms dup 0 skip 0 gc 7 auth 48 ghosts 14 | npc.brain=0.07(3900) npc.move=0.60(4388) npc.fire=0.01(22) npc.path=0.00(80) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.12 simulate=1.13 poses=0.07 containers=0.30 band=0.08 publish=0.04 gap=14.69
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-lab-north,auth) explorer-outdoor-ne -> explorer-lab-north
+[nebula] kill: npc-9 killed npc-44
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) explorer-lab-north -> explorer-outdoor-ne
+[nebula] ghost Npc(Clone)#281474976710663(e2,explorer-outdoor-ne,auth) -> w1
+[nebula] handover IN  Npc(Clone)#281474976710663(e2,explorer-outdoor-ne,auth) <- w1 (epoch 2, tick 1364124333)
+[nebula] local handover Npc(Clone)#281474976710663(e2,explorer-dome,auth) explorer-outdoor-ne -> explorer-dome
+[nebula] kill: npc-21 killed npc-1
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-lab-north,auth) explorer-outdoor-ne -> explorer-lab-north
+[nebula] profile 300 ticks/5s 300 frames avg 2.0ms max 7.2ms dup 0 skip 0 gc 5 auth 49 ghosts 12 | npc.brain=0.07(4031) npc.move=0.60(4187) npc.fire=0.01(26) npc.path=0.00(89) npc.presence=0.01(80) poll=0.05 ghosts=0.03 physics.sync=0.11 simulate=1.14 poses=0.07 containers=0.30 band=0.08 publish=0.04 gap=14.70
+[nebula] kill: npc-9 killed npc-1
+[nebula] kill: npc-25 killed npc-5
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) explorer-lab-north -> explorer-outdoor-ne
+[nebula] kill: npc-28 killed npc-21
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-hab-north,auth) explorer-outdoor-ne -> explorer-hab-north
+[nebula] local handover Npc(Clone)#562949953421313(e13,explorer-landing-pad,auth) explorer-outdoor-ne -> explorer-landing-pad
+[nebula] kill: npc-44 killed npc-8
+[nebula] local handover Npc(Clone)#562949953421313(e13,explorer-outdoor-ne,auth) explorer-landing-pad -> explorer-outdoor-ne
+[nebula] kill: npc-5 killed npc-25
+[nebula] profile 300 ticks/5s 300 frames avg 2.0ms max 5.5ms dup 0 skip 0 gc 6 auth 49 ghosts 13 | npc.brain=0.09(4200) npc.move=0.58(3967) npc.fire=0.01(33) npc.path=0.00(66) npc.presence=0.01(80) poll=0.03 ghosts=0.03 physics.sync=0.12 simulate=1.14 poses=0.07 containers=0.33 band=0.08 publish=0.04 gap=14.66
+[nebula] kill: npc-1 killed npc-21
+[nebula] local handover Npc(Clone)#281474976710664(e10,explorer-outdoor-ne,auth) explorer-dome -> explorer-outdoor-ne
+[nebula] ghost Npc(Clone)#281474976710664(e10,explorer-outdoor-ne,auth) -> w1
+[nebula] kill: npc-25 killed npc-5
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-outdoor-ne,auth) explorer-hab-north -> explorer-outdoor-ne
+[nebula] local handover Npc(Clone)#281474976710663(e2,explorer-outdoor-ne,auth) explorer-dome -> explorer-outdoor-ne
+[nebula] handover OUT Npc(Clone)#281474976710664(e11,explorer-outdoor-nw,ghost) -> w1 (epoch 11, tick 1364125006)
+[nebula] kill: npc-21 killed npc-1
+[nebula] kill: npc-1 killed npc-9
+[nebula] profile 300 ticks/5s 300 frames avg 1.9ms max 7.4ms dup 0 skip 0 gc 5 auth 48 ghosts 15 | npc.brain=0.08(4142) npc.move=0.49(4126) npc.fire=0.01(20) npc.path=0.00(90) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.12 simulate=1.02 poses=0.07 containers=0.32 band=0.08 publish=0.04 gap=14.78
+[nebula] ghost Npc(Clone)#281474976710661(e7,market-crates-west,auth) -> w3
+[nebula] handover IN  Npc(Clone)#281474976710661(e7,market-crates-west,auth) <- w3 (epoch 7, tick 1364125162)
+[nebula] kill: npc-1 killed npc-8
+[nebula] local handover Npc(Clone)#562949953421315(e3,explorer-roundhouse,auth) explorer-outdoor-ne -> explorer-roundhouse
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) explorer-lab-north -> explorer-outdoor-ne
+[nebula] local handover Player bot2 (15706508737898348549)#562949953421367(e5,explorer-dome,auth) explorer-hab-north -> explorer-dome
+[nebula] profile 300 ticks/5s 300 frames avg 1.9ms max 6.0ms dup 1 skip 0 gc 6 auth 49 ghosts 15 | npc.brain=0.09(4102) npc.move=0.49(4196) npc.fire=0.01(34) npc.path=0.00(79) npc.presence=0.01(80) poll=0.05 ghosts=0.04 physics.sync=0.13 simulate=1.03 poses=0.09 containers=0.32 band=0.08 publish=0.04 gap=14.75
+[nebula] kill: npc-9 killed npc-25
+[nebula] local handover Npc(Clone)#281474976710659(e6,explorer-hab-north,auth) explorer-outdoor-ne -> explorer-hab-north
+[nebula] kill: npc-1 killed npc-44
+[nebula] handover OUT Npc(Clone)#281474976710661(e8,market-outdoor-nw,ghost) -> w3 (epoch 8, tick 1364125467)
+[nebula] local handover NPC npc-1#562949953421369(e3,explorer-outdoor-se,auth) explorer-dome -> explorer-outdoor-se
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-landing-pad,auth) explorer-outdoor-ne -> explorer-landing-pad
+[nebula] kill: npc-44 killed npc-1
+[nebula] kill: npc-8 killed bot2
+[nebula] local handover Npc(Clone)#281474976710659(e6,explorer-dome,auth) explorer-hab-north -> explorer-dome
+[nebula] profile 301 ticks/5s 300 frames avg 1.7ms max 4.7ms dup 2 skip 0 gc 6 auth 48 ghosts 15 | npc.brain=0.07(4016) npc.move=0.38(4171) npc.fire=0.01(19) npc.path=0.00(77) npc.presence=0.01(81) poll=0.03(300) ghosts=0.04 physics.sync=0.13 simulate=0.85 poses=0.07 containers=0.29 band=0.07 publish=0.04 gap=14.94
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-outdoor-ne,auth) explorer-landing-pad -> explorer-outdoor-ne
+[nebula] local handover Npc(Clone)#562949953421313(e13,explorer-lab-north,auth) explorer-outdoor-ne -> explorer-lab-north
+[nebula] kill: npc-25 killed npc-5
+[nebula] kill: bot2 killed npc-8
+[nebula] local handover Npc(Clone)#281474976710668(e10,explorer-hab-north,auth) explorer-outdoor-ne -> explorer-hab-north
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 4.3ms dup 0 skip 0 gc 5 auth 48 ghosts 14 | npc.brain=0.06(3900) npc.move=0.37(4003) npc.fire=0.01(20) npc.path=0.00(69) npc.presence=0.01(80) poll=0.03 ghosts=0.04 physics.sync=0.13 simulate=0.82 poses=0.07 containers=0.30 band=0.07 publish=0.04 gap=15.02
+[nebula] local handover Npc(Clone)#281474976710663(e2,cell_0_0_n2,auth) explorer-outdoor-ne -> cell_0_0_n2
+[nebula] local handover Npc(Clone)#562949953421318(e11,explorer-outdoor-ne,auth) explorer-dome -> explorer-outdoor-ne
+[nebula] local handover Player bot2 (15706508737898348549)#562949953421367(e5,explorer-hab-north,auth) explorer-dome -> explorer-hab-north
+[nebula] ghost Npc(Clone)#562949953421321(e39,landing-pad-south,auth) -> w1
+[nebula] ghost Npc(Clone)#562949953421321(e39,landing-pad-south,auth) -> w4
+[nebula] handover IN  Npc(Clone)#562949953421321(e39,landing-pad-south,auth) <- w1 (epoch 39, tick 1364126062)
+[nebula] kill: npc-9 killed npc-25
+[nebula] npc-33 engages npc-17 on worker 1 at 27 m (not held here)
+[nebula] ghost Npc(Clone)#562949953421318(e11,explorer-outdoor-ne,auth) -> w1
+[nebula] cross-worker hit: npc-17 (via w1) -> npc-33 Hit
+[nebula] cross-worker hit: npc-17 (via w1) -> npc-33 Hit
+[nebula] kill: npc-5 killed npc-9
+[nebula] cross-worker hit: npc-17 (via w1) -> npc-33 Hit
+[nebula] local handover NPC npc-1#562949953421369(e3,explorer-dome,auth) explorer-outdoor-se -> explorer-dome
+[nebula] handover OUT Npc(Clone)#562949953421318(e12,explorer-outdoor-nw,ghost) -> w1 (epoch 12, tick 1364126201)
+[nebula] kill: npc-8 killed bot2
+[nebula] kill: npc-17 killed npc-33
+[nebula] cross-worker hit: npc-17 (via w1) -> npc-33 Kill
+[nebula] profile 300 ticks/5s 300 frames avg 1.9ms max 5.2ms dup 0 skip 0 gc 6 auth 48 ghosts 17 | npc.brain=0.07(4039) npc.move=0.50(4189) npc.fire=0.01(28) npc.path=0.00(75) npc.presence=0.01(80) poll=0.05 ghosts=0.04 physics.sync=0.13 simulate=1.01 poses=0.07 containers=0.29 band=0.09 publish=0.04 gap=14.82
+[nebula] ghost Npc(Clone)#562949953421317(e17,landing-pad-south,auth) -> w1
+[nebula] handover IN  Npc(Clone)#562949953421317(e17,landing-pad-south,auth) <- w1 (epoch 17, tick 1364126298)
+[nebula] ghost Npc(Clone)#562949953421317(e17,landing-pad-south,auth) -> w4
+[nebula] ghost Npc(Clone)#1125899906842629(e16,landing-tower,auth) -> w4
+[nebula] handover IN  Npc(Clone)#1125899906842629(e16,landing-tower,auth) <- w4 (epoch 16, tick 1364126303)
+[nebula] cross-worker hit: npc-16 (via w3) -> npc-12 Hit
+[nebula] cross-worker hit: npc-16 (via w3) -> npc-12 Hit
+[nebula] cross-worker hit: npc-16 (via w3) -> npc-12 Hit
+[nebula] handover OUT Npc(Clone)#562949953421317(e18,outdoor-west-south,ghost) -> w1 (epoch 18, tick 1364126406)
+[nebula] ghost Npc(Clone)#562949953421317(e19,landing-pad-south,auth) -> w1
+[nebula] ghost Npc(Clone)#562949953421317(e19,landing-pad-south,auth) -> w4
+[nebula] handover IN  Npc(Clone)#562949953421317(e19,landing-pad-south,auth) <- w1 (epoch 19, tick 1364126415)
+[nebula] kill: npc-25 killed npc-5
+[nebula] ghost Npc(Clone)#1125899906842634(e6,landing-pad-south,auth) -> w1
+[nebula] handover IN  Npc(Clone)#1125899906842634(e6,landing-pad-south,auth) <- w1 (epoch 6, tick 1364126431)
+[nebula] ghost Npc(Clone)#1125899906842634(e6,landing-pad-south,auth) -> w4
+[nebula] kill: npc-16 killed npc-12
+[nebula] cross-worker hit: npc-16 (via w3) -> npc-12 Kill
+[nebula] control plane: reading http://127.0.0.1:7080 failed: An error occurred while sending the request; mesh keeps running on its last known topology
+[nebula] handover OUT Npc(Clone)#562949953421317(e20,outdoor-west-south,ghost) -> w1 (epoch 20, tick 1364126496)

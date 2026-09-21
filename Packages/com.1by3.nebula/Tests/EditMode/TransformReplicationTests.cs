@@ -169,12 +169,21 @@ namespace Nebula.Tests
             var gateways = (IList)type.GetField("_gateways", flags).GetValue(worker);
             var peerType = type.GetNestedType("Peer", BindingFlags.NonPublic); var peer = Activator.CreateInstance(peerType, true);
             peerType.GetField("PeerId").SetValue(peer, 1); gateways.Add(peer);
+            // v17: a gateway is sent an entity only in the regions it subscribed, so the link needs a mask bit and
+            // a subscription covering where these entities stand. Without that the correct answer is "nothing sent".
+            var grid = InterestGrid.Resolve(InterestSettings.Default);
+            type.GetField("_interestGrid", flags).SetValue(worker, grid);
+            peerType.GetField("GatewayBit").SetValue(peer, 0);
+            ((Array)type.GetField("_gatewayBits", flags).GetValue(worker)).SetValue(peer, 0);
+            ((RegionPublisher)type.GetField("_publisher", flags).GetValue(worker)).Subscribe(0, grid.RegionOf(4, 0, 0));
             for (int i = 0; i < 60; i++)
             {
                 var id = Entity(i % 2 == 0); id.NetId = (ulong)(i + 1); authority.Add(id);
                 id.PrepareReplication(1); id.ClearDirty();
                 id.transform.position = Vector3.right * 4; id.PrepareReplication(2);
+                type.GetMethod("InterestAdd", flags).Invoke(worker, new object[] { id });
             }
+            type.GetMethod("BuildPublishMasks", flags).Invoke(worker, null);
             type.GetMethod("PublishToGateways", flags).Invoke(worker, new object[] { 2u });
             int count = 0;
             foreach (var packet in transport.Sent)
@@ -429,6 +438,7 @@ namespace Nebula.Tests
             var records = (IDictionary)type.GetField("_entities", flags).GetValue(gateway);
             var recordType = type.GetNestedType("EntityRecord", BindingFlags.NonPublic);
             var record = Activator.CreateInstance(recordType, true);
+            recordType.GetField("NetId").SetValue(record, a.NetId);
             recordType.GetField("Epoch").SetValue(record, 1u);
             recordType.GetField("OwnerWorkerIndex").SetValue(record, (ushort)2);
             var spawn = EntitySpawnMsg.From(a, new NetworkWriter()); spawn.LocalPosition = new Vector3(1, 2, 3);
@@ -462,6 +472,10 @@ namespace Nebula.Tests
                 var client = Activator.CreateInstance(clientType, true);
                 clientType.GetField("Welcomed").SetValue(client, true);
                 ((IDictionary)type.GetField("_clientsById", flags).GetValue(gateway)).Add(1UL, client);
+                // v17: all entity traffic fans out over the record's observer list, which is the client's interest
+                // set inverted. This test is about relay merging and reliable recovery, not about the distance
+                // decision, so the client is made an observer directly.
+                ((IList)recordType.GetField("Observers").GetValue(record)).Add(client);
                 Send(11); // (11 + netId % 12) % 12 != 0: a spectator would miss this update
                 Assert.AreEqual(-1, clientType.GetField("PendingSlot").GetValue(client));
                 // The first update also made the entity visible, which queued its spawn on the reliable batch.

@@ -43,6 +43,26 @@ namespace Nebula
             public int Players, Bots, ServerDriven, Other, Ghosts;
         }
 
+        /// <summary>
+        /// What interest management cost and saved since the previous document (design §12). Rates rather than
+        /// totals: "this worker sends 40% of its entries and 1.2 MB/s instead of 4 MB/s" is the question the
+        /// dashboard answers, and a counter that only grows cannot answer it.
+        /// </summary>
+        private struct InterestSample
+        {
+            public long EntriesSent, EntriesTotal, BytesSent, BytesUnfiltered;
+            public float At;
+        }
+
+        private InterestSample _interestPrevious;
+        private InterestSample _interestRate;
+        private bool _hasInterestRate;
+        private int _interestRegions;
+        private float _interestFilterMs;
+        private bool _interestGlobal;
+        private string _partitionWarning = "";
+        private readonly List<NebulaWorker.GatewayInterest> _gatewayInterest = new List<NebulaWorker.GatewayInterest>();
+
         private readonly string _url;
         private readonly MeshTelemetry _inProcess;
         private readonly HttpClient _http;
@@ -102,6 +122,7 @@ namespace Nebula
             if (now < _next || Volatile.Read(ref _inFlight) != 0) return;
             _next = now + (_detail ? DetailIntervalSeconds : IdleIntervalSeconds);
 
+            SampleInterest(worker, now);
             var streamer = NebulaWorld.IsActive ? NebulaWorld.Streamer : null;
             string json = Write(worker.WorkerId, worker.WorkerIndex, worker.CurrentTick, worker.Entities, _detail, streamer != null ? streamer.LoadedCells : null);
             Sent++;
@@ -114,6 +135,69 @@ namespace Nebula
             }
             Interlocked.Exchange(ref _inFlight, 1);
             Task.Run(() => PostAsync(json));
+        }
+
+        /// <summary>Take the interest counters and turn them into per-second rates for this document. Main thread.</summary>
+        private void SampleInterest(NebulaWorker worker, float now)
+        {
+            var current = new InterestSample
+            {
+                EntriesSent = worker.InterestEntriesSent,
+                EntriesTotal = worker.InterestEntriesTotal,
+                BytesSent = worker.InterestBytesSent,
+                BytesUnfiltered = worker.InterestBytesUnfiltered,
+                At = now,
+            };
+            float dt = now - _interestPrevious.At;
+            if (_interestPrevious.At > 0f && dt > 0.001f)
+            {
+                _interestRate = new InterestSample
+                {
+                    EntriesSent = (long)((current.EntriesSent - _interestPrevious.EntriesSent) / dt),
+                    EntriesTotal = (long)((current.EntriesTotal - _interestPrevious.EntriesTotal) / dt),
+                    BytesSent = (long)((current.BytesSent - _interestPrevious.BytesSent) / dt),
+                    BytesUnfiltered = (long)((current.BytesUnfiltered - _interestPrevious.BytesUnfiltered) / dt),
+                    At = now,
+                };
+                _hasInterestRate = true;
+            }
+            _interestPrevious = current;
+            _interestRegions = worker.SubscribedRegions;
+            _interestFilterMs = worker.InterestFilterMs;
+            _interestGlobal = worker.HasGlobalEntities;
+            _partitionWarning = worker.PartitionWarning ?? "";
+            worker.CopyGatewayInterest(_gatewayInterest);
+        }
+
+        /// <summary>The interest block of the document: totals, the per-gateway rows of design §12, and the partition warning of §11.</summary>
+        private void WriteInterest(JsonWriter w)
+        {
+            w.Key("interest");
+            w.BeginObject();
+            w.Prop("regions", _interestRegions);
+            w.Prop("filterMs", Math.Round(_interestFilterMs, 3));
+            w.Prop("global", _interestGlobal);
+            w.Prop("entriesSent", _hasInterestRate ? _interestRate.EntriesSent : 0L);
+            w.Prop("entriesTotal", _hasInterestRate ? _interestRate.EntriesTotal : 0L);
+            w.Prop("bytesSent", _hasInterestRate ? _interestRate.BytesSent : 0L);
+            w.Prop("bytesUnfiltered", _hasInterestRate ? _interestRate.BytesUnfiltered : 0L);
+            w.Prop("warning", _partitionWarning);
+            w.Key("gateways");
+            w.BeginArray();
+            for (int i = 0; i < _gatewayInterest.Count; i++)
+            {
+                var g = _gatewayInterest[i];
+                w.BeginObject();
+                w.Prop("id", g.GatewayId ?? "");
+                w.Prop("regions", g.Regions);
+                w.Prop("foci", g.Foci);
+                w.Prop("entities", g.ExplicitEntities);
+                w.Prop("entriesSent", g.EntriesSent);
+                w.Prop("bytesSent", g.BytesSent);
+                w.EndObject();
+            }
+            w.EndArray();
+            w.EndObject();
         }
 
         private async Task PostAsync(string json)
@@ -183,6 +267,7 @@ namespace Nebula
             w.Prop("index", (int)workerIndex);
             w.Prop("tick", tick);
             w.Prop("detail", includeEntities);
+            WriteInterest(w);
             if (Nebula.World.WorldOrigin.Definition != null) MeshTelemetry.WriteCell(w, "origin", Nebula.World.WorldOrigin.Cell);
             if (loadedCells != null)
             {

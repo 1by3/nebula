@@ -122,8 +122,12 @@ namespace Nebula
             }
             if (!transfer.ClientReady)
             {
+                // The owner's gateway is the one that has to get its client ready; the others do not know the
+                // client and would only drop it. Broadcast only when the session's gateway cannot be resolved.
                 _writer.Reset(); transfer.Message.Write(_writer, MsgId.InstancePrepare);
-                foreach (var gateway in _gateways) _transport.Send(gateway.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                var session = SessionGatewayOf(entity);
+                if (session != null) _transport.Send(session.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
+                else foreach (var gateway in _gateways) _transport.Send(gateway.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             }
             return transfer;
         }

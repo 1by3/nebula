@@ -1,0 +1,75 @@
+---
+title: "InterestQuery"
+description: "What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public sealed class InterestQuery
+```
+
+What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. Reused between evaluations, so a policy that adds the same things every pass allocates nothing.
+
+## Properties
+
+### MaxFoci [#maxfoci]
+
+```csharp
+public int MaxFoci { get; } = InterestSettings.Default.MaxFoci;
+```
+
+Foci beyond this are dropped ([`InterestSettings.MaxFoci`](/docs/reference/interest/interest-settings#maxfoci)).
+
+### MaxEntities [#maxentities]
+
+```csharp
+public int MaxEntities { get; } = InterestSettings.Default.MaxExplicitPerClient;
+```
+
+Explicit entities beyond this are dropped ([`InterestSettings.MaxExplicitPerClient`](/docs/reference/interest/interest-settings#maxexplicitperclient)).
+
+### Overflowed [#overflowed]
+
+```csharp
+public bool Overflowed { get; }
+```
+
+A policy asked for more than the caps allow; the gateway logs this once per client rather than growing the set.
+
+### Foci [#foci]
+
+```csharp
+public IReadOnlyList<InterestFocus> Foci { get; }
+```
+
+### Entities [#entities]
+
+```csharp
+public IReadOnlyList<ulong> Entities { get; }
+```
+
+## Methods
+
+### Reset [#reset]
+
+```csharp
+public void Reset(in InterestSettings settings);
+```
+
+Empty the query for a new evaluation and apply the caps that are in force.
+
+### AddFocus [#addfocus]
+
+```csharp
+public bool AddFocus(in InterestFocus focus);
+public bool AddFocus(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0);
+```
+
+### AddEntity [#addentity]
+
+```csharp
+public bool AddEntity(ulong netId);
+```
+
+Always send this entity to the client (a party member, a quest target), wherever it is.

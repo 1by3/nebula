@@ -1,0 +1,60 @@
+﻿-r:"Library/Bee/artifacts/1900b0aE.dag/UnityEngine.UI.ref.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/BCLExtensions/TargetingPacks/netstandard2.1/analyzers/dotnet/roslyn4.0/cs/Microsoft.Extensions.Logging.Generators.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/BCLExtensions/TargetingPacks/netstandard2.1/analyzers/dotnet/roslyn4.0/cs/System.Text.Json.SourceGeneration.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/Tools/BuildPipeline/Unity.Analyzers.Common/Unity.Analyzers.Common.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/Tools/BuildPipeline/Unity.Analyzers.LongLiving/Unity.Analyzers.LongLiving.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/Tools/BuildPipeline/Unity.SourceGenerators/Unity.Properties.SourceGenerator.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/Tools/BuildPipeline/Unity.SourceGenerators/Unity.SourceGenerators.dll"
+-analyzer:"C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/Tools/BuildPipeline/Unity.SourceGenerators/Unity.UIToolkit.SourceGenerator.dll"
+"Assets/VirtualWorld/Scripts/Avatar.cs"
+"Assets/VirtualWorld/Scripts/AvatarCamera.cs"
+"Assets/VirtualWorld/Scripts/AvatarInput.cs"
+"Assets/VirtualWorld/Scripts/ChunkAllocator.cs"
+"Assets/VirtualWorld/Scripts/ChunkLoader.cs"
+"Assets/VirtualWorld/Scripts/Chunks.cs"
+"Assets/VirtualWorld/Scripts/Prop.cs"
+"Assets/VirtualWorld/Scripts/VirtualWorldGameMode.cs"
+-langversion:9.0
+/deterministic
+/optimize+
+/debug:portable
+/nologo
+/RuntimeMetadataVersion:v4.0.30319
+/nowarn:0169
+/nowarn:0649
+/nowarn:0282
+/nowarn:1701
+/nowarn:1702
+/utf8output
+/preferreduilang:en-US
+/additionalfile:"Library/Bee/artifacts/1900b0aE.dag/VirtualWorld.UnityAdditionalFile.txt"
+##### Custom Environment Variables
+DOTNET_HOST_PATH=C:\Program Files\Unity\Hub\Editor\6000.6.0f1\Editor\Data\DotNetSdk\dotnet.exe
+DOTNET_MULTILEVEL_LOOKUP=0
+##### ExitCode
+1
+##### Output
+Assets\VirtualWorld\Scripts\VirtualWorldGameMode.cs(48,41): error CS0115: 'VirtualWorldGameMode.OnSpawnPlayer(NebulaWorker, uint, string, Container)': no suitable method found to override
+*** Tundra build failed (15.48 seconds), 428 items updated, 1010 evaluated
+## Script Compilation Error for: Csc Library/Bee/artifacts/1900b0aE.dag/VirtualWorld.dll (+2 others)
+## CmdLine: "C:\Program Files\Unity\Hub\Editor\6000.6.0f1\Editor\Data\DotNetSdk\dotnet.exe" exec "C:/Program Files/Unity/Hub/Editor/6000.6.0f1/Editor/Data/DotNetSdk/sdk/8.0.318/Roslyn/bincore/csc.dll" /nostdlib /noconfig /shared "@Library/Bee/artifacts/1900b0aE.dag/VirtualWorld.rsp" "@Library/Bee/artifacts/1900b0aE.dag/VirtualWorld.rsp2"
+## Output:
+Assets\VirtualWorld\Scripts\VirtualWorldGameMode.cs(48,41): error CS0115: 'VirtualWorldGameMode.OnSpawnPlayer(NebulaWorker, uint, string, Container)': no suitable method found to override
+
+C:\Dev\nebula\Packages\com.1by3.nebula\Runtime\Containers\ContainerRegistry.cs(124,102): warning CS0618: 'FindObjectsSortMode' is obsolete: 'FindObjectsSortMode has been deprecated. Use the FindObjectsByType overloads that do not take a FindObjectsSortMode parameter.'
+C:\Dev\nebula\Packages\com.1by3.nebula\Runtime\Containers\ContainerRegistry.cs(124,25): warning CS0618: 'Object.FindObjectsByType<T>(FindObjectsInactive, FindObjectsSortMode)' is obsolete: 'FindObjectsByType with FindObjectsSortMode parameter has been deprecated. Use FindObjectsByType<T>() or FindObjectsByType<T>(FindObjectsInactive) instead. InstanceID will be replaced in the future with EntityId and previous sort order cannot be maintained.'
+C:\Dev\nebula\Packages\com.1by3.nebula\Runtime\Bootstrap\NebulaBootstrap.cs(416,28): warning CS0618: 'Object.FindFirstObjectByType<T>()' is obsolete: 'FindFirstObjectByType has been deprecated because it relies on instance ID ordering. Use FindAnyObjectByType instead, which does not depend on ordering.'
+C:\Dev\nebula\Packages\com.1by3.nebula\Runtime\Worker\NebulaWorker.cs(283,25): warning CS0618: 'Object.FindFirstObjectByType<T>()' is obsolete: 'FindFirstObjectByType has been deprecated because it relies on instance ID ordering. Use FindAnyObjectByType instead, which does not depend on ordering.'
+Assets\VirtualWorld\Scripts\VirtualWorldGameMode.cs(48,41): error CS0115: 'VirtualWorldGameMode.OnSpawnPlayer(NebulaWorker, uint, string, Container)': no suitable method found to override
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\EditorSetupTests.cs(20,96): warning CS0618: 'FindObjectsSortMode' is obsolete: 'FindObjectsSortMode has been deprecated. Use the FindObjectsByType overloads that do not take a FindObjectsSortMode parameter.'
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\EditorSetupTests.cs(20,31): warning CS0618: 'Object.FindObjectsByType<T>(FindObjectsInactive, FindObjectsSortMode)' is obsolete: 'FindObjectsByType with FindObjectsSortMode parameter has been deprecated. Use FindObjectsByType<T>() or FindObjectsByType<T>(FindObjectsInactive) instead. InstanceID will be replaced in the future with EntityId and previous sort order cannot be maintained.'
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\SceneEntityTests.cs(10,42): warning UAC1001: Field 'IsOpen' type 'Nebula.NetworkVariable<bool>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\ControlPlaneAndRpcTests.cs(76,41): warning UAC1001: Field 'Score' type 'Nebula.NetworkVariable<int>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\ControlPlaneAndRpcTests.cs(77,44): warning UAC1001: Field 'Name' type 'Nebula.NetworkVariable<string>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\PersistenceTests.cs(246,43): warning UAC1001: Field 'Wobble' type 'Nebula.NetworkVariable<float>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\PersistenceTests.cs(241,54): warning UAC1001: Field 'Text' type 'Nebula.NetworkVariable<string>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\PersistenceTests.cs(223,51): warning UAC1001: Field 'Coins' type 'Nebula.NetworkVariable<int>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+C:\Dev\nebula\Packages\com.1by3.nebula\Tests\EditMode\PersistenceTests.cs(224,41): warning UAC1001: Field 'Sparkle' type 'Nebula.NetworkVariable<int>' is skipped by serialization (missing the [Serializable] attribute). Refer to the Serialization rules analyzer reference. (https://docs.unity3d.com/6000.6/Documentation/Manual/script-serialization-analyzer.html#uac1001)
+AssetDatabase: script compilation time: 17.178578s
+Scripts have compiler errors.
+[ExitDontLaunchBugReporter] Exiting without the bug reporter. Application will exit with return code 1

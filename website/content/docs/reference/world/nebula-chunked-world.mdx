@@ -1,0 +1,64 @@
+---
+title: "NebulaChunkedWorld"
+description: "The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld + a NebulaConfig.RuntimeWorld; design docs/interest-management.md §10)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunkedWorld.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunkedWorld.cs)</div>
+
+```csharp
+[DefaultExecutionOrder(-500)]
+public sealed class NebulaChunkedWorld : MonoBehaviour
+```
+
+The whole server and client side of an unbounded chunked world, wired from configuration alone ([`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) + a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); design `docs/interest-management.md` §10). [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) adds one of these on every role and the game writes no world-management code at all: chunks are containers, containers are leased, content arrives through [`NebulaChunks`](/docs/reference/world/nebula-chunks).
+
+- **every role**: the [`RuntimeGrid`](/docs/reference/world/runtime-grid) from the world definition's cell size, installed as the container-bounds hook and as the spatial-hash bucket size, and [`NebulaChunks`](/docs/reference/world/nebula-chunks) activated.
+- **worker**: a [`RuntimeGridAllocator`](/docs/reference/world/runtime-grid-allocator) keeping a ring of chunks leased around every pawn it simulates (and around the origin, so a first player always has somewhere to appear), retiring what nobody has wanted for [`NebulaConfig.ChunkRetireSeconds`](/docs/reference/core/nebula-config#chunkretireseconds). The origin follows the centroid of the cells this worker leases.
+- **client**: the origin follows the local pawn.
+- **gateway / orchestrator**: passive. They need the container arithmetic and nothing else.
+
+One notion of "near" (design §8): the allocator's ring is [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells) + 1, so a chunk is always leased — and its content built — before interest can put an entity standing on it into a client's set. Raising `InterestRadius` therefore widens the chunk ring by itself; nothing to keep in step.
+
+## Properties
+
+### Config [#config]
+
+```csharp
+public NebulaConfig Config { get; }
+```
+
+### Worker [#worker]
+
+```csharp
+public NebulaWorker Worker { get; }
+```
+
+### Client [#client]
+
+```csharp
+public NebulaClient Client { get; }
+```
+
+### Grid [#grid]
+
+```csharp
+public RuntimeGrid Grid { get; }
+```
+
+The grid every role shares. Also reachable as [`NebulaChunks.Grid`](/docs/reference/world/nebula-chunks#grid).
+
+### Allocator [#allocator]
+
+```csharp
+public RuntimeGridAllocator Allocator { get; }
+```
+
+The worker's chunk allocator; null on other roles.
+
+### Ring [#ring]
+
+```csharp
+public int Ring { get; }
+```
+
+Chebyshev ring of chunks the worker keeps leased around every pawn (design §8).

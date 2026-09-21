@@ -1,0 +1,191 @@
+---
+title: "InterestGrid"
+description: "A uniform spatial hash over absolute world coordinates: the region arithmetic every part of interest management shares (gateway, worker, standalone services)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestGrid.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestGrid.cs)</div>
+
+```csharp
+public readonly struct InterestGrid : IEquatable<InterestGrid>
+```
+
+A uniform spatial hash over **absolute** world coordinates: the region arithmetic every part of interest management shares (gateway, worker, standalone services). One region is one cell of the grid; its id is the pinned three-axis 21-bit packing `RuntimeGrid.PackId` uses, so a chunked world's region ids and its container ids are literally the same numbers.
+
+Positions are doubles because a region key must not depend on the floating origin: wire poses are container-local, and both ends add the container's absolute centre in double before asking for a key. Shift the origin and every key stays what it was, which is what lets a gateway and a worker with different origins agree on one set of subscribed regions.
+
+The packing is duplicated here rather than called: `RuntimeGrid` lives in the Unity-only `Nebula.World` assembly, which the standalone gateway does not compile. `InterestPackingPinTests` asserts the two agree for sample coordinates, and neither may change: ids are persisted.
+
+## Constructors
+
+### InterestGrid [#interestgrid]
+
+```csharp
+public InterestGrid(double edge, bool planar = true);
+public InterestGrid(double edgeX, double edgeY, double edgeZ, double offsetX, double offsetY, double offsetZ, bool planar);
+```
+
+## Fields
+
+### MinCoordinate [#mincoordinate]
+
+```csharp
+public const int MinCoordinate = -(1 << 20);
+```
+
+Coordinates outside \[[`MinCoordinate`](#mincoordinate), [`MaxCoordinate`](#maxcoordinate)\] cannot be packed; collectors clamp to this range.
+
+### MaxCoordinate [#maxcoordinate]
+
+```csharp
+public const int MaxCoordinate = (1 << 20) - 1;
+```
+
+### EdgeX, EdgeY, EdgeZ [#edgex-edgey-edgez]
+
+```csharp
+public readonly double EdgeX, EdgeY, EdgeZ;
+```
+
+Region edge in metres per axis. Y is unused (and meaningless) when [`Planar`](#planar).
+
+### OffsetX, OffsetY, OffsetZ [#offsetx-offsety-offsetz]
+
+```csharp
+public readonly double OffsetX, OffsetY, OffsetZ;
+```
+
+World coordinate of the region-0 lower corner per axis; see [`Resolve`](#resolve).
+
+### Planar [#planar]
+
+```csharp
+public readonly bool Planar;
+```
+
+Regions are infinite columns: the Y coordinate of every region is 0 and Y never enters a key.
+
+## Properties
+
+### IsValid [#isvalid]
+
+```csharp
+public bool IsValid { get; }
+```
+
+A grid with a positive edge on every axis it uses. A default-constructed grid is not valid.
+
+## Methods
+
+### Resolve [#resolve]
+
+```csharp
+public static InterestGrid Resolve(in InterestSettings settings, double worldCellX, double worldCellY, double worldCellZ, bool cellsCentred);
+public static InterestGrid Resolve(in InterestSettings settings, double worldCellSize = 0, bool cellsCentred = false);
+```
+
+Derive the grid both ends must agree on from the resolved settings and, when the game has a world definition, its cell size (design §3): the edge is snapped to an integer division of the cell so region edges coincide with cell edges, and the offset places region boundaries on those cell edges. Baked cells are centred on `coord × CellSize` (`cellsCentred`: offset −CellSize/2); `RuntimeGrid` cells start at `coord × CellSize` (offset 0). Pass 0 for no world definition.
+
+### SnapEdge [#snapedge]
+
+```csharp
+public static double SnapEdge(double wanted, double cell);
+```
+
+The snapped edge the settings ask for, before a key is ever made; for logging and validation.
+
+### PackRegion [#packregion]
+
+```csharp
+public static ulong PackRegion(int x, int y, int z);
+```
+
+Pack a region coordinate: three signed 21-bit fields, x in the high bits. Never change this.
+
+### UnpackRegion [#unpackregion]
+
+```csharp
+public static void UnpackRegion(ulong region, out int x, out int y, out int z);
+```
+
+### RegionOf [#regionof]
+
+```csharp
+public ulong RegionOf(double x, double y, double z);
+```
+
+The only place a region key is made. Absolute world position in, packed region id out.
+
+### CoordOf [#coordof]
+
+```csharp
+public void CoordOf(double x, double y, double z, out int cx, out int cy, out int cz);
+```
+
+Region coordinate of an absolute world position (Y is always 0 on a planar grid).
+
+### BoundsOf [#boundsof]
+
+```csharp
+public void BoundsOf(ulong region, out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
+```
+
+The region's box in absolute world coordinates. A planar grid's regions are columns, so Y spans ±infinity: a caller measuring a distance to the box gets the column distance it wants.
+
+### CenterOf [#centerof]
+
+```csharp
+public void CenterOf(ulong region, out double x, out double y, out double z);
+```
+
+Centre of a region in absolute world coordinates (Y = 0 on a planar grid, where there is no centre).
+
+### SqrDistanceToRegion [#sqrdistancetoregion]
+
+```csharp
+public double SqrDistanceToRegion(ulong region, double x, double y, double z);
+```
+
+Squared distance from a point to a region's box; 0 inside. Planar grids measure in the XZ plane only.
+
+### CollectDisc [#collectdisc]
+
+```csharp
+public void CollectDisc(double x, double y, double z, double radius, List<ulong> into);
+```
+
+Append every region whose box is within `radius` of the point. Each region appears once per call; a caller unioning several foci deduplicates (a `HashSet` or the subscription set itself).
+
+### CollectBox [#collectbox]
+
+```csharp
+public void CollectBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, List<ulong> into);
+```
+
+Append every region overlapping an absolute box (an `ObservePublic` window, a container).
+
+### Matches [#matches]
+
+```csharp
+public bool Matches(in InterestGrid other, double tolerance = 1e-3);
+```
+
+Whether two grids would produce the same keys. The subscribe message carries the grid so the worker can reject a mismatch loudly (design D2) instead of filtering with ids the gateway never meant; the tolerance absorbs the f32 round trip of that message, nothing more.
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(InterestGrid other);
+public override bool Equals(object obj);
+```
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

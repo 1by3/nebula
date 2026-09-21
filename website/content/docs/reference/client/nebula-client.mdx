@@ -143,6 +143,36 @@ public int InputLeadIncreases { get; }
 public int EntityCount { get; }
 ```
 
+### ReplicaCount [#replicacount]
+
+```csharp
+public int ReplicaCount { get; }
+```
+
+Replicas this client holds: with interest management this follows what is near it, not the world.
+
+### SpawnsReceived [#spawnsreceived]
+
+```csharp
+public int SpawnsReceived { get; }
+```
+
+Spawns and despawns received since the last telemetry report; also in the stats line.
+
+### DespawnsReceived [#despawnsreceived]
+
+```csharp
+public int DespawnsReceived { get; }
+```
+
+### FocusHint [#focushint]
+
+```csharp
+public Vector3? FocusHint { get; set; }
+```
+
+Where the player is looking, in world space, when that is not simply where the pawn is: a free camera, an RTS view, a spectator. Set it and the client sends the gateway a [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg) at up to [`NebulaConfig.InterestHintMaxHz`](/docs/reference/core/nebula-config#interesthintmaxhz); the gateway treats it as an input and never as authority — it clamps it to [`NebulaConfig.InterestHintMaxDistance`](/docs/reference/core/nebula-config#interesthintmaxdistance) of the pawn unless its policy says otherwise — so a game cannot widen its own interest by lying about where it is looking.
+
 ### Entities [#entities]
 
 ```csharp
@@ -266,6 +296,14 @@ public event Action<string> SessionReplaced;
 This player connected again somewhere else and that newer connection took the session and the pawn ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The client has left the world and does not reconnect by itself: show the reason (the argument, also in [`LastError`](#lasterror)) and let the player choose to take the session back with [`Connect`](#connect). Raised on the main thread.
 
 ## Methods
+
+### ClearFocusHint [#clearfocushint]
+
+```csharp
+public void ClearFocusHint();
+```
+
+Withdraw the focus hint: interest returns to the pawn. Going quiet is not enough — the gateway keeps the last hint it accepted — so the clear is said out loud, reliably, under a new generation that makes any hint still in flight stale.
 
 ### Initialize [#initialize]
 

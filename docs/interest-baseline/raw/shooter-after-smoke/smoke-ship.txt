@@ -1,0 +1,102 @@
+﻿==> control plane and saved entities in sqlite:C:\Dev\nebula-shootergame\Library\Nebula\nebula.db
+==> starting the orchestrator with 4 worker(s) (fixed) and the game-defined 'npcs' setting at 60
+    started 8 bot client(s) with -sg-bot-ship
+    waiting for the dashboard...
+  + mesh is up: 0 live worker(s), 0 player(s), 0 bot(s), 0 NPC(s), desired 4
+
+    dashboard   http://localhost:7080/
+    gateway     127.0.0.1:7000  (press Play in the Editor, or run the client build)
+    web client  http://127.0.0.1:7000/  (Builds/Web, served by the gateway)
+    logs        C:\Dev\nebula-shootergame\Builds\Win64\Logs  (`nebula logs orchestrator|gateway|w1`)
+    stop        nebula stop
+[smoke] 5s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=19 p=0 b=0 n=15] w2[ready c=19 p=0 b=3 n=16] w3[ready c=20 p=0 b=4 n=16] w4[ready c=19 p=0 b=1 n=13]
+[smoke] 10s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=20 p=0 b=0 n=13] w2[ready c=21 p=0 b=3 n=15] w3[ready c=26 p=0 b=4 n=21] w4[ready c=20 p=0 b=1 n=12]
+[smoke] 15s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=20 p=0 b=1 n=13] w2[ready c=26 p=0 b=3 n=18] w3[ready c=20 p=0 b=1 n=16] w4[ready c=21 p=0 b=3 n=14]
+[smoke] 20s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=1 n=12] w2[ready c=26 p=0 b=3 n=22] w3[ready c=21 p=0 b=3 n=16] w4[ready c=20 p=0 b=1 n=11]
+[smoke] 25s desired=4 live=4 players=0 bots=9 npcs=70 w1[ready c=21 p=0 b=1 n=19] w2[ready c=21 p=0 b=3 n=23] w3[ready c=19 p=0 b=2 n=14] w4[ready c=27 p=0 b=3 n=14]
+[smoke] 30s desired=4 live=4 players=0 bots=8 npcs=59 w1[ready c=21 p=0 b=0 n=12] w2[ready c=26 p=0 b=4 n=23] w3[ready c=21 p=0 b=2 n=16] w4[ready c=20 p=0 b=2 n=8]
+[smoke] 35s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=0 n=12] w2[ready c=26 p=0 b=4 n=26] w3[ready c=21 p=0 b=2 n=15] w4[ready c=20 p=0 b=2 n=8]
+[smoke] 40s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=2 n=12] w2[ready c=20 p=0 b=3 n=26] w3[ready c=20 p=0 b=2 n=15] w4[ready c=27 p=0 b=1 n=8]
+[smoke] 45s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=2 n=13] w2[ready c=20 p=0 b=2 n=20] w3[ready c=20 p=0 b=2 n=15] w4[ready c=27 p=0 b=2 n=13]
+[smoke] 50s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=2 n=13] w2[ready c=20 p=0 b=2 n=20] w3[ready c=20 p=0 b=2 n=15] w4[ready c=27 p=0 b=2 n=13]
+[smoke] 55s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=1 n=13] w2[ready c=20 p=0 b=3 n=20] w3[ready c=20 p=0 b=2 n=15] w4[ready c=27 p=0 b=2 n=13]
+[smoke] 60s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=1 n=12] w2[ready c=20 p=0 b=3 n=21] w3[ready c=20 p=0 b=2 n=16] w4[ready c=27 p=0 b=2 n=12]
+[smoke] 65s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=2 n=12] w2[ready c=20 p=0 b=2 n=21] w3[ready c=20 p=0 b=2 n=16] w4[ready c=27 p=0 b=2 n=12]
+[smoke] 70s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=2 n=10] w2[ready c=20 p=0 b=2 n=23] w3[ready c=20 p=0 b=2 n=17] w4[ready c=27 p=0 b=2 n=11]
+[smoke] 75s desired=4 live=4 players=0 bots=9 npcs=67 w1[ready c=27 p=0 b=1 n=13] w2[ready c=16 p=0 b=4 n=28] w3[ready c=24 p=0 b=3 n=16] w4[ready c=21 p=0 b=1 n=10]
+[smoke] 80s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=15 p=0 b=0 n=8] w2[ready c=25 p=0 b=4 n=27] w3[ready c=22 p=0 b=2 n=16] w4[ready c=26 p=0 b=2 n=9]
+[smoke] 85s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=25 p=0 b=2 n=15] w2[ready c=16 p=0 b=2 n=22] w3[ready c=22 p=0 b=2 n=14] w4[ready c=25 p=0 b=2 n=9]
+[smoke] 90s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=25 p=0 b=1 n=15] w2[ready c=16 p=0 b=3 n=21] w3[ready c=22 p=0 b=2 n=15] w4[ready c=25 p=0 b=2 n=9]
+[smoke] 95s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=25 p=0 b=1 n=15] w2[ready c=16 p=0 b=3 n=20] w3[ready c=22 p=0 b=2 n=16] w4[ready c=25 p=0 b=2 n=9]
+[smoke] 100s desired=4 live=4 players=0 bots=9 npcs=58 w1[ready c=25 p=0 b=2 n=14] w2[ready c=16 p=0 b=3 n=19] w3[ready c=22 p=0 b=2 n=16] w4[ready c=25 p=0 b=2 n=9]
+[smoke] 105s desired=4 live=4 players=0 bots=8 npcs=59 w1[ready c=16 p=0 b=1 n=10] w2[ready c=24 p=0 b=3 n=24] w3[ready c=23 p=0 b=2 n=14] w4[ready c=25 p=0 b=2 n=11]
+[smoke] 110s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=16 p=0 b=0 n=10] w2[ready c=24 p=0 b=4 n=26] w3[ready c=23 p=0 b=2 n=14] w4[ready c=25 p=0 b=2 n=10]
+[smoke] 115s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=16 p=0 b=0 n=10] w2[ready c=24 p=0 b=4 n=26] w3[ready c=23 p=0 b=2 n=14] w4[ready c=25 p=0 b=2 n=10]
+[smoke] 120s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=16 p=0 b=1 n=11] w2[ready c=24 p=0 b=3 n=25] w3[ready c=23 p=0 b=1 n=13] w4[ready c=25 p=0 b=3 n=11]
+[smoke] 125s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=16 p=0 b=0 n=11] w2[ready c=24 p=0 b=3 n=24] w3[ready c=23 p=0 b=2 n=14] w4[ready c=25 p=0 b=3 n=11]
+[smoke] 130s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=16 p=0 b=1 n=17] w2[ready c=25 p=0 b=2 n=22] w3[ready c=27 p=0 b=1 n=15] w4[ready c=20 p=0 b=4 n=6]
+[smoke] 135s desired=4 live=4 players=0 bots=8 npcs=59 w1[ready c=21 p=0 b=2 n=15] w2[ready c=23 p=0 b=3 n=22] w3[ready c=24 p=0 b=1 n=16] w4[ready c=20 p=0 b=2 n=6]
+[smoke] 140s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=0 n=15] w2[ready c=23 p=0 b=4 n=25] w3[ready c=24 p=0 b=2 n=15] w4[ready c=20 p=0 b=2 n=6]
+[smoke] 145s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=1 n=15] w2[ready c=23 p=0 b=3 n=26] w3[ready c=24 p=0 b=2 n=14] w4[ready c=20 p=0 b=2 n=6]
+[smoke] 150s desired=4 live=4 players=0 bots=8 npcs=61 w1[ready c=21 p=0 b=1 n=17] w2[ready c=23 p=0 b=3 n=24] w3[ready c=24 p=0 b=2 n=14] w4[ready c=20 p=0 b=2 n=6]
+[smoke] 155s desired=4 live=4 players=0 bots=8 npcs=67 w1[ready c=26 p=0 b=1 n=25] w2[ready c=13 p=0 b=2 n=21] w3[ready c=21 p=0 b=3 n=11] w4[ready c=28 p=0 b=2 n=10]
+[smoke] 160s desired=4 live=4 players=0 bots=9 npcs=58 w1[ready c=18 p=0 b=1 n=14] w2[ready c=28 p=0 b=3 n=25] w3[ready c=22 p=0 b=3 n=14] w4[ready c=20 p=0 b=2 n=5]
+[smoke] 165s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=18 p=0 b=1 n=15] w2[ready c=28 p=0 b=3 n=26] w3[ready c=22 p=0 b=3 n=14] w4[ready c=20 p=0 b=1 n=5]
+[smoke] 170s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=18 p=0 b=1 n=17] w2[ready c=28 p=0 b=3 n=24] w3[ready c=22 p=0 b=3 n=14] w4[ready c=20 p=0 b=1 n=5]
+[smoke] 175s desired=4 live=4 players=0 bots=8 npcs=60 w1[ready c=14 p=0 b=2 n=22] w2[ready c=24 p=0 b=2 n=19] w3[ready c=24 p=0 b=3 n=14] w4[ready c=26 p=0 b=1 n=5]
+[smoke] 180s desired=4 live=4 players=0 bots=8 npcs=58 w1[ready c=14 p=0 b=1 n=24] w2[ready c=31 p=0 b=3 n=15] w3[ready c=16 p=0 b=2 n=14] w4[ready c=27 p=0 b=2 n=5]
+
+[smoke] ===== results =====
+orchestrator: assignments=722 dead-declared=0 relaunched=0 scaled-up=4 retired=0 drain-timeouts=0
+gateway: workers-connected=13 clients-connected=16 spawn-requests=0
+w1: registered=1 peers=3 spawned=0 handover-out=509 handover-in=516 cross-worker-hits=25 kills=95 warnings=1 errors=0
+w2: registered=1 peers=3 spawned=3 handover-out=801 handover-in=808 cross-worker-hits=7 kills=211 warnings=1 errors=0
+w3: registered=1 peers=3 spawned=3 handover-out=585 handover-in=604 cross-worker-hits=3 kills=30 warnings=1 errors=0
+w4: registered=1 peers=3 spawned=2 handover-out=252 handover-in=256 cross-worker-hits=15 kills=34 warnings=1 errors=0
+bot1: welcome=1 local-player=1 errors=0
+bot2: welcome=1 local-player=1 errors=0
+bot3: welcome=1 local-player=1 errors=0
+bot4: welcome=1 local-player=1 errors=0
+bot5: welcome=1 local-player=1 errors=0
+bot6: welcome=1 local-player=1 errors=0
+bot7: welcome=1 local-player=1 errors=0
+bot8: welcome=1 local-player=1 errors=0
+TOTAL handovers: out=2147 in=2184
+
+[smoke] ===== interest (protocol v17) =====
+
+Bot  Samples Replicas ReplicasMax Dmin  Dmax Limit Beyond BeyondRun Dup
+---  ------- -------- ----------- ----  ---- ----- ------ --------- ---
+bot1     184        1          49    8     8 255.9      0         0   0
+bot2     184       43          43  6.9  60.1 161.1      0         0   0
+bot3     185       15          18   54 120.5 169.4      1         1   0
+bot4     185       45          45  4.1 107.5 161.3      0         0   0
+bot5     185       44          49 20.2 118.3 162.8      2         1   0
+bot6     185       45          49  2.5 123.2 166.1      1         1   0
+bot7     185       15          18 18.1  93.1   160      1         1   0
+bot8     185       44          49    3 121.7 169.3      1         1   0
+
+
+
+gateway interest: cached=155 regions=210 links=4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4) setAvg=32.4 setMax=46 evalMs avg=0.090 max=0.478 spawns/s=1.0 despawns/s=0.0
+w1 interest: regions=30 gateways=1 filterMs=0.035 entries sent=712/712 bytes=31550/31550 
+w2 interest: regions=151 gateways=1 filterMs=0.053 entries sent=669/679 bytes=31443/31443 
+w3 interest: regions=50 gateways=1 filterMs=0.040 entries sent=671/792 bytes=31545/31545 
+w4 interest: regions=94 gateways=1 filterMs=0.023 entries sent=336/396 bytes=13919/13919 
+
+[smoke] ===== checks =====
+  PASS  every bot wrote probe lines (8/8)
+  PASS  every bot has a pawn
+  PASS  nothing lingers past the exit radius (longest run of beyond>0 samples: 1)
+  PASS  no entity spawned twice without a despawn (dup=0)
+  PASS  no replica in an unloaded chunk (orphans=0)
+  PASS  every carried replica arrives with its carrier (carrierless=0)
+  PASS  no exceptions or errors in any worker log (0)
+  PASS  no exceptions in the gateway log
+  PASS  the gateway reports its interest stats (cachedEntities=155)
+  PASS  the gateway holds worker links (workerLinks=4)
+  PASS  a client holds far less than the gateway does (mean replicas 31.5 < 124 = 80% of 155 cached)
+  PASS  at least one worker filters what it publishes (3 of 4)
+  PASS  the ship bot boarded a Starhopper
+
+[smoke] all checks passed

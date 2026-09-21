@@ -1,0 +1,23 @@
+==> building the Windows player with Unity 6000.6.0f1
+    log: C:\Dev\nebula-virtualworld\Builds\unity-build.log
+VBCSCompilerPreWarmer: pre-warm launched (dotnet PID 28976)
+VBCSCompiler prewarm took 5.94 ms
+    [nebula] building C:\Dev\nebula-virtualworld\Builds\Win64\Nebula.exe (StandaloneWindows64/Player) with scenes: Assets/VirtualWorld/Scenes/World.unity
+    [nebula] exported service manifest: 0 containers, 2 persistence schemas
+    [nebula] build Succeeded in 23s, 0 errors
+  + built C:\Dev\nebula-virtualworld\Builds\Win64\Nebula.exe in 33s
+==> publishing the .NET orchestrator (win-x64)
+  Determining projects to restore...
+  Restored C:\Dev\nebula\Packages\com.1by3.nebula\Services~\Nebula.Services\Nebula.Services.csproj (in 197 ms).
+  Restored C:\Dev\nebula\Packages\com.1by3.nebula\Services~\Nebula.Orchestrator\Nebula.Orchestrator.csproj (in 197 ms).
+  Nebula.Services -> C:\Dev\nebula-virtualworld\Temp\nebula-services\bin\Nebula.Services\release\Nebula.Services.dll
+  Nebula.Orchestrator -> C:\Dev\nebula-virtualworld\Temp\nebula-services\bin\Nebula.Orchestrator\release_win-x64\nebula-orchestrator.dll
+  Nebula.Orchestrator -> C:\Dev\nebula-virtualworld\Builds\Win64\
+==> publishing the .NET gateway (win-x64)
+  Determining projects to restore...
+  Restored C:\Dev\nebula\Packages\com.1by3.nebula\Services~\Nebula.Gateway\Nebula.Gateway.csproj (in 201 ms).
+  1 of 2 projects are up-to-date for restore.
+  Nebula.Services -> C:\Dev\nebula-virtualworld\Temp\nebula-services\bin\Nebula.Services\release\Nebula.Services.dll
+  Nebula.Gateway -> C:\Dev\nebula-virtualworld\Temp\nebula-services\bin\Nebula.Gateway\release_win-x64\nebula-gateway.dll
+  Nebula.Gateway -> C:\Dev\nebula-virtualworld\Builds\Win64\
+    to start this build, run: nebula start --open-ui

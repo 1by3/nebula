@@ -17,10 +17,13 @@ Carries the container ownership protocol message.
 
 ```csharp
 public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries);
+public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries, bool full, IList<string> removes);
 ```
+
+Write a complete snapshot (the form a gateway sends on join and on every control-plane change).
 
 ### Read [#read]
 
 ```csharp
-public static List<ContainerOwnershipEntry> Read(NetworkReader r);
+public static ContainerOwnershipUpdate Read(NetworkReader r);
 ```

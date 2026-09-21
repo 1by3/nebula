@@ -85,14 +85,18 @@ Each role then streams what it needs:
 | Role | Cells loaded | Origin |
 | --- | --- | --- |
 | Worker | The cells of every container it leases plus `WorkerLoadRingCells` rings around them, so seam physics and ghosts have the neighbours' geometry. | Follows the centroid of the leased cells. |
-| Client and bots | `ClientLoadRadiusCells` around the local pawn (the origin cell before a pawn exists). | Follows the pawn. |
+| Client and bots | `NearCells` around the local pawn (the origin cell before a pawn exists). | Follows the pawn. |
 | Gateway, orchestrator | Nothing. The manifest gives them the container maths. | Never moves. |
+
+A client's load radius is no longer just `ClientLoadRadiusCells`. [Interest management](/docs/guides/interest-management#one-notion-of-near) computes `NearCells = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin) / cell size))`, so raising `InterestRadius` widens client streaming too — a client always has scene content loaded at least as far as it can hear about entities. `ClientLoadRadiusCells` is a floor for loading more than interest strictly needs, not the whole answer.
 
 The origin shifts only when the player or worker centroid is more than `OriginShiftThresholdCells` from the origin cell. When it shifts, Nebula moves the containers and refreshes each entity's interpolation, pose, and prediction history.
 
 If your component caches a position in the current Unity coordinate frame, override `NetworkBehaviour.OnOriginShifted(delta)` and add `delta` to the cached value.
 
 The orchestrator deals containers in manifest order, so each worker's share is a contiguous run of spatially neighbouring cells: a compact region it loads as a block. The dashboard shows each container's cell.
+
+[Interest management](/docs/guides/interest-management) subdivides each baked cell into interest regions of `InterestCellSize` (default 64 m), snapped so region edges land on cell edges. A 256 m cell is subdivided into a 4x4 grid of regions; a gateway subscribes only the regions its clients need, not the whole cell, so a client near one edge of a large cell does not cause a worker to publish everything inside it.
 
 ## Partitioning the tutorial arena
 
@@ -196,9 +200,9 @@ Each worker log now includes `containers: 5 (partitioned world)` and `cell (0,0,
 
 In the **World Window**, click cell `(1, 0, 0)` to create its scene. The cell is centered 256 m along X. Build its content around the cell scene's origin, add `Container` objects for its rooms or regions, then select **Bake** or run **Nebula > Set Up World Partition** again. Connect the new area with floor that crosses from the arena, because the arena's edge is at x = 20 m and the new cell begins at x = 128 m.
 
-Players in cell `(0, 0, 0)` load cell `(1, 0, 0)` when `ClientLoadRadiusCells` reaches it. Workers load it when it is within `WorkerLoadRingCells` of a cell they control.
+Players in cell `(0, 0, 0)` load cell `(1, 0, 0)` when `NearCells` reaches it. Workers load it when it is within `WorkerLoadRingCells` of a cell they control.
 
-To make cells smaller than 256 m, also reduce the gateway's interest radii. A cell should be several times larger than `InterestFarRadius`, which defaults to 80 m.
+To make cells smaller than 256 m, also lower `InterestRadius` and `InterestExitMargin`, or raise `ClientLoadRadiusCells`. A cell smaller than `InterestRadius + InterestExitMargin` still works — `NearCells` widens client streaming to cover it — but a cell several times larger than that sum keeps a client's loaded area close to one cell instead of several.
 
 </Step>
 </Steps>
@@ -218,8 +222,8 @@ A typical use is marking the city hub cell `Dedicated`, or giving the cells of o
 | `NebulaConfig` field | Default | Meaning |
 | --- | --- | --- |
 | `WorldManifest` | none | The baked manifest. Unset = single scene. |
-| `ClientLoadRadiusCells` | 1 | Cells around the local pawn a client keeps loaded (1 = the 3x3x3 block). |
+| `ClientLoadRadiusCells` | 1 | Floor on the cells around the local pawn a client keeps loaded (1 = the 3x3x3 block). The effective radius is `NearCells`, which also covers `InterestRadius + InterestExitMargin`. |
 | `WorkerLoadRingCells` | 1 | Rings of cells around every leased cell a worker keeps loaded. |
 | `OriginShiftThresholdCells` | 4 | Distance in cells from the origin cell before the origin moves. |
 
-`WorldDefinition.CellSize` sets the cell size per world. Pick it against the ghost band and interest radii: a cell should be several times larger than `InterestFarRadius` so a client's 3x3x3 block covers everything it can see.
+`WorldDefinition.CellSize` sets the cell size per world. Pick it against the ghost band and [interest management](/docs/guides/interest-management): a cell several times larger than `InterestRadius + InterestExitMargin` keeps a client's loaded cells close to a 3x3x3 block; a smaller cell still works correctly, because `NearCells` (not a fixed cell count) is what actually bounds client streaming, regions, and the runtime allocator ring together.

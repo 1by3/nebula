@@ -1,0 +1,34 @@
+---
+title: "DefaultInterestPolicy"
+description: "What a mesh does without a game policy: one focus at the pawn, plus the client's validated hint as a second focus when it has sent one."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public sealed class DefaultInterestPolicy : IInterestPolicy
+```
+
+What a mesh does without a game policy: one focus at the pawn, plus the client's validated hint as a second focus when it has sent one. A client with no pawn gets no focus, and so hears only about globally relevant entities; a game that wants spectators gives them a focus in its own policy.
+
+## Fields
+
+### Instance [#instance]
+
+```csharp
+public static readonly DefaultInterestPolicy Instance = new DefaultInterestPolicy();
+```
+
+## Methods
+
+### Collect [#collect]
+
+```csharp
+public void Collect(in InterestClient client, InterestQuery query);
+```
+
+### Authorize [#authorize]
+
+```csharp
+public bool Authorize(in InterestClient client, in InterestEntity entity);
+```

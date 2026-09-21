@@ -28,6 +28,7 @@
     "guides/authentication",
     "guides/web-builds",
     "---Worlds and containers---",
+    "guides/interest-management",
     "guides/world-partition",
     "guides/dynamic-containers",
     "guides/runtime-containers",

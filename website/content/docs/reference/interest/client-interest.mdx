@@ -1,0 +1,175 @@
+---
+title: "ClientInterest<T, TSource>"
+description: "One client's interest set and the state machine that maintains it (design §4)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs)</div>
+
+```csharp
+public sealed class ClientInterest<T, TSource> where TSource : struct, IInterestSource<T>
+```
+
+One client's interest set and the state machine that maintains it (design §4). Evaluation walks only the regions the client's foci cover, so its cost follows what is near the client rather than the size of the world, and the set is stable: an entity enters at the relevance radius and leaves only once it has been more than [`InterestSettings.ExitMargin`](/docs/reference/interest/interest-settings#exitmargin) further out for [`InterestSettings.LingerSeconds`](/docs/reference/interest/interest-settings#lingerseconds). That hysteresis is what stops an entity walking a boundary from spawning and despawning several times a second on every nearby client.
+
+Enter and leave events come out in an order the client can act on: carriers before their contents on the way in (a passenger's spawn names its ship's container) and contents before carriers on the way out.
+
+## Constructors
+
+### ClientInterest [#clientinterest]
+
+```csharp
+public ClientInterest(TSource source);
+```
+
+## Fields
+
+### Client [#client]
+
+```csharp
+public InterestClient Client;
+```
+
+Who this set belongs to; handed to the policy's authorization on every test.
+
+### Settings [#settings]
+
+```csharp
+public InterestSettings Settings = InterestSettings.Default;
+```
+
+### Grid [#grid]
+
+```csharp
+public InterestGrid Grid = InterestGrid.Resolve(InterestSettings.Default);
+```
+
+The grid the region scan uses. Must be the grid the index was bucketed with.
+
+### Clock [#clock]
+
+```csharp
+public Func<double> Clock;
+```
+
+Where the evaluation gets "now" from; tests and the standalone gateway supply their own.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+### Ids [#ids]
+
+```csharp
+public Dictionary<ulong, Member>.KeyCollection Ids { get; }
+```
+
+### ScannedRegions [#scannedregions]
+
+```csharp
+public int ScannedRegions { get; }
+```
+
+Regions the last evaluation scanned; the gateway subscribes exactly these (plus its margin).
+
+### Foci [#foci]
+
+```csharp
+public IReadOnlyList<InterestFocus> Foci { get; }
+```
+
+## Methods
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong netId);
+```
+
+### SetFoci [#setfoci]
+
+```csharp
+public void SetFoci(IReadOnlyList<InterestFocus> foci);
+```
+
+### SetAlways [#setalways]
+
+```csharp
+public void SetAlways(IReadOnlyList<ulong> ids);
+```
+
+Entities that are in the set whatever the distance: the client's own pawn, what it owns, and the policy's explicit extras. They are still authorized — an extra is not a way around a security filter.
+
+### AddAlways [#addalways]
+
+```csharp
+public void AddAlways(ulong netId);
+```
+
+### RemoveAlways [#removealways]
+
+```csharp
+public void RemoveAlways(ulong netId);
+```
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget the whole set without emitting leaves (the client is gone).
+
+### Remove [#remove]
+
+```csharp
+public bool Remove(ulong netId, List<ulong> left);
+```
+
+Take an entity out of the set now: it was despawned, its worker died, or the gateway forgot it. Appends to `left` when the client had it.
+
+### Evaluate [#evaluate]
+
+```csharp
+public void Evaluate(InterestIndex<T> index, List<ulong> entered, List<ulong> left);
+public void Evaluate(InterestIndex<T> index, double now, List<ulong> entered, List<ulong> left);
+```
+
+Bring the set up to date against the index and append what changed. Both lists may be null when the caller only wants the set maintained (a re-evaluation after a policy change, say).
+
+### ConsiderOne [#considerone]
+
+```csharp
+public void ConsiderOne(InterestIndex<T> index, ulong id, double now, List<ulong> entered, List<ulong> left);
+```
+
+Test one entity against this client and nothing else. This is what an *arrival* costs: an entity that spawns or rebuckets into a region is tested against the clients whose focus regions cover that region, instead of waiting for their next full evaluation (which would show it up to an eval interval late) or re-scanning every client (which would be the O(clients x entities) loop interest replaces).
+
+## Nested types
+
+### Member [#member]
+
+```csharp
+public struct Member
+```
+
+Per-entity leave state. Public only because [`Ids`](#ids) hands out the dictionary's keys.
+
+#### Fields
+
+##### OutsideSince [#outsidesince]
+
+```csharp
+public double OutsideSince;
+```
+
+When the entity first went beyond the exit radius; the linger is measured from it.
+
+##### Outside [#outside]
+
+```csharp
+public bool Outside;
+```

@@ -139,5 +139,55 @@ namespace Nebula.Tests
             Assert.AreEqual("postgres://u:***@h/d", DatabaseUrl.Parse("postgres://u:pw@h/d", "").Display);
             Assert.Throws<ArgumentException>(() => DatabaseUrl.Parse("redis://x", ""));
         }
+
+        /// <summary>
+        /// The interest half of <see cref="GatewayStats"/> must survive the HTTP control plane, not just the
+        /// in-process one. Every gateway in a real mesh reaches the orchestrator through
+        /// <see cref="RemoteControlPlane"/>, and an op that simply omits the fields leaves every interest number
+        /// on the dashboard reading zero while interest management is in fact working.
+        /// </summary>
+        [Test]
+        public void AGatewayHeartbeatCarriesItsInterestStatsOverTheRemoteControlPlane()
+        {
+            var stats = new GatewayStats
+            {
+                ActiveClients = 8,
+                InterestSetAvg = 31.5f, InterestSetMax = 44,
+                CachedEntities = 97, SubscribedRegions = 123, WorkerLinks = 3,
+                WorkerLinkReasons = "region=3,foci=1,global=0,explicit=0,spawn=0,owned=2",
+                SpawnsPerSecond = 12.5f, DespawnsPerSecond = 11.25f,
+                InterestEvalMsAvg = 0.125f, InterestEvalMsMax = 1.5f,
+                BytesPerClientAvg = 2048f, BytesPerClientMax = 4096f,
+            };
+
+            // Drive the real remote plane and take the op it queued for the orchestrator.
+            using var remote = new RemoteControlPlane("http://127.0.0.1:1");
+            remote.HeartbeatGateway("gw1", stats);
+            var queue = (System.Collections.Generic.Queue<string>)typeof(RemoteControlPlane)
+                .GetField("_writes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .GetValue(remote);
+            Assert.AreEqual(1, queue.Count, "the heartbeat queued exactly one op");
+
+            var target = new LocalControlPlane();
+            target.Connect();
+            target.RegisterGateway("gw1", "127.0.0.1", 7000);
+            Assert.IsNull(ControlPlaneJson.ApplyBatch(ControlPlaneJson.WriteBatch(new[] { queue.Peek() }), target));
+
+            var applied = target.Gateways[0].Stats;
+            Assert.AreEqual(8u, applied.ActiveClients);
+            Assert.AreEqual(31.5f, applied.InterestSetAvg, 1e-4f);
+            Assert.AreEqual(44u, applied.InterestSetMax);
+            Assert.AreEqual(97u, applied.CachedEntities);
+            Assert.AreEqual(123u, applied.SubscribedRegions);
+            Assert.AreEqual(3u, applied.WorkerLinks);
+            Assert.AreEqual(stats.WorkerLinkReasons, applied.WorkerLinkReasons);
+            Assert.AreEqual(12.5f, applied.SpawnsPerSecond, 1e-4f);
+            Assert.AreEqual(11.25f, applied.DespawnsPerSecond, 1e-4f);
+            Assert.AreEqual(0.125f, applied.InterestEvalMsAvg, 1e-4f);
+            Assert.AreEqual(1.5f, applied.InterestEvalMsMax, 1e-4f);
+            Assert.AreEqual(2048f, applied.BytesPerClientAvg, 1e-4f);
+            Assert.AreEqual(4096f, applied.BytesPerClientMax, 1e-4f);
+        }
+
     }
 }

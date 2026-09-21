@@ -49,7 +49,7 @@ namespace Nebula
             if (client != null)
             {
                 _sb.Append($"client {client.ConnectionState} id={client.ClientId} identity={(client.Identity.Length > 12 ? client.Identity.Substring(0, 12) : client.Identity)} rtt={client.RttMs}ms serverTick~{client.EstimatedServerTick:F0} predict={client.PredictedTick} lead={client.InputLeadTicks} (adaptive +{client.InputLeadAdjustTicks}, worker sees {client.LastReportedInputLead})\n");
-                _sb.Append($"entities={client.EntityCount} authorityChanges={client.AuthorityChangesSeen}\n");
+                _sb.Append($"replicas={client.ReplicaCount} (+{client.SpawnsReceived} -{client.DespawnsReceived} since the last report) authorityChanges={client.AuthorityChangesSeen}{(client.FocusHint != null ? $" focusHint={client.FocusHint.Value}" : "")}\n");
                 var lp = client.LocalPlayer;
                 if (lp != null)
                 {
@@ -61,10 +61,22 @@ namespace Nebula
             var worker = boot != null ? boot.Worker : null;
             if (worker != null)
             {
-                _sb.Append($"worker {worker.WorkerId} tick={worker.CurrentTick} {worker.TickMs:F2}ms auth={worker.AuthoritativeCount} ghosts={worker.GhostsHeld} players={worker.PlayerCount} bots={worker.BotCount} serverDriven={worker.ServerDrivenCount} out={worker.HandoversOut} in={worker.HandoversIn} local={worker.LocalHandovers}\n");
+                _sb.Append($"worker {worker.WorkerId} tick={worker.CurrentTick} {worker.TickMs:F2}ms auth={worker.AuthoritativeCount} ghosts={worker.GhostsHeld} players={worker.PlayerCount} bots={worker.BotCount} serverDriven={worker.ServerDrivenCount} out={worker.HandoversOut} in={worker.HandoversIn} local={worker.LocalHandovers}");
+                // Interest: the regions gateways subscribe here, the share of state entries that survives filtering
+                // and what deciding that costs per tick (design §12).
+                long total = worker.InterestEntriesTotal;
+                _sb.Append($" | interest regions={worker.SubscribedRegions} sent={(total > 0 ? worker.InterestEntriesSent * 100 / total : 100)}% filter={worker.InterestFilterMs:F2}ms\n");
+                if (worker.PartitionWarning.Length > 0) _sb.Append($"  ! {worker.PartitionWarning}\n");
             }
             var gw = boot != null ? boot.Gateway : null;
-            if (gw != null) _sb.Append($"gateway clients={gw.ClientCount} workers={gw.WorkerCount} entities={gw.EntityCount}\n");
+            if (gw != null)
+            {
+                // Interest (design §12): what one client hears about, what the gateway caches for it, and how
+                // many workers it had to talk to. A cache that tracks the world instead of the players is the
+                // failure this line exists to make obvious.
+                var gs = gw.LastStats;
+                _sb.Append($"gateway clients={gw.ClientCount} workers={gw.WorkerCount} cache={gw.CachedEntityCount} | interest set={gs.InterestSetAvg:F0}/{gs.InterestSetMax} regions={gw.SubscribedRegionCount} links={gw.WorkerLinkCount} ({gs.WorkerLinkReasons}) +{gs.SpawnsPerSecond:F1}/s -{gs.DespawnsPerSecond:F1}/s eval={gs.InterestEvalMsAvg:F2}/{gs.InterestEvalMsMax:F2}ms\n");
+            }
             var orch = boot != null ? boot.Orchestrator : null;
             if (orch != null) _sb.Append($"orchestrator desired={orch.DesiredWorkers} rebalances={orch.Rebalances} dashboard={orch.DashboardUrl}\n");
 

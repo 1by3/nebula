@@ -19,6 +19,7 @@ namespace Nebula
             NetworkIdentity.Live.Clear();
             DynamicContainer.ResetForNewSession();
             NebulaWorld.ResetForNewSession();
+            Nebula.World.NebulaChunks.ResetForNewSession();
             NebulaRuntime.IsServer = false;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.LocalClientId = 0;

@@ -1,0 +1,320 @@
+Mono path[0] = 'C:/Dev/nebula-shootergame/Builds/Win64/Nebula_Data/Managed'
+Mono config path = 'C:/Dev/nebula-shootergame/Builds/Win64/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Found 1 interfaces on host : 0) 192.168.4.54
+Player connection [8384]  Target information:
+
+Player connection [8384]  * "[IP] 192.168.4.54 [Port] 55004 [Flags] 2 [Guid] 655414723 [EditorId] 251666685 [Version] 1048832 [Id] WindowsPlayer(2,Atlas) [Debug] 0 [PackageName] WindowsPlayer [ProjectName] nebula" 
+
+Player connection [8384] Started UDP target info broadcast (1) on [225.0.0.222:54997].
+
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.6.0f1 (f7f8ed4d1e24)
+[EntityIdStore] init: VM path (explicit commit), pageSize=4096, blockCount=1048576, entitiesPerBlock=256, slots reserved=4294967296 bytes
+[Subsystems] Discovering subsystems at path C:/Dev/nebula-shootergame/Builds/Win64/Nebula_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.008 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Microsoft Media Foundation video decoding to texture disabled: graphics device is Null, only Direct3D 11 and Direct3D 12 (only on desktop) are supported for hardware-accelerated video decoding.
+Couldn't create a Convex Mesh from source mesh, within the maximum polygons limit (256). The partial hull will be used. Consider simplifying your mesh. Source mesh name: PilotSeat
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+UnloadTime: 0.432200 ms
+[nebula] boot roles=Client scene=Corporation tickRate=60
+Unloading 6 Unused Serialized files (Serialized files now loaded: 0)
+UnloadTime: 5.661300 ms
+[nebula] world 'Corporation': 20 cells, 77 containers, cell size (2048.00, 2048.00, 2048.00)
+[nebula] containers: 77 (partitioned world)
+[nebula] connecting to gateway 127.0.0.1:7000 as 'bot3'
+Unloading 6 unused Assets / (4.9 KB). Loaded Objects now: 4174.
+Memory consumption went from 172.6 MB to 172.5 MB.
+Total: 2.692800 ms (FindLiveObjects: 0.487400 ms CreateObjectMapping: 0.069200 ms MarkObjects: 2.067800 ms  DeleteObjects: 0.042300 ms)
+
+[nebula] client 0 fps replicas 0 (+0.0/s -0.0/s) entities 0 in 0 pkt/s 0.0 KB/s 0 states/s (msgs: state 0 rpc 0 vars 0) rtt -1ms lead 0 (adj 0, worker saw 0) corrections 0 | full-rate interp: depth 0.0 ticks, starved 0.0% worst +0.0 | frame max 337.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 0t (stream lag 0t) | snapshot age ms min 0.0 avg 0.0 max 0.0
+[nebula] [nebula-probe] t=1.3 pos=0.0,0.0,0.0 cell=0,0,0 origin=0,0,0 replicas=0 dmin=0.0 dmax=0.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=0 despawns=0 pawn=0
+[nebula] welcome: clientId=14810711738298662919 identity=31c85a16d70b serverTick=1364989984
+[nebula] world starting, about 3 s: no worker is running yet; holding the join
+[nebula] [nebula-probe] t=2.3 pos=0.0,0.0,0.0 cell=0,0,0 origin=0,0,0 replicas=0 dmin=0.0 dmax=0.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=0 despawns=0 pawn=0
+[nebula] cell (0, 0, 0) loaded (Corporation_0_0_0); 1 cell(s) resident
+[nebula] cell (-1, 0, -1) loaded (Corporation_n1_0_n1); 2 cell(s) resident
+[nebula] cell (-1, 0, 0) loaded (Corporation_n1_0_0); 3 cell(s) resident
+[nebula] cell (-1, 0, 1) loaded (Corporation_n1_0_1); 4 cell(s) resident
+[nebula] cell (0, 0, -1) loaded (Corporation_0_0_n1); 5 cell(s) resident
+[nebula] cell (0, 0, 1) loaded (Corporation_0_0_1); 6 cell(s) resident
+[nebula] cell (1, 0, -1) loaded (Corporation_1_0_n1); 7 cell(s) resident
+[nebula] cell (1, 0, 0) loaded (Corporation_1_0_0); 8 cell(s) resident
+[nebula] cell (1, 0, 1) loaded (Corporation_1_0_1); 9 cell(s) resident
+[nebula] [nebula-probe] t=3.3 pos=0.0,0.0,0.0 cell=0,0,0 origin=0,0,0 replicas=0 dmin=0.0 dmax=0.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=0 despawns=0 pawn=0
+[nebula] [nebula-probe] t=4.3 pos=0.0,0.0,0.0 cell=0,0,0 origin=0,0,0 replicas=0 dmin=0.0 dmax=0.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=0 despawns=0 pawn=0
+[nebula] joined the world
+[nebula] local player spawned: Player(Clone)#281474976710705(e1,market-outdoor-sw,local)
+[nebula] cell (-2, 0, 0) loaded (Corporation_n2_0_0); 10 cell(s) resident
+[nebula] cell (-2, 0, -1) loaded (Corporation_n2_0_n1); 11 cell(s) resident
+[nebula] cell (-2, 0, 1) loaded (Corporation_n2_0_1); 12 cell(s) resident
+[nebula] [nebula-probe] t=5.3 pos=-4135.2,-0.4,-16.3 cell=0,0,0 origin=0,0,0 replicas=42 dmin=6.4 dmax=77.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=0 pawn=1
+[nebula] client 8208 fps replicas 43 (+8.6/s -0.0/s) entities 43 in 70 pkt/s 9.8 KB/s 95 states/s (msgs: state 46 rpc 2 vars 2) rtt 0ms lead 7 (adj 4, worker saw 7) corrections 15 last 0.08m | full-rate interp: depth 3.0 ticks, starved 0.9% worst +17.0 | frame max 215.4ms fixed/frame max 3 | gaps>3t 1 worst 6t | render delay 4t (stream lag 1t) | snapshot age ms min 3.5 avg 13.9 max 69.9
+[nebula] [nebula-probe] t=6.3 pos=-4134.5,0.1,-16.2 cell=0,0,0 origin=0,0,0 replicas=42 dmin=5.7 dmax=76.1 limit=161.5 speed=0.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=0 pawn=1
+[nebula] [nebula-probe] t=7.3 pos=-4135.0,0.1,-15.5 cell=0,0,0 origin=0,0,0 replicas=42 dmin=6.5 dmax=75.5 limit=161.4 speed=0.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=0 pawn=1
+[nebula] cell (0, 0, -1) unloaded; 6 cell(s) resident
+[nebula] cell (0, 0, 0) unloaded; 6 cell(s) resident
+[nebula] cell (0, 0, 1) unloaded; 6 cell(s) resident
+[nebula] cell (1, 0, -1) unloaded; 6 cell(s) resident
+[nebula] cell (1, 0, 0) unloaded; 6 cell(s) resident
+[nebula] cell (1, 0, 1) unloaded; 6 cell(s) resident
+[nebula] [nebula-probe] t=8.3 pos=-4134.9,-1.2,-19.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=5.6 dmax=79.0 limit=166.3 speed=4.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=1 pawn=1
+[nebula] [nebula-probe] t=9.3 pos=-4133.1,-1.6,-17.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.3 dmax=76.7 limit=164.2 speed=2.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=10.3 pos=-4130.6,-1.5,-17.9 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.3 dmax=76.5 limit=164.0 speed=2.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 3860 fps replicas 41 (+0.0/s -0.4/s) entities 41 in 201 pkt/s 19.0 KB/s 234 states/s (msgs: state 128 rpc 12 vars 4) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.1 ticks, starved 0.0% worst +1.1 | frame max 31.0ms fixed/frame max 2 | gaps>3t 3 worst 9t | render delay 4t (stream lag 1t) | snapshot age ms min 6.0 avg 9.2 max 52.8
+[nebula] [nebula-probe] t=11.3 pos=-4132.3,-1.4,-16.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.0 dmax=75.4 limit=163.4 speed=2.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=12.3 pos=-4131.9,-1.4,-16.6 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.7 dmax=75.2 limit=160.6 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=13.3 pos=-4131.6,-1.4,-16.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.4 dmax=73.1 limit=160.5 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=14.3 pos=-4132.5,-0.8,-16.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.0 dmax=73.3 limit=161.8 speed=1.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=15.3 pos=-4131.8,-1.4,-16.6 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.6 dmax=73.2 limit=161.5 speed=0.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 5038 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 184 pkt/s 20.5 KB/s 278 states/s (msgs: state 112 rpc 7 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.2% worst +1.8 | frame max 3.5ms fixed/frame max 1 | gaps>3t 2 worst 9t | render delay 3t (stream lag 0t) | snapshot age ms min 5.8 avg 11.3 max 44.0
+[nebula] [nebula-probe] t=16.3 pos=-4131.2,-1.4,-16.9 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.1 dmax=73.0 limit=161.1 speed=0.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=17.3 pos=-4128.1,-0.8,-17.0 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.4 dmax=71.6 limit=165.0 speed=3.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=18.3 pos=-4122.5,-1.2,-18.0 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.9 dmax=70.2 limit=169.2 speed=5.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=19.3 pos=-4116.6,-1.9,-19.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=10.6 dmax=72.1 limit=169.7 speed=6.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=20.3 pos=-4110.8,-2.2,-20.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=11.4 dmax=77.5 limit=169.6 speed=6.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 5292 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 193 pkt/s 19.3 KB/s 220 states/s (msgs: state 118 rpc 6 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.3 ticks, starved 0.0% worst +0.0 | frame max 3.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 10.1 avg 14.7 max 73.9
+[nebula] [nebula-probe] t=21.3 pos=-4108.6,-2.3,-21.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=10.1 dmax=80.4 limit=163.9 speed=2.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=22.3 pos=-4108.6,-2.3,-22.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=9.2 dmax=81.3 limit=161.5 speed=0.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=23.3 pos=-4106.7,-2.1,-23.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.8 dmax=82.0 limit=163.4 speed=2.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=24.3 pos=-4106.6,-1.8,-23.8 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.2 dmax=82.5 limit=161.0 speed=0.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=25.3 pos=-4106.7,-2.2,-24.6 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.6 dmax=79.6 limit=161.4 speed=0.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 4987 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 189 pkt/s 21.1 KB/s 238 states/s (msgs: state 120 rpc 3 vars 3) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.2 ticks, starved 0.0% worst +0.0 | frame max 4.4ms fixed/frame max 1 | gaps>3t 3 worst 13t | render delay 4t (stream lag 1t) | snapshot age ms min 6.0 avg 16.7 max 57.7
+[nebula] [nebula-probe] t=26.3 pos=-4106.7,-2.3,-25.0 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.3 dmax=75.9 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=27.3 pos=-4106.7,-2.3,-25.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.1 dmax=76.1 limit=160.4 speed=0.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=28.3 pos=-4106.7,-2.3,-25.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=5.7 dmax=76.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=29.3 pos=-4106.7,-2.3,-25.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=0.8 dmax=77.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=30.3 pos=-4128.5,4.2,-24.9 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.1 dmax=79.1 limit=196.5 speed=22.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 5400 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 199 pkt/s 20.6 KB/s 259 states/s (msgs: state 131 rpc 4 vars 4) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.10m | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 2.6ms fixed/frame max 1 | gaps>3t 2 worst 154t | render delay 3t (stream lag 0t) | snapshot age ms min 5.8 avg 13.1 max 49.5
+[nebula] [nebula-probe] t=31.3 pos=-4123.5,3.9,-25.0 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.5 dmax=77.1 limit=168.1 speed=5.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=32.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.9 dmax=75.4 limit=162.7 speed=1.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=33.3 pos=-4123.9,4.0,-26.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.0 dmax=78.3 limit=164.7 speed=2.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=34.3 pos=-4123.8,3.9,-25.8 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.2 dmax=81.8 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=35.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.1 dmax=79.4 limit=164.1 speed=2.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 5660 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 192 pkt/s 19.6 KB/s 236 states/s (msgs: state 124 rpc 2 vars 2) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.1% worst +1.7 | frame max 2.7ms fixed/frame max 1 | gaps>3t 1 worst 5t | render delay 3t (stream lag 0t) | snapshot age ms min 10.4 avg 14.4 max 45.6
+[nebula] [nebula-probe] t=36.3 pos=-4123.4,3.9,-24.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.5 dmax=80.8 limit=162.3 speed=1.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=37.3 pos=-4123.9,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.4 dmax=82.0 limit=162.8 speed=1.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=38.3 pos=-4123.5,3.9,-24.9 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.6 dmax=82.1 limit=162.5 speed=1.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=39.3 pos=-4123.3,3.9,-24.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.8 dmax=81.2 limit=161.0 speed=0.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=40.3 pos=-4123.7,3.9,-25.6 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.4 dmax=80.8 limit=162.2 speed=1.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] client 5417 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 190 pkt/s 19.5 KB/s 244 states/s (msgs: state 121 rpc 3 vars 3) rtt 0ms lead 8 (adj 5, worker saw 10) corrections 0 | full-rate interp: depth 4.5 ticks, starved 2.2% worst +10.5 | frame max 3.5ms fixed/frame max 1 | gaps>3t 2 worst 18t | render delay 3t (stream lag 0t) | snapshot age ms min 10.4 avg 17.8 max 187.4
+[nebula] [nebula-probe] t=41.3 pos=-4123.5,3.9,-25.1 cell=0,0,0 origin=0,0,0 replicas=40 dmin=3.5 dmax=78.4 limit=160.9 speed=0.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=42.3 pos=-4123.1,3.9,-23.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.2 dmax=76.9 limit=162.3 speed=1.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=43.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.4 dmax=76.7 limit=160.6 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=43 despawns=2 pawn=1
+[nebula] [nebula-probe] t=44.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=45.3 pos=-4123.0,4.5,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=75.5 limit=160.4 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5438 fps replicas 42 (+0.2/s -0.0/s) entities 42 in 184 pkt/s 19.5 KB/s 233 states/s (msgs: state 116 rpc 1 vars 3) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +1.0 | frame max 3.6ms fixed/frame max 1 | gaps>3t 4 worst 85t | render delay 3t (stream lag 0t) | snapshot age ms min 10.7 avg 15.1 max 47.3
+[nebula] [nebula-probe] t=46.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=75.4 limit=160.4 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=47.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=48.3 pos=-4123.0,4.5,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=78.7 limit=160.4 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=49.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=75.4 limit=160.4 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=50.3 pos=-4124.0,4.2,-23.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=5.2 dmax=75.6 limit=161.7 speed=1.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4961 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 194 pkt/s 20.5 KB/s 232 states/s (msgs: state 122 rpc 4 vars 4) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.1 ticks, starved 0.0% worst +0.0 | frame max 3.6ms fixed/frame max 1 | gaps>3t 5 worst 60t | render delay 3t (stream lag 0t) | snapshot age ms min 7.3 avg 16.1 max 46.9
+[nebula] [nebula-probe] t=51.3 pos=-4127.2,4.2,-22.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.5 dmax=76.0 limit=165.3 speed=3.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=52.3 pos=-4130.2,4.2,-21.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.0 dmax=76.5 limit=165.0 speed=3.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=53.3 pos=-4130.9,4.2,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=76.7 limit=161.2 speed=0.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=54.3 pos=-4130.9,4.5,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.7 dmax=76.7 limit=160.5 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=55.3 pos=-4130.9,4.2,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=76.7 limit=160.5 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4801 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 189 pkt/s 19.5 KB/s 224 states/s (msgs: state 115 rpc 6 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.2 ticks, starved 0.0% worst +0.0 | frame max 3.5ms fixed/frame max 1 | gaps>3t 7 worst 45t | render delay 4t (stream lag 1t) | snapshot age ms min 7.6 avg 15.4 max 55.0
+[nebula] [nebula-probe] t=56.3 pos=-4130.9,4.2,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.0 dmax=76.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=57.3 pos=-4130.9,4.2,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.6 dmax=76.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=58.3 pos=-4130.9,4.2,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.4 dmax=76.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=59.3 pos=-4125.8,3.9,-24.8 cell=0,0,0 origin=0,0,0 replicas=41 dmin=5.0 dmax=77.8 limit=170.2 speed=6.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=60.3 pos=-4124.8,3.9,-24.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.8 dmax=77.1 limit=161.8 speed=1.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5317 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 186 pkt/s 18.9 KB/s 210 states/s (msgs: state 114 rpc 4 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.10m | full-rate interp: depth 3.5 ticks, starved 0.0% worst +0.0 | frame max 3.3ms fixed/frame max 1 | gaps>3t 2 worst 149t | render delay 4t (stream lag 1t) | snapshot age ms min 2.1 avg 14.3 max 51.1
+[nebula] [nebula-probe] t=61.3 pos=-4124.8,3.9,-24.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.1 dmax=78.8 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=62.3 pos=-4124.8,3.9,-24.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.1 dmax=78.8 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=63.3 pos=-4124.8,3.9,-24.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.1 dmax=79.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=64.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=80.0 limit=170.3 speed=6.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=65.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=81.3 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5369 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 188 pkt/s 18.8 KB/s 208 states/s (msgs: state 115 rpc 3 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.10m | full-rate interp: depth 3.0 ticks, starved 0.0% worst +0.0 | frame max 3.1ms fixed/frame max 1 | gaps>3t 2 worst 164t | render delay 5t (stream lag 2t) | snapshot age ms min 2.1 avg 8.9 max 42.6
+[nebula] [nebula-probe] t=66.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=85.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=67.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=93.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=68.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=69.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=70.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5588 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 182 pkt/s 17.2 KB/s 174 states/s (msgs: state 113 rpc 1 vars 3) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.7 ticks, starved 0.0% worst +0.0 | frame max 3.0ms fixed/frame max 1 | gaps>3t 8 worst 122t | render delay 4t (stream lag 1t) | snapshot age ms min 2.7 avg 9.5 max 43.4
+[nebula] [nebula-probe] t=71.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.2 limit=160.1 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=72.3 pos=-4119.2,4.2,-27.8 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.7 dmax=78.3 limit=160.2 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=73.3 pos=-4119.2,4.2,-27.9 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.7 dmax=78.4 limit=160.1 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=74.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.4 speed=0.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=75.3 pos=-4119.4,4.0,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.4 dmax=78.2 limit=160.4 speed=0.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5540 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 168 pkt/s 18.3 KB/s 203 states/s (msgs: state 98 rpc 2 vars 3) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 3.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.8 avg 10.4 max 48.8
+[nebula] [nebula-probe] t=76.3 pos=-4120.3,3.9,-32.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.7 dmax=82.8 limit=167.4 speed=4.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=77.3 pos=-4119.8,4.1,-32.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.3 dmax=82.7 limit=160.9 speed=0.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=78.3 pos=-4122.3,4.2,-28.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.3 dmax=79.6 limit=167.9 speed=4.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=79.3 pos=-4122.3,4.2,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.9 limit=161.2 speed=0.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=80.3 pos=-4122.3,4.2,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.3 dmax=78.9 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5189 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 197 pkt/s 21.2 KB/s 264 states/s (msgs: state 122 rpc 7 vars 8) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 2.8ms fixed/frame max 1 | gaps>3t 2 worst 116t | render delay 3t (stream lag 0t) | snapshot age ms min 5.8 avg 9.9 max 45.5
+[nebula] [nebula-probe] t=81.3 pos=-4122.3,4.2,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.9 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=82.3 pos=-4122.3,4.2,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.6 dmax=81.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=83.3 pos=-4122.3,4.2,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.4 dmax=81.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=84.3 pos=-4127.5,4.2,-25.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.7 dmax=80.5 limit=169.0 speed=5.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=85.3 pos=-4123.9,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=82.1 limit=166.0 speed=3.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5270 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 185 pkt/s 19.7 KB/s 231 states/s (msgs: state 113 rpc 5 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.10m | full-rate interp: depth 2.9 ticks, starved 0.0% worst +0.0 | frame max 4.0ms fixed/frame max 1 | gaps>3t 2 worst 149t | render delay 4t (stream lag 1t) | snapshot age ms min 5.6 avg 10.3 max 43.5
+[nebula] [nebula-probe] t=86.3 pos=-4123.8,3.9,-26.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.8 dmax=79.9 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=87.3 pos=-4123.2,3.9,-24.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.7 dmax=77.3 limit=163.4 speed=2.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=88.3 pos=-4123.3,3.9,-24.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.9 dmax=79.3 limit=160.2 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=89.3 pos=-4125.4,4.0,-25.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.9 dmax=78.5 limit=164.2 speed=2.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=90.3 pos=-4125.4,4.0,-25.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.0 dmax=78.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5378 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 193 pkt/s 20.5 KB/s 255 states/s (msgs: state 121 rpc 4 vars 4) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 0.06m | full-rate interp: depth 2.5 ticks, starved 0.0% worst +1.2 | frame max 3.6ms fixed/frame max 1 | gaps>3t 1 worst 21t | render delay 4t (stream lag 1t) | snapshot age ms min 5.8 avg 10.5 max 42.9
+[nebula] [nebula-probe] t=91.3 pos=-4125.4,4.0,-25.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.9 dmax=78.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=92.3 pos=-4125.4,4.0,-25.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.2 dmax=78.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=93.3 pos=-4120.1,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.5 dmax=80.1 limit=170.4 speed=6.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=94.3 pos=-4120.1,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.5 dmax=80.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=95.3 pos=-4120.1,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.7 dmax=85.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4898 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 190 pkt/s 21.1 KB/s 258 states/s (msgs: state 113 rpc 11 vars 6) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 6.52m | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 2.3ms fixed/frame max 1 | gaps>3t 3 worst 159t | render delay 3t (stream lag 0t) | snapshot age ms min 6.0 avg 11.1 max 46.9
+[nebula] [nebula-probe] t=96.3 pos=-4120.1,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.2 dmax=91.9 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=97.3 pos=-4120.1,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.8 dmax=99.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=98.3 pos=-4124.9,4.2,-26.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=105.3 limit=169.5 speed=5.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=99.3 pos=-4124.0,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.4 dmax=110.7 limit=161.6 speed=1.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=100.3 pos=-4123.9,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.8 dmax=111.6 limit=160.1 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4579 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 180 pkt/s 21.6 KB/s 243 states/s (msgs: state 97 rpc 14 vars 8) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.16m | full-rate interp: depth 2.4 ticks, starved 0.1% worst +1.9 | frame max 3.0ms fixed/frame max 1 | gaps>3t 2 worst 172t | render delay 4t (stream lag 1t) | snapshot age ms min 6.2 avg 13.9 max 47.9
+[nebula] [nebula-probe] t=101.3 pos=-4123.9,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.8 dmax=112.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=102.3 pos=-4123.9,4.2,-26.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.5 dmax=113.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=103.3 pos=-4120.3,3.9,-29.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.1 dmax=113.9 limit=167.5 speed=4.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=104.3 pos=-4122.0,4.0,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.4 dmax=116.2 limit=164.1 speed=2.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=105.3 pos=-4120.0,3.9,-30.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.5 dmax=126.9 limit=165.6 speed=3.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4659 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 205 pkt/s 23.6 KB/s 226 states/s (msgs: state 134 rpc 9 vars 6) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 3 last 0.10m | full-rate interp: depth 2.9 ticks, starved 0.0% worst +0.0 | frame max 4.3ms fixed/frame max 1 | gaps>3t 5 worst 161t | render delay 3t (stream lag 0t) | snapshot age ms min 6.0 avg 14.7 max 60.5
+[nebula] [nebula-probe] t=106.3 pos=-4119.8,3.9,-30.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.2 dmax=80.7 limit=160.3 speed=0.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=107.3 pos=-4119.8,3.9,-30.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.2 dmax=84.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=108.3 pos=-4119.8,3.9,-30.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.2 dmax=91.9 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=109.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=98.5 limit=164.2 speed=2.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=110.3 pos=-4122.2,3.9,-29.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.4 dmax=106.3 limit=165.2 speed=3.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5079 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 207 pkt/s 19.9 KB/s 248 states/s (msgs: state 135 rpc 8 vars 6) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 4 last 0.10m | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 3.3ms fixed/frame max 1 | gaps>3t 2 worst 160t | render delay 3t (stream lag 0t) | snapshot age ms min 6.0 avg 12.4 max 46.3
+[nebula] [nebula-probe] t=111.3 pos=-4121.4,3.9,-29.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.4 dmax=111.2 limit=161.3 speed=0.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=112.3 pos=-4121.4,3.9,-29.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.9 dmax=83.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=113.3 pos=-4128.2,3.9,-24.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.0 dmax=88.3 limit=173.8 speed=8.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=114.3 pos=-4126.0,3.9,-24.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.6 dmax=91.5 limit=163.6 speed=2.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=115.3 pos=-4129.0,3.9,-22.8 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.7 dmax=99.5 limit=165.6 speed=3.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 5079 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 222 pkt/s 21.6 KB/s 289 states/s (msgs: state 147 rpc 7 vars 8) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 8.60m | full-rate interp: depth 2.7 ticks, starved 0.2% worst +2.1 | frame max 2.2ms fixed/frame max 1 | gaps>3t 1 worst 170t | render delay 3t (stream lag 0t) | snapshot age ms min 6.1 avg 12.8 max 45.5
+[nebula] [nebula-probe] t=116.3 pos=-4126.0,3.9,-24.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.7 dmax=101.8 limit=165.6 speed=3.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=117.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=104.7 limit=165.2 speed=3.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=118.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=4.4 dmax=110.2 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=119.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.0 dmax=115.8 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=120.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.4 dmax=121.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4679 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 214 pkt/s 21.1 KB/s 263 states/s (msgs: state 135 rpc 11 vars 7) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.0 ticks, starved 0.0% worst +0.0 | frame max 2.5ms fixed/frame max 1 | gaps>3t 3 worst 30t | render delay 5t (stream lag 2t) | snapshot age ms min 5.9 avg 14.4 max 49.8
+[nebula] [nebula-probe] t=121.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.3 dmax=127.3 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=122.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=128.8 limit=169.2 speed=5.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=123.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=124.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=81.2 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=125.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=88.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4419 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 242 pkt/s 23.4 KB/s 321 states/s (msgs: state 162 rpc 13 vars 6) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.10m | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 3.1ms fixed/frame max 1 | gaps>3t 7 worst 149t | render delay 4t (stream lag 1t) | snapshot age ms min 7.5 avg 15.2 max 52.0
+[nebula] [nebula-probe] t=126.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=95.0 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=127.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=104.2 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=128.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=114.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=129.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=130.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.6 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4900 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 194 pkt/s 24.5 KB/s 302 states/s (msgs: state 126 rpc 8 vars 6) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 0.11m | full-rate interp: depth 2.9 ticks, starved 0.0% worst +1.1 | frame max 3.7ms fixed/frame max 1 | gaps>3t 9 worst 60t | render delay 4t (stream lag 1t) | snapshot age ms min 8.7 avg 15.7 max 42.0
+[nebula] [nebula-probe] t=131.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.3 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=132.3 pos=-4119.2,4.2,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.0 dmax=78.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=133.3 pos=-4127.1,3.9,-23.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.0 dmax=77.4 limit=174.1 speed=8.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=134.3 pos=-4126.5,4.2,-22.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.4 dmax=76.9 limit=162.5 speed=1.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=135.3 pos=-4126.2,4.2,-22.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.3 dmax=77.7 limit=160.4 speed=0.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4971 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 190 pkt/s 22.9 KB/s 274 states/s (msgs: state 119 rpc 7 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 3 last 0.07m | full-rate interp: depth 3.4 ticks, starved 0.0% worst +0.0 | frame max 3.2ms fixed/frame max 1 | gaps>3t 2 worst 149t | render delay 4t (stream lag 1t) | snapshot age ms min 2.2 avg 16.0 max 56.0
+[nebula] [nebula-probe] t=136.3 pos=-4126.2,4.2,-22.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.4 dmax=77.7 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=137.3 pos=-4126.2,4.2,-22.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.4 dmax=77.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=138.3 pos=-4119.4,4.0,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.2 dmax=79.4 limit=173.8 speed=8.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=139.3 pos=-4119.3,4.2,-28.6 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.4 dmax=79.1 limit=161.6 speed=1.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=140.3 pos=-4119.3,4.2,-28.6 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.7 dmax=79.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4787 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 189 pkt/s 23.6 KB/s 330 states/s (msgs: state 114 rpc 8 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 5 last 0.10m | full-rate interp: depth 3.0 ticks, starved 0.0% worst +0.0 | frame max 3.3ms fixed/frame max 1 | gaps>3t 2 worst 167t | render delay 4t (stream lag 1t) | snapshot age ms min 1.7 avg 12.8 max 62.0
+[nebula] [nebula-probe] t=141.3 pos=-4119.3,4.2,-28.6 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.1 dmax=79.1 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=142.3 pos=-4128.2,3.9,-24.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.5 dmax=78.4 limit=175.9 speed=10.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=143.3 pos=-4124.5,3.9,-25.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.0 dmax=77.5 limit=166.2 speed=3.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=144.3 pos=-4123.4,4.2,-23.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.4 dmax=75.5 limit=163.4 speed=2.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=145.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.0 dmax=75.4 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4899 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 167 pkt/s 23.0 KB/s 317 states/s (msgs: state 93 rpc 7 vars 7) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 10.02m | full-rate interp: depth 3.0 ticks, starved 0.0% worst +0.0 | frame max 3.5ms fixed/frame max 1 | gaps>3t 2 worst 154t | render delay 4t (stream lag 1t) | snapshot age ms min 2.0 avg 15.5 max 41.4
+[nebula] [nebula-probe] t=146.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.0 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=147.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.2 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=148.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.0 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=149.3 pos=-4123.0,4.2,-23.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.2 dmax=75.4 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=150.3 pos=-4119.4,4.0,-27.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.9 dmax=78.5 limit=169.0 speed=5.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4960 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 188 pkt/s 22.0 KB/s 291 states/s (msgs: state 112 rpc 7 vars 7) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.06m | full-rate interp: depth 3.0 ticks, starved 0.0% worst +0.0 | frame max 3.3ms fixed/frame max 1 | gaps>3t 3 worst 149t | render delay 4t (stream lag 1t) | snapshot age ms min 2.6 avg 15.2 max 48.2
+[nebula] [nebula-probe] t=151.3 pos=-4120.7,3.9,-26.6 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.5 dmax=80.5 limit=162.7 speed=1.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=152.3 pos=-4120.1,3.8,-26.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.9 dmax=80.6 limit=161.0 speed=0.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=153.3 pos=-4118.6,3.7,-26.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.5 dmax=77.9 limit=162.4 speed=1.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=154.3 pos=-4117.9,4.2,-25.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.6 dmax=77.4 limit=162.0 speed=1.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=155.3 pos=-4117.9,4.2,-25.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.6 dmax=75.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4759 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 208 pkt/s 23.8 KB/s 292 states/s (msgs: state 132 rpc 9 vars 8) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.06m | full-rate interp: depth 3.2 ticks, starved 0.0% worst +0.0 | frame max 3.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 2.3 avg 14.0 max 48.1
+[nebula] [nebula-probe] t=156.3 pos=-4117.9,4.2,-25.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.3 dmax=75.5 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=157.3 pos=-4120.0,3.9,-29.5 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.3 dmax=80.1 limit=167.5 speed=4.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=158.3 pos=-4121.3,3.9,-32.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=1.8 dmax=82.9 limit=164.5 speed=2.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=159.3 pos=-4121.0,4.0,-27.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.4 dmax=78.4 limit=167.4 speed=4.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=160.3 pos=-4121.0,3.9,-27.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=0.4 dmax=78.4 limit=160.1 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4918 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 208 pkt/s 28.3 KB/s 301 states/s (msgs: state 144 rpc 7 vars 8) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 2 last 0.22m | full-rate interp: depth 3.6 ticks, starved 0.0% worst +0.0 | frame max 3.4ms fixed/frame max 1 | gaps>3t 6 worst 178t | render delay 5t (stream lag 2t) | snapshot age ms min 3.6 avg 11.8 max 53.9
+[nebula] [nebula-probe] t=161.3 pos=-4119.8,3.8,-23.8 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.5 dmax=74.6 limit=166.0 speed=3.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=162.3 pos=-4121.2,3.8,-23.9 cell=0,0,0 origin=0,0,0 replicas=41 dmin=2.0 dmax=75.2 limit=162.2 speed=1.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=163.3 pos=-4121.0,3.1,-21.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=3.6 dmax=72.4 limit=164.7 speed=2.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=164.3 pos=-4118.8,-1.2,-22.4 cell=0,0,0 origin=0,0,0 replicas=41 dmin=6.9 dmax=72.8 limit=168.0 speed=5.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=165.3 pos=-4117.2,-0.8,-22.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=7.0 dmax=72.0 limit=162.6 speed=1.7 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4919 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 202 pkt/s 21.6 KB/s 273 states/s (msgs: state 129 rpc 6 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 3.8 ticks, starved 0.0% worst +0.0 | frame max 3.8ms fixed/frame max 1 | gaps>3t 8 worst 6t | render delay 5t (stream lag 2t) | snapshot age ms min 4.4 avg 10.0 max 50.6
+[nebula] [nebula-probe] t=166.3 pos=-4114.1,-2.1,-18.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=12.2 dmax=67.3 limit=168.3 speed=5.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=167.3 pos=-4111.0,-2.1,-18.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=13.0 dmax=66.5 limit=164.8 speed=3.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=168.3 pos=-4108.6,-1.6,-18.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=13.5 dmax=67.1 limit=164.0 speed=2.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=169.3 pos=-4105.7,-1.3,-15.7 cell=0,0,0 origin=0,0,0 replicas=41 dmin=11.2 dmax=66.5 limit=166.1 speed=3.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=170.3 pos=-4103.0,-1.3,-10.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=7.2 dmax=63.7 limit=169.6 speed=6.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4999 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 207 pkt/s 22.3 KB/s 296 states/s (msgs: state 136 rpc 4 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 0.24m | full-rate interp: depth 3.5 ticks, starved 0.1% worst +1.9 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 5.2 avg 9.9 max 50.5
+[nebula] [nebula-probe] t=171.3 pos=-4100.4,-1.3,-5.0 cell=0,0,0 origin=0,0,0 replicas=41 dmin=7.0 dmax=61.5 limit=169.6 speed=6.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=172.3 pos=-4098.8,-1.3,-1.1 cell=0,0,0 origin=0,0,0 replicas=41 dmin=8.3 dmax=60.6 limit=166.6 speed=4.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=173.3 pos=-4101.6,-1.3,4.3 cell=0,0,0 origin=0,0,0 replicas=41 dmin=12.7 dmax=71.7 limit=169.7 speed=6.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=174.3 pos=-4101.9,-1.0,4.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=13.0 dmax=79.2 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=175.3 pos=-4100.7,-0.8,5.6 cell=0,0,0 origin=0,0,0 replicas=41 dmin=12.1 dmax=84.7 limit=163.0 speed=1.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] client 4768 fps replicas 42 (+0.0/s -0.0/s) entities 42 in 221 pkt/s 26.1 KB/s 259 states/s (msgs: state 147 rpc 5 vars 5) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 1 last 0.25m | full-rate interp: depth 3.1 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.1 avg 14.4 max 48.8
+[nebula] [nebula-probe] t=176.3 pos=-4100.6,-1.3,10.2 cell=0,0,0 origin=0,0,0 replicas=41 dmin=11.6 dmax=88.4 limit=167.4 speed=4.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=2 pawn=1
+[nebula] [nebula-probe] t=177.3 pos=-4100.6,-1.3,15.5 cell=0,0,0 origin=0,0,0 replicas=39 dmin=8.8 dmax=66.0 limit=168.5 speed=5.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=178.3 pos=-4099.4,-1.2,21.2 cell=0,0,0 origin=0,0,0 replicas=39 dmin=7.4 dmax=72.8 limit=169.3 speed=5.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=179.3 pos=-4096.2,-1.2,25.4 cell=0,0,0 origin=0,0,0 replicas=39 dmin=12.2 dmax=78.5 limit=168.5 speed=5.3 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=180.3 pos=-4095.0,-1.2,26.9 cell=0,0,0 origin=0,0,0 replicas=39 dmin=12.4 dmax=85.5 limit=163.1 speed=2.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] client 5514 fps replicas 40 (+0.0/s -0.4/s) entities 40 in 184 pkt/s 23.1 KB/s 216 states/s (msgs: state 120 rpc 1 vars 2) rtt 0ms lead 6 (adj 3, worker saw 8) corrections 2 last 0.28m | full-rate interp: depth 3.1 ticks, starved 0.0% worst +1.1 | frame max 4.8ms fixed/frame max 1 | gaps>3t 7 worst 9t | render delay 5t (stream lag 2t) | snapshot age ms min 3.2 avg 12.1 max 44.4
+[nebula] [nebula-probe] t=181.3 pos=-4096.8,-1.3,31.5 cell=0,0,0 origin=0,0,0 replicas=39 dmin=9.2 dmax=103.9 limit=167.9 speed=4.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=182.3 pos=-4097.3,-0.8,34.1 cell=0,0,0 origin=0,0,0 replicas=39 dmin=6.7 dmax=77.3 limit=164.2 speed=2.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=183.3 pos=-4097.3,-0.8,34.1 cell=0,0,0 origin=0,0,0 replicas=39 dmin=6.3 dmax=77.3 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=184.3 pos=-4097.3,-0.8,34.1 cell=0,0,0 origin=0,0,0 replicas=39 dmin=6.7 dmax=77.3 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] [nebula-probe] t=185.3 pos=-4070.7,-2.0,22.2 cell=0,0,0 origin=0,0,0 replicas=39 dmin=13.8 dmax=79.8 limit=206.6 speed=29.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=44 despawns=4 pawn=1
+[nebula] client 5397 fps replicas 41 (+0.2/s -0.0/s) entities 41 in 166 pkt/s 19.4 KB/s 213 states/s (msgs: state 96 rpc 5 vars 5) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 3 last 0.10m | full-rate interp: depth 3.3 ticks, starved 0.0% worst +0.0 | frame max 3.2ms fixed/frame max 1 | gaps>3t 1 worst 178t | render delay 4t (stream lag 1t) | snapshot age ms min 6.6 avg 12.5 max 42.8
+[nebula] [nebula-probe] t=186.3 pos=-4072.4,-1.7,22.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=12.2 dmax=79.0 limit=162.8 speed=1.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=187.3 pos=-4072.2,-1.7,22.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=12.4 dmax=79.1 limit=160.3 speed=0.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=188.3 pos=-4072.2,-1.7,22.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=12.4 dmax=79.1 limit=160.1 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=189.3 pos=-4072.2,-1.7,22.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=12.4 dmax=79.1 limit=160.1 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=190.3 pos=-4073.0,-2.0,22.0 cell=0,0,0 origin=0,0,0 replicas=40 dmin=11.5 dmax=78.1 limit=161.8 speed=1.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] client 4823 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 188 pkt/s 18.2 KB/s 187 states/s (msgs: state 116 rpc 7 vars 4) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 1 last 0.06m | full-rate interp: depth 2.5 ticks, starved 0.5% worst +1.6 | frame max 3.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.8 avg 13.7 max 44.0
+[nebula] [nebula-probe] t=191.3 pos=-4078.7,-2.3,20.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=5.7 dmax=72.8 limit=169.6 speed=6.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=192.3 pos=-4083.6,-1.6,18.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.5 dmax=73.1 limit=168.4 speed=5.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=193.3 pos=-4083.6,-1.5,18.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.5 dmax=75.6 limit=160.1 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=194.3 pos=-4083.6,-1.2,18.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.4 dmax=78.9 limit=160.6 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=195.3 pos=-4083.6,-1.6,18.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=1.5 dmax=86.9 limit=160.7 speed=0.4 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] client 5016 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 168 pkt/s 20.7 KB/s 265 states/s (msgs: state 97 rpc 3 vars 3) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 3.1 ticks, starved 0.0% worst +1.0 | frame max 3.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 9.5 avg 12.9 max 46.6
+[nebula] [nebula-probe] t=196.3 pos=-4083.2,-1.6,17.5 cell=0,0,0 origin=0,0,0 replicas=40 dmin=2.6 dmax=67.8 limit=161.8 speed=1.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=197.3 pos=-4081.6,-2.7,11.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.8 dmax=67.5 limit=169.8 speed=6.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=198.3 pos=-4080.1,-2.7,8.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.1 dmax=70.2 limit=165.8 speed=3.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=199.3 pos=-4080.1,-2.8,8.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.2 dmax=70.2 limit=160.1 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=200.3 pos=-4080.1,-2.8,8.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.2 dmax=70.2 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] client 4928 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 186 pkt/s 22.2 KB/s 295 states/s (msgs: state 115 rpc 5 vars 5) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 14.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 9.9 avg 15.0 max 62.3
+[nebula] [nebula-probe] t=201.3 pos=-4080.1,-2.8,8.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.2 dmax=70.2 limit=160.0 speed=0.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=202.3 pos=-4082.1,-2.7,8.4 cell=0,0,0 origin=0,0,0 replicas=40 dmin=6.9 dmax=71.2 limit=163.1 speed=2.0 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=203.3 pos=-4083.4,-1.6,10.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=5.7 dmax=66.3 limit=163.9 speed=2.5 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=204.3 pos=-4083.1,-1.6,9.7 cell=0,0,0 origin=0,0,0 replicas=40 dmin=5.7 dmax=66.8 limit=160.9 speed=0.6 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=205.3 pos=-4083.0,-1.7,11.9 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.9 dmax=66.0 limit=163.5 speed=2.2 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] client 5494 fps replicas 41 (+0.0/s -0.0/s) entities 41 in 177 pkt/s 18.4 KB/s 201 states/s (msgs: state 107 rpc 4 vars 5) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 3.2ms fixed/frame max 1 | gaps>3t 11 worst 8t | render delay 3t (stream lag 0t) | snapshot age ms min 2.0 avg 11.5 max 50.7
+[nebula] [nebula-probe] t=206.3 pos=-4087.9,-1.6,15.1 cell=0,0,0 origin=0,0,0 replicas=40 dmin=4.7 dmax=63.2 limit=169.3 speed=5.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=207.3 pos=-4091.0,-1.4,17.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.1 dmax=63.8 limit=166.1 speed=3.8 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=208.3 pos=-4091.0,-1.3,17.3 cell=0,0,0 origin=0,0,0 replicas=40 dmin=7.1 dmax=63.8 limit=160.1 speed=0.1 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1
+[nebula] [nebula-probe] t=209.3 pos=-4092.9,-1.2,17.2 cell=0,0,0 origin=0,0,0 replicas=40 dmin=8.3 dmax=63.0 limit=163.0 speed=1.9 beyond=0 dup=0 chunks=0 orphans=0 carrierless=0 spawns=45 despawns=4 pawn=1

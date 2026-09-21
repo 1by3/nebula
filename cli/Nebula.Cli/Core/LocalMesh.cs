@@ -24,7 +24,8 @@ public static class LocalMesh
     /// <param name="Workers">Workers to start with.</param>
     /// <param name="MinWorkers">Autoscaling floor; equal to <paramref name="Workers"/> for a fixed mesh.</param>
     /// <param name="MaxWorkers">Autoscaling ceiling; equal to <paramref name="Workers"/> for a fixed mesh.</param>
-    public sealed record StartOptions(int Workers, int MinWorkers, int MaxWorkers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false, bool ResetSessions = false);
+    /// <param name="BotArgs">Extra command-line arguments appended to every bot client, so a game can select a deterministic bot behaviour per run.</param>
+    public sealed record StartOptions(int Workers, int MinWorkers, int MaxWorkers, int Npcs, int Bots, bool OpenUi, bool ResetPersistence = false, bool ResetSessions = false, string? BotArgs = null);
 
     public static void Start(Context ctx, NebulaProject project, StartOptions o)
     {
@@ -65,16 +66,21 @@ public static class LocalMesh
         if (ctx.Verbose) orch.Add("-nebula-verbose");
         Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null);
 
+        // A game's bot behaviour is the game's business, so --bot-args is passed through verbatim rather than
+        // being modelled here: the bot reads its own switches from the command line like any other Unity build.
+        var botExtra = (o.BotArgs ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         for (int b = 1; b <= o.Bots; b++)
         {
-            Shell.Detach(exe, new[]
+            var botArgs = new List<string>
             {
                 "-batchmode", "-nographics", "-nebula-role", "client", "-nebula-bot", "-nebula-name", $"bot{b}",
                 "-nebula-gateway", $"127.0.0.1:{mesh.GatewayPort}",
                 "-logFile", Path.Combine(logs, $"bot{b}.log"),
-            }, project.HostBuildDir, null);
+            };
+            botArgs.AddRange(botExtra);
+            Shell.Detach(exe, botArgs, project.HostBuildDir, null);
         }
-        if (o.Bots > 0) Ui.Info($"started {o.Bots} bot client(s)");
+        if (o.Bots > 0) Ui.Info($"started {o.Bots} bot client(s){(botExtra.Length > 0 ? $" with {string.Join(' ', botExtra)}" : "")}");
 
         Directory.CreateDirectory(project.CliStateDir);
         var state = new State

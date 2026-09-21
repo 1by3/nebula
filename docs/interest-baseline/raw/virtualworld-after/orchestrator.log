@@ -1,0 +1,180 @@
+2026-09-21T07:27:37.7508353Z [nebula] timer resolution 1 ms requested; background throttling opt-out ok
+2026-09-21T07:27:37.8223944Z [nebula] control plane: hosted by this orchestrator, stored in sqlite
+2026-09-21T07:27:37.8234249Z [nebula] persistence: sqlite store at sqlite:C:\Dev\nebula-virtualworld\Library\Nebula\nebula.db
+2026-09-21T07:27:37.8234955Z [nebula] warning: persistence: -nebula-reset-persistence: deleting every saved entity
+2026-09-21T07:27:37.8289028Z [nebula] orchestrator orch1: desired workers = 4, host=process, spawnGateway=True
+2026-09-21T07:27:37.8875470Z [nebula] dashboard at http://localhost:7180/ (bind localhost); World map at http://localhost:7180/map; workers post telemetry to http://127.0.0.1:7180/api/telemetry; artifacts from C:\Dev\nebula-virtualworld\Builds\Win64
+2026-09-21T07:27:37.8880769Z [nebula] control plane hosted at http://127.0.0.1:7180/ (stored in sqlite)
+2026-09-21T07:27:37.8881626Z [nebula] standalone orchestrator started; 0 baked containers
+2026-09-21T07:27:37.8885426Z [nebula] persistence: sqlite store ready (0 record(s))
+2026-09-21T07:27:37.8896887Z [nebula] setting npcs = 0
+2026-09-21T07:27:37.9237830Z [nebula] launched gateway pid=64740
+2026-09-21T07:27:38.9463836Z [nebula] scaling up: launching worker w1
+2026-09-21T07:27:38.9511679Z [nebula] launched worker w1 pid=72120
+2026-09-21T07:27:38.9512879Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7301 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7180/ -nebula-gateway 127.0.0.1:7200 -nebula-telemetry http://127.0.0.1:7180/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-virtualworld\Builds\Win64\Logs\w1.log"
+2026-09-21T07:27:38.9514691Z [nebula] launched worker w1 on process: pid 72120
+2026-09-21T07:27:38.9520562Z [nebula] scaling up: launching worker w2
+2026-09-21T07:27:38.9556695Z [nebula] launched worker w2 pid=34084
+2026-09-21T07:27:38.9556943Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w2 -nebula-worker-index 2 -nebula-port 7302 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7180/ -nebula-gateway 127.0.0.1:7200 -nebula-telemetry http://127.0.0.1:7180/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-virtualworld\Builds\Win64\Logs\w2.log"
+2026-09-21T07:27:38.9557161Z [nebula] launched worker w2 on process: pid 34084
+2026-09-21T07:27:38.9557584Z [nebula] scaling up: launching worker w3
+2026-09-21T07:27:38.9589045Z [nebula] launched worker w3 pid=57692
+2026-09-21T07:27:38.9589189Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w3 -nebula-worker-index 3 -nebula-port 7303 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7180/ -nebula-gateway 127.0.0.1:7200 -nebula-telemetry http://127.0.0.1:7180/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-virtualworld\Builds\Win64\Logs\w3.log"
+2026-09-21T07:27:38.9589321Z [nebula] launched worker w3 on process: pid 57692
+2026-09-21T07:27:38.9589552Z [nebula] scaling up: launching worker w4
+2026-09-21T07:27:38.9622405Z [nebula] launched worker w4 pid=48892
+2026-09-21T07:27:38.9622719Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w4 -nebula-worker-index 4 -nebula-port 7304 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7180/ -nebula-gateway 127.0.0.1:7200 -nebula-telemetry http://127.0.0.1:7180/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-virtualworld\Builds\Win64\Logs\w4.log"
+2026-09-21T07:27:38.9622922Z [nebula] launched worker w4 on process: pid 48892
+2026-09-21T07:27:42.5383693Z [nebula] assign rt_9223358842717339645 -> w2
+2026-09-21T07:27:42.5384004Z [nebula] assign rt_9223363240763850749 -> w2
+2026-09-21T07:27:42.5384039Z [nebula] assign rt_9223367638810361853 -> w2
+2026-09-21T07:27:42.5384067Z [nebula] assign rt_9223358842717339646 -> w2
+2026-09-21T07:27:42.5384093Z [nebula] assign rt_9223358842717339647 -> w2
+2026-09-21T07:27:42.5384561Z [nebula] assign rt_9223363240763850750 -> w2
+2026-09-21T07:27:42.5384608Z [nebula] assign rt_9223367638810361854 -> w2
+2026-09-21T07:27:42.5384633Z [nebula] assign rt_9223363240763850751 -> w2
+2026-09-21T07:27:42.5384660Z [nebula] assign rt_9223367638810361855 -> w2
+2026-09-21T07:27:42.5384687Z [nebula] assign rt_2097149 -> w2
+2026-09-21T07:27:42.5384716Z [nebula] assign rt_4398048608253 -> w2
+2026-09-21T07:27:42.5384751Z [nebula] assign rt_8796095119357 -> w2
+2026-09-21T07:27:42.5384781Z [nebula] assign rt_13194141630461 -> w3
+2026-09-21T07:27:42.5384814Z [nebula] assign rt_2097150 -> w3
+2026-09-21T07:27:42.5384942Z [nebula] assign rt_4398048608254 -> w3
+2026-09-21T07:27:42.5384975Z [nebula] assign rt_2097151 -> w3
+2026-09-21T07:27:42.5385012Z [nebula] assign rt_4398048608255 -> w3
+2026-09-21T07:27:42.5385044Z [nebula] assign rt_8796095119358 -> w3
+2026-09-21T07:27:42.5385088Z [nebula] assign rt_13194141630462 -> w3
+2026-09-21T07:27:42.5385118Z [nebula] assign rt_8796095119359 -> w3
+2026-09-21T07:27:42.5385158Z [nebula] assign rt_13194141630463 -> w3
+2026-09-21T07:27:42.5385183Z [nebula] assign rt_9223358842715242496 -> w3
+2026-09-21T07:27:42.5385207Z [nebula] assign rt_9223358842715242497 -> w3
+2026-09-21T07:27:42.5385230Z [nebula] assign rt_9223363240761753600 -> w3
+2026-09-21T07:27:42.5385263Z [nebula] assign rt_8796093022208 -> w4
+2026-09-21T07:27:42.5385293Z [nebula] assign rt_13194139533312 -> w4
+2026-09-21T07:27:42.5385322Z [nebula] assign rt_8796093022209 -> w4
+2026-09-21T07:27:42.5385353Z [nebula] assign rt_13194139533313 -> w4
+2026-09-21T07:27:42.5385381Z [nebula] assign rt_2 -> w4
+2026-09-21T07:27:42.5385410Z [nebula] assign rt_4398046511106 -> w4
+2026-09-21T07:27:42.5385438Z [nebula] assign rt_3 -> w4
+2026-09-21T07:27:42.5385466Z [nebula] assign rt_4398046511107 -> w4
+2026-09-21T07:27:42.5385497Z [nebula] assign rt_8796093022210 -> w4
+2026-09-21T07:27:42.5385529Z [nebula] assign rt_13194139533314 -> w4
+2026-09-21T07:27:42.5385560Z [nebula] assign rt_8796093022211 -> w4
+2026-09-21T07:27:42.5385592Z [nebula] assign rt_13194139533315 -> w4
+2026-09-21T07:27:42.9052005Z [nebula] loop 60 Hz, period max 45.6 ms, tick avg 0.42 ms max 45.6 ms
+2026-09-21T07:27:47.9050627Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.13 ms max 10.8 ms
+2026-09-21T07:27:52.1895196Z [nebula] assign rt_9223345648577806333 -> w2
+2026-09-21T07:27:52.1895521Z [nebula] assign rt_9223350046624317437 -> w2
+2026-09-21T07:27:52.1895588Z [nebula] assign rt_9223345648577806334 -> w2
+2026-09-21T07:27:52.1895653Z [nebula] assign rt_9223350046624317438 -> w2
+2026-09-21T07:27:52.1895718Z [nebula] assign rt_9223345648577806335 -> w2
+2026-09-21T07:27:52.1895785Z [nebula] assign rt_9223350046624317439 -> w2
+2026-09-21T07:27:52.1895865Z [nebula] assign rt_9223354444670828541 -> w2
+2026-09-21T07:27:52.1895944Z [nebula] assign rt_9223354444670828542 -> w2
+2026-09-21T07:27:52.1896024Z [nebula] assign rt_9223354444670828543 -> w2
+2026-09-21T07:27:52.1896102Z [nebula] assign rt_2097146 -> w2
+2026-09-21T07:27:52.1896181Z [nebula] assign rt_4398048608250 -> w2
+2026-09-21T07:27:52.1896257Z [nebula] assign rt_2097147 -> w2
+2026-09-21T07:27:52.1896346Z [nebula] assign rt_4398048608251 -> w2
+2026-09-21T07:27:52.1896420Z [nebula] assign rt_8796095119354 -> w2
+2026-09-21T07:27:52.1896489Z [nebula] assign rt_13194141630458 -> w2
+2026-09-21T07:27:52.1896560Z [nebula] assign rt_8796095119355 -> w2
+2026-09-21T07:27:52.1896633Z [nebula] assign rt_13194141630459 -> w2
+2026-09-21T07:27:52.1896707Z [nebula] assign rt_17592188141562 -> w2
+2026-09-21T07:27:52.1896789Z [nebula] assign rt_21990234652666 -> w2
+2026-09-21T07:27:52.1896857Z [nebula] assign rt_17592188141563 -> w2
+2026-09-21T07:27:52.1896892Z [nebula] assign rt_2097149 -> w3
+2026-09-21T07:27:52.1896927Z [nebula] assign rt_4398048608253 -> w3
+2026-09-21T07:27:52.1896966Z [nebula] assign rt_8796095119357 -> w3
+2026-09-21T07:27:52.1897016Z [nebula] assign rt_17592188141566 -> w3
+2026-09-21T07:27:52.1897494Z [nebula] assign rt_17592188141567 -> w3
+2026-09-21T07:27:52.1897555Z [nebula] assign rt_9223345648575709187 -> w1
+2026-09-21T07:27:52.1897610Z [nebula] assign rt_9223350046622220291 -> w1
+2026-09-21T07:27:52.1897663Z [nebula] assign rt_9223354444668731392 -> w1
+2026-09-21T07:27:52.1897752Z [nebula] assign rt_9223358842715242496 -> w1
+2026-09-21T07:27:52.1898236Z [nebula] assign rt_9223354444668731393 -> w1
+2026-09-21T07:27:52.1898307Z [nebula] assign rt_9223358842715242497 -> w1
+2026-09-21T07:27:52.1898347Z [nebula] assign rt_9223363240761753600 -> w1
+2026-09-21T07:27:52.1898407Z [nebula] assign rt_9223354444668731394 -> w1
+2026-09-21T07:27:52.1898466Z [nebula] assign rt_9223354444668731395 -> w1
+2026-09-21T07:27:52.1898538Z [nebula] assign rt_9223358842715242500 -> w1
+2026-09-21T07:27:52.1898617Z [nebula] assign rt_9223358842715242501 -> w1
+2026-09-21T07:27:52.1898669Z [nebula] assign rt_9223363240761753605 -> w1
+2026-09-21T07:27:52.1898720Z [nebula] assign rt_9223367638808264709 -> w1
+2026-09-21T07:27:52.1898771Z [nebula] assign rt_8796093022208 -> w1
+2026-09-21T07:27:52.1898826Z [nebula] assign rt_13194139533312 -> w1
+2026-09-21T07:27:52.1898875Z [nebula] assign rt_8796093022209 -> w1
+2026-09-21T07:27:52.1898927Z [nebula] assign rt_13194139533313 -> w1
+2026-09-21T07:27:52.1898970Z [nebula] assign rt_2 -> w1
+2026-09-21T07:27:52.1899018Z [nebula] assign rt_4398046511106 -> w1
+2026-09-21T07:27:52.9214350Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.13 ms max 12.7 ms
+2026-09-21T07:27:57.9214514Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.09 ms max 4.0 ms
+2026-09-21T07:28:02.9381763Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.09 ms max 5.5 ms
+2026-09-21T07:28:07.9386020Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.9 ms
+2026-09-21T07:28:12.9546540Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 1.6 ms
+2026-09-21T07:28:17.9547704Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.9 ms
+2026-09-21T07:28:22.8216530Z [nebula] assign rt_21990234652667 -> w2
+2026-09-21T07:28:22.8216723Z [nebula] assign rt_26388281163770 -> w2
+2026-09-21T07:28:22.8216758Z [nebula] assign rt_26388281163771 -> w2
+2026-09-21T07:28:22.8216789Z [nebula] assign rt_2097148 -> w2
+2026-09-21T07:28:22.8216822Z [nebula] assign rt_4398048608252 -> w2
+2026-09-21T07:28:22.8216848Z [nebula] assign rt_2097149 -> w2
+2026-09-21T07:28:22.8216875Z [nebula] assign rt_4398048608253 -> w2
+2026-09-21T07:28:22.8216903Z [nebula] assign rt_8796095119356 -> w2
+2026-09-21T07:28:22.8216932Z [nebula] assign rt_9223345648575709187 -> w3
+2026-09-21T07:28:22.8216961Z [nebula] assign rt_9223350046622220291 -> w3
+2026-09-21T07:28:22.8216988Z [nebula] assign rt_9223354444668731392 -> w3
+2026-09-21T07:28:22.8217019Z [nebula] assign rt_9223367638808264710 -> w1
+2026-09-21T07:28:22.8217045Z [nebula] assign rt_8796093022208 -> w4
+2026-09-21T07:28:22.8217070Z [nebula] assign rt_13194139533312 -> w4
+2026-09-21T07:28:22.8217096Z [nebula] assign rt_8796093022209 -> w4
+2026-09-21T07:28:22.8217123Z [nebula] assign rt_13194139533313 -> w4
+2026-09-21T07:28:22.8217151Z [nebula] assign rt_2 -> w4
+2026-09-21T07:28:22.8217178Z [nebula] assign rt_4398046511106 -> w4
+2026-09-21T07:28:22.9548180Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.08 ms max 1.2 ms
+2026-09-21T07:28:27.9553488Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.07 ms max 1.4 ms
+2026-09-21T07:28:32.9718558Z [nebula] loop 60 Hz, period max 17.9 ms, tick avg 0.08 ms max 1.3 ms
+2026-09-21T07:28:37.9877275Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:28:42.9887664Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:28:48.0047980Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.07 ms max 0.9 ms
+2026-09-21T07:28:53.0049300Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.07 ms max 1.0 ms
+2026-09-21T07:28:58.0214019Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.06 ms max 0.8 ms
+2026-09-21T07:29:03.0218926Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.9 ms
+2026-09-21T07:29:08.0221769Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.06 ms max 0.9 ms
+2026-09-21T07:29:13.0387523Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 1.1 ms
+2026-09-21T07:29:18.0386419Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.9 ms
+2026-09-21T07:29:23.0555276Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 1.0 ms
+2026-09-21T07:29:28.0709008Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.07 ms max 0.7 ms
+2026-09-21T07:29:33.0880907Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.08 ms max 0.8 ms
+2026-09-21T07:29:38.1051747Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:29:43.1224105Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.7 ms
+2026-09-21T07:29:48.1381276Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.08 ms max 0.9 ms
+2026-09-21T07:29:53.1381903Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:29:58.1538429Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 1.1 ms
+2026-09-21T07:30:03.1550331Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 0.8 ms
+2026-09-21T07:30:08.1725586Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:30:13.1882140Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:30:13.4883241Z [nebula] assign rt_13194141630460 -> w2
+2026-09-21T07:30:13.4883420Z [nebula] assign rt_21990234652671 -> w1
+2026-09-21T07:30:13.4883460Z [nebula] assign rt_9223350046622220288 -> w1
+2026-09-21T07:30:13.4883490Z [nebula] assign rt_9223350046622220289 -> w1
+2026-09-21T07:30:13.4883518Z [nebula] assign rt_9223350046622220290 -> w1
+2026-09-21T07:30:13.4883543Z [nebula] assign rt_9223354444668731392 -> w1
+2026-09-21T07:30:13.4883568Z [nebula] assign rt_1 -> w4
+2026-09-21T07:30:13.4883594Z [nebula] assign rt_4398046511105 -> w4
+2026-09-21T07:30:13.4883621Z [nebula] assign rt_5 -> w4
+2026-09-21T07:30:13.4883648Z [nebula] assign rt_4398046511109 -> w4
+2026-09-21T07:30:13.4883676Z [nebula] assign rt_13194139533316 -> w4
+2026-09-21T07:30:13.4883714Z [nebula] assign rt_8796093022213 -> w4
+2026-09-21T07:30:13.4883741Z [nebula] assign rt_17592186044420 -> w4
+2026-09-21T07:30:18.1883123Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 1.0 ms
+2026-09-21T07:30:23.2049902Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:30:28.2210220Z [nebula] loop 60 Hz, period max 41.3 ms, tick avg 0.07 ms max 1.0 ms
+2026-09-21T07:30:33.2381702Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 0.8 ms
+2026-09-21T07:30:38.2553694Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:30:43.2712971Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 0.9 ms
+2026-09-21T07:30:48.2889061Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.08 ms max 0.7 ms
+2026-09-21T07:30:53.3056765Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.07 ms max 1.1 ms
+2026-09-21T07:30:58.3057754Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 0.8 ms
+2026-09-21T07:31:03.3213901Z [nebula] loop 60 Hz, period max 18.8 ms, tick avg 0.08 ms max 0.8 ms
+2026-09-21T07:31:08.3214876Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.07 ms max 1.1 ms

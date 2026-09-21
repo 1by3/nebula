@@ -36,6 +36,8 @@ public static class Program
         public double ReconnectEvery;
         public string? Csv;
         public bool Verbose;
+        /// <summary>Fraction of clients that never send a focus hint and never move their focus: idle players.</summary>
+        public double Idle;
     }
 
     private sealed class Client
@@ -58,6 +60,16 @@ public static class Program
         public string LastError = "";
         public readonly List<double> Rtts = new();
         public double NextReconnectDrill;
+        /// <summary>
+        /// Replicas this client holds. With interest management this is the number that says whether the mesh
+        /// scopes: it must follow the local density of the world and not its size.
+        /// </summary>
+        public readonly HashSet<ulong> Replicas = new();
+        public readonly Dictionary<ulong, ushort> ViewSeq = new();
+        public long BytesIn;
+        public long LastBytesIn;
+        /// <summary>This client stands still and sends no focus hint (<c>--idle</c>).</summary>
+        public bool Idle;
 
         public Client(int index, string name, string identityToken)
         {
@@ -76,13 +88,19 @@ public static class Program
         if (o == null) return 2;
         Console.WriteLine($"nebula-loadgen: {o.Clients} clients -> {o.Host}:{o.Port} for {o.Seconds:0} s (ramp {o.RampSeconds:0} s, inputs {o.InputHz} Hz{(o.ReconnectEvery > 0 ? $", reconnect drill every {o.ReconnectEvery:0} s" : "")})");
         var clients = new List<Client>();
-        for (int i = 0; i < o.Clients; i++) clients.Add(new Client(i, $"{o.NamePrefix}{i}", o.Token));
+        for (int i = 0; i < o.Clients; i++)
+        {
+            // A mesh where every synthetic client moves is not the mesh a game has: standing players are the
+            // ones whose replica count and bytes should be flat, and a regression shows up in them first.
+            var client = new Client(i, $"{o.NamePrefix}{i}", o.Token) { Idle = o.Idle > 0 && i % 100 < o.Idle * 100 };
+            clients.Add(client);
+        }
         // One token is one player, and a mesh with NebulaConfig.SingleSessionPerPlayer on (the default) keeps only
         // that player's newest connection: the rest are closed as soon as they are welcomed.
         if (o.Clients > 1 && o.Token.Length > 0)
             Console.WriteLine("nebula-loadgen: warning: --token makes every client the same player. Give the mesh -nebula-single-session false, or a token per client, or the gateway will keep only the newest connection.");
         StreamWriter? csv = o.Csv != null ? new StreamWriter(o.Csv) : null;
-        csv?.WriteLine("t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,gateways");
+        csv?.WriteLine("t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,replicasAvg,replicasMax,bytesPerClientAvg,bytesPerClientMax,gateways");
 
         double start = Now, nextReport = start + 1, end = start + o.Seconds;
         var writer = new NetworkWriter(512);
@@ -155,6 +173,8 @@ public static class Program
         c.Peer = -1;
         c.Connected = false;
         c.Join = JoinState.None;
+        c.Replicas.Clear();
+        c.ViewSeq.Clear();
         c.ReconnectAt = Now + retryIn;
         c.LastError = why;
     }
@@ -179,6 +199,7 @@ public static class Program
             case TransportEvent.Kind.Data:
                 Interlocked.Increment(ref _packetsIn);
                 Interlocked.Add(ref _bytesIn, e.Data.Count);
+                c.BytesIn += e.Data.Count;
                 reader.Set(e.Data);
                 try { Dispatch(c, reader, o); } catch (Exception ex) { c.LastError = "bad packet: " + ex.Message; }
                 break;
@@ -234,11 +255,17 @@ public static class Program
             {
                 var spawn = EntitySpawnMsg.Read(r);
                 if (spawn.OwnerClientId == c.SessionId && c.SessionId != 0) c.Pawn = spawn.NetId;
+                c.Replicas.Add(spawn.NetId);
+                if (spawn.ViewSeq != 0) c.ViewSeq[spawn.NetId] = spawn.ViewSeq;
                 break;
             }
             case MsgId.EntityDespawn:
             {
                 var despawn = EntityDespawnMsg.Read(r);
+                // The same view guard a real client applies (design D4).
+                if (despawn.ViewSeq != 0 && c.ViewSeq.TryGetValue(despawn.NetId, out ushort held) && despawn.ViewSeq < held) break;
+                c.ViewSeq.Remove(despawn.NetId);
+                c.Replicas.Remove(despawn.NetId);
                 if (despawn.NetId == c.Pawn) c.Pawn = 0;
                 break;
             }
@@ -282,10 +309,25 @@ public static class Program
         var rtts = clients.SelectMany(c => c.Rtts).OrderBy(x => x).ToList();
         double p50 = rtts.Count > 0 ? rtts[rtts.Count / 2] : 0, p95 = rtts.Count > 0 ? rtts[(int)(rtts.Count * 0.95)] : 0;
         var gateways = clients.Where(c => c.SessionId != 0).GroupBy(c => SessionIds.Incarnation(c.SessionId)).Select(g => $"{g.Key:x8}={g.Count()}").ToList();
+        // Per-client replicas and bytes: the two numbers interest management is judged on. A total hides a
+        // single client being sent the world behind the many that are not.
+        var joinedClients = clients.Where(c => c.Welcome != null).ToList();
+        double replicasAvg = joinedClients.Count > 0 ? joinedClients.Average(c => c.Replicas.Count) : 0;
+        int replicasMax = joinedClients.Count > 0 ? joinedClients.Max(c => c.Replicas.Count) : 0;
+        double bytesAvg = 0, bytesMax = 0;
+        foreach (var c in joinedClients)
+        {
+            double delta = c.BytesIn - c.LastBytesIn;
+            c.LastBytesIn = c.BytesIn;
+            bytesAvg += delta;
+            if (delta > bytesMax) bytesMax = delta;
+        }
+        if (joinedClients.Count > 0) bytesAvg /= joinedClients.Count;
         string line = $"t={t,5:0}s connected={connected}/{clients.Count} joined={joined} reconnects={reconnects} sessionChanges={changes} pawnLosses={losses} rejected={rejections} " +
-                      $"in={dpin} pkt/s {dbin * 8 / 1e6:0.00} Mb/s out={dpout} pkt/s {dbout * 8 / 1e6:0.00} Mb/s rtt p50={p50:0.0} p95={p95:0.0} ms gateways[{string.Join(" ", gateways)}]";
+                      $"in={dpin} pkt/s {dbin * 8 / 1e6:0.00} Mb/s out={dpout} pkt/s {dbout * 8 / 1e6:0.00} Mb/s rtt p50={p50:0.0} p95={p95:0.0} ms " +
+                      $"replicas avg={replicasAvg:0.0} max={replicasMax} bytes/client avg={bytesAvg / 1024:0.0} max={bytesMax / 1024:0.0} KB/s gateways[{string.Join(" ", gateways)}]";
         Console.WriteLine(line);
-        csv?.WriteLine(string.Join(",", t.ToString("0", CultureInfo.InvariantCulture), connected, joined, reconnects, changes, losses, rejections, dpin, dpout, dbin, dbout, p50.ToString("0.0", CultureInfo.InvariantCulture), p95.ToString("0.0", CultureInfo.InvariantCulture), string.Join(" ", gateways)));
+        csv?.WriteLine(string.Join(",", t.ToString("0", CultureInfo.InvariantCulture), connected, joined, reconnects, changes, losses, rejections, dpin, dpout, dbin, dbout, p50.ToString("0.0", CultureInfo.InvariantCulture), p95.ToString("0.0", CultureInfo.InvariantCulture), replicasAvg.ToString("0.0", CultureInfo.InvariantCulture), replicasMax, bytesAvg.ToString("0", CultureInfo.InvariantCulture), bytesMax.ToString("0", CultureInfo.InvariantCulture), string.Join(" ", gateways)));
         if (o.Verbose)
         {
             foreach (var c in clients.Where(c => c.LastError.Length > 0).Take(5)) Console.WriteLine($"  {c.Name}: {c.LastError}");
@@ -319,6 +361,7 @@ public static class Program
                     case "--token": o.Token = Next(); break;
                     case "--reconnect-every": o.ReconnectEvery = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                     case "--csv": o.Csv = Next(); break;
+                    case "--idle": o.Idle = Math.Clamp(double.Parse(Next(), CultureInfo.InvariantCulture), 0, 1); break;
                     case "--verbose": o.Verbose = true; break;
                     case "--help": case "-h": Usage(); return null;
                     default: Console.Error.WriteLine("unknown option " + a); Usage(); return null;
@@ -331,7 +374,8 @@ public static class Program
 
     private static void Usage()
     {
-        Console.WriteLine("nebula-loadgen --gateway <host:port> --clients <n> --seconds <s> [--ramp <s>] [--input-hz <n>] [--name-prefix <p>] [--bot] [--token <identity token>] [--reconnect-every <s>] [--csv <file>] [--verbose]");
+        Console.WriteLine("nebula-loadgen --gateway <host:port> --clients <n> --seconds <s> [--ramp <s>] [--input-hz <n>] [--name-prefix <p>] [--bot] [--token <identity token>] [--reconnect-every <s>] [--idle <0..1>] [--csv <file>] [--verbose]");
+        Console.WriteLine("--idle is the fraction of clients that stand still and send no focus hint; their replica count and bytes are what must stay flat as the world grows.");
         Console.WriteLine("Synthetic clients for a gateway fleet: connect, send inputs, reconnect with the session token when told to, and report per second. Exit 0 when no session id changed and no pawn was lost across reconnects.");
         Console.WriteLine("--token gives every client the same identity, so it needs a mesh started with -nebula-single-session false. Without it, clients get an anonymous identity each.");
     }

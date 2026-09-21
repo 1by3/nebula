@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 16, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 17, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 16. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 17. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `16`. Every `Hello` carries that version.
+The current protocol version is `17`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `16`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `17`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -113,7 +113,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 16 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 17 sender MUST write them as zero.
 
 ## Message registry
 
@@ -142,9 +142,14 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 22 | `InstanceReady` | `W-W`, `C-G-W` | Reliable ordered | [`InstancePreparation`](#instance-preparation) |
 | 20 | `ClientInput` | `C-G-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
 | 21 | `ServerRpc` | `C-G-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 23 | `ClientFocusHint` | `C-G` | Sequenced (hint), ReliableOrdered (clear) | [`ClientFocusHint`](#interest-management) |
 | 30 | `SpawnPlayer` | `G-W` | Reliable ordered | [`SpawnPlayer`](#player-lifecycle) |
 | 31 | `DespawnPlayer` | `G-W` | Reliable ordered | [`DespawnPlayer`](#player-lifecycle) |
 | 32 | `EndSession` | `W-G` | Reliable ordered | [`EndSession`](#player-lifecycle) |
+| 33 | `InterestSubscribe` | `G-W` | Reliable ordered | [`InterestSubscribe`](#interest-management) |
+| 34 | `InterestResync` | `W-G` | Reliable ordered | [`InterestResync`](#interest-management) |
+| 35 | `EntityRedirect` | `W-G` | Reliable ordered | [`EntityRedirect`](#interest-management) |
+| 36 | `EntityForget` | `W-G` | Reliable ordered | [`EntityForget`](#interest-management) |
 | 40 | `GhostSpawn` | `W-W` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 41 | `GhostState` | `W-W` | Conditional | [`StateBatchBody`](#batched-transform-state) |
 | 42 | `GhostVars` | `W-W` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -155,7 +160,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 
-IDs not listed in this table are reserved. A version 16 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 17 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -210,13 +215,21 @@ EntitySpawnBody :=
   u32 scene_id,
   bytes vars,
   bytes state,
-  string owner_identity
+  string owner_identity,
+  f16 relevance_radius,
+  u8 interest_flags,
+  u8 interest_group,
+  u16 view_seq
 
-EntityDespawnBody := u64 net_id, u32 entity_epoch
+EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 ```
 
 `EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate. `owner_identity` is the owning player's identity (see `Welcome`), or empty for an entity no player owns.
+
+`relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in metres (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved.
+
+`view_seq` is assigned by the gateway, per client and per entity, and increases every time the entity enters that client's set. A client MUST ignore an `EntityDespawn` whose `view_seq` is older than the view it currently holds for that `net_id`, so a despawn delayed behind a re-entry cannot remove the replica the client has just been given. Workers write `0` in both messages; only the gateway-to-client link uses the field.
 
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
@@ -323,7 +336,8 @@ OwnerState :=
 ### Container ownership
 
 ```text
-ContainerOwnership := u16 entry_count, OwnershipEntry[entry_count]
+ContainerOwnership := u8 flags, u16 entry_count, OwnershipEntry[entry_count],
+                      u16 remove_count, string removed_container_id[remove_count]
 OwnershipEntry :=
   u16 container_index,
   string container_id,
@@ -333,11 +347,13 @@ OwnershipEntry :=
   string lease_state,
   bool has_instance,
   [InstanceContainerInfo when has_instance],
-  u8 flags,
-  [vector3 bounds_center, vector3 bounds_size when flags bit 0 is set]
+  u8 entry_flags,
+  [vector3 bounds_center, vector3 bounds_size when entry_flags bit 0 is set]
 ```
 
-Flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box in absolute world coordinates. Other bits are reserved. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
+Message flag bit 0 (`Full`) means the entries are the complete set of containers this client should know about: the client forgets every container the message does not name. Without it the message is a change to what the client already has, and `removed_container_id` names the containers to forget. A gateway sends the removes after the entities in those containers have been despawned, and sends the upserts before the spawns that need them, so an entity never arrives before its container.
+
+Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box in absolute world coordinates. Other bits are reserved. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
 
 ### Instance preparation
 
@@ -386,12 +402,16 @@ AuthorityTransfer :=
   u16 ghost_worker_count,
   string ghost_worker_id[ghost_worker_count],
   u64 session_generation,
-  string session_gateway
+  string session_gateway,
+  u16 interest_gateway_count,
+  string interest_gateway_key[interest_gateway_count]
 ```
+
+`interest_gateway_key` lists the gateways that were following the entity on the old owner without subscribing its region — an explicit per-entity subscription, or the session the gateway speaks for. The old owner also sends each of them an `EntityRedirect`; the new owner announces the entity's spawn to them in addition to the gateways its own subscribed regions cover, so a followed entity is not lost when it changes worker.
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 16. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 17. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,
@@ -412,6 +432,69 @@ HandoverChunk := u16 byte_length, raw[byte_length]
 ```
 
 Chunks appear in behavior-index order. Their bytes are defined by each behavior's `WriteHandoverState` and `ReadHandoverState` pair. A receiver bounds each behavior to its chunk and skips chunks beyond its behavior count.
+
+### Interest management
+
+A gateway tells each worker which parts of the world its clients need, instead of receiving every entity the mesh
+simulates. The unit is a **region**: one cell of a uniform grid over absolute world coordinates, identified by the
+same packing as a runtime container ID (three signed 21-bit fields, X in the high bits). Both ends derive the grid
+from shared configuration; the message carries it so a worker can detect a mismatch rather than filter with
+identifiers that mean something else.
+
+```text
+InterestSubscribe :=
+  u32 seq,
+  u32 base_seq,
+  f32 edge_x, f32 edge_y, f32 edge_z,
+  f32 offset_x, f32 offset_y, f32 offset_z,
+  bool planar,
+  u8 flags,
+  u16 add_count, u64 add_region[add_count],
+  u16 remove_count, u64 remove_region[remove_count],
+  u16 foci_count, u64 focus_region[foci_count],
+  u16 entity_count, u64 net_id[entity_count],
+  u32 set_count,
+  u64 set_hash
+
+InterestResync := u32 have_seq
+EntityRedirect := u64 net_id, u16 new_worker_index
+EntityForget   := u64 net_id, u32 entity_epoch
+ClientFocusHint := u8 generation, u8 flags, [vector3 position]   ; flags bit 0 = Clear; position is absent on a clear
+```
+
+A region's coordinate on each axis is `floor((position - offset) / edge)` in double precision, over absolute world
+coordinates rather than a peer's floating-origin frame. With `planar` set, the Y coordinate is always zero and
+regions are infinite columns.
+
+`flags` bit 0 (`Full`) means the message replaces the worker's whole set; bit 1 (`Commit`) marks the last message of
+an update. A set too large for one message is split into several with the same `seq`, and a worker MUST NOT adopt
+any of them until the committing message verifies. Other bits are reserved.
+
+`set_count` and `set_hash` describe the region set after the update: the count of regions, and the XOR over all of
+them of the SplitMix64 finalizer of the region identifier. The hash does not depend on order.
+
+A worker applies an update when the grid matches its own, and either `Full` is set or `base_seq` equals the sequence
+it currently holds. On the committing message it checks `set_count` and `set_hash`; if either differs, or the base
+sequence did not match, it MUST keep the set it had, discard everything staged, and answer `InterestResync` with the
+sequence it holds. The gateway answers a resync with a `Full` snapshot. Repeating a message whose `seq` the worker
+already holds is a no-op when it describes the same set, which makes the protocol idempotent under retransmission.
+Gateways also send a `Full` snapshot on connection, on a worker incarnation change, and periodically as an audit.
+
+`focus_region` is the full list of the regions this gateway's clients are focused on, and `net_id` the full list of
+entities it subscribes individually; both are sent on the committing message and replace whatever was there.
+
+On a newly subscribed region the worker sends `EntitySpawn` for the entities bucketed in it. When an entity moves
+between regions it sends `EntitySpawn` to the gateways that subscribe the new region but not the old one, and
+`EntityForget` to the gateways that subscribe the old one but not the new one. Nothing is sent when a region is
+unsubscribed: the gateway already knows which entities that removes. A worker sends `EntityRedirect` for an
+individually subscribed entity that has moved to another worker, so the gateway links that worker instead.
+
+`ClientFocusHint` tells the gateway where a client is looking, for example a sniper scope or a strategy camera. It
+is advisory. A gateway MUST drop a hint containing a non-finite value, MUST rate-limit hints per client
+(`InterestHintMaxHz`, five per second by default), and MUST clamp the point to `InterestHintMaxDistance` from the
+client's pawn unless its interest policy accepts free foci for that client.
+
+A client withdraws its hint with a `Clear` message, sent reliably under a `generation` one higher than its hints so far; interest returns to the pawn on the next evaluation. Hints and the clear travel on different channels and can cross, so the gateway drops any message whose generation is older than the newest it has seen (wrapping `u8` comparison), and ignores a clear whose generation it already holds from a newer hint. The gateway adopts the generation of the first hint message on a connection. A clear is never rate-limited: narrowing interest is always allowed.
 
 ### Worker-defined messages
 

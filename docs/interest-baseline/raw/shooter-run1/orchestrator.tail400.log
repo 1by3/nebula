@@ -1,0 +1,296 @@
+﻿2026-09-21T03:19:20.5582992Z [nebula] timer resolution 1 ms requested; background throttling opt-out ok
+2026-09-21T03:19:20.6354474Z [nebula] control plane: hosted by this orchestrator, stored in sqlite
+2026-09-21T03:19:20.6363531Z [nebula] persistence: sqlite store at sqlite:C:\Dev\nebula-shootergame\Library\Nebula\nebula.db
+2026-09-21T03:19:20.6402067Z [nebula] orchestrator orch1: desired workers = 4, host=process, spawnGateway=True
+2026-09-21T03:19:20.6979641Z [nebula] dashboard at http://localhost:7080/ (bind localhost); World map at http://localhost:7080/map; workers post telemetry to http://127.0.0.1:7080/api/telemetry; artifacts from C:\Dev\nebula-shootergame\Builds\Win64
+2026-09-21T03:19:20.6981102Z [nebula] control plane hosted at http://127.0.0.1:7080/ (stored in sqlite)
+2026-09-21T03:19:20.6981839Z [nebula] standalone orchestrator started; 77 baked containers
+2026-09-21T03:19:20.7000729Z [nebula] setting npcs = 60
+2026-09-21T03:19:20.7771406Z [nebula] launched gateway pid=25844
+2026-09-21T03:19:21.7897086Z [nebula] scaling up: launching worker w1
+2026-09-21T03:19:21.7946558Z [nebula] launched worker w1 pid=52596
+2026-09-21T03:19:21.7947612Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7080/ -nebula-gateway 127.0.0.1:7000 -nebula-telemetry http://127.0.0.1:7080/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-shootergame\Builds\Win64\Logs\w1.log"
+2026-09-21T03:19:21.7949340Z [nebula] launched worker w1 on process: pid 52596
+2026-09-21T03:19:21.7955633Z [nebula] scaling up: launching worker w2
+2026-09-21T03:19:21.7994048Z [nebula] launched worker w2 pid=45088
+2026-09-21T03:19:21.7994239Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w2 -nebula-worker-index 2 -nebula-port 7102 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7080/ -nebula-gateway 127.0.0.1:7000 -nebula-telemetry http://127.0.0.1:7080/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-shootergame\Builds\Win64\Logs\w2.log"
+2026-09-21T03:19:21.7994458Z [nebula] launched worker w2 on process: pid 45088
+2026-09-21T03:19:21.7994892Z [nebula] scaling up: launching worker w3
+2026-09-21T03:19:21.8033234Z [nebula] launched worker w3 pid=45580
+2026-09-21T03:19:21.8033534Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w3 -nebula-worker-index 3 -nebula-port 7103 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7080/ -nebula-gateway 127.0.0.1:7000 -nebula-telemetry http://127.0.0.1:7080/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-shootergame\Builds\Win64\Logs\w3.log"
+2026-09-21T03:19:21.8033669Z [nebula] launched worker w3 on process: pid 45580
+2026-09-21T03:19:21.8034035Z [nebula] scaling up: launching worker w4
+2026-09-21T03:19:21.8071683Z [nebula] launched worker w4 pid=38820
+2026-09-21T03:19:21.8071908Z [nebula] Nebula.exe -batchmode -nographics -nebula-role worker -nebula-worker-id w4 -nebula-worker-index 4 -nebula-port 7104 -nebula-advertise 127.0.0.1 -nebula-control-plane http://127.0.0.1:7080/ -nebula-gateway 127.0.0.1:7000 -nebula-telemetry http://127.0.0.1:7080/api/telemetry -nebula-persistence-mode remote -nebula-verbose -logFile "C:\Dev\nebula-shootergame\Builds\Win64\Logs\w4.log"
+2026-09-21T03:19:21.8072024Z [nebula] launched worker w4 on process: pid 38820
+2026-09-21T03:19:22.6487530Z [nebula] persistence: sqlite store ready (67 record(s))
+2026-09-21T03:19:25.6986230Z [nebula] loop 60 Hz, period max 79.1 ms, tick avg 0.49 ms max 79.1 ms
+2026-09-21T03:19:28.3776370Z [nebula] assign explorer-outdoor-sw -> w1
+2026-09-21T03:19:28.3776726Z [nebula] assign explorer-hex-lab -> w1
+2026-09-21T03:19:28.3776765Z [nebula] assign explorer-hab-south -> w1
+2026-09-21T03:19:28.3776806Z [nebula] assign market-outdoor-sw -> w1
+2026-09-21T03:19:28.3776840Z [nebula] assign market-crates-south -> w1
+2026-09-21T03:19:28.3777369Z [nebula] assign cell_n2_0_n2 -> w1
+2026-09-21T03:19:28.3777410Z [nebula] assign cell_n1_0_n2 -> w1
+2026-09-21T03:19:28.3777438Z [nebula] assign explorer-hab-far-west -> w1
+2026-09-21T03:19:28.3777466Z [nebula] assign explorer-labs-west -> w1
+2026-09-21T03:19:28.3777492Z [nebula] assign explorer-hab-west -> w1
+2026-09-21T03:19:28.3777516Z [nebula] assign explorer-outdoor-nw -> w1
+2026-09-21T03:19:28.3777547Z [nebula] assign explorer-hab-northwest -> w1
+2026-09-21T03:19:28.3777667Z [nebula] assign cell_n2_0_n1 -> w1
+2026-09-21T03:19:28.3777741Z [nebula] assign market-outdoor-se -> w1
+2026-09-21T03:19:28.3777778Z [nebula] assign market-docks -> w1
+2026-09-21T03:19:28.3777811Z [nebula] assign market-hab -> w1
+2026-09-21T03:19:28.3777841Z [nebula] assign cell_n1_0_n1 -> w1
+2026-09-21T03:19:28.3777882Z [nebula] assign garage -> w1
+2026-09-21T03:19:28.3777923Z [nebula] assign outdoor-west-south -> w1
+2026-09-21T03:19:28.3777957Z [nebula] assign barracks-row -> w2
+2026-09-21T03:19:28.3777986Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:19:28.3778011Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:19:28.3778036Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:19:28.3778060Z [nebula] assign cell_0_0_n2 -> w2
+2026-09-21T03:19:28.3778086Z [nebula] assign explorer-dome -> w2
+2026-09-21T03:19:28.3778113Z [nebula] assign explorer-hab-north -> w2
+2026-09-21T03:19:28.3778139Z [nebula] assign explorer-roundhouse -> w2
+2026-09-21T03:19:28.3778162Z [nebula] assign explorer-outdoor-ne -> w2
+2026-09-21T03:19:28.3778188Z [nebula] assign explorer-lab-north -> w2
+2026-09-21T03:19:28.3778214Z [nebula] assign explorer-landing-pad -> w2
+2026-09-21T03:19:28.3778242Z [nebula] assign cell_1_0_n2 -> w2
+2026-09-21T03:19:28.3778269Z [nebula] assign cell_0_0_n1 -> w2
+2026-09-21T03:19:28.3778326Z [nebula] assign outdoor-east-south -> w2
+2026-09-21T03:19:28.3778361Z [nebula] assign landing-pad-south -> w2
+2026-09-21T03:19:28.3778394Z [nebula] assign radar -> w2
+2026-09-21T03:19:28.3778432Z [nebula] assign landing-tower -> w2
+2026-09-21T03:19:28.3778460Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:19:28.3778490Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:19:28.3778518Z [nebula] assign market-crates-overhang -> w3
+2026-09-21T03:19:28.3778546Z [nebula] assign market-outdoor-nw -> w3
+2026-09-21T03:19:28.3778578Z [nebula] assign market-crates-north -> w3
+2026-09-21T03:19:28.3778607Z [nebula] assign market-landing-pad-west -> w3
+2026-09-21T03:19:28.3778636Z [nebula] assign cell_n2_0_0 -> w3
+2026-09-21T03:19:28.3778667Z [nebula] assign market-vendor-hall -> w3
+2026-09-21T03:19:28.3778697Z [nebula] assign market-outdoor-ne -> w3
+2026-09-21T03:19:28.3778726Z [nebula] assign market-landing-pad-east -> w3
+2026-09-21T03:19:28.3778754Z [nebula] assign cell_n1_0_0 -> w3
+2026-09-21T03:19:28.3778787Z [nebula] assign comms -> w3
+2026-09-21T03:19:28.3778819Z [nebula] assign outdoor-west-north -> w3
+2026-09-21T03:19:28.3778881Z [nebula] assign cell_n2_0_1 -> w3
+2026-09-21T03:19:28.3778915Z [nebula] assign cell_n1_0_1 -> w3
+2026-09-21T03:19:28.3778947Z [nebula] assign cell_n2_0_2 -> w3
+2026-09-21T03:19:28.3778979Z [nebula] assign cell_n1_0_2 -> w3
+2026-09-21T03:19:28.3779017Z [nebula] assign scav-outdoor-sw -> w3
+2026-09-21T03:19:28.3779057Z [nebula] assign scav-outdoor-w -> w3
+2026-09-21T03:19:28.3779093Z [nebula] assign scav-outdoor-nw -> w3
+2026-09-21T03:19:28.3779125Z [nebula] assign cell_0_0_0 -> w3
+2026-09-21T03:19:28.3779157Z [nebula] assign control-tower -> w3
+2026-09-21T03:19:28.3779188Z [nebula] assign outdoor-east-north -> w4
+2026-09-21T03:19:28.3779221Z [nebula] assign loading-bay -> w4
+2026-09-21T03:19:28.3779255Z [nebula] assign cell_1_0_0 -> w4
+2026-09-21T03:19:28.3779288Z [nebula] assign cell_0_0_1 -> w4
+2026-09-21T03:19:28.3779322Z [nebula] assign cell_1_0_1 -> w4
+2026-09-21T03:19:28.3779357Z [nebula] assign cell_0_0_2 -> w4
+2026-09-21T03:19:28.3779393Z [nebula] assign scav-outdoor-s -> w4
+2026-09-21T03:19:28.3779429Z [nebula] assign scav-landing-pads -> w4
+2026-09-21T03:19:28.3779481Z [nebula] assign scav-garage -> w4
+2026-09-21T03:19:28.3779527Z [nebula] assign scav-refinery-hall -> w4
+2026-09-21T03:19:28.3779564Z [nebula] assign scav-refinery-south -> w4
+2026-09-21T03:19:28.3779600Z [nebula] assign scav-refinery-north -> w4
+2026-09-21T03:19:28.3779635Z [nebula] assign scav-control-room -> w4
+2026-09-21T03:19:28.3779670Z [nebula] assign scav-outdoor-se -> w4
+2026-09-21T03:19:28.3779703Z [nebula] assign scav-outdoor-center -> w4
+2026-09-21T03:19:28.3779741Z [nebula] assign scav-outdoor-e -> w4
+2026-09-21T03:19:28.3779775Z [nebula] assign scav-outdoor-n -> w4
+2026-09-21T03:19:28.3779810Z [nebula] assign scav-outdoor-ne -> w4
+2026-09-21T03:19:28.3779848Z [nebula] assign cell_1_0_2 -> w4
+2026-09-21T03:19:30.7161028Z [nebula] loop 60 Hz, period max 18.8 ms, tick avg 0.40 ms max 17.3 ms
+2026-09-21T03:19:35.7313434Z [nebula] loop 60 Hz, period max 19.6 ms, tick avg 0.32 ms max 17.9 ms
+2026-09-21T03:19:40.7479607Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.21 ms max 3.6 ms
+2026-09-21T03:19:45.7483150Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.17 ms max 2.2 ms
+2026-09-21T03:19:50.7666670Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.19 ms max 2.9 ms
+2026-09-21T03:19:55.7813664Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.16 ms max 2.1 ms
+2026-09-21T03:19:56.3818942Z [nebula] assign barracks-row -> w1
+2026-09-21T03:19:56.3819274Z [nebula] assign cell_1_0_n1 -> w3
+2026-09-21T03:19:56.3819305Z [nebula] assign market-crates-west -> w3
+2026-09-21T03:19:56.3819532Z [nebula] assign control-tower -> w4
+2026-09-21T03:19:58.4313013Z [nebula] assign explorer-pods-south -> w1
+2026-09-21T03:19:58.4315136Z [nebula] assign explorer-labs-southeast -> w1
+2026-09-21T03:19:58.4315759Z [nebula] assign explorer-outdoor-se -> w1
+2026-09-21T03:19:58.4315824Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:19:58.4315858Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:19:58.4315895Z [nebula] assign cell_0_0_0 -> w4
+2026-09-21T03:20:00.7985719Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.18 ms max 1.4 ms
+2026-09-21T03:20:01.9985372Z [nebula] assign cell_n1_0_n1 -> w2
+2026-09-21T03:20:01.9985723Z [nebula] assign garage -> w2
+2026-09-21T03:20:01.9985909Z [nebula] assign outdoor-west-south -> w2
+2026-09-21T03:20:01.9986015Z [nebula] assign barracks-row -> w2
+2026-09-21T03:20:01.9986053Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:20:01.9986086Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:20:01.9986119Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:20:01.9986152Z [nebula] assign cell_1_0_n1 -> w3
+2026-09-21T03:20:01.9986248Z [nebula] assign market-crates-west -> w3
+2026-09-21T03:20:01.9986281Z [nebula] assign cell_0_0_0 -> w3
+2026-09-21T03:20:04.0338262Z [nebula] assign cell_n1_0_n1 -> w1
+2026-09-21T03:20:04.0338714Z [nebula] assign garage -> w1
+2026-09-21T03:20:04.0338765Z [nebula] assign outdoor-west-south -> w1
+2026-09-21T03:20:04.0341570Z [nebula] assign barracks-row -> w1
+2026-09-21T03:20:04.0341741Z [nebula] assign explorer-pods-south -> w1
+2026-09-21T03:20:04.0342646Z [nebula] assign explorer-labs-southeast -> w1
+2026-09-21T03:20:04.0342795Z [nebula] assign explorer-outdoor-se -> w1
+2026-09-21T03:20:04.0343756Z [nebula] assign cell_0_0_n2 -> w1
+2026-09-21T03:20:04.0344208Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:20:04.0344366Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:20:04.0344454Z [nebula] assign market-crates-overhang -> w2
+2026-09-21T03:20:04.0344487Z [nebula] assign market-outdoor-nw -> w2
+2026-09-21T03:20:05.8142818Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.25 ms max 7.9 ms
+2026-09-21T03:20:10.8149830Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.21 ms max 1.5 ms
+2026-09-21T03:20:15.8312615Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.23 ms max 2.1 ms
+2026-09-21T03:20:20.8313420Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.20 ms max 2.4 ms
+2026-09-21T03:20:25.8314098Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.18 ms max 3.1 ms
+2026-09-21T03:20:30.0322123Z [nebula] assign barracks-row -> w2
+2026-09-21T03:20:30.0323593Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:20:30.0323713Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:20:30.0323775Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:20:30.0323802Z [nebula] assign cell_0_0_n2 -> w2
+2026-09-21T03:20:30.0323834Z [nebula] assign radar -> w3
+2026-09-21T03:20:30.0323867Z [nebula] assign landing-tower -> w3
+2026-09-21T03:20:30.0323901Z [nebula] assign cell_1_0_n1 -> w3
+2026-09-21T03:20:30.0323936Z [nebula] assign market-crates-west -> w3
+2026-09-21T03:20:30.0323988Z [nebula] assign market-crates-overhang -> w3
+2026-09-21T03:20:30.0324023Z [nebula] assign market-outdoor-nw -> w3
+2026-09-21T03:20:30.0324061Z [nebula] assign cell_0_0_0 -> w4
+2026-09-21T03:20:30.8317906Z [nebula] loop 60 Hz, period max 18.7 ms, tick avg 0.20 ms max 2.4 ms
+2026-09-21T03:20:31.5484817Z [nebula] assign barracks-row -> w1
+2026-09-21T03:20:31.5485154Z [nebula] assign rt_71614309233905013 -> w1
+2026-09-21T03:20:31.5485200Z [nebula] assign explorer-pods-south -> w1
+2026-09-21T03:20:31.5485417Z [nebula] assign explorer-labs-southeast -> w1
+2026-09-21T03:20:31.5485490Z [nebula] assign explorer-outdoor-se -> w1
+2026-09-21T03:20:31.5485535Z [nebula] assign cell_0_0_n2 -> w1
+2026-09-21T03:20:31.5485574Z [nebula] assign radar -> w2
+2026-09-21T03:20:31.5485606Z [nebula] assign landing-tower -> w2
+2026-09-21T03:20:31.5485643Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:20:31.5485673Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:20:31.5485713Z [nebula] assign market-crates-overhang -> w2
+2026-09-21T03:20:31.5485743Z [nebula] assign market-outdoor-nw -> w2
+2026-09-21T03:20:31.5485781Z [nebula] assign scav-outdoor-nw -> w4
+2026-09-21T03:20:35.8485766Z [nebula] loop 60 Hz, period max 19.5 ms, tick avg 0.22 ms max 2.4 ms
+2026-09-21T03:20:36.0992839Z [nebula] assign rt_71614309233905013 -> w2
+2026-09-21T03:20:36.0994157Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:20:36.0994265Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:20:36.0997148Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:20:36.0997213Z [nebula] assign cell_0_0_n2 -> w2
+2026-09-21T03:20:36.0997252Z [nebula] assign cell_1_0_n1 -> w3
+2026-09-21T03:20:36.0997289Z [nebula] assign market-crates-west -> w3
+2026-09-21T03:20:36.0999432Z [nebula] assign market-crates-overhang -> w3
+2026-09-21T03:20:36.0999598Z [nebula] assign market-outdoor-nw -> w3
+2026-09-21T03:20:40.8643921Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.23 ms max 2.7 ms
+2026-09-21T03:20:45.8647724Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.20 ms max 1.8 ms
+2026-09-21T03:20:50.8829565Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.22 ms max 3.8 ms
+2026-09-21T03:20:55.8981199Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.21 ms max 1.5 ms
+2026-09-21T03:21:00.9150393Z [nebula] loop 60 Hz, period max 19.2 ms, tick avg 0.22 ms max 2.9 ms
+2026-09-21T03:21:05.9325953Z [nebula] loop 60 Hz, period max 18.1 ms, tick avg 0.20 ms max 3.5 ms
+2026-09-21T03:21:10.9478148Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.17 ms max 1.6 ms
+2026-09-21T03:21:15.9488105Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.17 ms max 1.3 ms
+2026-09-21T03:21:20.9655036Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.17 ms max 3.2 ms
+2026-09-21T03:21:25.9820125Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.17 ms max 2.0 ms
+2026-09-21T03:21:30.9976321Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.18 ms max 2.2 ms
+2026-09-21T03:21:35.9989314Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.19 ms max 2.0 ms
+2026-09-21T03:21:41.0141355Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.18 ms max 2.5 ms
+2026-09-21T03:21:46.0144389Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.20 ms max 2.4 ms
+2026-09-21T03:21:51.0164273Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.19 ms max 2.1 ms
+2026-09-21T03:21:56.0159155Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.19 ms max 2.5 ms
+2026-09-21T03:22:01.0319121Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.21 ms max 1.8 ms
+2026-09-21T03:22:06.0481930Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.20 ms max 2.3 ms
+2026-09-21T03:22:11.0647606Z [nebula] loop 60 Hz, period max 77.2 ms, tick avg 0.20 ms max 2.2 ms
+2026-09-21T03:22:16.0811497Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.20 ms max 2.1 ms
+2026-09-21T03:22:21.0814854Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.19 ms max 2.0 ms
+2026-09-21T03:22:22.0984784Z [nebula] assign rt_71614309233905013 -> w1
+2026-09-21T03:22:22.0985056Z [nebula] assign explorer-pods-south -> w1
+2026-09-21T03:22:22.0985081Z [nebula] assign explorer-labs-southeast -> w1
+2026-09-21T03:22:22.0985103Z [nebula] assign explorer-outdoor-se -> w1
+2026-09-21T03:22:22.0985123Z [nebula] assign cell_0_0_n2 -> w1
+2026-09-21T03:22:22.0985143Z [nebula] assign explorer-dome -> w1
+2026-09-21T03:22:22.0985163Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:22:22.0985183Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:22:22.0985203Z [nebula] assign market-crates-overhang -> w2
+2026-09-21T03:22:22.0985224Z [nebula] assign market-outdoor-nw -> w2
+2026-09-21T03:22:22.0985247Z [nebula] assign market-crates-north -> w2
+2026-09-21T03:22:22.0985279Z [nebula] assign market-landing-pad-west -> w2
+2026-09-21T03:22:22.0985526Z [nebula] assign cell_n2_0_0 -> w2
+2026-09-21T03:22:22.0985645Z [nebula] assign scav-outdoor-nw -> w3
+2026-09-21T03:22:22.0985680Z [nebula] assign cell_0_0_0 -> w3
+2026-09-21T03:22:26.0820205Z [nebula] loop 60 Hz, period max 18.0 ms, tick avg 0.20 ms max 3.1 ms
+2026-09-21T03:22:31.0828429Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.17 ms max 1.7 ms
+2026-09-21T03:22:36.0979210Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.17 ms max 1.2 ms
+2026-09-21T03:22:41.0982715Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.20 ms max 2.0 ms
+2026-09-21T03:22:44.0483892Z [nebula] assign outdoor-west-south -> w2
+2026-09-21T03:22:44.0484403Z [nebula] assign barracks-row -> w2
+2026-09-21T03:22:44.0484441Z [nebula] assign rt_71614309233905013 -> w2
+2026-09-21T03:22:44.0484465Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:22:44.0484486Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:22:44.0484505Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:22:44.0484525Z [nebula] assign cell_0_0_n2 -> w2
+2026-09-21T03:22:44.0484544Z [nebula] assign explorer-dome -> w2
+2026-09-21T03:22:44.0484564Z [nebula] assign cell_1_0_n1 -> w3
+2026-09-21T03:22:44.0484584Z [nebula] assign market-crates-west -> w3
+2026-09-21T03:22:44.0484604Z [nebula] assign market-crates-overhang -> w3
+2026-09-21T03:22:44.0484631Z [nebula] assign market-outdoor-nw -> w3
+2026-09-21T03:22:44.0484662Z [nebula] assign market-crates-north -> w3
+2026-09-21T03:22:44.0484688Z [nebula] assign market-landing-pad-west -> w3
+2026-09-21T03:22:44.0484717Z [nebula] assign cell_n2_0_0 -> w3
+2026-09-21T03:22:44.0485219Z [nebula] assign cell_0_0_0 -> w4
+2026-09-21T03:22:44.5484343Z [nebula] assign outdoor-west-south -> w1
+2026-09-21T03:22:44.5484642Z [nebula] assign barracks-row -> w1
+2026-09-21T03:22:44.5484675Z [nebula] assign rt_71614309233905013 -> w1
+2026-09-21T03:22:44.5484704Z [nebula] assign explorer-pods-south -> w1
+2026-09-21T03:22:44.5484732Z [nebula] assign cell_1_0_n1 -> w2
+2026-09-21T03:22:44.5484763Z [nebula] assign market-crates-west -> w2
+2026-09-21T03:22:44.5484796Z [nebula] assign market-crates-overhang -> w2
+2026-09-21T03:22:44.5484825Z [nebula] assign market-outdoor-nw -> w2
+2026-09-21T03:22:44.5484855Z [nebula] assign cell_n1_0_2 -> w4
+2026-09-21T03:22:44.5484882Z [nebula] assign scav-outdoor-sw -> w4
+2026-09-21T03:22:44.5484918Z [nebula] assign scav-outdoor-w -> w4
+2026-09-21T03:22:44.5484955Z [nebula] assign scav-outdoor-nw -> w4
+2026-09-21T03:22:45.0654449Z [nebula] assign explorer-labs-southeast -> w1
+2026-09-21T03:22:45.0654785Z [nebula] assign explorer-outdoor-se -> w1
+2026-09-21T03:22:45.0654916Z [nebula] assign cell_0_0_n2 -> w1
+2026-09-21T03:22:45.0655455Z [nebula] assign market-crates-north -> w2
+2026-09-21T03:22:45.0655546Z [nebula] assign cell_n1_0_2 -> w3
+2026-09-21T03:22:45.0655589Z [nebula] assign scav-outdoor-sw -> w3
+2026-09-21T03:22:45.0655624Z [nebula] assign scav-outdoor-w -> w3
+2026-09-21T03:22:45.0655664Z [nebula] assign scav-outdoor-nw -> w3
+2026-09-21T03:22:45.0660896Z [nebula] assign cell_0_0_0 -> w3
+2026-09-21T03:22:46.1161002Z [nebula] loop 60 Hz, period max 18.7 ms, tick avg 0.20 ms max 2.0 ms
+2026-09-21T03:22:46.5979992Z [nebula] assign explorer-dome -> w1
+2026-09-21T03:22:46.5981936Z [nebula] assign explorer-hab-north -> w1
+2026-09-21T03:22:46.5981978Z [nebula] assign market-landing-pad-west -> w2
+2026-09-21T03:22:46.5982004Z [nebula] assign cell_n2_0_0 -> w2
+2026-09-21T03:22:46.5982035Z [nebula] assign market-vendor-hall -> w2
+2026-09-21T03:22:49.1483922Z [nebula] assign explorer-pods-south -> w2
+2026-09-21T03:22:49.1484320Z [nebula] assign explorer-labs-southeast -> w2
+2026-09-21T03:22:49.1484365Z [nebula] assign explorer-outdoor-se -> w2
+2026-09-21T03:22:49.1484402Z [nebula] assign cell_0_0_n2 -> w2
+2026-09-21T03:22:49.1484438Z [nebula] assign explorer-dome -> w2
+2026-09-21T03:22:49.1484468Z [nebula] assign explorer-hab-north -> w2
+2026-09-21T03:22:49.1484508Z [nebula] assign market-crates-overhang -> w3
+2026-09-21T03:22:49.1484547Z [nebula] assign market-outdoor-nw -> w3
+2026-09-21T03:22:49.1484590Z [nebula] assign market-crates-north -> w3
+2026-09-21T03:22:49.1484627Z [nebula] assign market-landing-pad-west -> w3
+2026-09-21T03:22:49.1484658Z [nebula] assign cell_n2_0_0 -> w3
+2026-09-21T03:22:49.1484721Z [nebula] assign market-vendor-hall -> w3
+2026-09-21T03:22:49.1484755Z [nebula] assign scav-outdoor-nw -> w4
+2026-09-21T03:22:49.1484787Z [nebula] assign cell_0_0_0 -> w4
+2026-09-21T03:22:51.1316850Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.23 ms max 3.2 ms
+2026-09-21T03:22:56.1485056Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.20 ms max 2.3 ms
+2026-09-21T03:23:01.1644307Z [nebula] loop 60 Hz, period max 18.2 ms, tick avg 0.20 ms max 1.5 ms
+2026-09-21T03:23:06.1652113Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.19 ms max 2.6 ms
+2026-09-21T03:23:11.1657469Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.20 ms max 2.1 ms
+2026-09-21T03:23:16.1811549Z [nebula] loop 60 Hz, period max 18.6 ms, tick avg 0.21 ms max 2.8 ms
+2026-09-21T03:23:21.1821295Z [nebula] loop 60 Hz, period max 18.4 ms, tick avg 0.21 ms max 2.3 ms
+2026-09-21T03:23:26.1976051Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.21 ms max 2.2 ms
+2026-09-21T03:23:31.1979498Z [nebula] loop 60 Hz, period max 18.7 ms, tick avg 0.21 ms max 2.9 ms
+2026-09-21T03:23:36.1984836Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.19 ms max 3.3 ms
+2026-09-21T03:23:41.1984058Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.21 ms max 1.7 ms
+2026-09-21T03:23:46.1986379Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.20 ms max 1.9 ms
+2026-09-21T03:23:51.2143334Z [nebula] loop 60 Hz, period max 18.5 ms, tick avg 0.20 ms max 2.8 ms
+2026-09-21T03:23:56.2311479Z [nebula] loop 60 Hz, period max 18.7 ms, tick avg 0.20 ms max 1.3 ms
+2026-09-21T03:24:01.2480962Z [nebula] loop 60 Hz, period max 18.3 ms, tick avg 0.20 ms max 2.6 ms

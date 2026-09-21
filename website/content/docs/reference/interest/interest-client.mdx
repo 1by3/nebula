@@ -1,0 +1,92 @@
+---
+title: "InterestClient"
+description: "What a policy is told about the client it is deciding for."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public struct InterestClient
+```
+
+What a policy is told about the client it is deciding for. A snapshot: the gateway fills it once per evaluation, so a policy never walks live gateway state (and cannot keep a reference to it).
+
+## Fields
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+The player's identity across sessions (`PlayerIdentity`).
+
+### Name [#name]
+
+```csharp
+public string Name;
+```
+
+### PawnNetId [#pawnnetid]
+
+```csharp
+public ulong PawnNetId;
+```
+
+### HasPawn [#haspawn]
+
+```csharp
+public bool HasPawn;
+```
+
+### PawnX, PawnY, PawnZ [#pawnx-pawny-pawnz]
+
+```csharp
+public double PawnX, PawnY, PawnZ;
+```
+
+Absolute position of the pawn, resolved through any carrier. Meaningless when [`HasPawn`](#haspawn) is false.
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId;
+```
+
+The client's simulation scope; 0 is the public world.
+
+### Team [#team]
+
+```csharp
+public byte Team;
+```
+
+A byte the game sets per client (`gateway.SetClientTag`): team, faction, whatever the policy needs.
+
+### HasHint [#hashint]
+
+```csharp
+public bool HasHint;
+```
+
+A hint from the client survived validation ([`FocusHintFilter`](/docs/reference/interest/focus-hint-filter)).
+
+### HintX, HintY, HintZ [#hintx-hinty-hintz]
+
+```csharp
+public double HintX, HintY, HintZ;
+```
+
+### FreeHint [#freehint]
+
+```csharp
+public bool FreeHint;
+```
+
+The policy accepted free foci for this client, so the hint was not clamped to the pawn.

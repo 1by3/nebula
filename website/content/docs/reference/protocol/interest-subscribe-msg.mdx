@@ -1,0 +1,130 @@
+---
+title: "InterestSubscribeMsg"
+description: "Gateway -> worker: the set of regions this gateway wants entities from (design §5)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct InterestSubscribeMsg
+```
+
+Gateway -\> worker: the set of regions this gateway wants entities from (design §5). The state is a set, so the message is idempotent: a delta applies only when [`BaseSeq`](#baseseq) is the worker's current sequence and the resulting (count, hash) matches, and the worker otherwise keeps what it has and asks for a resync. The grid travels with it so a worker can refuse to filter with ids the gateway did not mean (design D2).
+
+## Fields
+
+### Seq [#seq]
+
+```csharp
+public uint Seq;
+```
+
+Sequence this message brings the worker's set to.
+
+### BaseSeq [#baseseq]
+
+```csharp
+public uint BaseSeq;
+```
+
+Sequence the delta is against; ignored for a [`InterestSubscribeFlags.Full`](/docs/reference/protocol/interest-subscribe-flags#full) message.
+
+### EdgeX, EdgeY, EdgeZ, OffsetX, OffsetY, OffsetZ [#edgex-edgey-edgez-offsetx-offsety-offsetz]
+
+```csharp
+public float EdgeX, EdgeY, EdgeZ, OffsetX, OffsetY, OffsetZ;
+```
+
+### Planar [#planar]
+
+```csharp
+public bool Planar;
+```
+
+### Flags [#flags]
+
+```csharp
+public InterestSubscribeFlags Flags;
+```
+
+### Add [#add]
+
+```csharp
+public List<ulong> Add;
+```
+
+### Remove [#remove]
+
+```csharp
+public List<ulong> Remove;
+```
+
+### FociRegions [#fociregions]
+
+```csharp
+public List<ulong> FociRegions;
+```
+
+The regions the gateway's clients are focused on, always in full; small, and the worker matches wide entities against them.
+
+### Entities [#entities]
+
+```csharp
+public List<ulong> Entities;
+```
+
+Explicit per-entity subscriptions (policy extras), always in full.
+
+### SetCount [#setcount]
+
+```csharp
+public uint SetCount;
+```
+
+Regions in the set after applying this message.
+
+### SetHash [#sethash]
+
+```csharp
+public ulong SetHash;
+```
+
+Order-independent mix of the set after applying (see [`RegionSubscription.Hash`](/docs/reference/interest/region-subscription#hash)).
+
+## Properties
+
+### IsFull [#isfull]
+
+```csharp
+public bool IsFull { get; }
+```
+
+### IsCommit [#iscommit]
+
+```csharp
+public bool IsCommit { get; }
+```
+
+### Grid [#grid]
+
+```csharp
+public InterestGrid Grid { get; set; }
+```
+
+The grid the sender made these region ids with.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static InterestSubscribeMsg Read(NetworkReader r, InterestSubscribeMsg reuse = default);
+```
+
+Read a subscription. Pass the previous message back in to reuse its lists: a gateway link sends one of these several times a second and the worker has no reason to allocate four lists each time.

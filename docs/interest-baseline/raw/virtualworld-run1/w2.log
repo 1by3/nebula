@@ -1,0 +1,903 @@
+Mono path[0] = 'C:/Dev/nebula-virtualworld/Builds/Win64/Nebula_Data/Managed'
+Mono config path = 'C:/Dev/nebula-virtualworld/Builds/Win64/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Found 1 interfaces on host : 0) 192.168.4.54
+Player connection [660]  Target information:
+
+Player connection [660]  * "[IP] 192.168.4.54 [Port] 55009 [Flags] 2 [Guid] 1302694992 [EditorId] 2082031993 [Version] 1048832 [Id] WindowsPlayer(2,Atlas) [Debug] 0 [PackageName] WindowsPlayer [ProjectName] nebula-virtualworld" 
+
+Player connection [660] Started UDP target info broadcast (1) on [225.0.0.222:54997].
+
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.6.0f1 (f7f8ed4d1e24)
+[EntityIdStore] init: VM path (explicit commit), pageSize=4096, blockCount=1048576, entitiesPerBlock=256, slots reserved=4294967296 bytes
+[Subsystems] Discovering subsystems at path C:/Dev/nebula-virtualworld/Builds/Win64/Nebula_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.009 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Microsoft Media Foundation video decoding to texture disabled: graphics device is Null, only Direct3D 11 and Direct3D 12 (only on desktop) are supported for hardware-accelerated video decoding.
+UnloadTime: 3.418200 ms
+[nebula] boot roles=Worker scene=World tickRate=60
+[nebula] containers: 0
+[nebula] control plane: mirroring http://127.0.0.1:7180/api/control-plane
+[nebula] persistence: remote store at http://127.0.0.1:7180/api/store
+[nebula] persistence: remote store, checkpoint every 5s
+[nebula] worker w2 (index 2) listening on udp/7302; telemetry to http://127.0.0.1:7180/api/telemetry
+[nebula] profile 1 ticks/5s 1 frames avg 10.6ms max 10.6ms dup 0 skip 0 gc 17 auth 0 ghosts 0 | poll=0.62 ghosts=0.54 physics.sync=0.07 simulate=0.00 poses=0.00 containers=0.09 band=4.46 publish=0.96 gap=0.00
+[nebula] control plane: connected to http://127.0.0.1:7180 (version 9)
+[nebula] persistence: connected to http://127.0.0.1:7180 (0 record(s) on the orchestrator)
+[nebula] registered with control plane as w2
+[nebula] dialing peer w4 at 127.0.0.1:7304
+[nebula] chunk (-1, 0, -1) loaded (rt_18446744073709551615)
+[nebula] chunk (-1, 0, 0) loaded (rt_18446744069414584320)
+[nebula] chunk (-1, 0, 1) loaded (rt_18446744069414584321)
+[nebula] chunk (0, 0, -1) loaded (rt_4294967295)
+[nebula] chunk (0, 0, 0) loaded (rt_0)
+[nebula] chunk (0, 0, 1) loaded (rt_1)
+[nebula] chunk (1, 0, -1) loaded (rt_8589934591)
+[nebula] chunk (1, 0, 0) loaded (rt_4294967296)
+[nebula] chunk (1, 0, 1) loaded (rt_4294967297)
+[nebula] dialing peer w3 at 127.0.0.1:7303
+[nebula] gateway gw1 (incarnation 2cb79e9f) connected; announcing 0 entities
+[nebula] peer worker w1 (index 1) connected
+[nebula] peer worker w4 (index 4) connected
+[nebula] peer worker w3 (index 3) connected
+[nebula] spawned player Player bot2 (3222218464143867909)#562949953421313(e1,rt_4294967296,auth) for client 3222218464143867909 in rt_4294967296
+[nebula] spawned player Player bot6 (3222218464143867908)#562949953421314(e1,rt_4294967296,auth) for client 3222218464143867908 in rt_4294967296
+[nebula] chunk (2, 0, -1) loaded (rt_12884901887)
+[nebula] chunk (2, 0, 0) loaded (rt_8589934592)
+[nebula] chunk (-2, 0, -1) loaded (rt_18446744069414584319)
+[nebula] chunk (-2, 0, 0) loaded (rt_18446744065119617024)
+[nebula] chunk (2, 0, 1) loaded (rt_8589934593)
+[nebula] chunk (-2, 0, 1) loaded (rt_18446744065119617025)
+[nebula] chunk (0, 0, -2) loaded (rt_4294967294)
+[nebula] chunk (1, 0, -2) loaded (rt_8589934590)
+[nebula] chunk (2, 0, -2) loaded (rt_12884901886)
+[nebula] chunk (0, 0, 2) loaded (rt_2)
+[nebula] chunk (1, 0, 2) loaded (rt_4294967298)
+[nebula] chunk (2, 0, 2) loaded (rt_8589934594)
+[nebula] ghost Player bot6 (3222218464143867908)#562949953421314(e1,rt_4294967296,auth) -> w4
+[nebula] ghost Player(Clone)#844424930131970(e2,rt_4294967296,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131970(e2,rt_4294967296,auth) <- w3 (epoch 2, tick 1364190804)
+[nebula] handover OUT Player bot6 (3222218464143867908)#562949953421314(e2,rt_4294967297,ghost) -> w4 (epoch 2, tick 1364190810)
+[nebula] profile 281 ticks/5s 279 frames avg 0.1ms max 5.5ms dup 0 skip 0 gc 12 auth 2 ghosts 1 | poll=0.12(279) ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.00 containers=0.02 band=0.02 publish=0.01 gap=16.54
+[nebula] ghost Player(Clone)#1125899906842625(e2,rt_4294967297,auth) -> w4
+[nebula] handover IN  Player(Clone)#1125899906842625(e2,rt_4294967297,auth) <- w4 (epoch 2, tick 1364190865)
+[nebula] ghost Player bot6 (3222218464143867908)#562949953421314(e3,rt_4294967297,auth) -> w4
+[nebula] handover IN  Player bot6 (3222218464143867908)#562949953421314(e3,rt_4294967297,auth) <- w4 (epoch 3, tick 1364190865)
+[nebula] ghost Player bot2 (3222218464143867909)#562949953421313(e1,rt_4294967296,auth) -> w4
+[nebula] chunk (-2, 0, 2) loaded (rt_18446744065119617026)
+[nebula] chunk (-1, 0, 2) loaded (rt_18446744069414584322)
+[nebula] ghost Player(Clone)#844424930131972(e2,rt_18446744069414584321,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e2,rt_18446744069414584321,auth) <- w3 (epoch 2, tick 1364190935)
+[nebula] handover OUT Player bot2 (3222218464143867909)#562949953421313(e2,rt_8589934592,ghost) -> w4 (epoch 2, tick 1364190944)
+[nebula] chunk (3, 0, -1) loaded (rt_17179869183)
+[nebula] chunk (3, 0, 0) loaded (rt_12884901888)
+[nebula] chunk (3, 0, 1) loaded (rt_12884901889)
+[nebula] chunk (3, 0, -2) loaded (rt_17179869182)
+[nebula] chunk (-3, 0, -1) loaded (rt_18446744065119617023)
+[nebula] chunk (-3, 0, 0) loaded (rt_18446744060824649728)
+[nebula] chunk (-3, 0, 1) loaded (rt_18446744060824649729)
+[nebula] spawned Prop(Clone)#562949953421315(e1,rt_18446744069414584321,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.1ms max 2.6ms dup 0 skip 0 gc 13 auth 5 ghosts 0 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.00 containers=0.04 band=0.02 publish=0.01 gap=16.53
+[nebula] ghost Player(Clone)#844424930131972(e2,rt_18446744069414584321,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131972(e3,rt_18446744069414584320,ghost) -> w3 (epoch 3, tick 1364191285)
+[nebula] ghost Player(Clone)#844424930131969(e2,rt_0,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e2,rt_0,auth) <- w3 (epoch 2, tick 1364191353)
+[nebula] ghost Player bot6 (3222218464143867908)#562949953421314(e3,rt_4294967297,auth) -> w4
+[nebula] spawned Prop(Clone)#562949953421316(e1,rt_4294967297,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.1ms max 0.4ms dup 0 skip 0 gc 10 auth 6 ghosts 3 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.00 containers=0.05 band=0.02 publish=0.02 gap=16.53
+[nebula] handover OUT Player bot6 (3222218464143867908)#562949953421314(e4,rt_8589934592,ghost) -> w4 (epoch 4, tick 1364191466)
+[nebula] ghost Player(Clone)#562949953421313(e3,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421313(e3,rt_4294967296,auth) <- w4 (epoch 3, tick 1364191582)
+[nebula] chunk (3, 0, 2) loaded (rt_12884901890)
+[nebula] ghost Player(Clone)#844424930131973(e2,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e2,rt_18446744065119617025,auth) <- w3 (epoch 2, tick 1364191613)
+[nebula] ghost Player(Clone)#1125899906842625(e2,rt_4294967297,auth) -> w4
+[nebula] chunk (-3, 0, 2) loaded (rt_18446744060824649730)
+[nebula] local handover Player(Clone)#844424930131970(e2,rt_0,auth) rt_4294967296 -> rt_0
+[nebula] handover OUT Player(Clone)#1125899906842625(e3,rt_4294967298,ghost) -> w4 (epoch 3, tick 1364191658)
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] chunk (1, 0, 3) loaded (rt_4294967299)
+[nebula] chunk (2, 0, 3) loaded (rt_8589934595)
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 0.4ms dup 0 skip 0 gc 11 auth 6 ghosts 4 | poll=0.03 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.00 containers=0.06 band=0.02 publish=0.02 gap=16.51
+[nebula] ghost Player(Clone)#844424930131972(e4,rt_0,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e4,rt_0,auth) <- w3 (epoch 4, tick 1364191749)
+[nebula] spawned Prop(Clone)#562949953421317(e1,rt_0,auth)
+[nebula] handover OUT Player(Clone)#844424930131973(e3,rt_18446744060824649729,ghost) -> w3 (epoch 3, tick 1364191813)
+[nebula] chunk (-4, 0, 0) loaded (rt_18446744056529682432)
+[nebula] chunk (-4, 0, 1) loaded (rt_18446744056529682433)
+[nebula] chunk (-4, 0, 2) loaded (rt_18446744056529682434)
+[nebula] ghost Player(Clone)#562949953421313(e3,rt_4294967296,auth) -> w4
+[nebula] spawned Prop(Clone)#562949953421318(e1,rt_0,auth)
+[nebula] ghost Player(Clone)#844424930131973(e4,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e4,rt_18446744065119617025,auth) <- w3 (epoch 4, tick 1364191882)
+[nebula] handover OUT Player(Clone)#562949953421313(e4,rt_8589934592,ghost) -> w4 (epoch 4, tick 1364191934)
+[nebula] ghost Player(Clone)#562949953421314(e5,rt_4294967297,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421314(e5,rt_4294967297,auth) <- w4 (epoch 5, tick 1364192004)
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 0.6ms dup 0 skip 0 gc 11 auth 9 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.08 band=0.03 publish=0.02 gap=16.47
+[nebula] ghost Player(Clone)#844424930131973(e4,rt_18446744065119617025,auth) -> w3
+[nebula] handover OUT Prop(Clone)#562949953421315(e2,rt_18446744069414584321,ghost) -> w3 (epoch 2, tick 1364192088)
+[nebula] handover OUT Player(Clone)#844424930131973(e5,rt_18446744065119617025,ghost) -> w3 (epoch 5, tick 1364192088)
+[nebula] spawned Prop(Clone)#562949953421319(e1,rt_0,auth)
+[nebula] ghost Player(Clone)#844424930131969(e2,rt_0,auth) -> w3
+[nebula] ghost Prop(Clone)#562949953421319(e1,rt_0,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131969(e3,rt_18446744069414584320,ghost) -> w3 (epoch 3, tick 1364192156)
+[nebula] local handover Player(Clone)#844424930131972(e4,rt_1,auth) rt_0 -> rt_1
+[nebula] spawned Prop(Clone)#562949953421320(e1,rt_0,auth)
+[nebula] local handover Player(Clone)#844424930131972(e4,rt_0,auth) rt_1 -> rt_0
+[nebula] ghost Player(Clone)#844424930131970(e2,rt_0,auth) -> w3
+[nebula] chunk (-1, 0, 3) loaded (rt_18446744069414584323)
+[nebula] local handover Player(Clone)#562949953421314(e5,rt_4294967296,auth) rt_4294967297 -> rt_4294967296
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 0.6ms dup 0 skip 0 gc 10 auth 8 ghosts 1 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.08 band=0.02 publish=0.02 gap=16.47
+[nebula] chunk (-4, 0, -1) loaded (rt_18446744060824649727)
+[nebula] ghost Player(Clone)#562949953421313(e5,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421313(e5,rt_4294967296,auth) <- w4 (epoch 5, tick 1364192375)
+[nebula] ghost Player(Clone)#1125899906842625(e4,rt_1,auth) -> w4
+[nebula] handover IN  Player(Clone)#1125899906842625(e4,rt_1,auth) <- w4 (epoch 4, tick 1364192439)
+[nebula] spawned Prop(Clone)#562949953421321(e1,rt_1,auth)
+[nebula] spawned Prop(Clone)#562949953421322(e1,rt_4294967296,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 0.5ms dup 0 skip 0 gc 9 auth 12 ghosts 0 | poll=0.03 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.11 band=0.03 publish=0.02 gap=16.44
+[nebula] ghost Player(Clone)#562949953421314(e5,rt_4294967296,auth) -> w4
+[nebula] handover OUT Player(Clone)#562949953421314(e6,rt_8589934592,ghost) -> w4 (epoch 6, tick 1364192771)
+[nebula] ghost Player(Clone)#562949953421314(e7,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421314(e7,rt_4294967296,auth) <- w4 (epoch 7, tick 1364192847)
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 0.5ms dup 0 skip 0 gc 8 auth 12 ghosts 0 | poll=0.02 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.13 band=0.02 publish=0.02 gap=16.42
+[nebula] local handover Player(Clone)#562949953421314(e7,rt_4294967297,auth) rt_4294967296 -> rt_4294967297
+[nebula] local handover Player(Clone)#562949953421313(e5,rt_0,auth) rt_4294967296 -> rt_0
+[nebula] local handover Player(Clone)#562949953421313(e5,rt_1,auth) rt_0 -> rt_1
+[nebula] spawned Prop(Clone)#562949953421323(e1,rt_0,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.2ms max 1.3ms dup 0 skip 0 gc 10 auth 13 ghosts 0 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.13 band=0.02 publish=0.02 gap=16.42
+[nebula] spawned Prop(Clone)#562949953421324(e1,rt_4294967297,auth)
+[nebula] ghost Player(Clone)#844424930131972(e4,rt_0,auth) -> w1
+[nebula] spawned Prop(Clone)#562949953421325(e1,rt_0,auth)
+[nebula] ghost Prop(Clone)#562949953421325(e1,rt_0,auth) -> w1
+[nebula] local handover Player(Clone)#562949953421313(e5,rt_4294967297,auth) rt_1 -> rt_4294967297
+[nebula] local handover Player(Clone)#562949953421314(e7,rt_4294967296,auth) rt_4294967297 -> rt_4294967296
+[nebula] chunk (-1, 0, -2) loaded (rt_18446744073709551614)
+[nebula] handover OUT Player(Clone)#844424930131972(e5,rt_4294967295,ghost) -> w1 (epoch 5, tick 1364193472)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.7ms dup 0 skip 0 gc 9 auth 14 ghosts 1 | poll=0.02 ghosts=0.00 physics.sync=0.00 simulate=0.02 poses=0.01 containers=0.15 band=0.03 publish=0.02 gap=16.39
+[nebula] spawned Prop(Clone)#562949953421326(e1,rt_0,auth)
+[nebula] local handover Player(Clone)#1125899906842625(e4,rt_4294967297,auth) rt_1 -> rt_4294967297
+[nebula] spawned Prop(Clone)#562949953421327(e1,rt_4294967296,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 9 auth 16 ghosts 0 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.16 band=0.02 publish=0.02 gap=16.38
+[nebula] local handover Player(Clone)#562949953421314(e7,rt_0,auth) rt_4294967296 -> rt_0
+[nebula] ghost Player(Clone)#844424930131970(e2,rt_0,auth) -> w3
+[nebula] local handover Player(Clone)#1125899906842625(e4,rt_1,auth) rt_4294967297 -> rt_1
+[nebula] handover OUT Player(Clone)#844424930131970(e3,rt_18446744069414584320,ghost) -> w3 (epoch 3, tick 1364194079)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 1.2ms dup 0 skip 0 gc 8 auth 15 ghosts 2 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.17 band=0.03 publish=0.02 gap=16.37
+[nebula] local handover Player(Clone)#562949953421313(e5,rt_4294967296,auth) rt_4294967297 -> rt_4294967296
+[nebula] spawned Prop(Clone)#562949953421328(e1,rt_0,auth)
+[nebula] chunk (0, 0, -3) loaded (rt_4294967293)
+[nebula] chunk (1, 0, -3) loaded (rt_8589934589)
+[nebula] chunk (2, 0, -3) loaded (rt_12884901885)
+[nebula] handover OUT Prop(Clone)#562949953421316(e2,rt_4294967297,ghost) -> w4 (epoch 2, tick 1364194348)
+[nebula] handover OUT Player(Clone)#1125899906842625(e5,rt_1,ghost) -> w4 (epoch 5, tick 1364194348)
+[nebula] handover OUT Prop(Clone)#562949953421321(e2,rt_1,ghost) -> w4 (epoch 2, tick 1364194348)
+[nebula] handover OUT Prop(Clone)#562949953421324(e2,rt_4294967297,ghost) -> w4 (epoch 2, tick 1364194348)
+[nebula] ghost Prop(Clone)#562949953421320(e1,rt_0,auth) -> w4
+[nebula] ghost Prop(Clone)#562949953421322(e1,rt_4294967296,auth) -> w4
+[nebula] ghost Player(Clone)#562949953421314(e7,rt_0,auth) -> w4
+[nebula] ghost Prop(Clone)#844424930131976(e2,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131976(e2,rt_18446744069414584320,auth) <- w3 (epoch 2, tick 1364194349)
+[nebula] ghost Prop(Clone)#562949953421315(e3,rt_18446744069414584321,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421315(e3,rt_18446744069414584321,auth) <- w3 (epoch 3, tick 1364194349)
+[nebula] ghost Player(Clone)#844424930131970(e4,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131970(e4,rt_18446744069414584320,auth) <- w3 (epoch 4, tick 1364194349)
+[nebula] handover OUT Player(Clone)#562949953421314(e8,rt_1,ghost) -> w4 (epoch 8, tick 1364194381)
+[nebula] ghost Player(Clone)#844424930131973(e6,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e6,rt_18446744069414584320,auth) <- w3 (epoch 6, tick 1364194408)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 1.0ms dup 0 skip 0 gc 10 auth 15 ghosts 8 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.17 band=0.03 publish=0.02 gap=16.37
+[nebula] local handover Player(Clone)#562949953421313(e5,rt_0,auth) rt_4294967296 -> rt_0
+[nebula] local handover Player(Clone)#844424930131973(e6,rt_18446744069414584321,auth) rt_18446744069414584320 -> rt_18446744069414584321
+[nebula] chunk (-2, 0, -1) unloaded (rt_18446744069414584319)
+[nebula] chunk (-2, 0, -1) loaded (rt_18446744069414584319)
+[nebula] ghost Player(Clone)#844424930131970(e4,rt_18446744069414584320,auth) -> w4
+[nebula] handover OUT Prop(Clone)#562949953421322(e2,rt_4294967296,ghost) -> w4 (epoch 2, tick 1364194593)
+[nebula] handover OUT Prop(Clone)#562949953421327(e2,rt_4294967296,ghost) -> w4 (epoch 2, tick 1364194593)
+[nebula] handover OUT Prop(Clone)#844424930131976(e3,rt_18446744069414584320,ghost) -> w3 (epoch 3, tick 1364194593)
+[nebula] handover OUT Player(Clone)#844424930131970(e5,rt_18446744069414584320,ghost) -> w3 (epoch 5, tick 1364194593)
+[nebula] ghost Prop(Clone)#562949953421319(e1,rt_0,auth) -> w3
+[nebula] spawned Prop(Clone)#562949953421329(e1,rt_18446744069414584321,auth)
+[nebula] ghost Player(Clone)#844424930131973(e6,rt_18446744069414584321,auth) -> w3
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.5ms dup 0 skip 0 gc 9 auth 12 ghosts 1 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.15 band=0.03 publish=0.02 gap=16.39
+[nebula] handover OUT Player(Clone)#844424930131973(e7,rt_18446744065119617025,ghost) -> w3 (epoch 7, tick 1364194776)
+[nebula] ghost Prop(Clone)#562949953421321(e3,rt_1,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421321(e3,rt_1,auth) <- w4 (epoch 3, tick 1364194838)
+[nebula] ghost Player(Clone)#562949953421314(e9,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421314(e9,rt_4294967296,auth) <- w4 (epoch 9, tick 1364194838)
+[nebula] ghost Prop(Clone)#562949953421322(e3,rt_4294967296,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421322(e3,rt_4294967296,auth) <- w4 (epoch 3, tick 1364194838)
+[nebula] ghost Prop(Clone)#562949953421327(e3,rt_4294967296,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421327(e3,rt_4294967296,auth) <- w4 (epoch 3, tick 1364194838)
+[nebula] ghost Player(Clone)#844424930131970(e7,rt_1,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e7,rt_1,auth) <- w4 (epoch 7, tick 1364194838)
+[nebula] ghost Prop(Clone)#1125899906842630(e2,rt_1,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842630(e2,rt_1,auth) <- w4 (epoch 2, tick 1364194838)
+[nebula] ghost Player(Clone)#844424930131973(e8,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e8,rt_18446744065119617025,auth) <- w3 (epoch 8, tick 1364194839)
+[nebula] spawned Prop(Clone)#562949953421330(e1,rt_18446744065119617025,auth)
+[nebula] spawned Prop(Clone)#562949953421331(e1,rt_0,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.8ms dup 0 skip 0 gc 9 auth 20 ghosts 3 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.19 band=0.04 publish=0.02 gap=16.34
+[nebula] local handover Player(Clone)#844424930131970(e7,rt_0,auth) rt_1 -> rt_0
+[nebula] ghost Player(Clone)#562949953421314(e9,rt_4294967296,auth) -> w4
+[nebula] local handover Player(Clone)#844424930131970(e7,rt_1,auth) rt_0 -> rt_1
+[nebula] ghost Player(Clone)#562949953421313(e5,rt_0,auth) -> w3
+[nebula] handover OUT Player(Clone)#562949953421313(e6,rt_18446744069414584320,ghost) -> w3 (epoch 6, tick 1364195258)
+[nebula] ghost Player(Clone)#844424930131969(e4,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e4,rt_18446744065119617025,auth) <- w3 (epoch 4, tick 1364195297)
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.6ms dup 0 skip 0 gc 7 auth 20 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.21 band=0.04 publish=0.02 gap=16.31
+[nebula] spawned Prop(Clone)#562949953421332(e1,rt_18446744065119617025,auth)
+[nebula] ghost Player(Clone)#1125899906842625(e6,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#1125899906842625(e6,rt_4294967296,auth) <- w4 (epoch 6, tick 1364195349)
+[nebula] spawned Prop(Clone)#562949953421333(e1,rt_18446744065119617025,auth)
+[nebula] ghost Player(Clone)#562949953421314(e9,rt_4294967296,auth) -> w4
+[nebula] spawned Prop(Clone)#562949953421334(e1,rt_4294967296,auth)
+[nebula] ghost Prop(Clone)#562949953421334(e1,rt_4294967296,auth) -> w4
+[nebula] handover OUT Prop(Clone)#562949953421321(e4,rt_1,ghost) -> w4 (epoch 4, tick 1364195509)
+[nebula] handover OUT Player(Clone)#844424930131970(e8,rt_1,ghost) -> w4 (epoch 8, tick 1364195509)
+[nebula] handover OUT Prop(Clone)#1125899906842630(e3,rt_1,ghost) -> w4 (epoch 3, tick 1364195509)
+[nebula] ghost Prop(Clone)#562949953421320(e1,rt_0,auth) -> w4
+[nebula] handover OUT Player(Clone)#562949953421314(e10,rt_4294967297,ghost) -> w4 (epoch 10, tick 1364195576)
+[nebula] chunk (3, 0, 2) unloaded (rt_12884901890)
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.7ms dup 0 skip 0 gc 9 auth 20 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.01 containers=0.23 band=0.04 publish=0.02 gap=16.28
+[nebula] ghost Player(Clone)#562949953421313(e7,rt_0,auth) -> w3
+[nebula] handover IN  Player(Clone)#562949953421313(e7,rt_0,auth) <- w3 (epoch 7, tick 1364195659)
+[nebula] chunk (-3, 0, -1) unloaded (rt_18446744065119617023)
+[nebula] chunk (-1, 0, -3) loaded (rt_18446744073709551613)
+[nebula] handover OUT Prop(Clone)#562949953421322(e4,rt_4294967296,ghost) -> w4 (epoch 4, tick 1364195723)
+[nebula] handover OUT Prop(Clone)#562949953421327(e4,rt_4294967296,ghost) -> w4 (epoch 4, tick 1364195723)
+[nebula] handover OUT Player(Clone)#1125899906842625(e7,rt_4294967296,ghost) -> w4 (epoch 7, tick 1364195723)
+[nebula] handover OUT Prop(Clone)#562949953421334(e2,rt_4294967296,ghost) -> w4 (epoch 2, tick 1364195723)
+[nebula] ghost Prop(Clone)#844424930131976(e4,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131976(e4,rt_18446744069414584320,auth) <- w3 (epoch 4, tick 1364195724)
+[nebula] ghost Prop(Clone)#844424930131984(e2,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131984(e2,rt_18446744069414584320,auth) <- w3 (epoch 2, tick 1364195724)
+[nebula] spawned Prop(Clone)#562949953421335(e1,rt_18446744065119617025,auth)
+[nebula] handover OUT Prop(Clone)#844424930131976(e5,rt_18446744069414584320,ghost) -> w3 (epoch 5, tick 1364195784)
+[nebula] handover OUT Prop(Clone)#844424930131984(e3,rt_18446744069414584320,ghost) -> w3 (epoch 3, tick 1364195784)
+[nebula] ghost Prop(Clone)#562949953421322(e5,rt_4294967296,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421322(e5,rt_4294967296,auth) <- w4 (epoch 5, tick 1364195784)
+[nebula] ghost Prop(Clone)#562949953421327(e5,rt_4294967296,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421327(e5,rt_4294967296,auth) <- w4 (epoch 5, tick 1364195784)
+[nebula] ghost Player(Clone)#1125899906842625(e8,rt_4294967296,auth) -> w4
+[nebula] handover IN  Player(Clone)#1125899906842625(e8,rt_4294967296,auth) <- w4 (epoch 8, tick 1364195784)
+[nebula] ghost Prop(Clone)#562949953421334(e3,rt_4294967296,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421334(e3,rt_4294967296,auth) <- w4 (epoch 3, tick 1364195784)
+[nebula] ghost Player(Clone)#844424930131969(e4,rt_18446744065119617025,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131969(e5,rt_18446744060824649729,ghost) -> w3 (epoch 5, tick 1364195869)
+[nebula] chunk (2, 0, 3) unloaded (rt_8589934595)
+[nebula] ghost Player(Clone)#844424930131969(e6,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e6,rt_18446744065119617025,auth) <- w3 (epoch 6, tick 1364195927)
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.6ms dup 0 skip 0 gc 9 auth 22 ghosts 3 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.22 band=0.04 publish=0.02 gap=16.30
+[nebula] ghost Player(Clone)#1125899906842625(e8,rt_4294967296,auth) -> w1
+[nebula] chunk (0, 0, 3) unloaded (rt_3)
+[nebula] chunk (1, 0, 3) unloaded (rt_4294967299)
+[nebula] ghost Player(Clone)#844424930131970(e9,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e9,rt_18446744069414584321,auth) <- w4 (epoch 9, tick 1364196054)
+[nebula] handover OUT Player(Clone)#1125899906842625(e9,rt_8589934591,ghost) -> w1 (epoch 9, tick 1364196057)
+[nebula] spawned Prop(Clone)#562949953421336(e1,rt_18446744065119617025,auth)
+[nebula] ghost Player(Clone)#562949953421313(e7,rt_0,auth) -> w1
+[nebula] ghost Player(Clone)#562949953421313(e7,rt_0,auth) -> w3
+[nebula] ghost Player(Clone)#844424930131971(e5,rt_4294967296,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930131971(e5,rt_4294967296,auth) <- w1 (epoch 5, tick 1364196106)
+[nebula] handover OUT Player(Clone)#562949953421313(e8,rt_4294967295,ghost) -> w1 (epoch 8, tick 1364196120)
+[nebula] handover OUT Player(Clone)#844424930131973(e9,rt_18446744065119617025,ghost) -> w3 (epoch 9, tick 1364196151)
+[nebula] handover OUT Prop(Clone)#562949953421330(e2,rt_18446744065119617025,ghost) -> w3 (epoch 2, tick 1364196151)
+[nebula] handover OUT Prop(Clone)#562949953421332(e2,rt_18446744065119617025,ghost) -> w3 (epoch 2, tick 1364196151)
+[nebula] handover OUT Prop(Clone)#562949953421333(e2,rt_18446744065119617025,ghost) -> w3 (epoch 2, tick 1364196151)
+[nebula] handover OUT Prop(Clone)#562949953421335(e2,rt_18446744065119617025,ghost) -> w3 (epoch 2, tick 1364196151)
+[nebula] handover OUT Player(Clone)#844424930131969(e7,rt_18446744065119617025,ghost) -> w3 (epoch 7, tick 1364196151)
+[nebula] handover OUT Prop(Clone)#562949953421336(e2,rt_18446744065119617025,ghost) -> w3 (epoch 2, tick 1364196151)
+[nebula] local handover Player(Clone)#844424930131971(e5,rt_0,auth) rt_4294967296 -> rt_0
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.9ms dup 0 skip 0 gc 9 auth 16 ghosts 12 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.21 band=0.04 publish=0.02 gap=16.31
+[nebula] ghost Player(Clone)#562949953421314(e11,rt_0,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421314(e11,rt_0,auth) <- w4 (epoch 11, tick 1364196249)
+[nebula] handover OUT Prop(Clone)#562949953421322(e6,rt_4294967296,ghost) -> w4 (epoch 6, tick 1364196272)
+[nebula] handover OUT Prop(Clone)#562949953421327(e6,rt_4294967296,ghost) -> w4 (epoch 6, tick 1364196272)
+[nebula] handover OUT Prop(Clone)#562949953421334(e4,rt_4294967296,ghost) -> w4 (epoch 4, tick 1364196272)
+[nebula] ghost Player(Clone)#844424930131971(e5,rt_0,auth) -> w4
+[nebula] ghost Player(Clone)#844424930131973(e10,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e10,rt_18446744065119617025,auth) <- w3 (epoch 10, tick 1364196273)
+[nebula] ghost Prop(Clone)#562949953421330(e3,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421330(e3,rt_18446744065119617025,auth) <- w3 (epoch 3, tick 1364196273)
+[nebula] ghost Prop(Clone)#562949953421332(e3,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421332(e3,rt_18446744065119617025,auth) <- w3 (epoch 3, tick 1364196273)
+[nebula] ghost Prop(Clone)#562949953421333(e3,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421333(e3,rt_18446744065119617025,auth) <- w3 (epoch 3, tick 1364196273)
+[nebula] ghost Prop(Clone)#562949953421335(e3,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421335(e3,rt_18446744065119617025,auth) <- w3 (epoch 3, tick 1364196273)
+[nebula] ghost Player(Clone)#844424930131969(e8,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e8,rt_18446744065119617025,auth) <- w3 (epoch 8, tick 1364196273)
+[nebula] ghost Prop(Clone)#562949953421336(e3,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Prop(Clone)#562949953421336(e3,rt_18446744065119617025,auth) <- w3 (epoch 3, tick 1364196273)
+[nebula] spawned Prop(Clone)#562949953421337(e1,rt_18446744065119617025,auth)
+[nebula] handover OUT Player(Clone)#844424930131971(e6,rt_4294967296,ghost) -> w4 (epoch 6, tick 1364196293)
+[nebula] chunk (-2, 0, -2) loaded (rt_18446744069414584318)
+[nebula] handover OUT Prop(Clone)#562949953421317(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421318(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421319(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421320(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421323(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421325(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421326(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421328(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Prop(Clone)#562949953421331(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364196334)
+[nebula] handover OUT Player(Clone)#562949953421314(e12,rt_0,ghost) -> w4 (epoch 12, tick 1364196334)
+[nebula] ghost Prop(Clone)#844424930131977(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131977(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131978(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131978(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131980(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131980(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131981(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131981(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131982(e2,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Prop(Clone)#844424930131982(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131982(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131983(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131983(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131976(e6,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131976(e6,rt_18446744069414584320,auth) <- w3 (epoch 6, tick 1364196335)
+[nebula] ghost Prop(Clone)#844424930131984(e4,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131984(e4,rt_18446744069414584320,auth) <- w3 (epoch 4, tick 1364196335)
+[nebula] chunk (-1, 0, -4) loaded (rt_18446744073709551612)
+[nebula] chunk (0, 0, -4) loaded (rt_4294967292)
+[nebula] chunk (1, 0, -4) loaded (rt_8589934588)
+[nebula] ghost Player(Clone)#844424930131970(e9,rt_18446744069414584321,auth) -> w4
+[nebula] chunk (2, 0, -4) loaded (rt_12884901884)
+[nebula] handover OUT Player(Clone)#844424930131970(e10,rt_1,ghost) -> w4 (epoch 10, tick 1364196429)
+[nebula] chunk (3, 0, 0) unloaded (rt_12884901888)
+[nebula] chunk (3, 0, 1) unloaded (rt_12884901889)
+[nebula] local handover Player(Clone)#844424930131973(e10,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.7ms dup 0 skip 0 gc 10 auth 18 ghosts 3 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.02 containers=0.18 band=0.03 publish=0.02 gap=16.34
+[nebula] spawned Prop(Clone)#562949953421338(e1,rt_18446744065119617025,auth)
+[nebula] spawned Prop(Clone)#562949953421339(e1,rt_18446744069414584321,auth)
+[nebula] local handover Player(Clone)#844424930131969(e8,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] chunk (-2, 0, -3) loaded (rt_18446744069414584317)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 7 auth 20 ghosts 2 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.19 band=0.02 publish=0.02 gap=16.35
+[nebula] local handover Player(Clone)#844424930131973(e10,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] local handover Player(Clone)#844424930131969(e8,rt_18446744069414584320,auth) rt_18446744069414584321 -> rt_18446744069414584320
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.7ms dup 0 skip 0 gc 6 auth 20 ghosts 2 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.20 band=0.02 publish=0.02 gap=16.34
+[nebula] chunk (-3, 0, -1) loaded (rt_18446744065119617023)
+[nebula] local handover Player(Clone)#844424930131969(e8,rt_18446744065119617024,auth) rt_18446744069414584320 -> rt_18446744065119617024
+[nebula] handover OUT Player(Clone)#844424930131969(e9,rt_18446744065119617024,ghost) -> w3 (epoch 9, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131977(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131978(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131980(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131981(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131982(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] handover OUT Prop(Clone)#844424930131983(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364197347)
+[nebula] ghost Player(Clone)#844424930131970(e11,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e11,rt_18446744069414584321,auth) <- w4 (epoch 11, tick 1364197377)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 7 auth 14 ghosts 9 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.19 band=0.02 publish=0.02 gap=16.35
+[nebula] spawned Prop(Clone)#562949953421340(e1,rt_18446744069414584321,auth)
+[nebula] chunk (-3, 0, -3) loaded (rt_18446744065119617021)
+[nebula] chunk (-3, 0, -2) loaded (rt_18446744065119617022)
+[nebula] ghost Player(Clone)#844424930131973(e10,rt_18446744065119617025,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131973(e11,rt_18446744065119617024,ghost) -> w3 (epoch 11, tick 1364197664)
+[nebula] ghost Player(Clone)#844424930131973(e12,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e12,rt_18446744069414584320,auth) <- w3 (epoch 12, tick 1364197730)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.5ms dup 0 skip 0 gc 8 auth 15 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.16 band=0.03 publish=0.01 gap=16.38
+[nebula] local handover Player(Clone)#844424930131973(e12,rt_18446744069414584321,auth) rt_18446744069414584320 -> rt_18446744069414584321
+[nebula] local handover Player(Clone)#844424930131970(e11,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] chunk (-2, 0, 3) loaded (rt_18446744065119617027)
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] spawned Prop(Clone)#562949953421341(e1,rt_18446744069414584322,auth)
+[nebula] chunk (-4, 0, -1) unloaded (rt_18446744060824649727)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 8 auth 16 ghosts 4 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.17 band=0.02 publish=0.02 gap=16.37
+[nebula] chunk (-4, 0, -3) loaded (rt_18446744060824649725)
+[nebula] chunk (-4, 0, -2) loaded (rt_18446744060824649726)
+[nebula] chunk (-4, 0, -1) loaded (rt_18446744060824649727)
+[nebula] ghost Player(Clone)#844424930131970(e11,rt_18446744069414584322,auth) -> w4
+[nebula] chunk (1, 0, 3) loaded (rt_4294967299)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 9 auth 16 ghosts 4 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.18 band=0.02 publish=0.02 gap=16.36
+[nebula] handover OUT Player(Clone)#844424930131970(e12,rt_1,ghost) -> w4 (epoch 12, tick 1364198364)
+[nebula] chunk (3, 0, 0) loaded (rt_12884901888)
+[nebula] ghost Player(Clone)#844424930131970(e13,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e13,rt_18446744069414584322,auth) <- w4 (epoch 13, tick 1364198489)
+[nebula] spawned Prop(Clone)#562949953421342(e1,rt_18446744069414584321,auth)
+[nebula] ghost Player(Clone)#844424930131973(e12,rt_18446744069414584321,auth) -> w4
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 8 auth 17 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.19 band=0.02 publish=0.02 gap=16.35
+[nebula] handover OUT Player(Clone)#844424930131973(e13,rt_1,ghost) -> w4 (epoch 13, tick 1364198662)
+[nebula] spawned Prop(Clone)#562949953421343(e1,rt_18446744069414584322,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.6ms dup 0 skip 0 gc 8 auth 17 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.20 band=0.02 publish=0.02 gap=16.34
+[nebula] chunk (3, 0, -3) loaded (rt_17179869181)
+[nebula] profile 300 ticks/5s 300 frames avg 0.3ms max 0.7ms dup 0 skip 0 gc 8 auth 17 ghosts 4 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.21 band=0.02 publish=0.02 gap=16.33
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584323,auth) rt_18446744069414584322 -> rt_18446744069414584323
+[nebula] chunk (-2, 0, 4) loaded (rt_18446744065119617028)
+[nebula] chunk (-1, 0, 4) loaded (rt_18446744069414584324)
+[nebula] chunk (0, 0, 4) loaded (rt_4)
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584322,auth) rt_18446744069414584323 -> rt_18446744069414584322
+[nebula] ghost Player(Clone)#844424930131973(e14,rt_18446744069414584320,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131973(e14,rt_18446744069414584320,auth) <- w4 (epoch 14, tick 1364199340)
+[nebula] chunk (-4, 0, 2) unloaded (rt_18446744056529682434)
+[nebula] ghost Player(Clone)#844424930131969(e10,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e10,rt_18446744065119617025,auth) <- w3 (epoch 10, tick 1364199517)
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 1.8ms dup 0 skip 0 gc 9 auth 19 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.23 band=0.03 publish=0.02 gap=16.28
+[nebula] spawned Prop(Clone)#562949953421344(e1,rt_18446744069414584322,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.7ms dup 0 skip 0 gc 8 auth 20 ghosts 4 | poll=0.01 ghosts=0.00 physics.sync=0.00 simulate=0.01 poses=0.01 containers=0.24 band=0.03 publish=0.02 gap=16.28
+[nebula] ghost Player(Clone)#844424930131973(e14,rt_18446744069414584320,auth) -> w1
+[nebula] handover OUT Player(Clone)#844424930131973(e15,rt_18446744073709551615,ghost) -> w1 (epoch 15, tick 1364200024)
+[nebula] handover OUT Prop(Clone)#844424930131976(e7,rt_18446744069414584320,ghost) -> w3 (epoch 7, tick 1364200039)
+[nebula] handover OUT Prop(Clone)#844424930131984(e5,rt_18446744069414584320,ghost) -> w3 (epoch 5, tick 1364200039)
+[nebula] ghost Player(Clone)#844424930131971(e7,rt_0,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131971(e7,rt_0,auth) <- w4 (epoch 7, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421317(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421317(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421318(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421318(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421319(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421319(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421320(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421320(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421323(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421323(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421325(e3,rt_0,auth) -> w1
+[nebula] ghost Prop(Clone)#562949953421325(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421325(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421326(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421326(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421328(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421328(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421331(e3,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421331(e3,rt_0,auth) <- w4 (epoch 3, tick 1364200039)
+[nebula] ghost Prop(Clone)#1125899906842631(e2,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842631(e2,rt_0,auth) <- w4 (epoch 2, tick 1364200039)
+[nebula] ghost Prop(Clone)#1125899906842637(e2,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842637(e2,rt_0,auth) <- w4 (epoch 2, tick 1364200039)
+[nebula] ghost Prop(Clone)#1125899906842643(e2,rt_0,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842643(e2,rt_0,auth) <- w4 (epoch 2, tick 1364200039)
+[nebula] ghost Prop(Clone)#562949953421319(e3,rt_0,auth) -> w3
+[nebula] ghost Prop(Clone)#562949953421325(e3,rt_0,auth) -> w3
+[nebula] ghost Prop(Clone)#844424930131976(e8,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131976(e8,rt_18446744069414584320,auth) <- w3 (epoch 8, tick 1364200071)
+[nebula] ghost Prop(Clone)#844424930131984(e6,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131984(e6,rt_18446744069414584320,auth) <- w3 (epoch 6, tick 1364200071)
+[nebula] local handover Player(Clone)#844424930131969(e10,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.4ms max 0.8ms dup 0 skip 0 gc 9 auth 32 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.02 containers=0.28 band=0.03 publish=0.02 gap=16.23
+[nebula] spawned Prop(Clone)#562949953421345(e1,rt_18446744069414584321,auth)
+[nebula] local handover Player(Clone)#844424930131969(e10,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] ghost Player(Clone)#844424930131971(e7,rt_0,auth) -> w4
+[nebula] ghost Player(Clone)#844424930131969(e10,rt_18446744065119617025,auth) -> w3
+[nebula] spawned Prop(Clone)#562949953421346(e1,rt_0,auth)
+[nebula] ghost Prop(Clone)#562949953421346(e1,rt_0,auth) -> w4
+[nebula] handover OUT Player(Clone)#844424930131969(e11,rt_18446744065119617024,ghost) -> w3 (epoch 11, tick 1364200348)
+[nebula] handover OUT Player(Clone)#844424930131971(e8,rt_4294967296,ghost) -> w4 (epoch 8, tick 1364200371)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.9ms dup 0 skip 0 gc 10 auth 32 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.39 band=0.05 publish=0.02 gap=16.10
+[nebula] chunk (-3, 0, 3) loaded (rt_18446744060824649731)
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744065119617026,auth) rt_18446744069414584322 -> rt_18446744065119617026
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584322,auth) rt_18446744065119617026 -> rt_18446744069414584322
+[nebula] ghost Player(Clone)#844424930131969(e12,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131969(e12,rt_18446744065119617025,auth) <- w3 (epoch 12, tick 1364200712)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.9ms dup 0 skip 0 gc 9 auth 33 ghosts 3 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.02 containers=0.39 band=0.04 publish=0.02 gap=16.11
+[nebula] spawned Prop(Clone)#562949953421347(e1,rt_18446744065119617025,auth)
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 34 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.42 band=0.04 publish=0.02 gap=16.08
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] chunk (3, 0, -4) loaded (rt_17179869180)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 34 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.02 containers=0.42 band=0.04 publish=0.02 gap=16.07
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] spawned Prop(Clone)#562949953421348(e1,rt_18446744069414584322,auth)
+[nebula] chunk (-1, 0, -4) unloaded (rt_18446744073709551612)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 35 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.43 band=0.04 publish=0.02 gap=16.07
+[nebula] ghost Player(Clone)#844424930131973(e16,rt_18446744069414584320,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930131973(e16,rt_18446744069414584320,auth) <- w1 (epoch 16, tick 1364201643)
+[nebula] ghost Player(Clone)#844424930131973(e16,rt_18446744069414584320,auth) -> w3
+[nebula] spawned Prop(Clone)#562949953421349(e1,rt_18446744069414584322,auth)
+[nebula] handover OUT Player(Clone)#844424930131973(e17,rt_18446744065119617024,ghost) -> w3 (epoch 17, tick 1364201740)
+[nebula] ghost Player(Clone)#844424930131971(e9,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131971(e9,rt_18446744069414584321,auth) <- w4 (epoch 9, tick 1364201850)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.2ms dup 1 skip 0 gc 10 auth 37 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.44 band=0.05 publish=0.02 gap=16.04
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] chunk (0, 0, -4) unloaded (rt_4294967292)
+[nebula] ghost Player(Clone)#844424930131971(e9,rt_18446744069414584321,auth) -> w4
+[nebula] handover OUT Player(Clone)#844424930131971(e10,rt_1,ghost) -> w4 (epoch 10, tick 1364202207)
+[nebula] local handover Player(Clone)#844424930131970(e13,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 36 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.44 band=0.05 publish=0.02 gap=16.04
+[nebula] chunk (0, 0, -4) loaded (rt_4294967292)
+[nebula] ghost Player(Clone)#844424930131971(e11,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131971(e11,rt_18446744069414584321,auth) <- w4 (epoch 11, tick 1364202444)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 0.9ms dup 0 skip 0 gc 10 auth 37 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.43 band=0.04 publish=0.02 gap=16.05
+[nebula] ghost Player(Clone)#562949953421313(e10,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#562949953421313(e10,rt_18446744065119617025,auth) <- w3 (epoch 10, tick 1364202582)
+[nebula] spawned Prop(Clone)#562949953421350(e1,rt_18446744065119617025,auth)
+[nebula] ghost Prop(Clone)#562949953421350(e1,rt_18446744065119617025,auth) -> w3
+[nebula] chunk (-4, 0, -3) unloaded (rt_18446744060824649725)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.8ms dup 0 skip 0 gc 10 auth 39 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.02 containers=0.47 band=0.05 publish=0.02 gap=16.01
+[nebula] spawned Prop(Clone)#562949953421351(e1,rt_18446744069414584321,auth)
+[nebula] ghost Player(Clone)#844424930131970(e13,rt_18446744069414584321,auth) -> w4
+[nebula] chunk (-2, 0, 4) unloaded (rt_18446744065119617028)
+[nebula] chunk (-1, 0, 4) unloaded (rt_18446744069414584324)
+[nebula] handover OUT Player(Clone)#844424930131970(e14,rt_1,ghost) -> w4 (epoch 14, tick 1364202947)
+[nebula] spawned Prop(Clone)#562949953421352(e1,rt_18446744065119617025,auth)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744065119617026,auth) rt_18446744065119617025 -> rt_18446744065119617026
+[nebula] local handover Player(Clone)#844424930131971(e11,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 40 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.46 band=0.05 publish=0.02 gap=16.02
+[nebula] ghost Player(Clone)#844424930131971(e11,rt_18446744065119617025,auth) -> w3
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744065119617026,auth) rt_18446744065119617025 -> rt_18446744065119617026
+[nebula] handover OUT Player(Clone)#844424930131971(e12,rt_18446744065119617024,ghost) -> w3 (epoch 12, tick 1364203374)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744065119617025,auth) rt_18446744065119617026 -> rt_18446744065119617025
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.3ms dup 0 skip 0 gc 9 auth 39 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.47 band=0.05 publish=0.02 gap=16.01
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744060824649730,auth) rt_18446744065119617026 -> rt_18446744060824649730
+[nebula] chunk (-4, 0, 2) loaded (rt_18446744056529682434)
+[nebula] chunk (-4, 0, 3) loaded (rt_18446744056529682435)
+[nebula] ghost Player(Clone)#844424930131970(e15,rt_0,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e15,rt_0,auth) <- w4 (epoch 15, tick 1364203501)
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744065119617026,auth) rt_18446744060824649730 -> rt_18446744065119617026
+[nebula] chunk (0, 0, 3) unloaded (rt_3)
+[nebula] chunk (1, 0, 3) unloaded (rt_4294967299)
+[nebula] chunk (3, 0, 0) unloaded (rt_12884901888)
+[nebula] chunk (0, 0, 4) unloaded (rt_4)
+[nebula] ghost Player(Clone)#844424930131971(e13,rt_18446744065119617025,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e13,rt_18446744065119617025,auth) <- w3 (epoch 13, tick 1364203725)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 0.9ms dup 0 skip 0 gc 10 auth 41 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.47 band=0.05 publish=0.02 gap=16.01
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744065119617025,auth) rt_18446744065119617026 -> rt_18446744065119617025
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 9 auth 41 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.46 band=0.05 publish=0.02 gap=16.02
+[nebula] spawned Prop(Clone)#562949953421353(e1,rt_18446744065119617025,auth)
+[nebula] ghost Player(Clone)#844424930131972(e6,rt_18446744069414584320,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930131972(e6,rt_18446744069414584320,auth) <- w1 (epoch 6, tick 1364204201)
+[nebula] ghost Player(Clone)#844424930131970(e15,rt_0,auth) -> w4
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] handover OUT Player(Clone)#844424930131970(e16,rt_1,ghost) -> w4 (epoch 16, tick 1364204261)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.1ms dup 0 skip 0 gc 9 auth 42 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.48 band=0.05 publish=0.02 gap=15.99
+[nebula] chunk (-3, 0, -3) unloaded (rt_18446744065119617021)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744065119617026,auth) rt_18446744065119617025 -> rt_18446744065119617026
+[nebula] spawned Prop(Clone)#562949953421354(e1,rt_18446744065119617025,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.3ms dup 0 skip 0 gc 9 auth 43 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.47 band=0.05 publish=0.02 gap=16.01
+[nebula] spawned Prop(Clone)#562949953421355(e1,rt_18446744065119617026,auth)
+[nebula] chunk (2, 0, 0) unloaded (rt_8589934592)
+[nebula] chunk (2, 0, 1) unloaded (rt_8589934593)
+[nebula] chunk (2, 0, 2) unloaded (rt_8589934594)
+[nebula] spawned Prop(Clone)#562949953421356(e1,rt_18446744069414584320,auth)
+[nebula] ghost Player(Clone)#844424930131970(e17,rt_0,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e17,rt_0,auth) <- w4 (epoch 17, tick 1364204762)
+[nebula] spawned Prop(Clone)#562949953421357(e1,rt_18446744065119617025,auth)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584322,auth) rt_18446744065119617026 -> rt_18446744069414584322
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.0ms dup 0 skip 0 gc 10 auth 47 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.48 band=0.05 publish=0.02 gap=15.98
+[nebula] chunk (-1, 0, -4) loaded (rt_18446744073709551612)
+[nebula] chunk (3, 0, -3) unloaded (rt_17179869181)
+[nebula] chunk (3, 0, -4) unloaded (rt_17179869180)
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744069414584321,auth) rt_18446744065119617025 -> rt_18446744069414584321
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] ghost Player(Clone)#844424930131971(e13,rt_18446744065119617025,auth) -> w3
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.5ms dup 0 skip 0 gc 10 auth 47 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.50 band=0.05 publish=0.03 gap=15.96
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] handover OUT Player(Clone)#844424930131971(e14,rt_18446744065119617024,ghost) -> w3 (epoch 14, tick 1364205252)
+[nebula] spawned Prop(Clone)#562949953421358(e1,rt_0,auth)
+[nebula] spawned Prop(Clone)#562949953421359(e1,rt_18446744069414584322,auth)
+[nebula] chunk (-4, 0, 0) unloaded (rt_18446744056529682432)
+[nebula] chunk (-4, 0, 1) unloaded (rt_18446744056529682433)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 2.6ms dup 0 skip 0 gc 10 auth 48 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.51 band=0.05 publish=0.03 gap=15.95
+[nebula] spawned Prop(Clone)#562949953421360(e1,rt_0,auth)
+[nebula] ghost Player(Clone)#844424930131971(e15,rt_18446744069414584320,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e15,rt_18446744069414584320,auth) <- w3 (epoch 15, tick 1364205566)
+[nebula] local handover Player(Clone)#844424930131969(e12,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744065119617026,auth) rt_18446744069414584322 -> rt_18446744065119617026
+[nebula] spawned Prop(Clone)#562949953421361(e1,rt_18446744069414584320,auth)
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744069414584322,auth) rt_18446744065119617026 -> rt_18446744069414584322
+[nebula] spawned Prop(Clone)#562949953421362(e1,rt_18446744069414584321,auth)
+[nebula] spawned Prop(Clone)#562949953421363(e1,rt_18446744069414584320,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 1.0ms dup 0 skip 0 gc 9 auth 53 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.03 poses=0.03 containers=0.53 band=0.06 publish=0.03 gap=15.92
+[nebula] ghost Player(Clone)#844424930131971(e15,rt_18446744069414584320,auth) -> w3
+[nebula] spawned Prop(Clone)#562949953421364(e1,rt_0,auth)
+[nebula] chunk (-4, 0, 0) loaded (rt_18446744056529682432)
+[nebula] ghost Player(Clone)#844424930131970(e17,rt_0,auth) -> w4
+[nebula] handover OUT Player(Clone)#844424930131971(e16,rt_18446744065119617024,ghost) -> w3 (epoch 16, tick 1364205933)
+[nebula] handover OUT Player(Clone)#844424930131970(e18,rt_1,ghost) -> w4 (epoch 18, tick 1364205997)
+[nebula] profile 300 ticks/5s 300 frames avg 0.8ms max 1.2ms dup 0 skip 0 gc 9 auth 52 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.56 band=0.06 publish=0.02 gap=15.90
+[nebula] spawned Prop(Clone)#562949953421365(e1,rt_18446744069414584321,auth)
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744069414584321,auth) rt_18446744069414584322 -> rt_18446744069414584321
+[nebula] spawned Prop(Clone)#562949953421366(e1,rt_18446744069414584321,auth)
+[nebula] ghost Player(Clone)#844424930131970(e19,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131970(e19,rt_18446744069414584321,auth) <- w4 (epoch 19, tick 1364206248)
+[nebula] local handover Player(Clone)#562949953421313(e10,rt_18446744069414584322,auth) rt_18446744069414584321 -> rt_18446744069414584322
+[nebula] local handover Player(Clone)#844424930131972(e6,rt_18446744069414584321,auth) rt_18446744069414584320 -> rt_18446744069414584321
+[nebula] ghost Player(Clone)#844424930131972(e6,rt_18446744069414584321,auth) -> w3
+[nebula] local handover Player(Clone)#844424930131972(e6,rt_18446744065119617025,auth) rt_18446744069414584321 -> rt_18446744065119617025
+[nebula] handover OUT Prop(Clone)#562949953421317(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421318(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421319(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421320(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421323(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421325(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421326(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421328(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421331(e4,rt_0,ghost) -> w4 (epoch 4, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#1125899906842631(e3,rt_0,ghost) -> w4 (epoch 3, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#1125899906842637(e3,rt_0,ghost) -> w4 (epoch 3, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#1125899906842643(e3,rt_0,ghost) -> w4 (epoch 3, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421346(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421358(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421360(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364206367)
+[nebula] handover OUT Prop(Clone)#562949953421364(e2,rt_0,ghost) -> w4 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#562949953421356(e1,rt_18446744069414584320,auth) -> w4
+[nebula] ghost Prop(Clone)#844424930131977(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131977(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131978(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131978(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131980(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131980(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131981(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131981(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131982(e4,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Prop(Clone)#844424930131982(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131982(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131983(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131983(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131985(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131985(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131986(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131986(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131987(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131987(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131993(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131993(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131996(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131996(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131997(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131997(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930131998(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131998(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930132000(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132000(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Prop(Clone)#844424930132001(e2,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132001(e2,rt_18446744065119617024,auth) <- w3 (epoch 2, tick 1364206367)
+[nebula] ghost Player(Clone)#844424930131971(e17,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e17,rt_18446744065119617024,auth) <- w3 (epoch 17, tick 1364206367)
+[nebula] ghost Player(Clone)#844424930131971(e17,rt_18446744065119617024,auth) -> w1
+[nebula] profile 300 ticks/5s 300 frames avg 0.8ms max 2.5ms dup 0 skip 0 gc 9 auth 55 ghosts 18 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.03 poses=0.04 containers=0.59 band=0.07 publish=0.02 gap=15.85
+[nebula] handover OUT Player(Clone)#844424930131971(e18,rt_18446744069414584319,ghost) -> w1 (epoch 18, tick 1364206461)
+[nebula] spawned Prop(Clone)#562949953421367(e1,rt_18446744069414584321,auth)
+[nebula] spawned Prop(Clone)#562949953421368(e1,rt_18446744069414584321,auth)
+[nebula] local handover Player(Clone)#844424930131972(e6,rt_18446744065119617024,auth) rt_18446744065119617025 -> rt_18446744065119617024
+[nebula] handover OUT Prop(Clone)#562949953421341(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421343(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421344(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421348(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421349(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Player(Clone)#562949953421313(e11,rt_18446744069414584322,ghost) -> w4 (epoch 11, tick 1364206549)
+[nebula] handover OUT Player(Clone)#844424930131972(e7,rt_18446744065119617024,ghost) -> w3 (epoch 7, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421355(e2,rt_18446744065119617026,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#562949953421359(e2,rt_18446744069414584322,ghost) -> w4 (epoch 2, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131977(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131978(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131980(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131981(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131982(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131983(e5,rt_18446744065119617024,ghost) -> w3 (epoch 5, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131985(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131986(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131987(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131993(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131996(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131997(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930131998(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930132000(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] handover OUT Prop(Clone)#844424930132001(e3,rt_18446744065119617024,ghost) -> w3 (epoch 3, tick 1364206549)
+[nebula] ghost Prop(Clone)#562949953421350(e1,rt_18446744065119617025,auth) -> w3
+[nebula] ghost Prop(Clone)#562949953421366(e1,rt_18446744069414584321,auth) -> w4
+[nebula] ghost Prop(Clone)#562949953421341(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421341(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421343(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421343(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421344(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421344(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421348(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421348(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421349(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421349(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Player(Clone)#562949953421313(e12,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Player(Clone)#562949953421313(e12,rt_18446744069414584322,auth) <- w4 (epoch 12, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421355(e3,rt_18446744065119617026,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421355(e3,rt_18446744065119617026,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] ghost Prop(Clone)#562949953421359(e3,rt_18446744069414584322,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421359(e3,rt_18446744069414584322,auth) <- w4 (epoch 3, tick 1364206580)
+[nebula] chunk (3, 0, -1) unloaded (rt_17179869183)
+[nebula] chunk (3, 0, -2) unloaded (rt_17179869182)
+[nebula] profile 300 ticks/5s 300 frames avg 0.7ms max 2.2ms dup 0 skip 0 gc 9 auth 40 ghosts 5 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.04 containers=0.48 band=0.05 publish=0.02 gap=15.98
+[nebula] local handover Player(Clone)#844424930131970(e19,rt_18446744069414584320,auth) rt_18446744069414584321 -> rt_18446744069414584320
+[nebula] handover OUT Prop(Clone)#562949953421341(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421343(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421344(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421348(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421349(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Player(Clone)#562949953421313(e13,rt_18446744069414584322,ghost) -> w4 (epoch 13, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421355(e4,rt_18446744065119617026,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] handover OUT Prop(Clone)#562949953421359(e4,rt_18446744069414584322,ghost) -> w4 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#562949953421366(e1,rt_18446744069414584321,auth) -> w4
+[nebula] ghost Player(Clone)#844424930131972(e8,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e8,rt_18446744065119617024,auth) <- w3 (epoch 8, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131977(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131977(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131978(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131978(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131980(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131980(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131981(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131981(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131982(e6,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Prop(Clone)#844424930131982(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131982(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131983(e6,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131983(e6,rt_18446744065119617024,auth) <- w3 (epoch 6, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131985(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131985(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131986(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131986(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131987(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131987(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131993(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131993(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131996(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131996(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131997(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131997(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930131998(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131998(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930132000(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132000(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Prop(Clone)#844424930132001(e4,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132001(e4,rt_18446744065119617024,auth) <- w3 (epoch 4, tick 1364206763)
+[nebula] ghost Player(Clone)#844424930131971(e20,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Player(Clone)#844424930131971(e20,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e20,rt_18446744065119617024,auth) <- w3 (epoch 20, tick 1364206763)
+[nebula] chunk (3, 0, -3) loaded (rt_17179869181)
+[nebula] chunk (3, 0, -2) loaded (rt_17179869182)
+[nebula] chunk (3, 0, -1) loaded (rt_17179869183)
+[nebula] ghost Prop(Clone)#844424930131979(e2,rt_18446744060824649729,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131979(e2,rt_18446744060824649729,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] ghost Prop(Clone)#281474976710657(e5,rt_12884901887,auth) -> w3
+[nebula] handover IN  Prop(Clone)#281474976710657(e5,rt_12884901887,auth) <- w3 (epoch 5, tick 1364206824)
+[nebula] ghost Prop(Clone)#844424930131988(e2,rt_12884901887,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131988(e2,rt_12884901887,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] ghost Prop(Clone)#844424930131989(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131989(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] ghost Prop(Clone)#844424930131994(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131994(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] ghost Prop(Clone)#844424930131995(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131995(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] ghost Prop(Clone)#844424930131999(e2,rt_12884901887,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131999(e2,rt_12884901887,auth) <- w3 (epoch 2, tick 1364206824)
+[nebula] spawned Prop(Clone)#562949953421369(e1,rt_18446744065119617024,auth)
+[nebula] spawned Prop(Clone)#562949953421370(e1,rt_18446744069414584320,auth)
+[nebula] handover OUT Prop(Clone)#562949953421315(e4,rt_18446744069414584321,ghost) -> w4 (epoch 4, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421329(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421339(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421340(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421342(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421345(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Player(Clone)#844424930131969(e13,rt_18446744069414584321,ghost) -> w4 (epoch 13, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421351(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421362(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421365(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421366(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421367(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#562949953421368(e2,rt_18446744069414584321,ghost) -> w4 (epoch 2, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131979(e3,rt_18446744060824649729,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#281474976710657(e6,rt_12884901887,ghost) -> w3 (epoch 6, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131988(e3,rt_12884901887,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131989(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131994(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131995(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] handover OUT Prop(Clone)#844424930131999(e3,rt_12884901887,ghost) -> w3 (epoch 3, tick 1364206946)
+[nebula] ghost Player(Clone)#844424930131971(e20,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Player(Clone)#844424930131971(e20,rt_18446744065119617024,auth) -> w3
+[nebula] spawned Prop(Clone)#562949953421371(e1,rt_18446744065119617024,auth)
+[nebula] profile 300 ticks/5s 300 frames avg 0.8ms max 3.4ms dup 0 skip 0 gc 11 auth 39 ghosts 24 | poll=0.03 ghosts=0.02 physics.sync=0.00 simulate=0.02 poses=0.04 containers=0.53 band=0.07 publish=0.02 gap=15.90
+[nebula] handover OUT Player(Clone)#844424930131971(e21,rt_18446744069414584319,ghost) -> w1 (epoch 21, tick 1364207043)
+[nebula] ghost Player(Clone)#844424930131969(e14,rt_18446744069414584320,auth) -> w4
+[nebula] handover IN  Player(Clone)#844424930131969(e14,rt_18446744069414584320,auth) <- w4 (epoch 14, tick 1364207247)
+[nebula] ghost Player(Clone)#844424930131972(e8,rt_18446744065119617024,auth) -> w1
+[nebula] ghost Player(Clone)#844424930131970(e19,rt_18446744069414584320,auth) -> w4
+[nebula] chunk (-2, 0, -3) unloaded (rt_18446744069414584317)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.9ms dup 0 skip 0 gc 7 auth 39 ghosts 4 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.42 band=0.05 publish=0.02 gap=16.05
+[nebula] handover OUT Player(Clone)#844424930131972(e9,rt_18446744069414584319,ghost) -> w1 (epoch 9, tick 1364207341)
+[nebula] handover OUT Player(Clone)#844424930131970(e20,rt_0,ghost) -> w4 (epoch 20, tick 1364207344)
+[nebula] spawned Prop(Clone)#562949953421372(e1,rt_18446744069414584320,auth)
+[nebula] chunk (-3, 0, -3) loaded (rt_18446744065119617021)
+[nebula] chunk (-2, 0, -3) loaded (rt_18446744069414584317)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.9ms dup 0 skip 0 gc 8 auth 38 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.03 containers=0.41 band=0.05 publish=0.03 gap=16.07
+[nebula] chunk (-4, 0, 1) loaded (rt_18446744056529682433)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 3.1ms dup 0 skip 0 gc 7 auth 38 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.03 containers=0.43 band=0.05 publish=0.03 gap=16.04
+[nebula] chunk (2, 0, 0) loaded (rt_8589934592)
+[nebula] ghost Player(Clone)#844424930131972(e11,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e11,rt_18446744065119617024,auth) <- w3 (epoch 11, tick 1364208031)
+[nebula] chunk (2, 0, 1) loaded (rt_8589934593)
+[nebula] ghost Player(Clone)#844424930131969(e14,rt_18446744069414584320,auth) -> w1
+[nebula] spawned Prop(Clone)#562949953421373(e1,rt_18446744069414584320,auth)
+[nebula] ghost Prop(Clone)#562949953421373(e1,rt_18446744069414584320,auth) -> w1
+[nebula] handover OUT Player(Clone)#844424930131969(e15,rt_18446744073709551615,ghost) -> w1 (epoch 15, tick 1364208150)
+[nebula] profile 301 ticks/5s 300 frames avg 0.6ms max 2.2ms dup 0 skip 0 gc 8 auth 39 ghosts 5 | poll=0.01(300) ghosts=0.01 physics.sync=0.00 simulate=0.02 poses=0.03 containers=0.44 band=0.06 publish=0.03 gap=15.99
+[nebula] local handover Player(Clone)#844424930131972(e11,rt_18446744065119617025,auth) rt_18446744065119617024 -> rt_18446744065119617025
+[nebula] ghost Player(Clone)#844424930131973(e19,rt_18446744065119617024,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930131973(e19,rt_18446744065119617024,auth) <- w1 (epoch 19, tick 1364208514)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.2ms dup 0 skip 0 gc 7 auth 40 ghosts 4 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.03 containers=0.45 band=0.05 publish=0.02 gap=16.02
+[nebula] ghost Player(Clone)#844424930131973(e19,rt_18446744065119617024,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131973(e20,rt_18446744060824649728,ghost) -> w3 (epoch 20, tick 1364208626)
+[nebula] ghost Player(Clone)#844424930131972(e11,rt_18446744065119617025,auth) -> w3
+[nebula] handover OUT Player(Clone)#844424930131972(e12,rt_18446744060824649729,ghost) -> w3 (epoch 12, tick 1364208700)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.0ms dup 0 skip 0 gc 7 auth 38 ghosts 5 | poll=0.01 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.03 containers=0.44 band=0.06 publish=0.01 gap=16.04
+[nebula] ghost Player(Clone)#844424930131973(e21,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131973(e21,rt_18446744065119617024,auth) <- w3 (epoch 21, tick 1364209043)
+[nebula] ghost Prop(Clone)#844424930131979(e4,rt_18446744060824649729,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131979(e4,rt_18446744060824649729,auth) <- w3 (epoch 4, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930131989(e4,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131989(e4,rt_18446744060824649728,auth) <- w3 (epoch 4, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930131994(e4,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131994(e4,rt_18446744060824649728,auth) <- w3 (epoch 4, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930131995(e4,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930131995(e4,rt_18446744060824649728,auth) <- w3 (epoch 4, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930132009(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132009(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364209115)
+[nebula] ghost Player(Clone)#844424930131972(e13,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e13,rt_18446744060824649728,auth) <- w3 (epoch 13, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930132013(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132013(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364209115)
+[nebula] ghost Player(Clone)#844424930131971(e25,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e25,rt_18446744060824649728,auth) <- w3 (epoch 25, tick 1364209115)
+[nebula] ghost Prop(Clone)#844424930132016(e2,rt_18446744060824649728,auth) -> w3
+[nebula] handover IN  Prop(Clone)#844424930132016(e2,rt_18446744060824649728,auth) <- w3 (epoch 2, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421315(e5,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421315(e5,rt_18446744069414584321,auth) <- w4 (epoch 5, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421329(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421329(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421339(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421339(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421340(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421340(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421342(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421342(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421345(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421345(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421351(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421351(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421362(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421362(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421365(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421365(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421366(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421366(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421367(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421367(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#562949953421368(e3,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#562949953421368(e3,rt_18446744069414584321,auth) <- w4 (epoch 3, tick 1364209115)
+[nebula] ghost Prop(Clone)#1125899906842648(e2,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842648(e2,rt_18446744069414584321,auth) <- w4 (epoch 2, tick 1364209115)
+[nebula] ghost Prop(Clone)#1125899906842649(e2,rt_18446744069414584321,auth) -> w4
+[nebula] handover IN  Prop(Clone)#1125899906842649(e2,rt_18446744069414584321,auth) <- w4 (epoch 2, tick 1364209115)
+[nebula] profile 300 ticks/5s 300 frames avg 0.6ms max 1.5ms dup 0 skip 0 gc 7 auth 62 ghosts 3 | poll=0.02 ghosts=0.01 physics.sync=0.00 simulate=0.01 poses=0.03 containers=0.45 band=0.05 publish=0.01 gap=16.04
+[nebula] local handover Player(Clone)#844424930131973(e21,rt_18446744060824649728,auth) rt_18446744065119617024 -> rt_18446744060824649728
+[nebula] handover OUT Player(Clone)#844424930131973(e22,rt_18446744060824649728,ghost) -> w3 (epoch 22, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930131979(e5,rt_18446744060824649729,ghost) -> w3 (epoch 5, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930131989(e5,rt_18446744060824649728,ghost) -> w3 (epoch 5, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930131994(e5,rt_18446744060824649728,ghost) -> w3 (epoch 5, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930131995(e5,rt_18446744060824649728,ghost) -> w3 (epoch 5, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930132009(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364209175)
+[nebula] handover OUT Player(Clone)#844424930131972(e14,rt_18446744060824649728,ghost) -> w3 (epoch 14, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930132013(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364209175)
+[nebula] handover OUT Player(Clone)#844424930131971(e26,rt_18446744060824649728,ghost) -> w3 (epoch 26, tick 1364209175)
+[nebula] handover OUT Prop(Clone)#844424930132016(e3,rt_18446744060824649728,ghost) -> w3 (epoch 3, tick 1364209175)
+[nebula] ghost Player(Clone)#844424930131972(e15,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131972(e15,rt_18446744065119617024,auth) <- w3 (epoch 15, tick 1364209207)
+[nebula] ghost Player(Clone)#844424930131971(e27,rt_18446744065119617024,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930131971(e27,rt_18446744065119617024,auth) <- w3 (epoch 27, tick 1364209250)
+[nebula] control plane: reading http://127.0.0.1:7180 failed: An error occurred while sending the request; mesh keeps running on its last known topology

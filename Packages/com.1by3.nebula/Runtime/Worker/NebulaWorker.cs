@@ -24,6 +24,13 @@ namespace Nebula
             public string Key = "";
             public bool HelloReceived;
             public bool Outbound;
+            /// <summary>Gateways: this link's bit in the <see cref="RegionPublisher"/> mask, or -1 when no bit was free.</summary>
+            public int GatewayBit = -1;
+            /// <summary>Gateways: the region set this link subscribes here (design §5). Null until the link is registered.</summary>
+            public RegionSubscriptionReceiver Subscription;
+            /// <summary>Gateways: state entries and bytes sent to this link since it came up, for the interest stats of design §12.</summary>
+            public long EntriesSent;
+            public long BytesSent;
         }
 
         /// <summary>
@@ -116,7 +123,15 @@ namespace Nebula
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
         private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool)>();
 
+        /// <summary>netId -> the entities ghosted to each worker this tick, rebuilt in <see cref="UpdateGhostBand"/>; lists are pooled.</summary>
+        private readonly Dictionary<string, List<NetworkIdentity>> _ghostByWorker = new Dictionary<string, List<NetworkIdentity>>();
+        private readonly Stack<List<NetworkIdentity>> _ghostListPool = new Stack<List<NetworkIdentity>>();
+        /// <summary>Workers to re-ghost to, reused by <see cref="ResumeInheritedGhosts"/> so a handover allocates no list.</summary>
+        private readonly List<ulong> _resumeCompleted = new List<ulong>();
+
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
+        /// <summary>The ghost band's sequenced batch, separate from <see cref="_writer"/> so a reliable message mid-batch needs no copy.</summary>
+        private readonly NetworkWriter _ghostBatch = new NetworkWriter(1024);
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
         private readonly NetworkReader _reader = new NetworkReader();
         private readonly Stopwatch _tickWatch = new Stopwatch();
@@ -279,6 +294,7 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
+            InitializeInterest();
 
             _gameMode = FindFirstObjectByType<NebulaGameMode>();
             if (_gameMode == null) NebulaLog.Warn("No NebulaGameMode in the scene; players cannot be spawned");
@@ -658,6 +674,7 @@ namespace Nebula
                 PlayerCount = (uint)players,
                 BotCount = (uint)bots,
                 ServerDrivenCount = (uint)serverDriven,
+                HasGlobalEntities = HasGlobalEntities,
             };
         }
 
@@ -843,7 +860,21 @@ namespace Nebula
             UpdateGhostBand(tick);
             ProfBand.End();
 
-            // 5. Stream to the gateway(s) and clear dirty state.
+            // 5. Decide who hears about what (interest management), stream to the gateway(s), clear dirty state.
+            ProfInterest.Begin();
+            _filterWatch.Restart();
+            CacheOrigin();
+            UpdateInterestIndex();
+            float unscaled = Time.unscaledTime;
+            EvaluateWideEntities(unscaled);
+            _publisher.BuildGroups(_index);
+            BuildPublishMasks();
+            _filterWatch.Stop();
+            float filterMs = (float)_filterWatch.Elapsed.TotalMilliseconds;
+            InterestFilterMs = InterestFilterMs <= 0f ? filterMs : Mathf.Lerp(InterestFilterMs, filterMs, 0.05f);
+            CheckPartitionWarning(unscaled);
+            ProfInterest.End();
+
             ProfPublish.Begin();
             PublishToGateways(tick);
             foreach (var e in _authoritative) e.ClearDirty();
@@ -857,7 +888,7 @@ namespace Nebula
             _scratchIds.Clear();
             foreach (var kv in _entities) if (kv.Value == null) _scratchIds.Add(kv.Key);
             NebulaLog.Warn($"{_scratchIds.Count} entity object(s) were destroyed without a despawn; forgetting them");
-            foreach (var id in _scratchIds) _entities.Remove(id);
+            foreach (var id in _scratchIds) { _entities.Remove(id); InterestRemove(id); }
             _authoritative.RemoveAll(e => e == null);
             _scratchEntities.Clear();
             _scratchIds.Clear();
@@ -927,8 +958,9 @@ namespace Nebula
             identity.ClearDirty();
             if (identity.Carried != null) SyncCarriedLeases();
 
-            var msg = EntitySpawnMsg.From(identity, _scratch);
-            foreach (var g in _gateways) SendSpawn(g, msg, MsgId.EntitySpawn);
+            // Index it before announcing: which gateways hear about a spawn is decided from where it landed.
+            InterestAdd(identity);
+            AnnounceToRelevantGateways(identity, null);
             EntitySpawned?.Invoke(identity);
             if (ownerClientId != 0) NebulaLog.Info($"spawned player {identity} for client {ownerClientId} in {identity.Container?.ContainerId}");
             else NebulaLog.Debugf($"spawned {identity}");
@@ -958,7 +990,12 @@ namespace Nebula
             }
             Persistence?.OnDespawning(identity, keepPersisted);
             var despawn = new EntityDespawnMsg { NetId = identity.NetId, Epoch = identity.Epoch };
-            foreach (var g in _gateways) { _writer.Reset(); despawn.Write(_writer, MsgId.EntityDespawn); Send(g, Delivery.ReliableOrdered); }
+            // Everyone who could know it: its region's subscribers, its owner's gateway, explicit subscribers, and
+            // every link when it is global. A gateway that never heard of it simply ignores the despawn.
+            ulong despawnMask = PublishMaskOf(identity);
+            _writer.Reset();
+            despawn.Write(_writer, MsgId.EntityDespawn);
+            SendToMask(despawnMask, Delivery.ReliableOrdered);
             var carried = identity.Carried;
             if (carried != null && carried.IsDynamic && _registered && ControlPlane.IsConnected) ControlPlane.RemoveContainer(carried.ContainerId);
             if (_ghostTargets.TryGetValue(identity.NetId, out var targets))
@@ -976,6 +1013,7 @@ namespace Nebula
         {
             _entities.Remove(identity.NetId);
             _authoritative.Remove(identity);
+            InterestRemove(identity.NetId);
             _handedOff.Remove(identity.NetId);
             if (identity.OwnerClientId != 0 && _players.TryGetValue(identity.OwnerClientId, out var p) && p == identity) _players.Remove(identity.OwnerClientId);
             identity.InvokeDespawn();
@@ -1029,16 +1067,21 @@ namespace Nebula
                 if (!deeper) break;
             }
 
-            // Expire ghosts that left the band a while ago, and stream to the rest.
-            _scratchStrings.Clear();
+            // Expire ghosts that left the band a while ago, and index what is left by target worker. Indexing is
+            // what keeps this pass proportional to the ghosts that exist rather than to peers x ghosts: the stream
+            // loop below then walks one list per peer instead of the whole table per peer.
+            foreach (var list in _ghostByWorker.Values) { list.Clear(); _ghostListPool.Push(list); }
+            _ghostByWorker.Clear();
+            _scratchIds.Clear();
             foreach (var kv in _ghostTargets)
             {
                 var e = Find(kv.Key);
                 bool authoritative = e != null && e.HasAuthority;
+                _scratchStrings.Clear();
                 foreach (var t in kv.Value)
                 {
-                    bool expired = !authoritative || now - t.Value > Config.GhostLingerSeconds || !_workerPeersById.ContainsKey(t.Key);
-                    if (expired) _scratchStrings.Add(t.Key);
+                    if (GhostTargetExpired(authoritative, _workerPeersById.ContainsKey(t.Key), now, t.Value, Config.GhostLingerSeconds)) _scratchStrings.Add(t.Key);
+                    else if (_workerPeersById.TryGetValue(t.Key, out var live) && live.HelloReceived) Index(t.Key, e);
                 }
                 foreach (var w in _scratchStrings)
                 {
@@ -1051,50 +1094,43 @@ namespace Nebula
                     }
                 }
                 _scratchStrings.Clear();
+                if (kv.Value.Count == 0) _scratchIds.Add(kv.Key); // net ids, not their decimal strings
             }
-            // Drop empty target sets.
-            _scratchEntities.Clear();
-            foreach (var kv in _ghostTargets) if (kv.Value.Count == 0) _scratchStrings.Add(kv.Key.ToString());
-            if (_scratchStrings.Count > 0)
-            {
-                foreach (var key in _scratchStrings) _ghostTargets.Remove(ulong.Parse(key));
-                _scratchStrings.Clear();
-            }
+            for (int i = 0; i < _scratchIds.Count; i++) _ghostTargets.Remove(_scratchIds[i]);
+            _scratchIds.Clear();
 
-            // Stream state and vars to each target worker.
+            // Stream state and vars to each target worker. The sequenced batch is built in its own writer, so a
+            // reliable message in the middle of it does not have to copy the batch out and back (which allocated a
+            // byte[] per entity per peer per tick).
             foreach (var peer in _workerPeersById.Values)
             {
-                if (!peer.HelloReceived) continue;
+                if (!peer.HelloReceived || !_ghostByWorker.TryGetValue(peer.Id, out var targets)) continue;
                 int slot = -1;
                 ushort count = 0;
-                foreach (var kv in _ghostTargets)
+                for (int i = 0; i < targets.Count; i++)
                 {
-                    if (!kv.Value.ContainsKey(peer.Id)) continue;
-                    var e = Find(kv.Key);
+                    var e = targets[i];
                     if (e == null || !e.HasAuthority) continue;
                     if (e.HasReplicationState)
                     {
                         var entry = e.ReplicationState;
                         if (entry.Reliable)
                         {
-                            var saved = _writer.ToArray();
                             _writer.Reset();
                             int one = WorldStateMsg.Begin(_writer, MsgId.GhostState, tick, WorkerIndex);
                             entry.Write(_writer);
                             WorldStateMsg.End(_writer, one, 1);
                             Send(peer, Delivery.ReliableOrdered);
-                            _writer.Reset();
-                            _writer.WriteRaw(new ArraySegment<byte>(saved));
                         }
                         else
                         {
-                            if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.GhostState, tick, WorkerIndex); }
-                            entry.Write(_writer);
+                            if (slot < 0) { _ghostBatch.Reset(); slot = WorldStateMsg.Begin(_ghostBatch, MsgId.GhostState, tick, WorkerIndex); }
+                            entry.Write(_ghostBatch);
                             count++;
-                            if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                            if (_ghostBatch.Length + EntityStateEntry.WireSize > StateBatchBytes)
                             {
-                                WorldStateMsg.End(_writer, slot, count);
-                                Send(peer, Delivery.Sequenced);
+                                WorldStateMsg.End(_ghostBatch, slot, count);
+                                Send(peer, Delivery.Sequenced, _ghostBatch);
                                 slot = -1; count = 0;
                             }
                         }
@@ -1103,35 +1139,45 @@ namespace Nebula
                     {
                         _scratch.Reset();
                         e.WriteVars(_scratch);
-                        var vars = new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() };
-                        // Vars go on the reliable channel; keep the state batch writer intact by using the scratch writer.
-                        var saved = _writer.ToArray();
                         _writer.Reset();
-                        vars.Write(_writer, MsgId.GhostVars);
+                        new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
                         Send(peer, Delivery.ReliableOrdered);
-                        _writer.Reset();
-                        _writer.WriteRaw(new ArraySegment<byte>(saved));
                     }
                     if (e.HasSyncState)
                     {
                         // The keyframe decision is per tick, not per destination (SyncEverSent only advances in
                         // ClearDirty), so this peer gets the same chunks the gateways get; a ghost that joined late
                         // got its keyframe in GhostSpawn anyway.
-                        var saved = _writer.ToArray();
                         SendSyncState(e, tick, MsgId.GhostSyncState, peer);
-                        _writer.Reset();
-                        _writer.WriteRaw(new ArraySegment<byte>(saved));
                     }
                 }
                 if (slot >= 0)
                 {
-                    WorldStateMsg.End(_writer, slot, count);
-                    Send(peer, Delivery.Sequenced);
+                    WorldStateMsg.End(_ghostBatch, slot, count);
+                    Send(peer, Delivery.Sequenced, _ghostBatch);
                 }
             }
 
             GhostsHeld = _entities.Count - _authoritative.Count;
+
+            void Index(string workerId, NetworkIdentity entity)
+            {
+                if (entity == null) return;
+                if (!_ghostByWorker.TryGetValue(workerId, out var list))
+                {
+                    list = _ghostListPool.Count > 0 ? _ghostListPool.Pop() : new List<NetworkIdentity>(32);
+                    _ghostByWorker[workerId] = list;
+                }
+                list.Add(entity);
+            }
         }
+
+        /// <summary>
+        /// Whether a ghost target has lapsed: the entity is not ours any more, the peer holding it is gone, or it
+        /// has been out of the band for longer than the linger. Pure, so the bookkeeping is testable without a mesh.
+        /// </summary>
+        internal static bool GhostTargetExpired(bool authoritative, bool peerKnown, float now, float lastSeen, float lingerSeconds) =>
+            !authoritative || !peerKnown || now - lastSeen > lingerSeconds;
 
         /// <summary>Deepest container nesting the ghost band walks (a shuttle in a hangar in a carrier is depth 3).</summary>
         public const int MaxNestingDepth = 8;
@@ -1154,20 +1200,35 @@ namespace Nebula
             targets[owner] = now;
         }
 
+        /// <summary>
+        /// Refresh the band timestamp of every inherited ghost target we already have an entry for, so the first
+        /// <see cref="UpdateGhostBand"/> after a handover cannot expire (and immediately re-create) a copy the
+        /// neighbour never lost. Targets we have no entry for are left alone: <see cref="ResumeInheritedGhosts"/>
+        /// creates them, and creating one here would suppress the snapshot spawn that opens the new owner's stream.
+        /// </summary>
+        private void SeedInheritedTargets(ulong netId, HashSet<string> inherited, float now)
+        {
+            if (inherited == null || inherited.Count == 0) return;
+            if (!_ghostTargets.TryGetValue(netId, out var targets)) return;
+            foreach (var worker in inherited) if (targets.ContainsKey(worker)) targets[worker] = now;
+        }
+
         private void ResumeInheritedGhosts()
         {
             if (_inheritedGhosts.Count == 0) return;
-            var completed = new List<ulong>();
+            _resumeCompleted.Clear();
+            float now = Time.unscaledTime;
             foreach (var pending in _inheritedGhosts)
             {
                 var entity = Find(pending.Key);
-                if (entity == null || !entity.HasAuthority) { completed.Add(pending.Key); continue; }
+                if (entity == null || !entity.HasAuthority) { _resumeCompleted.Add(pending.Key); continue; }
                 Dictionary<string, float> targets = null;
                 foreach (var peer in _workerPeersById.Values)
-                    if (peer.HelloReceived && pending.Value.Remove(peer.Id)) Ghost(entity, peer.Id, ref targets, Time.unscaledTime);
-                if (pending.Value.Count == 0) completed.Add(pending.Key);
+                    if (peer.HelloReceived && pending.Value.Remove(peer.Id)) Ghost(entity, peer.Id, ref targets, now);
+                if (pending.Value.Count == 0) _resumeCompleted.Add(pending.Key);
             }
-            foreach (var id in completed) _inheritedGhosts.Remove(id);
+            for (int i = 0; i < _resumeCompleted.Count; i++) _inheritedGhosts.Remove(_resumeCompleted[i]);
+            _resumeCompleted.Clear();
         }
 
         // ---------------------------------------------------------------------------------------- handover
@@ -1204,11 +1265,25 @@ namespace Nebula
             _scratch.Reset();
             e.WriteHandoverState(_scratch);
             var handoverState = _scratch.ToArray();
-            _writer.Reset();
-            var transfer = new AuthorityTransferMsg { Entity = entity, NewEpoch = newEpoch, PendingInputs = pending, HandoverState = handoverState, GhostWorkers = ghostWorkers.ToArray() };
+            // Gateways that follow this entity by name or by session must not lose it when it changes worker: they
+            // ride along in the transfer so the new owner announces to them, and they are redirected from here so
+            // they link the new owner before the old link goes quiet (design §5).
+            ulong followMask = StickyMask(e);
+            var transfer = new AuthorityTransferMsg
+            {
+                Entity = entity,
+                NewEpoch = newEpoch,
+                PendingInputs = pending,
+                HandoverState = handoverState,
+                GhostWorkers = ghostWorkers.ToArray(),
+                InterestGateways = InterestGatewayKeys(followMask),
+            };
             if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session)) { transfer.SessionGeneration = session.Generation; transfer.SessionGateway = session.Gateway; }
+            _writer.Reset();
             transfer.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
+            SendRedirect(e, (ushort)target.Index, followMask);
+            InterestRemove(e.NetId);
 
             // Become the ghost. The object stays; its transform will now be driven by the new owner's stream.
             e.Epoch = newEpoch;
@@ -1289,6 +1364,11 @@ namespace Nebula
                 var inherited = new HashSet<string>();
                 foreach (var worker in msg.GhostWorkers)
                     if (worker != WorkerId) inherited.Add(worker);
+                // Seed the band bookkeeping with a fresh timestamp before anything can expire it: without this the
+                // first UpdateGhostBand after a handover could find an entity with no (or a stale) target time,
+                // despawn the neighbour's ghost and immediately respawn it - a one-tick hole in a copy the
+                // neighbour is about to need.
+                SeedInheritedTargets(e.NetId, inherited, Time.unscaledTime);
                 _inheritedGhosts[e.NetId] = inherited;
                 ResumeInheritedGhosts();
             }
@@ -1297,9 +1377,11 @@ namespace Nebula
             NebulaLog.Info($"handover IN  {e} <- {from.Id} (epoch {msg.NewEpoch}, tick {CurrentTick})");
             if (e.Carried != null) SyncCarriedLeases();
 
-            // Tell the gateway we own it now (a spawn for a known id is an update).
-            var spawn = EntitySpawnMsg.From(e, _scratch);
-            foreach (var g in _gateways) SendSpawn(g, spawn, MsgId.EntitySpawn);
+            // Tell the gateways that want it that we own it now (a spawn for a known id is an update): the ones
+            // subscribing the region it landed in, the ones following it by name or session here, and the ones the
+            // previous owner said were following it. Not every gateway, as before v17.
+            InterestAdd(e);
+            AnnounceToRelevantGateways(e, msg.InterestGateways);
         }
 
         /// <summary>Fallback for a bare Rigidbody with no <see cref="NetworkRigidbody"/> (which does this itself, plus velocity).</summary>
@@ -1416,6 +1498,7 @@ namespace Nebula
                 {
                     NebulaLog.Warn($"{(from != null ? from.Id : "a peer")} claims {e} at epoch {msg.Epoch} > ours {e.Epoch}; yielding authority");
                     _authoritative.Remove(e);
+                    InterestRemove(e.NetId);
                     e.SetAuthority(false);
                     SetGhostPhysics(e, true);
                 }
@@ -1493,54 +1576,77 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- gateway traffic
 
+        /// <summary>
+        /// Send this tick's state to the gateways, filtered by interest (design §6). Entities are grouped by the
+        /// exact set of gateways that hear about them, each group's batches are written once and sent to every
+        /// gateway in that set, and netvars, sync state and owner state use the same mask lookup: the work is
+        /// O(entities + batches × subscribers) rather than O(entities × gateways). Nothing here allocates.
+        /// </summary>
         private void PublishToGateways(uint tick)
         {
             if (_gateways.Count == 0) return;
             for (int d = 0; d < 2; d++)
             {
                 bool reliable = d == 1;
-                int slot = -1;
-                ushort count = 0;
-                foreach (var e in _authoritative)
+                var delivery = reliable ? Delivery.ReliableOrdered : Delivery.Sequenced;
+                GroupDirtyByMask(reliable);
+                for (int m = 0; m < _maskOrder.Count; m++)
                 {
-                    if (!e.HasReplicationState || e.ReplicationState.Reliable != reliable) continue;
-                    if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex); }
-                    e.ReplicationState.Write(_writer);
-                    count++;
-                    if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                    ulong mask = _maskOrder[m];
+                    var group = _byMask[mask];
+                    int slot = -1;
+                    ushort count = 0;
+                    for (int i = 0; i < group.Count; i++)
+                    {
+                        var e = group[i];
+                        if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex); }
+                        e.ReplicationState.Write(_writer);
+                        count++;
+                        CountEntry(mask);
+                        if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
+                        {
+                            WorldStateMsg.End(_writer, slot, count);
+                            SendToMask(mask, delivery);
+                            slot = -1; count = 0;
+                        }
+                    }
+                    if (slot >= 0)
                     {
                         WorldStateMsg.End(_writer, slot, count);
-                        foreach (var g in _gateways) Send(g, reliable ? Delivery.ReliableOrdered : Delivery.Sequenced);
-                        slot = -1; count = 0;
+                        SendToMask(mask, delivery);
                     }
                 }
-                if (slot >= 0)
-                {
-                    WorldStateMsg.End(_writer, slot, count);
-                    foreach (var g in _gateways) Send(g, reliable ? Delivery.ReliableOrdered : Delivery.Sequenced);
-                }
             }
+            ReleaseMaskLists();
 
             for (int i = 0; i < _authoritative.Count; i++)
             {
                 var e = _authoritative[i];
-                if (e.VarsDirty)
+                ulong mask = MaskOfEntity(e.NetId);
+                if (e.VarsDirty && (mask != 0 || _unmaskedGateways.Count > 0))
                 {
                     _scratch.Reset();
                     e.WriteVars(_scratch);
                     _writer.Reset();
                     new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.EntityVars);
-                    foreach (var g in _gateways) Send(g, Delivery.ReliableOrdered);
+                    SendToMask(mask, Delivery.ReliableOrdered);
                 }
                 if (e.HasSyncState)
                 {
-                    foreach (var g in _gateways) SendSyncState(e, tick, MsgId.EntityState, g);
+                    // The keyframe decision is per tick, not per destination, so every gateway in the mask gets the
+                    // same chunks; a gateway that has just subscribed got its keyframe in the spawn.
+                    for (int bit = 0; bit < RegionPublisher.MaxGateways && mask != 0; bit++)
+                        if ((mask & (1UL << bit)) != 0 && _gatewayBits[bit] != null) SendSyncState(e, tick, MsgId.EntityState, _gatewayBits[bit]);
+                    for (int u = 0; u < _unmaskedGateways.Count; u++) SendSyncState(e, tick, MsgId.EntityState, _unmaskedGateways[u]);
                 }
                 // Every tick, even when the owner's input for it had not arrived and the last one was repeated: the
                 // owner must still see what the worker actually simulated, and the lead report is what lets it fix
                 // late inputs. (Sending only on consumed ticks left a late owner blind until it got lucky.)
                 if (e.OwnerClientId != 0 && e.Predicted != null)
                 {
+                    // Owner state is for one client, so it goes to that client's gateway only.
+                    var session = SessionGatewayOf(e);
+                    if (session == null) continue;
                     _scratch.Reset();
                     e.Predicted.WriteOwnerState(_scratch);
                     _writer.Reset();
@@ -1555,7 +1661,7 @@ namespace Nebula
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                     }.Write(_writer);
-                    foreach (var g in _gateways) Send(g, Delivery.Sequenced);
+                    Send(session, Delivery.Sequenced);
                 }
             }
         }
@@ -1761,7 +1867,15 @@ namespace Nebula
             var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = targetClientId, Radius = radius, Args = ToArray(args) };
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
-            foreach (var g in _gateways) Send(g, Delivery.ReliableOrdered);
+            // Targeted at one client: its gateway alone. Otherwise the gateways that hear about the entity at all —
+            // an RPC for an entity a gateway has never been told about has nowhere to land.
+            if (targetClientId != 0)
+            {
+                var session = SessionGatewayOf(targetClientId);
+                if (session != null) Send(session, Delivery.ReliableOrdered);
+                return;
+            }
+            SendToMask(PublishMaskOf(identity), Delivery.ReliableOrdered);
         }
 
         void IRpcSink.SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)
@@ -1870,6 +1984,7 @@ namespace Nebula
             if (peer.Role == PeerRole.Gateway)
             {
                 _gateways.Remove(peer);
+                RemoveGatewayLink(peer);
                 // Its sessions wait for a reclaim (the same gateway coming back, or another one the clients moved to).
                 bool stillHere = false;
                 foreach (var g in _gateways) if (g.Key == peer.Key) stillHere = true;
@@ -1887,10 +2002,10 @@ namespace Nebula
                 foreach (var e in _entities.Values) if (!e.HasAuthority && e.OwnerWorkerIndex == peer.Index) _scratchEntities.Add(e);
                 foreach (var e in _scratchEntities) RemoveLocal(e);
                 foreach (var kv in _ghostTargets) kv.Value.Remove(peer.Id);
-                _scratchStrings.Clear();
-                foreach (var kv in _handedOff) if (kv.Value == peer.Id) _scratchStrings.Add(kv.Key.ToString());
-                foreach (var k in _scratchStrings) _handedOff.Remove(ulong.Parse(k));
-                _scratchStrings.Clear();
+                _scratchIds.Clear();
+                foreach (var kv in _handedOff) if (kv.Value == peer.Id) _scratchIds.Add(kv.Key);
+                for (int i = 0; i < _scratchIds.Count; i++) _handedOff.Remove(_scratchIds[i]);
+                _scratchIds.Clear();
             }
         }
 
@@ -1922,8 +2037,10 @@ namespace Nebula
                     peer.Key = PlayerSessions.GatewayKey(hello.Id, hello.Incarnation);
                     _gateways.Add(peer);
                     _sessions.GatewayReturned(peer.Key);
-                    NebulaLog.Info($"gateway {peer.Id} (incarnation {hello.Incarnation:x8}) connected; announcing {_authoritative.Count} entities");
-                    foreach (var e in _authoritative) SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.EntitySpawn);
+                    // Nothing is announced here beyond the always-relevant entities and the pawns of the sessions
+                    // this gateway speaks for: it is told what it subscribes, and it has not subscribed yet.
+                    AddGatewayLink(peer);
+                    NebulaLog.Info($"gateway {peer.Id} (incarnation {hello.Incarnation:x8}) connected as interest link {peer.GatewayBit}");
                 }
                 else if (hello.Role == PeerRole.Worker)
                 {
@@ -1945,6 +2062,7 @@ namespace Nebula
                 case MsgId.ClientInput:
                 case MsgId.ForwardInput: OnClientInput(peer, ClientInputMsg.Read(r)); break;
                 case MsgId.ServerRpc: OnServerRpc(peer, EntityRpcMsg.Read(r)); break;
+                case MsgId.InterestSubscribe: OnInterestSubscribe(peer, InterestSubscribeMsg.Read(r)); break;
                 case MsgId.GhostSpawn: OnGhostSpawn(peer, EntitySpawnMsg.Read(r)); break;
                 case MsgId.GhostState: OnGhostState(peer, r); break;
                 case MsgId.GhostVars: OnGhostVars(peer, EntityVarsMsg.Read(r)); break;
@@ -1977,6 +2095,12 @@ namespace Nebula
         private void Send(Peer to, Delivery delivery)
         {
             _transport.Send(to.PeerId, delivery, _writer.ToSegment());
+        }
+
+        /// <summary>Send what <paramref name="from"/> holds, for the paths that build a batch in a writer of their own.</summary>
+        private void Send(Peer to, Delivery delivery, NetworkWriter from)
+        {
+            _transport.Send(to.PeerId, delivery, from.ToSegment());
         }
     }
 }

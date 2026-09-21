@@ -95,6 +95,8 @@ namespace Nebula
         private CostBalancedAssignmentPolicy _costPolicy;
         private readonly AssignmentInput _assignmentInput = new AssignmentInput();
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>Per-worker interest summary for the state document, refreshed from telemetry on every build.</summary>
+        private readonly Dictionary<string, MeshTelemetry.WorkerInterest> _interestByWorker = new Dictionary<string, MeshTelemetry.WorkerInterest>(StringComparer.Ordinal);
         /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
         public float TotalCost { get; private set; }
 
@@ -1519,6 +1521,8 @@ namespace Nebula
             foreach (var r in workers) if (!ids.Contains(r.WorkerId)) ids.Add(r.WorkerId);
             uint totalPlayers = 0, totalBots = 0, totalServerDriven = 0, totalEntities = 0, totalAuth = 0;
             int liveCount = 0;
+            // What interest management is doing per worker, from the telemetry documents (design §12).
+            Telemetry.CopyInterest(_interestByWorker);
             w.Key("workers");
             w.BeginArray();
             foreach (var id in ids.OrderBy(IndexOf))
@@ -1567,6 +1571,21 @@ namespace Nebula
                 w.Prop("players", row != null ? row.PlayerCount : 0U);
                 w.Prop("bots", row != null ? row.BotCount : 0U);
                 w.Prop("serverDriven", row != null ? row.ServerDrivenCount : 0U);
+                // Interest management: what this worker sends versus what it holds, and whether it is asking for
+                // the world to be partitioned. Absent (zeros) until its first telemetry document arrives.
+                _interestByWorker.TryGetValue(id, out var interest);
+                w.Key("interest");
+                w.BeginObject();
+                w.Prop("regions", interest.Regions);
+                w.Prop("gateways", interest.Gateways);
+                w.Prop("filterMs", interest.FilterMs);
+                w.Prop("global", interest.Global || (row != null && row.HasGlobalEntities));
+                w.Prop("entriesSent", interest.EntriesSent);
+                w.Prop("entriesTotal", interest.EntriesTotal);
+                w.Prop("bytesSent", interest.BytesSent);
+                w.Prop("bytesUnfiltered", interest.BytesUnfiltered);
+                w.Prop("warning", interest.Warning ?? "");
+                w.EndObject();
                 w.Key("containers");
                 w.BeginArray();
                 foreach (var l in leases.OrderBy(l => l.ContainerId, StringComparer.Ordinal))

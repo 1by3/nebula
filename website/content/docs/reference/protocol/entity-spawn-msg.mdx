@@ -111,6 +111,38 @@ public string OwnerIdentity;
 
 The owning player's [`PlayerIdentity`](/docs/reference/gateway/player-identity); empty for entities no player owns. Travels with the entity through ghosting and handover.
 
+### RelevanceRadius [#relevanceradius]
+
+```csharp
+public float RelevanceRadius;
+```
+
+Metres this entity is relevant at, from its prefab ([`NetworkIdentity.RelevanceRadius`](/docs/reference/core/network-identity#relevanceradius)); 0 means the mesh default. Sent as an f16, so it is precise to about a metre at the default ceiling.
+
+### InterestFlags [#interestflags]
+
+```csharp
+public EntityInterestFlags InterestFlags;
+```
+
+Per-prefab interest flags ([`NetworkIdentity.AlwaysRelevant`](/docs/reference/core/network-identity#alwaysrelevant)).
+
+### InterestGroup [#interestgroup]
+
+```csharp
+public byte InterestGroup;
+```
+
+A game-defined bucket a policy can filter on ([`NetworkIdentity.InterestGroup`](/docs/reference/core/network-identity#interestgroup)).
+
+### ViewSeq [#viewseq]
+
+```csharp
+public ushort ViewSeq;
+```
+
+Gateway -\> client: which view of this net id the spawn belongs to. It increases every time the gateway lets the entity into this client's set, so a despawn from an older view cannot kill a replica the client has just re-entered (design D4). Workers send 0.
+
 ## Methods
 
 ### From [#from]

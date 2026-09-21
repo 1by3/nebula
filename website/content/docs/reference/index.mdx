@@ -63,7 +63,11 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 
 | Type | Summary |
 | --- | --- |
+| [ChunkContent](/docs/reference/world/chunk-content) | Abstract class. Scene-object form of NebulaChunks.Loaded/NebulaChunks.Unloading: drop a subclass in the game scene and override OnChunkLoaded. |
+| [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a turnkey chunked world (design docs/interest-management.md §10). |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
+| [NebulaChunkedWorld](/docs/reference/world/nebula-chunked-world) | Class. The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld + a NebulaConfig.RuntimeWorld; design docs/interest-management.md §10). |
+| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist. |
 | [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
 | [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. |
@@ -108,6 +112,7 @@ Accept client connections, route input to workers, and send replicated state to 
 | --- | --- |
 | [AnonymousIdentityIssuer](/docs/reference/gateway/anonymous-identity-issuer) | Class. Identities the gateway hands to clients that present no token: an HS256 token with iss PlayerIdentity.AnonymousIssuer and a random sub, which the client keeps and presents on its next connection to get the same AuthResult.Identity back. |
 | [AuthResult](/docs/reference/gateway/auth-result) | Struct. Outcome of checking the token a client presented in Hello (see OidcTokenValidator). |
+| [InterestLinkReason](/docs/reference/gateway/interest-link-reason) | Enum. Why a gateway holds a link to a worker (design §5). |
 | [JsonWebToken](/docs/reference/gateway/json-web-token) | Static class. Compact JSON Web Token (JWT) encoding: split, decode and sign. |
 | [MeshPeerAuth](/docs/reference/gateway/mesh-peer-auth) | Static class. How gateways and workers prove to each other that they belong to the mesh: HelloMsg.Token on an infrastructure link carries unixSeconds.base64url(HMAC-SHA256(key, role\|id\|incarnation\|unixSeconds)) with a key derived from the mesh token (... |
 | [NebulaGateway](/docs/reference/gateway/nebula-gateway) | Class. Accepts client connections and maintains a connection to every worker. |
@@ -220,13 +225,18 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | Type | Summary |
 | --- | --- |
 | [AuthorityTransferMsg](/docs/reference/protocol/authority-transfer-msg) | Struct. The authority event. |
+| [ClientFocusHintMsg](/docs/reference/protocol/client-focus-hint-msg) | Struct. Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). |
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
 | [ContainerOwnershipMsg](/docs/reference/protocol/container-ownership-msg) | Static class. Carries the container ownership protocol message. |
+| [ContainerOwnershipUpdate](/docs/reference/protocol/container-ownership-update) | Struct. What one MsgId.ContainerOwnership message says: either the complete set of containers a client should know about (Full) or a change to it. |
 | [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). |
 | [EndSessionMsg](/docs/reference/protocol/end-session-msg) | Struct. Worker -\> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway (NebulaConfig.SingleSessionPerPlayer). |
 | [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct. Carries the entity despawn protocol message. |
 | [EntityFlags](/docs/reference/protocol/entity-flags) | Enum. Lists the supported entity flags values. |
+| [EntityForgetMsg](/docs/reference/protocol/entity-forget-msg) | Struct. Worker -\> gateway: the entity left every region this gateway subscribes on this worker. |
+| [EntityInterestFlags](/docs/reference/protocol/entity-interest-flags) | Enum. Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from). |
+| [EntityRedirectMsg](/docs/reference/protocol/entity-redirect-msg) | Struct. Worker -\> gateway: an entity the gateway subscribed by id (a policy extra, or one it owns) is now on another worker. |
 | [EntityRpcMsg](/docs/reference/protocol/entity-rpc-msg) | Struct. Carries the entity rpc protocol message. |
 | [EntitySpawnMsg](/docs/reference/protocol/entity-spawn-msg) | Struct. Full description of an entity. |
 | [EntityStateEntry](/docs/reference/protocol/entity-state-entry) | Struct. One entity's selected transform fields inside a WorldState/GhostState batch. |
@@ -237,6 +247,9 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
 | [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
 | [InstancePreparationMsg](/docs/reference/protocol/instance-preparation-msg) | Struct. Carries the instance preparation protocol message. |
+| [InterestResyncMsg](/docs/reference/protocol/interest-resync-msg) | Struct. Worker -\> gateway: the last InterestSubscribeMsg could not be applied (wrong base sequence, or the result did not verify). |
+| [InterestSubscribeFlags](/docs/reference/protocol/interest-subscribe-flags) | Enum. Lists the supported interest subscribe flags values. |
+| [InterestSubscribeMsg](/docs/reference/protocol/interest-subscribe-msg) | Struct. Gateway -\> worker: the set of regions this gateway wants entities from (design §5). |
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown). |
@@ -258,6 +271,7 @@ Display mesh status and measure worker tick sections.
 
 | Type | Summary |
 | --- | --- |
+| [InterestProbe](/docs/reference/debug/interest-probe) | Class. A client-side watchdog for interest management and content streaming: once a second it writes one machine-parsable line saying what this client can currently see and whether any of it is wrong. |
 | [NebulaDebugOverlay](/docs/reference/debug/nebula-debug-overlay) | Class. IMGUI status overlay for every role. |
 | [NebulaProfiler](/docs/reference/debug/nebula-profiler) | Static class. Where a worker's tick goes. |
 | [ProfileSection](/docs/reference/debug/profile-section) | Class. A named stretch of code whose cost is accumulated by NebulaProfiler. |
@@ -290,6 +304,31 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [NebulaDatabase](/docs/reference/storage/nebula-database) | Class. The standalone orchestrator's database: SQLite (a file next to the orchestrator, the default for a local mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. |
 | [SqlControlPlaneStorage](/docs/reference/storage/sql-control-plane-storage) | Class. IControlPlaneStorage in the orchestrator's database: the document sits in the single row of nebula\_control\_plane, replaced on every save. |
 | [SqlPersistenceStore](/docs/reference/storage/sql-persistence-store) | Class. IPersistenceStore in the orchestrator's database (NebulaDatabase: SQLite or PostgreSQL), table nebula\_entity. |
+
+## Interest
+
+| Type | Summary |
+| --- | --- |
+| [ClientInterest\<T, TSource\>](/docs/reference/interest/client-interest) | Class. One client's interest set and the state machine that maintains it (design §4). |
+| [ConfigIssue](/docs/reference/interest/config-issue) | Struct. One problem found in a configuration, named by field so an inspector or nebula doctor can point at it. |
+| [ConfigSeverity](/docs/reference/interest/config-severity) | Enum. How much a ConfigIssue matters. |
+| [DefaultInterestPolicy](/docs/reference/interest/default-interest-policy) | Class. What a mesh does without a game policy: one focus at the pawn, plus the client's validated hint as a second focus when it has sent one. |
+| [FocusHintFilter](/docs/reference/interest/focus-hint-filter) | Class. Validation of ClientFocusHintMsg, on the gateway, before a policy ever sees a hint. |
+| [IInterestPolicy](/docs/reference/interest/i-interest-policy) | Interface. The game's say in what a client hears about. |
+| [IInterestSource\<T\>](/docs/reference/interest/i-interest-source) | Interface. What ClientInterest\<T,TSource\> needs to know about the records it is evaluating. |
+| [InterestClient](/docs/reference/interest/interest-client) | Struct. What a policy is told about the client it is deciding for. |
+| [InterestEntity](/docs/reference/interest/interest-entity) | Struct. What a policy is told about the entity it is deciding on. |
+| [InterestFocus](/docs/reference/interest/interest-focus) | Struct. One place a client is interested in: a point (the usual case, its pawn) or a box (an ObservePublic window, an RTS selection). |
+| [InterestGrid](/docs/reference/interest/interest-grid) | Struct. A uniform spatial hash over absolute world coordinates: the region arithmetic every part of interest management shares (gateway, worker, standalone services). |
+| [InterestIndex\<T\>](/docs/reference/interest/interest-index) | Class. Region → dense list of items, with swap-remove and O(1) rebucketing. |
+| [InterestPlacement](/docs/reference/interest/interest-placement) | Enum. Where an item sits in an InterestIndex\<T\>. |
+| [InterestPolicies](/docs/reference/interest/interest-policies) | Static class. Combining policies, so a game can add one concern (parties) without rewriting another (fog of war). |
+| [InterestQuery](/docs/reference/interest/interest-query) | Class. What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. |
+| [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
+| [RegionPublisher](/docs/reference/interest/region-publisher) | Class. The worker's side of interest management (design §6): which gateways hear about each region, and the grouping that lets one serialization serve all of them. |
+| [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol (design §5): a set's fingerprint. |
+| [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |
+| [RegionSubscriptionSender](/docs/reference/interest/region-subscription-sender) | Class. The gateway's end of one worker link's subscription: what this gateway wants from that worker, and the messages that get the worker there. |
 
 ## Persistence
 

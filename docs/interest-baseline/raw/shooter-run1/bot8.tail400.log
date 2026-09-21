@@ -1,0 +1,400 @@
+﻿[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.6.0f1 (f7f8ed4d1e24)
+[EntityIdStore] init: VM path (explicit commit), pageSize=4096, blockCount=1048576, entitiesPerBlock=256, slots reserved=4294967296 bytes
+[Subsystems] Discovering subsystems at path C:/Dev/nebula-shootergame/Builds/Win64/Nebula_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.009 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Microsoft Media Foundation video decoding to texture disabled: graphics device is Null, only Direct3D 11 and Direct3D 12 (only on desktop) are supported for hardware-accelerated video decoding.
+Couldn't create a Convex Mesh from source mesh, within the maximum polygons limit (256). The partial hull will be used. Consider simplifying your mesh. Source mesh name: PilotSeat
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+HDR Render Texture not supported, disabling HDR on reflection probe.
+UnloadTime: 2.991500 ms
+[nebula] boot roles=Client scene=Corporation tickRate=60
+Unloading 6 Unused Serialized files (Serialized files now loaded: 0)
+UnloadTime: 6.116300 ms
+[nebula] world 'Corporation': 20 cells, 77 containers, cell size (2048.00, 2048.00, 2048.00)
+[nebula] containers: 77 (partitioned world)
+[nebula] connecting to gateway 127.0.0.1:7000 as 'bot8'
+Unloading 6 unused Assets / (5.1 KB). Loaded Objects now: 4114.
+Memory consumption went from 171.4 MB to 171.4 MB.
+Total: 4.368200 ms (FindLiveObjects: 1.600100 ms CreateObjectMapping: 0.198000 ms MarkObjects: 2.503800 ms  DeleteObjects: 0.041200 ms)
+
+[nebula] client 0 fps entities 0 in 0 pkt/s 0.0 KB/s 0 states/s (msgs: state 0 rpc 0 vars 0) rtt -1ms lead 0 (adj 0, worker saw 0) corrections 0 | full-rate interp: depth 0.0 ticks, starved 0.0% worst +0.0 | frame max 344.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 0t (stream lag 0t) | snapshot age ms min 0.0 avg 0.0 max 0.0
+[nebula] welcome: clientId=15706508737898348545 identity=abed9743c426 serverTick=1364110094
+[nebula] world starting, about 3 s: no worker is running yet; holding the join
+[nebula] cell (0, 0, 0) loaded (Corporation_0_0_0); 1 cell(s) resident
+[nebula] cell (-1, 0, -1) loaded (Corporation_n1_0_n1); 2 cell(s) resident
+[nebula] cell (-1, 0, 0) loaded (Corporation_n1_0_0); 3 cell(s) resident
+[nebula] cell (-1, 0, 1) loaded (Corporation_n1_0_1); 4 cell(s) resident
+[nebula] cell (0, 0, -1) loaded (Corporation_0_0_n1); 5 cell(s) resident
+[nebula] cell (0, 0, 1) loaded (Corporation_0_0_1); 6 cell(s) resident
+[nebula] cell (1, 0, -1) loaded (Corporation_1_0_n1); 7 cell(s) resident
+[nebula] cell (1, 0, 0) loaded (Corporation_1_0_0); 8 cell(s) resident
+[nebula] cell (1, 0, 1) loaded (Corporation_1_0_1); 9 cell(s) resident
+[nebula] joined the world
+[nebula] local player spawned: Player(Clone)#844424930132008(e1,cell_n1_0_1,local)
+[nebula] cell (-2, 0, 0) loaded (Corporation_n2_0_0); 10 cell(s) resident
+[nebula] cell (-2, 0, 1) loaded (Corporation_n2_0_1); 11 cell(s) resident
+[nebula] cell (-2, 0, 2) loaded (Corporation_n2_0_2); 12 cell(s) resident
+[nebula] cell (-1, 0, 2) loaded (Corporation_n1_0_2); 13 cell(s) resident
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_n1_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_n1_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+[nebula] cell (0, 0, 2) loaded (Corporation_0_0_2); 14 cell(s) resident
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_n2_0_1/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_n2_0_1/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_n1/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_n1/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/outdoor-west-south/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/outdoor-west-south/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+[nebula] client 6750 fps entities 150 in 182 pkt/s 37.7 KB/s 278 states/s (msgs: state 221 rpc 2 vars 28) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 2 last 0.13m | full-rate interp: depth 2.2 ticks, starved 1.0% worst +1.4 | frame max 215.1ms fixed/frame max 3 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 2.0 avg 16.4 max 75.4
+[nebula] cell (-1, 0, -1) unloaded; 9 cell(s) resident
+[nebula] cell (0, 0, -1) unloaded; 9 cell(s) resident
+[nebula] cell (1, 0, -1) unloaded; 9 cell(s) resident
+[nebula] cell (1, 0, 0) unloaded; 9 cell(s) resident
+[nebula] cell (1, 0, 1) unloaded; 9 cell(s) resident
+[nebula] client 849 fps entities 139 in 319 pkt/s 35.7 KB/s 381 states/s (msgs: state 303 rpc 2 vars 19) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 5.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.6 avg 10.7 max 38.7
+[nebula] client 853 fps entities 140 in 323 pkt/s 34.0 KB/s 362 states/s (msgs: state 291 rpc 1 vars 15) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 7.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.2 avg 11.3 max 32.3
+[nebula] client 859 fps entities 140 in 323 pkt/s 34.3 KB/s 360 states/s (msgs: state 281 rpc 1 vars 17) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 0 | full-rate interp: depth 2.7 ticks, starved 0.0% worst +0.0 | frame max 4.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.3 avg 12.5 max 43.2
+[nebula] client 877 fps entities 140 in 327 pkt/s 35.4 KB/s 371 states/s (msgs: state 290 rpc 1 vars 14) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 0 | full-rate interp: depth 2.0 ticks, starved 0.0% worst +0.0 | frame max 4.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.3 avg 12.7 max 42.0
+[nebula] client 854 fps entities 140 in 346 pkt/s 38.3 KB/s 401 states/s (msgs: state 317 rpc 1 vars 13) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 1 last 0.11m | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 5.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.9 avg 13.7 max 37.6
+[nebula] client 857 fps entities 140 in 334 pkt/s 42.0 KB/s 380 states/s (msgs: state 305 rpc 2 vars 16) rtt 0ms lead 10 (adj 7, worker saw 9) corrections 2 last 0.11m | full-rate interp: depth 2.8 ticks, starved 0.6% worst +3.1 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 8t (stream lag 5t) | snapshot age ms min 6.6 avg 16.7 max 111.9
+[nebula] client 862 fps entities 140 in 318 pkt/s 40.2 KB/s 363 states/s (msgs: state 286 rpc 2 vars 17) rtt 0ms lead 6 (adj 3, worker saw 10) corrections 1 last 0.11m | full-rate interp: depth 3.3 ticks, starved 0.0% worst +0.0 | frame max 8.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 3.2 avg 13.3 max 41.2
+[nebula] client 857 fps entities 140 in 325 pkt/s 38.7 KB/s 387 states/s (msgs: state 290 rpc 0 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 6.4 avg 15.8 max 46.2
+[nebula] client 860 fps entities 140 in 317 pkt/s 38.3 KB/s 379 states/s (msgs: state 280 rpc 1 vars 13) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.8 ticks, starved 0.0% worst +0.0 | frame max 4.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.2 avg 16.2 max 47.3
+[nebula] client 889 fps entities 140 in 310 pkt/s 37.8 KB/s 359 states/s (msgs: state 280 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 4.8 avg 15.4 max 44.9
+[nebula] client 863 fps entities 140 in 309 pkt/s 37.8 KB/s 362 states/s (msgs: state 278 rpc 1 vars 16) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 5.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.1 avg 14.3 max 41.9
+[nebula] client 867 fps entities 140 in 315 pkt/s 42.9 KB/s 378 states/s (msgs: state 292 rpc 0 vars 10) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.3 avg 12.7 max 34.7
+[nebula] client 883 fps entities 140 in 298 pkt/s 35.6 KB/s 377 states/s (msgs: state 281 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 1 last 0.22m | full-rate interp: depth 2.1 ticks, starved 0.1% worst +1.3 | frame max 4.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 2.4 avg 13.7 max 43.0
+[nebula] client 870 fps entities 140 in 312 pkt/s 36.5 KB/s 369 states/s (msgs: state 284 rpc 1 vars 13) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 1.9 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.1 avg 15.6 max 40.0
+[nebula] client 875 fps entities 140 in 307 pkt/s 37.6 KB/s 362 states/s (msgs: state 273 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.3 avg 16.3 max 43.6
+[nebula] client 869 fps entities 140 in 304 pkt/s 37.8 KB/s 362 states/s (msgs: state 268 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 3.1 ticks, starved 0.0% worst +0.0 | frame max 4.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.0 avg 18.1 max 47.1
+[nebula] client 876 fps entities 140 in 315 pkt/s 38.8 KB/s 377 states/s (msgs: state 284 rpc 2 vars 16) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 5.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 8.0 avg 18.8 max 43.8
+[nebula] client 862 fps entities 140 in 313 pkt/s 38.2 KB/s 371 states/s (msgs: state 281 rpc 1 vars 14) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 6.8 avg 18.8 max 43.6
+[nebula] client 866 fps entities 140 in 315 pkt/s 37.9 KB/s 372 states/s (msgs: state 275 rpc 0 vars 8) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.7 ticks, starved 0.0% worst +0.0 | frame max 5.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 3.1 avg 15.1 max 45.1
+[nebula] client 857 fps entities 140 in 308 pkt/s 37.1 KB/s 349 states/s (msgs: state 266 rpc 1 vars 11) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 4.8ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.3 avg 14.1 max 43.5
+[nebula] client 879 fps entities 140 in 314 pkt/s 37.9 KB/s 368 states/s (msgs: state 271 rpc 1 vars 13) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.4 avg 14.7 max 46.0
+[nebula] client 884 fps entities 140 in 316 pkt/s 37.8 KB/s 359 states/s (msgs: state 269 rpc 2 vars 17) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 3.5 avg 15.5 max 47.3
+[nebula] client 848 fps entities 140 in 320 pkt/s 38.3 KB/s 373 states/s (msgs: state 279 rpc 1 vars 14) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 3.2 avg 12.5 max 44.8
+[nebula] client 859 fps entities 140 in 310 pkt/s 38.0 KB/s 365 states/s (msgs: state 273 rpc 2 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.2% worst +1.5 | frame max 5.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 6.3 avg 11.9 max 42.2
+[nebula] client 836 fps entities 140 in 311 pkt/s 38.3 KB/s 356 states/s (msgs: state 266 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.1% worst +1.4 | frame max 5.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.5 avg 12.1 max 32.7
+[nebula] client 851 fps entities 140 in 299 pkt/s 37.7 KB/s 357 states/s (msgs: state 262 rpc 2 vars 16) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.9 avg 13.2 max 46.0
+[nebula] client 895 fps entities 140 in 315 pkt/s 38.9 KB/s 367 states/s (msgs: state 280 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 1.8 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.0 avg 14.1 max 42.1
+[nebula] client 863 fps entities 140 in 316 pkt/s 39.4 KB/s 364 states/s (msgs: state 273 rpc 2 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.7 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 7.3 avg 14.8 max 46.0
+[nebula] client 871 fps entities 140 in 325 pkt/s 41.5 KB/s 384 states/s (msgs: state 286 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 5.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 10.6 avg 14.9 max 41.9
+[nebula] client 862 fps entities 140 in 335 pkt/s 43.0 KB/s 391 states/s (msgs: state 299 rpc 1 vars 14) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.2% worst +1.4 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 10.5 avg 15.0 max 45.8
+[nebula] client 866 fps entities 140 in 323 pkt/s 41.9 KB/s 386 states/s (msgs: state 284 rpc 2 vars 13) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.9 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 4.7 avg 13.6 max 45.6
+[nebula] client 854 fps entities 140 in 322 pkt/s 42.2 KB/s 375 states/s (msgs: state 279 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.4 avg 13.5 max 39.8
+[nebula] client 861 fps entities 140 in 309 pkt/s 41.3 KB/s 378 states/s (msgs: state 267 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 5.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.4 avg 13.9 max 42.4
+[nebula] client 872 fps entities 140 in 325 pkt/s 47.2 KB/s 398 states/s (msgs: state 284 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 1 last 0.22m | full-rate interp: depth 2.8 ticks, starved 0.0% worst +0.0 | frame max 4.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.3 avg 15.2 max 47.4
+[nebula] client 854 fps entities 140 in 321 pkt/s 41.9 KB/s 369 states/s (msgs: state 287 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 2.8 avg 18.2 max 41.1
+[nebula] client 872 fps entities 140 in 330 pkt/s 42.2 KB/s 376 states/s (msgs: state 290 rpc 1 vars 11) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.9 ticks, starved 0.0% worst +0.0 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.4 avg 15.1 max 47.8
+[nebula] client 880 fps entities 140 in 314 pkt/s 38.3 KB/s 354 states/s (msgs: state 274 rpc 1 vars 14) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.7 ticks, starved 0.0% worst +0.0 | frame max 5.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.6 avg 13.2 max 42.0
+[nebula] client 866 fps entities 140 in 334 pkt/s 39.3 KB/s 374 states/s (msgs: state 297 rpc 1 vars 14) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.1 avg 11.6 max 38.5
+[nebula] client 865 fps entities 141 in 313 pkt/s 50.1 KB/s 395 states/s (msgs: state 301 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.5 avg 13.2 max 46.4
+[nebula] client 875 fps entities 141 in 312 pkt/s 47.0 KB/s 398 states/s (msgs: state 289 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 4.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.1 avg 17.6 max 45.1
+[nebula] client 887 fps entities 141 in 317 pkt/s 43.2 KB/s 398 states/s (msgs: state 288 rpc 2 vars 12) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 4.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.5 avg 15.1 max 42.4
+[nebula] client 864 fps entities 141 in 305 pkt/s 41.5 KB/s 366 states/s (msgs: state 268 rpc 1 vars 13) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.6 ticks, starved 0.0% worst +0.0 | frame max 5.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.5 avg 12.0 max 41.3
+[nebula] client 850 fps entities 141 in 326 pkt/s 42.9 KB/s 392 states/s (msgs: state 288 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.4 avg 12.5 max 40.3
+[nebula] client 837 fps entities 141 in 316 pkt/s 41.7 KB/s 367 states/s (msgs: state 277 rpc 1 vars 13) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 4.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 5t (stream lag 2t) | snapshot age ms min 6.4 avg 13.2 max 43.7
+[nebula] client 849 fps entities 141 in 302 pkt/s 41.3 KB/s 362 states/s (msgs: state 264 rpc 1 vars 11) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 4.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.5 avg 13.1 max 42.2
+[nebula] client 875 fps entities 141 in 296 pkt/s 41.3 KB/s 365 states/s (msgs: state 259 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.8 ticks, starved 0.0% worst +1.0 | frame max 4.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.7 avg 13.8 max 46.0
+[nebula] client 831 fps entities 141 in 316 pkt/s 42.3 KB/s 373 states/s (msgs: state 269 rpc 2 vars 18) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 4.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.9 avg 14.7 max 42.4
+[nebula] client 873 fps entities 141 in 299 pkt/s 41.7 KB/s 365 states/s (msgs: state 256 rpc 2 vars 17) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.7 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.1 avg 15.5 max 41.3
+[nebula] client 864 fps entities 141 in 306 pkt/s 41.8 KB/s 371 states/s (msgs: state 267 rpc 1 vars 12) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 5.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.8 avg 16.4 max 44.0
+[nebula] client 833 fps entities 141 in 302 pkt/s 41.6 KB/s 366 states/s (msgs: state 259 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 4.7ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 7.7 avg 16.4 max 31.7
+[nebula] cell (0, 0, -1) loaded (Corporation_0_0_n1); 10 cell(s) resident
+[nebula] cell (-1, 0, -1) loaded (Corporation_n1_0_n1); 11 cell(s) resident
+[nebula] cell (-2, 0, -1) loaded (Corporation_n2_0_n1); 12 cell(s) resident
+[nebula] cell (-2, 0, 2) unloaded; 9 cell(s) resident
+[nebula] cell (-1, 0, 2) unloaded; 9 cell(s) resident
+[nebula] cell (0, 0, 2) unloaded; 9 cell(s) resident
+[nebula] client 911 fps entities 130 in 314 pkt/s 41.9 KB/s 371 states/s (msgs: state 270 rpc 1 vars 11) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 21.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.6 avg 15.0 max 38.0
+[nebula] client 985 fps entities 130 in 317 pkt/s 42.1 KB/s 381 states/s (msgs: state 272 rpc 1 vars 10) rtt 0ms lead 3 (adj 0, worker saw 7) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 4.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 4.6 avg 12.6 max 43.0
+[nebula] client 983 fps entities 130 in 326 pkt/s 42.7 KB/s 388 states/s (msgs: state 284 rpc 1 vars 15) rtt 0ms lead 3 (adj 0, worker saw 8) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 7.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 6.6 avg 12.0 max 40.7

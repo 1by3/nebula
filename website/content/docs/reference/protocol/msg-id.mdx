@@ -36,9 +36,14 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | `ClientInput` | `20` |  |
 | `ServerRpc` | `21` |  |
 | `InstanceReady` | `22` |  |
+| `ClientFocusHint` | `23` | Client -\> gateway: where the player is looking ([`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg)). A hint, never authority: the gateway drops a non-finite one, rate-limits it and clamps it to the pawn before a policy ever sees it ([`FocusHintFilter`](/docs/reference/interest/focus-hint-filter)). |
 | `SpawnPlayer` | `30` |  |
 | `DespawnPlayer` | `31` |  |
 | `EndSession` | `32` | The session moved to another gateway, so this one must let its client go ([`EndSessionMsg`](/docs/reference/protocol/end-session-msg)). |
+| `InterestSubscribe` | `33` | Gateway -\> worker: the set of regions this gateway wants entities from ([`InterestSubscribeMsg`](/docs/reference/protocol/interest-subscribe-msg)). |
+| `InterestResync` | `34` | Worker -\> gateway: the last subscription could not be applied; send a Full snapshot ([`InterestResyncMsg`](/docs/reference/protocol/interest-resync-msg)). |
+| `EntityRedirect` | `35` | Worker -\> gateway: an explicitly subscribed entity now lives on another worker ([`EntityRedirectMsg`](/docs/reference/protocol/entity-redirect-msg)). |
+| `EntityForget` | `36` | Worker -\> gateway: an entity left every region this gateway subscribes here ([`EntityForgetMsg`](/docs/reference/protocol/entity-forget-msg)). |
 | `GhostSpawn` | `40` |  |
 | `GhostState` | `41` |  |
 | `GhostVars` | `42` |  |

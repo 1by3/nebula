@@ -25,6 +25,7 @@ namespace Nebula.World
         private readonly HashSet<ulong> wanted = new HashSet<ulong>();
         private readonly Dictionary<ulong, float> lastWanted = new Dictionary<ulong, float>();
         private readonly List<ulong> scratch = new List<ulong>();
+        private readonly List<Vector3Int> ring = new List<Vector3Int>();
         private float next;
 
         /// <summary>Ring radius (Chebyshev distance in cells) requested around every anchor and owned entity.</summary>
@@ -40,9 +41,16 @@ namespace Nebula.World
             this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
         }
 
+        /// <summary>The grid this allocator works in.</summary>
+        public RuntimeGrid Grid => grid;
+
         /// <summary>Fixed coordinates kept wanted regardless of where entities are, e.g. the origin cell(s).</summary>
-        public void AddAnchor(Vector3Int coord) { if (!anchors.Contains(coord)) anchors.Add(coord); }
-        public void RemoveAnchor(Vector3Int coord) => anchors.Remove(coord);
+        public void AddAnchor(Vector3Int coord)
+        {
+            coord = grid.Normalize(coord);
+            if (!anchors.Contains(coord)) anchors.Add(coord);
+        }
+        public void RemoveAnchor(Vector3Int coord) => anchors.Remove(grid.Normalize(coord));
         public void ClearAnchors() => anchors.Clear();
 
         /// <summary>The interest set as of the last <see cref="Tick"/>: every cell id currently requested.</summary>
@@ -92,7 +100,11 @@ namespace Nebula.World
 
         private void AddRing(Vector3Int center)
         {
-            foreach (var coord in RuntimeGrid.Neighborhood(center, Ring)) wanted.Add(RuntimeGrid.PackId(coord));
+            // Through the grid, not the static helper: a planar grid must not want a layer of cells above and
+            // below the one that exists, and the list overload keeps the policy tick allocation-free.
+            ring.Clear();
+            grid.Neighborhood(center, Ring, ring);
+            for (int i = 0; i < ring.Count; i++) wanted.Add(RuntimeGrid.PackId(ring[i]));
         }
 
         /// <summary>
@@ -106,6 +118,7 @@ namespace Nebula.World
         public void EnsureContainer(Vector3Int coord, Action<Container> onReady)
         {
             if (onReady == null) return;
+            coord = grid.Normalize(coord);
             ulong id = RuntimeGrid.PackId(coord);
             var existing = ContainerRegistry.GetRuntime(id);
             if (existing != null) { onReady(existing); return; }

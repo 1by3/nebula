@@ -1,0 +1,214 @@
+Mono path[0] = 'C:/Dev/nebula-virtualworld/Builds/Win64/Nebula_Data/Managed'
+Mono config path = 'C:/Dev/nebula-virtualworld/Builds/Win64/MonoBleedingEdge/etc'
+CodeReloadManager initialized
+Found 1 interfaces on host : 0) 192.168.4.54
+Player connection [38444]  Target information:
+
+Player connection [38444]  * "[IP] 192.168.4.54 [Port] 55000 [Flags] 2 [Guid] 2334396614 [EditorId] 2082031993 [Version] 1048832 [Id] WindowsPlayer(2,Atlas) [Debug] 0 [PackageName] WindowsPlayer [ProjectName] nebula-virtualworld" 
+
+Player connection [38444] Started UDP target info broadcast (1) on [225.0.0.222:54997].
+
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+Initialize engine version: 6000.6.0f1 (f7f8ed4d1e24)
+[EntityIdStore] init: VM path (explicit commit), pageSize=4096, blockCount=1048576, entitiesPerBlock=256, slots reserved=4294967296 bytes
+[Subsystems] Discovering subsystems at path C:/Dev/nebula-virtualworld/Builds/Win64/Nebula_Data/UnitySubsystems
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Begin MonoManager ReloadAssembly
+- Finished resetting the current domain, in  0.009 seconds
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Microsoft Media Foundation video decoding to texture disabled: graphics device is Null, only Direct3D 11 and Direct3D 12 (only on desktop) are supported for hardware-accelerated video decoding.
+UnloadTime: 3.439500 ms
+[nebula] boot roles=Client scene=World tickRate=60
+[nebula] containers: 0
+[nebula] connecting to gateway 127.0.0.1:7200 as 'bot7'
+[nebula] client 0 fps entities 0 in 0 pkt/s 0.0 KB/s 0 states/s (msgs: state 0 rpc 0 vars 0) rtt -1ms lead 0 (adj 0, worker saw 0) corrections 0 | full-rate interp: depth 0.0 ticks, starved 0.0% worst +0.0 | frame max 0.1ms fixed/frame max 2 | gaps>3t 0 worst 0t | render delay 0t (stream lag 0t) | snapshot age ms min 0.0 avg 0.0 max 0.0
+[nebula] welcome: clientId=3222218464143867910 identity=0b2995d60769 serverTick=1364190552
+[nebula] world starting, about 3 s: no worker is running yet; holding the join
+[nebula] chunk (-1, 0, -1) loaded (rt_18446744073709551615)
+[nebula] chunk (-1, 0, 0) loaded (rt_18446744069414584320)
+[nebula] chunk (-1, 0, 1) loaded (rt_18446744069414584321)
+[nebula] chunk (0, 0, -1) loaded (rt_4294967295)
+[nebula] chunk (0, 0, 0) loaded (rt_0)
+[nebula] chunk (0, 0, 1) loaded (rt_1)
+[nebula] chunk (1, 0, -1) loaded (rt_8589934591)
+[nebula] chunk (1, 0, 0) loaded (rt_4294967296)
+[nebula] chunk (1, 0, 1) loaded (rt_4294967297)
+[nebula] joined the world
+[nebula] local player spawned: Player(Clone)#844424930131971(e1,rt_8589934591,local)
+[nebula] chunk (2, 0, -1) loaded (rt_12884901887)
+[nebula] chunk (2, 0, 0) loaded (rt_8589934592)
+[nebula] chunk (-2, 0, -1) loaded (rt_18446744069414584319)
+[nebula] chunk (-2, 0, 0) loaded (rt_18446744065119617024)
+[nebula] chunk (2, 0, 1) loaded (rt_8589934593)
+[nebula] chunk (-2, 0, 1) loaded (rt_18446744065119617025)
+[nebula] chunk (0, 0, -2) loaded (rt_4294967294)
+[nebula] chunk (1, 0, -2) loaded (rt_8589934590)
+[nebula] chunk (2, 0, -2) loaded (rt_12884901886)
+[nebula] chunk (0, 0, 2) loaded (rt_2)
+[nebula] chunk (1, 0, 2) loaded (rt_4294967298)
+[nebula] chunk (2, 0, 2) loaded (rt_8589934594)
+[nebula] client 53531 fps entities 11 in 67 pkt/s 8.5 KB/s 55 states/s (msgs: state 41 rpc 0 vars 1) rtt 0ms lead 4 (adj 1, worker saw 3) corrections 1 last 0.10m | full-rate interp: depth 1.9 ticks, starved 0.7% worst +1.2 | frame max 15.0ms fixed/frame max 1 | gaps>3t 1 worst 4t | render delay 3t (stream lag 0t) | snapshot age ms min 6.4 avg 11.1 max 24.5
+[nebula] chunk (-2, 0, 2) loaded (rt_18446744065119617026)
+[nebula] chunk (-1, 0, 2) loaded (rt_18446744069414584322)
+[nebula] chunk (3, 0, -1) loaded (rt_17179869183)
+[nebula] chunk (3, 0, 0) loaded (rt_12884901888)
+[nebula] chunk (3, 0, 1) loaded (rt_12884901889)
+[nebula] chunk (3, 0, -2) loaded (rt_17179869182)
+[nebula] chunk (-3, 0, -1) loaded (rt_18446744065119617023)
+[nebula] chunk (-3, 0, 0) loaded (rt_18446744060824649728)
+[nebula] chunk (-3, 0, 1) loaded (rt_18446744060824649729)
+[nebula] client 24123 fps entities 12 in 180 pkt/s 18.5 KB/s 125 states/s (msgs: state 119 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 0.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.6 avg 14.3 max 24.9
+[nebula] client 23405 fps entities 15 in 181 pkt/s 17.4 KB/s 118 states/s (msgs: state 118 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 0.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 9.5 max 21.0
+[nebula] chunk (3, 0, 2) loaded (rt_12884901890)
+[nebula] chunk (-3, 0, 2) loaded (rt_18446744060824649730)
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] chunk (1, 0, 3) loaded (rt_4294967299)
+[nebula] chunk (2, 0, 3) loaded (rt_8589934595)
+[nebula] client 24228 fps entities 17 in 177 pkt/s 18.2 KB/s 118 states/s (msgs: state 112 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.1 avg 6.6 max 16.7
+[nebula] chunk (-4, 0, 0) loaded (rt_18446744056529682432)
+[nebula] chunk (-4, 0, 1) loaded (rt_18446744056529682433)
+[nebula] chunk (-4, 0, 2) loaded (rt_18446744056529682434)
+[nebula] client 23803 fps entities 21 in 176 pkt/s 18.4 KB/s 118 states/s (msgs: state 111 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 0.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 1.7 avg 6.4 max 21.7
+[nebula] chunk (-1, 0, 3) loaded (rt_18446744069414584323)
+[nebula] client 23668 fps entities 23 in 178 pkt/s 18.1 KB/s 119 states/s (msgs: state 114 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 6.9 max 16.7
+[nebula] chunk (-4, 0, -1) loaded (rt_18446744060824649727)
+[nebula] client 24259 fps entities 26 in 174 pkt/s 17.4 KB/s 109 states/s (msgs: state 109 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 0.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 5.9 max 16.8
+[nebula] client 23963 fps entities 27 in 172 pkt/s 16.2 KB/s 108 states/s (msgs: state 108 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.4 avg 6.4 max 35.2
+[nebula] client 24188 fps entities 29 in 178 pkt/s 17.5 KB/s 114 states/s (msgs: state 114 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 0.9ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.6 avg 6.8 max 14.4
+[nebula] chunk (-1, 0, -2) loaded (rt_18446744073709551614)
+[nebula] client 23154 fps entities 32 in 186 pkt/s 18.6 KB/s 145 states/s (msgs: state 122 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.9 avg 7.5 max 19.4
+[nebula] client 23302 fps entities 35 in 174 pkt/s 18.5 KB/s 156 states/s (msgs: state 110 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.0 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.7 avg 7.9 max 12.9
+[nebula] client 23003 fps entities 35 in 176 pkt/s 17.4 KB/s 131 states/s (msgs: state 112 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.9 avg 8.1 max 13.5
+[nebula] chunk (0, 0, -3) loaded (rt_4294967293)
+[nebula] chunk (1, 0, -3) loaded (rt_8589934589)
+[nebula] chunk (2, 0, -3) loaded (rt_12884901885)
+[nebula] client 23308 fps entities 37 in 181 pkt/s 19.2 KB/s 122 states/s (msgs: state 116 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 8.3 max 20.0
+[nebula] chunk (-2, 0, -1) unloaded (rt_18446744069414584319)
+[nebula] chunk (-2, 0, -1) loaded (rt_18446744069414584319)
+[nebula] client 22828 fps entities 42 in 170 pkt/s 18.8 KB/s 112 states/s (msgs: state 106 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.8 ticks, starved 0.0% worst +0.0 | frame max 2.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 4t (stream lag 1t) | snapshot age ms min 2.1 avg 7.5 max 20.4
+[nebula] client 23021 fps entities 48 in 167 pkt/s 18.1 KB/s 119 states/s (msgs: state 105 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.6 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 7.7 max 19.4
+[nebula] client 22948 fps entities 51 in 167 pkt/s 17.6 KB/s 125 states/s (msgs: state 105 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.9 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 8.1 max 17.9
+[nebula] chunk (3, 0, 2) unloaded (rt_12884901890)
+[nebula] client 23005 fps entities 54 in 165 pkt/s 20.3 KB/s 162 states/s (msgs: state 101 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.5 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.4 avg 8.1 max 19.0
+[nebula] chunk (-3, 0, -1) unloaded (rt_18446744065119617023)
+[nebula] chunk (-1, 0, -3) loaded (rt_18446744073709551613)
+[nebula] chunk (2, 0, 3) unloaded (rt_8589934595)
+[nebula] client 23095 fps entities 55 in 175 pkt/s 21.8 KB/s 144 states/s (msgs: state 114 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.8 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 8.4 max 16.7
+[nebula] chunk (0, 0, 3) unloaded (rt_3)
+[nebula] chunk (1, 0, 3) unloaded (rt_4294967299)
+[nebula] client 22186 fps entities 58 in 206 pkt/s 21.1 KB/s 176 states/s (msgs: state 142 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 8.6 max 18.8
+[nebula] chunk (-2, 0, -2) loaded (rt_18446744069414584318)
+[nebula] chunk (-1, 0, -4) loaded (rt_18446744073709551612)
+[nebula] chunk (0, 0, -4) loaded (rt_4294967292)
+[nebula] chunk (1, 0, -4) loaded (rt_8589934588)
+[nebula] chunk (2, 0, -4) loaded (rt_12884901884)
+[nebula] chunk (3, 0, 0) unloaded (rt_12884901888)
+[nebula] chunk (3, 0, 1) unloaded (rt_12884901889)
+[nebula] client 22620 fps entities 60 in 173 pkt/s 22.8 KB/s 136 states/s (msgs: state 117 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.5 avg 8.2 max 17.0
+[nebula] chunk (-2, 0, -3) loaded (rt_18446744069414584317)
+[nebula] client 22663 fps entities 65 in 163 pkt/s 19.0 KB/s 134 states/s (msgs: state 102 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.0 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.0 avg 7.4 max 18.2
+[nebula] client 22316 fps entities 67 in 160 pkt/s 18.1 KB/s 126 states/s (msgs: state 100 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.2 avg 7.3 max 13.8
+[nebula] chunk (-3, 0, -1) loaded (rt_18446744065119617023)
+[nebula] client 22240 fps entities 70 in 162 pkt/s 18.9 KB/s 121 states/s (msgs: state 102 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.5 avg 7.8 max 16.1
+[nebula] chunk (-3, 0, -3) loaded (rt_18446744065119617021)
+[nebula] chunk (-3, 0, -2) loaded (rt_18446744065119617022)
+[nebula] client 22508 fps entities 73 in 168 pkt/s 20.3 KB/s 148 states/s (msgs: state 105 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.6 avg 8.3 max 19.0
+[nebula] chunk (-2, 0, 3) loaded (rt_18446744065119617027)
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] chunk (-4, 0, -1) unloaded (rt_18446744060824649727)
+[nebula] client 21941 fps entities 76 in 168 pkt/s 21.4 KB/s 141 states/s (msgs: state 105 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.0ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.8 avg 8.2 max 16.8
+[nebula] chunk (-4, 0, -3) loaded (rt_18446744060824649725)
+[nebula] chunk (-4, 0, -2) loaded (rt_18446744060824649726)
+[nebula] chunk (-4, 0, -1) loaded (rt_18446744060824649727)
+[nebula] chunk (1, 0, 3) loaded (rt_4294967299)
+[nebula] client 22168 fps entities 80 in 168 pkt/s 21.4 KB/s 115 states/s (msgs: state 105 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.2 avg 8.3 max 21.1
+[nebula] chunk (3, 0, 0) loaded (rt_12884901888)
+[nebula] client 22665 fps entities 85 in 171 pkt/s 19.8 KB/s 112 states/s (msgs: state 108 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.4 avg 8.8 max 16.7
+[nebula] client 22395 fps entities 89 in 165 pkt/s 19.5 KB/s 108 states/s (msgs: state 104 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.4 avg 8.6 max 16.8
+[nebula] chunk (3, 0, -3) loaded (rt_17179869181)
+[nebula] client 21920 fps entities 92 in 164 pkt/s 20.2 KB/s 108 states/s (msgs: state 104 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.6 avg 8.5 max 17.0
+[nebula] chunk (-2, 0, 4) loaded (rt_18446744065119617028)
+[nebula] chunk (-1, 0, 4) loaded (rt_18446744069414584324)
+[nebula] chunk (0, 0, 4) loaded (rt_4)
+[nebula] chunk (-4, 0, 2) unloaded (rt_18446744056529682434)
+[nebula] client 21802 fps entities 94 in 171 pkt/s 22.4 KB/s 109 states/s (msgs: state 108 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 5.2 avg 8.7 max 21.8
+[nebula] client 22718 fps entities 97 in 171 pkt/s 20.0 KB/s 109 states/s (msgs: state 109 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.4 avg 8.6 max 16.8
+[nebula] client 22362 fps entities 100 in 167 pkt/s 22.9 KB/s 116 states/s (msgs: state 110 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 5.3 avg 9.6 max 16.6
+[nebula] client 21772 fps entities 105 in 167 pkt/s 22.0 KB/s 118 states/s (msgs: state 103 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.9 avg 10.2 max 18.9
+[nebula] chunk (-3, 0, 3) loaded (rt_18446744060824649731)
+[nebula] client 21855 fps entities 106 in 171 pkt/s 23.5 KB/s 115 states/s (msgs: state 105 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.7 avg 8.9 max 16.7
+[nebula] client 22010 fps entities 111 in 169 pkt/s 22.5 KB/s 109 states/s (msgs: state 104 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.3 avg 9.1 max 20.0
+[nebula] chunk (3, 0, -4) loaded (rt_17179869180)
+[nebula] client 22232 fps entities 113 in 170 pkt/s 23.4 KB/s 109 states/s (msgs: state 105 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 5.3 avg 9.3 max 20.8
+[nebula] chunk (-1, 0, -4) unloaded (rt_18446744073709551612)
+[nebula] client 22104 fps entities 116 in 176 pkt/s 23.5 KB/s 112 states/s (msgs: state 110 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.0 avg 9.8 max 25.6
+[nebula] client 21356 fps entities 119 in 176 pkt/s 23.0 KB/s 119 states/s (msgs: state 111 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.4 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 10.8 max 20.8
+[nebula] chunk (0, 0, -4) unloaded (rt_4294967292)
+[nebula] client 21488 fps entities 121 in 166 pkt/s 23.6 KB/s 122 states/s (msgs: state 102 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.1 avg 11.3 max 20.8
+[nebula] chunk (0, 0, -4) loaded (rt_4294967292)
+[nebula] client 21630 fps entities 123 in 174 pkt/s 24.1 KB/s 131 states/s (msgs: state 111 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.8 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.0 avg 9.4 max 22.2
+[nebula] chunk (-4, 0, -3) unloaded (rt_18446744060824649725)
+[nebula] client 21195 fps entities 126 in 161 pkt/s 25.5 KB/s 166 states/s (msgs: state 98 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 12.6 max 21.5
+[nebula] chunk (-2, 0, 4) unloaded (rt_18446744065119617028)
+[nebula] chunk (-1, 0, 4) unloaded (rt_18446744069414584324)
+[nebula] client 21772 fps entities 132 in 169 pkt/s 24.0 KB/s 139 states/s (msgs: state 106 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.6 ticks, starved 0.0% worst +0.0 | frame max 1.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.9 avg 12.5 max 17.4
+[nebula] client 21462 fps entities 133 in 165 pkt/s 22.5 KB/s 127 states/s (msgs: state 101 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.0 avg 12.0 max 16.8
+[nebula] chunk (-4, 0, 2) loaded (rt_18446744056529682434)
+[nebula] chunk (-4, 0, 3) loaded (rt_18446744056529682435)
+[nebula] chunk (0, 0, 3) unloaded (rt_3)
+[nebula] chunk (1, 0, 3) unloaded (rt_4294967299)
+[nebula] chunk (3, 0, 0) unloaded (rt_12884901888)
+[nebula] chunk (0, 0, 4) unloaded (rt_4)
+[nebula] client 21272 fps entities 134 in 174 pkt/s 24.8 KB/s 121 states/s (msgs: state 108 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 1.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.1 avg 9.7 max 21.9
+[nebula] client 21392 fps entities 136 in 157 pkt/s 24.2 KB/s 171 states/s (msgs: state 91 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 3.5 avg 13.9 max 21.6
+[nebula] chunk (-3, 0, -3) unloaded (rt_18446744065119617021)
+[nebula] client 20445 fps entities 137 in 155 pkt/s 26.5 KB/s 208 states/s (msgs: state 90 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 7.4 avg 14.5 max 17.4
+[nebula] client 20651 fps entities 140 in 156 pkt/s 24.0 KB/s 172 states/s (msgs: state 91 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.2 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 7.4 avg 14.4 max 22.4
+[nebula] chunk (2, 0, 0) unloaded (rt_8589934592)
+[nebula] chunk (2, 0, 1) unloaded (rt_8589934593)
+[nebula] chunk (2, 0, 2) unloaded (rt_8589934594)
+[nebula] chunk (0, 0, 3) loaded (rt_3)
+[nebula] client 21068 fps entities 142 in 154 pkt/s 24.6 KB/s 150 states/s (msgs: state 88 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.0 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 7.6 avg 14.6 max 23.5
+[nebula] chunk (-1, 0, -4) loaded (rt_18446744073709551612)
+[nebula] chunk (3, 0, -3) unloaded (rt_17179869181)
+[nebula] chunk (3, 0, -4) unloaded (rt_17179869180)
+[nebula] client 20840 fps entities 143 in 150 pkt/s 22.8 KB/s 131 states/s (msgs: state 85 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.6 ticks, starved 0.0% worst +0.0 | frame max 1.1ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 10.7 avg 14.7 max 17.4
+[nebula] chunk (-4, 0, 0) unloaded (rt_18446744056529682432)
+[nebula] chunk (-4, 0, 1) unloaded (rt_18446744056529682433)
+[nebula] client 21565 fps entities 146 in 182 pkt/s 22.6 KB/s 124 states/s (msgs: state 117 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 5.4 avg 10.6 max 22.6
+[nebula] client 21211 fps entities 151 in 155 pkt/s 23.2 KB/s 176 states/s (msgs: state 90 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.6ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.8 avg 14.5 max 16.7
+[nebula] chunk (-4, 0, 0) loaded (rt_18446744056529682432)
+[nebula] client 21542 fps entities 154 in 173 pkt/s 21.8 KB/s 124 states/s (msgs: state 108 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 5.1 avg 11.3 max 21.8
+[nebula] client 21023 fps entities 155 in 172 pkt/s 23.2 KB/s 127 states/s (msgs: state 115 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 6) corrections 0 | full-rate interp: depth 1.3 ticks, starved 0.0% worst +0.0 | frame max 1.5ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.4 avg 11.3 max 20.2
+[nebula] chunk (3, 0, -1) unloaded (rt_17179869183)
+[nebula] chunk (3, 0, -2) unloaded (rt_17179869182)
+[nebula] client 20328 fps entities 159 in 171 pkt/s 24.3 KB/s 135 states/s (msgs: state 115 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 2 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.4 avg 11.3 max 20.2
+[nebula] chunk (3, 0, -3) loaded (rt_17179869181)
+[nebula] chunk (3, 0, -2) loaded (rt_17179869182)
+[nebula] chunk (3, 0, -1) loaded (rt_17179869183)
+[nebula] client 20397 fps entities 166 in 200 pkt/s 29.1 KB/s 172 states/s (msgs: state 148 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 4.6 avg 12.9 max 21.6
+[nebula] chunk (-2, 0, -3) unloaded (rt_18446744069414584317)
+[nebula] client 20205 fps entities 167 in 180 pkt/s 23.0 KB/s 145 states/s (msgs: state 114 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.0 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.3 avg 11.9 max 20.8
+[nebula] chunk (-3, 0, -3) loaded (rt_18446744065119617021)
+[nebula] chunk (-2, 0, -3) loaded (rt_18446744069414584317)
+[nebula] client 20437 fps entities 169 in 165 pkt/s 23.3 KB/s 154 states/s (msgs: state 100 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 2.1 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.3 avg 11.2 max 20.9
+[nebula] chunk (-4, 0, 1) loaded (rt_18446744056529682433)
+[nebula] client 20680 fps entities 171 in 179 pkt/s 22.7 KB/s 129 states/s (msgs: state 113 rpc 0 vars 0) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.6 ticks, starved 0.0% worst +0.0 | frame max 1.2ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 6.3 avg 10.6 max 21.1
+[nebula] chunk (2, 0, 0) loaded (rt_8589934592)
+[nebula] chunk (2, 0, 1) loaded (rt_8589934593)
+[nebula] client 20290 fps entities 177 in 180 pkt/s 23.9 KB/s 128 states/s (msgs: state 115 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 9.4 max 20.4
+[nebula] client 20596 fps entities 180 in 172 pkt/s 22.2 KB/s 122 states/s (msgs: state 106 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 0 | full-rate interp: depth 1.5 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.3 avg 9.0 max 18.0
+[nebula] client 20639 fps entities 183 in 182 pkt/s 22.5 KB/s 127 states/s (msgs: state 117 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 4) corrections 1 last 0.10m | full-rate interp: depth 2.4 ticks, starved 0.0% worst +0.0 | frame max 1.4ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.2 avg 9.4 max 17.7
+[nebula] client 20171 fps entities 187 in 159 pkt/s 25.5 KB/s 168 states/s (msgs: state 99 rpc 0 vars 1) rtt 0ms lead 5 (adj 2, worker saw 5) corrections 1 last 0.10m | full-rate interp: depth 2.3 ticks, starved 0.0% worst +0.0 | frame max 1.3ms fixed/frame max 1 | gaps>3t 0 worst 0t | render delay 3t (stream lag 0t) | snapshot age ms min 2.7 avg 7.3 max 16.3

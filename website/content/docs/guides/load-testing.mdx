@@ -32,6 +32,7 @@ Inputs carry no game meaning. Workers decode them with your game's input type, s
 | `--token <token>` | An identity token every client presents (an anonymous token or an ID token), for meshes that require sign-in. One token is one player, so a mesh that keeps [one connection per player](/docs/guides/authentication#one-connection-per-player) closes all but the newest client. Start that mesh with `-nebula-single-session false`, or give each client its own token. |
 | `--bot` | Mark the clients as bots in `Hello`. |
 | `--name-prefix P` | Player names are `P0`, `P1`, ... Default `load`. |
+| `--idle <0..1>` | Fraction of clients that stand still and send no focus hint. Default `0`. Their replica count and bytes are what must stay flat as the world grows — see [Interest management](/docs/guides/interest-management). |
 | `--csv file` | Also write the per-second report as CSV. |
 | `--verbose` | Print each client's welcome, rejection, and drain events. |
 
@@ -40,7 +41,7 @@ Inputs carry no game meaning. Workers decode them with your game's input type, s
 One line per second:
 
 ```text
-t=   30s connected=15/15 joined=15 reconnects=15 sessionChanges=0 pawnLosses=0 rejected=135 in=1428 pkt/s 2.19 Mb/s out=510 pkt/s 0.13 Mb/s rtt p50=15.7 p95=16.4 ms gateways[9cd7ccce=15]
+t=   30s connected=15/15 joined=15 reconnects=15 sessionChanges=0 pawnLosses=0 rejected=135 in=1428 pkt/s 2.19 Mb/s out=510 pkt/s 0.13 Mb/s rtt p50=15.7 p95=16.4 ms replicas avg=42.3 max=88 bytes/client avg=3.1 max=7.4 KB/s gateways[9cd7ccce=15]
 ```
 
 | Field | Meaning |
@@ -53,7 +54,11 @@ t=   30s connected=15/15 joined=15 reconnects=15 sessionChanges=0 pawnLosses=0 r
 | `rejected` | `JoinRejected` messages received. A draining gateway refuses with a retry hint, so a fleet without a load balancer shows retries here until the drain is cancelled. |
 | `in`, `out` | Packets and bits per second received from and sent to the gateways, over all clients. |
 | `rtt` | Round trip from the ping/pong exchange, over the last 200 samples per client. |
+| `replicas avg`/`max` | Entities each client currently has replicated (its interest set size), averaged and at the worst client. This is what [interest management](/docs/guides/interest-management) bounds — it should stay flat as the world grows, not as client count grows. |
+| `bytes/client avg`/`max` | Kilobytes per second received per client, averaged and at the worst client. |
 | `gateways` | How many clients each gateway holds, keyed by the gateway's incarnation (the top 32 bits of the session id). |
+
+The CSV header (with `--csv`) is `t,connected,joined,reconnects,sessionChanges,pawnLosses,rejections,packetsIn,packetsOut,bytesIn,bytesOut,rttP50,rttP95,replicasAvg,replicasMax,bytesPerClientAvg,bytesPerClientMax,gateways`.
 
 The program exits with 0 when `sessionChanges` and `pawnLosses` are both zero at the end, and 1 otherwise, so it can gate a fleet test.
 
@@ -66,5 +71,27 @@ curl -X POST http://<orchestrator>:7080/api/gateways/drain -H "X-Nebula-Token: <
 ```
 
 Within [`GatewayDrainReconnectSeconds`](/docs/guides/configuration) the `gateways` field shows that gateway's clients moving to the others, with `sessionChanges` and `pawnLosses` still zero.
+
+**Kill a gateway.** Stop a gateway process under load. Its clients' links drop, they reconnect through the load balancer, and the workers, which keep a pawn for [`SessionReclaimSeconds`](/docs/guides/configuration) after a link drops, hand the same pawns back. `pawnLosses` stays zero as long as the reconnection lands inside that window.
+
+## Soak tests
+
+`Nebula.Services.Tests` includes a soak suite for [interest management](/docs/guides/interest-management): `InterestSoakTests`, tagged `[Category("Soak")]` so it does not run with the ordinary unit tests. It runs the real gateway and a real `RegionPublisher` inside a fake worker, at two world sizes each, for the three shapes from [Scaling limits and when to partition](/docs/guides/interest-management#scaling-limits-and-when-to-partition):
+
+- a grid of cell containers across four workers,
+- a few large zone containers across three workers, and
+- one big container on one worker.
+
+Each asserts that a stationary client's replica count and bytes stay bounded independent of world size, that the gateway's cache and worker link count stay bounded by its own clients' interest, and that a client walking a fixed distance sees no gaps, duplicates, or leaked replicas. Run it with:
+
+```bash
+dotnet test Packages/com.1by3.nebula/Services~/Nebula.Services.Tests/Nebula.Services.Tests.csproj --filter TestCategory=Soak
+```
+
+It writes its measurements to `docs/interest-baseline/soak-results.md` in the repository, so a later run can be compared against the recorded baseline.
+
+`InterestProbe.Attach(client)`, attached in a game scene running as a bot or a manual test client, logs the same four properties from inside a running Unity process — see [Interest management](/docs/guides/interest-management#observability). It is useful for checking a soak scenario your game defines that the fixed test shapes above do not cover, such as your own world's actual container layout.
+
+`nebula start --bots N --bot-args "..."` starts `N` headless client processes as bots, appending `--bot-args`'s value to every bot's launch arguments so your game can select a specific bot behavior for a soak run, for example `nebula start --bots 4 --bot-args "-vw-bot-line"`. This is a different tool from `nebula-loadgen`: bots run your actual game code end to end (useful for exercising real gameplay and `InterestProbe`), while `nebula-loadgen` is a lightweight synthetic client for sizing a gateway's connection handling.
 
 **Kill a gateway.** Stop a gateway process under load. Its clients' links drop, they reconnect through the load balancer, and the workers, which keep a pawn for [`SessionReclaimSeconds`](/docs/guides/configuration) after a link drops, hand the same pawns back. `pawnLosses` stays zero as long as the reconnection lands inside that window.

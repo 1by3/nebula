@@ -1,0 +1,60 @@
+---
+title: "ClientFocusHintMsg"
+description: "Client -> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ClientFocusHintMsg
+```
+
+Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). The gateway validates it ([`FocusHintFilter`](/docs/reference/interest/focus-hint-filter)) before any policy sees it: a hint is an input, never authority, so it cannot be used to see the whole map.
+
+## Fields
+
+### Position [#position]
+
+```csharp
+public Vector3 Position;
+```
+
+The hinted point, in the client's own frame; the gateway resolves it against the pawn.
+
+### Generation [#generation]
+
+```csharp
+public byte Generation;
+```
+
+Bumped by the client every time it clears its hint. Hints travel [`Delivery.Sequenced`](/docs/reference/transport/delivery#sequenced) and the clear travels reliably, so a hint already in flight can arrive after the clear; without a generation it would quietly re-establish the focus the game just gave up.
+
+### Clear [#clear]
+
+```csharp
+public bool Clear;
+```
+
+The client withdraws its hint: interest returns to the pawn. [`Position`](#position) is unused.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static ClientFocusHintMsg Read(NetworkReader r);
+```
+
+### IsStale [#isstale]
+
+```csharp
+public static bool IsStale(byte generation, byte current);
+```
+
+True when `generation` is older than `current` (wrapping).

@@ -1,0 +1,40 @@
+---
+title: "EntityForgetMsg"
+description: "Worker -> gateway: the entity left every region this gateway subscribes on this worker."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EntityForgetMsg
+```
+
+Worker -\> gateway: the entity left every region this gateway subscribes on this worker. The gateway drops its cached record (and despawns it from whoever still observes it); no per-gateway per-entity "known" set exists on the worker, which is what keeps worker memory independent of the number of gateways.
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static EntityForgetMsg Read(NetworkReader r);
+```

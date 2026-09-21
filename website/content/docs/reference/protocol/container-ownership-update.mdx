@@ -1,0 +1,38 @@
+---
+title: "ContainerOwnershipUpdate"
+description: "What one MsgId.ContainerOwnership message says: either the complete set of containers a client should know about (Full) or a change to it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct ContainerOwnershipUpdate
+```
+
+What one [`MsgId.ContainerOwnership`](/docs/reference/protocol/msg-id#containerownership) message says: either the complete set of containers a client should know about ([`Full`](#full)) or a change to it. Interest management makes this per-client and incremental (design §8): a client is told about the containers overlapping its own window, so the snapshot of a large world is no longer broadcast to everybody.
+
+## Fields
+
+### Full [#full]
+
+```csharp
+public bool Full;
+```
+
+The upserts are the complete set: the receiver forgets every container not named here.
+
+### Upserts [#upserts]
+
+```csharp
+public List<ContainerOwnershipEntry> Upserts;
+```
+
+Containers added or changed.
+
+### Removes [#removes]
+
+```csharp
+public List<string> Removes;
+```
+
+Container ids the client should forget. Empty in a Full message.

@@ -240,7 +240,7 @@
     <section class="card wide">
       <h2>Gateways</h2>
       <table>
-        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Clients</th><th>Joining</th><th>Out</th><th>CPU</th><th>Lag</th><th>State</th><th></th></tr></thead>
+        <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Clients</th><th>Joining</th><th>Out</th><th>Interest</th><th>Cache</th><th>Regions</th><th>Links</th><th>Eval</th><th>CPU</th><th>Lag</th><th>State</th><th></th></tr></thead>
         <tbody id="gateways"></tbody>
       </table>
     </section>
@@ -262,6 +262,18 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
   function fmtRate(bytesPerSecond) { const b = bytesPerSecond * 8; return b >= 1e6 ? (b / 1e6).toFixed(1) + ' Mb/s' : b >= 1e3 ? (b / 1e3).toFixed(0) + ' kb/s' : Math.round(b) + ' b/s'; }
+  // Interest management (design §12): how much of what this worker holds actually leaves it, and what the
+  // per-gateway filtering costs. "sent/total" is state entries per second, so 100 % means nothing is filtered.
+  function interestMetrics(w) {
+    const i = w.interest;
+    if (!i || (!i.entriesTotal && !i.regions && !i.filterMs)) return '';
+    const share = i.entriesTotal > 0 ? (i.entriesSent / i.entriesTotal * 100) : 0;
+    const saved = i.bytesUnfiltered > 0 ? (1 - i.bytesSent / i.bytesUnfiltered) * 100 : 0;
+    return `<div class="metric" title="Regions at least one gateway subscribes here, across ${i.gateways || 0} gateway link(s)${i.global ? '; holds always-relevant entities' : ''}"><div class="v">${i.regions}</div><div class="l">regions</div></div>
+      <div class="metric" title="State entries sent per second versus what an unfiltered worker would send"><div class="v">${i.entriesTotal > 0 ? share.toFixed(0) + ' %' : '—'}</div><div class="l">entries sent</div></div>
+      <div class="metric" title="${esc(fmtRate(i.bytesSent) + ' of ' + fmtRate(i.bytesUnfiltered) + ' unfiltered' + (saved > 0 ? ' (' + saved.toFixed(0) + ' % saved)' : ''))}"><div class="v">${fmtRate(i.bytesSent)}</div><div class="l">to gateways</div></div>
+      <div class="metric" title="Milliseconds per tick deciding which gateway hears about what"><div class="v">${Number(i.filterMs || 0).toFixed(2)}</div><div class="l">filter ms</div></div>`;
+  }
   // p90 of the worker's tick time as a fraction of the tick budget: the signal the scaler works from.
   function utilBar(w, s) {
     const sc = s.scale || {};
@@ -390,7 +402,9 @@
             <div class="metric"><div class="v">${w.serverDriven}</div><div class="l">server-driven</div></div>
             <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
             <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
+            ${interestMetrics(w)}
           </div>
+          ${(w.interest && w.interest.warning) ? `<div class="meta" style="margin-bottom:8px;color:#e0a33e" title="Interest management bounds who hears about entities, not who simulates them">⚠ ${esc(w.interest.warning)}</div>` : ''}
           ${utilBar(w, s)}
           <div class="meta" style="margin-bottom:8px">heartbeat ${fmtAge(w.heartbeatAgeSeconds)} · ${esc(w.address || 'not registered')} · tick ${w.tickCount}</div>
           ${cloudManaged ? '' : `<div class="actions">
@@ -428,14 +442,19 @@
       return `
       <tr><td class="mono" title="incarnation ${esc(g.incarnation || '')}">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td>
         <td>${g.activeClients || 0}</td><td${g.pendingJoins ? ' class="warnText"' : ''} title="${g.pendingJoins || 0} waiting for a worker, ${g.joiningClients || 0} authenticating, ${g.reconnectingClients || 0} reconnecting">${joining}</td>
-        <td title="${Math.round(g.packetsOut || 0)} packets/s to clients; ${fmtRate(g.workerBytesOut || 0)} to workers">${fmtRate(g.bytesOut || 0)}</td>
+        <td title="${Math.round(g.packetsOut || 0)} packets/s to clients; ${fmtRate(g.workerBytesOut || 0)} to workers; per client ${fmtRate(g.bytesPerClientAvg || 0)} avg, ${fmtRate(g.bytesPerClientMax || 0)} worst">${fmtRate(g.bytesOut || 0)}</td>
+        <td title="Replicas in one client's interest set: ${(g.interestSetAvg || 0).toFixed(1)} average, ${g.interestSetMax || 0} worst; ${(g.spawnsPerSecond || 0).toFixed(1)} spawns/s, ${(g.despawnsPerSecond || 0).toFixed(1)} despawns/s">${(g.interestSetAvg || 0).toFixed(0)} / ${g.interestSetMax || 0}</td>
+        <td title="Entity records this gateway caches. It should follow what its clients can see, not the size of the world.">${g.cachedEntities || 0}</td>
+        <td title="Regions subscribed across every worker link">${g.subscribedRegions || 0}</td>
+        <td title="Why: ${esc(g.workerLinkReasons || '')}">${g.workerLinks || 0} / ${g.workerConnections || 0}</td>
+        <td title="One interest evaluation: ${(g.interestEvalMsAvg || 0).toFixed(2)} ms average"${(g.interestEvalMsMax || 0) > 5 ? ' class="warnText"' : ''}>${(g.interestEvalMsMax || 0).toFixed(1)} ms</td>
         <td>${((g.cpu || 0) * 100).toFixed(0)}%</td><td${(g.loopLagMs || 0) > 8 ? ' class="warnText"' : ''}>${(g.loopLagMs || 0).toFixed(1)} ms</td>
         <td${g.draining || g.drainRequested ? ' class="warnText"' : ''}>${state}</td>
         <td>${g.drainRequested || g.draining
           ? `<button class="small" data-act="undrain" data-id="${esc(g.id)}" title="Take this gateway back into service">Undrain</button>`
           : `<button class="small" data-act="drain" data-id="${esc(g.id)}" ${s.gateways.length < 2 ? 'disabled' : ''} title="Refuse new clients and ask its clients to reconnect through another gateway">Drain</button>`}</td></tr>`;
       }).join('')
-      : '<tr><td colspan="10" class="muted">no gateway registered</td></tr>';
+      : '<tr><td colspan="15" class="muted">no gateway registered</td></tr>';
 
     $('log').innerHTML = s.events.map(e => `<div class="${esc(e.level)}"><span class="t">${fmtTime(e.time)}</span><span>${esc(e.message)}</span></div>`).join('');
   }

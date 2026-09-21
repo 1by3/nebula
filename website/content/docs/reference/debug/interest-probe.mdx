@@ -1,0 +1,114 @@
+---
+title: "InterestProbe"
+description: "A client-side watchdog for interest management and content streaming: once a second it writes one machine-parsable line saying what this client can currently see and whether any of it is wrong."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Debug/InterestProbe.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Debug/InterestProbe.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class InterestProbe : MonoBehaviour
+```
+
+A client-side watchdog for interest management and content streaming: once a second it writes one machine-parsable line saying what this client can currently see and whether any of it is wrong. Meant for headless bot clients in a soak run — `nebula logs bot1 \| grep nebula-probe` is then a time series you can assert on — but it costs nothing to leave on a player client while tuning.
+
+It lives in the package rather than in a game because the four things worth failing a soak on are framework-level, not game-level: replicas leaking past the exit radius (hysteresis or unsubscribe is broken), a net id spawned twice without a despawn in between (a re-entry racing a late despawn), a replica standing in a chunk this process has not loaded (entity traffic overtook container ownership), and a replica count that grows with world size instead of staying bounded.
+
+The line is `key=value` pairs after a fixed `[nebula-probe]` tag, so a log parser can split on spaces and never has to track the field order:
+
+```csharp
+[nebula-probe] t=12.0 pos=64.2,0.0,-31.5 cell=1,0,-1 replicas=37 near=12 dmin=3.4 dmax=131.8
+               beyond=0 dup=0 chunks=25 orphans=0 spawns=41 despawns=4
+```
+
+## Fields
+
+### IntervalSeconds [#intervalseconds]
+
+```csharp
+public float IntervalSeconds = 1f;
+```
+
+Seconds between lines. One per second is small enough to leave on for hours and dense enough to see a leak appear.
+
+### SlackMeters [#slackmeters]
+
+```csharp
+public float SlackMeters = 24f;
+```
+
+Metres past `InterestRadius + InterestExitMargin` a replica may sit before it is counted in `beyond`. Not zero: a replica is measured against a pose that is one interpolation delay old and the gateway evaluates at `InterestEvalHz`, so a few metres of overshoot is correct behaviour and only a persistent count is a bug.
+
+### SlackSeconds [#slackseconds]
+
+```csharp
+public float SlackSeconds = 1.6f;
+```
+
+Seconds of the client's own motion added to [`SlackMeters`](#slackmeters). An entity may only leave a set after it has been beyond the exit radius for `InterestLingerSeconds`, the gateway re-evaluates at `InterestEvalHz`, and the pose measured here is an interpolated one a few ticks old. A walking player covers a metre or two in that window and the flat slack absorbs it, but a client in a ship at 60 m/s leaves everything it holds tens of metres behind entirely correctly. Without this the probe reports a leak every time anyone flies.
+
+### Log [#log]
+
+```csharp
+public bool Log = true;
+```
+
+Also write the line through [`NebulaLog`](/docs/reference/core/nebula-log) at info level (on by default; a bot's log is the point).
+
+## Properties
+
+### LastLine [#lastline]
+
+```csharp
+public string LastLine { get; } = "";
+```
+
+The most recent line, for a debug overlay or a test that would rather read than parse a log.
+
+### Duplicates [#duplicates]
+
+```csharp
+public int Duplicates { get; }
+```
+
+### Spawns [#spawns]
+
+```csharp
+public int Spawns { get; }
+```
+
+### Despawns [#despawns]
+
+```csharp
+public int Despawns { get; }
+```
+
+### Orphans [#orphans]
+
+```csharp
+public int Orphans { get; }
+```
+
+### Beyond [#beyond]
+
+```csharp
+public int Beyond { get; }
+```
+
+### Carrierless [#carrierless]
+
+```csharp
+public int Carrierless { get; }
+```
+
+Replicas riding in a dynamic container whose carrier this client does not hold. Design D3 says a carrier and everything it carries enter and leave a client's set as one unit, so a passenger without its ship is the observable failure of that rule: the client would render a seated player hanging in the air where the ship used to be, and the pose it receives is relative to a frame it cannot resolve.
+
+## Methods
+
+### Attach [#attach]
+
+```csharp
+public static InterestProbe Attach(NebulaClient client);
+```
+
+Attach a probe to the object holding `client` (idempotent).

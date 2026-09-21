@@ -1,0 +1,355 @@
+﻿{
+    "orchestratorId":  "orch1",
+    "serverTimeUtc":  "2026-09-21T07:27:38.9757107Z",
+    "controlPlaneConnected":  true,
+    "localControlPlane":  false,
+    "controlPlaneStorage":  "sqlite",
+    "host":  "process",
+    "hostReady":  true,
+    "hostError":  "",
+    "hostBootSeconds":  3,
+    "hostParks":  false,
+    "idlePoolSeconds":  0,
+    "gatewayAddress":  "127.0.0.1:7200",
+    "desiredWorkers":  4,
+    "minWorkers":  4,
+    "maxWorkers":  4,
+    "policy":  "cost",
+    "totalCost":  0,
+    "autoScale":  false,
+    "runtimeContainers":  0,
+    "rebalances":  0,
+    "workerTimeoutSeconds":  5,
+    "scale":  {
+                  "enabled":  false,
+                  "action":  "none",
+                  "peak":  0,
+                  "mean":  0,
+                  "heldSeconds":  0,
+                  "holdSeconds":  0,
+                  "blockedBy":  "",
+                  "reason":  "autoscaling is off",
+                  "outUtilization":  0.7,
+                  "inUtilization":  0.3,
+                  "windowSeconds":  20,
+                  "tickPeriodMs":  16.667,
+                  "hintNote":  "",
+                  "pendingJoins":  0,
+                  "scaleToZero":  false
+              },
+    "workers":  [
+                    {
+                        "id":  "w1",
+                        "index":  1,
+                        "color":  "#4CCC66",
+                        "state":  "launching",
+                        "alive":  false,
+                        "retiring":  false,
+                        "parked":  false,
+                        "paidSecondsRemaining":  -1,
+                        "managed":  true,
+                        "instance":  "pid 72120",
+                        "pid":  72120,
+                        "address":  "",
+                        "heartbeatAgeSeconds":  -1,
+                        "relaunchInSeconds":  -1,
+                        "drainRemainingSeconds":  -1,
+                        "tickMs":  0,
+                        "utilization":  0,
+                        "tickCount":  0,
+                        "entities":  0,
+                        "authoritative":  0,
+                        "ghosts":  0,
+                        "players":  0,
+                        "bots":  0,
+                        "serverDriven":  0,
+                        "interest":  {
+                                         "regions":  0,
+                                         "gateways":  0,
+                                         "filterMs":  0,
+                                         "global":  false,
+                                         "entriesSent":  0,
+                                         "entriesTotal":  0,
+                                         "bytesSent":  0,
+                                         "bytesUnfiltered":  0,
+                                         "warning":  ""
+                                     },
+                        "containers":  [
+
+                                       ]
+                    },
+                    {
+                        "id":  "w2",
+                        "index":  2,
+                        "color":  "#4C8CF2",
+                        "state":  "launching",
+                        "alive":  false,
+                        "retiring":  false,
+                        "parked":  false,
+                        "paidSecondsRemaining":  -1,
+                        "managed":  true,
+                        "instance":  "pid 34084",
+                        "pid":  34084,
+                        "address":  "",
+                        "heartbeatAgeSeconds":  -1,
+                        "relaunchInSeconds":  -1,
+                        "drainRemainingSeconds":  -1,
+                        "tickMs":  0,
+                        "utilization":  0,
+                        "tickCount":  0,
+                        "entities":  0,
+                        "authoritative":  0,
+                        "ghosts":  0,
+                        "players":  0,
+                        "bots":  0,
+                        "serverDriven":  0,
+                        "interest":  {
+                                         "regions":  0,
+                                         "gateways":  0,
+                                         "filterMs":  0,
+                                         "global":  false,
+                                         "entriesSent":  0,
+                                         "entriesTotal":  0,
+                                         "bytesSent":  0,
+                                         "bytesUnfiltered":  0,
+                                         "warning":  ""
+                                     },
+                        "containers":  [
+
+                                       ]
+                    },
+                    {
+                        "id":  "w3",
+                        "index":  3,
+                        "color":  "#F2CC40",
+                        "state":  "launching",
+                        "alive":  false,
+                        "retiring":  false,
+                        "parked":  false,
+                        "paidSecondsRemaining":  -1,
+                        "managed":  true,
+                        "instance":  "pid 57692",
+                        "pid":  57692,
+                        "address":  "",
+                        "heartbeatAgeSeconds":  -1,
+                        "relaunchInSeconds":  -1,
+                        "drainRemainingSeconds":  -1,
+                        "tickMs":  0,
+                        "utilization":  0,
+                        "tickCount":  0,
+                        "entities":  0,
+                        "authoritative":  0,
+                        "ghosts":  0,
+                        "players":  0,
+                        "bots":  0,
+                        "serverDriven":  0,
+                        "interest":  {
+                                         "regions":  0,
+                                         "gateways":  0,
+                                         "filterMs":  0,
+                                         "global":  false,
+                                         "entriesSent":  0,
+                                         "entriesTotal":  0,
+                                         "bytesSent":  0,
+                                         "bytesUnfiltered":  0,
+                                         "warning":  ""
+                                     },
+                        "containers":  [
+
+                                       ]
+                    },
+                    {
+                        "id":  "w4",
+                        "index":  4,
+                        "color":  "#CC66E6",
+                        "state":  "launching",
+                        "alive":  false,
+                        "retiring":  false,
+                        "parked":  false,
+                        "paidSecondsRemaining":  -1,
+                        "managed":  true,
+                        "instance":  "pid 48892",
+                        "pid":  48892,
+                        "address":  "",
+                        "heartbeatAgeSeconds":  -1,
+                        "relaunchInSeconds":  -1,
+                        "drainRemainingSeconds":  -1,
+                        "tickMs":  0,
+                        "utilization":  0,
+                        "tickCount":  0,
+                        "entities":  0,
+                        "authoritative":  0,
+                        "ghosts":  0,
+                        "players":  0,
+                        "bots":  0,
+                        "serverDriven":  0,
+                        "interest":  {
+                                         "regions":  0,
+                                         "gateways":  0,
+                                         "filterMs":  0,
+                                         "global":  false,
+                                         "entriesSent":  0,
+                                         "entriesTotal":  0,
+                                         "bytesSent":  0,
+                                         "bytesUnfiltered":  0,
+                                         "warning":  ""
+                                     },
+                        "containers":  [
+
+                                       ]
+                    }
+                ],
+    "parked":  [
+
+               ],
+    "containers":  [
+
+                   ],
+    "carried":  [
+
+                ],
+    "gateways":  [
+                     {
+                         "id":  "gw1",
+                         "incarnation":  "35152336",
+                         "address":  "127.0.0.1:7200",
+                         "heartbeatAgeSeconds":  0.743,
+                         "drainRequested":  false,
+                         "pendingJoins":  0,
+                         "activeClients":  0,
+                         "joiningClients":  0,
+                         "reconnectingClients":  0,
+                         "packetsIn":  0,
+                         "packetsOut":  0,
+                         "bytesIn":  0,
+                         "bytesOut":  0,
+                         "workerBytesIn":  0,
+                         "workerBytesOut":  0,
+                         "cpu":  0,
+                         "memoryBytes":  61927424,
+                         "loopLagMs":  0,
+                         "workerConnections":  0,
+                         "ready":  true,
+                         "draining":  false,
+                         "interestSetAvg":  0,
+                         "interestSetMax":  0,
+                         "cachedEntities":  0,
+                         "subscribedRegions":  0,
+                         "workerLinks":  0,
+                         "workerLinkReasons":  "region=0,foci=0,global=0,explicit=0,spawn=0,owned=0",
+                         "spawnsPerSecond":  0,
+                         "despawnsPerSecond":  0,
+                         "interestEvalMsAvg":  0,
+                         "interestEvalMsMax":  0,
+                         "bytesPerClientAvg":  0,
+                         "bytesPerClientMax":  0
+                     }
+                 ],
+    "totals":  {
+                   "liveWorkers":  0,
+                   "parkedWorkers":  0,
+                   "players":  0,
+                   "bots":  0,
+                   "serverDriven":  0,
+                   "entities":  0,
+                   "authoritative":  0,
+                   "containers":  0
+               },
+    "persistence":  {
+                        "mode":  "auto",
+                        "backend":  "sqlite",
+                        "connected":  true,
+                        "entities":  0
+                    },
+    "settings":  {
+                     "nebula.bootSeconds":  "3",
+                     "npcs":  "0"
+                 },
+    "events":  [
+                   {
+                       "time":  "2026-09-21T07:27:38.9622949Z",
+                       "level":  "info",
+                       "message":  "launched worker w4 on process: pid 48892"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9622648Z",
+                       "level":  "info",
+                       "message":  "launched worker w4 pid=48892"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9589576Z",
+                       "level":  "info",
+                       "message":  "scaling up: launching worker w4"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9589356Z",
+                       "level":  "info",
+                       "message":  "launched worker w3 on process: pid 57692"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9589168Z",
+                       "level":  "info",
+                       "message":  "launched worker w3 pid=57692"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9557618Z",
+                       "level":  "info",
+                       "message":  "scaling up: launching worker w3"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9557190Z",
+                       "level":  "info",
+                       "message":  "launched worker w2 on process: pid 34084"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9556829Z",
+                       "level":  "info",
+                       "message":  "launched worker w2 pid=34084"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9520662Z",
+                       "level":  "info",
+                       "message":  "scaling up: launching worker w2"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9514783Z",
+                       "level":  "info",
+                       "message":  "launched worker w1 on process: pid 72120"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9511900Z",
+                       "level":  "info",
+                       "message":  "launched worker w1 pid=72120"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:38.9464082Z",
+                       "level":  "info",
+                       "message":  "scaling up: launching worker w1"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:37.9238134Z",
+                       "level":  "info",
+                       "message":  "launched gateway pid=64740"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:37.8896987Z",
+                       "level":  "info",
+                       "message":  "setting npcs = 0"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:37.8880864Z",
+                       "level":  "info",
+                       "message":  "control plane hosted at http://127.0.0.1:7180/ (stored in sqlite)"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:37.8879444Z",
+                       "level":  "info",
+                       "message":  "dashboard at http://localhost:7180/ (bind localhost); World map at http://localhost:7180/map; workers post telemetry to http://127.0.0.1:7180/api/telemetry; artifacts from C:\\Dev\\nebula-virtualworld\\Builds\\Win64"
+                   },
+                   {
+                       "time":  "2026-09-21T07:27:37.8289368Z",
+                       "level":  "info",
+                       "message":  "orchestrator orch1: desired workers = 4, host=process, spawnGateway=True"
+                   }
+               ]
+}

@@ -1,0 +1,44 @@
+---
+title: "ChunkContent"
+description: "Scene-object form of NebulaChunks.Loaded/NebulaChunks.Unloading: drop a subclass in the game scene and override OnChunkLoaded."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkContent.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkContent.cs)</div>
+
+```csharp
+public abstract class ChunkContent : MonoBehaviour
+```
+
+Scene-object form of [`NebulaChunks.Loaded`](/docs/reference/world/nebula-chunks#loaded)/[`NebulaChunks.Unloading`](/docs/reference/world/nebula-chunks#unloading): drop a subclass in the game scene and override [`OnChunkLoaded`](#onchunkloaded). It exists because a chunk generator is usually authored content — a prefab list, a material, a noise setting — and a `MonoBehaviour` is where a Unity developer expects to put those, whereas the static events are what a headless service or a test wants. Both paths are the same events; use whichever reads better.
+
+Subscription happens in `OnEnable`, and [`NebulaChunks.Loaded`](/docs/reference/world/nebula-chunks#loaded) back-fills, so a component enabled long after the first chunks arrived still builds all of them.
+
+## Methods
+
+### OnEnable [#onenable]
+
+```csharp
+protected virtual void OnEnable();
+```
+
+### OnDisable [#ondisable]
+
+```csharp
+protected virtual void OnDisable();
+```
+
+### OnChunkLoaded [#onchunkloaded]
+
+```csharp
+protected abstract void OnChunkLoaded(in ChunkContext chunk);
+```
+
+Build this chunk's content under [`ChunkContext.Root`](/docs/reference/world/chunk-context#root). Runs on every role.
+
+### OnChunkUnloading [#onchunkunloading]
+
+```csharp
+protected virtual void OnChunkUnloading(in ChunkContext chunk);
+```
+
+The chunk is about to be destroyed, with everything under its root. Only override to release things kept elsewhere.

@@ -1,4 +1,4 @@
 {
   "title": "Debug",
-  "pages": ["nebula-debug-overlay", "nebula-profiler", "profile-section"]
+  "pages": ["interest-probe", "nebula-debug-overlay", "nebula-profiler", "profile-section"]
 }

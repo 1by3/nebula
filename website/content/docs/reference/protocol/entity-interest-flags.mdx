@@ -1,0 +1,20 @@
+---
+title: "EntityInterestFlags"
+description: "Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum EntityInterestFlags : byte
+```
+
+Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `AlwaysRelevant` | `1` | The entity is in every client's set, whatever the distance ([`NetworkIdentity.AlwaysRelevant`](/docs/reference/core/network-identity#alwaysrelevant)). |

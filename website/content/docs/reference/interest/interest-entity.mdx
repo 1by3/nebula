@@ -1,0 +1,82 @@
+---
+title: "InterestEntity"
+description: "What a policy is told about the entity it is deciding on."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public struct InterestEntity
+```
+
+What a policy is told about the entity it is deciding on. A snapshot, like [`InterestClient`](/docs/reference/interest/interest-client).
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### PrefabId [#prefabid]
+
+```csharp
+public ushort PrefabId;
+```
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public ulong OwnerClientId;
+```
+
+### Container [#container]
+
+```csharp
+public ContainerRef Container;
+```
+
+### X, Y, Z [#x-y-z]
+
+```csharp
+public double X, Y, Z;
+```
+
+Absolute position, resolved through carriers.
+
+### RelevanceRadius [#relevanceradius]
+
+```csharp
+public float RelevanceRadius;
+```
+
+The prefab's relevance radius, 0 for the mesh default.
+
+### AlwaysRelevant [#alwaysrelevant]
+
+```csharp
+public bool AlwaysRelevant;
+```
+
+### InterestGroup [#interestgroup]
+
+```csharp
+public byte InterestGroup;
+```
+
+The prefab's interest group: a game-defined bucket to filter on.
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId;
+```
+
+### CarrierNetId [#carriernetid]
+
+```csharp
+public ulong CarrierNetId;
+```
+
+The entity carrying this one (0 = none); the interest decision is made on the root carrier.

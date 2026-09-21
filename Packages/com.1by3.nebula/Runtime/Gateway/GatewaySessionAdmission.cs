@@ -1,5 +1,10 @@
 using System;
 using System.Collections.Generic;
+#if NEBULA_SERVICE
+using Nebula.ServicePrimitives;
+#else
+using UnityEngine;
+#endif
 
 namespace Nebula
 {
@@ -125,7 +130,20 @@ namespace Nebula
                 c.SpawnWorkerId = reply.Session.Worker;
                 c.SpawnContainer = reply.Session.Container;
                 if (_workersById.TryGetValue(c.SpawnWorkerId, out var worker) && worker.Ready)
+                {
                     SendClaim(c, worker, c.SpawnContainer);
+                    return;
+                }
+                // The directory keeps a session's reserved worker while that worker is alive, and after a worker
+                // is relaunched under the same id that can be a worker this gateway has no link to and no
+                // interest reason to dial (its leases went elsewhere while it was down). Without this the claim
+                // could never be sent and the client would retry into the same wall for the rest of its session.
+                if (EnsureLink(c.SpawnWorkerId) != null)
+                {
+                    Reason(c.SpawnWorkerId, InterestLinkReason.Spawn);
+                    _subscriptionsDirty = true;
+                }
+                c.NextSpawnAttempt = Time.unscaledTime + 0.5f;
             });
         }
 
@@ -179,8 +197,15 @@ namespace Nebula
                 {
                     if (_sessionClients.TryGetValue(revoke.Claim, out var previous))
                     {
-                        _clientsByPeer.Remove(previous.PeerId);
-                        _clientsById.Remove(previous.ClientId);
+                        // Remove the revoked link by identity, never by key. By the time a revocation is polled back
+                        // the replacement connection may already hold the same session id (a takeover reuses it) or
+                        // the same peer id (the transport recycles them), and evicting by key would disconnect the
+                        // client we just admitted instead of the one the directory revoked.
+                        if (_clientsByPeer.TryGetValue(previous.PeerId, out var byPeer) && byPeer == previous)
+                            _clientsByPeer.Remove(previous.PeerId);
+                        if (_clientsById.TryGetValue(previous.ClientId, out var byId) && byId == previous)
+                            _clientsById.Remove(previous.ClientId);
+                        ForgetClientInterest(previous);
                         EndPlayerLink(previous, ReplacedReason);
                         // CloseReplacedLinks runs first. Only then may the directory admit the replacement.
                         QueueSessionRelease(previous, "release", 0.6);

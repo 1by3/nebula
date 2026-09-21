@@ -153,6 +153,14 @@ public static void Load(IList<Container> ordered, bool gridded);
 
 Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point. Dynamic and runtime containers registered earlier are forgotten: this is a boot-time operation.
 
+### Overlapping [#overlapping]
+
+```csharp
+public static void Overlapping(Bounds box, List<Container> result, ulong instanceId = 0);
+```
+
+Every container whose box overlaps `box`, appended to `result` (cleared first). This is the query interest management resolves a region to its owning workers with (design §5), so it must never walk the whole world: a gridded world is answered from the cell grid, a runtime world from the spatial hash, and only the dynamic list — which is small by construction — is scanned linearly. An ungridded static set is scanned linearly too, which is bounded because an ungridded world is a handful of hand-placed containers.
+
 ### InCell [#incell]
 
 ```csharp

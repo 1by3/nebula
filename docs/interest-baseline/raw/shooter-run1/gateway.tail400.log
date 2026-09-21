@@ -1,0 +1,376 @@
+﻿2026-09-21T03:19:20.8381398Z [nebula] timer resolution 1 ms requested; background throttling opt-out ok
+2026-09-21T03:19:20.9053199Z [nebula] control plane: mirroring http://127.0.0.1:7080/api/control-plane
+2026-09-21T03:19:21.0323714Z [nebula] web clients: signaling at http://127.0.0.1:7000/nebula/rtc, WebRTC on udp/7001; serving the web build from C:\Dev\nebula-shootergame\Builds\Web at http://127.0.0.1:7000/
+2026-09-21T03:19:21.0410966Z [nebula] gateway gw1 (incarnation d9f8ba7b) listening on udp/7000; no mesh token: any worker is trusted
+2026-09-21T03:19:21.0484235Z [nebula] auth: anonymous identities on, signing key from C:\Dev\nebula-shootergame\Builds\Win64\nebula-auth.key
+2026-09-21T03:19:21.0490049Z [nebula] standalone gateway started; 77 baked containers
+2026-09-21T03:19:21.0493536Z [nebula] control plane: connected to http://127.0.0.1:7080 (version 80)
+2026-09-21T03:19:21.0557139Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:22.0568809Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:23.0569452Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:24.0610932Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:25.0649659Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:26.0497930Z [nebula] loop 240 Hz, period max 27.6 ms, tick avg 0.07 ms max 27.6 ms
+2026-09-21T03:19:26.0652315Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:27.0659460Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:27.9883338Z [nebula] dialing worker w4 at 127.0.0.1:7104
+2026-09-21T03:19:27.9987922Z [nebula] dialing worker w3 at 127.0.0.1:7103
+2026-09-21T03:19:27.9989380Z [nebula] dialing worker w1 at 127.0.0.1:7101
+2026-09-21T03:19:27.9990523Z [nebula] dialing worker w2 at 127.0.0.1:7102
+2026-09-21T03:19:28.0245720Z [nebula] worker w1 (index 1) connected
+2026-09-21T03:19:28.0246830Z [nebula] worker w2 (index 2) connected
+2026-09-21T03:19:28.0246926Z [nebula] worker w4 (index 4) connected
+2026-09-21T03:19:28.0324834Z [nebula] worker w3 (index 3) connected
+2026-09-21T03:19:28.0693690Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T03:19:28.2298802Z [nebula] client 15706508737898348549 'bot2' (bot) connected as d8d3e869eb0f.. (new anonymous identity)
+2026-09-21T03:19:28.2326492Z [nebula] client 15706508737898348549 'bot2' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2337601Z [nebula] no container available to spawn client 15706508737898348549 yet; holding the join (world starting)
+2026-09-21T03:19:28.2338039Z [nebula] client 15706508737898348548 'bot3' (bot) connected as 6400cb9964d4.. (new anonymous identity)
+2026-09-21T03:19:28.2339630Z [nebula] client 15706508737898348548 'bot3' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2339779Z [nebula] no container available to spawn client 15706508737898348548 yet; holding the join (world starting)
+2026-09-21T03:19:28.2339875Z [nebula] client 15706508737898348545 'bot8' (bot) connected as abed9743c426.. (new anonymous identity)
+2026-09-21T03:19:28.2340435Z [nebula] client 15706508737898348545 'bot8' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2340578Z [nebula] no container available to spawn client 15706508737898348545 yet; holding the join (world starting)
+2026-09-21T03:19:28.2340673Z [nebula] client 15706508737898348550 'bot4' (bot) connected as 13f5db11250e.. (new anonymous identity)
+2026-09-21T03:19:28.2342188Z [nebula] client 15706508737898348550 'bot4' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2342340Z [nebula] no container available to spawn client 15706508737898348550 yet; holding the join (world starting)
+2026-09-21T03:19:28.2342427Z [nebula] client 15706508737898348546 'bot6' (bot) connected as d638bea34d22.. (new anonymous identity)
+2026-09-21T03:19:28.2342873Z [nebula] client 15706508737898348546 'bot6' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2343221Z [nebula] no container available to spawn client 15706508737898348546 yet; holding the join (world starting)
+2026-09-21T03:19:28.2343325Z [nebula] client 15706508737898348547 'bot7' (bot) connected as 432da147c023.. (new anonymous identity)
+2026-09-21T03:19:28.2343822Z [nebula] client 15706508737898348547 'bot7' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2343982Z [nebula] no container available to spawn client 15706508737898348547 yet; holding the join (world starting)
+2026-09-21T03:19:28.2344094Z [nebula] client 15706508737898348551 'bot1' (bot) connected as 1f98ee9751f6.. (new anonymous identity)
+2026-09-21T03:19:28.2344573Z [nebula] client 15706508737898348551 'bot1' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2344800Z [nebula] no container available to spawn client 15706508737898348551 yet; holding the join (world starting)
+2026-09-21T03:19:28.2344922Z [nebula] client 15706508737898348552 'bot5' (bot) connected as a6da77788668.. (new anonymous identity)
+2026-09-21T03:19:28.2345332Z [nebula] client 15706508737898348552 'bot5' is waiting for the world to start (about 3 s)
+2026-09-21T03:19:28.2345441Z [nebula] no container available to spawn client 15706508737898348552 yet; holding the join (world starting)
+2026-09-21T03:19:29.0694484Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 8 client(s); 0 entities known
+2026-09-21T03:19:30.0699200Z [nebula] worldstate: 29 packets 200 entries in; dropped unknown=0 stale=0 wrongOwner=0; 528 entries sent to 8 client(s); 60 entities known
+2026-09-21T03:19:31.0499840Z [nebula] loop 240 Hz, period max 34.4 ms, tick avg 0.19 ms max 34.4 ms
+2026-09-21T03:19:31.0741181Z [nebula] worldstate: 509 packets 3684 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4128 entries sent to 8 client(s); 164 entities known
+2026-09-21T03:19:32.0784834Z [nebula] worldstate: 482 packets 3497 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4346 entries sent to 8 client(s); 183 entities known
+2026-09-21T03:19:33.0822066Z [nebula] worldstate: 400 packets 2983 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3740 entries sent to 8 client(s); 183 entities known
+2026-09-21T03:19:34.0822950Z [nebula] worldstate: 405 packets 3015 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3849 entries sent to 8 client(s); 183 entities known
+2026-09-21T03:19:35.0824723Z [nebula] worldstate: 430 packets 3176 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3996 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:36.0526037Z [nebula] loop 240 Hz, period max 30.7 ms, tick avg 0.26 ms max 30.7 ms
+2026-09-21T03:19:36.0861955Z [nebula] worldstate: 346 packets 2725 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3647 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:37.0904930Z [nebula] worldstate: 331 packets 2512 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3374 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:38.0907770Z [nebula] worldstate: 326 packets 2634 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3489 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:39.0946228Z [nebula] worldstate: 332 packets 2737 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3735 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:40.0984734Z [nebula] worldstate: 366 packets 2765 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3628 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:41.0527361Z [nebula] loop 240 Hz, period max 31.1 ms, tick avg 0.24 ms max 31.1 ms
+2026-09-21T03:19:41.1027743Z [nebula] worldstate: 334 packets 2562 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3551 entries sent to 8 client(s); 172 entities known
+2026-09-21T03:19:42.1066917Z [nebula] worldstate: 342 packets 2546 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3468 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:43.1113440Z [nebula] worldstate: 340 packets 2679 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3601 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:44.1118448Z [nebula] worldstate: 326 packets 2648 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3623 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:45.1147171Z [nebula] worldstate: 334 packets 2798 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3830 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:46.0531076Z [nebula] loop 240 Hz, period max 33.0 ms, tick avg 0.23 ms max 33.0 ms
+2026-09-21T03:19:46.1155757Z [nebula] worldstate: 359 packets 2793 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3768 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:47.1156726Z [nebula] worldstate: 310 packets 2516 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3277 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:48.1188044Z [nebula] worldstate: 304 packets 2557 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3312 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:49.1189190Z [nebula] worldstate: 329 packets 2627 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3526 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:50.1192668Z [nebula] worldstate: 381 packets 2806 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3989 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:51.0575766Z [nebula] loop 240 Hz, period max 29.6 ms, tick avg 0.23 ms max 29.6 ms
+2026-09-21T03:19:51.1194811Z [nebula] worldstate: 364 packets 2797 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4052 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:52.1200267Z [nebula] worldstate: 318 packets 2749 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3929 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:53.1241393Z [nebula] worldstate: 340 packets 2712 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3803 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:54.1283468Z [nebula] worldstate: 417 packets 2944 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3878 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:55.1320254Z [nebula] worldstate: 456 packets 3039 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4093 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:56.0574343Z [nebula] loop 240 Hz, period max 29.3 ms, tick avg 0.21 ms max 29.3 ms
+2026-09-21T03:19:56.1326438Z [nebula] worldstate: 462 packets 3049 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4216 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:57.1359847Z [nebula] worldstate: 437 packets 3009 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4345 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:58.1362009Z [nebula] worldstate: 401 packets 2791 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3966 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:19:59.1362250Z [nebula] worldstate: 399 packets 2846 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4296 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:00.1397897Z [nebula] worldstate: 391 packets 2841 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3910 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:01.0609942Z [nebula] loop 240 Hz, period max 30.4 ms, tick avg 0.23 ms max 30.4 ms
+2026-09-21T03:20:01.1398298Z [nebula] worldstate: 391 packets 2742 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3926 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:02.1405552Z [nebula] worldstate: 356 packets 2640 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4011 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:03.1407975Z [nebula] worldstate: 383 packets 2653 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3619 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:04.1408288Z [nebula] worldstate: 385 packets 2635 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3818 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:05.1440586Z [nebula] worldstate: 416 packets 2690 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3735 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:06.0613259Z [nebula] loop 240 Hz, period max 103.3 ms, tick avg 0.24 ms max 29.0 ms
+2026-09-21T03:20:06.1443989Z [nebula] worldstate: 365 packets 2686 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3699 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:07.1487277Z [nebula] worldstate: 367 packets 2566 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3557 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:08.1492341Z [nebula] worldstate: 329 packets 2520 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3517 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:09.1525638Z [nebula] worldstate: 409 packets 2877 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4108 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:10.1527167Z [nebula] worldstate: 411 packets 2953 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4156 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:11.0613849Z [nebula] loop 240 Hz, period max 30.0 ms, tick avg 0.23 ms max 30.0 ms
+2026-09-21T03:20:11.1533660Z [nebula] worldstate: 426 packets 2936 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4310 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:12.1570135Z [nebula] worldstate: 424 packets 2881 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4096 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:13.1612573Z [nebula] worldstate: 387 packets 2870 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3981 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:14.1614857Z [nebula] worldstate: 398 packets 2801 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4013 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:15.1653777Z [nebula] worldstate: 382 packets 2917 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3978 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:16.0619457Z [nebula] loop 240 Hz, period max 31.6 ms, tick avg 0.25 ms max 31.6 ms
+2026-09-21T03:20:16.1654650Z [nebula] worldstate: 412 packets 2932 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4108 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:17.1654681Z [nebula] worldstate: 394 packets 2756 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3772 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:18.1692321Z [nebula] worldstate: 374 packets 2681 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3662 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:19.1693318Z [nebula] worldstate: 357 packets 2513 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3543 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:20.1709207Z [nebula] worldstate: 357 packets 2671 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3805 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:21.0659857Z [nebula] loop 240 Hz, period max 32.4 ms, tick avg 0.25 ms max 32.4 ms
+2026-09-21T03:20:21.1736179Z [nebula] worldstate: 365 packets 2786 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3864 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:22.1744539Z [nebula] worldstate: 349 packets 2480 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3056 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:23.1771708Z [nebula] worldstate: 367 packets 2780 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3645 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:24.1773050Z [nebula] worldstate: 354 packets 2788 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3731 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:25.1777712Z [nebula] worldstate: 370 packets 2869 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3898 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:26.0697508Z [nebula] loop 240 Hz, period max 29.5 ms, tick avg 0.25 ms max 29.5 ms
+2026-09-21T03:20:26.1783440Z [nebula] worldstate: 372 packets 2689 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3789 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:27.1822520Z [nebula] worldstate: 358 packets 2548 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3358 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:28.1863611Z [nebula] worldstate: 351 packets 2243 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2824 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:29.1901182Z [nebula] worldstate: 350 packets 2290 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2974 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:30.1902241Z [nebula] worldstate: 379 packets 2607 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3640 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:31.0734265Z [nebula] loop 240 Hz, period max 30.7 ms, tick avg 0.22 ms max 30.6 ms
+2026-09-21T03:20:31.1905863Z [nebula] worldstate: 417 packets 2975 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3999 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:32.1912435Z [nebula] worldstate: 412 packets 2886 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4037 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:33.1951712Z [nebula] worldstate: 388 packets 2743 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3590 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:34.1988544Z [nebula] worldstate: 390 packets 2641 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3448 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:35.2025591Z [nebula] worldstate: 399 packets 2739 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3687 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:36.0773268Z [nebula] loop 240 Hz, period max 28.1 ms, tick avg 0.24 ms max 28.1 ms
+2026-09-21T03:20:36.2026216Z [nebula] worldstate: 401 packets 2749 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4043 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:37.2029678Z [nebula] worldstate: 377 packets 2809 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3815 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:38.2075362Z [nebula] worldstate: 373 packets 2822 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3687 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:39.2108607Z [nebula] worldstate: 359 packets 2711 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3575 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:40.2117646Z [nebula] worldstate: 378 packets 2852 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3815 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:41.0775040Z [nebula] loop 240 Hz, period max 30.5 ms, tick avg 0.25 ms max 30.5 ms
+2026-09-21T03:20:41.2159853Z [nebula] worldstate: 361 packets 2753 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3716 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:42.2193665Z [nebula] worldstate: 349 packets 2692 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3718 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:43.2242304Z [nebula] worldstate: 366 packets 2657 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3729 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:44.2284485Z [nebula] worldstate: 366 packets 2682 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3525 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:45.2322958Z [nebula] worldstate: 379 packets 2842 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3638 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:46.0778963Z [nebula] loop 240 Hz, period max 30.6 ms, tick avg 0.25 ms max 30.6 ms
+2026-09-21T03:20:46.2363190Z [nebula] worldstate: 363 packets 2608 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3278 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:47.2369417Z [nebula] worldstate: 357 packets 2622 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3298 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:48.2372397Z [nebula] worldstate: 377 packets 2676 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3336 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:49.2402019Z [nebula] worldstate: 368 packets 2633 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3349 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:50.2404363Z [nebula] worldstate: 382 packets 2858 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3743 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:51.0777407Z [nebula] loop 240 Hz, period max 32.1 ms, tick avg 0.25 ms max 32.1 ms
+2026-09-21T03:20:51.2414603Z [nebula] worldstate: 368 packets 2553 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3354 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:52.2445085Z [nebula] worldstate: 367 packets 2527 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3151 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:53.2447156Z [nebula] worldstate: 379 packets 2729 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3665 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:54.2454910Z [nebula] worldstate: 382 packets 2763 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3789 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:55.2489262Z [nebula] worldstate: 389 packets 2946 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3943 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:56.0780373Z [nebula] loop 240 Hz, period max 31.1 ms, tick avg 0.22 ms max 31.1 ms
+2026-09-21T03:20:56.2532944Z [nebula] worldstate: 389 packets 2849 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3911 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:57.2567889Z [nebula] worldstate: 324 packets 2617 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3612 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:58.2568774Z [nebula] worldstate: 342 packets 2707 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3634 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:20:59.2571977Z [nebula] worldstate: 335 packets 2745 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3601 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:00.2578128Z [nebula] worldstate: 363 packets 2751 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3651 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:01.0827603Z [nebula] loop 240 Hz, period max 29.7 ms, tick avg 0.24 ms max 29.7 ms
+2026-09-21T03:21:01.2622147Z [nebula] worldstate: 373 packets 2848 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3834 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:02.2649458Z [nebula] worldstate: 372 packets 2808 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3792 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:03.2657144Z [nebula] worldstate: 366 packets 2718 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3727 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:04.2695633Z [nebula] worldstate: 366 packets 2651 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3660 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:05.2701248Z [nebula] worldstate: 363 packets 2769 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3785 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:06.0857127Z [nebula] loop 240 Hz, period max 31.6 ms, tick avg 0.24 ms max 31.6 ms
+2026-09-21T03:21:06.2733564Z [nebula] worldstate: 400 packets 2961 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3993 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:07.2735628Z [nebula] worldstate: 388 packets 2742 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3657 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:08.2776333Z [nebula] worldstate: 377 packets 2584 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3413 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:09.2784506Z [nebula] worldstate: 365 packets 2469 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3183 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:10.2816352Z [nebula] worldstate: 358 packets 2550 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3258 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:11.0865294Z [nebula] loop 240 Hz, period max 30.8 ms, tick avg 0.25 ms max 30.8 ms
+2026-09-21T03:21:11.2818008Z [nebula] worldstate: 350 packets 2517 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3236 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:12.2827239Z [nebula] worldstate: 350 packets 2459 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3065 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:13.2861787Z [nebula] worldstate: 367 packets 2581 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3321 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:14.2863884Z [nebula] worldstate: 376 packets 2800 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3660 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:15.2865765Z [nebula] worldstate: 371 packets 3036 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3979 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:16.0869289Z [nebula] loop 240 Hz, period max 27.8 ms, tick avg 0.24 ms max 27.7 ms
+2026-09-21T03:21:16.2904678Z [nebula] worldstate: 372 packets 2705 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3563 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:17.2946500Z [nebula] worldstate: 364 packets 2553 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3203 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:18.2950724Z [nebula] worldstate: 364 packets 2540 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3357 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:19.2990683Z [nebula] worldstate: 364 packets 2557 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3524 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:20.3043842Z [nebula] worldstate: 362 packets 2669 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3573 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:21.0899277Z [nebula] loop 240 Hz, period max 31.1 ms, tick avg 0.25 ms max 31.1 ms
+2026-09-21T03:21:21.3074856Z [nebula] worldstate: 340 packets 2517 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3137 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:22.3115347Z [nebula] worldstate: 347 packets 2584 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3284 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:23.3152583Z [nebula] worldstate: 373 packets 2850 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3730 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:24.3155206Z [nebula] worldstate: 378 packets 2851 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3724 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:25.3161272Z [nebula] worldstate: 389 packets 2970 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4026 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:26.0899815Z [nebula] loop 240 Hz, period max 35.0 ms, tick avg 0.25 ms max 35.0 ms
+2026-09-21T03:21:26.3197614Z [nebula] worldstate: 360 packets 2795 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3904 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:27.3232903Z [nebula] worldstate: 353 packets 2589 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3417 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:28.3240067Z [nebula] worldstate: 353 packets 2520 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3412 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:29.3278492Z [nebula] worldstate: 358 packets 2517 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3349 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:30.3318147Z [nebula] worldstate: 360 packets 2703 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3641 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:31.0911322Z [nebula] loop 240 Hz, period max 33.2 ms, tick avg 0.26 ms max 33.2 ms
+2026-09-21T03:21:31.3318118Z [nebula] worldstate: 380 packets 2866 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3910 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:32.3321106Z [nebula] worldstate: 372 packets 2760 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3730 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:33.3367398Z [nebula] worldstate: 363 packets 2628 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3495 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:34.3408683Z [nebula] worldstate: 366 packets 2642 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3402 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:35.3409273Z [nebula] worldstate: 371 packets 2750 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3592 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:36.0942832Z [nebula] loop 240 Hz, period max 32.9 ms, tick avg 0.25 ms max 32.9 ms
+2026-09-21T03:21:36.3442342Z [nebula] worldstate: 372 packets 2589 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3292 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:37.3452802Z [nebula] worldstate: 380 packets 2591 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3255 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:38.3491469Z [nebula] worldstate: 384 packets 2653 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3487 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:39.3528855Z [nebula] worldstate: 377 packets 2626 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3346 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:40.3529403Z [nebula] worldstate: 373 packets 2776 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3653 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:41.0945747Z [nebula] loop 240 Hz, period max 31.5 ms, tick avg 0.24 ms max 31.5 ms
+2026-09-21T03:21:41.3533518Z [nebula] worldstate: 368 packets 2554 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3365 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:42.3575223Z [nebula] worldstate: 369 packets 2615 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3354 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:43.3612335Z [nebula] worldstate: 369 packets 2540 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3292 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:44.3619114Z [nebula] worldstate: 367 packets 2577 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3250 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:45.3651242Z [nebula] worldstate: 372 packets 2767 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3449 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:46.0952389Z [nebula] loop 240 Hz, period max 35.2 ms, tick avg 0.24 ms max 35.2 ms
+2026-09-21T03:21:46.3654749Z [nebula] worldstate: 390 packets 2743 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3399 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:47.3690730Z [nebula] worldstate: 388 packets 2755 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3448 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:48.3740178Z [nebula] worldstate: 374 packets 2735 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3526 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:49.3778044Z [nebula] worldstate: 382 packets 2779 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3674 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:50.3820544Z [nebula] worldstate: 357 packets 2642 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3403 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:51.0989857Z [nebula] loop 240 Hz, period max 29.8 ms, tick avg 0.24 ms max 29.8 ms
+2026-09-21T03:21:51.3820564Z [nebula] worldstate: 346 packets 2622 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3398 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:52.3825595Z [nebula] worldstate: 353 packets 2622 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3441 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:53.3867659Z [nebula] worldstate: 374 packets 2678 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3430 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:54.3904483Z [nebula] worldstate: 373 packets 2768 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3542 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:55.3949004Z [nebula] worldstate: 407 packets 3079 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3931 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:56.1029266Z [nebula] loop 240 Hz, period max 31.5 ms, tick avg 0.25 ms max 31.5 ms
+2026-09-21T03:21:56.3988172Z [nebula] worldstate: 383 packets 2959 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3832 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:57.4024376Z [nebula] worldstate: 414 packets 2908 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3971 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:58.4036355Z [nebula] worldstate: 357 packets 2790 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3763 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:21:59.4071715Z [nebula] worldstate: 367 packets 2897 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3762 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:00.4073603Z [nebula] worldstate: 413 packets 3043 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3998 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:01.1028463Z [nebula] loop 240 Hz, period max 30.1 ms, tick avg 0.25 ms max 30.1 ms
+2026-09-21T03:22:01.4113205Z [nebula] worldstate: 377 packets 2946 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3956 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:02.4115175Z [nebula] worldstate: 376 packets 2968 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3925 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:03.4158200Z [nebula] worldstate: 377 packets 2853 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3850 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:04.4193784Z [nebula] worldstate: 373 packets 2788 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3803 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:05.4241213Z [nebula] worldstate: 380 packets 2963 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4002 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:06.1031095Z [nebula] loop 240 Hz, period max 35.1 ms, tick avg 0.26 ms max 35.1 ms
+2026-09-21T03:22:06.4279261Z [nebula] worldstate: 396 packets 3047 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4103 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:07.4324048Z [nebula] worldstate: 389 packets 3019 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3911 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:08.4325412Z [nebula] worldstate: 371 packets 2760 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3606 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:09.4364394Z [nebula] worldstate: 359 packets 2748 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3670 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:10.4364896Z [nebula] worldstate: 366 packets 2837 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3687 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:11.1031472Z [nebula] loop 240 Hz, period max 33.3 ms, tick avg 0.25 ms max 33.3 ms
+2026-09-21T03:22:11.4397721Z [nebula] worldstate: 380 packets 2864 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3734 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:12.4400912Z [nebula] worldstate: 368 packets 2717 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3451 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:13.4407916Z [nebula] worldstate: 364 packets 2679 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3470 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:14.4442501Z [nebula] worldstate: 371 packets 2657 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3468 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:15.4443637Z [nebula] worldstate: 383 packets 2854 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3678 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:16.1068376Z [nebula] loop 240 Hz, period max 30.6 ms, tick avg 0.25 ms max 30.6 ms
+2026-09-21T03:22:16.4446464Z [nebula] worldstate: 369 packets 2837 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3699 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:17.4452934Z [nebula] worldstate: 374 packets 2924 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3842 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:18.4485307Z [nebula] worldstate: 374 packets 2849 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3764 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:19.4485617Z [nebula] worldstate: 373 packets 2815 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3538 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:20.4489620Z [nebula] worldstate: 372 packets 2934 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3796 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:21.1083582Z [nebula] loop 240 Hz, period max 32.4 ms, tick avg 0.25 ms max 32.4 ms
+2026-09-21T03:22:21.4534719Z [nebula] worldstate: 376 packets 2948 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3863 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:22.4570668Z [nebula] worldstate: 383 packets 3056 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4161 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:23.4609499Z [nebula] worldstate: 337 packets 2821 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3602 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:24.4612597Z [nebula] worldstate: 341 packets 2684 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3386 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:25.4619300Z [nebula] worldstate: 362 packets 2853 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3634 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:26.1114776Z [nebula] loop 240 Hz, period max 30.7 ms, tick avg 0.24 ms max 30.7 ms
+2026-09-21T03:22:26.4650539Z [nebula] worldstate: 370 packets 2795 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3741 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:27.4662120Z [nebula] worldstate: 346 packets 2683 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3539 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:28.4697698Z [nebula] worldstate: 339 packets 2550 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3302 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:29.4737157Z [nebula] worldstate: 361 packets 2737 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3534 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:30.4771962Z [nebula] worldstate: 371 packets 2865 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3663 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:31.1157472Z [nebula] loop 240 Hz, period max 31.7 ms, tick avg 0.23 ms max 31.7 ms
+2026-09-21T03:22:31.4772840Z [nebula] worldstate: 370 packets 2888 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3799 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:32.4780357Z [nebula] worldstate: 367 packets 2786 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3655 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:33.4781795Z [nebula] worldstate: 344 packets 2516 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3279 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:34.4784075Z [nebula] worldstate: 302 packets 2508 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3150 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:35.4822520Z [nebula] worldstate: 336 packets 2707 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3388 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:36.1194198Z [nebula] loop 240 Hz, period max 29.8 ms, tick avg 0.25 ms max 29.8 ms
+2026-09-21T03:22:36.4829075Z [nebula] worldstate: 318 packets 2670 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3318 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:37.4861903Z [nebula] worldstate: 307 packets 2615 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3238 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:38.4863179Z [nebula] worldstate: 334 packets 2679 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3449 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:39.4866132Z [nebula] worldstate: 365 packets 2771 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3636 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:40.4905288Z [nebula] worldstate: 361 packets 2863 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3680 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:41.1241949Z [nebula] loop 240 Hz, period max 28.8 ms, tick avg 0.23 ms max 28.8 ms
+2026-09-21T03:22:41.4942817Z [nebula] worldstate: 375 packets 2728 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3512 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:42.4948804Z [nebula] worldstate: 364 packets 2705 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3419 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:43.4987950Z [nebula] worldstate: 363 packets 2667 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3355 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:44.5023988Z [nebula] worldstate: 359 packets 2663 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3488 entries sent to 8 client(s); 173 entities known
+2026-09-21T03:22:45.5031103Z [nebula] worldstate: 381 packets 2954 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3913 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:46.1278628Z [nebula] loop 240 Hz, period max 26.6 ms, tick avg 0.21 ms max 26.6 ms
+2026-09-21T03:22:46.5072285Z [nebula] worldstate: 387 packets 2725 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3672 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:47.5073468Z [nebula] worldstate: 364 packets 2805 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3780 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:48.5113967Z [nebula] worldstate: 366 packets 2988 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3922 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:49.5117260Z [nebula] worldstate: 362 packets 2813 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3947 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:50.5156711Z [nebula] worldstate: 374 packets 2949 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3895 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:51.1283040Z [nebula] loop 240 Hz, period max 28.9 ms, tick avg 0.25 ms max 28.9 ms
+2026-09-21T03:22:51.5163977Z [nebula] worldstate: 394 packets 2976 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4008 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:52.5191030Z [nebula] worldstate: 386 packets 2993 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3798 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:53.5195148Z [nebula] worldstate: 374 packets 3066 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3835 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:54.5235808Z [nebula] worldstate: 396 packets 3076 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3846 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:55.5240734Z [nebula] worldstate: 398 packets 3287 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4075 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:56.1326503Z [nebula] loop 240 Hz, period max 30.2 ms, tick avg 0.25 ms max 30.2 ms
+2026-09-21T03:22:56.5241901Z [nebula] worldstate: 371 packets 3018 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3576 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:57.5242224Z [nebula] worldstate: 360 packets 2686 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3096 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:58.5279783Z [nebula] worldstate: 354 packets 2648 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3101 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:22:59.5320487Z [nebula] worldstate: 350 packets 2527 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2970 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:00.5359356Z [nebula] worldstate: 402 packets 2871 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3451 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:01.1354755Z [nebula] loop 240 Hz, period max 31.8 ms, tick avg 0.24 ms max 31.8 ms
+2026-09-21T03:23:01.5412279Z [nebula] worldstate: 382 packets 2836 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3481 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:02.5444197Z [nebula] worldstate: 365 packets 2713 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3298 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:03.5444389Z [nebula] worldstate: 378 packets 2802 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3321 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:04.5483122Z [nebula] worldstate: 410 packets 2841 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3474 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:05.5486912Z [nebula] worldstate: 436 packets 3079 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3747 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:06.1363894Z [nebula] loop 240 Hz, period max 31.1 ms, tick avg 0.25 ms max 31.1 ms
+2026-09-21T03:23:06.5489962Z [nebula] worldstate: 388 packets 2928 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3566 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:07.5490828Z [nebula] worldstate: 382 packets 2910 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3651 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:08.5534707Z [nebula] worldstate: 408 packets 2898 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3609 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:09.5577044Z [nebula] worldstate: 351 packets 2717 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3275 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:10.5607879Z [nebula] worldstate: 340 packets 2680 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3256 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:11.1408046Z [nebula] loop 240 Hz, period max 30.5 ms, tick avg 0.25 ms max 30.5 ms
+2026-09-21T03:23:11.5610642Z [nebula] worldstate: 362 packets 2567 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3197 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:12.5652182Z [nebula] worldstate: 364 packets 2611 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3383 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:13.5658830Z [nebula] worldstate: 365 packets 2741 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3499 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:14.5696340Z [nebula] worldstate: 362 packets 2644 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3354 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:15.5735801Z [nebula] worldstate: 382 packets 2723 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3522 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:16.1414495Z [nebula] loop 240 Hz, period max 30.9 ms, tick avg 0.25 ms max 30.9 ms
+2026-09-21T03:23:16.5737701Z [nebula] worldstate: 357 packets 2531 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3259 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:17.5741062Z [nebula] worldstate: 359 packets 2594 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3249 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:18.5745363Z [nebula] worldstate: 362 packets 2751 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3345 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:19.5780266Z [nebula] worldstate: 361 packets 2677 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3323 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:20.5821128Z [nebula] worldstate: 393 packets 2848 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3738 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:21.1450179Z [nebula] loop 240 Hz, period max 30.1 ms, tick avg 0.25 ms max 30.1 ms
+2026-09-21T03:23:21.5825821Z [nebula] worldstate: 366 packets 2566 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3450 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:22.5861207Z [nebula] worldstate: 363 packets 2661 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3574 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:23.5898479Z [nebula] worldstate: 365 packets 2646 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3523 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:24.5956993Z [nebula] worldstate: 373 packets 2616 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3505 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:25.5981921Z [nebula] worldstate: 384 packets 2945 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4053 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:26.1488413Z [nebula] loop 240 Hz, period max 35.9 ms, tick avg 0.26 ms max 35.9 ms
+2026-09-21T03:23:26.6035437Z [nebula] worldstate: 390 packets 2821 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3807 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:27.6086916Z [nebula] worldstate: 414 packets 2802 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3903 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:28.6110966Z [nebula] worldstate: 370 packets 2723 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3655 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:29.6162032Z [nebula] worldstate: 367 packets 2610 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3536 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:30.6186800Z [nebula] worldstate: 376 packets 2761 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3665 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:31.1487303Z [nebula] loop 240 Hz, period max 31.2 ms, tick avg 0.25 ms max 31.2 ms
+2026-09-21T03:23:31.6189922Z [nebula] worldstate: 369 packets 2646 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3657 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:32.6195459Z [nebula] worldstate: 388 packets 2701 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3760 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:33.6201034Z [nebula] worldstate: 372 packets 2631 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3513 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:34.6232761Z [nebula] worldstate: 368 packets 2740 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3642 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:35.6235180Z [nebula] worldstate: 403 packets 3057 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4170 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:36.1490546Z [nebula] loop 240 Hz, period max 28.6 ms, tick avg 0.25 ms max 28.6 ms
+2026-09-21T03:23:36.6282865Z [nebula] worldstate: 378 packets 2810 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4000 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:37.6322899Z [nebula] worldstate: 358 packets 2510 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3549 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:38.6360288Z [nebula] worldstate: 364 packets 2664 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3725 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:39.6396963Z [nebula] worldstate: 370 packets 2704 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3620 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:40.6402705Z [nebula] worldstate: 406 packets 2899 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4049 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:41.1528451Z [nebula] loop 240 Hz, period max 35.0 ms, tick avg 0.26 ms max 35.0 ms
+2026-09-21T03:23:41.6403817Z [nebula] worldstate: 375 packets 2669 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3654 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:42.6407374Z [nebula] worldstate: 364 packets 2572 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3325 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:43.6447695Z [nebula] worldstate: 400 packets 2629 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3649 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:44.6450120Z [nebula] worldstate: 363 packets 2599 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3423 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:45.6496928Z [nebula] worldstate: 397 packets 3025 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4006 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:46.1531179Z [nebula] loop 240 Hz, period max 32.3 ms, tick avg 0.26 ms max 32.3 ms
+2026-09-21T03:23:46.6533415Z [nebula] worldstate: 403 packets 2792 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3587 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:47.6534688Z [nebula] worldstate: 392 packets 2767 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3570 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:48.6574026Z [nebula] worldstate: 382 packets 2750 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3514 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:49.6617565Z [nebula] worldstate: 387 packets 2730 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3605 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:50.6659308Z [nebula] worldstate: 450 packets 3209 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4034 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:51.1568759Z [nebula] loop 240 Hz, period max 27.1 ms, tick avg 0.25 ms max 27.1 ms
+2026-09-21T03:23:51.6696291Z [nebula] worldstate: 379 packets 2749 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3484 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:52.6736412Z [nebula] worldstate: 372 packets 2730 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3346 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:53.6741173Z [nebula] worldstate: 379 packets 2800 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3559 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:54.6787032Z [nebula] worldstate: 399 packets 2872 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3637 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:55.6819255Z [nebula] worldstate: 441 packets 3101 entries in; dropped unknown=0 stale=0 wrongOwner=0; 4031 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:56.1574332Z [nebula] loop 240 Hz, period max 28.7 ms, tick avg 0.25 ms max 28.7 ms
+2026-09-21T03:23:56.6821437Z [nebula] worldstate: 425 packets 2880 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3776 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:57.6862292Z [nebula] worldstate: 382 packets 2776 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3529 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:58.6914490Z [nebula] worldstate: 374 packets 2767 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3472 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:23:59.6950389Z [nebula] worldstate: 380 packets 2664 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3234 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:24:00.6983243Z [nebula] worldstate: 407 packets 2893 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3595 entries sent to 8 client(s); 174 entities known
+2026-09-21T03:24:01.1615752Z [nebula] loop 240 Hz, period max 31.0 ms, tick avg 0.24 ms max 31.0 ms
+2026-09-21T03:24:01.5323624Z [nebula] warning: control plane: reading http://127.0.0.1:7080 failed: An error occurred while sending the request.; mesh keeps running on its last known topology

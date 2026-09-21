@@ -1,0 +1,32 @@
+---
+title: "IInterestSource<T>"
+description: "What ClientInterest<T,TSource> needs to know about the records it is evaluating."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs)</div>
+
+```csharp
+public interface IInterestSource<T>
+```
+
+What [`ClientInterest<T,TSource>`](/docs/reference/interest/client-interest) needs to know about the records it is evaluating. The gateway implements this over its own entity record and the worker over its authoritative entities, so neither has to copy its state into a shape interest management likes.
+
+Implement it on a **struct**: the type parameter is constrained to one so the calls are direct and an evaluation allocates nothing, however many entities it walks.
+
+## Methods
+
+### Describe [#describe]
+
+```csharp
+void Describe(ulong id, in T value, out InterestEntity entity);
+```
+
+Fill in the interest facts about one record: absolute position, relevance radius, flags, carrier.
+
+### Authorize [#authorize]
+
+```csharp
+bool Authorize(in InterestClient client, in InterestEntity entity);
+```
+
+The security filter: instance rules (an unknown container is never observable), then the game policy. A false here removes the entity from the set immediately, without the leave hysteresis.

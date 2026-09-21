@@ -1,0 +1,30 @@
+---
+title: "IInterestPolicy"
+description: "The game's say in what a client hears about."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public interface IInterestPolicy
+```
+
+The game's say in what a client hears about. Both methods are called by the gateway, per client, at [`InterestSettings.EvalHz`](/docs/reference/interest/interest-settings#evalhz); neither may block or allocate per call if the mesh is to stay quiet.
+
+## Methods
+
+### Collect [#collect]
+
+```csharp
+void Collect(in InterestClient client, InterestQuery query);
+```
+
+Fill the foci and explicit entities for this client.
+
+### Authorize [#authorize]
+
+```csharp
+bool Authorize(in InterestClient client, in InterestEntity entity);
+```
+
+The security filter, asked before an entity may enter or stay in the set (team, fog of war). Returning false removes the entity at once, with no linger: this is a boundary, not a distance.

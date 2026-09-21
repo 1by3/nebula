@@ -27,13 +27,25 @@ namespace Nebula.World
         /// <summary>Size of one cell in metres, per axis.</summary>
         public Vector3 CellSize { get; }
 
-        public RuntimeGrid(float cellSize) : this(new Vector3(cellSize, cellSize, cellSize)) { }
+        /// <summary>
+        /// Cells are columns: the grid has a single layer at y = 0 and <see cref="CellSize"/>.y is the column's
+        /// height, centred on absolute y = 0. Surface worlds want this — a chunk that is 64 m wide and 512 m tall
+        /// is one container nothing ever leaves vertically, so verticality never costs a cell, a lease, or a
+        /// neighbourhood dimension. The packing is unchanged (y is simply always 0), so a planar and a volumetric
+        /// grid produce the same ids for the same coordinates.
+        /// </summary>
+        public bool Planar { get; }
 
-        public RuntimeGrid(Vector3 cellSize)
+        public RuntimeGrid(float cellSize) : this(new Vector3(cellSize, cellSize, cellSize), false) { }
+
+        public RuntimeGrid(Vector3 cellSize) : this(cellSize, false) { }
+
+        public RuntimeGrid(Vector3 cellSize, bool planar)
         {
             if (cellSize.x <= 0f || cellSize.y <= 0f || cellSize.z <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(cellSize), "Cell size must be positive on every axis.");
             CellSize = cellSize;
+            Planar = planar;
         }
 
         /// <summary>Whether a coordinate is within the range that <see cref="PackId"/> can represent.</summary>
@@ -63,7 +75,7 @@ namespace Nebula.World
         /// <summary>Which cell a position in the current floating-origin frame falls in.</summary>
         public Vector3Int CoordOf(Vector3 framePosition) => new Vector3Int(
             WorldOrigin.Cell.x + Mathf.FloorToInt(framePosition.x / CellSize.x),
-            WorldOrigin.Cell.y + Mathf.FloorToInt(framePosition.y / CellSize.y),
+            Planar ? 0 : WorldOrigin.Cell.y + Mathf.FloorToInt(framePosition.y / CellSize.y),
             WorldOrigin.Cell.z + Mathf.FloorToInt(framePosition.z / CellSize.z));
 
         /// <summary>
@@ -75,16 +87,22 @@ namespace Nebula.World
             if (entity.Container == null || !entity.Container.IsRuntime) return CoordOf(entity.transform.position);
             var c = UnpackId(entity.Container.RuntimeId);
             var local = entity.LocalPosition;
-            return c + new Vector3Int(
-                Mathf.FloorToInt((local.x + CellSize.x / 2) / CellSize.x),
-                Mathf.FloorToInt((local.y + CellSize.y / 2) / CellSize.y),
-                Mathf.FloorToInt((local.z + CellSize.z / 2) / CellSize.z));
+            return new Vector3Int(
+                c.x + Mathf.FloorToInt((local.x + CellSize.x / 2) / CellSize.x),
+                Planar ? 0 : c.y + Mathf.FloorToInt((local.y + CellSize.y / 2) / CellSize.y),
+                c.z + Mathf.FloorToInt((local.z + CellSize.z / 2) / CellSize.z));
         }
 
-        /// <summary>Centre of a cell in the current floating-origin frame.</summary>
+        /// <summary>
+        /// Centre of a cell in the current floating-origin frame. A planar grid's column is centred on absolute
+        /// y = 0 (the origin never shifts vertically in a planar world), so its box spans ±CellSize.y/2 around the
+        /// ground plane rather than sitting above it.
+        /// </summary>
         public Vector3 CenterOf(Vector3Int coord) => new Vector3(
             (float)(((long)coord.x - WorldOrigin.Cell.x + 0.5) * CellSize.x),
-            (float)(((long)coord.y - WorldOrigin.Cell.y + 0.5) * CellSize.y),
+            Planar
+                ? (float)(-(long)WorldOrigin.Cell.y * (double)CellSize.y)
+                : (float)(((long)coord.y - WorldOrigin.Cell.y + 0.5) * CellSize.y),
             (float)(((long)coord.z - WorldOrigin.Cell.z + 0.5) * CellSize.z));
 
         /// <summary>Box of a cell in the current floating-origin frame.</summary>
@@ -109,6 +127,28 @@ namespace Nebula.World
                         if (IsValid(c)) yield return c;
                     }
         }
+
+        /// <summary>
+        /// The neighbourhood of this grid, appended to <paramref name="into"/>: a cube for a volumetric grid, a
+        /// square in the y = 0 layer for a <see cref="Planar"/> one. Takes a list rather than yielding, because
+        /// the allocator walks it every policy tick and an iterator would allocate an enumerator each time.
+        /// </summary>
+        public void Neighborhood(Vector3Int center, int ring, List<Vector3Int> into)
+        {
+            if (into == null) return;
+            int yLow = Planar ? 0 : -ring, yHigh = Planar ? 0 : ring;
+            int cy = Planar ? 0 : center.y;
+            for (int x = -ring; x <= ring; x++)
+                for (int y = yLow; y <= yHigh; y++)
+                    for (int z = -ring; z <= ring; z++)
+                    {
+                        var c = new Vector3Int(center.x + x, cy + y, center.z + z);
+                        if (IsValid(c)) into.Add(c);
+                    }
+        }
+
+        /// <summary>Drop the vertical component of a coordinate when this grid is <see cref="Planar"/>, so a caller's arithmetic cannot leave the single layer.</summary>
+        public Vector3Int Normalize(Vector3Int coord) => Planar ? new Vector3Int(coord.x, 0, coord.z) : coord;
 
         /// <summary>
         /// Point <see cref="ContainerRegistry.RuntimeBoundsInFrame"/> at this grid, so a game that registers runtime
@@ -154,7 +194,17 @@ namespace Nebula.World
         public void KeepOriginNear(NetworkIdentity entity, int ring = 1)
         {
             if (entity == null) return;
-            var cell = CoordOf(entity);
+            KeepOriginNear(CoordOf(entity), ring);
+        }
+
+        /// <summary>
+        /// <see cref="KeepOriginNear(NetworkIdentity,int)"/> for a coordinate a role computed itself (a worker
+        /// follows the centroid of the cells it leases, not any one entity). Planar grids never shift vertically,
+        /// so the target keeps the current origin's y.
+        /// </summary>
+        public void KeepOriginNear(Vector3Int cell, int ring = 1)
+        {
+            if (Planar) cell = new Vector3Int(cell.x, WorldOrigin.Cell.y, cell.z);
             if (!IsNear(cell, WorldOrigin.Cell, ring)) ShiftOriginTo(cell);
         }
     }

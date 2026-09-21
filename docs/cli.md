@@ -39,9 +39,10 @@ into `cli/dist`.
 nebula setup                 install the .NET 10 SDK, check git/ssh and the Unity editors
 nebula init                  install Nebula into the Unity project you are in (Packages/com.1by3.nebula, manifest, nebula.json)
 nebula build [--linux]       build the executable every role runs (host player, or the Linux server + tarball)
-nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence]
+nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--bot-args "..."] [--open-ui] [--reset-persistence]
                              --workers N fixes the count (min = max = N); --min/--max open the autoscaling band and
                              the mesh starts at --min, growing and shrinking between the two (--min 0 scales to zero)
+                             --bot-args is appended verbatim to every bot client's command line (the game reads it)
 nebula stop
 nebula status [--cloud]      dashboard + gateway addresses, workers, containers, players/bots/NPCs, persistence, recent events
 nebula logs [role] [-n N] [--follow] [--cloud] [--instance x] [--since 10m]

@@ -1,9 +1,9 @@
 ---
 title: Build an infinite runtime world
-description: Create procedural chunks on demand, shift the floating origin, move a predicted player, and place persistent blocks.
+description: Turn on the turnkey chunked world, add one content callback, move a predicted player, and place persistent blocks.
 ---
 
-Build a procedural world whose chunks appear as players explore, retire when nobody needs them, and return with their saved entities. This tutorial uses Nebula World Partition's runtime grid and floating origin with Nebula's runtime containers, prediction, remote procedure calls (RPCs), and persistence.
+Build a procedural world whose chunks appear as players explore, retire when nobody needs them, and return with their saved entities. This tutorial uses Nebula's turnkey **chunked world**: a `RuntimeWorld` definition plus `NebulaConfig.ChunkedWorld` builds the chunk grid, leases chunks around every pawn, keeps the floating origin near the pawn, and raises one event pair for your game's content. It combines that with [runtime containers](/docs/guides/runtime-containers), prediction, remote procedure calls (RPCs), and persistence.
 
 The example uses a 3D chunk grid with 64 m square ground cells generated in its `y = 0` layer. A player can walk without a fixed world boundary and press F to place a block. Blocks are authoritative worker entities and survive chunk retirement, worker failure, and a mesh restart.
 
@@ -15,14 +15,14 @@ This tutorial combines four systems:
 
 | System | Responsibility |
 | --- | --- |
-| `RuntimeGrid` | Converts signed 3D chunk coordinates to stable 64-bit IDs, calculates chunk bounds in the current origin frame, and shifts the origin. |
-| Runtime containers | Put an on-demand chunk in the control plane so the orchestrator can lease it to a worker. Each process reconstructs the same box from the lease. |
-| Game-owned chunk content | Creates the floor and colliders for registered chunks. Nebula manages the box and authority; your game generates the terrain. |
+| `NebulaChunkedWorld` | Builds the chunk grid from your `RuntimeWorld` definition, leases chunks around every pawn on workers, and keeps the floating origin near the pawn on clients and near the leased centroid on workers. Installed automatically when `NebulaConfig.ChunkedWorld` is on. |
+| `NebulaChunks` | The one API surface your game touches: `Loaded`/`Unloading` events for content, and `EnsureAt` to make sure a chunk exists before spawning into it. |
+| Game-owned chunk content | Creates the floor and colliders for a loaded chunk, in a `Loaded` handler. Nebula manages the box, the lease, and authority; your game generates the terrain. |
 | `PersistentEntity` | Saves each placed block's prefab, container, pose, and opted-in state, then restores it when that chunk returns. |
 
-The **floating origin** is the chunk coordinate currently represented by Unity coordinates near `(0, 0, 0)`. An origin shift moves registered containers, their child content, networked entities, interpolation history, and prediction history together.
+The **floating origin** is the chunk coordinate currently represented by Unity coordinates near `(0, 0, 0)`. An origin shift moves registered containers, their child content, networked entities, interpolation history, and prediction history together. `NebulaChunkedWorld` performs these shifts for you; this tutorial does not call origin APIs directly.
 
-Nebula calls this an infinite world because no authored extent or fixed list of chunks exists. `RuntimeGrid` is not mathematically infinite: each axis has signed 21-bit coordinates, from `-1,048,576` through `1,048,575`. At 64 m per chunk, the addressable span is about 134 million meters per axis.
+Nebula calls this an infinite world because no authored extent or fixed list of chunks exists. The underlying `RuntimeGrid` is not mathematically infinite: each axis has signed 21-bit coordinates, from `-1,048,576` through `1,048,575`. At 64 m per chunk, the addressable span is about 134 million meters per axis.
 
 ## Prerequisites
 
@@ -38,7 +38,7 @@ You can also start from the [main tutorial](/docs/getting-started/tutorial), but
 <Steps>
 <Step>
 
-### Create an empty world definition
+### Create an empty world definition and turn on the chunked world
 
 In the Project window, select **Create > Nebula > World Definition** and name the asset `InfiniteWorld`.
 
@@ -50,157 +50,58 @@ Set these fields:
 | `CellSize` | `(64, 256, 64)` |
 | `Cells` | Empty |
 
-The empty cell list is intentional. `WorldDefinition` supplies the cell size and origin-shift math, but the runtime grid supplies chunk coordinates as players explore. The 256 m Y size gives a ground-level container enough vertical room for players and placed objects.
+The empty cell list is intentional. `WorldDefinition` supplies the cell size; the runtime grid supplies chunk coordinates as players explore. The 256 m Y size gives a ground-level container enough vertical room for players and placed objects.
 
-Select `Resources/NebulaConfig`. In the Inspector, assign this asset to **Runtime World** (`NebulaConfig.RuntimeWorld`) and leave **World Manifest** (`NebulaConfig.WorldManifest`) empty. Nebula now loads the floating-origin frame before game scripts initialize, starts with no authored containers, and expects workers to register runtime containers.
+Select `Resources/NebulaConfig`. In the Inspector:
+
+- Assign `InfiniteWorld` to **Runtime World** (`NebulaConfig.RuntimeWorld`) and leave **World Manifest** (`NebulaConfig.WorldManifest`) empty.
+- Enable **Chunked World** (`NebulaConfig.ChunkedWorld`).
+- Leave **Chunk Planar** (`NebulaConfig.ChunkPlanar`) on. Chunks stay a single layer of columns at `y = 0`, which matches the ground world this tutorial builds.
+
+With `ChunkedWorld` on and a `RuntimeWorld` assigned, every process — client, worker, gateway, and orchestrator — builds the same chunk grid and container bounds from configuration alone. No scene component or game-mode wiring is required to get chunks leasing, ghosting, and handing over across seams; the rest of this tutorial only adds content and gameplay.
 
 </Step>
 <Step>
 
-### Start the runtime world on every Unity process
+### Generate ground for each loaded chunk
 
-Create an empty GameObject named `Infinite World` in the game scene and add this component. Assign a material to **Ground Material**. The `InfiniteWorld` world definition is already assigned through `NebulaConfig.RuntimeWorld` in the previous step; this component does not have a separate definition field.
+Add one `ChunkContent` subclass. Nebula calls it once per chunk your process needs, on every role:
 
-```csharp title="InfiniteWorldRuntime.cs"
-using System.Collections.Generic;
+```csharp title="ChunkGround.cs"
 using Nebula;
 using Nebula.World;
 using UnityEngine;
 
-[DefaultExecutionOrder(-500)]
-public sealed class InfiniteWorldRuntime : MonoBehaviour
+public sealed class ChunkGround : ChunkContent
 {
-    public static InfiniteWorldRuntime Instance { get; private set; }
-    public RuntimeGrid Grid { get; private set; }
-
     [SerializeField] private Material groundMaterial;
-    [SerializeField] private int contentRadius = 1;
 
-    private readonly Dictionary<ulong, GameObject> loadedGround = new();
-    private readonly HashSet<ulong> wantedGround = new();
-    private readonly List<ulong> remove = new();
-    private float nextRefresh;
-
-    private void Awake()
-    {
-        Instance = this;
-        Grid = new RuntimeGrid(NebulaWorld.Definition.CellSize);
-
-        // Recalculate every public runtime container from its stable grid ID after an origin shift.
-        Grid.UseAsRuntimeBounds();
-
-        ContainerRegistry.RuntimeRegistered += OnRuntimeRegistered;
-        ContainerRegistry.RuntimeUnregistering += OnRuntimeUnregistering;
-        ContainerRegistry.LeasesChanged += RefreshContent;
-    }
-
-    private void Update()
-    {
-        var client = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Client : null;
-        if (client != null && client.LocalPlayer != null)
-            Grid.KeepOriginNear(client.LocalPlayer, ring: 1);
-
-        if (Time.unscaledTime >= nextRefresh)
-        {
-            nextRefresh = Time.unscaledTime + 0.25f;
-            RefreshContent();
-        }
-    }
-
-    private void OnRuntimeRegistered(Container container) => RefreshContent();
-
-    private void OnRuntimeUnregistering(Container container)
-    {
-        if (!loadedGround.Remove(container.RuntimeId, out var ground)) return;
-        if (ground != null) Destroy(ground);
-    }
-
-    private void RefreshContent()
-    {
-        wantedGround.Clear();
-
-        foreach (var container in ContainerRegistry.Runtime)
-        {
-            var coord = RuntimeGrid.UnpackId(container.RuntimeId);
-            if (coord.y != 0 || !ShouldLoadContent(container, coord)) continue;
-
-            wantedGround.Add(container.RuntimeId);
-            if (!loadedGround.ContainsKey(container.RuntimeId))
-                loadedGround[container.RuntimeId] = CreateGround(container, coord);
-        }
-
-        remove.Clear();
-        foreach (var pair in loadedGround)
-            if (!wantedGround.Contains(pair.Key)) remove.Add(pair.Key);
-
-        foreach (var id in remove)
-        {
-            var ground = loadedGround[id];
-            loadedGround.Remove(id);
-            if (ground != null) Destroy(ground);
-        }
-    }
-
-    private bool ShouldLoadContent(Container container, Vector3Int coord)
-    {
-        var bootstrap = NebulaBootstrap.Instance;
-        if (bootstrap == null) return false;
-
-        if (bootstrap.Worker != null)
-        {
-            string workerId = bootstrap.Worker.WorkerId;
-            if (container.IsOwnedBy(workerId)) return true;
-            foreach (var neighbor in container.Neighbors)
-                if (neighbor.IsOwnedBy(workerId)) return true;
-            return false;
-        }
-
-        var player = bootstrap.Client != null ? bootstrap.Client.LocalPlayer : null;
-        if (player == null) return false;
-        var playerCoord = Grid.CoordOf(player);
-        return coord.y == playerCoord.y && RuntimeGrid.IsNear(coord, playerCoord, contentRadius);
-    }
-
-    private GameObject CreateGround(Container container, Vector3Int coord)
+    protected override void OnChunkLoaded(in ChunkContext chunk)
     {
         var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        ground.name = $"Ground {coord}";
-        ground.transform.SetParent(container.transform, false);
-        ground.transform.localPosition = new Vector3(0f, -container.Size.y * 0.5f - 0.5f, 0f);
-        ground.transform.localScale = new Vector3(container.Size.x, 1f, container.Size.z);
+        ground.name = $"Ground {chunk.Coord}";
+        ground.transform.SetParent(chunk.Root, false);
+
+        var size = NebulaChunks.Grid.CellSize;
+        ground.transform.localPosition = new Vector3(0f, -size.y * 0.5f - 0.5f, 0f);
+        ground.transform.localScale = new Vector3(size.x, 1f, size.z);
 
         var renderer = ground.GetComponent<Renderer>();
-        if (NebulaRuntime.IsClient && groundMaterial != null)
+        if (chunk.IsHeadless)
+            Object.Destroy(renderer);
+        else if (groundMaterial != null)
             renderer.sharedMaterial = groundMaterial;
-        else if (!NebulaRuntime.IsClient)
-            renderer.enabled = false;
-
-        return ground;
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance != this) return;
-        ContainerRegistry.RuntimeRegistered -= OnRuntimeRegistered;
-        ContainerRegistry.RuntimeUnregistering -= OnRuntimeUnregistering;
-        ContainerRegistry.LeasesChanged -= RefreshContent;
-        if (ContainerRegistry.RuntimeBoundsInFrame == Grid.BoundsOfId)
-            ContainerRegistry.RuntimeBoundsInFrame = null;
-        NebulaWorld.Unload();
-        Instance = null;
     }
 }
 ```
 
-`NebulaBootstrap` runs at execution order `-1000` and loads `NebulaConfig.RuntimeWorld` in `Awake`. This component therefore finds `NebulaWorld.Definition` ready when its own `Awake` runs. Put the component in the game scene, not only in a client-only boot scene: workers and clients both need the same grid and bounds callback.
+Create an empty GameObject named `Chunk Content` in the game scene and add `ChunkGround` to it. Assign a material to **Ground Material**.
 
-The content policy is role-specific:
+- `chunk.Root` is a child object created under the chunk's container the first time content is dispatched to it. Objects parented to it are destroyed automatically when the chunk retires, so a `Loaded` handler that only creates content needs no matching `Unloading` handler.
+- `chunk.IsHeadless` is true on a worker, or on any process running without a graphics device. Workers still need the ground's collider; they do not need its renderer.
+- `NebulaChunks.Grid.CellSize` is the same size you set on `InfiniteWorld`, read back from the active grid rather than duplicated in this script.
 
-- A worker creates colliders for chunks it owns and their immediate neighbors. That supplies collision geometry for authoritative entities and ghosts near a seam.
-- A client creates visible ground only around its local player. Runtime container records are mesh-wide, but a client does not need to render every active chunk around every player.
-- The generated ground is parented to the container. Nebula therefore moves it automatically when the floating origin shifts.
-
-Replace `CreateGround` with your deterministic terrain, voxel, or content loader. Generate the same collision surface on the worker that the client presents to the player. Do not put `NetworkIdentity` or `NetworkBehaviour` components on content created as children after the container registers. Spawn interactive networked objects as registered prefabs instead.
+Replace the cube with your deterministic terrain, voxel, or content loader. Generate the same collision surface on the worker that the client presents to the player. Do not put `NetworkIdentity` or `NetworkBehaviour` components on content created under `chunk.Root`. Spawn interactive networked objects as registered prefabs instead, into `chunk.Container`.
 
 </Step>
 <Step>
@@ -328,32 +229,28 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
         position.y = 0.5f;
         position.z = Mathf.Round(position.z - 0.5f) + 0.5f;
 
-        var container = ContainerRegistry.Find(position);
-        if (container == null || !container.IsRuntime) return;
-        if (RuntimeGrid.UnpackId(container.RuntimeId).y != 0) return;
-        if (!container.Contains(position)) return;
         if (Physics.CheckBox(position, Vector3.one * 0.45f, Quaternion.identity,
                 Physics.AllLayers, QueryTriggerInteraction.Ignore)) return;
 
         var worker = NebulaBootstrap.Instance.Worker;
-        var block = worker.SpawnPrefab(
-            blockPrefab,
-            position,
-            Quaternion.identity,
-            container);
 
-        // New persistent entities are checkpointed automatically. SaveNow narrows the window
-        // between confirming the placement and its first durable checkpoint.
-        worker.Persistence?.SaveNow(block);
+        NebulaChunks.EnsureAt(position, container =>
+        {
+            var block = worker.SpawnPrefab(blockPrefab, position, Quaternion.identity, container);
+
+            // New persistent entities are checkpointed automatically. SaveNow narrows the window
+            // between confirming the placement and its first durable checkpoint.
+            worker.Persistence?.SaveNow(block);
+        });
     }
 }
 ```
 
 Keep one camera in the game scene and set its tag to `MainCamera`. Do not add a camera to the `Player` prefab: every remote player copy would otherwise bring another active camera. `LateUpdate` runs the follow behavior only when `IsOwner` identifies this entity as the local player, and it follows the predicted transform after movement for the frame. Adjust **Camera Offset**, **Camera Look Height**, and **Camera Follow Sharpness** on the prefab to tune the view.
 
-The client never instantiates a networked block. It only asks through `ServerRpc`; the worker checks authority, rate-limits the request, rejects overlaps, selects the runtime container, and calls `SpawnPrefab`. Add your game's permissions, inventory cost, reach test, and placement rules in the same handler.
+The client never instantiates a networked block. It only asks through `ServerRpc`; the worker checks authority, rate-limits the request, rejects overlaps, and calls `NebulaChunks.EnsureAt` so the chunk under the target position is leased (creating it if this is the first entity to reach that spot) before spawning into it. Add your game's permissions, inventory cost, reach test, and placement rules in the same handler.
 
-The position is in the worker's current floating-origin frame. Nebula converts it to container-local placement when it spawns the entity, so the block remains stable across later origin shifts.
+`NebulaChunks.EnsureAt` on a worker requests the chunk's lease through the allocator and waits; on a client or gateway it only waits, because a client does not decide which chunks exist. The position is in the worker's current floating-origin frame. Nebula converts it to container-local placement when it spawns the entity, so the block remains stable across later origin shifts.
 
 </Step>
 <Step>
@@ -390,7 +287,7 @@ Nebula assigns each registered prefab a network ID from its position in `Network
 </Step>
 <Step>
 
-### Allocate chunks and spawn players from the game mode
+### Spawn players from the game mode
 
 Create this game mode script:
 
@@ -402,23 +299,6 @@ using UnityEngine;
 public sealed class InfiniteWorldGameMode : NebulaGameMode
 {
     [SerializeField] private GameObject playerPrefab;
-    private RuntimeGridAllocator allocator;
-
-    public override void OnWorkerStarted(NebulaWorker worker)
-    {
-        allocator = new RuntimeGridAllocator(worker, InfiniteWorldRuntime.Instance.Grid)
-        {
-            Ring = 1,
-            RetireAfterSeconds = 60f,
-            TickIntervalSeconds = 0.25f,
-        };
-        allocator.AddAnchor(Vector3Int.zero);
-    }
-
-    private void Update()
-    {
-        allocator?.Tick(Time.unscaledTime);
-    }
 
     public override NetworkIdentity OnSpawnPlayer(
         NebulaWorker worker,
@@ -426,24 +306,18 @@ public sealed class InfiniteWorldGameMode : NebulaGameMode
         string playerName,
         Container requestedContainer)
     {
-        ulong spawnId = RuntimeGrid.PackId(Vector3Int.zero);
-        var spawnContainer = ContainerRegistry.GetRuntime(spawnId) ?? requestedContainer;
-        var bounds = spawnContainer.WorldBounds;
+        var container = requestedContainer;
+        var bounds = container.WorldBounds;
         var position = new Vector3(bounds.center.x, bounds.min.y + 1f, bounds.center.z);
 
         var player = worker.SpawnPrefab(
             playerPrefab,
             position,
             Quaternion.identity,
-            spawnContainer,
+            container,
             clientId);
         player.name = $"Player {playerName} ({clientId})";
         return player;
-    }
-
-    public override void PrepareSpatialFrame(NetworkIdentity entity)
-    {
-        InfiniteWorldRuntime.Instance.Grid.KeepOriginNear(entity, ring: 2);
     }
 }
 ```
@@ -455,19 +329,9 @@ Return to the game scene and connect the game mode:
 3. Drag the `Player` prefab into **Player Prefab**.
 4. Save the scene.
 
-The scene must contain exactly one enabled `NebulaGameMode`. Without it, workers can register but cannot allocate the initial chunks or spawn a player.
+The scene must contain exactly one enabled `NebulaGameMode`. `NebulaChunkedWorld` anchors chunk `(0, 0, 0)` permanently — the guaranteed spawn area — so the gateway always has a leased container to offer a joining player, even before anyone has walked there. `requestedContainer` in `OnSpawnPlayer` is one of the currently leased chunks; this example spawns directly into it rather than picking a fixed coordinate, so a new player always lands somewhere already loaded.
 
-`RuntimeGridAllocator` requests a 3D ring around each player-owned authoritative entity. `Ring = 1` keeps the surrounding 3 × 3 × 3 group available. The origin anchor keeps its own 3 × 3 × 3 group available permanently, including after players move away. This gives later players a leased container to join through. Remove the anchor only if your game supplies another way to request a spawn container before `OnSpawnPlayer` runs. The worker API queues requests made before registration and sends them once the control plane knows the worker.
-
-Repeated requests create a missing lease or touch an existing lease so its owner knows another worker still needs the chunk. After a chunk remains unwanted, unoccupied, and idle for `RetireAfterSeconds`, the allocator checkpoints its persistent entities, despawns its contents, and releases its lease.
-
-The dashboard World map shows every authoritative entity in the public world. It is an operator view, not the client's content radius. A block remains on the map while its container is leased, even when that block is too far away for the client-side terrain loader. Blocks in the anchored origin ring remain live until you remove that anchor.
-
-The `contentRadius` field controls only the procedural ground generated by this example. Nebula continues to replicate public entities in every leased container in the same instance, so use game-side rendering or level-of-detail rules if distant active blocks should be hidden. When an unanchored container retires, Nebula removes its replicas from the client and restores its persistent blocks only after the container is requested again.
-
-The gateway may ask a worker to spawn into any currently leased chunk. This example deliberately spawns everyone in chunk `(0, 0, 0)`. If that chunk belongs to another worker, Nebula transfers the new player to its owner on the next tick.
-
-`PrepareSpatialFrame` keeps worker-side membership checks precise in distant regions. The client follows its own local player in `InfiniteWorldRuntime.Update`.
+The dashboard World map shows every authoritative entity in the public world. It is an operator view, not the client's content radius: a block remains on the map while its container is leased, even when that block is too far away for the client-side terrain loader. Nebula continues to replicate public entities within [interest range](/docs/guides/interest-management) in every leased container in the same instance; use game-side rendering or level-of-detail rules if a distant active block should be hidden for other reasons.
 
 </Step>
 <Step>
@@ -478,8 +342,8 @@ Keep `NebulaConfig.PersistenceMode` at `auto`. For a local mesh, the standalone 
 
 Before building, verify the complete setup:
 
-- `Resources/NebulaConfig` has `InfiniteWorld` in **Runtime World**, nothing in **World Manifest**, and both prefabs in **Network Prefabs**.
-- The game scene has one `NebulaBootstrap`, one `InfiniteWorldRuntime` with **Ground Material** assigned, and one `InfiniteWorldGameMode` with **Player Prefab** assigned.
+- `Resources/NebulaConfig` has `InfiniteWorld` in **Runtime World**, nothing in **World Manifest**, **Chunked World** enabled, and both prefabs in **Network Prefabs**.
+- The game scene has one `NebulaBootstrap`, one `Chunk Content` object with `ChunkGround` and its **Ground Material** assigned, and one `InfiniteWorldGameMode` with **Player Prefab** assigned.
 - The game scene has one enabled camera tagged `MainCamera`; the `Player` prefab has no camera of its own.
 - The `Player` prefab has **Block Prefab** assigned on `PlayerController`.
 - The `Player` and `Block` prefab roots each have `NetworkIdentity` with `SceneId` set to `0`.
@@ -495,16 +359,16 @@ nebula start --workers 2 --open-ui
 
 Press Play in the Editor as a client and connect to `127.0.0.1:7000`. Walk with WASD, turn with the mouse, and press F to place blocks.
 
-Use the dashboard's World map to watch `rt_<id>` containers appear and move between workers. Cross a chunk edge and confirm that the player keeps moving while the overlay's container and worker values change.
+Use the dashboard's World map to watch chunk containers appear and move between workers. Cross a chunk edge and confirm that the player keeps moving while the overlay's container and worker values change.
 
 </Step>
 <Step>
 
 ### Verify chunk retirement and restore
 
-Place a block, walk more than one chunk away, and wait longer than `RetireAfterSeconds`. The owning worker releases the old chunk. Nebula checkpoints and despawns the block before removing the lease.
+Place a block, walk more than one chunk away, and wait longer than `ChunkRetireSeconds` (default 30 seconds). The owning worker releases the old chunk. Nebula checkpoints and despawns the block before removing the lease.
 
-Walk back. The allocator requests the chunk again, the control plane leases it, and persistence restores the block into the same runtime container at its saved pose. The restore starts after `PersistenceRestoreGraceSeconds`, which defaults to 3 seconds, so wait briefly before treating a missing block as a failure.
+Walk back. `NebulaChunks.EnsureAt` requests the chunk again, the control plane leases it, and persistence restores the block into the same runtime container at its saved pose. The restore starts after `PersistenceRestoreGraceSeconds`, which defaults to 3 seconds, so wait briefly before treating a missing block as a failure.
 
 To verify restart persistence:
 
@@ -513,7 +377,7 @@ nebula stop
 nebula start --workers 2 --open-ui
 ```
 
-Blocks in the spawn ring return after workers acquire those chunk leases. Blocks elsewhere return when a player approaches and the allocator requests their chunks.
+The anchored spawn chunk returns as soon as a worker starts. Blocks elsewhere return when a player approaches and `NebulaChunks.EnsureAt` requests their chunk.
 
 Do not pass `--reset-persistence` during this test. That option deletes every saved entity before the mesh starts.
 
@@ -522,9 +386,10 @@ Do not pass `--reset-persistence` during this test. That option deletes every sa
 
 ## What Nebula handles
 
-Once the game supplies allocation and procedural content, Nebula handles:
+Once the game supplies a `RuntimeWorld` and one content callback, Nebula handles:
 
-- stable runtime-container identity and control-plane leases;
+- building the chunk grid and installing it as the runtime container bounds for every role;
+- stable runtime-container identity and control-plane leases, including which chunks are leased around each pawn;
 - cost-balanced chunk assignment across workers;
 - ghosting and authority handover across registered neighboring chunks;
 - container-local network poses;
@@ -532,18 +397,20 @@ Once the game supplies allocation and procedural content, Nebula handles:
 - floating-origin updates to containers, entities, interpolation, and prediction history; and
 - checkpoint and restore of opted-in persistent entities when a runtime chunk retires or changes owner.
 
-Your game still owns terrain generation, asset streaming, placement rules, permissions, and the policy that decides which chunks should exist.
+Your game still owns terrain generation, asset streaming, placement rules, permissions, and player-facing gameplay.
 
 ## Current boundaries
 
 - **Runtime-grid IDs have a fixed coordinate range.** Keep coordinates within `RuntimeGrid.MinCoordinate` and `RuntimeGrid.MaxCoordinate`. Changing the packing later would break persisted chunk IDs.
-- **Procedural content is not network state.** Every role that needs terrain or colliders must generate or load it from the stable chunk ID. Network interactive objects must be registered prefabs spawned by a worker.
+- **Procedural content is not network state.** Every role that needs terrain or colliders must generate or load it from the stable chunk ID inside a `ChunkContent` handler. Network interactive objects must be registered prefabs spawned by a worker.
 - **Persistence is opt-in per entity and field.** The block exists and keeps its pose because it has `PersistentEntity`. Add `[Persist]` to any `NetworkVariable` whose value must also survive. Ordinary fields and transient entities are not restored.
-- **One Unity worker has one floating-origin frame.** `PrepareSpatialFrame` can shift before each authoritative entity's membership query, and the cost policy tends to give a worker spatially neighboring chunks. A game that expects one worker to simulate many extremely distant active regions should measure the cost of repeated shifts.
+- **One Unity worker has one floating-origin frame.** The cost policy tends to give a worker spatially neighboring chunks. A game that expects one worker to simulate many extremely distant active regions should measure the cost of repeated origin shifts.
+- **Interest management bounds who hears about an entity, not who simulates it.** More chunks means more containers to spread across workers, but a single container is still one worker's budget. See [Scaling limits and when to partition](/docs/guides/interest-management#scaling-limits-and-when-to-partition).
+- **Only one anchor exists by default.** `NebulaChunkedWorld` anchors chunk `(0, 0, 0)` so a joining player always has somewhere to spawn. A game that wants another permanently loaded area (a second town, a hub reachable by teleport) adds anchors to `NebulaChunks.Allocator`, or works with the runtime grid and allocator directly — see [Runtime containers](/docs/guides/runtime-containers) for the lower-level API this turnkey path builds on.
 
 <Cards>
-  <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Understand runtime leases, retirement, assignment, and balancing hints." />
-  <Card title="World partition" href="/docs/guides/world-partition" description="Use authored cell scenes or inspect the lower-level floating-origin model." />
+  <Card title="Interest management" href="/docs/guides/interest-management" description="Understand what bounds a client's bandwidth as the world grows, and its limits." />
+  <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Work with leases, retirement, assignment, and balancing hints directly." />
+  <Card title="World partition" href="/docs/guides/world-partition" description="Use authored cell scenes, or the lower-level floating-origin model without chunking." />
   <Card title="Persistence" href="/docs/guides/persistence" description="Choose saved variables, checkpoint timing, stores, and reset behavior." />
-  <Card title="Prediction" href="/docs/guides/prediction" description="Extend the player controller with collision, jumping, and reconciliation state." />
 </Cards>

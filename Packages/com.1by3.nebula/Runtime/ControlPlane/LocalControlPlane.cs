@@ -100,6 +100,7 @@ namespace Nebula
             w.PlayerCount = stats.PlayerCount;
             w.BotCount = stats.BotCount;
             w.ServerDrivenCount = stats.ServerDrivenCount;
+            w.HasGlobalEntities = stats.HasGlobalEntities;
             Touch();
         }
 

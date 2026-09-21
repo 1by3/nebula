@@ -1,0 +1,144 @@
+---
+title: "NebulaChunks"
+description: "The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs)</div>
+
+```csharp
+public static class NebulaChunks
+```
+
+The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates it from [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) plus a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); a game supplies content and nothing else.
+
+Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbours lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
+
+[`Loaded`](#loaded) back-fills: subscribing after chunks already exist raises the event for each of them at once, so a handler added from `Start` on a late-loaded scene object cannot miss a chunk and no game has to write the "and now walk the existing ones" loop that every hand-rolled chunk loader begins with.
+
+## Properties
+
+### Grid [#grid]
+
+```csharp
+public static RuntimeGrid Grid { get; }
+```
+
+The grid this world is built on, or null when the process is not running a chunked world.
+
+### IsActive [#isactive]
+
+```csharp
+public static bool IsActive { get; }
+```
+
+Whether a chunked world is wired up in this process.
+
+### Role [#role]
+
+```csharp
+public static NebulaRoles Role { get; }
+```
+
+The roles this process runs, as reported to every [`ChunkContext`](/docs/reference/world/chunk-context).
+
+### IsHeadless [#isheadless]
+
+```csharp
+public static bool IsHeadless { get; } = true;
+```
+
+Whether this process draws anything (see [`ChunkContext.IsHeadless`](/docs/reference/world/chunk-context#isheadless)).
+
+### Allocator [#allocator]
+
+```csharp
+public static RuntimeGridAllocator Allocator { get; }
+```
+
+The worker-side allocator, when this process is a worker; null otherwise.
+
+### All [#all]
+
+```csharp
+public static IReadOnlyList<Container> All { get; }
+```
+
+Chunks resident in this process right now.
+
+### LoadedCount [#loadedcount]
+
+```csharp
+public static int LoadedCount { get; }
+```
+
+How many chunks are resident in this process right now.
+
+## Events
+
+### Loaded [#loaded]
+
+```csharp
+public static event ChunkHandler Loaded;
+```
+
+A chunk now exists in this process: build its content. Subscribing back-fills every chunk that is already here, so subscription order never decides what a game sees.
+
+### Unloading [#unloading]
+
+```csharp
+public static event ChunkHandler Unloading;
+```
+
+A chunk is about to go: its container object, and everything under [`ChunkContext.Root`](/docs/reference/world/chunk-context#root), is destroyed right after. Only a game holding references outside the chunk has anything to do here.
+
+## Methods
+
+### CoordOf [#coordof]
+
+```csharp
+public static Vector3Int CoordOf(Vector3 framePosition);
+```
+
+The chunk coordinate a position in the current floating-origin frame falls in.
+
+### At [#at]
+
+```csharp
+public static Container At(Vector3 framePosition);
+```
+
+The chunk holding `framePosition` if it is resident in this process, else null.
+
+### IsLoadedAt [#isloadedat]
+
+```csharp
+public static bool IsLoadedAt(Vector3 framePosition);
+```
+
+Whether the chunk holding `framePosition` is resident in this process.
+
+### RootOf [#rootof]
+
+```csharp
+public static Transform RootOf(ulong id);
+```
+
+The content root of a chunk (see [`ChunkContext.Root`](/docs/reference/world/chunk-context#root)), or null if it is not resident.
+
+### EnsureAt [#ensureat]
+
+```csharp
+public static void EnsureAt(Vector3 framePosition, Action<Container> onReady);
+public static void EnsureAt(Vector3Int coord, Action<Container> onReady);
+```
+
+Make sure the chunk holding `framePosition` exists, then hand it over. The spawn-point helper: a game mode that wants to put a player or an object somewhere must not assume a container is there, and must not poll for one either. On a worker this requests the lease; on any role it waits for the registration event, and calls back at once when the chunk is already here.
+
+### SeedOf [#seedof]
+
+```csharp
+public static int SeedOf(ulong id);
+public static int SeedOf(Vector3Int coord);
+```
+
+The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighbouring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.

@@ -182,241 +182,18 @@ public class GatewayFleetTests
 
     // ---------------------------------------------------------------------------------------- fleet
 
-    /// <summary>A worker as the gateway sees it: answers Hello, spawns a pawn per claim, and records what it was told.</summary>
-    private sealed class FakeWorker : IDisposable
-    {
-        public readonly LiteNetTransport Transport = new LiteNetTransport("fake-worker");
-        public readonly int Port;
-        public readonly List<SpawnPlayerMsg> Claims = new();
-        public readonly List<DespawnPlayerMsg> Despawns = new();
-        public readonly Dictionary<int, string> Gateways = new();
-        public readonly List<string> Refused = new();
-        public readonly List<ClientInputMsg> Inputs = new();
-        public bool DeferSpawns;
-        private readonly Dictionary<ulong, ulong> _pawns = new();
-        private readonly Dictionary<ulong, string> _identities = new();
-        private readonly string _meshToken;
-        private ulong _nextNetId = 1000;
-        private readonly NetworkWriter _w = new NetworkWriter();
-
-        public FakeWorker(string meshToken)
-        {
-            _meshToken = meshToken;
-            Transport.Listen(0);
-            Port = Transport.LocalPort;
-        }
-
-        public void Poll()
-        {
-            Transport.Poll(e =>
-            {
-                if (e.Type != TransportEvent.Kind.Data) return;
-                var r = new NetworkReader(e.Data);
-                var id = (MsgId)r.ReadByte();
-                switch (id)
-                {
-                    case MsgId.Hello:
-                    {
-                        var hello = HelloMsg.Read(r);
-                        if (!MeshPeerAuth.Verify(_meshToken, hello.Role, hello.Id, hello.Incarnation, hello.Token, out string error)) { Refused.Add(hello.Id + ": " + error); Transport.Disconnect(e.PeerId); return; }
-                        Gateways[e.PeerId] = hello.Id;
-                        _w.Reset();
-                        new HelloMsg { Role = PeerRole.Worker, Id = "w1", Index = 1, Incarnation = 1, Token = MeshPeerAuth.Issue(_meshToken, PeerRole.Worker, "w1", 1) }.Write(_w);
-                        Transport.Send(e.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
-                        // Announce what we hold, as a real worker does on a gateway's Hello.
-                        foreach (var kv in _pawns) SendSpawn(e.PeerId, kv.Value, kv.Key);
-                        break;
-                    }
-                    case MsgId.SpawnPlayer:
-                    {
-                        var msg = SpawnPlayerMsg.Read(r);
-                        Claims.Add(msg);
-                        if (DeferSpawns) break;
-                        _identities[msg.ClientId] = msg.Identity ?? "";
-                        if (!_pawns.TryGetValue(msg.ClientId, out ulong netId)) { netId = _nextNetId++; _pawns[msg.ClientId] = netId; }
-                        // A worker announces every entity to every gateway it is linked to, not only the claimant.
-                        foreach (int peer in Gateways.Keys) SendSpawn(peer, netId, msg.ClientId);
-                        break;
-                    }
-                    case MsgId.DespawnPlayer: Despawns.Add(DespawnPlayerMsg.Read(r)); break;
-                    case MsgId.ClientInput: Inputs.Add(ClientInputMsg.Read(r)); break;
-                }
-            });
-            Transport.Flush();
-        }
-
-        /// <summary>The distinct pawns handed out, by session. A duplicate player shows up here as two entries.</summary>
-        public IReadOnlyDictionary<ulong, ulong> Pawns => _pawns;
-
-        /// <summary>What a real worker sends a gateway whose session has moved to another gateway.</summary>
-        public void EndSession(string gatewayId, ulong clientId, ulong generation, string reason)
-        {
-            foreach (var kv in Gateways)
-            {
-                if (kv.Value != gatewayId) continue;
-                _w.Reset();
-                new EndSessionMsg { ClientId = clientId, Generation = generation, Reason = reason }.Write(_w);
-                Transport.Send(kv.Key, Delivery.ReliableOrdered, _w.ToSegment());
-                Transport.Flush();
-                return;
-            }
-            throw new InvalidOperationException("no link to gateway " + gatewayId);
-        }
-
-        private void SendSpawn(int peer, ulong netId, ulong owner)
-        {
-            _w.Reset();
-            new EntitySpawnMsg
-            {
-                NetId = netId, OwnerClientId = owner, OwnerIdentity = _identities.TryGetValue(owner, out string identity) ? identity : "",
-                Epoch = 1, Container = new ContainerRef(0), LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
-            }.Write(_w, MsgId.EntitySpawn);
-            Transport.Send(peer, Delivery.ReliableOrdered, _w.ToSegment());
-        }
-
-        public void Dispose() => Transport.Dispose();
-    }
-
-    /// <summary>A client link: sends Hello on connect and collects what the gateway says (unpacking batches).</summary>
-    private sealed class FakeClient : IDisposable
-    {
-        public readonly LiteNetTransport Transport = new LiteNetTransport("fake-client");
-        public WelcomeMsg? Welcome;
-        public JoinRejectedMsg? Rejected;
-        public string? Replaced;
-        public JoinState Join;
-        public int DrainWithin = -1;
-        public bool Disconnected;
-        public readonly List<ulong> Spawned = new();
-        private readonly string _token, _session, _name;
-        private int _peer = -1;
-
-        public FakeClient(int port, string name, string token = "", string session = "")
-        {
-            _name = name; _token = token; _session = session;
-            _peer = Transport.Connect("127.0.0.1", port);
-        }
-
-        public void SendInput()
-        {
-            var w = new NetworkWriter();
-            new ClientInputMsg { Frames = new List<ClientInputMsg.Frame> { new() { Tick = 1, Payload = new byte[] { 1 } } } }.Write(w, MsgId.ClientInput);
-            Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
-        }
-
-        public void Poll()
-        {
-            Transport.Poll(e =>
-            {
-                if (e.Type == TransportEvent.Kind.Connected)
-                {
-                    var w = new NetworkWriter();
-                    new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session }.Write(w);
-                    Transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
-                }
-                else if (e.Type == TransportEvent.Kind.Disconnected) Disconnected = true;
-                else if (e.Type == TransportEvent.Kind.Data) Dispatch(new NetworkReader(e.Data));
-            });
-            Transport.Flush();
-        }
-
-        private void Dispatch(NetworkReader r)
-        {
-            var id = (MsgId)r.ReadByte();
-            switch (id)
-            {
-                case MsgId.Batch:
-                {
-                    int n = r.ReadUShort();
-                    for (int i = 0; i < n; i++) Dispatch(new NetworkReader(r.ReadSegment(r.ReadUShort())));
-                    break;
-                }
-                case MsgId.Welcome: Welcome = WelcomeMsg.Read(r); break;
-                case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
-                case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
-                case MsgId.JoinStatus: Join = JoinStatusMsg.Read(r).State; break;
-                case MsgId.GatewayDraining: DrainWithin = GatewayDrainingMsg.Read(r).ReconnectWithinSeconds; break;
-                case MsgId.EntitySpawn: Spawned.Add(EntitySpawnMsg.Read(r).NetId); break;
-            }
-        }
-
-        public void Disconnect() { Transport.Disconnect(_peer); }
-        public void Dispose() => Transport.Dispose();
-    }
-
-    private sealed class Fleet : IDisposable
-    {
-        public readonly LocalControlPlane Plane = new LocalControlPlane();
-        public readonly FakeWorker Worker;
-        public readonly List<NebulaGateway> Gateways = new();
-        public readonly List<int> Ports = new();
-        public readonly List<FakeClient> Clients = new();
-        public readonly HashSet<NebulaGateway> PausedGateways = new();
-        private readonly string _meshToken;
-
-        public Fleet(int gateways, string meshToken = "", float reclaimSeconds = 30f, bool singleSession = true)
-        {
-            _meshToken = meshToken;
-            Plane.Connect();
-            Worker = new FakeWorker(meshToken);
-            Plane.RegisterWorker("w1", 1, "127.0.0.1", (ushort)Worker.Port);
-            Plane.HeartbeatWorker("w1", WorkerStatus.Ready, new WorkerStats());
-            Plane.EnsureContainer("c0");
-            Plane.AssignContainer("c0", "w1");
-            for (int i = 0; i < gateways; i++)
-            {
-                using var reserve = new UdpClient(0);
-                int port = ((IPEndPoint)reserve.Client.LocalEndPoint!).Port; reserve.Close();
-                var gw = new NebulaGateway();
-                gw.Initialize(new NebulaConfig { GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = meshToken, WebClients = false, SessionReclaimSeconds = reclaimSeconds, SingleSessionPerPlayer = singleSession, GatewayDrainReconnectSeconds = 7 }, Plane, null, "gw" + (i + 1));
-                Gateways.Add(gw);
-                Ports.Add(port);
-            }
-        }
-
-        public FakeClient Connect(int gateway, string name, string token = "", string session = "")
-        {
-            var c = new FakeClient(Ports[gateway], name, token, session);
-            Clients.Add(c);
-            return c;
-        }
-
-        /// <summary>Pump everything until <paramref name="until"/> holds or the time is up; returns whether it held.</summary>
-        public bool Run(Func<bool> until, double seconds = 5)
-        {
-            var clock = Stopwatch.StartNew();
-            bool ok = false;
-            while (clock.Elapsed.TotalSeconds < seconds && !(ok = until()))
-            {
-                Plane.HeartbeatWorker("w1", WorkerStatus.Ready, new WorkerStats());
-                Plane.Tick();
-                foreach (var g in Gateways) if (!PausedGateways.Contains(g)) g.Tick();
-                Worker.Poll();
-                foreach (var c in Clients) c.Poll();
-                Thread.Sleep(5);
-            }
-            return ok;
-        }
-
-        public void Dispose()
-        {
-            foreach (var c in Clients) c.Dispose();
-            foreach (var g in Gateways) g.Dispose();
-            Worker.Dispose();
-            Plane.Dispose();
-        }
-    }
-
     [Test]
     public void TwoGatewaysIssueDistinctSessionIdsAndBothReachTheWorker()
     {
         using var fleet = new Fleet(2);
-        Assert.That(fleet.Run(() => fleet.Worker.Gateways.Count == 2), Is.True, "both gateways dial the worker");
         Assert.That(fleet.Gateways[0].Incarnation, Is.Not.EqualTo(fleet.Gateways[1].Incarnation));
+        fleet.RunFor(0.3);
+        Assert.That(fleet.Worker.Gateways, Is.Empty, "a gateway with no clients has no reason to hold a worker link (design §5)");
 
         var a = fleet.Connect(0, "ann");
         var b = fleet.Connect(1, "bob");
         Assert.That(fleet.Run(() => a.Join == JoinState.Joined && b.Join == JoinState.Joined), Is.True, "both clients get a pawn");
+        Assert.That(fleet.Worker.Gateways.Count, Is.EqualTo(2), "and now both gateways need the worker, so both dial it");
         Assert.That(a.Welcome!.Value.ClientId, Is.Not.EqualTo(b.Welcome!.Value.ClientId));
         Assert.That(SessionIds.Incarnation(a.Welcome.Value.ClientId), Is.EqualTo(fleet.Gateways[0].Incarnation));
         Assert.That(SessionIds.Incarnation(b.Welcome.Value.ClientId), Is.EqualTo(fleet.Gateways[1].Incarnation));
@@ -473,7 +250,7 @@ public class GatewayFleetTests
         Assert.That(fleet.Run(() => fleet.Worker.Claims.Count == 2), Is.True, "the worker receives the reclaim after the gateway welcomes the client");
         Assert.That(fleet.Worker.Claims[1].ClientId, Is.EqualTo(welcome.ClientId));
         Assert.That(fleet.Worker.Claims[1].Generation, Is.GreaterThan(generation), "the reclaim outranks the old gateway");
-        Assert.That(second.Spawned, Does.Contain(1000ul), "the worker re-announced the same pawn, not a new one");
+        Assert.That(fleet.Run(() => second.Spawned.Contains(1000ul)), Is.True, "the worker re-announced the same pawn, not a new one");
 
         // A token for another identity does not reclaim the session.
         var stranger = fleet.Connect(0, "eve", "", welcome.SessionToken);
@@ -517,6 +294,8 @@ public class GatewayFleetTests
     public void AGatewayRegistersAgainWhenTheControlPlaneForgetsIt()
     {
         using var fleet = new Fleet(1);
+        var client = fleet.Connect(0, "ann");
+        Assert.That(fleet.Run(() => client.Join == JoinState.Joined), Is.True);
         Assert.That(fleet.Run(() => fleet.Plane.FindGateway("gw1") is { } g && g.Stats.Ready), Is.True);
         uint incarnation = fleet.Plane.FindGateway("gw1")!.Incarnation;
 
@@ -531,6 +310,7 @@ public class GatewayFleetTests
     public void PeersWithoutTheMeshTokenAreRefused()
     {
         using var honest = new Fleet(1, "secret");
+        honest.Connect(0, "ann");
         Assert.That(honest.Run(() => honest.Worker.Gateways.Count == 1), Is.True, "a gateway with the mesh token is accepted by the worker");
         Assert.That(honest.Run(() => honest.Gateways[0].WorkerCount == 1), Is.True, "and the worker's own credential is accepted by the gateway");
         Assert.That(honest.Worker.Refused, Is.Empty);
@@ -572,7 +352,9 @@ public class GatewayFleetTests
         Assert.That(fleet.Run(() => second.Join == JoinState.Joined), Is.True);
         Assert.That(second.Welcome!.Value.ClientId, Is.EqualTo(welcome.ClientId), "the newer connection took the session over");
         Assert.That(second.Welcome.Value.Reclaimed, Is.True);
-        Assert.That(second.Spawned, Does.Contain(1000ul), "and the pawn that was already in the world");
+        // Spawns ride the batched reliable channel now, one flush behind the join status that is sent directly,
+        // so the pawn arrives just after the join completes rather than with it.
+        Assert.That(fleet.Run(() => second.Spawned.Contains(1000ul)), Is.True, "and the pawn that was already in the world");
         Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1), "one player, one pawn");
 
         Assert.That(fleet.Run(() => first.Replaced != null && first.Disconnected), Is.True, "the earlier connection is told why and closed");
@@ -608,7 +390,7 @@ public class GatewayFleetTests
         var first = fleet.Connect(0, "ann");
         Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
         var welcome = first.Welcome!.Value;
-        Assert.That(fleet.Run(() => fleet.Gateways[1].EntityCount == 1), Is.True, "every gateway is told about every entity");
+        Assert.That(fleet.Gateways[1].EntityCount, Is.Zero, "a gateway with no clients caches nothing (design §5): it is not told about other gateways' entities");
 
         // No session token, and gw2 has never seen this client: the pawn's identity is what identifies the player.
         var second = fleet.Connect(1, "ann", welcome.Token);

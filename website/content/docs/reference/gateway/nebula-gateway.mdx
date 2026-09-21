@@ -137,6 +137,54 @@ public SessionTokens Sessions { get; }
 
 Issues and checks the session tokens clients reconnect with.
 
+### InterestPolicy [#interestpolicy]
+
+```csharp
+public IInterestPolicy InterestPolicy { get; set; }
+```
+
+The game's say in what each client hears about (design §7). Defaults to [`DefaultInterestPolicy`](/docs/reference/interest/default-interest-policy): one focus at the pawn plus the client's validated hint. Compose several with [`InterestPolicies.Combine`](/docs/reference/interest/interest-policies#combine). Setting it re-evaluates every client at once.
+
+### InterestSettingsInUse [#interestsettingsinuse]
+
+```csharp
+public InterestSettings InterestSettingsInUse { get; }
+```
+
+The resolved interest knobs this gateway runs on (clamped; see [`InterestSettings.Validate`](/docs/reference/interest/interest-settings#validate)).
+
+### InterestGridInUse [#interestgridinuse]
+
+```csharp
+public InterestGrid InterestGridInUse { get; }
+```
+
+The region grid both ends must agree on; it travels in every subscription message.
+
+### CachedEntityCount [#cachedentitycount]
+
+```csharp
+public int CachedEntityCount { get; }
+```
+
+Entity records cached: what this gateway's clients' subscriptions bring in, not the world.
+
+### SubscribedRegionCount [#subscribedregioncount]
+
+```csharp
+public int SubscribedRegionCount { get; }
+```
+
+Distinct regions subscribed across every worker link.
+
+### WorkerLinkCount [#workerlinkcount]
+
+```csharp
+public int WorkerLinkCount { get; }
+```
+
+Worker links currently held, for a test or an operator that wants the number without the heartbeat.
+
 ## Methods
 
 ### Initialize [#initialize]
@@ -165,3 +213,35 @@ public void StopDraining();
 ```
 
 Cancel a drain (the fleet changed its mind): new clients are accepted again.
+
+### SetClientTag [#setclienttag]
+
+```csharp
+public void SetClientTag(ulong clientId, byte team);
+```
+
+A byte the game attaches to a client for its policy to filter on (team, faction, party). It is server state: the client never sends it, which is what makes a team filter a security boundary rather than a suggestion. Changing it re-evaluates the client at once.
+
+### GetClientTag [#getclienttag]
+
+```csharp
+public byte GetClientTag(ulong clientId);
+```
+
+What [`SetClientTag`](#setclienttag) last set for this client (0 by default).
+
+### MarkInterestDirty [#markinterestdirty]
+
+```csharp
+public void MarkInterestDirty(ulong clientId);
+```
+
+Re-evaluate this client on the next tick rather than at its next scheduled evaluation. The game calls it when something its policy depends on changed (a party, a fog-of-war reveal); the gateway calls it when the pawn, instance, carrier or focus region changed.
+
+### InterestSetSize [#interestsetsize]
+
+```csharp
+public int InterestSetSize(ulong clientId);
+```
+
+Entities in one client's set right now (-1 when there is no such client). For tests and tooling.

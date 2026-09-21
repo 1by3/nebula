@@ -1,0 +1,40 @@
+---
+title: "EntityRedirectMsg"
+description: "Worker -> gateway: an entity the gateway subscribed by id (a policy extra, or one it owns) is now on another worker."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct EntityRedirectMsg
+```
+
+Worker -\> gateway: an entity the gateway subscribed by id (a policy extra, or one it owns) is now on another worker. The gateway links that worker instead of asking every live one for the id.
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### NewWorkerIndex [#newworkerindex]
+
+```csharp
+public ushort NewWorkerIndex;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static EntityRedirectMsg Read(NetworkReader r);
+```

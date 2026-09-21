@@ -1,0 +1,84 @@
+---
+title: "InterestFocus"
+description: "One place a client is interested in: a point (the usual case, its pawn) or a box (an ObservePublic window, an RTS selection)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public struct InterestFocus
+```
+
+One place a client is interested in: a point (the usual case, its pawn) or a box (an `ObservePublic` window, an RTS selection). Positions are absolute world coordinates in double, like every other interest input, so a floating-origin shift changes nothing.
+
+## Fields
+
+### X, Y, Z [#x-y-z]
+
+```csharp
+public double X, Y, Z;
+```
+
+### HalfX, HalfY, HalfZ [#halfx-halfy-halfz]
+
+```csharp
+public double HalfX, HalfY, HalfZ;
+```
+
+Half extents; all zero for a point focus.
+
+### RadiusScale [#radiusscale]
+
+```csharp
+public float RadiusScale;
+```
+
+Scales the radius used around this focus (0.5 = half as far). 1 for the usual focus.
+
+### SourceNetId [#sourcenetid]
+
+```csharp
+public ulong SourceNetId;
+```
+
+The entity this focus follows, when it follows one (the pawn, an owned unit). 0 otherwise.
+
+## Properties
+
+### IsBox [#isbox]
+
+```csharp
+public bool IsBox { get; }
+```
+
+## Methods
+
+### Point [#point]
+
+```csharp
+public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0);
+```
+
+### Box [#box]
+
+```csharp
+public static InterestFocus Box(double centerX, double centerY, double centerZ, double sizeX, double sizeY, double sizeZ, float radiusScale = 1f);
+```
+
+A box focus, from its centre and full size.
+
+### SqrDistanceTo [#sqrdistanceto]
+
+```csharp
+public double SqrDistanceTo(double x, double y, double z);
+```
+
+Squared distance from this focus to a point; 0 inside a box focus.
+
+### Scaled [#scaled]
+
+```csharp
+public double Scaled(double radius);
+```
+
+The effective radius around this focus for an entity whose relevance radius is `radius`.

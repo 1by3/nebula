@@ -111,6 +111,10 @@ A dynamic reference can arrive before the carrier. For example, the gateway can 
 
 The gateway uses the carrier pose to reconstruct a passenger's world position for clients. It does not instantiate carrier entities itself.
 
+## Interest behavior
+
+An entity inside a dynamic container is bucketed for [interest management](/docs/guides/interest-management) at its carrier's position, and inherits the carrier's enter and exit decision for each client. Everything riding a carrier enters and leaves a client's set together with it, at any speed, instead of a passenger popping in or out independently as it nears a region edge. A client also only learns the dynamic container exists (through `ContainerOwnership`) once one of its entities is in that client's interest set.
+
 ## Inspect dynamic containers
 
 Open the dashboard's [World map](/docs/guides/orchestrator-and-dashboard#inspect-the-world-map) to inspect:

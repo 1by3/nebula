@@ -50,6 +50,8 @@ namespace Nebula
         private readonly SortedDictionary<string, Document> _documents = new SortedDictionary<string, Document>(StringComparer.Ordinal);
         /// <summary>The latest per-container counts, by container id, from whichever worker reported each container last.</summary>
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>The latest interest summary per worker (design §12), from the same documents.</summary>
+        private readonly Dictionary<string, WorkerInterest> _interest = new Dictionary<string, WorkerInterest>(StringComparer.Ordinal);
         private readonly List<KeyValuePair<string, ContainerLoad>> _parsed = new List<KeyValuePair<string, ContainerLoad>>();
         private readonly List<string> _expired = new List<string>();
         private readonly StringBuilder _sb = new StringBuilder(1 << 16);
@@ -131,6 +133,12 @@ namespace Nebula
                     load.ReceivedAt = now;
                     _occupancy[_parsed[i].Key] = load;
                 }
+                if (ParseInterest(json, out var interest))
+                {
+                    interest.ReceivedAt = now;
+                    _interest[workerId] = interest;
+                }
+                else _interest.Remove(workerId);
             }
             return null;
         }
@@ -214,6 +222,110 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// The interest summary of one worker's latest document (design §12): how much of what it holds it
+        /// actually sends, what that costs, and whether it is asking for the world to be partitioned (§11).
+        /// </summary>
+        public struct WorkerInterest
+        {
+            public int Regions;
+            public int Gateways;
+            public double FilterMs;
+            public bool Global;
+            public long EntriesSent, EntriesTotal, BytesSent, BytesUnfiltered;
+            public string Warning;
+            public double ReceivedAt;
+        }
+
+        /// <summary>
+        /// Snapshot each worker's interest summary into <paramref name="result"/> (cleared first), dropping reports
+        /// older than <see cref="ExpireSeconds"/>. This is what the dashboard's worker rows read.
+        /// </summary>
+        public void CopyInterest(Dictionary<string, WorkerInterest> result)
+        {
+            result.Clear();
+            lock (_lock)
+            {
+                double now = _now();
+                foreach (var kv in _interest) if (now - kv.Value.ReceivedAt <= ExpireSeconds) result[kv.Key] = kv.Value;
+            }
+        }
+
+        /// <summary>
+        /// Pull the <c>"interest"</c> object out of a worker document without parsing the rest of it. Deliberately
+        /// narrow: it reads the flat numeric and string properties of that one object and stops at its nested
+        /// <c>"gateways"</c> array, which only the map page needs.
+        /// </summary>
+        public static bool ParseInterest(string json, out WorkerInterest interest)
+        {
+            interest = new WorkerInterest { Warning = "" };
+            int at = json.IndexOf("\"interest\"", StringComparison.Ordinal);
+            if (at < 0) return false;
+            at = json.IndexOf('{', at);
+            if (at < 0) return false;
+            at++;
+            while (at < json.Length)
+            {
+                while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+                if (at >= json.Length || json[at] == '}') return true;
+                if (json[at] != '"') return true;
+                int keyEnd = json.IndexOf('"', at + 1);
+                if (keyEnd < 0) return true;
+                string key = json.Substring(at + 1, keyEnd - at - 1);
+                at = json.IndexOf(':', keyEnd);
+                if (at < 0) return true;
+                at++;
+                while (at < json.Length && char.IsWhiteSpace(json[at])) at++;
+                if (at >= json.Length) return true;
+                char c = json[at];
+                if (c == '[')
+                {
+                    // The per-gateway rows: counted here, read in full only by the map page.
+                    int depth = 0;
+                    int count = 0;
+                    for (; at < json.Length; at++)
+                    {
+                        if (json[at] == '[') depth++;
+                        else if (json[at] == ']') { depth--; if (depth == 0) { at++; break; } }
+                        else if (json[at] == '{' && depth == 1) count++;
+                    }
+                    if (key == "gateways") interest.Gateways = count;
+                }
+                else if (c == '"')
+                {
+                    int strEnd = at + 1;
+                    while (strEnd < json.Length && json[strEnd] != '"') { if (json[strEnd] == '\\') strEnd++; strEnd++; }
+                    if (strEnd >= json.Length) return true;
+                    if (key == "warning") interest.Warning = json.Substring(at + 1, strEnd - at - 1);
+                    at = strEnd + 1;
+                }
+                else if (c == 't' || c == 'f')
+                {
+                    bool value = c == 't';
+                    while (at < json.Length && char.IsLetter(json[at])) at++;
+                    if (key == "global") interest.Global = value;
+                }
+                else
+                {
+                    int numEnd = at;
+                    while (numEnd < json.Length && (char.IsDigit(json[numEnd]) || json[numEnd] == '-' || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '+')) numEnd++;
+                    if (numEnd == at) return true;
+                    double.TryParse(json.Substring(at, numEnd - at), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
+                    switch (key)
+                    {
+                        case "regions": interest.Regions = (int)value; break;
+                        case "filterMs": interest.FilterMs = value; break;
+                        case "entriesSent": interest.EntriesSent = (long)value; break;
+                        case "entriesTotal": interest.EntriesTotal = (long)value; break;
+                        case "bytesSent": interest.BytesSent = (long)value; break;
+                        case "bytesUnfiltered": interest.BytesUnfiltered = (long)value; break;
+                    }
+                    at = numEnd;
+                }
+            }
+            return true;
+        }
+
         /// <summary>Drop a worker's document now instead of waiting for it to expire.</summary>
         public void Forget(string workerId)
         {
@@ -221,6 +333,7 @@ namespace Nebula
             lock (_lock)
             {
                 _documents.Remove(workerId);
+                _interest.Remove(workerId);
                 _expired.Clear();
                 foreach (var kv in _occupancy) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
                 foreach (var id in _expired) _occupancy.Remove(id);

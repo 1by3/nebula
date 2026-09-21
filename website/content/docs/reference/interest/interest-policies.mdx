@@ -1,0 +1,23 @@
+---
+title: "InterestPolicies"
+description: "Combining policies, so a game can add one concern (parties) without rewriting another (fog of war)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public static class InterestPolicies
+```
+
+Combining policies, so a game can add one concern (parties) without rewriting another (fog of war).
+
+## Methods
+
+### Combine [#combine]
+
+```csharp
+public static IInterestPolicy Combine(IInterestPolicy a, IInterestPolicy b);
+public static IInterestPolicy Combine(params IInterestPolicy[] policies);
+```
+
+Union of the foci and explicit entities, and the AND of the authorizations: a policy can only ever take an entity away from a client, never grant one another policy refused.

@@ -1,0 +1,510 @@
+2026-09-21T07:23:46.9461850Z [nebula] timer resolution 1 ms requested; background throttling opt-out ok
+2026-09-21T07:23:47.0156635Z [nebula] control plane: mirroring http://127.0.0.1:7080/api/control-plane
+2026-09-21T07:23:47.1426224Z [nebula] web clients: signaling at http://127.0.0.1:7000/nebula/rtc, WebRTC on udp/7001; serving the web build from C:\Dev\nebula-shootergame\Builds\Web at http://127.0.0.1:7000/
+2026-09-21T07:23:47.1523588Z [nebula] interest: radius 120 m (+16 exit, +32 subscribe), grid(64x64x64 @ -1024,-1024,-1024, planar), eval 4 Hz
+2026-09-21T07:23:47.1526453Z [nebula] gateway gw1 (incarnation cd8a37db) listening on udp/7000; no mesh token: any worker is trusted
+2026-09-21T07:23:47.1562141Z [nebula] auth: anonymous identities on, signing key from C:\Dev\nebula-shootergame\Builds\Win64\nebula-auth.key
+2026-09-21T07:23:47.1570967Z [nebula] standalone gateway started; 77 baked containers
+2026-09-21T07:23:47.1574338Z [nebula] control plane: connected to http://127.0.0.1:7080 (version 80)
+2026-09-21T07:23:47.1642895Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:47.1644984Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:48.1650690Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:48.1651127Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:49.1657074Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:49.1657575Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:50.1694448Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:50.1694842Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:51.1697955Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:51.1698382Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:52.1607849Z [nebula] loop 240 Hz, period max 27.6 ms, tick avg 0.06 ms max 27.6 ms
+2026-09-21T07:23:52.1699448Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 0 client(s); 0 entities known
+2026-09-21T07:23:52.1699794Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.00/0.00 ms
+2026-09-21T07:23:53.0598848Z [nebula] client 14810711738298662914 'bot8' (bot) connected as f8ffaa403ba9.. (new anonymous identity)
+2026-09-21T07:23:53.0729866Z [nebula] client 14810711738298662914 'bot8' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0735514Z [nebula] no container available to spawn client 14810711738298662914 yet; holding the join (world starting)
+2026-09-21T07:23:53.0736045Z [nebula] client 14810711738298662915 'bot7' (bot) connected as 85a26e28a219.. (new anonymous identity)
+2026-09-21T07:23:53.0738630Z [nebula] client 14810711738298662915 'bot7' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0738838Z [nebula] no container available to spawn client 14810711738298662915 yet; holding the join (world starting)
+2026-09-21T07:23:53.0740379Z [nebula] client 14810711738298662918 'bot5' (bot) connected as 1b551e76ad59.. (new anonymous identity)
+2026-09-21T07:23:53.0742223Z [nebula] client 14810711738298662918 'bot5' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0742696Z [nebula] no container available to spawn client 14810711738298662918 yet; holding the join (world starting)
+2026-09-21T07:23:53.0742857Z [nebula] client 14810711738298662913 'bot4' (bot) connected as 37a54177521b.. (new anonymous identity)
+2026-09-21T07:23:53.0743227Z [nebula] client 14810711738298662913 'bot4' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0743280Z [nebula] no container available to spawn client 14810711738298662913 yet; holding the join (world starting)
+2026-09-21T07:23:53.0743333Z [nebula] client 14810711738298662916 'bot6' (bot) connected as b048de2ee9e9.. (new anonymous identity)
+2026-09-21T07:23:53.0743513Z [nebula] client 14810711738298662916 'bot6' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0743580Z [nebula] no container available to spawn client 14810711738298662916 yet; holding the join (world starting)
+2026-09-21T07:23:53.0743672Z [nebula] client 14810711738298662919 'bot3' (bot) connected as 31c85a16d70b.. (new anonymous identity)
+2026-09-21T07:23:53.0743853Z [nebula] client 14810711738298662919 'bot3' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0743903Z [nebula] no container available to spawn client 14810711738298662919 yet; holding the join (world starting)
+2026-09-21T07:23:53.0743969Z [nebula] client 14810711738298662917 'bot1' (bot) connected as f803dc8134c4.. (new anonymous identity)
+2026-09-21T07:23:53.0744428Z [nebula] client 14810711738298662917 'bot1' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0744481Z [nebula] no container available to spawn client 14810711738298662917 yet; holding the join (world starting)
+2026-09-21T07:23:53.0744537Z [nebula] client 14810711738298662920 'bot2' (bot) connected as 868344d684d8.. (new anonymous identity)
+2026-09-21T07:23:53.0744717Z [nebula] client 14810711738298662920 'bot2' is waiting for the world to start (about 3 s)
+2026-09-21T07:23:53.0744812Z [nebula] no container available to spawn client 14810711738298662920 yet; holding the join (world starting)
+2026-09-21T07:23:53.1733858Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 8 client(s); 0 entities known
+2026-09-21T07:23:53.1734519Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 0 (region=0,foci=0,global=0,explicit=0,spawn=0,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.66/5.27 ms
+2026-09-21T07:23:53.2513651Z [nebula] dialing worker w1 at 127.0.0.1:7101 (interest)
+2026-09-21T07:23:53.2517668Z [nebula] dialing worker w2 at 127.0.0.1:7102 (interest)
+2026-09-21T07:23:53.2519410Z [nebula] dialing worker w3 at 127.0.0.1:7103 (interest)
+2026-09-21T07:23:53.2521063Z [nebula] dialing worker w4 at 127.0.0.1:7104 (interest)
+2026-09-21T07:23:53.2751725Z [nebula] worker w2 (index 2) connected
+2026-09-21T07:23:53.2773478Z [nebula] worker w4 (index 4) connected
+2026-09-21T07:23:53.2810797Z [nebula] worker w3 (index 3) connected
+2026-09-21T07:23:53.2949793Z [nebula] worker w1 (index 1) connected
+2026-09-21T07:23:54.1736885Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 8 client(s); 0 entities known
+2026-09-21T07:23:54.1738095Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 4 (region=0,foci=0,global=0,explicit=0,spawn=4,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.01/0.03 ms
+2026-09-21T07:23:55.1791719Z [nebula] worldstate: 0 packets 0 entries in; dropped unknown=0 stale=0 wrongOwner=0; 0 entries sent to 8 client(s); 0 entities known
+2026-09-21T07:23:55.1794756Z [nebula] interest: set 0/0 per client, cache 0, regions 0, links 4 (region=0,foci=0,global=0,explicit=0,spawn=4,owned=0), spawns 0 despawns 0 since the last heartbeat, eval 0.01/0.08 ms
+2026-09-21T07:23:56.1828289Z [nebula] worldstate: 16 packets 32 entries in; dropped unknown=0 stale=0 wrongOwner=0; 24 entries sent to 8 client(s); 61 entities known
+2026-09-21T07:23:56.1829492Z [nebula] interest: set 18/30 per client, cache 61, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 149 despawns 0 since the last heartbeat, eval 1.17/44.10 ms
+2026-09-21T07:23:57.1618961Z [nebula] loop 240 Hz, period max 63.7 ms, tick avg 0.46 ms max 63.7 ms
+2026-09-21T07:23:57.1853168Z [nebula] worldstate: 362 packets 2795 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2358 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:23:57.1856604Z [nebula] interest: set 40/49 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 118 despawns 0 since the last heartbeat, eval 0.10/0.29 ms
+2026-09-21T07:23:58.1906344Z [nebula] worldstate: 304 packets 2517 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2156 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:23:58.1908402Z [nebula] interest: set 40/49 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.12/0.42 ms
+2026-09-21T07:23:59.1907365Z [nebula] worldstate: 277 packets 2222 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1889 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:23:59.1911051Z [nebula] interest: set 40/49 per client, cache 155, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.13/0.31 ms
+2026-09-21T07:24:00.1939163Z [nebula] worldstate: 288 packets 2312 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1949 entries sent to 8 client(s); 145 entities known
+2026-09-21T07:24:00.1940960Z [nebula] interest: set 37/47 per client, cache 145, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 19 since the last heartbeat, eval 0.21/0.60 ms
+2026-09-21T07:24:01.1940092Z [nebula] worldstate: 294 packets 2129 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1812 entries sent to 8 client(s); 145 entities known
+2026-09-21T07:24:01.1946663Z [nebula] interest: set 37/47 per client, cache 145, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.26 ms
+2026-09-21T07:24:02.1645144Z [nebula] loop 240 Hz, period max 44.5 ms, tick avg 0.50 ms max 44.5 ms
+2026-09-21T07:24:02.1940602Z [nebula] worldstate: 293 packets 1741 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1430 entries sent to 8 client(s); 145 entities known
+2026-09-21T07:24:02.1943553Z [nebula] interest: set 37/47 per client, cache 145, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.17 ms
+2026-09-21T07:24:03.1945009Z [nebula] worldstate: 285 packets 1664 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1354 entries sent to 8 client(s); 145 entities known
+2026-09-21T07:24:03.1945784Z [nebula] interest: set 37/47 per client, cache 145, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.25 ms
+2026-09-21T07:24:04.1947535Z [nebula] worldstate: 280 packets 1546 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1221 entries sent to 8 client(s); 145 entities known
+2026-09-21T07:24:04.1949431Z [nebula] interest: set 37/47 per client, cache 145, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.21 ms
+2026-09-21T07:24:05.1980311Z [nebula] worldstate: 311 packets 1864 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1534 entries sent to 8 client(s); 146 entities known
+2026-09-21T07:24:05.1982355Z [nebula] interest: set 37/47 per client, cache 146, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.59 ms
+2026-09-21T07:24:06.1981210Z [nebula] worldstate: 312 packets 2095 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1835 entries sent to 8 client(s); 146 entities known
+2026-09-21T07:24:06.1982516Z [nebula] interest: set 37/47 per client, cache 146, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.45 ms
+2026-09-21T07:24:07.1655704Z [nebula] loop 240 Hz, period max 45.3 ms, tick avg 0.32 ms max 45.3 ms
+2026-09-21T07:24:07.1982977Z [nebula] worldstate: 297 packets 1817 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1571 entries sent to 8 client(s); 146 entities known
+2026-09-21T07:24:07.1983528Z [nebula] interest: set 37/47 per client, cache 146, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.33 ms
+2026-09-21T07:24:08.1985444Z [nebula] worldstate: 294 packets 1582 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1310 entries sent to 8 client(s); 146 entities known
+2026-09-21T07:24:08.1985758Z [nebula] interest: set 37/47 per client, cache 146, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.03/0.15 ms
+2026-09-21T07:24:09.1989544Z [nebula] worldstate: 292 packets 1620 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1195 entries sent to 8 client(s); 146 entities known
+2026-09-21T07:24:09.1991168Z [nebula] interest: set 37/47 per client, cache 146, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.04/0.13 ms
+2026-09-21T07:24:10.2026519Z [nebula] worldstate: 292 packets 1681 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1308 entries sent to 8 client(s); 147 entities known
+2026-09-21T07:24:10.2027634Z [nebula] interest: set 37/47 per client, cache 147, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.25 ms
+2026-09-21T07:24:11.2028642Z [nebula] worldstate: 309 packets 2024 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1659 entries sent to 8 client(s); 147 entities known
+2026-09-21T07:24:11.2030905Z [nebula] interest: set 37/47 per client, cache 147, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.03/0.19 ms
+2026-09-21T07:24:12.1705943Z [nebula] loop 240 Hz, period max 39.5 ms, tick avg 0.24 ms max 39.5 ms
+2026-09-21T07:24:12.2066729Z [nebula] worldstate: 299 packets 1638 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1308 entries sent to 8 client(s); 147 entities known
+2026-09-21T07:24:12.2068645Z [nebula] interest: set 38/47 per client, cache 147, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.05/0.21 ms
+2026-09-21T07:24:13.2075389Z [nebula] worldstate: 296 packets 1747 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1354 entries sent to 8 client(s); 147 entities known
+2026-09-21T07:24:13.2075675Z [nebula] interest: set 37/47 per client, cache 147, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 1 since the last heartbeat, eval 0.15/2.58 ms
+2026-09-21T07:24:14.2107422Z [nebula] worldstate: 294 packets 1609 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1242 entries sent to 8 client(s); 147 entities known
+2026-09-21T07:24:14.2107913Z [nebula] interest: set 37/47 per client, cache 147, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.69 ms
+2026-09-21T07:24:15.2110344Z [nebula] worldstate: 293 packets 1841 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1429 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:24:15.2111510Z [nebula] interest: set 40/50 per client, cache 154, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 19 despawns 0 since the last heartbeat, eval 0.06/0.22 ms
+2026-09-21T07:24:16.2145920Z [nebula] worldstate: 315 packets 2475 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2092 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:24:16.2146239Z [nebula] interest: set 40/50 per client, cache 154, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.46 ms
+2026-09-21T07:24:17.1734632Z [nebula] loop 240 Hz, period max 45.4 ms, tick avg 0.33 ms max 45.4 ms
+2026-09-21T07:24:17.2148389Z [nebula] worldstate: 341 packets 2287 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1990 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:24:17.2148631Z [nebula] interest: set 40/50 per client, cache 154, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.06/0.63 ms
+2026-09-21T07:24:18.2152168Z [nebula] worldstate: 329 packets 2355 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2148 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:24:18.2152750Z [nebula] interest: set 40/50 per client, cache 154, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.10/0.57 ms
+2026-09-21T07:24:19.2153075Z [nebula] worldstate: 313 packets 2311 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2033 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:24:19.2153802Z [nebula] interest: set 40/50 per client, cache 154, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.24 ms
+2026-09-21T07:24:20.2206125Z [nebula] worldstate: 333 packets 2525 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2120 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:20.2208195Z [nebula] interest: set 40/50 per client, cache 155, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.55 ms
+2026-09-21T07:24:21.2228806Z [nebula] worldstate: 324 packets 2380 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1904 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:21.2230075Z [nebula] interest: set 40/50 per client, cache 155, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.17 ms
+2026-09-21T07:24:22.1737802Z [nebula] loop 240 Hz, period max 42.3 ms, tick avg 0.30 ms max 42.3 ms
+2026-09-21T07:24:22.2292258Z [nebula] worldstate: 311 packets 2099 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1729 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:22.2292729Z [nebula] interest: set 40/50 per client, cache 155, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.12/0.77 ms
+2026-09-21T07:24:23.2315364Z [nebula] worldstate: 298 packets 1880 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1583 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:23.2316127Z [nebula] interest: set 40/50 per client, cache 155, regions 161, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.38 ms
+2026-09-21T07:24:24.2324798Z [nebula] worldstate: 325 packets 2133 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1782 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:24.2325620Z [nebula] interest: set 40/50 per client, cache 155, regions 164, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.06/0.32 ms
+2026-09-21T07:24:25.2363239Z [nebula] worldstate: 349 packets 2396 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1984 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:25.2367225Z [nebula] interest: set 39/50 per client, cache 155, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 3 since the last heartbeat, eval 0.07/0.44 ms
+2026-09-21T07:24:26.2399311Z [nebula] worldstate: 345 packets 2395 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1965 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:26.2400034Z [nebula] interest: set 39/50 per client, cache 155, regions 164, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.13/2.24 ms
+2026-09-21T07:24:27.1775466Z [nebula] loop 240 Hz, period max 35.3 ms, tick avg 0.28 ms max 35.3 ms
+2026-09-21T07:24:27.2400828Z [nebula] worldstate: 334 packets 2323 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1856 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:27.2401533Z [nebula] interest: set 39/50 per client, cache 155, regions 165, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.31 ms
+2026-09-21T07:24:28.2403805Z [nebula] worldstate: 306 packets 2146 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1810 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:28.2404714Z [nebula] interest: set 39/50 per client, cache 155, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.07/0.77 ms
+2026-09-21T07:24:29.2405257Z [nebula] worldstate: 304 packets 2104 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1799 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:29.2407283Z [nebula] interest: set 39/50 per client, cache 155, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.05/0.16 ms
+2026-09-21T07:24:30.2438014Z [nebula] worldstate: 347 packets 2568 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2000 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:30.2438703Z [nebula] interest: set 39/50 per client, cache 155, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.16 ms
+2026-09-21T07:24:31.2446092Z [nebula] worldstate: 380 packets 2520 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1980 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:31.2446625Z [nebula] interest: set 39/50 per client, cache 155, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.22 ms
+2026-09-21T07:24:32.1819626Z [nebula] loop 240 Hz, period max 184.9 ms, tick avg 0.30 ms max 43.7 ms
+2026-09-21T07:24:32.2486962Z [nebula] worldstate: 362 packets 2174 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1716 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:32.2487194Z [nebula] interest: set 39/50 per client, cache 155, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.59 ms
+2026-09-21T07:24:33.2492558Z [nebula] worldstate: 323 packets 2168 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1642 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:33.2492808Z [nebula] interest: set 39/50 per client, cache 155, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.05/0.20 ms
+2026-09-21T07:24:34.2528596Z [nebula] worldstate: 339 packets 2282 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1731 entries sent to 8 client(s); 155 entities known
+2026-09-21T07:24:34.2530683Z [nebula] interest: set 40/50 per client, cache 155, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.07/0.31 ms
+2026-09-21T07:24:35.2530708Z [nebula] worldstate: 340 packets 2400 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1832 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:35.2531542Z [nebula] interest: set 40/50 per client, cache 156, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 3 despawns 0 since the last heartbeat, eval 0.04/0.16 ms
+2026-09-21T07:24:36.2562232Z [nebula] worldstate: 356 packets 2433 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1837 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:36.2562999Z [nebula] interest: set 40/50 per client, cache 156, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.06/0.19 ms
+2026-09-21T07:24:37.1856697Z [nebula] loop 240 Hz, period max 37.2 ms, tick avg 0.29 ms max 37.2 ms
+2026-09-21T07:24:37.2575120Z [nebula] worldstate: 320 packets 2330 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1883 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:37.2575871Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.27 ms
+2026-09-21T07:24:38.2575452Z [nebula] worldstate: 306 packets 2181 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1762 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:38.2577360Z [nebula] interest: set 40/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.27 ms
+2026-09-21T07:24:39.2613002Z [nebula] worldstate: 305 packets 2024 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1616 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:39.2614132Z [nebula] interest: set 40/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.31 ms
+2026-09-21T07:24:40.2613757Z [nebula] worldstate: 346 packets 2411 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1894 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:40.2615506Z [nebula] interest: set 40/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.19 ms
+2026-09-21T07:24:41.2658229Z [nebula] worldstate: 341 packets 2389 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1910 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:41.2658512Z [nebula] interest: set 40/50 per client, cache 156, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.26 ms
+2026-09-21T07:24:42.1863831Z [nebula] loop 240 Hz, period max 35.5 ms, tick avg 0.31 ms max 35.5 ms
+2026-09-21T07:24:42.2691812Z [nebula] worldstate: 305 packets 2219 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1809 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:42.2693955Z [nebula] interest: set 40/50 per client, cache 156, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 4 despawns 0 since the last heartbeat, eval 0.06/0.24 ms
+2026-09-21T07:24:43.2694707Z [nebula] worldstate: 302 packets 2126 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1548 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:43.2695335Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.17 ms
+2026-09-21T07:24:44.2729169Z [nebula] worldstate: 329 packets 2187 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1570 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:44.2729494Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.62 ms
+2026-09-21T07:24:45.2735966Z [nebula] worldstate: 313 packets 2240 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1644 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:45.2737652Z [nebula] interest: set 40/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.08/0.46 ms
+2026-09-21T07:24:46.2744677Z [nebula] worldstate: 304 packets 2129 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1560 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:46.2747346Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.45 ms
+2026-09-21T07:24:47.1867293Z [nebula] loop 240 Hz, period max 40.0 ms, tick avg 0.34 ms max 40.0 ms
+2026-09-21T07:24:47.2777943Z [nebula] worldstate: 298 packets 1726 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1197 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:47.2780200Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.29 ms
+2026-09-21T07:24:48.2779876Z [nebula] worldstate: 293 packets 1667 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1264 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:48.2781867Z [nebula] interest: set 40/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.20 ms
+2026-09-21T07:24:49.2825107Z [nebula] worldstate: 314 packets 2132 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1564 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:49.2826738Z [nebula] interest: set 40/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.26 ms
+2026-09-21T07:24:50.2853583Z [nebula] worldstate: 320 packets 2469 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1952 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:50.2854697Z [nebula] interest: set 40/50 per client, cache 156, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.27 ms
+2026-09-21T07:24:51.2856843Z [nebula] worldstate: 308 packets 2365 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1767 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:51.2857308Z [nebula] interest: set 40/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.33 ms
+2026-09-21T07:24:52.1900297Z [nebula] loop 240 Hz, period max 38.6 ms, tick avg 0.29 ms max 38.6 ms
+2026-09-21T07:24:52.2863248Z [nebula] worldstate: 310 packets 2213 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1720 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:52.2863969Z [nebula] interest: set 40/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.40 ms
+2026-09-21T07:24:53.2900309Z [nebula] worldstate: 314 packets 2130 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1656 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:53.2900708Z [nebula] interest: set 40/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.66 ms
+2026-09-21T07:24:54.2903353Z [nebula] worldstate: 345 packets 2372 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1949 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:54.2904571Z [nebula] interest: set 40/50 per client, cache 156, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.37 ms
+2026-09-21T07:24:55.2905410Z [nebula] worldstate: 348 packets 2481 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1963 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:55.2906420Z [nebula] interest: set 41/50 per client, cache 156, regions 150, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.07/0.50 ms
+2026-09-21T07:24:56.2945180Z [nebula] worldstate: 337 packets 2236 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1836 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:56.2945465Z [nebula] interest: set 41/50 per client, cache 156, regions 150, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.03/0.12 ms
+2026-09-21T07:24:57.1904531Z [nebula] loop 240 Hz, period max 35.1 ms, tick avg 0.28 ms max 35.1 ms
+2026-09-21T07:24:57.2946444Z [nebula] worldstate: 316 packets 2170 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1747 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:57.2947595Z [nebula] interest: set 41/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.07/0.70 ms
+2026-09-21T07:24:58.2949287Z [nebula] worldstate: 337 packets 2326 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1921 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:58.2949800Z [nebula] interest: set 41/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.22 ms
+2026-09-21T07:24:59.2991350Z [nebula] worldstate: 349 packets 2397 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1894 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:24:59.2992095Z [nebula] interest: set 41/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.08/0.32 ms
+2026-09-21T07:25:00.3030834Z [nebula] worldstate: 371 packets 2688 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2007 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:00.3031086Z [nebula] interest: set 41/50 per client, cache 156, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.33 ms
+2026-09-21T07:25:01.3030984Z [nebula] worldstate: 355 packets 2643 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2010 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:01.3031235Z [nebula] interest: set 41/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.21 ms
+2026-09-21T07:25:02.1941052Z [nebula] loop 240 Hz, period max 43.1 ms, tick avg 0.30 ms max 43.1 ms
+2026-09-21T07:25:02.3070173Z [nebula] worldstate: 314 packets 2171 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1508 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:02.3070848Z [nebula] interest: set 41/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.25 ms
+2026-09-21T07:25:03.3110952Z [nebula] worldstate: 307 packets 2087 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1517 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:03.3111726Z [nebula] interest: set 41/50 per client, cache 156, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.36 ms
+2026-09-21T07:25:04.3144544Z [nebula] worldstate: 303 packets 2311 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1644 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:04.3145324Z [nebula] interest: set 41/50 per client, cache 156, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.16 ms
+2026-09-21T07:25:05.3149411Z [nebula] worldstate: 338 packets 2504 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1890 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:05.3149915Z [nebula] interest: set 41/50 per client, cache 156, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.23 ms
+2026-09-21T07:25:06.3150547Z [nebula] worldstate: 321 packets 2246 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1685 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:06.3150816Z [nebula] interest: set 41/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.10/0.44 ms
+2026-09-21T07:25:07.1990270Z [nebula] loop 240 Hz, period max 47.7 ms, tick avg 0.33 ms max 47.7 ms
+2026-09-21T07:25:07.3154043Z [nebula] worldstate: 300 packets 1862 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1317 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:07.3154298Z [nebula] interest: set 41/50 per client, cache 157, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.10/0.52 ms
+2026-09-21T07:25:08.3195485Z [nebula] worldstate: 301 packets 1789 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1419 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:08.3197867Z [nebula] interest: set 41/50 per client, cache 157, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.28 ms
+2026-09-21T07:25:09.3236484Z [nebula] worldstate: 301 packets 1802 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1334 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:09.3238619Z [nebula] interest: set 41/50 per client, cache 157, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.15 ms
+2026-09-21T07:25:10.3276434Z [nebula] worldstate: 313 packets 2189 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1562 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:10.3277885Z [nebula] interest: set 41/50 per client, cache 157, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.37 ms
+2026-09-21T07:25:11.3313035Z [nebula] worldstate: 317 packets 2277 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1679 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:11.3313344Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.10/0.78 ms
+2026-09-21T07:25:12.2023724Z [nebula] loop 240 Hz, period max 43.8 ms, tick avg 0.32 ms max 43.8 ms
+2026-09-21T07:25:12.3313255Z [nebula] worldstate: 353 packets 2413 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1764 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:12.3313548Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.19 ms
+2026-09-21T07:25:13.3320928Z [nebula] worldstate: 345 packets 2511 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1879 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:13.3321953Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.17 ms
+2026-09-21T07:25:14.3352460Z [nebula] worldstate: 315 packets 2385 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1886 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:14.3354384Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.20 ms
+2026-09-21T07:25:15.3365801Z [nebula] worldstate: 309 packets 2244 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1771 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:15.3367608Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.19 ms
+2026-09-21T07:25:16.3400552Z [nebula] worldstate: 314 packets 2197 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1713 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:16.3402375Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.17 ms
+2026-09-21T07:25:17.2029286Z [nebula] loop 240 Hz, period max 40.6 ms, tick avg 0.31 ms max 40.6 ms
+2026-09-21T07:25:17.3406889Z [nebula] worldstate: 335 packets 2301 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1975 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:17.3407762Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.20 ms
+2026-09-21T07:25:18.3446442Z [nebula] worldstate: 366 packets 2496 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2242 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:18.3447527Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.26 ms
+2026-09-21T07:25:19.3485966Z [nebula] worldstate: 354 packets 2500 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2155 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:19.3486775Z [nebula] interest: set 41/50 per client, cache 157, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.23 ms
+2026-09-21T07:25:20.3521464Z [nebula] worldstate: 356 packets 2558 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2096 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:20.3521772Z [nebula] interest: set 41/50 per client, cache 157, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.06/0.33 ms
+2026-09-21T07:25:21.3538071Z [nebula] worldstate: 375 packets 2488 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2011 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:21.3539140Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.27 ms
+2026-09-21T07:25:22.2073890Z [nebula] loop 240 Hz, period max 40.5 ms, tick avg 0.31 ms max 40.5 ms
+2026-09-21T07:25:22.3569269Z [nebula] worldstate: 322 packets 2296 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1935 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:22.3570868Z [nebula] interest: set 41/50 per client, cache 157, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.36 ms
+2026-09-21T07:25:23.3608217Z [nebula] worldstate: 316 packets 2015 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1822 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:23.3608485Z [nebula] interest: set 41/50 per client, cache 157, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.24 ms
+2026-09-21T07:25:24.3611176Z [nebula] worldstate: 322 packets 1951 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2023 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:24.3611467Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.23 ms
+2026-09-21T07:25:25.3612141Z [nebula] worldstate: 362 packets 2479 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2432 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:25.3614303Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.08/0.25 ms
+2026-09-21T07:25:26.3612326Z [nebula] worldstate: 355 packets 2370 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2371 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:26.3613662Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.19 ms
+2026-09-21T07:25:27.2111508Z [nebula] loop 240 Hz, period max 42.0 ms, tick avg 0.34 ms max 42.0 ms
+2026-09-21T07:25:27.3618807Z [nebula] worldstate: 312 packets 2311 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2261 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:27.3619986Z [nebula] interest: set 41/50 per client, cache 157, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.40 ms
+2026-09-21T07:25:28.3651719Z [nebula] worldstate: 323 packets 2423 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2428 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:28.3653551Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.65 ms
+2026-09-21T07:25:29.3687784Z [nebula] worldstate: 309 packets 2271 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2172 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:29.3689008Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.06/0.24 ms
+2026-09-21T07:25:30.3691878Z [nebula] worldstate: 345 packets 2356 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2303 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:30.3692188Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.29 ms
+2026-09-21T07:25:31.3693349Z [nebula] worldstate: 310 packets 2111 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1956 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:31.3693932Z [nebula] interest: set 41/50 per client, cache 157, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.10/0.33 ms
+2026-09-21T07:25:32.2112437Z [nebula] loop 240 Hz, period max 41.4 ms, tick avg 0.35 ms max 41.4 ms
+2026-09-21T07:25:32.3738092Z [nebula] worldstate: 352 packets 2224 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2161 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:32.3741060Z [nebula] interest: set 41/50 per client, cache 157, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.48 ms
+2026-09-21T07:25:33.3738707Z [nebula] worldstate: 332 packets 2376 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2258 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:33.3738999Z [nebula] interest: set 41/50 per client, cache 157, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.17 ms
+2026-09-21T07:25:34.3739536Z [nebula] worldstate: 338 packets 2318 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2148 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:34.3740833Z [nebula] interest: set 41/50 per client, cache 157, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.12/2.06 ms
+2026-09-21T07:25:35.3776607Z [nebula] worldstate: 364 packets 2411 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2309 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:35.3778666Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 1 since the last heartbeat, eval 0.09/0.57 ms
+2026-09-21T07:25:36.3812724Z [nebula] worldstate: 330 packets 2335 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2094 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:36.3813791Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.19 ms
+2026-09-21T07:25:37.2148304Z [nebula] loop 240 Hz, period max 43.8 ms, tick avg 0.34 ms max 43.8 ms
+2026-09-21T07:25:37.3819387Z [nebula] worldstate: 292 packets 2304 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2045 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:37.3820524Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.27 ms
+2026-09-21T07:25:38.3820193Z [nebula] worldstate: 305 packets 2231 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1970 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:38.3820908Z [nebula] interest: set 41/50 per client, cache 156, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.26 ms
+2026-09-21T07:25:39.3858394Z [nebula] worldstate: 298 packets 1958 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1747 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:39.3859220Z [nebula] interest: set 41/50 per client, cache 156, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.52 ms
+2026-09-21T07:25:40.3863960Z [nebula] worldstate: 290 packets 1916 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1726 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:25:40.3869061Z [nebula] interest: set 41/50 per client, cache 156, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.25 ms
+2026-09-21T07:25:41.3905673Z [nebula] worldstate: 300 packets 1984 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1804 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:41.3905964Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.29 ms
+2026-09-21T07:25:42.2151977Z [nebula] loop 240 Hz, period max 46.6 ms, tick avg 0.32 ms max 46.6 ms
+2026-09-21T07:25:42.3905161Z [nebula] worldstate: 295 packets 2217 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1839 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:42.3905496Z [nebula] interest: set 41/50 per client, cache 157, regions 159, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.31 ms
+2026-09-21T07:25:43.3944493Z [nebula] worldstate: 324 packets 2568 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2180 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:43.3946066Z [nebula] interest: set 41/50 per client, cache 157, regions 158, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.43 ms
+2026-09-21T07:25:44.3951695Z [nebula] worldstate: 324 packets 2398 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2051 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:44.3953206Z [nebula] interest: set 41/50 per client, cache 157, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.25 ms
+2026-09-21T07:25:45.3987995Z [nebula] worldstate: 302 packets 2251 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1798 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:45.3989165Z [nebula] interest: set 41/50 per client, cache 157, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.07/0.29 ms
+2026-09-21T07:25:46.4027117Z [nebula] worldstate: 309 packets 2294 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1865 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:46.4027655Z [nebula] interest: set 41/50 per client, cache 157, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.30 ms
+2026-09-21T07:25:47.2157893Z [nebula] loop 240 Hz, period max 39.2 ms, tick avg 0.30 ms max 39.2 ms
+2026-09-21T07:25:47.4065626Z [nebula] worldstate: 347 packets 2593 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2187 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:47.4065865Z [nebula] interest: set 40/50 per client, cache 157, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.08/0.72 ms
+2026-09-21T07:25:48.4074331Z [nebula] worldstate: 314 packets 2341 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1976 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:48.4074617Z [nebula] interest: set 40/50 per client, cache 157, regions 161, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.42 ms
+2026-09-21T07:25:49.4107838Z [nebula] worldstate: 332 packets 2149 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1711 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:49.4109237Z [nebula] interest: set 40/50 per client, cache 157, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.21 ms
+2026-09-21T07:25:50.4151176Z [nebula] worldstate: 346 packets 2473 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1952 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:50.4153287Z [nebula] interest: set 40/50 per client, cache 157, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.32 ms
+2026-09-21T07:25:51.4153905Z [nebula] worldstate: 380 packets 2575 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2235 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:51.4154186Z [nebula] interest: set 40/50 per client, cache 157, regions 164, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 2 since the last heartbeat, eval 0.10/0.36 ms
+2026-09-21T07:25:52.2198928Z [nebula] loop 240 Hz, period max 48.2 ms, tick avg 0.33 ms max 48.2 ms
+2026-09-21T07:25:52.4194131Z [nebula] worldstate: 378 packets 2514 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2192 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:52.4195558Z [nebula] interest: set 40/50 per client, cache 157, regions 163, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.06/0.25 ms
+2026-09-21T07:25:53.4193860Z [nebula] worldstate: 331 packets 2373 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2110 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:53.4196754Z [nebula] interest: set 40/49 per client, cache 157, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.11/0.49 ms
+2026-09-21T07:25:54.4245654Z [nebula] worldstate: 331 packets 2245 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1955 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:54.4248821Z [nebula] interest: set 40/49 per client, cache 157, regions 162, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.35 ms
+2026-09-21T07:25:55.4276506Z [nebula] worldstate: 328 packets 2281 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1999 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:55.4277398Z [nebula] interest: set 40/49 per client, cache 157, regions 160, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.18 ms
+2026-09-21T07:25:56.4316008Z [nebula] worldstate: 319 packets 2027 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1820 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:56.4316971Z [nebula] interest: set 40/49 per client, cache 157, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.07/0.18 ms
+2026-09-21T07:25:57.2232510Z [nebula] loop 240 Hz, period max 41.8 ms, tick avg 0.31 ms max 41.8 ms
+2026-09-21T07:25:57.4324854Z [nebula] worldstate: 319 packets 2172 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2084 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:57.4325359Z [nebula] interest: set 40/49 per client, cache 157, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 3 despawns 0 since the last heartbeat, eval 0.09/0.65 ms
+2026-09-21T07:25:58.4360305Z [nebula] worldstate: 310 packets 2386 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2253 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:58.4361099Z [nebula] interest: set 40/49 per client, cache 157, regions 150, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.07/0.68 ms
+2026-09-21T07:25:59.4406438Z [nebula] worldstate: 317 packets 2344 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2138 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:25:59.4406689Z [nebula] interest: set 40/49 per client, cache 157, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.16 ms
+2026-09-21T07:26:00.4441386Z [nebula] worldstate: 330 packets 2417 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2130 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:26:00.4441863Z [nebula] interest: set 40/49 per client, cache 157, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.11/1.05 ms
+2026-09-21T07:26:01.4444790Z [nebula] worldstate: 344 packets 2402 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2291 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:26:01.4445596Z [nebula] interest: set 40/49 per client, cache 157, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.21 ms
+2026-09-21T07:26:02.2238311Z [nebula] loop 240 Hz, period max 49.9 ms, tick avg 0.33 ms max 49.9 ms
+2026-09-21T07:26:02.4444827Z [nebula] worldstate: 337 packets 2259 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2158 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:02.4445134Z [nebula] interest: set 41/50 per client, cache 158, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 3 despawns 0 since the last heartbeat, eval 0.05/0.53 ms
+2026-09-21T07:26:03.4479513Z [nebula] worldstate: 343 packets 2258 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2105 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:03.4479766Z [nebula] interest: set 41/50 per client, cache 158, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.17 ms
+2026-09-21T07:26:04.4490722Z [nebula] worldstate: 342 packets 2154 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1790 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:04.4492863Z [nebula] interest: set 41/50 per client, cache 159, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 4 despawns 0 since the last heartbeat, eval 0.06/0.33 ms
+2026-09-21T07:26:05.4523786Z [nebula] worldstate: 365 packets 2564 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2382 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:05.4524574Z [nebula] interest: set 41/50 per client, cache 159, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.22 ms
+2026-09-21T07:26:06.4524734Z [nebula] worldstate: 362 packets 2500 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2432 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:06.4527378Z [nebula] interest: set 41/50 per client, cache 159, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.87 ms
+2026-09-21T07:26:07.2239549Z [nebula] loop 240 Hz, period max 40.4 ms, tick avg 0.31 ms max 40.4 ms
+2026-09-21T07:26:07.4529561Z [nebula] worldstate: 360 packets 2279 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2224 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:07.4530408Z [nebula] interest: set 41/50 per client, cache 159, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.27 ms
+2026-09-21T07:26:08.4564627Z [nebula] worldstate: 357 packets 2249 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2387 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:08.4565652Z [nebula] interest: set 41/50 per client, cache 159, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.16 ms
+2026-09-21T07:26:09.4573135Z [nebula] worldstate: 345 packets 2278 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2338 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:09.4575181Z [nebula] interest: set 41/50 per client, cache 159, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.18 ms
+2026-09-21T07:26:10.4611084Z [nebula] worldstate: 376 packets 2751 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2931 entries sent to 8 client(s); 159 entities known
+2026-09-21T07:26:10.4612002Z [nebula] interest: set 41/50 per client, cache 159, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.22 ms
+2026-09-21T07:26:11.4611998Z [nebula] worldstate: 375 packets 2430 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2654 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:11.4613022Z [nebula] interest: set 41/50 per client, cache 158, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.19 ms
+2026-09-21T07:26:12.2282064Z [nebula] loop 240 Hz, period max 42.7 ms, tick avg 0.32 ms max 42.7 ms
+2026-09-21T07:26:12.4645124Z [nebula] worldstate: 349 packets 2182 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2399 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:12.4645401Z [nebula] interest: set 41/50 per client, cache 158, regions 145, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.17 ms
+2026-09-21T07:26:13.4651984Z [nebula] worldstate: 357 packets 2043 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2381 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:13.4652241Z [nebula] interest: set 41/50 per client, cache 158, regions 145, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.32 ms
+2026-09-21T07:26:14.4702791Z [nebula] worldstate: 366 packets 2164 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2512 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:14.4703107Z [nebula] interest: set 41/50 per client, cache 158, regions 147, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.16 ms
+2026-09-21T07:26:15.4732804Z [nebula] worldstate: 370 packets 2442 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2655 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:15.4734166Z [nebula] interest: set 41/50 per client, cache 158, regions 147, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.22 ms
+2026-09-21T07:26:16.4772997Z [nebula] worldstate: 381 packets 2391 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2658 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:16.4774179Z [nebula] interest: set 41/50 per client, cache 158, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.22 ms
+2026-09-21T07:26:17.2314909Z [nebula] loop 240 Hz, period max 42.1 ms, tick avg 0.32 ms max 42.1 ms
+2026-09-21T07:26:17.4814822Z [nebula] worldstate: 359 packets 2295 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2552 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:17.4815549Z [nebula] interest: set 41/50 per client, cache 158, regions 146, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.26 ms
+2026-09-21T07:26:18.4875766Z [nebula] worldstate: 349 packets 2300 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2536 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:18.4876377Z [nebula] interest: set 41/50 per client, cache 158, regions 145, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.39 ms
+2026-09-21T07:26:19.4896846Z [nebula] worldstate: 370 packets 2186 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2473 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:19.4898488Z [nebula] interest: set 41/50 per client, cache 158, regions 144, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.22 ms
+2026-09-21T07:26:20.4905290Z [nebula] worldstate: 331 packets 2288 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2391 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:20.4906126Z [nebula] interest: set 41/50 per client, cache 158, regions 144, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.41 ms
+2026-09-21T07:26:21.4948811Z [nebula] worldstate: 352 packets 2419 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2567 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:21.4950012Z [nebula] interest: set 41/50 per client, cache 158, regions 144, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.33 ms
+2026-09-21T07:26:22.2320980Z [nebula] loop 240 Hz, period max 36.0 ms, tick avg 0.31 ms max 36.0 ms
+2026-09-21T07:26:22.4950063Z [nebula] worldstate: 372 packets 2528 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2764 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:22.4950917Z [nebula] interest: set 41/50 per client, cache 158, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.16 ms
+2026-09-21T07:26:23.4989363Z [nebula] worldstate: 360 packets 2368 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2675 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:26:23.4989665Z [nebula] interest: set 41/50 per client, cache 157, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.30 ms
+2026-09-21T07:26:24.5028868Z [nebula] worldstate: 377 packets 2412 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2838 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:26:24.5030662Z [nebula] interest: set 41/50 per client, cache 157, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.08/0.44 ms
+2026-09-21T07:26:25.5071536Z [nebula] worldstate: 387 packets 2641 entries in; dropped unknown=0 stale=0 wrongOwner=0; 3121 entries sent to 8 client(s); 157 entities known
+2026-09-21T07:26:25.5072103Z [nebula] interest: set 41/50 per client, cache 157, regions 150, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.22 ms
+2026-09-21T07:26:26.5115441Z [nebula] worldstate: 361 packets 2371 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2506 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:26.5117016Z [nebula] interest: set 41/51 per client, cache 158, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 2 despawns 0 since the last heartbeat, eval 0.08/0.65 ms
+2026-09-21T07:26:27.2365380Z [nebula] loop 240 Hz, period max 36.3 ms, tick avg 0.33 ms max 36.3 ms
+2026-09-21T07:26:27.5154846Z [nebula] worldstate: 358 packets 2317 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2346 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:27.5157095Z [nebula] interest: set 41/51 per client, cache 158, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.49 ms
+2026-09-21T07:26:28.5155394Z [nebula] worldstate: 351 packets 2379 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2364 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:28.5157157Z [nebula] interest: set 41/51 per client, cache 158, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.26 ms
+2026-09-21T07:26:29.5188924Z [nebula] worldstate: 320 packets 2413 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2358 entries sent to 8 client(s); 158 entities known
+2026-09-21T07:26:29.5189274Z [nebula] interest: set 41/51 per client, cache 158, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 1 despawns 0 since the last heartbeat, eval 0.08/0.47 ms
+2026-09-21T07:26:30.5233932Z [nebula] worldstate: 351 packets 2474 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2366 entries sent to 8 client(s); 156 entities known
+2026-09-21T07:26:30.5236659Z [nebula] interest: set 41/51 per client, cache 156, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 5 since the last heartbeat, eval 0.06/0.23 ms
+2026-09-21T07:26:31.5236252Z [nebula] worldstate: 332 packets 2175 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2009 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:31.5238891Z [nebula] interest: set 40/47 per client, cache 153, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 7 since the last heartbeat, eval 0.05/0.20 ms
+2026-09-21T07:26:32.2359270Z [nebula] loop 240 Hz, period max 41.1 ms, tick avg 0.35 ms max 41.1 ms
+2026-09-21T07:26:32.5239800Z [nebula] worldstate: 362 packets 2125 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1977 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:32.5240978Z [nebula] interest: set 40/47 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.78 ms
+2026-09-21T07:26:33.5277746Z [nebula] worldstate: 308 packets 2271 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2189 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:33.5278979Z [nebula] interest: set 40/47 per client, cache 153, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.17 ms
+2026-09-21T07:26:34.5283911Z [nebula] worldstate: 325 packets 2227 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2159 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:34.5284219Z [nebula] interest: set 40/47 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.23 ms
+2026-09-21T07:26:35.5321111Z [nebula] worldstate: 362 packets 2445 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2490 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:35.5322127Z [nebula] interest: set 40/47 per client, cache 152, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.52 ms
+2026-09-21T07:26:36.5359552Z [nebula] worldstate: 315 packets 2106 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2135 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:36.5360038Z [nebula] interest: set 40/47 per client, cache 152, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.28 ms
+2026-09-21T07:26:37.2399828Z [nebula] loop 240 Hz, period max 49.7 ms, tick avg 0.35 ms max 49.7 ms
+2026-09-21T07:26:37.5361113Z [nebula] worldstate: 311 packets 1974 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1993 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:37.5361374Z [nebula] interest: set 40/47 per client, cache 152, regions 147, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.46 ms
+2026-09-21T07:26:38.5401272Z [nebula] worldstate: 305 packets 2044 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2193 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:38.5402150Z [nebula] interest: set 40/47 per client, cache 152, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.80 ms
+2026-09-21T07:26:39.5405089Z [nebula] worldstate: 304 packets 2006 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2209 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:39.5406503Z [nebula] interest: set 40/47 per client, cache 152, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.51 ms
+2026-09-21T07:26:40.5445640Z [nebula] worldstate: 330 packets 2270 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2372 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:40.5446354Z [nebula] interest: set 40/47 per client, cache 152, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.55 ms
+2026-09-21T07:26:41.5479550Z [nebula] worldstate: 323 packets 2004 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2113 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:41.5480200Z [nebula] interest: set 40/47 per client, cache 152, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.13/1.16 ms
+2026-09-21T07:26:42.2403332Z [nebula] loop 240 Hz, period max 51.1 ms, tick avg 0.33 ms max 51.1 ms
+2026-09-21T07:26:42.5484417Z [nebula] worldstate: 317 packets 2094 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2116 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:42.5484757Z [nebula] interest: set 40/47 per client, cache 152, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.29 ms
+2026-09-21T07:26:43.5536408Z [nebula] worldstate: 367 packets 2154 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1968 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:43.5537901Z [nebula] interest: set 40/47 per client, cache 152, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.53 ms
+2026-09-21T07:26:44.5564303Z [nebula] worldstate: 310 packets 1932 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1826 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:44.5565808Z [nebula] interest: set 40/47 per client, cache 153, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.51 ms
+2026-09-21T07:26:45.5566724Z [nebula] worldstate: 339 packets 2426 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2306 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:45.5567170Z [nebula] interest: set 40/47 per client, cache 153, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.29 ms
+2026-09-21T07:26:46.5590071Z [nebula] worldstate: 355 packets 2323 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2204 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:46.5590353Z [nebula] interest: set 40/47 per client, cache 153, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.33 ms
+2026-09-21T07:26:47.2448466Z [nebula] loop 240 Hz, period max 42.9 ms, tick avg 0.36 ms max 42.9 ms
+2026-09-21T07:26:47.5609726Z [nebula] worldstate: 328 packets 2328 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2079 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:26:47.5610023Z [nebula] interest: set 40/47 per client, cache 153, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.25 ms
+2026-09-21T07:26:48.5646196Z [nebula] worldstate: 331 packets 2071 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1971 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:48.5646463Z [nebula] interest: set 40/47 per client, cache 151, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 3 despawns 4 since the last heartbeat, eval 0.05/0.19 ms
+2026-09-21T07:26:49.5648292Z [nebula] worldstate: 335 packets 2098 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2001 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:49.5648610Z [nebula] interest: set 40/47 per client, cache 151, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.11/0.65 ms
+2026-09-21T07:26:50.5652755Z [nebula] worldstate: 311 packets 2109 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1936 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:50.5653192Z [nebula] interest: set 40/47 per client, cache 151, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.67 ms
+2026-09-21T07:26:51.5707289Z [nebula] worldstate: 315 packets 2141 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2139 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:51.5707548Z [nebula] interest: set 40/47 per client, cache 151, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 1 since the last heartbeat, eval 0.08/0.29 ms
+2026-09-21T07:26:52.2487293Z [nebula] loop 240 Hz, period max 37.3 ms, tick avg 0.33 ms max 37.3 ms
+2026-09-21T07:26:52.5742700Z [nebula] worldstate: 295 packets 1910 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1967 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:52.5743074Z [nebula] interest: set 40/47 per client, cache 151, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.23 ms
+2026-09-21T07:26:53.5772269Z [nebula] worldstate: 294 packets 1812 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1792 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:53.5773451Z [nebula] interest: set 40/47 per client, cache 151, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.23 ms
+2026-09-21T07:26:54.5777384Z [nebula] worldstate: 289 packets 1744 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1819 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:54.5778094Z [nebula] interest: set 40/47 per client, cache 151, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.25 ms
+2026-09-21T07:26:55.5818788Z [nebula] worldstate: 310 packets 2162 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2019 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:55.5819628Z [nebula] interest: set 40/47 per client, cache 151, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.19 ms
+2026-09-21T07:26:56.5827892Z [nebula] worldstate: 296 packets 1861 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1820 entries sent to 8 client(s); 151 entities known
+2026-09-21T07:26:56.5828340Z [nebula] interest: set 40/47 per client, cache 151, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.42 ms
+2026-09-21T07:26:57.2488797Z [nebula] loop 240 Hz, period max 46.4 ms, tick avg 0.33 ms max 46.4 ms
+2026-09-21T07:26:57.5865005Z [nebula] worldstate: 308 packets 1911 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1913 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:57.5865719Z [nebula] interest: set 40/47 per client, cache 152, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 2 despawns 0 since the last heartbeat, eval 0.07/0.80 ms
+2026-09-21T07:26:58.5903132Z [nebula] worldstate: 311 packets 2058 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2080 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:58.5905432Z [nebula] interest: set 40/47 per client, cache 152, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.50 ms
+2026-09-21T07:26:59.5906237Z [nebula] worldstate: 314 packets 1891 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1867 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:26:59.5907396Z [nebula] interest: set 40/47 per client, cache 152, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.40 ms
+2026-09-21T07:27:00.5947670Z [nebula] worldstate: 309 packets 2164 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2074 entries sent to 8 client(s); 152 entities known
+2026-09-21T07:27:00.5947955Z [nebula] interest: set 40/47 per client, cache 152, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.19 ms
+2026-09-21T07:27:01.5981470Z [nebula] worldstate: 309 packets 2017 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1926 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:01.5982102Z [nebula] interest: set 40/47 per client, cache 153, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 3 despawns 0 since the last heartbeat, eval 0.08/0.21 ms
+2026-09-21T07:27:02.2490034Z [nebula] loop 240 Hz, period max 41.4 ms, tick avg 0.31 ms max 41.4 ms
+2026-09-21T07:27:02.5989896Z [nebula] worldstate: 308 packets 2129 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1974 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:02.5990165Z [nebula] interest: set 40/47 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.09/1.09 ms
+2026-09-21T07:27:03.6037710Z [nebula] worldstate: 313 packets 1984 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1799 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:03.6039783Z [nebula] interest: set 40/47 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.27 ms
+2026-09-21T07:27:04.6067009Z [nebula] worldstate: 303 packets 1837 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1654 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:04.6067799Z [nebula] interest: set 40/47 per client, cache 153, regions 157, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.20 ms
+2026-09-21T07:27:05.6067759Z [nebula] worldstate: 313 packets 2254 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2015 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:05.6068443Z [nebula] interest: set 40/46 per client, cache 153, regions 156, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.05/0.22 ms
+2026-09-21T07:27:06.6073240Z [nebula] worldstate: 307 packets 2000 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1864 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:06.6074617Z [nebula] interest: set 40/46 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.21 ms
+2026-09-21T07:27:07.2526476Z [nebula] loop 240 Hz, period max 38.3 ms, tick avg 0.31 ms max 38.3 ms
+2026-09-21T07:27:07.6110824Z [nebula] worldstate: 308 packets 2101 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1902 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:07.6111537Z [nebula] interest: set 40/46 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.27 ms
+2026-09-21T07:27:08.6147115Z [nebula] worldstate: 312 packets 2106 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1949 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:08.6148784Z [nebula] interest: set 40/46 per client, cache 153, regions 154, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.22 ms
+2026-09-21T07:27:09.6206742Z [nebula] worldstate: 330 packets 2251 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2067 entries sent to 8 client(s); 153 entities known
+2026-09-21T07:27:09.6208866Z [nebula] interest: set 40/47 per client, cache 153, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 1 despawns 0 since the last heartbeat, eval 0.08/0.43 ms
+2026-09-21T07:27:10.6241004Z [nebula] worldstate: 339 packets 2354 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2072 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:10.6252088Z [nebula] interest: set 41/47 per client, cache 154, regions 155, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 4 despawns 0 since the last heartbeat, eval 0.08/0.37 ms
+2026-09-21T07:27:11.6277771Z [nebula] worldstate: 336 packets 2322 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1897 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:11.6278051Z [nebula] interest: set 41/47 per client, cache 154, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.04/0.24 ms
+2026-09-21T07:27:12.2563519Z [nebula] loop 240 Hz, period max 44.7 ms, tick avg 0.31 ms max 44.7 ms
+2026-09-21T07:27:12.6281000Z [nebula] worldstate: 330 packets 2378 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1952 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:12.6281650Z [nebula] interest: set 41/47 per client, cache 154, regions 153, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.29 ms
+2026-09-21T07:27:13.6317121Z [nebula] worldstate: 352 packets 2240 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1874 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:13.6319468Z [nebula] interest: set 41/46 per client, cache 154, regions 152, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.18 ms
+2026-09-21T07:27:14.6364452Z [nebula] worldstate: 351 packets 2198 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1889 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:14.6366503Z [nebula] interest: set 41/46 per client, cache 154, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.59 ms
+2026-09-21T07:27:15.6396942Z [nebula] worldstate: 340 packets 2237 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1957 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:15.6397388Z [nebula] interest: set 41/46 per client, cache 154, regions 151, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=4), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.29 ms
+2026-09-21T07:27:16.6408897Z [nebula] worldstate: 306 packets 1729 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1572 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:16.6410163Z [nebula] interest: set 41/46 per client, cache 154, regions 150, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.39 ms
+2026-09-21T07:27:17.2565422Z [nebula] loop 240 Hz, period max 36.8 ms, tick avg 0.31 ms max 36.8 ms
+2026-09-21T07:27:17.6438399Z [nebula] worldstate: 301 packets 1789 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1645 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:17.6440154Z [nebula] interest: set 41/46 per client, cache 154, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.09/0.33 ms
+2026-09-21T07:27:18.6445452Z [nebula] worldstate: 304 packets 1970 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1775 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:18.6445944Z [nebula] interest: set 41/46 per client, cache 154, regions 148, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.07/0.24 ms
+2026-09-21T07:27:19.6454114Z [nebula] worldstate: 308 packets 1950 entries in; dropped unknown=0 stale=0 wrongOwner=0; 1664 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:19.6454790Z [nebula] interest: set 41/46 per client, cache 154, regions 147, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.06/0.16 ms
+2026-09-21T07:27:20.6486324Z [nebula] worldstate: 331 packets 2314 entries in; dropped unknown=0 stale=0 wrongOwner=0; 2076 entries sent to 8 client(s); 154 entities known
+2026-09-21T07:27:20.6486587Z [nebula] interest: set 41/46 per client, cache 154, regions 149, links 4 (region=4,foci=4,global=0,explicit=0,spawn=0,owned=3), spawns 0 despawns 0 since the last heartbeat, eval 0.08/0.20 ms

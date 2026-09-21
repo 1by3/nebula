@@ -29,6 +29,14 @@ namespace Nebula
         [Tooltip("Non-zero for an entity authored into a scene (assigned when the scene is saved). The worker owning its container spawns it; clients and neighbours bind to their own copy of the scene object. Leave 0 on prefabs.")]
         public uint SceneId;
 
+        [Header("Interest")]
+        [Tooltip("How far clients hear about this entity, in metres. 0 uses NebulaConfig.InterestRadius. Raise it for something players should see from far away (a dropship, a boss); the gateway clamps it to InterestMaxRadius. A radius above the mesh default costs more to evaluate, so use it sparingly.")]
+        public float RelevanceRadius = 0f;
+        [Tooltip("Send this entity to every client whatever the distance. For the few objects a game cannot cull: a match timer, a world boss, a weather driver.")]
+        public bool AlwaysRelevant;
+        [Tooltip("A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.")]
+        public byte InterestGroup;
+
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 

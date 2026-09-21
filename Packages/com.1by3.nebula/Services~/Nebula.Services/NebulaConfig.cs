@@ -1,7 +1,7 @@
 // Scalar settings consumed by the shared service loops. Unity exports these fields by name.
 namespace Nebula
 {
-    public sealed class NebulaConfig
+    public sealed partial class NebulaConfig
     {
         public string GameScene = "Arena";
         public int ClientLoadRadiusCells = 1;
@@ -56,6 +56,27 @@ namespace Nebula
         public float PersistenceCheckpointSeconds = 5f;
         public float PersistenceRestoreGraceSeconds = 3f;
         public float SceneEntityGraceSeconds = 2f;
+        public float InterestRadius = 120f;
+        public float InterestExitMargin = 16f;
+        public float InterestLingerSeconds = 1f;
+        public float InterestCellSize = 64f;
+        public bool InterestPlanar = true;
+        public float InterestEvalHz = 4f;
+        public float InterestSubscribeMargin = 32f;
+        public float InterestRegionLingerSeconds = 3f;
+        public float InterestLinkLingerSeconds = 10f;
+        public float InterestResyncSeconds = 30f;
+        public float InterestMaxRadius = 1024f;
+        public int InterestMaxFoci = 8;
+        public float InterestHintMaxDistance = 60f;
+        public float InterestHintMaxHz = 5f;
+        public int InterestMaxExplicitPerClient = 16;
+        public float InterestMaxFocusSpeed = 12f;
+        public int PartitionWarnEntities = 2000;
+        public float PartitionWarnFilterMs = 2f;
+        public bool ChunkedWorld = false;
+        public bool ChunkPlanar = true;
+        public float ChunkRetireSeconds = 30f;
         public float InterestNearRadius = 30f;
         public float InterestFarRadius = 80f;
         public int InterestMidDivisor = 4;
@@ -64,5 +85,17 @@ namespace Nebula
         public int InputLeadMarginTicks = 2;
         public int InputLeadTargetTicks = 3;
         public int InputLeadMaxAdjustTicks = 30;
+
+        /// <summary>
+        /// The services have no Unity asset references, so a world definition reaches them through the exported
+        /// manifest instead: <c>ServiceManifest</c> sets this from <c>World.CellSize</c> when the game has one.
+        /// It is what the interest grid is snapped to (design §3).
+        /// </summary>
+        public float WorldCellSizeMeters;
+        /// <summary>Whether the exported world's cells are centred on their coordinate (a baked manifest) rather than starting there.</summary>
+        public bool WorldCellsAreCentred;
+
+        private float WorldCellSize() => WorldCellSizeMeters > 0 ? WorldCellSizeMeters : 0f;
+        private bool WorldCellsCentred() => WorldCellsAreCentred;
     }
 }

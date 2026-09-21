@@ -1,0 +1,34 @@
+---
+title: "InterestResyncMsg"
+description: "Worker -> gateway: the last InterestSubscribeMsg could not be applied (wrong base sequence, or the result did not verify)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct InterestResyncMsg
+```
+
+Worker -\> gateway: the last [`InterestSubscribeMsg`](/docs/reference/protocol/interest-subscribe-msg) could not be applied (wrong base sequence, or the result did not verify). The worker kept the set it had, at [`HaveSeq`](#haveseq); the gateway answers with a Full snapshot.
+
+## Fields
+
+### HaveSeq [#haveseq]
+
+```csharp
+public uint HaveSeq;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static InterestResyncMsg Read(NetworkReader r);
+```

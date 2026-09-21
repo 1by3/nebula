@@ -27,6 +27,8 @@ namespace Nebula
         public uint PlayerCount;
         public uint BotCount;
         public uint ServerDrivenCount;
+        /// <summary>The worker holds at least one always-relevant entity (see <see cref="WorkerStats.HasGlobalEntities"/>).</summary>
+        public bool HasGlobalEntities;
     }
 
     /// <summary>What a worker reports about itself on every heartbeat.</summary>
@@ -40,6 +42,12 @@ namespace Nebula
         public uint PlayerCount;
         public uint BotCount;
         public uint ServerDrivenCount;
+        /// <summary>
+        /// This worker holds at least one always-relevant entity (design §5). A gateway keeps a link to such a
+        /// worker even when it subscribes no region there, because a global entity belongs in every client's set
+        /// and nothing else would make the gateway ask for it.
+        /// </summary>
+        public bool HasGlobalEntities;
     }
 
     /// <summary>Describes the current worker assignment for one container.</summary>
@@ -102,6 +110,28 @@ namespace Nebula
         public float LoopLagMs;
         /// <summary>Worker links that completed the handshake.</summary>
         public uint WorkerConnections;
+
+        // Interest management (design §12). These are what tell you whether the gateway is actually scoping: a
+        // cache or an interest set that grows with the world rather than with the players is the failure mode
+        // interest management exists to prevent, and it is invisible in the traffic figures above until it hurts.
+
+        /// <summary>Entities in one client's interest set, averaged over the welcomed clients.</summary>
+        public float InterestSetAvg;
+        /// <summary>The largest interest set of any client.</summary>
+        public uint InterestSetMax;
+        /// <summary>Entity records this gateway caches: everything its clients' subscribed regions cover.</summary>
+        public uint CachedEntities;
+        /// <summary>Distinct regions subscribed across every worker link.</summary>
+        public uint SubscribedRegions;
+        /// <summary>Worker links held, and why (a comma-separated summary: region, foci, global, explicit, spawn, owned).</summary>
+        public uint WorkerLinks;
+        public string WorkerLinkReasons;
+        /// <summary>Entity spawns and despawns sent to clients over the interval, per second.</summary>
+        public float SpawnsPerSecond, DespawnsPerSecond;
+        /// <summary>Time one interest evaluation takes, in milliseconds, over the interval.</summary>
+        public float InterestEvalMsAvg, InterestEvalMsMax;
+        /// <summary>Bytes sent to one client per second, averaged over the welcomed clients, and the worst of them.</summary>
+        public float BytesPerClientAvg, BytesPerClientMax;
         /// <summary>Registered, connected to the control plane, and accepting clients.</summary>
         public bool Ready;
         /// <summary>The gateway is taking itself out of service: refusing new clients and asking the ones it has to reconnect elsewhere.</summary>

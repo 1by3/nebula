@@ -29,6 +29,17 @@ namespace Nebula
         private static readonly List<Container> Candidates = new List<Container>();
         private static readonly List<Container> DynamicList = new List<Container>();
         private static readonly Dictionary<ulong, Container> DynamicByNetId = new Dictionary<ulong, Container>();
+        // Carried containers move every tick, so they cannot live in the static grid. They get a coarse hash of
+        // their own instead, rebuilt whenever the caches are refreshed (once per tick on a worker) and whenever one
+        // is registered or forgotten. It is a broad phase only: every candidate is still tested against the exact
+        // box. Footprints and queries are padded by a whole bucket, so a carrier that moves between the rebuild and
+        // the query is still found - at 256 m buckets that is far more than anything moves in a tick.
+        private static readonly Dictionary<Vector3Int, List<Container>> DynamicHash = new Dictionary<Vector3Int, List<Container>>();
+        private static readonly List<Container> DynamicCandidates = new List<Container>();
+        private static readonly HashSet<Container> DynamicSeen = new HashSet<Container>();
+        private static bool _dynamicHashDirty = true;
+        /// <summary>Below this many carried containers the exact linear scan is cheaper than hashing them.</summary>
+        private const int DynamicHashThreshold = 16;
         private static readonly List<NetworkIdentity> EntityScratch = new List<NetworkIdentity>();
         private struct PendingLease { public string WorkerId; public ushort WorkerIndex; public ulong Epoch; public string State; }
         /// <summary>Leases for dynamic or runtime containers that are not here yet, by container id; applied on registration.</summary>
@@ -103,6 +114,8 @@ namespace Nebula
             _grid = null;
             DynamicList.Clear();
             DynamicByNetId.Clear();
+            DynamicHash.Clear();
+            _dynamicHashDirty = true;
             PendingLeases.Clear();
             RuntimeList.Clear();
             RuntimeById.Clear();
@@ -141,6 +154,8 @@ namespace Nebula
             ById.Clear();
             DynamicList.Clear();
             DynamicByNetId.Clear();
+            DynamicHash.Clear();
+            _dynamicHashDirty = true;
             PendingLeases.Clear();
             _grid = gridded ? new Dictionary<Vector3Int, List<Container>>() : null;
             for (int i = 0; i < ordered.Count; i++)
@@ -200,6 +215,45 @@ namespace Nebula
                         if (_grid.TryGetValue(new Vector3Int(cell.x + x, cell.y + y, cell.z + z), out var list)) result.AddRange(list);
         }
 
+        /// <summary>
+        /// Every container whose box overlaps <paramref name="box"/>, appended to <paramref name="result"/>
+        /// (cleared first). This is the query interest management resolves a region to its owning workers with
+        /// (design §5), so it must never walk the whole world: a gridded world is answered from the cell grid, a
+        /// runtime world from the spatial hash, and only the dynamic list — which is small by construction — is
+        /// scanned linearly. An ungridded static set is scanned linearly too, which is bounded because an
+        /// ungridded world is a handful of hand-placed containers.
+        /// </summary>
+        public static void Overlapping(Bounds box, List<Container> result, ulong instanceId = 0)
+        {
+            result.Clear();
+            if (_grid != null)
+            {
+                var min = WorldOrigin.CellOf(box.min);
+                var max = WorldOrigin.CellOf(box.max);
+                for (int x = min.x - 1; x <= max.x + 1; x++)
+                    for (int y = min.y - 1; y <= max.y + 1; y++)
+                        for (int z = min.z - 1; z <= max.z + 1; z++)
+                        {
+                            if (!_grid.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                            for (int i = 0; i < list.Count; i++)
+                                if (list[i].InstanceId == instanceId && box.Intersects(list[i].WorldBounds) && !result.Contains(list[i])) result.Add(list[i]);
+                        }
+            }
+            else
+            {
+                for (int i = 0; i < Containers.Count; i++)
+                    if (Containers[i].InstanceId == instanceId && box.Intersects(Containers[i].WorldBounds)) result.Add(Containers[i]);
+            }
+            if (RuntimeList.Count > 0)
+            {
+                CollectRuntimeIn(box, RuntimeCandidates);
+                for (int i = 0; i < RuntimeCandidates.Count; i++)
+                    if (RuntimeCandidates[i].InstanceId == instanceId && box.Intersects(RuntimeCandidates[i].WorldBounds)) result.Add(RuntimeCandidates[i]);
+            }
+            for (int i = 0; i < DynamicList.Count; i++)
+                if (DynamicList[i].InstanceId == instanceId && box.Intersects(DynamicList[i].WorldBounds)) result.Add(DynamicList[i]);
+        }
+
         /// <summary>Containers whose cell is <paramref name="cell"/> (the cell container and its nested ones). Empty when not gridded.</summary>
         public static IReadOnlyList<Container> InCell(Vector3Int cell)
         {
@@ -226,6 +280,7 @@ namespace Nebula
             for (int i = 0; i < Containers.Count; i++) Containers[i].RefreshCache();
             for (int i = 0; i < RuntimeList.Count; i++) RuntimeList[i].RefreshCache();
             for (int i = 0; i < DynamicList.Count; i++) DynamicList[i].RefreshCache();
+            _dynamicHashDirty = true; // the boxes just moved: the broad phase is rebuilt on the next query
         }
 
         /// <summary>The static or runtime container with this id, or the dynamic container currently registered under it (<c>label#netId</c>), or null.</summary>
@@ -276,6 +331,7 @@ namespace Nebula
             container.RefreshCache();
             DynamicList.Add(container);
             DynamicByNetId[carrier.NetId] = container;
+            _dynamicHashDirty = true;
             if (PendingLeases.TryGetValue(container.ContainerId, out var lease))
             {
                 PendingLeases.Remove(container.ContainerId);
@@ -295,6 +351,7 @@ namespace Nebula
             if (container == null || !container.IsDynamic) return;
             ulong netId = container.CarrierNetId;
             if (!DynamicList.Remove(container)) return;
+            _dynamicHashDirty = true;
             if (netId != 0 && DynamicByNetId.TryGetValue(netId, out var same) && same == container) DynamicByNetId.Remove(netId);
             DynamicUnregistering?.Invoke(container);
             EvacuateEntities(container);
@@ -566,6 +623,57 @@ namespace Nebula
             for (int i = 0; i < RuntimeList.Count; i++) AddToHash(RuntimeList[i]);
         }
 
+        /// <summary>
+        /// Rebuild the carried-container broad phase from the cached boxes, each padded by one bucket so a carrier
+        /// that moves between this rebuild and a query is still found. O(carried containers); called at most once
+        /// per tick, and only when something changed.
+        /// </summary>
+        private static void RehashDynamic()
+        {
+            _dynamicHashDirty = false;
+            foreach (var list in DynamicHash.Values) list.Clear();
+            for (int i = 0; i < DynamicList.Count; i++)
+            {
+                var c = DynamicList[i];
+                var b = c.WorldBounds;
+                var min = BucketOf(b.min - Vector3.one * _runtimeBucketSize);
+                var max = BucketOf(b.max + Vector3.one * _runtimeBucketSize);
+                for (int x = min.x; x <= max.x; x++)
+                    for (int y = min.y; y <= max.y; y++)
+                        for (int z = min.z; z <= max.z; z++)
+                        {
+                            var key = new Vector3Int(x, y, z);
+                            if (!DynamicHash.TryGetValue(key, out var list)) DynamicHash[key] = list = new List<Container>();
+                            list.Add(c);
+                        }
+            }
+        }
+
+        /// <summary>
+        /// Distinct carried containers that could overlap <paramref name="bounds"/>, into <paramref name="result"/>
+        /// (cleared first). A broad phase: the caller still tests each candidate against the exact box. Below
+        /// <see cref="DynamicHashThreshold"/> containers the whole list is returned, which is both cheaper and
+        /// exactly what the pre-hash code did.
+        /// </summary>
+        private static void CollectDynamicIn(Bounds bounds, List<Container> result)
+        {
+            result.Clear();
+            if (DynamicList.Count == 0) return;
+            if (DynamicList.Count <= DynamicHashThreshold) { result.AddRange(DynamicList); return; }
+            if (_dynamicHashDirty) RehashDynamic();
+            DynamicSeen.Clear();
+            var min = BucketOf(bounds.min);
+            var max = BucketOf(bounds.max);
+            for (int x = min.x; x <= max.x; x++)
+                for (int y = min.y; y <= max.y; y++)
+                    for (int z = min.z; z <= max.z; z++)
+                    {
+                        if (!DynamicHash.TryGetValue(new Vector3Int(x, y, z), out var list)) continue;
+                        for (int i = 0; i < list.Count; i++) if (DynamicSeen.Add(list[i])) result.Add(list[i]);
+                    }
+            DynamicSeen.Clear();
+        }
+
         /// <summary>Distinct runtime containers hashed into any bucket <paramref name="bounds"/> overlaps, into <paramref name="result"/> (cleared first).</summary>
         private static void CollectRuntimeIn(Bounds bounds, List<Container> result)
         {
@@ -645,9 +753,12 @@ namespace Nebula
             if (!container.IsDynamic)
             {
                 result.AddRange(container.Neighbors);
-                for (int i = 0; i < DynamicList.Count; i++)
+                // Only the carriers whose broad-phase buckets reach this box: a world with hundreds of vehicles
+                // used to cost every static container a full scan of all of them, every tick, per entity.
+                CollectDynamicIn(bounds, DynamicCandidates);
+                for (int i = 0; i < DynamicCandidates.Count; i++)
                 {
-                    var d = DynamicList[i];
+                    var d = DynamicCandidates[i];
                     if (d != container && d.InstanceId == container.InstanceId && bounds.Intersects(d.WorldBounds)) result.Add(d);
                 }
                 return;
@@ -676,9 +787,10 @@ namespace Nebula
                     if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
-            for (int i = 0; i < DynamicList.Count; i++)
+            CollectDynamicIn(bounds, DynamicCandidates);
+            for (int i = 0; i < DynamicCandidates.Count; i++)
             {
-                var d = DynamicList[i];
+                var d = DynamicCandidates[i];
                 if (d == container || d == enclosing || d.InstanceId != container.InstanceId) continue;
                 if (bounds.Intersects(d.WorldBounds)) result.Add(d);
             }

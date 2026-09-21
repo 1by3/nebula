@@ -62,6 +62,56 @@ namespace Nebula
         public int LastReportedInputLead { get; private set; }
         public int InputLeadIncreases { get; private set; }
         public int EntityCount => _entities.Count;
+        /// <summary>Replicas this client holds: with interest management this follows what is near it, not the world.</summary>
+        public int ReplicaCount => _entities.Count;
+        /// <summary>Spawns and despawns received since the last telemetry report; also in the stats line.</summary>
+        public int SpawnsReceived { get; private set; }
+        public int DespawnsReceived { get; private set; }
+
+        /// <summary>
+        /// Where the player is looking, in world space, when that is not simply where the pawn is: a free camera,
+        /// an RTS view, a spectator. Set it and the client sends the gateway a
+        /// <see cref="ClientFocusHintMsg"/> at up to <see cref="NebulaConfig.InterestHintMaxHz"/>; the gateway
+        /// treats it as an input and never as authority — it clamps it to
+        /// <see cref="NebulaConfig.InterestHintMaxDistance"/> of the pawn unless its policy says otherwise — so a
+        /// game cannot widen its own interest by lying about where it is looking.
+        /// </summary>
+        public Vector3? FocusHint
+        {
+            get => _hasFocusHint ? _focusHint : (Vector3?)null;
+            set
+            {
+                if (value == null) { ClearFocusHint(); return; }
+                _focusHint = value.Value;
+                _hasFocusHint = true;
+            }
+        }
+
+        /// <summary>
+        /// Withdraw the focus hint: interest returns to the pawn. Going quiet is not enough — the gateway keeps
+        /// the last hint it accepted — so the clear is said out loud, reliably, under a new generation that
+        /// makes any hint still in flight stale.
+        /// </summary>
+        public void ClearFocusHint()
+        {
+            if (!_hasFocusHint) return;
+            _hasFocusHint = false;
+            _focusHintGeneration++;
+            _focusClearPending = true;
+        }
+
+        private Vector3 _focusHint;
+        private bool _hasFocusHint;
+        private byte _focusHintGeneration;
+        /// <summary>A clear that still has to reach the gateway (it may have been requested before the welcome).</summary>
+        private bool _focusClearPending;
+        private float _nextFocusHintAt;
+        /// <summary>
+        /// The view a replica was last spawned under (design D4). A despawn names the view it ends, so a despawn
+        /// of an older view — one sent before the entity re-entered the set, still in flight — cannot kill the
+        /// replica the newer spawn created.
+        /// </summary>
+        private readonly Dictionary<ulong, ushort> _viewSeq = new Dictionary<ulong, ushort>();
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
         public int AuthorityChangesSeen { get; private set; }
 
@@ -314,6 +364,25 @@ namespace Nebula
                 ReportTelemetry();
             }
 
+            // A focus hint only matters while the game is actually supplying one, and only at the rate the
+            // gateway accepts; anything faster is dropped there, so sending it would be pure waste.
+            if (_focusClearPending && ConnectionState == State.InGame)
+            {
+                // Reliable, and ahead of any new hint: the generation it carries is what makes older hints stale.
+                _focusClearPending = false;
+                _writer.Reset();
+                new ClientFocusHintMsg { Generation = _focusHintGeneration, Clear = true }.Write(_writer);
+                _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+            }
+            if (_hasFocusHint && Time.unscaledTime >= _nextFocusHintAt)
+            {
+                float hz = Config != null && Config.InterestHintMaxHz > 0 ? Config.InterestHintMaxHz : 5f;
+                _nextFocusHintAt = Time.unscaledTime + 1f / hz;
+                _writer.Reset();
+                new ClientFocusHintMsg { Position = _focusHint, Generation = _focusHintGeneration }.Write(_writer);
+                _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
+            }
+
             if (Time.unscaledTime >= _nextPing)
             {
                 _nextPing = Time.unscaledTime + 0.5f;
@@ -445,7 +514,8 @@ namespace Nebula
             int corrections = predicted != null ? predicted.Corrections - _lastCorrections : 0;
             if (predicted != null) _lastCorrections = predicted.Corrections;
             float seconds = TelemetryIntervalSeconds;
-            NebulaLog.Info($"client {_frames / seconds:0} fps entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}" : "")}");
+            NebulaLog.Info($"client {_frames / seconds:0} fps replicas {_entities.Count} (+{SpawnsReceived / seconds:0.0}/s -{DespawnsReceived / seconds:0.0}/s) entities {_entities.Count} in {_packetsIn / seconds:0} pkt/s {_bytesIn / seconds / 1024f:0.0} KB/s {_stateEntriesIn / seconds:0} states/s (msgs: state {_statePacketsIn / seconds:0} rpc {_rpcPacketsIn / seconds:0} vars {_varsPacketsIn / seconds:0}) rtt {RttMs}ms lead {InputLeadTicks} (adj {InputLeadAdjustTicks}, worker saw {LastReportedInputLead}) corrections {corrections}{(predicted != null && corrections > 0 ? $" last {predicted.LastCorrectionMagnitude:0.00}m" : "")} | full-rate interp: depth {(RemoteInterpolator.Samples > 0 ? RemoteInterpolator.DepthSum / RemoteInterpolator.Samples : 0):0.0} ticks, starved {(RemoteInterpolator.Samples > 0 ? 100.0 * RemoteInterpolator.Starved / RemoteInterpolator.Samples : 0):0.0}% worst +{RemoteInterpolator.MaxOvershoot:0.0} | frame max {_maxFrameMs:0.0}ms fixed/frame max {_maxFixedPerFrame} | gaps>{StateGapThresholdTicks}t {_stateGaps} worst {_worstStateGap}t | render delay {RenderDelayTicks}t (stream lag {StreamLagTicks}t) | snapshot age ms min {(_ageCount > 0 ? _ageMin : 0):0.0} avg {(_ageCount > 0 ? _ageSum / _ageCount : 0):0.0} max {_ageMax:0.0}{(_carrier != null ? $" | carrier hitches {_carrierHitches} worst +{_carrierWorstJump:0.00}m, container changes {_carrierContainerChanges}, epoch changes {_carrierEpochChanges}" : "")}");
+            SpawnsReceived = DespawnsReceived = 0;
             _carrierHitches = _carrierContainerChanges = _carrierEpochChanges = 0; _carrierWorstJump = 0;
             _ageMin = double.MaxValue; _ageMax = 0; _ageSum = 0; _ageCount = 0;
             RemoteInterpolator.ResetStats();
@@ -643,16 +713,30 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Apply the gateway's complete ownership snapshot. A runtime lease disappearing is also a despawn boundary:
-        /// the owning worker retires every entity in the container before removing the row. Remove those replicas
-        /// here as part of the same snapshot so a delayed or lost entity-despawn packet cannot leave an evacuated,
-        /// permanently stale client object behind.
+        /// Apply an ownership message. A runtime lease disappearing is also a despawn boundary: the owning worker
+        /// retires every entity in the container before removing the row. Remove those replicas here as part of
+        /// the same message so a delayed or lost entity-despawn packet cannot leave an evacuated, permanently
+        /// stale client object behind.
+        /// <para>
+        /// A <see cref="ContainerOwnershipUpdate.Full"/> message is the complete set of containers this client
+        /// should know about and anything else is forgotten; a delta only adds, changes and removes what it names,
+        /// which is how a client of a large world hears about its own surroundings instead of the whole lease table.
+        /// </para>
         /// </summary>
-        internal void ApplyContainerOwnership(IList<ContainerOwnershipEntry> entries)
+        internal void ApplyContainerOwnership(in ContainerOwnershipUpdate update)
         {
+            var entries = update.Upserts;
             // Runtime containers come and go with their lease rows: register the ones that carry a box, forget the rest.
             _runtimeKeep.Clear();
-            foreach (var e in entries)
+            if (!update.Full)
+            {
+                // A delta says nothing about the containers it leaves out, so they stay.
+                foreach (var c in ContainerRegistry.Runtime) _runtimeKeep.Add(c.RuntimeId);
+                if (update.Removes != null)
+                    foreach (var id in update.Removes)
+                        if (ContainerRegistry.TryParseRuntimeId(id, out ulong retired)) _runtimeKeep.Remove(retired);
+            }
+            if (entries != null) foreach (var e in entries)
             {
                 if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                 _runtimeKeep.Add(runtimeId);
@@ -676,12 +760,19 @@ namespace Nebula
             _retiredRuntimeEntities.Clear();
 
             _seenLeases.Clear();
-            foreach (var e in entries)
+            if (entries != null) foreach (var e in entries)
             {
                 ContainerRegistry.ApplyLease(e.ContainerId, e.WorkerId, e.WorkerIndex, e.Epoch, e.State);
                 _seenLeases.Add(e.ContainerId);
             }
-            foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
+            if (update.Full)
+            {
+                foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
+            }
+            else if (update.Removes != null)
+            {
+                foreach (var id in update.Removes) ContainerRegistry.ForgetLease(id);
+            }
             ContainerRegistry.NotifyLeasesChanged();
             ContainerOwnershipChanged?.Invoke();
         }
@@ -690,6 +781,13 @@ namespace Nebula
 
         private void OnEntitySpawn(EntitySpawnMsg msg)
         {
+            if (msg.ViewSeq != 0)
+            {
+                // Re-entering the set is a new view of the same net id, so the despawn of the old one must not
+                // apply to it. An in-place update (an authority transfer, a container change) keeps its view.
+                _viewSeq.TryGetValue(msg.NetId, out ushort held);
+                if (msg.ViewSeq > held) { _viewSeq[msg.NetId] = msg.ViewSeq; SpawnsReceived++; }
+            }
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {
@@ -796,6 +894,12 @@ namespace Nebula
 
         private void OnEntityDespawn(EntityDespawnMsg msg)
         {
+            // A despawn for a view we have already left behind is stale: the entity left the set and came back,
+            // and this message was in flight for the earlier visit. Killing the new replica would leave a hole
+            // in the world that nothing would ever fill, because the gateway believes the client has it.
+            if (msg.ViewSeq != 0 && _viewSeq.TryGetValue(msg.NetId, out ushort current) && msg.ViewSeq < current) return;
+            _viewSeq.Remove(msg.NetId);
+            DespawnsReceived++;
             _pendingByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
             foreach (var kv in _pendingByCarrier) kv.Value.RemoveAll(held => held.NetId == msg.NetId && msg.Epoch >= held.Epoch);
             if (!_entities.TryGetValue(msg.NetId, out var e))
@@ -1026,6 +1130,7 @@ namespace Nebula
                 else Destroy(e.gameObject);
             }
             _entities.Clear();
+            _viewSeq.Clear();
             _pendingScene.Clear();
             _pendingSceneByNetId.Clear();
             _pendingByCarrier.Clear();

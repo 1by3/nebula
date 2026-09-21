@@ -1,0 +1,52 @@
+---
+title: "FocusHintFilter"
+description: "Validation of ClientFocusHintMsg, on the gateway, before a policy ever sees a hint."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public sealed class FocusHintFilter
+```
+
+Validation of [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg), on the gateway, before a policy ever sees a hint. A hint is an input and never authority: a client that sends a point on the other side of the map, or a thousand points a second, must not be able to make the gateway stream it the world. Non-finite values are dropped, the rate is capped at [`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz), and the point is clamped to [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) from the pawn unless the policy allows free foci.
+
+## Fields
+
+### Settings [#settings]
+
+```csharp
+public InterestSettings Settings = InterestSettings.Default;
+```
+
+### DroppedNonFinite, DroppedRate, Clamped, Accepted [#droppednonfinite-droppedrate-clamped-accepted]
+
+```csharp
+public long DroppedNonFinite, DroppedRate, Clamped, Accepted;
+```
+
+Hints dropped since the last reset, by reason. Reported in the gateway's stats.
+
+## Methods
+
+### TryAccept [#tryaccept]
+
+```csharp
+public bool TryAccept(ulong clientId, double now, double x, double y, double z, bool hasPawn, double pawnX, double pawnY, double pawnZ, out double outX, out double outY, out double outZ, bool freeHint = false);
+```
+
+Validate one hint. Returns false when it must be ignored entirely; otherwise the (possibly clamped) point comes back in the out parameters.
+
+### Forget [#forget]
+
+```csharp
+public void Forget(ulong clientId);
+```
+
+Drop a disconnected client's rate-limit state.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```

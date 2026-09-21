@@ -6,7 +6,7 @@ description: "Start the orchestrator, gateway, and workers on this computer"
 To start the orchestrator, gateway, and workers on this computer, run:
 
 ```bash
-nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--open-ui] [--reset-persistence] [--reset-sessions]
+nebula start [--build] [--workers N] [--min N] [--max N] [--npcs N] [--bots N] [--bot-args "..."] [--open-ui] [--reset-persistence] [--reset-sessions]
 ```
 
 Start the orchestrator from the latest build. The orchestrator hosts the control plane on its dashboard port and starts the gateway and workers. To join, enter Play mode in the Unity Editor or start the build with the client role. Set defaults in the mesh section of nebula.json.
@@ -16,6 +16,8 @@ Only one local mesh can run at a time. When a mesh from this or another project 
 The orchestrator keeps the control plane and every saved entity in one database, by default a SQLite file at Library/Nebula/nebula.db (mesh.database in nebula.json changes it: `sqlite:\<file\>`, `postgres://...` or `memory`). The control plane starts empty on every run because it only holds which processes are running; saved entities stay across restarts unless you pass --reset-persistence.
 
 --reset-sessions clears held player-session claims without deleting saved entities. Use it only after every gateway of this mesh has stopped, to recover claims whose previous gateway cannot acknowledge disconnection.
+
+--bots starts headless client processes with -nebula-bot; what they do is the game's code. --bot-args appends its value to every one of those command lines unchanged, which is how a game selects a deterministic bot behaviour for a soak run (`nebula start --bots 4 --bot-args "-vw-bot-line"`).
 
 ## Options
 
@@ -27,6 +29,7 @@ The orchestrator keeps the control plane and every saved entity in one database,
 | `--max <N>` | Autoscaling ceiling; autoscaling grows into the band from --min (default: --workers). |
 | `--npcs <N>` | Set the game-defined 'npcs' mesh setting at startup (default 0). |
 | `--bots <N>` | Start headless clients with the bot flag; the game supplies their behavior (default 0). |
+| `--bot-args <ARGS>` | Extra command-line arguments appended to every bot client, e.g. --bot-args "-mygame-bot-line"; the game reads them itself. |
 | `--open-ui` | Open the Nebula Dashboard in the browser once it is up. |
 | `--reset-persistence` | Delete every saved entity when the orchestrator starts. |
 | `--reset-sessions` | Clear player-session claims; stop every gateway of this mesh first. |
@@ -48,4 +51,5 @@ nebula start --open-ui
 nebula start --build --workers 2
 nebula start --min 1 --max 4
 nebula start --reset-persistence
+nebula start --bots 3 --bot-args "-vw-bot-line"
 ```

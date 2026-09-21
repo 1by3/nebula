@@ -62,6 +62,7 @@ namespace Nebula
                 w.Prop("playerCount", x.PlayerCount);
                 w.Prop("botCount", x.BotCount);
                 w.Prop("serverDrivenCount", x.ServerDrivenCount);
+                w.Prop("hasGlobalEntities", x.HasGlobalEntities);
                 w.EndObject();
             }
             w.EndArray();
@@ -146,6 +147,7 @@ namespace Nebula
                         PlayerCount = (uint)Num(o, "playerCount"),
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
+                        HasGlobalEntities = Bool(o, "hasGlobalEntities"),
                     });
                 }
             }
@@ -217,6 +219,18 @@ namespace Nebula
             w.Prop("workerConnections", (long)s.WorkerConnections);
             w.Prop("ready", s.Ready);
             w.Prop("draining", s.Draining);
+            w.Prop("interestSetAvg", s.InterestSetAvg);
+            w.Prop("interestSetMax", (long)s.InterestSetMax);
+            w.Prop("cachedEntities", (long)s.CachedEntities);
+            w.Prop("subscribedRegions", (long)s.SubscribedRegions);
+            w.Prop("workerLinks", (long)s.WorkerLinks);
+            w.Prop("workerLinkReasons", s.WorkerLinkReasons ?? "");
+            w.Prop("spawnsPerSecond", s.SpawnsPerSecond);
+            w.Prop("despawnsPerSecond", s.DespawnsPerSecond);
+            w.Prop("interestEvalMsAvg", s.InterestEvalMsAvg);
+            w.Prop("interestEvalMsMax", s.InterestEvalMsMax);
+            w.Prop("bytesPerClientAvg", s.BytesPerClientAvg);
+            w.Prop("bytesPerClientMax", s.BytesPerClientMax);
         }
 
         public static GatewayStats ReadGatewayStats(Dictionary<string, object> o) => new GatewayStats
@@ -237,6 +251,18 @@ namespace Nebula
             WorkerConnections = (uint)Num(o, "workerConnections"),
             Ready = Bool(o, "ready"),
             Draining = Bool(o, "draining"),
+            InterestSetAvg = (float)Num(o, "interestSetAvg"),
+            InterestSetMax = (uint)Num(o, "interestSetMax"),
+            CachedEntities = (uint)Num(o, "cachedEntities"),
+            SubscribedRegions = (uint)Num(o, "subscribedRegions"),
+            WorkerLinks = (uint)Num(o, "workerLinks"),
+            WorkerLinkReasons = Str(o, "workerLinkReasons"),
+            SpawnsPerSecond = (float)Num(o, "spawnsPerSecond"),
+            DespawnsPerSecond = (float)Num(o, "despawnsPerSecond"),
+            InterestEvalMsAvg = (float)Num(o, "interestEvalMsAvg"),
+            InterestEvalMsMax = (float)Num(o, "interestEvalMsMax"),
+            BytesPerClientAvg = (float)Num(o, "bytesPerClientAvg"),
+            BytesPerClientMax = (float)Num(o, "bytesPerClientMax"),
         };
 
         // ---------------------------------------------------------------------------------------- writes
@@ -321,6 +347,7 @@ namespace Nebula
                         PlayerCount = (uint)Num(o, "playerCount"),
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
+                        HasGlobalEntities = Bool(o, "hasGlobalEntities"),
                     };
                     cp.HeartbeatWorker(Str(o, "workerId"), Str(o, "status"), stats);
                     return null;

@@ -33,6 +33,10 @@ public class InstanceTests
         Spawn(1, 1, new ContainerRef(0));
         Spawn(2, 2, ContainerRef.Runtime(11));
         Spawn(3, 3, ContainerRef.Runtime(22));
+        // Interest is evaluated on a schedule in a running gateway; here the tests drive it, so a set exists
+        // before anything is asserted about it. Everything sits at the origin, well inside InterestRadius: what
+        // these tests are about is the authorization step, which runs before any distance is measured.
+        Evaluate();
         Flush(); transport.Messages.Clear();
     }
 
@@ -48,6 +52,7 @@ public class InstanceTests
         new EntitySpawnMsg { NetId=id, OwnerClientId=client, Container=container, Epoch=epoch, LocalRotation=Quaternion.identity, LocalScale=Vector3.one });
     private static HashSet<ulong> Visible(object client) => (HashSet<ulong>)Field(client,"Visible");
     private void Flush() { Call("FlushReliable",outside); Call("FlushReliable",inside); Call("FlushReliable",other); }
+    private void Evaluate() { Call("ReconcileView",outside); Call("ReconcileView",inside); Call("ReconcileView",other); }
 
     [Test]
     public void PrivateOccupantsSeePublicButNotOtherInstances()
@@ -57,16 +62,16 @@ public class InstanceTests
         Assert.That(Visible(other), Is.EquivalentTo(new ulong[]{1,3}));
         var late = Client(4);
         Call("ReconcileView", late);
-        Assert.That(Visible(late), Is.EquivalentTo(new ulong[]{1}), "a client without a pawn cannot see private entities");
+        Assert.That(Visible(late), Is.Empty, "a client with no pawn has no focus, so it hears only about globally relevant entities (design §4)");
     }
 
     [Test]
     public void CrossingKeepsHallwayReplicaAndRemovesPrivateVisibilityOnExit()
     {
         Spawn(2,2,new ContainerRef(0),2);
-        Assert.That(Visible(outside), Does.Contain(2UL));
+        Assert.That(Visible(outside), Does.Contain(2UL), "the entity arrived in the public world, so the public client is told about it");
         Spawn(2,2,ContainerRef.Runtime(11),3);
-        Assert.That(Visible(outside), Does.Not.Contain(2UL));
+        Assert.That(Visible(outside), Does.Not.Contain(2UL), "and loses it again the moment it is back inside a private instance");
         Assert.That(Visible(inside), Does.Contain(1UL));
         Assert.That(Visible(other), Does.Not.Contain(2UL));
     }
@@ -102,7 +107,7 @@ public class InstanceTests
         var writer=new NetworkWriter();
         ContainerOwnershipMsg.Write(writer,new[]{new ContainerOwnershipEntry {ContainerId="rt_11",Instance=info,HasBounds=true,BoundsSize=new(10,10,10)}});
         var reader=new NetworkReader(writer.ToArray()); reader.ReadByte();
-        var roundtrip=ContainerOwnershipMsg.Read(reader)[0];
+        var roundtrip=ContainerOwnershipMsg.Read(reader).Upserts[0];
         Assert.That(roundtrip.Instance.InstanceId,Is.EqualTo(ulong.MaxValue));
         Assert.That(roundtrip.Instance.ContentResource,Is.EqualTo("Instances/Room"));
         Assert.That(roundtrip.Instance.ObservePublic,Is.True);

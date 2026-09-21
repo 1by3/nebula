@@ -1,0 +1,20 @@
+---
+title: "InterestPlacement"
+description: "Where an item sits in an InterestIndex<T>."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs)</div>
+
+```csharp
+public enum InterestPlacement : byte
+```
+
+Where an item sits in an [`InterestIndex<T>`](/docs/reference/interest/interest-index).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Region` | `0` | In one region bucket, found by a client's region scan. |
+| `Wide` | `1` | Its relevance radius is larger than the scan, so widening every client's scan to find it would cost every client. It lives in a short list that is tested directly against each focus instead. |
+| `Global` | `2` | Always relevant: in everyone's set, never distance tested. |

@@ -1,0 +1,20 @@
+---
+title: "ConfigSeverity"
+description: "How much a ConfigIssue matters."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs)</div>
+
+```csharp
+public enum ConfigSeverity : byte
+```
+
+How much a [`ConfigIssue`](/docs/reference/interest/config-issue) matters. Only `Error` is worth refusing to start for.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `Info` | `0` |  |
+| `Warning` | `1` | The value was clamped or raised to something that works; the mesh runs, but not as configured. |
+| `Error` | `2` | The value cannot produce correct behaviour (a non-positive size). Start-up should stop. |

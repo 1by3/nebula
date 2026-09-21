@@ -5,7 +5,9 @@ description: Register containers while the mesh runs, so a world whose shape is 
 
 Use a **runtime container** when the game decides where the containers are while the mesh runs. A chunked landscape that grows as players explore it, plots that appear when someone buys land, or an instance that exists while a group is inside are all runtime containers. Baked containers (authored in the scene or in a world manifest) and dynamic containers (carried by an entity) keep working alongside them.
 
-For an end-to-end procedural grid with floating-origin shifts and persistent player-placed blocks, follow [Build an infinite runtime world](/docs/guides/infinite-runtime-world).
+For a chunked landscape specifically, `NebulaConfig.ChunkedWorld` builds and balances runtime containers for you — see [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for that turnkey path, built on the API this page describes. Use this page directly when your game's containers are not a uniform chunk grid, or you need more control than `NebulaChunks` gives you.
+
+A client only learns about a runtime container that overlaps its [interest](/docs/guides/interest-management) window (`NearCells` around its pawn), its current instance, or a dynamic container carrying an entity already in its interest set — not every runtime container the mesh has registered. `ContainerRegistry.Runtime` and the events below still enumerate every registered container on a worker or the orchestrator, which see the whole mesh regardless of any one client's interest set.
 
 A runtime container is a static box named by a 64-bit id the game chooses. Its lease row on the control plane carries the box, so every process registers the same container from the row alone; nothing about the world's shape is baked into a build. On the wire it is ten bytes (a marker index plus the id), where a baked container is two. Baked containers are unaffected.
 

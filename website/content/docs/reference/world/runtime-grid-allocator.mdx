@@ -47,6 +47,14 @@ public float TickIntervalSeconds { get; set; } = 0.25f;
 
 How often [`Tick`](#tick) actually recomputes interest; calls between are no-ops.
 
+### Grid [#grid]
+
+```csharp
+public RuntimeGrid Grid { get; }
+```
+
+The grid this allocator works in.
+
 ### WantedIds [#wantedids]
 
 ```csharp

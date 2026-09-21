@@ -1,0 +1,80 @@
+---
+title: "ChunkContext"
+description: "What a game is told about one chunk of a turnkey chunked world (design docs/interest-management.md §10)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs)</div>
+
+```csharp
+public readonly struct ChunkContext
+```
+
+What a game is told about one chunk of a turnkey chunked world (design `docs/interest-management.md` §10). Passed by `in` reference so a content callback that runs for every chunk entering and leaving a role's window costs no allocation.
+
+## Fields
+
+### Coord [#coord]
+
+```csharp
+public readonly Vector3Int Coord;
+```
+
+Grid coordinate of the chunk. In a planar world y is always 0.
+
+### Id [#id]
+
+```csharp
+public readonly ulong Id;
+```
+
+The chunk's stable 64-bit id: [`RuntimeGrid.PackId`](/docs/reference/world/runtime-grid#packid) of [`Coord`](#coord), and the control-plane lease key.
+
+### Seed [#seed]
+
+```csharp
+public readonly int Seed;
+```
+
+A deterministic seed for procedural content, derived from [`Id`](#id) alone: every role, every process and every run generate the same chunk without replicating a byte of it.
+
+### Container [#container]
+
+```csharp
+public readonly Container Container;
+```
+
+The Nebula runtime container this chunk is. Entities are spawned into it; it is leased by one worker.
+
+### Root [#root]
+
+```csharp
+public readonly Transform Root;
+```
+
+Where the game parents its content. A child of [`Container`](/docs/reference/containers/container), destroyed with the chunk, so a game that only parents under it never has to clean up in [`NebulaChunks.Unloading`](/docs/reference/world/nebula-chunks#unloading). It also keeps content out of `Container.Entities`' way: Nebula detaches networked objects when a chunk retires, and unnetworked content should simply go with it.
+
+### Role [#role]
+
+```csharp
+public readonly NebulaRoles Role;
+```
+
+The roles this process runs. Content that only matters to a viewer checks [`IsHeadless`](#isheadless) instead.
+
+### IsHeadless [#isheadless]
+
+```csharp
+public readonly bool IsHeadless;
+```
+
+No one is looking: strip renderers and keep colliders. True on workers and on batchmode clients (bots).
+
+## Properties
+
+### Center [#center]
+
+```csharp
+public Vector3 Center { get; }
+```
+
+Centre of the chunk in the current floating-origin frame.

@@ -29,12 +29,18 @@ namespace Nebula
         private readonly HashSet<Vector3Int> _required = new HashSet<Vector3Int>();
         private readonly List<Vector3Int> _scratch = new List<Vector3Int>();
         private bool _leasesDirty;
+        private int _nearCells = 1;
+
+        /// <summary>Cells of content a client keeps loaded: <see cref="InterestSettings.NearCells"/> of the world's cell size.</summary>
+        public int NearCells => _nearCells;
 
         public void Initialize(NebulaConfig config, NebulaWorker worker, NebulaClient client)
         {
             Config = config;
             Worker = worker;
             Client = client;
+            var cellSize = NebulaWorld.Definition != null ? Mathf.Max(NebulaWorld.Definition.CellSize.x, NebulaWorld.Definition.CellSize.z) : 0f;
+            _nearCells = config.ToInterestSettings().NearCells(cellSize);
             var streamer = NebulaWorld.Streamer;
             if (worker != null)
             {
@@ -115,7 +121,10 @@ namespace Nebula
 
         bool IWorldAnchor.TryGetAnchor(out Vector3 framePosition, out int radiusCells)
         {
-            radiusCells = Mathf.Max(0, Config.ClientLoadRadiusCells);
+            // One notion of "near" (design §8): content must reach at least as far as interest, or a client is
+            // spawned an entity standing on a cell it has not loaded. ClientLoadRadiusCells stays the floor, so a
+            // game asking for more cells than interest needs still gets them.
+            radiusCells = Mathf.Max(0, _nearCells);
             var pawn = Client != null ? Client.LocalPlayer : null;
             framePosition = pawn != null ? pawn.transform.position : Vector3.zero;
             return true;

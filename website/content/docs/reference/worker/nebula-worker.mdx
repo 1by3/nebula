@@ -239,6 +239,74 @@ public bool IsRegistered { get; }
 
 Registered with the control plane; the mesh knows about this worker.
 
+### InterestGrid [#interestgrid]
+
+```csharp
+public InterestGrid InterestGrid { get; }
+```
+
+The grid this worker makes region ids with; a gateway subscribing with a different one is rejected (design D2).
+
+### SubscribedRegions [#subscribedregions]
+
+```csharp
+public int SubscribedRegions { get; }
+```
+
+Regions at least one gateway subscribes here.
+
+### HasGlobalEntities [#hasglobalentities]
+
+```csharp
+public bool HasGlobalEntities { get; }
+```
+
+Authoritative entities that are in every client's set, so gateways must link this worker to hear them (design §5).
+
+### InterestEntriesSent [#interestentriessent]
+
+```csharp
+public long InterestEntriesSent { get; }
+```
+
+State entries actually sent to gateways since start-up, and what an unfiltered worker would have sent.
+
+### InterestEntriesTotal [#interestentriestotal]
+
+```csharp
+public long InterestEntriesTotal { get; }
+```
+
+### InterestBytesSent [#interestbytessent]
+
+```csharp
+public long InterestBytesSent { get; }
+```
+
+Bytes of world state actually sent, and what the same tick would have cost sent to every gateway.
+
+### InterestBytesUnfiltered [#interestbytesunfiltered]
+
+```csharp
+public long InterestBytesUnfiltered { get; }
+```
+
+### InterestFilterMs [#interestfilterms]
+
+```csharp
+public float InterestFilterMs { get; }
+```
+
+Smoothed milliseconds per tick spent deciding who hears about what (design §11's second warning).
+
+### PartitionWarning [#partitionwarning]
+
+```csharp
+public string PartitionWarning { get; } = "";
+```
+
+Non-empty while this worker wants the world partitioned; shown on the dashboard and logged once a minute.
+
 ## Events
 
 ### EntitySpawned [#entityspawned]
@@ -464,6 +532,14 @@ public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quate
 
 Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.
 
+### CopyGatewayInterest [#copygatewayinterest]
+
+```csharp
+public void CopyGatewayInterest(List<GatewayInterest> result);
+```
+
+Snapshot the per-gateway interest counters into `result` (cleared first). Main thread.
+
 ## Nested types
 
 ### WorkerMessageHandler [#workermessagehandler]
@@ -473,3 +549,49 @@ public delegate void WorkerMessageHandler(string fromWorkerId, ushort fromWorker
 ```
 
 Handler for a game-defined worker message. `reader` is positioned at the payload.
+
+### GatewayInterest [#gatewayinterest]
+
+```csharp
+public struct GatewayInterest
+```
+
+Per gateway link, what interest management is doing for it. For telemetry and the debug overlay.
+
+#### Fields
+
+##### GatewayId [#gatewayid]
+
+```csharp
+public string GatewayId;
+```
+
+##### Regions [#regions]
+
+```csharp
+public int Regions;
+```
+
+##### Foci [#foci]
+
+```csharp
+public int Foci;
+```
+
+##### ExplicitEntities [#explicitentities]
+
+```csharp
+public int ExplicitEntities;
+```
+
+##### EntriesSent [#entriessent]
+
+```csharp
+public long EntriesSent;
+```
+
+##### BytesSent [#bytessent]
+
+```csharp
+public long BytesSent;
+```

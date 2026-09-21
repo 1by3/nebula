@@ -139,6 +139,7 @@ namespace Nebula
         {
             if (_started) return;
             _started = true;
+            LogConfigIssues();
             ConfigureWorld(Config);
             string worldKind = Config.WorldManifest != null ? " (partitioned world)" : Config.RuntimeWorld != null ? " (runtime world)" : "";
             NebulaLog.Info($"containers: {ContainerRegistry.Count}{worldKind}");
@@ -197,11 +198,41 @@ namespace Nebula
                 // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
                 bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", false);
                 Client.Initialize(Config, autoConnect);
+                // A headless bot's log is the only place a soak can read what one client actually holds, so bots
+                // carry the probe by default; a player client takes -nebula-probe to turn it on (and a bot takes
+                // -nebula-probe=false to turn it off). It costs one pass over the replica set per second.
+                if (CommandLine.GetBool("nebula-probe", CommandLine.Has("nebula-bot"))) InterestProbe.Attach(Client);
             }
             if (NebulaWorld.IsActive)
             {
                 WorldStreaming = gameObject.AddComponent<NebulaWorldStreaming>();
                 WorldStreaming.Initialize(Config, Worker, Client);
+            }
+            else if (Config.ChunkedWorld)
+            {
+                // A runtime world has no authored cell scenes, so NebulaWorld.IsActive is false and the baked
+                // streaming policy above never runs. The chunked driver is that policy for a procedural world:
+                // grid, allocator, origin and content hooks, on every role, from configuration alone.
+                ChunkedWorld = gameObject.AddComponent<NebulaChunkedWorld>();
+                ChunkedWorld.Initialize(Config, Roles, Worker, Client);
+            }
+        }
+
+        /// <summary>
+        /// Report a configuration that does not hold together at the one moment somebody is certain to be reading:
+        /// the first seconds of a role's log. The same check runs in the config inspector, the setup window and
+        /// <c>nebula doctor</c>, but a mesh is usually started from a build where none of those were looked at.
+        /// Repairs are already applied by <see cref="NebulaConfig.ToInterestSettings()"/>; this only says so.
+        /// </summary>
+        private void LogConfigIssues()
+        {
+            var issues = new List<ConfigIssue>();
+            Config.Validate(issues);
+            foreach (var issue in issues)
+            {
+                if (issue.Severity == ConfigSeverity.Error) NebulaLog.Error($"config {issue.Field}: {issue.Message}");
+                else if (issue.Severity == ConfigSeverity.Warning) NebulaLog.Warn($"config {issue.Field}: {issue.Message}");
+                else NebulaLog.Info($"config {issue.Field}: {issue.Message}");
             }
         }
 
@@ -226,6 +257,9 @@ namespace Nebula
 
         /// <summary>Per-role cell streaming policy; null unless <see cref="NebulaConfig.WorldManifest"/> is set.</summary>
         public NebulaWorldStreaming WorldStreaming { get; private set; }
+
+        /// <summary>Per-role chunked-world policy; null unless <see cref="NebulaConfig.ChunkedWorld"/> is on with a <see cref="NebulaConfig.RuntimeWorld"/>.</summary>
+        public NebulaChunkedWorld ChunkedWorld { get; private set; }
 
         private void Update()
         {
@@ -380,6 +414,9 @@ namespace Nebula
             cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
+            // Interest is the knob a load test or a soak run wants to sweep without rebuilding.
+            cfg.InterestRadius = CommandLine.GetFloat("nebula-interest-radius", cfg.InterestRadius);
+            cfg.InterestCellSize = CommandLine.GetFloat("nebula-interest-cell", cfg.InterestCellSize);
             return cfg;
         }
 

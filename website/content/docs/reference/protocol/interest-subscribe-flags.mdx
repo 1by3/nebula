@@ -1,0 +1,21 @@
+---
+title: "InterestSubscribeFlags"
+description: "Lists the supported interest subscribe flags values."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum InterestSubscribeFlags : byte
+```
+
+Lists the supported interest subscribe flags values.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Full` | `1` | The message replaces the worker's whole set instead of changing it. |
+| `Commit` | `2` | The last chunk of this update: the worker applies the staged changes, checks [`InterestSubscribeMsg.SetCount`](/docs/reference/protocol/interest-subscribe-msg#setcount) and [`InterestSubscribeMsg.SetHash`](/docs/reference/protocol/interest-subscribe-msg#sethash), and only then adopts the new sequence number. A set too large for one message is split, and the chunks before this one change nothing the worker will keep if the commit never arrives or does not verify. |

@@ -110,7 +110,7 @@ namespace Nebula.Tests
             var r = new NetworkReader();
             r.Set(w.ToSegment());
             Assert.AreEqual((byte)MsgId.ContainerOwnership, r.ReadByte());
-            var back = ContainerOwnershipMsg.Read(r);
+            var back = ContainerOwnershipMsg.Read(r).Upserts;
             Assert.AreEqual(2, back.Count);
             Assert.IsFalse(back[0].HasBounds);
             Assert.AreEqual("arena", back[0].ContainerId);

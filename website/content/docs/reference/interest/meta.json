@@ -1,0 +1,4 @@
+{
+  "title": "Interest",
+  "pages": ["client-interest", "config-issue", "config-severity", "default-interest-policy", "focus-hint-filter", "i-interest-policy", "i-interest-source", "interest-client", "interest-entity", "interest-focus", "interest-grid", "interest-index", "interest-placement", "interest-policies", "interest-query", "interest-settings", "region-publisher", "region-subscription", "region-subscription-receiver", "region-subscription-sender"]
+}

@@ -1,0 +1,1736 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="265" result="Passed" total="265" passed="265" failed="0" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="1.8588807">
+  <test-suite type="TestSuite" id="1000" name="nebula" fullname="nebula" runstate="Runnable" testcasecount="265" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="1.858881" total="265" passed="265" failed="0" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="EditMode" />
+    </properties>
+    <test-suite type="Assembly" id="1298" name="Nebula.Tests.EditMode.dll" fullname="C:/Dev/nebula-shootergame/Library/ScriptAssemblies/Nebula.Tests.EditMode.dll" runstate="Runnable" testcasecount="265" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="1.853430" total="265" passed="265" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="73220" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="EditMode" />
+        <property name="EditorOnly" value="True" />
+      </properties>
+      <test-suite type="TestSuite" id="1299" name="Nebula" fullname="Nebula" runstate="Runnable" testcasecount="265" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="1.853137" total="265" passed="265" failed="0" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1300" name="Tests" fullname="Nebula.Tests" runstate="Runnable" testcasecount="265" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="1.852879" total="265" passed="265" failed="0" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <test-suite type="TestFixture" id="1002" name="AssignmentPolicyTests" fullname="Nebula.Tests.AssignmentPolicyTests" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" testcasecount="14" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.078269" total="14" passed="14" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1005" name="BakedPolicyIsTheOriginalDealerPlusStickyRuntimeContainers" fullname="Nebula.Tests.AssignmentPolicyTests.BakedPolicyIsTheOriginalDealerPlusStickyRuntimeContainers" methodname="BakedPolicyIsTheOriginalDealerPlusStickyRuntimeContainers" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1692308829" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.029600" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1008" name="CostPolicyCutsByCostNotByCount" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyCutsByCostNotByCount" methodname="CostPolicyCutsByCostNotByCount" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1038727457" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.012824" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1010" name="CostPolicyGivesEveryWorkerSomethingWhenThereAreMoreWorkersThanContainers" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyGivesEveryWorkerSomethingWhenThereAreMoreWorkersThanContainers" methodname="CostPolicyGivesEveryWorkerSomethingWhenThereAreMoreWorkersThanContainers" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="626148690" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002279" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1006" name="CostPolicyLeavesABalancedMeshAlone" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyLeavesABalancedMeshAlone" methodname="CostPolicyLeavesABalancedMeshAlone" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="769822606" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001423" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1011" name="CostPolicyMixesBakedAndRuntimeContainersOnOneCurve" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyMixesBakedAndRuntimeContainersOnOneCurve" methodname="CostPolicyMixesBakedAndRuntimeContainersOnOneCurve" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1228456344" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000912" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1007" name="CostPolicyMovesEdgeContainersTowardsTheIdleWorker" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyMovesEdgeContainersTowardsTheIdleWorker" methodname="CostPolicyMovesEdgeContainersTowardsTheIdleWorker" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="846924984" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001732" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1009" name="CostPolicyPlacesAnOrphanNextToItsNeighboursOwnerWhenBalanced" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyPlacesAnOrphanNextToItsNeighboursOwnerWhenBalanced" methodname="CostPolicyPlacesAnOrphanNextToItsNeighboursOwnerWhenBalanced" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1478675685" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000937" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1015" name="CostPolicyRefusesAReDealThatBuysAlmostNothing" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyRefusesAReDealThatBuysAlmostNothing" methodname="CostPolicyRefusesAReDealThatBuysAlmostNothing" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1572500322" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003329" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1016" name="CostPolicyStillReDealsWhenNobodyIsBusyEnoughForUtilizationToMeanAnything" fullname="Nebula.Tests.AssignmentPolicyTests.CostPolicyStillReDealsWhenNobodyIsBusyEnoughForUtilizationToMeanAnything" methodname="CostPolicyStillReDealsWhenNobodyIsBusyEnoughForUtilizationToMeanAnything" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1017298073" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003125" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1003" name="CostWeightsPriceOccupants" fullname="Nebula.Tests.AssignmentPolicyTests.CostWeightsPriceOccupants" methodname="CostWeightsPriceOccupants" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="1882766223" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000193" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1012" name="PredictDealsToSyntheticWorkersAndAddsUpTheirLoad" fullname="Nebula.Tests.AssignmentPolicyTests.PredictDealsToSyntheticWorkersAndAddsUpTheirLoad" methodname="PredictDealsToSyntheticWorkersAndAddsUpTheirLoad" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="405495971" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003354" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1013" name="PredictNamesTheContainerThatCarriesTheLoadOnItsOwn" fullname="Nebula.Tests.AssignmentPolicyTests.PredictNamesTheContainerThatCarriesTheLoadOnItsOwn" methodname="PredictNamesTheContainerThatCarriesTheLoadOnItsOwn" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="2114610243" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000801" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1014" name="PredictWorksForTheBakedPolicyToo" fullname="Nebula.Tests.AssignmentPolicyTests.PredictWorksForTheBakedPolicyToo" methodname="PredictWorksForTheBakedPolicyToo" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="321997931" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000505" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1004" name="TelemetryContainersAreParsedWithoutTheEntityList" fullname="Nebula.Tests.AssignmentPolicyTests.TelemetryContainersAreParsedWithoutTheEntityList" methodname="TelemetryContainersAreParsedWithoutTheEntityList" classname="Nebula.Tests.AssignmentPolicyTests" runstate="Runnable" seed="329166302" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.005064" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1017" name="ContainerHintTests" fullname="Nebula.Tests.ContainerHintTests" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" testcasecount="14" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.024291" total="14" passed="14" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1026" name="AnAffinityGroupIsDealtAsOneContainer" fullname="Nebula.Tests.ContainerHintTests.AnAffinityGroupIsDealtAsOneContainer" methodname="AnAffinityGroupIsDealtAsOneContainer" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="398033552" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002800" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1030" name="AnUnhintedWorldIsDealtExactlyAsBefore" fullname="Nebula.Tests.ContainerHintTests.AnUnhintedWorldIsDealtExactlyAsBefore" methodname="AnUnhintedWorldIsDealtExactlyAsBefore" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="826221655" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001446" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1031" name="AskingForARuntimeContainerWithoutAHintNeverTouchesTheOneOnTheRow" fullname="Nebula.Tests.ContainerHintTests.AskingForARuntimeContainerWithoutAHintNeverTouchesTheOneOnTheRow" methodname="AskingForARuntimeContainerWithoutAHintNeverTouchesTheOneOnTheRow" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1794885529" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001118" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1027" name="ASplitAffinityGroupIsPutBackTogether" fullname="Nebula.Tests.ContainerHintTests.ASplitAffinityGroupIsPutBackTogether" methodname="ASplitAffinityGroupIsPutBackTogether" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="616348635" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000708" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1021" name="ControlPlaneStoresTheHintBesideTheLease" fullname="Nebula.Tests.ContainerHintTests.ControlPlaneStoresTheHintBesideTheLease" methodname="ControlPlaneStoresTheHintBesideTheLease" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="194746058" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007817" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1023" name="CostMultiplierChangesWhereTheCurveIsCut" fullname="Nebula.Tests.ContainerHintTests.CostMultiplierChangesWhereTheCurveIsCut" methodname="CostMultiplierChangesWhereTheCurveIsCut" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1426946717" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001003" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1024" name="DedicatedReservesAWorkerAndTheRestShareTheOthers" fullname="Nebula.Tests.ContainerHintTests.DedicatedReservesAWorkerAndTheRestShareTheOthers" methodname="DedicatedReservesAWorkerAndTheRestShareTheOthers" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1932580708" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001699" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1018" name="DefaultHintSaysNothing" fullname="Nebula.Tests.ContainerHintTests.DefaultHintSaysNothing" methodname="DefaultHintSaysNothing" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="495498732" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000227" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1019" name="HintRoundTripsThroughItsCompactForm" fullname="Nebula.Tests.ContainerHintTests.HintRoundTripsThroughItsCompactForm" methodname="HintRoundTripsThroughItsCompactForm" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="560312719" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000252" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1020" name="ManifestEntryCarriesTheHint" fullname="Nebula.Tests.ContainerHintTests.ManifestEntryCarriesTheHint" methodname="ManifestEntryCarriesTheHint" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="600366325" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000827" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1029" name="PredictSeesTheHintsToo" fullname="Nebula.Tests.ContainerHintTests.PredictSeesTheHintsToo" methodname="PredictSeesTheHintsToo" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="366887033" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000602" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1028" name="SeamCostMovesTheCutElsewhere" fullname="Nebula.Tests.ContainerHintTests.SeamCostMovesTheCutElsewhere" methodname="SeamCostMovesTheCutElsewhere" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1223386164" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001187" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1022" name="TheHintOpTravelsOverTheWire" fullname="Nebula.Tests.ContainerHintTests.TheHintOpTravelsOverTheWire" methodname="TheHintOpTravelsOverTheWire" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1138388300" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001466" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1025" name="TooFewWorkersForTheDedicatedContainersIsReportedAndShared" fullname="Nebula.Tests.ContainerHintTests.TooFewWorkersForTheDedicatedContainersIsReportedAndShared" methodname="TooFewWorkersForTheDedicatedContainersIsReportedAndShared" classname="Nebula.Tests.ContainerHintTests" runstate="Runnable" seed="1734234005" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000958" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1032" name="ContainerTests" fullname="Nebula.Tests.ContainerTests" classname="Nebula.Tests.ContainerTests" runstate="Runnable" testcasecount="12" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.010849" total="12" passed="12" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1044" name="AlongListsEveryBoxTheSegmentCrossesIncludingNested" fullname="Nebula.Tests.ContainerTests.AlongListsEveryBoxTheSegmentCrossesIncludingNested" methodname="AlongListsEveryBoxTheSegmentCrossesIncludingNested" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1238914876" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002411" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1038" name="FindReturnsTheContainingVolume" fullname="Nebula.Tests.ContainerTests.FindReturnsTheContainingVolume" methodname="FindReturnsTheContainingVolume" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="59472458" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000673" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1034" name="FitToBoundsLeavesAnEmptyObjectUnchanged" fullname="Nebula.Tests.ContainerTests.FitToBoundsLeavesAnEmptyObjectUnchanged" methodname="FitToBoundsLeavesAnEmptyObjectUnchanged" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="438634383" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000485" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1033" name="FitToBoundsWrapsChildRenderersInLocalSpace" fullname="Nebula.Tests.ContainerTests.FitToBoundsWrapsChildRenderersInLocalSpace" methodname="FitToBoundsWrapsChildRenderersInLocalSpace" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="828114128" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002607" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1036" name="IndicesAreAssignedInIdOrder" fullname="Nebula.Tests.ContainerTests.IndicesAreAssignedInIdOrder" methodname="IndicesAreAssignedInIdOrder" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="44796225" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000292" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1041" name="NestedContainersResolveToTheInnermostBox" fullname="Nebula.Tests.ContainerTests.NestedContainersResolveToTheInnermostBox" methodname="NestedContainersResolveToTheInnermostBox" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1257890939" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000969" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1035" name="NewContainerIdsAreRandom" fullname="Nebula.Tests.ContainerTests.NewContainerIdsAreRandom" methodname="NewContainerIdsAreRandom" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1292883442" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000423" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1040" name="ResolveAppliesHysteresisAtTheBoundary" fullname="Nebula.Tests.ContainerTests.ResolveAppliesHysteresisAtTheBoundary" methodname="ResolveAppliesHysteresisAtTheBoundary" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1706936906" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000261" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1042" name="ResolveKeepsAHysteresisBandAtANestedBoxsFloor" fullname="Nebula.Tests.ContainerTests.ResolveKeepsAHysteresisBandAtANestedBoxsFloor" methodname="ResolveKeepsAHysteresisBandAtANestedBoxsFloor" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1929836781" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000372" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1043" name="SegmentIntersectionReportsEntryAndExit" fullname="Nebula.Tests.ContainerTests.SegmentIntersectionReportsEntryAndExit" methodname="SegmentIntersectionReportsEntryAndExit" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="1507804993" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000361" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1039" name="SignedDistanceIsNegativeInsideAndPositiveOutside" fullname="Nebula.Tests.ContainerTests.SignedDistanceIsNegativeInsideAndPositiveOutside" methodname="SignedDistanceIsNegativeInsideAndPositiveOutside" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="850800555" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000276" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1037" name="TouchingContainersAreNeighbours" fullname="Nebula.Tests.ContainerTests.TouchingContainersAreNeighbours" methodname="TouchingContainersAreNeighbours" classname="Nebula.Tests.ContainerTests" runstate="Runnable" seed="323995334" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000226" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1045" name="ControlPlaneAndRpcTests" fullname="Nebula.Tests.ControlPlaneAndRpcTests" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.029258" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1048" name="HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks" fullname="Nebula.Tests.ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks" methodname="HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" seed="501654055" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.012295" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] ReadHandoverState on Greedy of c threw: NetworkReader: tried to read 4 bytes with 0 remaining
+]]></output>
+            </test-case>
+            <test-case id="1046" name="LocalControlPlaneLeaseSemanticsMatchTheModule" fullname="Nebula.Tests.ControlPlaneAndRpcTests.LocalControlPlaneLeaseSemanticsMatchTheModule" methodname="LocalControlPlaneLeaseSemanticsMatchTheModule" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" seed="1955473484" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001475" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1049" name="NetworkVariablesAreDiscoveredInDeclarationOrderAndRoundTrip" fullname="Nebula.Tests.ControlPlaneAndRpcTests.NetworkVariablesAreDiscoveredInDeclarationOrderAndRoundTrip" methodname="NetworkVariablesAreDiscoveredInDeclarationOrderAndRoundTrip" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" seed="2075416959" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.005294" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1050" name="RemoteInterpolatorInterpolatesBetweenSamplesAndExtrapolatesPastTheNewest" fullname="Nebula.Tests.ControlPlaneAndRpcTests.RemoteInterpolatorInterpolatesBetweenSamplesAndExtrapolatesPastTheNewest" methodname="RemoteInterpolatorInterpolatesBetweenSamplesAndExtrapolatesPastTheNewest" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" seed="1650713194" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002088" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1047" name="RpcRegistryFindsAttributedMethodsAndInvokesThemWithDeserialisedArguments" fullname="Nebula.Tests.ControlPlaneAndRpcTests.RpcRegistryFindsAttributedMethodsAndInvokesThemWithDeserialisedArguments" methodname="RpcRegistryFindsAttributedMethodsAndInvokesThemWithDeserialisedArguments" classname="Nebula.Tests.ControlPlaneAndRpcTests" runstate="Runnable" seed="1813094100" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002682" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1051" name="ControlPlaneJsonTests" fullname="Nebula.Tests.ControlPlaneJsonTests" classname="Nebula.Tests.ControlPlaneJsonTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.010728" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1055" name="DatabaseUrlNamesTheEngine" fullname="Nebula.Tests.ControlPlaneJsonTests.DatabaseUrlNamesTheEngine" methodname="DatabaseUrlNamesTheEngine" classname="Nebula.Tests.ControlPlaneJsonTests" runstate="Runnable" seed="1914242574" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001405" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1054" name="PersistedRecordSurvivesARoundTrip" fullname="Nebula.Tests.ControlPlaneJsonTests.PersistedRecordSurvivesARoundTrip" methodname="PersistedRecordSurvivesARoundTrip" classname="Nebula.Tests.ControlPlaneJsonTests" runstate="Runnable" seed="510207984" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004088" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1052" name="SnapshotSurvivesARoundTrip" fullname="Nebula.Tests.ControlPlaneJsonTests.SnapshotSurvivesARoundTrip" methodname="SnapshotSurvivesARoundTrip" classname="Nebula.Tests.ControlPlaneJsonTests" runstate="Runnable" seed="803701953" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003470" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1053" name="WritesApplyInOrderAndRejectUnknownOps" fullname="Nebula.Tests.ControlPlaneJsonTests.WritesApplyInOrderAndRejectUnknownOps" methodname="WritesApplyInOrderAndRejectUnknownOps" classname="Nebula.Tests.ControlPlaneJsonTests" runstate="Runnable" seed="2089675323" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000641" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1056" name="DeferredPlayerSpawnTests" fullname="Nebula.Tests.DeferredPlayerSpawnTests" classname="Nebula.Tests.DeferredPlayerSpawnTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007072" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1058" name="CancelledJoinNeverInvokesPlayerFactory" fullname="Nebula.Tests.DeferredPlayerSpawnTests.CancelledJoinNeverInvokesPlayerFactory" methodname="CancelledJoinNeverInvokesPlayerFactory" classname="Nebula.Tests.DeferredPlayerSpawnTests" runstate="Runnable" seed="382073863" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.005156" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1057" name="CurrentCompletionCreatesExactlyOnePlayer" fullname="Nebula.Tests.DeferredPlayerSpawnTests.CurrentCompletionCreatesExactlyOnePlayer" methodname="CurrentCompletionCreatesExactlyOnePlayer" classname="Nebula.Tests.DeferredPlayerSpawnTests" runstate="Runnable" seed="1165812542" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000453" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1060" name="DisconnectedSessionCannotFinishLoading" fullname="Nebula.Tests.DeferredPlayerSpawnTests.DisconnectedSessionCannotFinishLoading" methodname="DisconnectedSessionCannotFinishLoading" classname="Nebula.Tests.DeferredPlayerSpawnTests" runstate="Runnable" seed="1983632480" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000492" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1059" name="OlderJoinCannotCompleteAfterReplacement" fullname="Nebula.Tests.DeferredPlayerSpawnTests.OlderJoinCannotCompleteAfterReplacement" methodname="OlderJoinCannotCompleteAfterReplacement" classname="Nebula.Tests.DeferredPlayerSpawnTests" runstate="Runnable" seed="1437592372" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000272" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1061" name="DynamicContainerLeaseTests" fullname="Nebula.Tests.DynamicContainerLeaseTests" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007445" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1064" name="ALeaseThatArrivesBeforeTheCarrierIsAppliedOnRegistration" fullname="Nebula.Tests.DynamicContainerLeaseTests.ALeaseThatArrivesBeforeTheCarrierIsAppliedOnRegistration" methodname="ALeaseThatArrivesBeforeTheCarrierIsAppliedOnRegistration" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" seed="2135141974" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003971" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1063" name="AnActiveLeaseIsInformationalAndAPinnedOneTakesOver" fullname="Nebula.Tests.DynamicContainerLeaseTests.AnActiveLeaseIsInformationalAndAPinnedOneTakesOver" methodname="AnActiveLeaseIsInformationalAndAPinnedOneTakesOver" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" seed="487024545" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000987" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1066" name="APinIsOneChangeAndTheCarriersWorkerCannotReclaimIt" fullname="Nebula.Tests.DynamicContainerLeaseTests.APinIsOneChangeAndTheCarriersWorkerCannotReclaimIt" methodname="APinIsOneChangeAndTheCarriersWorkerCannotReclaimIt" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" seed="581274133" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000478" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1062" name="DynamicIdsAreRecognisedAndResolvedById" fullname="Nebula.Tests.DynamicContainerLeaseTests.DynamicIdsAreRecognisedAndResolvedById" methodname="DynamicIdsAreRecognisedAndResolvedById" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" seed="1144237607" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000579" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1065" name="LocalControlPlaneRemovesLeaseRows" fullname="Nebula.Tests.DynamicContainerLeaseTests.LocalControlPlaneRemovesLeaseRows" methodname="LocalControlPlaneRemovesLeaseRows" classname="Nebula.Tests.DynamicContainerLeaseTests" runstate="Runnable" seed="1504909955" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000395" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1067" name="DynamicContainerTests" fullname="Nebula.Tests.DynamicContainerTests" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" testcasecount="10" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.014793" total="10" passed="10" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1068" name="ACarrierRegistersItsContainerByNetIdAndIsNotAStaticContainer" fullname="Nebula.Tests.DynamicContainerTests.ACarrierRegistersItsContainerByNetIdAndIsNotAStaticContainer" methodname="ACarrierRegistersItsContainerByNetIdAndIsNotAStaticContainer" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="1964309778" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002794" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1075" name="ContainerRefRoundTripsBothForms" fullname="Nebula.Tests.DynamicContainerTests.ContainerRefRoundTripsBothForms" methodname="ContainerRefRoundTripsBothForms" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="232613684" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000939" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1071" name="ContentsAreParentedUnderTheCarrierAndReplicatedInItsSpace" fullname="Nebula.Tests.DynamicContainerTests.ContentsAreParentedUnderTheCarrierAndReplicatedInItsSpace" methodname="ContentsAreParentedUnderTheCarrierAndReplicatedInItsSpace" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="1901487756" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002574" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1076" name="EntityStateEntryCarriesADynamicReference" fullname="Nebula.Tests.DynamicContainerTests.EntityStateEntryCarriesADynamicReference" methodname="EntityStateEntryCarriesADynamicReference" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="1836880551" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001081" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1077" name="InterpolatorSamplesInTheContainersSpace" fullname="Nebula.Tests.DynamicContainerTests.InterpolatorSamplesInTheContainersSpace" methodname="InterpolatorSamplesInTheContainersSpace" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="334326387" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001037" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1072" name="NeighboursIncludeTheEnclosingContainerAndTouchingBoxes" fullname="Nebula.Tests.DynamicContainerTests.NeighboursIncludeTheEnclosingContainerAndTouchingBoxes" methodname="NeighboursIncludeTheEnclosingContainerAndTouchingBoxes" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="631854839" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002085" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1074" name="NestedCarriersResolveInnermostAndReportDepth" fullname="Nebula.Tests.DynamicContainerTests.NestedCarriersResolveInnermostAndReportDepth" methodname="NestedCarriersResolveInnermostAndReportDepth" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="1499358623" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000714" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1069" name="PointsInsideTheCarriedBoxResolveToItAndHysteresisApplies" fullname="Nebula.Tests.DynamicContainerTests.PointsInsideTheCarriedBoxResolveToItAndHysteresisApplies" methodname="PointsInsideTheCarriedBoxResolveToItAndHysteresisApplies" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="1549254512" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000500" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1070" name="TheCarriedBoxMovesWithTheCarrier" fullname="Nebula.Tests.DynamicContainerTests.TheCarriedBoxMovesWithTheCarrier" methodname="TheCarriedBoxMovesWithTheCarrier" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="2001098055" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000561" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1073" name="UnregisteringEvacuatesTheContentsToTheContainerAround" fullname="Nebula.Tests.DynamicContainerTests.UnregisteringEvacuatesTheContentsToTheContainerAround" methodname="UnregisteringEvacuatesTheContentsToTheContainerAround" classname="Nebula.Tests.DynamicContainerTests" runstate="Runnable" seed="320933482" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000799" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1078" name="EditorSetupTests" fullname="Nebula.Tests.EditorSetupTests" classname="Nebula.Tests.EditorSetupTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.011191" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1081" name="HubKeepsCamerasAndSunButNotLevelContent" fullname="Nebula.Tests.EditorSetupTests.HubKeepsCamerasAndSunButNotLevelContent" methodname="HubKeepsCamerasAndSunButNotLevelContent" classname="Nebula.Tests.EditorSetupTests" runstate="Runnable" seed="718997765" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002180" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1082" name="RuntimeWorldDoesNotRequireAuthoredContainers" fullname="Nebula.Tests.EditorSetupTests.RuntimeWorldDoesNotRequireAuthoredContainers" methodname="RuntimeWorldDoesNotRequireAuthoredContainers" classname="Nebula.Tests.EditorSetupTests" runstate="Runnable" seed="1790584942" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000973" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1079" name="SplitTilesTheFootprintOfARotatedScaledContainer" fullname="Nebula.Tests.EditorSetupTests.SplitTilesTheFootprintOfARotatedScaledContainer" methodname="SplitTilesTheFootprintOfARotatedScaledContainer" classname="Nebula.Tests.EditorSetupTests" runstate="Runnable" seed="2129520270" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.006675" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1080" name="UniqueContainerIdSkipsIdsInUse" fullname="Nebula.Tests.EditorSetupTests.UniqueContainerIdSkipsIdsInUse" methodname="UniqueContainerIdSkipsIdsInUse" classname="Nebula.Tests.EditorSetupTests" runstate="Runnable" seed="754272651" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000236" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1083" name="EntityRequestsTests" fullname="Nebula.Tests.EntityRequestsTests" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" testcasecount="7" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.017076" total="7" passed="7" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1088" name="ADisconnectedWorkerCannotHangARequestForever" fullname="Nebula.Tests.EntityRequestsTests.ADisconnectedWorkerCannotHangARequestForever" methodname="ADisconnectedWorkerCannotHangARequestForever" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="1187981676" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.008495" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1090" name="ASecondReplyIsIgnored" fullname="Nebula.Tests.EntityRequestsTests.ASecondReplyIsIgnored" methodname="ASecondReplyIsIgnored" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="1145814077" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001334" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1086" name="EveryoneDecliningTwiceConcludesNotFound" fullname="Nebula.Tests.EntityRequestsTests.EveryoneDecliningTwiceConcludesNotFound" methodname="EveryoneDecliningTwiceConcludesNotFound" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="1429071812" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000821" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1084" name="LocalAuthorityAnswersWithNoNetworkTraffic" fullname="Nebula.Tests.EntityRequestsTests.LocalAuthorityAnswersWithNoNetworkTraffic" methodname="LocalAuthorityAnswersWithNoNetworkTraffic" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="456964248" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000547" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1087" name="NoReplyBeforeTheDeadlineTimesOut" fullname="Nebula.Tests.EntityRequestsTests.NoReplyBeforeTheDeadlineTimesOut" methodname="NoReplyBeforeTheDeadlineTimesOut" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="1623749651" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000428" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1085" name="RemoteAuthorityAnswersAfterADeferredReply" fullname="Nebula.Tests.EntityRequestsTests.RemoteAuthorityAnswersAfterADeferredReply" methodname="RemoteAuthorityAnswersAfterADeferredReply" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="2016216495" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000671" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1089" name="ReplyAfterCancelIsIgnored" fullname="Nebula.Tests.EntityRequestsTests.ReplyAfterCancelIsIgnored" methodname="ReplyAfterCancelIsIgnored" classname="Nebula.Tests.EntityRequestsTests" runstate="Runnable" seed="1898706588" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000312" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1091" name="IdlePoolTests" fullname="Nebula.Tests.IdlePoolTests" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.017182" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1104" name="AHostThatIgnoresParkingKillsInstead" fullname="Nebula.Tests.IdlePoolTests.AHostThatIgnoresParkingKillsInstead" methodname="AHostThatIgnoresParkingKillsInstead" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1820462819" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000430" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1102" name="AHostThatParksKeepsTheInstanceAndGivesItBackWithTheSameWorkerId" fullname="Nebula.Tests.IdlePoolTests.AHostThatParksKeepsTheInstanceAndGivesItBackWithTheSameWorkerId" methodname="AHostThatParksKeepsTheInstanceAndGivesItBackWithTheSameWorkerId" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1878906934" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000515" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1093" name="AMachineIsAlwaysPaidForAtLeastOneStartedHour" fullname="Nebula.Tests.IdlePoolTests.AMachineIsAlwaysPaidForAtLeastOneStartedHour" methodname="AMachineIsAlwaysPaidForAtLeastOneStartedHour" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1289979830" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000327" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1092" name="AMachineParkedInsideItsFirstHourIsPaidForUntilTheHourEnds" fullname="Nebula.Tests.IdlePoolTests.AMachineParkedInsideItsFirstHourIsPaidForUntilTheHourEnds" methodname="AMachineParkedInsideItsFirstHourIsPaidForUntilTheHourEnds" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="207996338" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000073" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1096" name="AnIdlePoolShorterThanTheBillingMarginIsStillHonouredInFull" fullname="Nebula.Tests.IdlePoolTests.AnIdlePoolShorterThanTheBillingMarginIsStillHonouredInFull" methodname="AnIdlePoolShorterThanTheBillingMarginIsStillHonouredInFull" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1679050096" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000300" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1103" name="AParkedInstanceTheHostHasDroppedRefusesToUnpark" fullname="Nebula.Tests.IdlePoolTests.AParkedInstanceTheHostHasDroppedRefusesToUnpark" methodname="AParkedInstanceTheHostHasDroppedRefusesToUnpark" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="522697458" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000969" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1097" name="AParkedMachineIsDeletedShortlyBeforeItsPaidHourRunsOut" fullname="Nebula.Tests.IdlePoolTests.AParkedMachineIsDeletedShortlyBeforeItsPaidHourRunsOut" methodname="AParkedMachineIsDeletedShortlyBeforeItsPaidHourRunsOut" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="2041996930" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000193" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1098" name="AParkedWorkerIsNeverDealtContainers" fullname="Nebula.Tests.IdlePoolTests.AParkedWorkerIsNeverDealtContainers" methodname="AParkedWorkerIsNeverDealtContainers" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1982384433" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000596" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1100" name="AScaleOutTakesBackTheMostRecentlyParkedWorker" fullname="Nebula.Tests.IdlePoolTests.AScaleOutTakesBackTheMostRecentlyParkedWorker" methodname="AScaleOutTakesBackTheMostRecentlyParkedWorker" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1693654054" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000617" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1095" name="AShorterIdlePoolGivesTheMachineUpEarlyAndALongerOneIsNotHonoured" fullname="Nebula.Tests.IdlePoolTests.AShorterIdlePoolGivesTheMachineUpEarlyAndALongerOneIsNotHonoured" methodname="AShorterIdlePoolGivesTheMachineUpEarlyAndALongerOneIsNotHonoured" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="960922963" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000091" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1099" name="DrainingRetiredAndParkedWorkersAreAllIneligible" fullname="Nebula.Tests.IdlePoolTests.DrainingRetiredAndParkedWorkersAreAllIneligible" methodname="DrainingRetiredAndParkedWorkersAreAllIneligible" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="572716586" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000212" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1094" name="EveryStartedHourCounts" fullname="Nebula.Tests.IdlePoolTests.EveryStartedHourCounts" methodname="EveryStartedHourCounts" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="483742449" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000080" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1101" name="ParkedWorkersKeepTheirIndexSoNoLaunchReusesIt" fullname="Nebula.Tests.IdlePoolTests.ParkedWorkersKeepTheirIndexSoNoLaunchReusesIt" methodname="ParkedWorkersKeepTheirIndexSoNoLaunchReusesIt" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="2045358162" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000814" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1106" name="TheHetznerHostParksAndReportsACloudBootTime" fullname="Nebula.Tests.IdlePoolTests.TheHetznerHostParksAndReportsACloudBootTime" methodname="TheHetznerHostParksAndReportsACloudBootTime" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="393236645" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.008726" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1105" name="TheProcessHostDoesNotParkAndBootsInSeconds" fullname="Nebula.Tests.IdlePoolTests.TheProcessHostDoesNotParkAndBootsInSeconds" methodname="TheProcessHostDoesNotParkAndBootsInSeconds" classname="Nebula.Tests.IdlePoolTests" runstate="Runnable" seed="1872173123" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000575" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1107" name="InstanceContainerTests" fullname="Nebula.Tests.InstanceContainerTests" classname="Nebula.Tests.InstanceContainerTests" runstate="Runnable" testcasecount="2" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.013731" total="2" passed="2" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1109" name="MissingContentCannotBecomeReady" fullname="Nebula.Tests.InstanceContainerTests.MissingContentCannotBecomeReady" methodname="MissingContentCannotBecomeReady" classname="Nebula.Tests.InstanceContainerTests" runstate="Runnable" seed="827382472" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.011857" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1108" name="OverlappingCopiesResolveOnlyWithinTheirScope" fullname="Nebula.Tests.InstanceContainerTests.OverlappingCopiesResolveOnlyWithinTheirScope" methodname="OverlappingCopiesResolveOnlyWithinTheirScope" classname="Nebula.Tests.InstanceContainerTests" runstate="Runnable" seed="2004261170" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001203" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1110" name="MeshTelemetryTests" fullname="Nebula.Tests.MeshTelemetryTests" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.015885" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1115" name="AbsolutePositionsAddTheFloatingOriginBack" fullname="Nebula.Tests.MeshTelemetryTests.AbsolutePositionsAddTheFloatingOriginBack" methodname="AbsolutePositionsAddTheFloatingOriginBack" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="1006273740" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000868" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1118" name="AWorkerDocumentCountsWhatItHoldsPerContainerAndReportsItsCarriers" fullname="Nebula.Tests.MeshTelemetryTests.AWorkerDocumentCountsWhatItHoldsPerContainerAndReportsItsCarriers" methodname="AWorkerDocumentCountsWhatItHoldsPerContainerAndReportsItsCarriers" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="1351916891" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004825" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1112" name="DocumentsThatAreNotAWorkerObjectAreRefused" fullname="Nebula.Tests.MeshTelemetryTests.DocumentsThatAreNotAWorkerObjectAreRefused" methodname="DocumentsThatAreNotAWorkerObjectAreRefused" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="1980999494" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000827" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1117" name="GeometryDescribesEveryStaticContainerWithItsEnclosingContainer" fullname="Nebula.Tests.MeshTelemetryTests.GeometryDescribesEveryStaticContainerWithItsEnclosingContainer" methodname="GeometryDescribesEveryStaticContainerWithItsEnclosingContainer" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="1824204661" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001069" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1116" name="RuntimeOnlyWorldReportsAbsoluteEntityPositionsAndItsOrigin" fullname="Nebula.Tests.MeshTelemetryTests.RuntimeOnlyWorldReportsAbsoluteEntityPositionsAndItsOrigin" methodname="RuntimeOnlyWorldReportsAbsoluteEntityPositionsAndItsOrigin" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="997740110" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004184" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1114" name="StaleAndForgottenWorkersLeaveTheMap" fullname="Nebula.Tests.MeshTelemetryTests.StaleAndForgottenWorkersLeaveTheMap" methodname="StaleAndForgottenWorkersLeaveTheMap" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="292547205" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001764" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1111" name="TheLatestDocumentPerWorkerIsKeptAndServedInWorkerOrder" fullname="Nebula.Tests.MeshTelemetryTests.TheLatestDocumentPerWorkerIsKeptAndServedInWorkerOrder" methodname="TheLatestDocumentPerWorkerIsKeptAndServedInWorkerOrder" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="419110002" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000435" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1113" name="WorkersAreAskedForEntitiesOnlyWhileSomebodyReadsTheMap" fullname="Nebula.Tests.MeshTelemetryTests.WorkersAreAskedForEntitiesOnlyWhileSomebodyReadsTheMap" methodname="WorkersAreAskedForEntitiesOnlyWhileSomebodyReadsTheMap" classname="Nebula.Tests.MeshTelemetryTests" runstate="Runnable" seed="1547426869" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000361" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1119" name="NetworkPrefabTests" fullname="Nebula.Tests.NetworkPrefabTests" classname="Nebula.Tests.NetworkPrefabTests" runstate="Runnable" testcasecount="1" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.005339" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1120" name="CopyOfPrefabWithLeftoverSceneIdIsNotASceneEntity" fullname="Nebula.Tests.NetworkPrefabTests.CopyOfPrefabWithLeftoverSceneIdIsNotASceneEntity" methodname="CopyOfPrefabWithLeftoverSceneIdIsNotASceneEntity" classname="Nebula.Tests.NetworkPrefabTests" runstate="Runnable" seed="2142312090" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004541" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] Network prefab 'player prefab' has SceneId 4242; spawned copies ignore it. Set SceneId to 0 on the prefab asset (Nebula > Validate Project reports this)
+]]></output>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1121" name="OrchestratorAssignmentTests" fullname="Nebula.Tests.OrchestratorAssignmentTests" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" testcasecount="12" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007250" total="12" passed="12" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1132" name="DashboardJsonHelpersEscapeAndParse" fullname="Nebula.Tests.OrchestratorAssignmentTests.DashboardJsonHelpersEscapeAndParse" methodname="DashboardJsonHelpersEscapeAndParse" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="2016559689" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000390" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1127" name="DeadWorkersContainerMovesAndNothingElseDoes" fullname="Nebula.Tests.OrchestratorAssignmentTests.DeadWorkersContainerMovesAndNothingElseDoes" methodname="DeadWorkersContainerMovesAndNothingElseDoes" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="696132978" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001055" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1122" name="FourWorkersGetOneContainerEach" fullname="Nebula.Tests.OrchestratorAssignmentTests.FourWorkersGetOneContainerEach" methodname="FourWorkersGetOneContainerEach" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="48933985" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000268" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1131" name="HighestIndexWorkerRetiresFirst" fullname="Nebula.Tests.OrchestratorAssignmentTests.HighestIndexWorkerRetiresFirst" methodname="HighestIndexWorkerRetiresFirst" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="21836706" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000622" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1130" name="NextFreeIndexReusesGapsAndStartsAtOne" fullname="Nebula.Tests.OrchestratorAssignmentTests.NextFreeIndexReusesGapsAndStartsAtOne" methodname="NextFreeIndexReusesGapsAndStartsAtOne" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1825977377" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000180" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1125" name="NoWorkersMeansNoChanges" fullname="Nebula.Tests.OrchestratorAssignmentTests.NoWorkersMeansNoChanges" methodname="NoWorkersMeansNoChanges" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1912053785" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000107" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1124" name="OneWorkerTakesEverything" fullname="Nebula.Tests.OrchestratorAssignmentTests.OneWorkerTakesEverything" methodname="OneWorkerTakesEverything" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="676741418" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000179" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1133" name="OrphanedContainersAreDealtToTheLeastLoadedWorkers" fullname="Nebula.Tests.OrchestratorAssignmentTests.OrphanedContainersAreDealtToTheLeastLoadedWorkers" methodname="OrphanedContainersAreDealtToTheLeastLoadedWorkers" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1044526521" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000496" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1129" name="RetiringWorkerIsSimplyLeftOutAndOnlyItsContainerMoves" fullname="Nebula.Tests.OrchestratorAssignmentTests.RetiringWorkerIsSimplyLeftOutAndOnlyItsContainerMoves" methodname="RetiringWorkerIsSimplyLeftOutAndOnlyItsContainerMoves" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1017084934" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000262" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1128" name="ReturningWorkerGetsAContainerBackWithOneMove" fullname="Nebula.Tests.OrchestratorAssignmentTests.ReturningWorkerGetsAContainerBackWithOneMove" methodname="ReturningWorkerGetsAContainerBackWithOneMove" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1798513741" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000233" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1126" name="StableAssignmentIsANoOp" fullname="Nebula.Tests.OrchestratorAssignmentTests.StableAssignmentIsANoOp" methodname="StableAssignmentIsANoOp" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="1369025445" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000175" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1123" name="ThreeWorkersMeansOneOfThemSimulatesTwo" fullname="Nebula.Tests.OrchestratorAssignmentTests.ThreeWorkersMeansOneOfThemSimulatesTwo" methodname="ThreeWorkersMeansOneOfThemSimulatesTwo" classname="Nebula.Tests.OrchestratorAssignmentTests" runstate="Runnable" seed="98786629" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001780" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1134" name="PersistenceTests" fullname="Nebula.Tests.PersistenceTests" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" testcasecount="13" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.303614" total="13" passed="13" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1143" name="ABehaviourThatReadsPastItsChunkIsIsolated" fullname="Nebula.Tests.PersistenceTests.ABehaviourThatReadsPastItsChunkIsIsolated" methodname="ABehaviourThatReadsPastItsChunkIsIsolated" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="2033285065" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003554" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] ReadPersistentState on Chest of b threw: NetworkReader: tried to read 4 bytes with 2 remaining
+]]></output>
+            </test-case>
+            <test-case id="1142" name="ASingleEntryCanBeReadOutOfABlobWithoutAnEntity" fullname="Nebula.Tests.PersistenceTests.ASingleEntryCanBeReadOutOfABlobWithoutAnEntity" methodname="ASingleEntryCanBeReadOutOfABlobWithoutAnEntity" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="229895666" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000646" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1146" name="AssigningAPersistedVariableMarksTheEntityForACheckpoint" fullname="Nebula.Tests.PersistenceTests.AssigningAPersistedVariableMarksTheEntityForACheckpoint" methodname="AssigningAPersistedVariableMarksTheEntityForACheckpoint" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="799076953" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003952" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1139" name="LocalStoreDoesNotAnswerABarrierWhenTheFileWriteFails" fullname="Nebula.Tests.PersistenceTests.LocalStoreDoesNotAnswerABarrierWhenTheFileWriteFails" methodname="LocalStoreDoesNotAnswerABarrierWhenTheFileWriteFails" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1177099583" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.221578" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] persistence: local store ready (C:\Users\jesse\AppData\Local\Temp\nebula-persist-33c44e5c85214c1db101978b067437aa\is-a-directory), 0 records
+[nebula] persistence: writing C:\Users\jesse\AppData\Local\Temp\nebula-persist-33c44e5c85214c1db101978b067437aa\is-a-directory failed: Cannot create a file when that file already exists
+[nebula] persistence: writing C:\Users\jesse\AppData\Local\Temp\nebula-persist-33c44e5c85214c1db101978b067437aa\is-a-directory failed: Cannot create a file when that file already exists
+[nebula] persistence: writing C:\Users\jesse\AppData\Local\Temp\nebula-persist-33c44e5c85214c1db101978b067437aa\is-a-directory failed: Cannot create a file when that file already exists
+[nebula] persistence: writing C:\Users\jesse\AppData\Local\Temp\nebula-persist-33c44e5c85214c1db101978b067437aa\is-a-directory failed: Cannot create a file when that file already exists
+]]></output>
+            </test-case>
+            <test-case id="1138" name="LocalStoreGroupsBarriersAndOnlyAnswersAfterTheSnapshotIsDurable" fullname="Nebula.Tests.PersistenceTests.LocalStoreGroupsBarriersAndOnlyAnswersAfterTheSnapshotIsDurable" methodname="LocalStoreGroupsBarriersAndOnlyAnswersAfterTheSnapshotIsDurable" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1022013445" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.058079" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] persistence: local store ready (C:\Users\jesse\AppData\Local\Temp\nebula-persist-ef071a7b8fb742f68e20a2b0e9e04814\world.bin), 0 records
+[nebula] persistence: local store ready (C:\Users\jesse\AppData\Local\Temp\nebula-persist-ef071a7b8fb742f68e20a2b0e9e04814\world.bin), 2 records
+]]></output>
+            </test-case>
+            <test-case id="1136" name="LocalStoreRejectsAnOlderEpochAndBumpsTheVersionOnEveryAcceptedSave" fullname="Nebula.Tests.PersistenceTests.LocalStoreRejectsAnOlderEpochAndBumpsTheVersionOnEveryAcceptedSave" methodname="LocalStoreRejectsAnOlderEpochAndBumpsTheVersionOnEveryAcceptedSave" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1109511558" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000657" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] persistence: local store ready (in memory), 0 records
+]]></output>
+            </test-case>
+            <test-case id="1137" name="LocalStoreRoundTripsThroughItsFile" fullname="Nebula.Tests.PersistenceTests.LocalStoreRoundTripsThroughItsFile" methodname="LocalStoreRoundTripsThroughItsFile" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1127969766" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007769" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] persistence: local store ready (C:\Users\jesse\AppData\Local\Temp\nebula-persist-85f4f460df0f4b8bac54d8fe247ed449\world.bin), 0 records
+[nebula] persistence: local store ready (C:\Users\jesse\AppData\Local\Temp\nebula-persist-85f4f460df0f4b8bac54d8fe247ed449\world.bin), 2 records
+]]></output>
+            </test-case>
+            <test-case id="1135" name="LocalStoreSavesLoadsAndAnswersContainerAndCarrierQueries" fullname="Nebula.Tests.PersistenceTests.LocalStoreSavesLoadsAndAnswersContainerAndCarrierQueries" methodname="LocalStoreSavesLoadsAndAnswersContainerAndCarrierQueries" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1561685418" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002053" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] persistence: local store ready (in memory), 0 records
+]]></output>
+            </test-case>
+            <test-case id="1140" name="PersistedVariablesAreNamedAndRoundTripWhileUnpersistedOnesAreLeftAlone" fullname="Nebula.Tests.PersistenceTests.PersistedVariablesAreNamedAndRoundTripWhileUnpersistedOnesAreLeftAlone" methodname="PersistedVariablesAreNamedAndRoundTripWhileUnpersistedOnesAreLeftAlone" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="774756489" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001043" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1147" name="RestorePlanningNeverBringsBackWhatIsAliveOrOwnedAndWaitsOutALiveSaver" fullname="Nebula.Tests.PersistenceTests.RestorePlanningNeverBringsBackWhatIsAliveOrOwnedAndWaitsOutALiveSaver" methodname="RestorePlanningNeverBringsBackWhatIsAliveOrOwnedAndWaitsOutALiveSaver" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1446731972" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000349" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1145" name="TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord" fullname="Nebula.Tests.PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord" methodname="TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="1000412568" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001167" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] PersistentEntity.Key on Crate is already saved as 'crate-42'; ignoring the change to 'something-else'
+]]></output>
+            </test-case>
+            <test-case id="1144" name="ThePersistentEntityIsFoundOnTheIdentityAndGeneratesAKeyWhenItHasNone" fullname="Nebula.Tests.PersistenceTests.ThePersistentEntityIsFoundOnTheIdentityAndGeneratesAKeyWhenItHasNone" methodname="ThePersistentEntityIsFoundOnTheIdentityAndGeneratesAKeyWhenItHasNone" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="949492221" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000602" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1141" name="UnknownEntriesAreSkippedAndMissingOnesKeepTheirDefaults" fullname="Nebula.Tests.PersistenceTests.UnknownEntriesAreSkippedAndMissingOnesKeepTheirDefaults" methodname="UnknownEntriesAreSkippedAndMissingOnesKeepTheirDefaults" classname="Nebula.Tests.PersistenceTests" runstate="Runnable" seed="499840663" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000480" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1148" name="RuntimeContainerTests" fullname="Nebula.Tests.RuntimeContainerTests" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.021520" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1151" name="AdjacentChunksAreNeighboursAndFindPicksTheRightOne" fullname="Nebula.Tests.RuntimeContainerTests.AdjacentChunksAreNeighboursAndFindPicksTheRightOne" methodname="AdjacentChunksAreNeighboursAndFindPicksTheRightOne" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="944294786" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001519" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1152" name="AlongVisitsRuntimeBoxesThroughTheHash" fullname="Nebula.Tests.RuntimeContainerTests.AlongVisitsRuntimeBoxesThroughTheHash" methodname="AlongVisitsRuntimeBoxesThroughTheHash" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1844592223" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000501" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1156" name="ANewSessionForgetsRuntimeContainersAndSubscribers" fullname="Nebula.Tests.RuntimeContainerTests.ANewSessionForgetsRuntimeContainersAndSubscribers" methodname="ANewSessionForgetsRuntimeContainersAndSubscribers" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="193375513" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000638" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1163" name="BucketSizeCanChangeWithBoxesRegistered" fullname="Nebula.Tests.RuntimeContainerTests.BucketSizeCanChangeWithBoxesRegistered" methodname="BucketSizeCanChangeWithBoxesRegistered" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="214170590" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000836" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1159" name="ClientOwnershipSnapshotDespawnsEntitiesFromRetiredRuntimeContainers" fullname="Nebula.Tests.RuntimeContainerTests.ClientOwnershipSnapshotDespawnsEntitiesFromRetiredRuntimeContainers" methodname="ClientOwnershipSnapshotDespawnsEntitiesFromRetiredRuntimeContainers" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1140301055" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.006508" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1157" name="LeasesApplyToRuntimeContainersAndWaitForLateOnes" fullname="Nebula.Tests.RuntimeContainerTests.LeasesApplyToRuntimeContainersAndWaitForLateOnes" methodname="LeasesApplyToRuntimeContainersAndWaitForLateOnes" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1420388813" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000396" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1160" name="LocalControlPlaneCreatesRuntimeRowsAssignedToTheRequester" fullname="Nebula.Tests.RuntimeContainerTests.LocalControlPlaneCreatesRuntimeRowsAssignedToTheRequester" methodname="LocalControlPlaneCreatesRuntimeRowsAssignedToTheRequester" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="543849904" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.003215" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1162" name="RebuildingTheBakedSetIgnoresRuntimeObjects" fullname="Nebula.Tests.RuntimeContainerTests.RebuildingTheBakedSetIgnoresRuntimeObjects" methodname="RebuildingTheBakedSetIgnoresRuntimeObjects" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="252170831" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000589" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1149" name="RegisterCreatesAResolvableBoxNamedByItsId" fullname="Nebula.Tests.RuntimeContainerTests.RegisterCreatesAResolvableBoxNamedByItsId" methodname="RegisterCreatesAResolvableBoxNamedByItsId" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1518336361" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000757" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1161" name="RuntimeAssignmentIsStickyAndOnlyOrphansMove" fullname="Nebula.Tests.RuntimeContainerTests.RuntimeAssignmentIsStickyAndOnlyOrphansMove" methodname="RuntimeAssignmentIsStickyAndOnlyOrphansMove" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1689359580" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001080" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1153" name="RuntimeBoxesNeighbourBakedOnesTheyTouch" fullname="Nebula.Tests.RuntimeContainerTests.RuntimeBoxesNeighbourBakedOnesTheyTouch" methodname="RuntimeBoxesNeighbourBakedOnesTheyTouch" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="814172596" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000468" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1158" name="SyncRuntimeMirrorsTheLeaseRows" fullname="Nebula.Tests.RuntimeContainerTests.SyncRuntimeMirrorsTheLeaseRows" methodname="SyncRuntimeMirrorsTheLeaseRows" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="666211350" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001092" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1155" name="UnregisterNeverDestroysTheEntitiesInsideEvenWithNoContainerLeft" fullname="Nebula.Tests.RuntimeContainerTests.UnregisterNeverDestroysTheEntitiesInsideEvenWithNoContainerLeft" methodname="UnregisterNeverDestroysTheEntitiesInsideEvenWithNoContainerLeft" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1569168998" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000744" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1154" name="UnregisterRaisesTheEventEvacuatesEntitiesAndDestroysTheObject" fullname="Nebula.Tests.RuntimeContainerTests.UnregisterRaisesTheEventEvacuatesEntitiesAndDestroysTheObject" methodname="UnregisterRaisesTheEventEvacuatesEntitiesAndDestroysTheObject" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="1724893360" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000783" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1150" name="UnresolvedRuntimeReferenceIsNullLikeAnUnarrivedCarrier" fullname="Nebula.Tests.RuntimeContainerTests.UnresolvedRuntimeReferenceIsNullLikeAnUnarrivedCarrier" methodname="UnresolvedRuntimeReferenceIsNullLikeAnUnarrivedCarrier" classname="Nebula.Tests.RuntimeContainerTests" runstate="Runnable" seed="619912344" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000160" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1164" name="RuntimeGridTests" fullname="Nebula.Tests.RuntimeGridTests" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" testcasecount="18" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.018576" total="18" passed="18" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1180" name="BoundsOfIdMatchesUnpackingTheId" fullname="Nebula.Tests.RuntimeGridTests.BoundsOfIdMatchesUnpackingTheId" methodname="BoundsOfIdMatchesUnpackingTheId" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1351591916" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002093" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1175" name="CenterOfAndBoundsOfAgreeWithCoordOf" fullname="Nebula.Tests.RuntimeGridTests.CenterOfAndBoundsOfAgreeWithCoordOf" methodname="CenterOfAndBoundsOfAgreeWithCoordOf" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="302220853" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000570" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1176" name="CenterOfShiftsWithTheFloatingOrigin" fullname="Nebula.Tests.RuntimeGridTests.CenterOfShiftsWithTheFloatingOrigin" methodname="CenterOfShiftsWithTheFloatingOrigin" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="861324531" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000397" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1183" name="ConstructorRejectsNonPositiveCellSize" fullname="Nebula.Tests.RuntimeGridTests.ConstructorRejectsNonPositiveCellSize" methodname="ConstructorRejectsNonPositiveCellSize" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="324390048" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000509" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1174" name="CoordOfMatchesTheCellAPositionFallsIn" fullname="Nebula.Tests.RuntimeGridTests.CoordOfMatchesTheCellAPositionFallsIn" methodname="CoordOfMatchesTheCellAPositionFallsIn" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1559339017" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000387" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1177" name="IsNearUsesChebyshevDistance" fullname="Nebula.Tests.RuntimeGridTests.IsNearUsesChebyshevDistance" methodname="IsNearUsesChebyshevDistance" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1723745388" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000568" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1172" name="IsValidRejectsCoordinatesOutsideThePackableRange" fullname="Nebula.Tests.RuntimeGridTests.IsValidRejectsCoordinatesOutsideThePackableRange" methodname="IsValidRejectsCoordinatesOutsideThePackableRange" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1595154368" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000243" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1179" name="NeighborhoodDropsCoordinatesOutsideThePackableRange" fullname="Nebula.Tests.RuntimeGridTests.NeighborhoodDropsCoordinatesOutsideThePackableRange" methodname="NeighborhoodDropsCoordinatesOutsideThePackableRange" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1030221082" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001652" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1178" name="NeighborhoodEnumeratesACubeOfTheRequestedRing" fullname="Nebula.Tests.RuntimeGridTests.NeighborhoodEnumeratesACubeOfTheRequestedRing" methodname="NeighborhoodEnumeratesACubeOfTheRequestedRing" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1222901073" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000258" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1182" name="NonUniformCellSizeIsRespectedPerAxis" fullname="Nebula.Tests.RuntimeGridTests.NonUniformCellSizeIsRespectedPerAxis" methodname="NonUniformCellSizeIsRespectedPerAxis" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="2007121195" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000248" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-suite type="ParameterizedMethod" id="1170" name="PackIdMatchesKnownPairs" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001545" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1165" name="PackIdMatchesKnownPairs(ulong.MinValue,0,0,0)" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs(ulong.MinValue,0,0,0)" methodname="PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1672506128" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000364" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1166" name="PackIdMatchesKnownPairs(2097151UL,0,0,-1)" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs(2097151UL,0,0,-1)" methodname="PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="614828184" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000097" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1167" name="PackIdMatchesKnownPairs(9223367638808264704UL,-1,0,0)" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs(9223367638808264704UL,-1,0,0)" methodname="PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1930190896" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000083" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1168" name="PackIdMatchesKnownPairs(9223367638810361855UL,-1,0,-1)" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs(9223367638810361855UL,-1,0,-1)" methodname="PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="896540055" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000078" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1169" name="PackIdMatchesKnownPairs(9223372036854775807UL,-1,-1,-1)" fullname="Nebula.Tests.RuntimeGridTests.PackIdMatchesKnownPairs(9223372036854775807UL,-1,-1,-1)" methodname="PackIdMatchesKnownPairs" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1296129261" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000079" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-case id="1173" name="PackIdThrowsOutsideTheValidRange" fullname="Nebula.Tests.RuntimeGridTests.PackIdThrowsOutsideTheValidRange" methodname="PackIdThrowsOutsideTheValidRange" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1940582939" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000241" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1171" name="PackUnpackRoundTripsAcrossTheValidRange" fullname="Nebula.Tests.RuntimeGridTests.PackUnpackRoundTripsAcrossTheValidRange" methodname="PackUnpackRoundTripsAcrossTheValidRange" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1195427716" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000619" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1181" name="UseAsRuntimeBoundsWiresTheHookAndCanBeReplaced" fullname="Nebula.Tests.RuntimeGridTests.UseAsRuntimeBoundsWiresTheHookAndCanBeReplaced" methodname="UseAsRuntimeBoundsWiresTheHookAndCanBeReplaced" classname="Nebula.Tests.RuntimeGridTests" runstate="Runnable" seed="1624947958" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000556" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1184" name="RuntimeOriginTests" fullname="Nebula.Tests.RuntimeOriginTests" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.007105" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1186" name="NewRuntimeContainerResolvesInShiftedFrame" fullname="Nebula.Tests.RuntimeOriginTests.NewRuntimeContainerResolvesInShiftedFrame" methodname="NewRuntimeContainerResolvesInShiftedFrame" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" seed="321388802" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000869" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1188" name="NewSessionClearsProceduralBoundsCallback" fullname="Nebula.Tests.RuntimeOriginTests.NewSessionClearsProceduralBoundsCallback" methodname="NewSessionClearsProceduralBoundsCallback" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" seed="382471424" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000240" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1189" name="OppositeSignedCellExtremesDoNotOverflow" fullname="Nebula.Tests.RuntimeOriginTests.OppositeSignedCellExtremesDoNotOverflow" methodname="OppositeSignedCellExtremesDoNotOverflow" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" seed="1526292853" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000393" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1185" name="RuntimeWorldShiftsContainersWithoutAuthoredScenes" fullname="Nebula.Tests.RuntimeOriginTests.RuntimeWorldShiftsContainersWithoutAuthoredScenes" methodname="RuntimeWorldShiftsContainersWithoutAuthoredScenes" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" seed="1062850649" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000903" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1187" name="UnloadClearsOriginForTheNextSession" fullname="Nebula.Tests.RuntimeOriginTests.UnloadClearsOriginForTheNextSession" methodname="UnloadClearsOriginForTheNextSession" classname="Nebula.Tests.RuntimeOriginTests" runstate="Runnable" seed="380462008" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000269" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1190" name="ScaleToZeroTests" fullname="Nebula.Tests.ScaleToZeroTests" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004380" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1191" name="AnIdleMeshMayHaveNoWorkersButADemandedOneKeepsOne" fullname="Nebula.Tests.ScaleToZeroTests.AnIdleMeshMayHaveNoWorkersButADemandedOneKeepsOne" methodname="AnIdleMeshMayHaveNoWorkersButADemandedOneKeepsOne" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" seed="1132213072" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000269" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1194" name="GatewayHeartbeatCarriesPendingJoinsThroughTheControlPlane" fullname="Nebula.Tests.ScaleToZeroTests.GatewayHeartbeatCarriesPendingJoinsThroughTheControlPlane" methodname="GatewayHeartbeatCarriesPendingJoinsThroughTheControlPlane" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" seed="1772461086" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000481" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1193" name="JoinStatusSurvivesTheWire" fullname="Nebula.Tests.ScaleToZeroTests.JoinStatusSurvivesTheWire" methodname="JoinStatusSurvivesTheWire" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" seed="501662835" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000262" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1192" name="ShrinksToZeroOnlyWhileNobodyIsWaitingToJoin" fullname="Nebula.Tests.ScaleToZeroTests.ShrinksToZeroOnlyWhileNobodyIsWaitingToJoin" methodname="ShrinksToZeroOnlyWhileNobodyIsWaitingToJoin" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" seed="1302850978" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.002089" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1195" name="TheBootEstimateIsAMeshSettingTheGatewayCanRead" fullname="Nebula.Tests.ScaleToZeroTests.TheBootEstimateIsAMeshSettingTheGatewayCanRead" methodname="TheBootEstimateIsAMeshSettingTheGatewayCanRead" classname="Nebula.Tests.ScaleToZeroTests" runstate="Runnable" seed="1930304505" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000394" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1196" name="SceneEntityTests" fullname="Nebula.Tests.SceneEntityTests" classname="Nebula.Tests.SceneEntityTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004217" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1198" name="PrefabStyleIdentityDoesNotRegister" fullname="Nebula.Tests.SceneEntityTests.PrefabStyleIdentityDoesNotRegister" methodname="PrefabStyleIdentityDoesNotRegister" classname="Nebula.Tests.SceneEntityTests" runstate="Runnable" seed="1943518387" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000419" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1197" name="SceneObjectRegistersAndLeavesOnDestroy" fullname="Nebula.Tests.SceneEntityTests.SceneObjectRegistersAndLeavesOnDestroy" methodname="SceneObjectRegistersAndLeavesOnDestroy" classname="Nebula.Tests.SceneEntityTests" runstate="Runnable" seed="1762259357" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.001591" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1200" name="SpawnMessageCarriesTheSceneId" fullname="Nebula.Tests.SceneEntityTests.SpawnMessageCarriesTheSceneId" methodname="SpawnMessageCarriesTheSceneId" classname="Nebula.Tests.SceneEntityTests" runstate="Runnable" seed="62964462" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000749" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1199" name="UnbindReturnsToTheUnspawnedStateKeepingValues" fullname="Nebula.Tests.SceneEntityTests.UnbindReturnsToTheUnspawnedStateKeepingValues" methodname="UnbindReturnsToTheUnspawnedStateKeepingValues" classname="Nebula.Tests.SceneEntityTests" runstate="Runnable" seed="688270038" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000664" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1201" name="SerializationTests" fullname="Nebula.Tests.SerializationTests" classname="Nebula.Tests.SerializationTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.004706" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1207" name="AuthorityTransferMessageCarriesHandoverState" fullname="Nebula.Tests.SerializationTests.AuthorityTransferMessageCarriesHandoverState" methodname="AuthorityTransferMessageCarriesHandoverState" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="435726373" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000604" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1206" name="EntitySpawnMessageRoundTrips" fullname="Nebula.Tests.SerializationTests.EntitySpawnMessageRoundTrips" methodname="EntitySpawnMessageRoundTrips" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="1938335023" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000351" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1202" name="PrimitivesRoundTrip" fullname="Nebula.Tests.SerializationTests.PrimitivesRoundTrip" methodname="PrimitivesRoundTrip" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="1822090351" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000768" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1203" name="ReadingPastTheEndThrows" fullname="Nebula.Tests.SerializationTests.ReadingPastTheEndThrows" methodname="ReadingPastTheEndThrows" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="872821614" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000175" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1208" name="ReadSegmentIsBoundedAndAdvances" fullname="Nebula.Tests.SerializationTests.ReadSegmentIsBoundedAndAdvances" methodname="ReadSegmentIsBoundedAndAdvances" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="1528023009" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000763" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1204" name="ReservedCountIsPatched" fullname="Nebula.Tests.SerializationTests.ReservedCountIsPatched" methodname="ReservedCountIsPatched" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="1643658387" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000121" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1209" name="SkipAdvancesAndIsBoundsChecked" fullname="Nebula.Tests.SerializationTests.SkipAdvancesAndIsBoundsChecked" methodname="SkipAdvancesAndIsBoundsChecked" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="1003049214" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000207" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1205" name="TypedSerializationHandlesEnumsAndUnityTypes" fullname="Nebula.Tests.SerializationTests.TypedSerializationHandlesEnumsAndUnityTypes" methodname="TypedSerializationHandlesEnumsAndUnityTypes" classname="Nebula.Tests.SerializationTests" runstate="Runnable" seed="2057074402" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:29Z" duration="0.000788" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1210" name="ServiceExportTests" fullname="Nebula.Tests.ServiceExportTests" classname="Nebula.Tests.ServiceExportTests" runstate="Runnable" testcasecount="2" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="0.967892" total="2" passed="2" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1211" name="PartitionedExportKeepsManifestOrder" fullname="Nebula.Tests.ServiceExportTests.PartitionedExportKeepsManifestOrder" methodname="PartitionedExportKeepsManifestOrder" classname="Nebula.Tests.ServiceExportTests" runstate="Runnable" seed="1195257983" result="Passed" start-time="2026-09-21 03:10:29Z" end-time="2026-09-21 03:10:30Z" duration="0.614871" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] exported service manifest: 2 containers, 0 persistence schemas
+]]></output>
+            </test-case>
+            <test-case id="1212" name="SavedSceneExportMatchesRegistryOrderAndTransforms" fullname="Nebula.Tests.ServiceExportTests.SavedSceneExportMatchesRegistryOrderAndTransforms" methodname="SavedSceneExportMatchesRegistryOrderAndTransforms" classname="Nebula.Tests.ServiceExportTests" runstate="Runnable" seed="384028108" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.352500" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[nebula] exported service manifest: 2 containers, 0 persistence schemas
+]]></output>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1213" name="SyncComponentTests" fullname="Nebula.Tests.SyncComponentTests" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" testcasecount="11" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.028656" total="11" passed="11" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1224" name="AnimatorParametersTriggersAndStatesReplicate" fullname="Nebula.Tests.SyncComponentTests.AnimatorParametersTriggersAndStatesReplicate" methodname="AnimatorParametersTriggersAndStatesReplicate" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="545187757" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.014230" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1215" name="BufferedInterpolationSamplesBetweenTicks" fullname="Nebula.Tests.SyncComponentTests.BufferedInterpolationSamplesBetweenTicks" methodname="BufferedInterpolationSamplesBetweenTicks" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="1929707263" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003954" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1221" name="ChildBufferFollowsAMovingContainerWithoutAnotherPacket" fullname="Nebula.Tests.SyncComponentTests.ChildBufferFollowsAMovingContainerWithoutAnotherPacket" methodname="ChildBufferFollowsAMovingContainerWithoutAnotherPacket" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="694669248" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000972" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1214" name="ChildTransformReplicatesSelectedAxesAndSnapsWithoutInterpolation" fullname="Nebula.Tests.SyncComponentTests.ChildTransformReplicatesSelectedAxesAndSnapsWithoutInterpolation" methodname="ChildTransformReplicatesSelectedAxesAndSnapsWithoutInterpolation" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="1213512093" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001101" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1217" name="CompressedQuaternionRoundTripsEveryOctant" fullname="Nebula.Tests.SyncComponentTests.CompressedQuaternionRoundTripsEveryOctant" methodname="CompressedQuaternionRoundTripsEveryOctant" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="462926783" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001876" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1223" name="EntitySyncMsgRoundTrips" fullname="Nebula.Tests.SyncComponentTests.EntitySyncMsgRoundTrips" methodname="EntitySyncMsgRoundTrips" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="1051157487" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000509" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1219" name="EveryDestinationWrittenInTheFirstTickAfterGainingAuthorityGetsAKeyframe" fullname="Nebula.Tests.SyncComponentTests.EveryDestinationWrittenInTheFirstTickAfterGainingAuthorityGetsAKeyframe" methodname="EveryDestinationWrittenInTheFirstTickAfterGainingAuthorityGetsAKeyframe" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="1775295015" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000685" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1216" name="HalfFloatsAndCompressedQuaternionsStayWithinTolerance" fullname="Nebula.Tests.SyncComponentTests.HalfFloatsAndCompressedQuaternionsStayWithinTolerance" methodname="HalfFloatsAndCompressedQuaternionsStayWithinTolerance" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="2066454417" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000776" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1220" name="ReliableChildAtRestLeavesAFreshCompleteLateJoinSnapshot" fullname="Nebula.Tests.SyncComponentTests.ReliableChildAtRestLeavesAFreshCompleteLateJoinSnapshot" methodname="ReliableChildAtRestLeavesAFreshCompleteLateJoinSnapshot" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="2104535465" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000488" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1222" name="SpawnSnapshotCarriesTheSyncStateAndTeleportSnapsAnInterpolatingCopy" fullname="Nebula.Tests.SyncComponentTests.SpawnSnapshotCarriesTheSyncStateAndTeleportSnapsAnInterpolatingCopy" methodname="SpawnSnapshotCarriesTheSyncStateAndTeleportSnapsAnInterpolatingCopy" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="71306537" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000919" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1218" name="UnreliableTransformsGetKeyframesOnTheIntervalEvenWhenIdle" fullname="Nebula.Tests.SyncComponentTests.UnreliableTransformsGetKeyframesOnTheIntervalEvenWhenIdle" methodname="UnreliableTransformsGetKeyframesOnTheIntervalEvenWhenIdle" classname="Nebula.Tests.SyncComponentTests" runstate="Runnable" seed="261677576" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000463" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1225" name="TransformReplicationTests" fullname="Nebula.Tests.TransformReplicationTests" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" testcasecount="22" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.176044" total="22" passed="22" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1235" name="BareIdentitySendsLocationOnceButNeverStreamsMotion" fullname="Nebula.Tests.TransformReplicationTests.BareIdentitySendsLocationOnceButNeverStreamsMotion" methodname="BareIdentitySendsLocationOnceButNeverStreamsMotion" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="840603089" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000859" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1227" name="CarrierValidationReportsDisabledAxesAndOwnerPhysics" fullname="Nebula.Tests.TransformReplicationTests.CarrierValidationReportsDisabledAxesAndOwnerPhysics" methodname="CarrierValidationReportsDisabledAxesAndOwnerPhysics" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="163589277" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001568" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1239" name="DisablingAllAxesStopsAnAlreadyOpenStream" fullname="Nebula.Tests.TransformReplicationTests.DisablingAllAxesStopsAnAlreadyOpenStream" methodname="DisablingAllAxesStopsAnAlreadyOpenStream" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1069216372" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.002700" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1246" name="GatewayMergesMaskedPoseVelocityAndRejectsStaleTicks" fullname="Nebula.Tests.TransformReplicationTests.GatewayMergesMaskedPoseVelocityAndRejectsStaleTicks" methodname="GatewayMergesMaskedPoseVelocityAndRejectsStaleTicks" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="931590803" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.006935" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1229" name="HandoverIncludesDisabledChildAxesAndWorldTeleportUsesWorldCoordinates" fullname="Nebula.Tests.TransformReplicationTests.HandoverIncludesDisabledChildAxesAndWorldTeleportUsesWorldCoordinates" methodname="HandoverIncludesDisabledChildAxesAndWorldTeleportUsesWorldCoordinates" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1115437758" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001139" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1232" name="InterpolatedOwnerAcceptsNewContainerWithoutRewindingItsPose" fullname="Nebula.Tests.TransformReplicationTests.InterpolatedOwnerAcceptsNewContainerWithoutRewindingItsPose" methodname="InterpolatedOwnerAcceptsNewContainerWithoutRewindingItsPose" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1858002950" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001224" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1237" name="LostFinalUpdateGetsReliableRecoveryThenIdleCostsNothing" fullname="Nebula.Tests.TransformReplicationTests.LostFinalUpdateGetsReliableRecoveryThenIdleCostsNothing" methodname="LostFinalUpdateGetsReliableRecoveryThenIdleCostsNothing" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="794290055" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000608" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1236" name="OneAxisCostsOneFloatAndDisabledAxesStayLocal" fullname="Nebula.Tests.TransformReplicationTests.OneAxisCostsOneFloatAndDisabledAxesStayLocal" methodname="OneAxisCostsOneFloatAndDisabledAxesStayLocal" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1391711694" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000514" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1228" name="OwnerAuthoritativeTransformIgnoresItsLocationEcho" fullname="Nebula.Tests.TransformReplicationTests.OwnerAuthoritativeTransformIgnoresItsLocationEcho" methodname="OwnerAuthoritativeTransformIgnoresItsLocationEcho" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1356605477" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000330" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1231" name="OwnerTransformRpcRejectsMissingFrame" fullname="Nebula.Tests.TransformReplicationTests.OwnerTransformRpcRejectsMissingFrame" methodname="OwnerTransformRpcRejectsMissingFrame" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1319121207" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000882" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1230" name="OwnerTransformRpcUsesSenderFrameAfterWorkerChangesContainer" fullname="Nebula.Tests.TransformReplicationTests.OwnerTransformRpcUsesSenderFrameAfterWorkerChangesContainer" methodname="OwnerTransformRpcUsesSenderFrameAfterWorkerChangesContainer" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="965283475" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000696" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1244" name="PhysicsHandoverPreservesBothVelocitiesWhenPoseVelocityIsDisabled" fullname="Nebula.Tests.TransformReplicationTests.PhysicsHandoverPreservesBothVelocitiesWhenPoseVelocityIsDisabled" methodname="PhysicsHandoverPreservesBothVelocitiesWhenPoseVelocityIsDisabled" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="496546053" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.002093" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1226" name="PredictedOwnerKeepsItsPoseWhileObserversReceiveMovement" fullname="Nebula.Tests.TransformReplicationTests.PredictedOwnerKeepsItsPoseWhileObserversReceiveMovement" methodname="PredictedOwnerKeepsItsPoseWhileObserversReceiveMovement" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="551284343" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001362" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1247" name="RegisteredPrefabsHaveTheirRequiredTransformAndValidMotionSettings" fullname="Nebula.Tests.TransformReplicationTests.RegisteredPrefabsHaveTheirRequiredTransformAndValidMotionSettings" methodname="RegisteredPrefabsHaveTheirRequiredTransformAndValidMotionSettings" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1770876018" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.140623" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1243" name="RootInterpolatesInMovingContainerFrame" fullname="Nebula.Tests.TransformReplicationTests.RootInterpolatesInMovingContainerFrame" methodname="RootInterpolatesInMovingContainerFrame" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1040818358" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000928" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1238" name="ScaleOnlyReplicationDoesNotMoveOrRotateTheRoot" fullname="Nebula.Tests.TransformReplicationTests.ScaleOnlyReplicationDoesNotMoveOrRotateTheRoot" methodname="ScaleOnlyReplicationDoesNotMoveOrRotateTheRoot" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1912144089" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000727" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1240" name="ScaleUsesTheSameBufferedTickAsPosition" fullname="Nebula.Tests.TransformReplicationTests.ScaleUsesTheSameBufferedTickAsPosition" methodname="ScaleUsesTheSameBufferedTickAsPosition" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="624654029" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000536" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1245" name="SpawnKeepsScaleWithoutTransformAndTransferKeepsGhostRecipients" fullname="Nebula.Tests.TransformReplicationTests.SpawnKeepsScaleWithoutTransformAndTransferKeepsGhostRecipients" methodname="SpawnKeepsScaleWithoutTransformAndTransferKeepsGhostRecipients" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="582508186" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000438" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1242" name="StaticLocationWaitsForContainerAndSurvivesReorderedDelivery" fullname="Nebula.Tests.TransformReplicationTests.StaticLocationWaitsForContainerAndSurvivesReorderedDelivery" methodname="StaticLocationWaitsForContainerAndSurvivesReorderedDelivery" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1572393210" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000483" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1234" name="StaticSceneEntityRetainsScaleWhenCellUnloadsAndReloads" fullname="Nebula.Tests.TransformReplicationTests.StaticSceneEntityRetainsScaleWhenCellUnloadsAndReloads" methodname="StaticSceneEntityRetainsScaleWhenCellUnloadsAndReloads" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="27443054" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003623" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1241" name="TeleportAndNewEpochRejectOlderUnreliableSamples" fullname="Nebula.Tests.TransformReplicationTests.TeleportAndNewEpochRejectOlderUnreliableSamples" methodname="TeleportAndNewEpochRejectOlderUnreliableSamples" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="1026786550" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000511" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1233" name="WorkerBatchesOnlyOptedInEntitiesWithinSequencedPacketBudget" fullname="Nebula.Tests.TransformReplicationTests.WorkerBatchesOnlyOptedInEntitiesWithinSequencedPacketBudget" methodname="WorkerBatchesOnlyOptedInEntitiesWithinSequencedPacketBudget" classname="Nebula.Tests.TransformReplicationTests" runstate="Runnable" seed="602280235" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.004466" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1248" name="WireFormatTests" fullname="Nebula.Tests.WireFormatTests" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003942" total="8" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1255" name="ContainerOwnershipEntriesCarryABoxOnlyWhenTheyHaveOne" fullname="Nebula.Tests.WireFormatTests.ContainerOwnershipEntriesCarryABoxOnlyWhenTheyHaveOne" methodname="ContainerOwnershipEntriesCarryABoxOnlyWhenTheyHaveOne" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="117858393" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000523" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1251" name="DynamicReferenceIsTenBytesAndRoundTrips" fullname="Nebula.Tests.WireFormatTests.DynamicReferenceIsTenBytesAndRoundTrips" methodname="DynamicReferenceIsTenBytesAndRoundTrips" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="1796336619" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000233" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1254" name="EntityStateEntryReservesTheLargestReference" fullname="Nebula.Tests.WireFormatTests.EntityStateEntryReservesTheLargestReference" methodname="EntityStateEntryReservesTheLargestReference" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="1583861264" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000235" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1250" name="NoneIsTwoBytes" fullname="Nebula.Tests.WireFormatTests.NoneIsTwoBytes" methodname="NoneIsTwoBytes" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="635236290" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000106" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1253" name="ReferencesWithDifferentPayloadsAreDifferentKeys" fullname="Nebula.Tests.WireFormatTests.ReferencesWithDifferentPayloadsAreDifferentKeys" methodname="ReferencesWithDifferentPayloadsAreDifferentKeys" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="1628571606" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000900" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1252" name="RuntimeReferenceIsTenBytesAndRoundTrips" fullname="Nebula.Tests.WireFormatTests.RuntimeReferenceIsTenBytesAndRoundTrips" methodname="RuntimeReferenceIsTenBytesAndRoundTrips" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="1092866676" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000301" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1256" name="SpawnPlayerNamesItsContainerByReference" fullname="Nebula.Tests.WireFormatTests.SpawnPlayerNamesItsContainerByReference" methodname="SpawnPlayerNamesItsContainerByReference" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="839682611" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000293" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1249" name="StaticReferenceIsTwoBytesAndRoundTrips" fullname="Nebula.Tests.WireFormatTests.StaticReferenceIsTwoBytesAndRoundTrips" methodname="StaticReferenceIsTwoBytesAndRoundTrips" classname="Nebula.Tests.WireFormatTests" runstate="Runnable" seed="1153782449" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000198" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1257" name="WorkerLoadTrackerTests" fullname="Nebula.Tests.WorkerLoadTrackerTests" classname="Nebula.Tests.WorkerLoadTrackerTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003442" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1260" name="SamplesLeaveTheWindowAndWorkersExpire" fullname="Nebula.Tests.WorkerLoadTrackerTests.SamplesLeaveTheWindowAndWorkersExpire" methodname="SamplesLeaveTheWindowAndWorkersExpire" classname="Nebula.Tests.WorkerLoadTrackerTests" runstate="Runnable" seed="1443311650" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001785" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1259" name="ThePercentileIgnoresTheOccasionalSpike" fullname="Nebula.Tests.WorkerLoadTrackerTests.ThePercentileIgnoresTheOccasionalSpike" methodname="ThePercentileIgnoresTheOccasionalSpike" classname="Nebula.Tests.WorkerLoadTrackerTests" runstate="Runnable" seed="1529648333" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000300" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1261" name="UtilizationIsSpreadOverAWorkersContainersByWhatIsInsideThem" fullname="Nebula.Tests.WorkerLoadTrackerTests.UtilizationIsSpreadOverAWorkersContainersByWhatIsInsideThem" methodname="UtilizationIsSpreadOverAWorkersContainersByWhatIsInsideThem" classname="Nebula.Tests.WorkerLoadTrackerTests" runstate="Runnable" seed="613672674" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000689" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1258" name="UtilizationIsTickTimeOverTheTickBudget" fullname="Nebula.Tests.WorkerLoadTrackerTests.UtilizationIsTickTimeOverTheTickBudget" methodname="UtilizationIsTickTimeOverTheTickBudget" classname="Nebula.Tests.WorkerLoadTrackerTests" runstate="Runnable" seed="783629431" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000118" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1262" name="WorkerQueryTests" fullname="Nebula.Tests.WorkerQueryTests" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" testcasecount="6" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.008686" total="6" passed="6" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1266" name="AskingOneselfAnswersSynchronouslyAndStillCompletesOnce" fullname="Nebula.Tests.WorkerQueryTests.AskingOneselfAnswersSynchronouslyAndStillCompletesOnce" methodname="AskingOneselfAnswersSynchronouslyAndStillCompletesOnce" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="386796839" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.004989" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1267" name="CancelAndDisposeSilenceCallbacks" fullname="Nebula.Tests.WorkerQueryTests.CancelAndDisposeSilenceCallbacks" methodname="CancelAndDisposeSilenceCallbacks" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="1619684667" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000709" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1268" name="ConcurrentRequestsAreKeptApartById" fullname="Nebula.Tests.WorkerQueryTests.ConcurrentRequestsAreKeptApartById" methodname="ConcurrentRequestsAreKeptApartById" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="1641205670" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000623" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1263" name="RepliesFromEveryTargetCompleteTheRequest" fullname="Nebula.Tests.WorkerQueryTests.RepliesFromEveryTargetCompleteTheRequest" methodname="RepliesFromEveryTargetCompleteTheRequest" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="1679115767" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000492" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1264" name="TimeoutCompletesWithFalseAndLateRepliesAreDropped" fullname="Nebula.Tests.WorkerQueryTests.TimeoutCompletesWithFalseAndLateRepliesAreDropped" methodname="TimeoutCompletesWithFalseAndLateRepliesAreDropped" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="2052876406" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000873" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1265" name="UnreachableTargetsAreSkippedAndAnEmptyFanOutCompletesAtOnce" fullname="Nebula.Tests.WorkerQueryTests.UnreachableTargetsAreSkippedAndAnEmptyFanOutCompletesAtOnce" methodname="UnreachableTargetsAreSkippedAndAnEmptyFanOutCompletesAtOnce" classname="Nebula.Tests.WorkerQueryTests" runstate="Runnable" seed="1778234901" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000278" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1269" name="WorkerScalerTests" fullname="Nebula.Tests.WorkerScalerTests" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" testcasecount="16" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.011029" total="16" passed="16" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1279" name="AParkedWorkerDoesNotStallTheScalerForever" fullname="Nebula.Tests.WorkerScalerTests.AParkedWorkerDoesNotStallTheScalerForever" methodname="AParkedWorkerDoesNotStallTheScalerForever" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1889569268" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001777" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1283" name="AWorkerWithNoSamplesIsNeitherTheRetireeNorAReasonToShrink" fullname="Nebula.Tests.WorkerScalerTests.AWorkerWithNoSamplesIsNeitherTheRetireeNorAReasonToShrink" methodname="AWorkerWithNoSamplesIsNeitherTheRetireeNorAReasonToShrink" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="245665015" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000827" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1273" name="DoesNotGrowPastTheCeiling" fullname="Nebula.Tests.WorkerScalerTests.DoesNotGrowPastTheCeiling" methodname="DoesNotGrowPastTheCeiling" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="775266635" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000497" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1271" name="DoesNotGrowWhileAWorkerIsStillLaunchingOrDraining" fullname="Nebula.Tests.WorkerScalerTests.DoesNotGrowWhileAWorkerIsStillLaunchingOrDraining" methodname="DoesNotGrowWhileAWorkerIsStillLaunchingOrDraining" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1248260380" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000521" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1276" name="DoesNotShrinkWhenTheSurvivorsWouldBeOverTheScaleOutLine" fullname="Nebula.Tests.WorkerScalerTests.DoesNotShrinkWhenTheSurvivorsWouldBeOverTheScaleOutLine" methodname="DoesNotShrinkWhenTheSurvivorsWouldBeOverTheScaleOutLine" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="945615412" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000427" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1270" name="GrowsOnlyAfterTheHoldAndOnlyWhenAnExtraWorkerHelps" fullname="Nebula.Tests.WorkerScalerTests.GrowsOnlyAfterTheHoldAndOnlyWhenAnExtraWorkerHelps" methodname="GrowsOnlyAfterTheHoldAndOnlyWhenAnExtraWorkerHelps" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1758145377" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000622" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1280" name="GrowsOnTheMeasurementWhenThePolicyLeavesTheDryRunUnplanned" fullname="Nebula.Tests.WorkerScalerTests.GrowsOnTheMeasurementWhenThePolicyLeavesTheDryRunUnplanned" methodname="GrowsOnTheMeasurementWhenThePolicyLeavesTheDryRunUnplanned" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1792174478" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000560" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1281" name="GrowsWhenTheDryRunSaysReDealButThePolicyWouldNotMoveAnything" fullname="Nebula.Tests.WorkerScalerTests.GrowsWhenTheDryRunSaysReDealButThePolicyWouldNotMoveAnything" methodname="GrowsWhenTheDryRunSaysReDealButThePolicyWouldNotMoveAnything" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1436239215" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000537" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1277" name="NeverRetiresAWorkerThatMayNotGo" fullname="Nebula.Tests.WorkerScalerTests.NeverRetiresAWorkerThatMayNotGo" methodname="NeverRetiresAWorkerThatMayNotGo" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="315112044" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000548" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1278" name="ParkedWorkersAreNotCountedAsInFlightSoAParkingMeshSettlesAfterAShrink" fullname="Nebula.Tests.WorkerScalerTests.ParkedWorkersAreNotCountedAsInFlightSoAParkingMeshSettlesAfterAShrink" methodname="ParkedWorkersAreNotCountedAsInFlightSoAParkingMeshSettlesAfterAShrink" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1874014142" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000246" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1272" name="ReportsTheContainerThatCannotBeSplitInsteadOfGrowing" fullname="Nebula.Tests.WorkerScalerTests.ReportsTheContainerThatCannotBeSplitInsteadOfGrowing" methodname="ReportsTheContainerThatCannotBeSplitInsteadOfGrowing" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="600323119" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000436" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1285" name="SaysNothingWithoutWorkers" fullname="Nebula.Tests.WorkerScalerTests.SaysNothingWithoutWorkers" methodname="SaysNothingWithoutWorkers" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="73564259" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000202" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1274" name="ShrinksToTheCheapestWorkerWhenTheMeshIsQuiet" fullname="Nebula.Tests.WorkerScalerTests.ShrinksToTheCheapestWorkerWhenTheMeshIsQuiet" methodname="ShrinksToTheCheapestWorkerWhenTheMeshIsQuiet" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="1116086408" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000555" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1275" name="ShrinksToZeroWhenTheFloorAllowsIt" fullname="Nebula.Tests.WorkerScalerTests.ShrinksToZeroWhenTheFloorAllowsIt" methodname="ShrinksToZeroWhenTheFloorAllowsIt" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="540024629" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000322" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1282" name="StillWaitsForAReDealThePolicyWouldActuallyMake" fullname="Nebula.Tests.WorkerScalerTests.StillWaitsForAReDealThePolicyWouldActuallyMake" methodname="StillWaitsForAReDealThePolicyWouldActuallyMake" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="2069727094" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000836" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1284" name="TheLoadTrackerKnowsWhichWorkersHaveReportedEnough" fullname="Nebula.Tests.WorkerScalerTests.TheLoadTrackerKnowsWhichWorkersHaveReportedEnough" methodname="TheLoadTrackerKnowsWhichWorkersHaveReportedEnough" classname="Nebula.Tests.WorkerScalerTests" runstate="Runnable" seed="932309411" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000464" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1286" name="WorldPartitionTests" fullname="Nebula.Tests.WorldPartitionTests" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" testcasecount="11" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.014907" total="11" passed="11" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1295" name="AssignmentKeepsManifestOrderSoWorkersGetContiguousRuns" fullname="Nebula.Tests.WorldPartitionTests.AssignmentKeepsManifestOrderSoWorkersGetContiguousRuns" methodname="AssignmentKeepsManifestOrderSoWorkersGetContiguousRuns" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="599583518" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003174" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1287" name="CellsAreCentredOnTheirGridPosition" fullname="Nebula.Tests.WorldPartitionTests.CellsAreCentredOnTheirGridPosition" methodname="CellsAreCentredOnTheirGridPosition" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1097157947" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000541" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1294" name="GridLookupFindsCellsAndNestedBoxesAndAdjacencyOnlyCrossesNeighbouringCells" fullname="Nebula.Tests.WorldPartitionTests.GridLookupFindsCellsAndNestedBoxesAndAdjacencyOnlyCrossesNeighbouringCells" methodname="GridLookupFindsCellsAndNestedBoxesAndAdjacencyOnlyCrossesNeighbouringCells" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1569816496" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.003411" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1293" name="ManifestOrderIsTheWireIndexAndCellsPrecedeTheirNestedContainers" fullname="Nebula.Tests.WorldPartitionTests.ManifestOrderIsTheWireIndexAndCellsPrecedeTheirNestedContainers" methodname="ManifestOrderIsTheWireIndexAndCellsPrecedeTheirNestedContainers" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1876454961" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000457" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1289" name="MortonOrderKeepsNeighboursTogether" fullname="Nebula.Tests.WorldPartitionTests.MortonOrderKeepsNeighboursTogether" methodname="MortonOrderKeepsNeighboursTogether" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1879278741" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001712" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1296" name="OriginShiftMovesInterpolatorAndPoseHistory" fullname="Nebula.Tests.WorldPartitionTests.OriginShiftMovesInterpolatorAndPoseHistory" methodname="OriginShiftMovesInterpolatorAndPoseHistory" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="635180545" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000593" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1297" name="RuntimeWorldStartsWithAnEmptyStaticRegistry" fullname="Nebula.Tests.WorldPartitionTests.RuntimeWorldStartsWithAnEmptyStaticRegistry" methodname="RuntimeWorldStartsWithAnEmptyStaticRegistry" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="379418561" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000549" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1288" name="SceneNamesRoundTripNegativeCoordinates" fullname="Nebula.Tests.WorldPartitionTests.SceneNamesRoundTripNegativeCoordinates" methodname="SceneNamesRoundTripNegativeCoordinates" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1832942507" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000579" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1290" name="ShiftDeltaMovesEverythingTowardsTheNewOrigin" fullname="Nebula.Tests.WorldPartitionTests.ShiftDeltaMovesEverythingTowardsTheNewOrigin" methodname="ShiftDeltaMovesEverythingTowardsTheNewOrigin" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="1063420868" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000214" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1291" name="WantedSetIsTheAnchorCubesPlusRequiredLimitedToDefinedCells" fullname="Nebula.Tests.WorldPartitionTests.WantedSetIsTheAnchorCubesPlusRequiredLimitedToDefinedCells" methodname="WantedSetIsTheAnchorCubesPlusRequiredLimitedToDefinedCells" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="882006680" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.001683" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1292" name="WorkerCentroidIsTheRoundedAverageCell" fullname="Nebula.Tests.WorldPartitionTests.WorkerCentroidIsTheRoundedAverageCell" methodname="WorkerCentroidIsTheRoundedAverageCell" classname="Nebula.Tests.WorldPartitionTests" runstate="Runnable" seed="666150789" result="Passed" start-time="2026-09-21 03:10:30Z" end-time="2026-09-21 03:10:30Z" duration="0.000476" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[<b><color=#2EA3FF>MCP-FOR-UNITY</color></b>: [TestRunnerNoThrottle] Restored Interaction Mode after test run.
+Saving results to: C:/Users/jesse/AppData/LocalLow/DefaultCompany/nebula\TestResults.xml
+]]></output>
+            </test-case>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

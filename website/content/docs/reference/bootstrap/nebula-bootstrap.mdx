@@ -99,6 +99,14 @@ public NebulaWorldStreaming WorldStreaming { get; }
 
 Per-role cell streaming policy; null unless [`NebulaConfig.WorldManifest`](/docs/reference/core/nebula-config#worldmanifest) is set.
 
+### ChunkedWorld [#chunkedworld]
+
+```csharp
+public NebulaChunkedWorld ChunkedWorld { get; }
+```
+
+Per-role chunked-world policy; null unless [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) is on with a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld).
+
 ## Methods
 
 ### EnsureExists [#ensureexists]

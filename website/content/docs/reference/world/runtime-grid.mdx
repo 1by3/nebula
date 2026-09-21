@@ -20,6 +20,7 @@ The id packing (three signed 21-bit fields) is fixed and must never change: ids 
 ```csharp
 public RuntimeGrid(float cellSize);
 public RuntimeGrid(Vector3 cellSize);
+public RuntimeGrid(Vector3 cellSize, bool planar);
 ```
 
 ## Fields
@@ -47,6 +48,14 @@ public Vector3 CellSize { get; }
 ```
 
 Size of one cell in metres, per axis.
+
+### Planar [#planar]
+
+```csharp
+public bool Planar { get; }
+```
+
+Cells are columns: the grid has a single layer at y = 0 and [`CellSize`](#cellsize).y is the column's height, centred on absolute y = 0. Surface worlds want this — a chunk that is 64 m wide and 512 m tall is one container nothing ever leaves vertically, so verticality never costs a cell, a lease, or a neighbourhood dimension. The packing is unchanged (y is simply always 0), so a planar and a volumetric grid produce the same ids for the same coordinates.
 
 ## Methods
 
@@ -89,7 +98,7 @@ Which cell a position in the current floating-origin frame falls in.
 public Vector3 CenterOf(Vector3Int coord);
 ```
 
-Centre of a cell in the current floating-origin frame.
+Centre of a cell in the current floating-origin frame. A planar grid's column is centred on absolute y = 0 (the origin never shifts vertically in a planar world), so its box spans ±CellSize.y/2 around the ground plane rather than sitting above it.
 
 ### BoundsOf [#boundsof]
 
@@ -119,9 +128,18 @@ Chebyshev (ring) distance between two coordinates, independent of cell size.
 
 ```csharp
 public static IEnumerable<Vector3Int> Neighborhood(Vector3Int center, int ring);
+public void Neighborhood(Vector3Int center, int ring, List<Vector3Int> into);
 ```
 
 Every valid coordinate within `ring` cells of `center` on every axis (a cube).
+
+### Normalize [#normalize]
+
+```csharp
+public Vector3Int Normalize(Vector3Int coord);
+```
+
+Drop the vertical component of a coordinate when this grid is [`Planar`](#planar), so a caller's arithmetic cannot leave the single layer.
 
 ### UseAsRuntimeBounds [#useasruntimebounds]
 
@@ -143,6 +161,7 @@ Opt-in floating-origin policy for a grid world: shift the origin to `target` (a 
 
 ```csharp
 public void KeepOriginNear(NetworkIdentity entity, int ring = 1);
+public void KeepOriginNear(Vector3Int cell, int ring = 1);
 ```
 
 Keep the floating origin within `ring` cells of `entity` — the usual policy for a client following its local player. Shifts through [`ShiftOriginTo`](#shiftoriginto) when the entity leaves that ring around [`WorldOrigin.Cell`](/docs/reference/world/world-origin#cell), and does nothing otherwise.

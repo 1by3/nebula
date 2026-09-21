@@ -36,6 +36,11 @@ namespace Nebula
                 if (c.transform == null || (c.transform.Matrix != null && c.transform.Matrix.Length != 16))
                     throw new InvalidDataException("Service container frame must contain a 4x4 matrix");
             }
+            // The services have no Unity asset references, so the world definition the interest grid is snapped
+            // to reaches the config from the manifest instead (design §3). A manifest world is a baked one, and
+            // baked cells are centred on their coordinate.
+            manifest.Config.WorldCellSizeMeters = manifest.World != null ? MathF.Max(manifest.World.CellSize.x, manifest.World.CellSize.z) : 0f;
+            manifest.Config.WorldCellsAreCentred = manifest.World != null;
             Current = manifest;
             ContainerRegistry.Load(manifest);
             return manifest;
@@ -168,6 +173,47 @@ namespace Nebula
             foreach (var c in All) { c.Neighbors.Clear(); foreach (var id in c.NeighborIds) { var n = FindById(id); if (n != null) c.Neighbors.Add(n); } }
         }
         public static Container FindById(string id) => id != null && ById.TryGetValue(id, out var c) ? c : null;
+
+        /// <summary>
+        /// Every container whose box overlaps <paramref name="box"/> (the Unity registry's query, which interest
+        /// management resolves a region to its owning workers with). The standalone gateway holds no scene, so
+        /// this is a scan of the manifest: the callers cache what they resolve and re-resolve only when the
+        /// control plane changes, so the scan is per lease change and not per region per tick.
+        /// </summary>
+        public static void Overlapping(Bounds box, List<Container> result, ulong instanceId = 0)
+        {
+            result.Clear();
+            foreach (var c in All) if (c.InstanceId == instanceId && box.Intersects(c.WorldBounds)) result.Add(c);
+            foreach (var c in RuntimeList) if (c.InstanceId == instanceId && box.Intersects(c.WorldBounds)) result.Add(c);
+        }
+
+        /// <summary>The container holding the point, or — as the Unity registry does for a point in no box — the nearest one.</summary>
+        public static Container Find(Vector3 world, Container exclude = null, ulong instanceId = 0)
+        {
+            Container inside = null, nearest = null;
+            float insideVolume = float.MaxValue, nearestDistance = float.MaxValue;
+            foreach (var c in All.Concat(RuntimeList))
+            {
+                if (c == exclude || c.InstanceId != instanceId) continue;
+                var b = c.WorldBounds;
+                if (b.Contains(world))
+                {
+                    if (c.Volume >= insideVolume) continue;
+                    insideVolume = c.Volume;
+                    inside = c;
+                }
+                else
+                {
+                    var min = b.min; var max = b.max;
+                    var closest = new Vector3(MathF.Min(MathF.Max(world.x, min.x), max.x), MathF.Min(MathF.Max(world.y, min.y), max.y), MathF.Min(MathF.Max(world.z, min.z), max.z));
+                    float d = (closest - world).sqrMagnitude;
+                    if (d >= nearestDistance) continue;
+                    nearestDistance = d;
+                    nearest = c;
+                }
+            }
+            return inside ?? nearest;
+        }
         public static Container Resolve(ContainerRef r) => r.IsRuntime ? (RuntimeById.TryGetValue(r.RuntimeId, out var c) ? c : null) : r.IsStatic && r.Index < All.Count ? All[r.Index] : null;
         public static IReadOnlyList<Container> InCell(Vector3Int cell) => ByCell.TryGetValue(cell, out var list) ? list : Array.Empty<Container>();
         public static Bounds ToAbsolute(Bounds b) => b;

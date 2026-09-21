@@ -1,0 +1,202 @@
+---
+title: "RegionPublisher"
+description: "The worker's side of interest management (design §6): which gateways hear about each region, and the grouping that lets one serialization serve all of them."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RegionPublisher.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RegionPublisher.cs)</div>
+
+```csharp
+public sealed class RegionPublisher
+```
+
+The worker's side of interest management (design §6): which gateways hear about each region, and the grouping that lets one serialization serve all of them.
+
+Every region carries a **subscriber mask**, one bit per gateway link. Once a tick the publisher groups the regions that share a mask, so a batch is written once and sent to each gateway in the mask: with G gateways the work is O(entities + batches × subscribers) instead of O(entities × gateways). Nothing here remembers what a gateway already knows — a worker's memory must not grow with the number of gateways — so the only per-gateway state is the region set itself.
+
+## Fields
+
+### MaxGateways [#maxgateways]
+
+```csharp
+public const int MaxGateways = 64;
+```
+
+Bits in a mask. A mesh with more gateway links than this falls back to per-region sends for the rest.
+
+## Properties
+
+### LinkedMask [#linkedmask]
+
+```csharp
+public ulong LinkedMask { get; }
+```
+
+Bit per gateway link currently registered.
+
+### SubscribedRegions [#subscribedregions]
+
+```csharp
+public int SubscribedRegions { get; }
+```
+
+Regions at least one gateway subscribes.
+
+### Groups [#groups]
+
+```csharp
+public IReadOnlyList<Group> Groups { get; }
+```
+
+Groups produced by the last [`BuildGroups<T>`](#buildgroups).
+
+### FilteredEntities [#filteredentities]
+
+```csharp
+public long FilteredEntities { get; }
+```
+
+Entities in subscribed regions in the last rebuild: what is actually sent.
+
+### TotalEntities [#totalentities]
+
+```csharp
+public long TotalEntities { get; }
+```
+
+Entities the worker holds in regions at all: what would be sent without interest management.
+
+## Methods
+
+### Bit [#bit]
+
+```csharp
+public static ulong Bit(int gatewayBit);
+```
+
+### AddGateway [#addgateway]
+
+```csharp
+public void AddGateway(int gatewayBit, RegionSubscriptionReceiver receiver);
+```
+
+Register a gateway link and the subscription set it maintains.
+
+### RemoveGateway [#removegateway]
+
+```csharp
+public void RemoveGateway(int gatewayBit);
+```
+
+Drop a gateway link: its bit leaves every region it held.
+
+### ApplyChanges [#applychanges]
+
+```csharp
+public void ApplyChanges(int gatewayBit, RegionSubscriptionReceiver receiver);
+```
+
+Fold a committed subscription change into the region masks. Call it from the receiver's change callback: the journal it exposes is exactly the work to do, so the cost follows the change and not the size of the set.
+
+### Subscribe [#subscribe]
+
+```csharp
+public void Subscribe(int gatewayBit, ulong region);
+```
+
+### Unsubscribe [#unsubscribe]
+
+```csharp
+public void Unsubscribe(int gatewayBit, ulong region);
+```
+
+### MaskOf [#maskof]
+
+```csharp
+public ulong MaskOf(ulong region);
+```
+
+Which gateways want a region (0 = nobody, so nothing in it is sent anywhere).
+
+### SpawnBits [#spawnbits]
+
+```csharp
+public ulong SpawnBits(ulong from, ulong to);
+```
+
+An entity moved from region `from` to `to`: these gateways have not heard of it and need a spawn.
+
+### ForgetBits [#forgetbits]
+
+```csharp
+public ulong ForgetBits(ulong from, ulong to);
+```
+
+The counterpart: these gateways subscribed the old region only, and are told to forget it.
+
+### WideMask [#widemask]
+
+```csharp
+public ulong WideMask(in InterestGrid grid, double x, double y, double z, double radius);
+```
+
+Which gateways a wide entity (one whose own radius exceeds a region scan) reaches: the ones with a focus region within its radius. Matched at the evaluation rate, not per tick.
+
+### ExplicitMask [#explicitmask]
+
+```csharp
+public ulong ExplicitMask(ulong netId);
+```
+
+Which gateways explicitly subscribed an entity by id (a policy extra, or one they own).
+
+### BuildGroups [#buildgroups]
+
+```csharp
+public void BuildGroups<T>(InterestIndex<T> index);
+```
+
+Group this tick's subscribed regions by mask. Allocation free after the first few ticks: the region lists are pooled and reused. Iterate [`Groups`](#groups), write one batch per group, and send it to every gateway in `Group.Mask`.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget every link and mask (the worker is shutting down, or lost every gateway).
+
+## Nested types
+
+### Group [#group]
+
+```csharp
+public struct Group
+```
+
+Regions that share one subscriber mask, and therefore one serialization.
+
+#### Fields
+
+##### Mask [#mask]
+
+```csharp
+public ulong Mask;
+```
+
+Bit per gateway link that wants these regions.
+
+##### Regions [#regions]
+
+```csharp
+public List<ulong> Regions;
+```
+
+The regions themselves. Owned by the publisher and reused between rebuilds.
+
+##### EntityCount [#entitycount]
+
+```csharp
+public int EntityCount;
+```
+
+Entities bucketed in these regions, counted during the rebuild.

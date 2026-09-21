@@ -93,6 +93,76 @@ public uint WorkerConnections;
 
 Worker links that completed the handshake.
 
+### InterestSetAvg [#interestsetavg]
+
+```csharp
+public float InterestSetAvg;
+```
+
+Entities in one client's interest set, averaged over the welcomed clients.
+
+### InterestSetMax [#interestsetmax]
+
+```csharp
+public uint InterestSetMax;
+```
+
+The largest interest set of any client.
+
+### CachedEntities [#cachedentities]
+
+```csharp
+public uint CachedEntities;
+```
+
+Entity records this gateway caches: everything its clients' subscribed regions cover.
+
+### SubscribedRegions [#subscribedregions]
+
+```csharp
+public uint SubscribedRegions;
+```
+
+Distinct regions subscribed across every worker link.
+
+### WorkerLinks [#workerlinks]
+
+```csharp
+public uint WorkerLinks;
+```
+
+Worker links held, and why (a comma-separated summary: region, foci, global, explicit, spawn, owned).
+
+### WorkerLinkReasons [#workerlinkreasons]
+
+```csharp
+public string WorkerLinkReasons;
+```
+
+### SpawnsPerSecond, DespawnsPerSecond [#spawnspersecond-despawnspersecond]
+
+```csharp
+public float SpawnsPerSecond, DespawnsPerSecond;
+```
+
+Entity spawns and despawns sent to clients over the interval, per second.
+
+### InterestEvalMsAvg, InterestEvalMsMax [#interestevalmsavg-interestevalmsmax]
+
+```csharp
+public float InterestEvalMsAvg, InterestEvalMsMax;
+```
+
+Time one interest evaluation takes, in milliseconds, over the interval.
+
+### BytesPerClientAvg, BytesPerClientMax [#bytesperclientavg-bytesperclientmax]
+
+```csharp
+public float BytesPerClientAvg, BytesPerClientMax;
+```
+
+Bytes sent to one client per second, averaged over the welcomed clients, and the worst of them.
+
 ### Ready [#ready]
 
 ```csharp

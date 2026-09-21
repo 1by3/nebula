@@ -1,0 +1,175 @@
+---
+title: "RegionSubscriptionSender"
+description: "The gateway's end of one worker link's subscription: what this gateway wants from that worker, and the messages that get the worker there."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs)</div>
+
+```csharp
+public sealed class RegionSubscriptionSender
+```
+
+The gateway's end of one worker link's subscription: what this gateway wants from that worker, and the messages that get the worker there. Callers describe the regions they need each pass and this decides what to send — a delta while the worker is in step, a Full snapshot after a resync, a reconnect, a worker incarnation change, or every [`InterestSettings.ResyncSeconds`](/docs/reference/interest/interest-settings#resyncseconds) as an audit.
+
+Unsubscribing is delayed by [`LingerSeconds`](#lingerseconds) so a client pacing along a region edge does not make the worker start and stop sending the same entities. The clock is injected because the tests, the standalone gateway and the Unity gateway all measure time differently.
+
+## Constructors
+
+### RegionSubscriptionSender [#regionsubscriptionsender]
+
+```csharp
+public RegionSubscriptionSender(Func<double> clock = null);
+```
+
+## Properties
+
+### LingerSeconds [#lingerseconds]
+
+```csharp
+public double LingerSeconds { get; set; } = InterestSettings.Default.RegionLingerSeconds;
+```
+
+Seconds a region stays subscribed after the last pass that needed it.
+
+### ResyncSeconds [#resyncseconds]
+
+```csharp
+public double ResyncSeconds { get; set; } = InterestSettings.Default.ResyncSeconds;
+```
+
+Seconds between belt-and-braces Full snapshots. 0 or less turns the audit off.
+
+### MaxRegionsPerMessage [#maxregionspermessage]
+
+```csharp
+public int MaxRegionsPerMessage { get; set; } = 512;
+```
+
+Most region ids in one message; a larger change is chunked and only the last chunk commits.
+
+### Grid [#grid]
+
+```csharp
+public InterestGrid Grid { get; set; }
+```
+
+The grid these ids were made with; it travels with every message so the worker can refuse a mismatch.
+
+### Seq [#seq]
+
+```csharp
+public uint Seq { get; }
+```
+
+The sequence the worker is believed to hold.
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+Regions currently subscribed, including ones only still there because of the linger.
+
+## Methods
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong region);
+```
+
+### GetEnumerator [#getenumerator]
+
+```csharp
+public HashSet<ulong>.Enumerator GetEnumerator();
+```
+
+### BeginPass [#beginpass]
+
+```csharp
+public void BeginPass();
+```
+
+Start describing the regions this gateway needs. Every [`Need`](#need) until [`EndPass`](#endpass) forms one set.
+
+### Need [#need]
+
+```csharp
+public void Need(ulong region);
+public void Need(List<ulong> regions);
+```
+
+### EndPass [#endpass]
+
+```csharp
+public void EndPass();
+public void EndPass(double now);
+```
+
+Adopt the pass: newly needed regions are subscribed at once, and regions that dropped out are kept for [`LingerSeconds`](#lingerseconds) before they go.
+
+### Add [#add]
+
+```csharp
+public void Add(ulong region);
+```
+
+Subscribe a region outside a pass (an explicit container, a pinned interior).
+
+### Drop [#drop]
+
+```csharp
+public void Drop(ulong region);
+```
+
+Drop a region now, skipping the linger (the last client in it disconnected).
+
+### SetFoci [#setfoci]
+
+```csharp
+public void SetFoci(List<ulong> fociRegions);
+```
+
+The focus regions the worker matches wide entities against. Kept in full; the list is small.
+
+### SetEntities [#setentities]
+
+```csharp
+public void SetEntities(List<ulong> netIds);
+```
+
+Explicit per-entity subscriptions (policy extras). Kept in full.
+
+### OnResync [#onresync]
+
+```csharp
+public void OnResync(uint haveSeq);
+```
+
+The worker could not apply what we sent: the next build is a Full snapshot.
+
+### Reset [#reset]
+
+```csharp
+public void Reset();
+```
+
+A new link, or the worker restarted: forget what it was believed to hold.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget everything, including what we want (the gateway is done with this worker).
+
+### Build [#build]
+
+```csharp
+public bool Build(List<InterestSubscribeMsg> into);
+public bool Build(List<InterestSubscribeMsg> into, double now);
+```
+
+Produce the messages that bring the worker to the current set, appended to `into`, and return whether anything is to be sent. The messages must go out in order on the reliable channel.

@@ -177,6 +177,10 @@ Parts in the same instance share one local physics scene per process. Parts in d
 
 Nebula filters gateway spawns, variables, transform state, behavior state, and entity RPCs by visibility. Unknown runtime containers are hidden until their metadata arrives. Distance-based update frequency applies after this visibility check.
 
+## Interest behavior
+
+[Interest management](/docs/guides/interest-management) checks instance authorization before any spatial test: an unknown container is never added to a client's set, and a private instance's entities are only reachable by clients inside that same instance. `ObservePublic` supplies an additional focus box rather than changing this check, so an occupant's outward view is still limited to `PublicView`'s bounds and never crosses into another private instance.
+
 ## Save and retire an instance
 
 A stable instance key provides repeatable container IDs, not automatic saving of every object. Add [PersistentEntity](/docs/guides/persistence) to objects that must survive and save their state through the persistence APIs. Include the home or run key in each object's persistence key so copies do not share saved records.

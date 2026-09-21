@@ -65,6 +65,13 @@ namespace Nebula
         ServerRpc = 21,
         InstanceReady = 22,
 
+        /// <summary>
+        /// Client -> gateway: where the player is looking (<see cref="ClientFocusHintMsg"/>). A hint, never
+        /// authority: the gateway drops a non-finite one, rate-limits it and clamps it to the pawn before a policy
+        /// ever sees it (<see cref="FocusHintFilter"/>).
+        /// </summary>
+        ClientFocusHint = 23,
+
         // Gateway -> worker
         SpawnPlayer = 30,
         DespawnPlayer = 31,
@@ -72,6 +79,15 @@ namespace Nebula
         // Worker -> gateway
         /// <summary>The session moved to another gateway, so this one must let its client go (<see cref="EndSessionMsg"/>).</summary>
         EndSession = 32,
+
+        /// <summary>Gateway -> worker: the set of regions this gateway wants entities from (<see cref="InterestSubscribeMsg"/>).</summary>
+        InterestSubscribe = 33,
+        /// <summary>Worker -> gateway: the last subscription could not be applied; send a Full snapshot (<see cref="InterestResyncMsg"/>).</summary>
+        InterestResync = 34,
+        /// <summary>Worker -> gateway: an explicitly subscribed entity now lives on another worker (<see cref="EntityRedirectMsg"/>).</summary>
+        EntityRedirect = 35,
+        /// <summary>Worker -> gateway: an entity left every region this gateway subscribes here (<see cref="EntityForgetMsg"/>).</summary>
+        EntityForget = 36,
 
         // Worker <-> worker
         GhostSpawn = 40,
@@ -116,9 +132,18 @@ namespace Nebula
         ServerDriven = 2,
     }
 
+    /// <summary>Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from).</summary>
+    [Flags]
+    public enum EntityInterestFlags : byte
+    {
+        None = 0,
+        /// <summary>The entity is in every client's set, whatever the distance (<see cref="NetworkIdentity.AlwaysRelevant"/>).</summary>
+        AlwaysRelevant = 1,
+    }
+
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 16;
+        public const ushort ProtocolVersion = 17;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -360,6 +385,21 @@ namespace Nebula
         public byte[] State;
         /// <summary>The owning player's <see cref="PlayerIdentity"/>; empty for entities no player owns. Travels with the entity through ghosting and handover.</summary>
         public string OwnerIdentity;
+        /// <summary>
+        /// Metres this entity is relevant at, from its prefab (<see cref="NetworkIdentity.RelevanceRadius"/>);
+        /// 0 means the mesh default. Sent as an f16, so it is precise to about a metre at the default ceiling.
+        /// </summary>
+        public float RelevanceRadius;
+        /// <summary>Per-prefab interest flags (<see cref="NetworkIdentity.AlwaysRelevant"/>).</summary>
+        public EntityInterestFlags InterestFlags;
+        /// <summary>A game-defined bucket a policy can filter on (<see cref="NetworkIdentity.InterestGroup"/>).</summary>
+        public byte InterestGroup;
+        /// <summary>
+        /// Gateway -> client: which view of this net id the spawn belongs to. It increases every time the gateway
+        /// lets the entity into this client's set, so a despawn from an older view cannot kill a replica the
+        /// client has just re-entered (design D4). Workers send 0.
+        /// </summary>
+        public ushort ViewSeq;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -391,6 +431,9 @@ namespace Nebula
                 Velocity = id.Motion.Velocity,
                 Vars = vars,
                 State = state,
+                RelevanceRadius = id.RelevanceRadius,
+                InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
+                InterestGroup = id.InterestGroup,
             };
         }
 
@@ -418,6 +461,10 @@ namespace Nebula
             w.WriteBytes(Vars);
             w.WriteBytes(State);
             w.WriteString(OwnerIdentity ?? "");
+            w.WriteHalf(RelevanceRadius);
+            w.WriteByte((byte)InterestFlags);
+            w.WriteByte(InterestGroup);
+            w.WriteUShort(ViewSeq);
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -439,6 +486,10 @@ namespace Nebula
                 Vars = r.ReadBytes(),
                 State = r.ReadBytes(),
                 OwnerIdentity = r.ReadString() ?? "",
+                RelevanceRadius = r.ReadHalf(),
+                InterestFlags = (EntityInterestFlags)r.ReadByte(),
+                InterestGroup = r.ReadByte(),
+                ViewSeq = r.ReadUShort(),
             };
         }
     }
@@ -447,15 +498,22 @@ namespace Nebula
     {
         public ulong NetId;
         public uint Epoch;
+        /// <summary>
+        /// Gateway -> client: the view this despawn ends (see <see cref="EntitySpawnMsg.ViewSeq"/>). A client
+        /// drops a despawn older than the view it currently holds, so a late leave cannot kill a re-entered
+        /// replica. Workers send 0.
+        /// </summary>
+        public ushort ViewSeq;
 
         public void Write(NetworkWriter w, MsgId id)
         {
             w.WriteByte((byte)id);
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
+            w.WriteUShort(ViewSeq);
         }
 
-        public static EntityDespawnMsg Read(NetworkReader r) => new EntityDespawnMsg { NetId = r.ReadULong(), Epoch = r.ReadUInt() };
+        public static EntityDespawnMsg Read(NetworkReader r) => new EntityDespawnMsg { NetId = r.ReadULong(), Epoch = r.ReadUInt(), ViewSeq = r.ReadUShort() };
     }
 
     public struct EntityVarsMsg
@@ -759,15 +817,40 @@ namespace Nebula
         public Vector3 BoundsSize;
     }
 
+    /// <summary>
+    /// What one <see cref="MsgId.ContainerOwnership"/> message says: either the complete set of containers a
+    /// client should know about (<see cref="Full"/>) or a change to it. Interest management makes this per-client
+    /// and incremental (design §8): a client is told about the containers overlapping its own window, so the
+    /// snapshot of a large world is no longer broadcast to everybody.
+    /// </summary>
+    public struct ContainerOwnershipUpdate
+    {
+        /// <summary>The upserts are the complete set: the receiver forgets every container not named here.</summary>
+        public bool Full;
+        /// <summary>Containers added or changed.</summary>
+        public List<ContainerOwnershipEntry> Upserts;
+        /// <summary>Container ids the client should forget. Empty in a Full message.</summary>
+        public List<string> Removes;
+    }
+
     public static class ContainerOwnershipMsg
     {
         private const byte FlagBounds = 1;
+        private const byte FlagFull = 1;
 
-        public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries)
+        /// <summary>Write a complete snapshot (the form a gateway sends on join and on every control-plane change).</summary>
+        public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries) => Write(w, entries, true, null);
+
+        /// <summary>
+        /// Write a snapshot or a delta. A delta's removes are applied after its upserts, and a container is only
+        /// ever removed once the entities inside it have been despawned.
+        /// </summary>
+        public static void Write(NetworkWriter w, IList<ContainerOwnershipEntry> entries, bool full, IList<string> removes)
         {
             w.WriteByte((byte)MsgId.ContainerOwnership);
-            w.WriteUShort((ushort)entries.Count);
-            foreach (var e in entries)
+            w.WriteByte(full ? FlagFull : (byte)0);
+            w.WriteUShort((ushort)(entries?.Count ?? 0));
+            if (entries != null) foreach (var e in entries)
             {
                 w.WriteUShort(e.ContainerIndex);
                 w.WriteString(e.ContainerId);
@@ -784,10 +867,13 @@ namespace Nebula
                     w.WriteVector3(e.BoundsSize);
                 }
             }
+            w.WriteUShort((ushort)(removes?.Count ?? 0));
+            if (removes != null) foreach (var id in removes) w.WriteString(id ?? "");
         }
 
-        public static List<ContainerOwnershipEntry> Read(NetworkReader r)
+        public static ContainerOwnershipUpdate Read(NetworkReader r)
         {
+            var update = new ContainerOwnershipUpdate { Full = (r.ReadByte() & FlagFull) != 0 };
             int n = r.ReadUShort();
             var list = new List<ContainerOwnershipEntry>(n);
             for (int i = 0; i < n; i++)
@@ -811,7 +897,11 @@ namespace Nebula
                 }
                 list.Add(e);
             }
-            return list;
+            update.Upserts = list;
+            int removed = r.ReadUShort();
+            update.Removes = new List<string>(removed);
+            for (int i = 0; i < removed; i++) update.Removes.Add(r.ReadString() ?? "");
+            return update;
         }
     }
 
@@ -944,6 +1034,13 @@ namespace Nebula
         /// <summary>The owner's session as the sender knew it (<see cref="PlayerSessions"/>), so the receiver accepts the owner's gateway at once. 0/"" for an unowned entity.</summary>
         public ulong SessionGeneration;
         public string SessionGateway;
+        /// <summary>
+        /// Gateway keys (<see cref="PlayerSessions.GatewayKey"/>) that were following this entity on the old owner
+        /// without subscribing its region — an explicit per-entity subscription, or the session it speaks for
+        /// (design §5). The new owner announces the spawn to them as well as to the gateways its own regions cover,
+        /// so a followed entity is not lost the moment it changes worker.
+        /// </summary>
+        public string[] InterestGateways;
 
         public void Write(NetworkWriter w)
         {
@@ -956,6 +1053,8 @@ namespace Nebula
             if (GhostWorkers != null) foreach (var worker in GhostWorkers) w.WriteString(worker);
             w.WriteULong(SessionGeneration);
             w.WriteString(SessionGateway ?? "");
+            w.WriteUShort((ushort)(InterestGateways?.Length ?? 0));
+            if (InterestGateways != null) foreach (var key in InterestGateways) w.WriteString(key);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r) => new AuthorityTransferMsg
@@ -964,16 +1063,226 @@ namespace Nebula
             NewEpoch = r.ReadUInt(),
             PendingInputs = r.ReadBytes(),
             HandoverState = r.ReadBytes(),
-            GhostWorkers = ReadGhostWorkers(r),
+            GhostWorkers = ReadStrings(r),
             SessionGeneration = r.ReadULong(),
             SessionGateway = r.ReadString() ?? "",
+            InterestGateways = ReadStrings(r),
         };
 
-        private static string[] ReadGhostWorkers(NetworkReader r)
+        private static string[] ReadStrings(NetworkReader r)
         {
-            var workers = new string[r.ReadUShort()];
-            for (int i = 0; i < workers.Length; i++) workers[i] = r.ReadString();
-            return workers;
+            int count = r.ReadUShort();
+            if (count == 0) return Array.Empty<string>();
+            var values = new string[count];
+            for (int i = 0; i < count; i++) values[i] = r.ReadString();
+            return values;
         }
+    }
+
+    [Flags]
+    public enum InterestSubscribeFlags : byte
+    {
+        None = 0,
+        /// <summary>The message replaces the worker's whole set instead of changing it.</summary>
+        Full = 1,
+        /// <summary>
+        /// The last chunk of this update: the worker applies the staged changes, checks
+        /// <see cref="InterestSubscribeMsg.SetCount"/> and <see cref="InterestSubscribeMsg.SetHash"/>, and only
+        /// then adopts the new sequence number. A set too large for one message is split, and the chunks before
+        /// this one change nothing the worker will keep if the commit never arrives or does not verify.
+        /// </summary>
+        Commit = 2,
+    }
+
+    /// <summary>
+    /// Gateway -> worker: the set of regions this gateway wants entities from (design §5). The state is a set, so
+    /// the message is idempotent: a delta applies only when <see cref="BaseSeq"/> is the worker's current sequence
+    /// and the resulting (count, hash) matches, and the worker otherwise keeps what it has and asks for a resync.
+    /// The grid travels with it so a worker can refuse to filter with ids the gateway did not mean (design D2).
+    /// </summary>
+    public struct InterestSubscribeMsg
+    {
+        /// <summary>Sequence this message brings the worker's set to.</summary>
+        public uint Seq;
+        /// <summary>Sequence the delta is against; ignored for a <see cref="InterestSubscribeFlags.Full"/> message.</summary>
+        public uint BaseSeq;
+        public float EdgeX, EdgeY, EdgeZ, OffsetX, OffsetY, OffsetZ;
+        public bool Planar;
+        public InterestSubscribeFlags Flags;
+        public List<ulong> Add;
+        public List<ulong> Remove;
+        /// <summary>The regions the gateway's clients are focused on, always in full; small, and the worker matches wide entities against them.</summary>
+        public List<ulong> FociRegions;
+        /// <summary>Explicit per-entity subscriptions (policy extras), always in full.</summary>
+        public List<ulong> Entities;
+        /// <summary>Regions in the set after applying this message.</summary>
+        public uint SetCount;
+        /// <summary>Order-independent mix of the set after applying (see <see cref="RegionSubscription.Hash"/>).</summary>
+        public ulong SetHash;
+
+        public bool IsFull => (Flags & InterestSubscribeFlags.Full) != 0;
+        public bool IsCommit => (Flags & InterestSubscribeFlags.Commit) != 0;
+
+        /// <summary>The grid the sender made these region ids with.</summary>
+        public InterestGrid Grid
+        {
+            get => new InterestGrid(EdgeX, EdgeY, EdgeZ, OffsetX, OffsetY, OffsetZ, Planar);
+            set
+            {
+                EdgeX = (float)value.EdgeX; EdgeY = (float)value.EdgeY; EdgeZ = (float)value.EdgeZ;
+                OffsetX = (float)value.OffsetX; OffsetY = (float)value.OffsetY; OffsetZ = (float)value.OffsetZ;
+                Planar = value.Planar;
+            }
+        }
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.InterestSubscribe);
+            w.WriteUInt(Seq);
+            w.WriteUInt(BaseSeq);
+            w.WriteFloat(EdgeX); w.WriteFloat(EdgeY); w.WriteFloat(EdgeZ);
+            w.WriteFloat(OffsetX); w.WriteFloat(OffsetY); w.WriteFloat(OffsetZ);
+            w.WriteBool(Planar);
+            w.WriteByte((byte)Flags);
+            WriteIds(w, Add);
+            WriteIds(w, Remove);
+            WriteIds(w, FociRegions);
+            WriteIds(w, Entities);
+            w.WriteUInt(SetCount);
+            w.WriteULong(SetHash);
+        }
+
+        private static void WriteIds(NetworkWriter w, List<ulong> ids)
+        {
+            w.WriteUShort((ushort)(ids?.Count ?? 0));
+            if (ids != null) foreach (ulong id in ids) w.WriteULong(id);
+        }
+
+        /// <summary>
+        /// Read a subscription. Pass the previous message back in to reuse its lists: a gateway link sends one of
+        /// these several times a second and the worker has no reason to allocate four lists each time.
+        /// </summary>
+        public static InterestSubscribeMsg Read(NetworkReader r, InterestSubscribeMsg reuse = default)
+        {
+            var m = new InterestSubscribeMsg
+            {
+                Seq = r.ReadUInt(),
+                BaseSeq = r.ReadUInt(),
+                EdgeX = r.ReadFloat(), EdgeY = r.ReadFloat(), EdgeZ = r.ReadFloat(),
+                OffsetX = r.ReadFloat(), OffsetY = r.ReadFloat(), OffsetZ = r.ReadFloat(),
+                Planar = r.ReadBool(),
+                Flags = (InterestSubscribeFlags)r.ReadByte(),
+                Add = ReadIds(r, reuse.Add),
+                Remove = ReadIds(r, reuse.Remove),
+                FociRegions = ReadIds(r, reuse.FociRegions),
+                Entities = ReadIds(r, reuse.Entities),
+            };
+            m.SetCount = r.ReadUInt();
+            m.SetHash = r.ReadULong();
+            return m;
+        }
+
+        private static List<ulong> ReadIds(NetworkReader r, List<ulong> reuse)
+        {
+            int n = r.ReadUShort();
+            var list = reuse ?? new List<ulong>(n);
+            list.Clear();
+            for (int i = 0; i < n; i++) list.Add(r.ReadULong());
+            return list;
+        }
+    }
+
+    /// <summary>
+    /// Worker -> gateway: the last <see cref="InterestSubscribeMsg"/> could not be applied (wrong base sequence,
+    /// or the result did not verify). The worker kept the set it had, at <see cref="HaveSeq"/>; the gateway
+    /// answers with a Full snapshot.
+    /// </summary>
+    public struct InterestResyncMsg
+    {
+        public uint HaveSeq;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.InterestResync);
+            w.WriteUInt(HaveSeq);
+        }
+
+        public static InterestResyncMsg Read(NetworkReader r) => new InterestResyncMsg { HaveSeq = r.ReadUInt() };
+    }
+
+    /// <summary>
+    /// Worker -> gateway: an entity the gateway subscribed by id (a policy extra, or one it owns) is now on
+    /// another worker. The gateway links that worker instead of asking every live one for the id.
+    /// </summary>
+    public struct EntityRedirectMsg
+    {
+        public ulong NetId;
+        public ushort NewWorkerIndex;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.EntityRedirect);
+            w.WriteULong(NetId);
+            w.WriteUShort(NewWorkerIndex);
+        }
+
+        public static EntityRedirectMsg Read(NetworkReader r) => new EntityRedirectMsg { NetId = r.ReadULong(), NewWorkerIndex = r.ReadUShort() };
+    }
+
+    /// <summary>
+    /// Worker -> gateway: the entity left every region this gateway subscribes on this worker. The gateway drops
+    /// its cached record (and despawns it from whoever still observes it); no per-gateway per-entity "known" set
+    /// exists on the worker, which is what keeps worker memory independent of the number of gateways.
+    /// </summary>
+    public struct EntityForgetMsg
+    {
+        public ulong NetId;
+        public uint Epoch;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.EntityForget);
+            w.WriteULong(NetId);
+            w.WriteUInt(Epoch);
+        }
+
+        public static EntityForgetMsg Read(NetworkReader r) => new EntityForgetMsg { NetId = r.ReadULong(), Epoch = r.ReadUInt() };
+    }
+
+    /// <summary>
+    /// Client -> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera).
+    /// The gateway validates it (<see cref="FocusHintFilter"/>) before any policy sees it: a hint is an input,
+    /// never authority, so it cannot be used to see the whole map.
+    /// </summary>
+    public struct ClientFocusHintMsg
+    {
+        /// <summary>The hinted point, in the client's own frame; the gateway resolves it against the pawn.</summary>
+        public Vector3 Position;
+        /// <summary>
+        /// Bumped by the client every time it clears its hint. Hints travel <see cref="Delivery.Sequenced"/> and
+        /// the clear travels reliably, so a hint already in flight can arrive after the clear; without a
+        /// generation it would quietly re-establish the focus the game just gave up.
+        /// </summary>
+        public byte Generation;
+        /// <summary>The client withdraws its hint: interest returns to the pawn. <see cref="Position"/> is unused.</summary>
+        public bool Clear;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.ClientFocusHint);
+            w.WriteByte(Generation);
+            w.WriteByte((byte)(Clear ? 1 : 0));
+            if (!Clear) w.WriteVector3(Position);
+        }
+
+        public static ClientFocusHintMsg Read(NetworkReader r)
+        {
+            var msg = new ClientFocusHintMsg { Generation = r.ReadByte(), Clear = (r.ReadByte() & 1) != 0 };
+            if (!msg.Clear) msg.Position = r.ReadVector3();
+            return msg;
+        }
+
+        /// <summary>True when <paramref name="generation"/> is older than <paramref name="current"/> (wrapping).</summary>
+        public static bool IsStale(byte generation, byte current) => (byte)(generation - current) >= 128;
     }
 }

@@ -1,0 +1,400 @@
+﻿UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[nebula] ghost Starhopper(Clone)#844424930132013(e85,cell_0_0_0,auth) -> w3
+[nebula] handover IN  Starhopper(Clone)#844424930132013(e85,cell_0_0_0,auth) <- w3 (epoch 85, tick 1364122151)
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+[Physics.PhysX] computeMassAndInertia: Dynamic actor with illegal collision shapes
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] PxRigidBodyExt::setMassAndUpdateInertia: Mass and inertia computation failed, setting mass to 1 and inertia to (1,1,1)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] computeMassAndInertia: Dynamic actor with illegal collision shapes
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] PxRigidBodyExt::setMassAndUpdateInertia: Mass and inertia computation failed, setting mass to 1 and inertia to (1,1,1)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[nebula] ghost Starhopper(Clone)#844424930132014(e88,cell_0_0_0,auth) -> w3
+[nebula] handover IN  Starhopper(Clone)#844424930132014(e88,cell_0_0_0,auth) <- w3 (epoch 88, tick 1364122151)
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+color=#FF0000>VattalusAssets: Interactable object did not find reference to the VattalusSceneController. Make sure to include it in the scene</color>
+[Physics.PhysX] computeMassAndInertia: Dynamic actor with illegal collision shapes
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] PxRigidBodyExt::setMassAndUpdateInertia: Mass and inertia computation failed, setting mass to 1 and inertia to (1,1,1)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] computeMassAndInertia: Dynamic actor with illegal collision shapes
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[Physics.PhysX] PxRigidBodyExt::setMassAndUpdateInertia: Mass and inertia computation failed, setting mass to 1 and inertia to (1,1,1)
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace () (at C:/build/output/unity/unity/Runtime/Export/Scripting/StackTrace.cs:23)
+UnityEngine.Rigidbody:set_isKinematic (bool)
+Nebula.NebulaWorker:SetGhostPhysics (Nebula.NetworkIdentity,bool) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1310)
+Nebula.NebulaWorker:OnAuthorityTransfer (Nebula.NebulaWorker/Peer,Nebula.AuthorityTransferMsg) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1275)
+Nebula.NebulaWorker:Dispatch (Nebula.NebulaWorker/Peer,Nebula.NetworkReader) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1953)
+Nebula.NebulaWorker:HandleTransportEvent (Nebula.TransportEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:1861)
+Nebula.LiteNetTransport:LiteNetLib.INetEventListener.OnNetworkReceive (LiteNetLib.NetPeer,LiteNetLib.NetPacketReader,byte,LiteNetLib.DeliveryMethod) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:142)
+LiteNetLib.NetManager:ProcessEvent (LiteNetLib.NetEvent) (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:489)
+LiteNetLib.NetManager:PollEvents () (at C:/Dev/nebula/Packages/com.1by3.nebula/ThirdParty/LiteNetLib/NetManager.cs:1445)
+Nebula.LiteNetTransport:Poll (System.Action`1<Nebula.TransportEvent>) (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Transport/LiteNetTransport.cs:105)
+Nebula.NebulaWorker:Update () (at C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs:470)
+
+[C:/Dev/nebula/Packages/com.1by3.nebula/Runtime/Worker/NebulaWorker.cs line 1310]
+
+[nebula] ghost Starhopper(Clone)#844424930132015(e55,cell_0_0_0,auth) -> w3
+[nebula] handover IN  Starhopper(Clone)#844424930132015(e55,cell_0_0_0,auth) <- w3 (epoch 55, tick 1364122151)
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Phobos_Starhopper_BathroomDoor/DoorParent/BathroomDoor"
+BoxCollider does not support negative scale or size.
+The effective box size has been forced positive and is likely to give unexpected collision geometry.
+If you absolutely need to use negative scaling you can use the convex MeshCollider. Scene hierarchy path "Nebula World/cell_0_0_0/Starhopper(Clone)/Phobos_Starhopper_Interior/WardrobeDoor_Slot/Phobos_Starhopper_BathroomDoor/Console"
+[nebula] handover OUT Npc(Clone)#844424930131973(e205,scav-outdoor-sw,ghost) -> w3 (epoch 205, tick 1364122254)
+[nebula] kill: npc-51 killed npc-47
+[nebula] ghost Npc(Clone)#844424930131973(e206,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e206,cell_0_0_2,auth) <- w3 (epoch 206, tick 1364122291)
+[nebula] handover OUT Npc(Clone)#844424930131973(e207,scav-outdoor-sw,ghost) -> w3 (epoch 207, tick 1364122337)
+[nebula] profile 298 ticks/5s 297 frames avg 1.5ms max 4.5ms dup 3 skip 2 gc 7 auth 40 ghosts 16 | npc.brain=0.05(3733) npc.move=0.34(3791) npc.fire=0.00(8) npc.path=0.00(88) npc.presence=0.01(80) poll=0.25(297) ghosts=0.03 physics.sync=0.11 simulate=0.81 poses=0.04 containers=0.25 band=0.09 publish=0.04 gap=15.29
+[nebula] ghost Npc(Clone)#844424930131973(e208,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e208,cell_0_0_2,auth) <- w3 (epoch 208, tick 1364122375)
+[nebula] handover OUT Npc(Clone)#844424930131973(e209,scav-outdoor-sw,ghost) -> w3 (epoch 209, tick 1364122433)
+[nebula] ghost Npc(Clone)#844424930131973(e210,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e210,cell_0_0_2,auth) <- w3 (epoch 210, tick 1364122470)
+[nebula] handover OUT Npc(Clone)#844424930131973(e211,scav-outdoor-sw,ghost) -> w3 (epoch 211, tick 1364122527)
+[nebula] kill: npc-47 killed npc-51
+[nebula] ghost Npc(Clone)#844424930131973(e212,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e212,cell_0_0_2,auth) <- w3 (epoch 212, tick 1364122610)
+[nebula] handover OUT Npc(Clone)#844424930131973(e213,scav-outdoor-sw,ghost) -> w3 (epoch 213, tick 1364122647)
+[nebula] profile 301 ticks/5s 300 frames avg 1.6ms max 4.3ms dup 1 skip 0 gc 7 auth 40 ghosts 14 | npc.brain=0.04(3764) npc.move=0.33(3863) npc.fire=0.00(8) npc.path=0.00(87) npc.presence=0.01(80) poll=0.05(300) ghosts=0.04 physics.sync=0.12 simulate=0.81 poses=0.05 containers=0.28 band=0.10 publish=0.04 gap=15.07
+[nebula] ghost Npc(Clone)#844424930131973(e214,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e214,cell_0_0_2,auth) <- w3 (epoch 214, tick 1364122705)
+[nebula] handover OUT Npc(Clone)#844424930131973(e215,scav-outdoor-sw,ghost) -> w3 (epoch 215, tick 1364122803)
+[nebula] ghost Npc(Clone)#844424930131973(e216,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e216,cell_0_0_2,auth) <- w3 (epoch 216, tick 1364122841)
+[nebula] kill: npc-51 killed npc-47
+[nebula] handover OUT Npc(Clone)#844424930131973(e217,scav-outdoor-sw,ghost) -> w3 (epoch 217, tick 1364122898)
+[nebula] profile 300 ticks/5s 300 frames avg 1.4ms max 4.1ms dup 0 skip 0 gc 5 auth 40 ghosts 13 | npc.brain=0.04(3755) npc.move=0.27(3853) npc.fire=0.00(11) npc.path=0.00(93) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.72 poses=0.05 containers=0.28 band=0.10 publish=0.04 gap=15.24
+[nebula] ghost Npc(Clone)#844424930131973(e218,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e218,cell_0_0_2,auth) <- w3 (epoch 218, tick 1364122984)
+[nebula] handover OUT Npc(Clone)#844424930131973(e219,scav-outdoor-sw,ghost) -> w3 (epoch 219, tick 1364123021)
+[nebula] ghost Player(Clone)#844424930132006(e14,outdoor-east-north,auth) -> w1
+[nebula] handover IN  Player(Clone)#844424930132006(e14,outdoor-east-north,auth) <- w1 (epoch 14, tick 1364123038)
+[nebula] kill: npc-47 killed npc-51
+[nebula] ghost Npc(Clone)#844424930131973(e220,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e220,cell_0_0_2,auth) <- w3 (epoch 220, tick 1364123079)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-landing-pads,auth) scav-outdoor-s -> scav-landing-pads
+[nebula] handover OUT Npc(Clone)#844424930131973(e221,scav-outdoor-sw,ghost) -> w3 (epoch 221, tick 1364123179)
+[nebula] local handover Npc(Clone)#844424930131978(e4,scav-outdoor-s,auth) cell_0_0_2 -> scav-outdoor-s
+[nebula] profile 300 ticks/5s 300 frames avg 1.4ms max 3.7ms dup 0 skip 0 gc 7 auth 41 ghosts 13 | npc.brain=0.05(3737) npc.move=0.22(4024) npc.fire=0.00(8) npc.path=0.00(77) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.67 poses=0.05 containers=0.28 band=0.10 publish=0.04 gap=15.27
+[nebula] ghost Npc(Clone)#844424930131973(e222,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e222,cell_0_0_2,auth) <- w3 (epoch 222, tick 1364123289)
+[nebula] kill: npc-51 killed npc-47
+[nebula] local handover Player(Clone)#1125899906842652(e7,scav-control-room,auth) scav-outdoor-center -> scav-control-room
+[nebula] handover OUT Npc(Clone)#844424930131973(e223,scav-outdoor-sw,ghost) -> w3 (epoch 223, tick 1364123387)
+[nebula] ghost Npc(Clone)#844424930131973(e224,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e224,cell_0_0_2,auth) <- w3 (epoch 224, tick 1364123425)
+[nebula] handover OUT Npc(Clone)#844424930131973(e225,scav-outdoor-sw,ghost) -> w3 (epoch 225, tick 1364123482)
+[nebula] kill: npc-47 killed npc-51
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 3.5ms dup 0 skip 0 gc 6 auth 41 ghosts 12 | npc.brain=0.05(3755) npc.move=0.34(4133) npc.fire=0.00(10) npc.path=0.00(81) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.83 poses=0.05 containers=0.28 band=0.10 publish=0.04 gap=15.11
+[nebula] ghost Npc(Clone)#844424930131973(e226,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e226,cell_0_0_2,auth) <- w3 (epoch 226, tick 1364123567)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-outdoor-s,auth) scav-landing-pads -> scav-outdoor-s
+[nebula] handover OUT Npc(Clone)#844424930131973(e227,scav-outdoor-sw,ghost) -> w3 (epoch 227, tick 1364123604)
+[nebula] ghost Npc(Clone)#844424930131973(e228,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e228,cell_0_0_2,auth) <- w3 (epoch 228, tick 1364123662)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-refinery-south,auth) scav-outdoor-s -> scav-refinery-south
+[nebula] ghost Player(Clone)#844424930132006(e14,outdoor-east-north,auth) -> w1
+[nebula] local handover NPC npc-27#1125899906842631(e1,cell_0_0_1,auth) cell_0_0_2 -> cell_0_0_1
+[nebula] handover OUT Npc(Clone)#844424930131973(e229,scav-outdoor-sw,ghost) -> w3 (epoch 229, tick 1364123761)
+[nebula] handover OUT Player(Clone)#844424930132006(e15,outdoor-west-south,ghost) -> w1 (epoch 15, tick 1364123792)
+[nebula] kill: npc-51 killed npc-47
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 4.0ms dup 0 skip 0 gc 6 auth 40 ghosts 13 | npc.brain=0.04(3736) npc.move=0.41(4063) npc.fire=0.00(5) npc.path=0.00(88) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.90 poses=0.05 containers=0.27 band=0.10 publish=0.04 gap=15.07
+[nebula] ghost Npc(Clone)#844424930131973(e230,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e230,cell_0_0_2,auth) <- w3 (epoch 230, tick 1364123870)
+[nebula] handover OUT Npc(Clone)#844424930131973(e231,scav-outdoor-sw,ghost) -> w3 (epoch 231, tick 1364123968)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-outdoor-s,auth) scav-refinery-south -> scav-outdoor-s
+[nebula] ghost Npc(Clone)#844424930131973(e232,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e232,cell_0_0_2,auth) <- w3 (epoch 232, tick 1364124006)
+[nebula] kill: npc-47 killed npc-51
+[nebula] handover OUT Npc(Clone)#844424930131973(e233,scav-outdoor-sw,ghost) -> w3 (epoch 233, tick 1364124063)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-refinery-north,auth) scav-outdoor-s -> scav-refinery-north
+[nebula] ghost Npc(Clone)#844424930131973(e234,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e234,cell_0_0_2,auth) <- w3 (epoch 234, tick 1364124148)
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 3.8ms dup 0 skip 0 gc 6 auth 41 ghosts 13 | npc.brain=0.04(3771) npc.move=0.39(3848) npc.fire=0.00(8) npc.path=0.00(88) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.86 poses=0.05 containers=0.28 band=0.09 publish=0.04 gap=15.09
+[nebula] handover OUT Npc(Clone)#844424930131973(e235,scav-outdoor-sw,ghost) -> w3 (epoch 235, tick 1364124185)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-outdoor-s,auth) scav-refinery-north -> scav-outdoor-s
+[nebula] ghost Npc(Clone)#844424930131973(e236,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e236,cell_0_0_2,auth) <- w3 (epoch 236, tick 1364124243)
+[nebula] kill: npc-51 killed npc-47
+[nebula] handover OUT Npc(Clone)#844424930131973(e237,scav-outdoor-sw,ghost) -> w3 (epoch 237, tick 1364124342)
+[nebula] ghost Npc(Clone)#844424930131973(e238,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e238,cell_0_0_2,auth) <- w3 (epoch 238, tick 1364124451)
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 3.3ms dup 0 skip 0 gc 5 auth 41 ghosts 12 | npc.brain=0.05(3733) npc.move=0.34(3811) npc.fire=0.00(8) npc.path=0.00(106) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.81 poses=0.05 containers=0.27 band=0.09 publish=0.04 gap=15.15
+[nebula] kill: npc-47 killed npc-51
+[nebula] handover OUT Npc(Clone)#844424930131973(e239,scav-outdoor-sw,ghost) -> w3 (epoch 239, tick 1364124549)
+[nebula] ghost Npc(Clone)#844424930131973(e240,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e240,cell_0_0_2,auth) <- w3 (epoch 240, tick 1364124587)
+[nebula] handover OUT Npc(Clone)#844424930131973(e241,scav-outdoor-sw,ghost) -> w3 (epoch 241, tick 1364124644)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-control-room,auth) scav-outdoor-s -> scav-control-room
+[nebula] ghost Npc(Clone)#844424930131973(e242,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e242,cell_0_0_2,auth) <- w3 (epoch 242, tick 1364124730)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-refinery-hall,auth) scav-control-room -> scav-refinery-hall
+[nebula] kill: npc-51 killed npc-47
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 3.0ms dup 0 skip 0 gc 6 auth 41 ghosts 12 | npc.brain=0.05(3776) npc.move=0.30(3866) npc.fire=0.00(10) npc.path=0.00(101) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.76 poses=0.05 containers=0.27 band=0.09 publish=0.04 gap=15.21
+[nebula] handover OUT Npc(Clone)#844424930131973(e243,scav-outdoor-sw,ghost) -> w3 (epoch 243, tick 1364124768)
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-outdoor-s,auth) scav-refinery-hall -> scav-outdoor-s
+[nebula] local handover NPC npc-35#1125899906842633(e1,scav-outdoor-center,auth) scav-outdoor-s -> scav-outdoor-center
+[nebula] ghost Npc(Clone)#844424930131973(e244,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e244,cell_0_0_2,auth) <- w3 (epoch 244, tick 1364124829)
+[nebula] handover OUT Npc(Clone)#844424930131973(e245,scav-outdoor-sw,ghost) -> w3 (epoch 245, tick 1364124928)
+[nebula] kill: npc-47 killed npc-51
+[nebula] ghost Npc(Clone)#844424930131973(e246,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e246,cell_0_0_2,auth) <- w3 (epoch 246, tick 1364125038)
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 3.4ms dup 0 skip 0 gc 5 auth 41 ghosts 13 | npc.brain=0.05(3729) npc.move=0.32(3738) npc.fire=0.00(2) npc.path=0.00(75) npc.presence=0.00(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.78 poses=0.05 containers=0.27 band=0.09 publish=0.04 gap=15.18
+[nebula] handover OUT Npc(Clone)#844424930131973(e247,scav-outdoor-sw,ghost) -> w3 (epoch 247, tick 1364125135)
+[nebula] ghost Npc(Clone)#844424930131973(e248,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e248,cell_0_0_2,auth) <- w3 (epoch 248, tick 1364125173)
+[nebula] local handover Player(Clone)#1125899906842652(e7,scav-outdoor-center,auth) scav-control-room -> scav-outdoor-center
+[nebula] kill: npc-51 killed npc-47
+[nebula] handover OUT Npc(Clone)#844424930131973(e249,scav-outdoor-sw,ghost) -> w3 (epoch 249, tick 1364125230)
+[nebula] kill: bot1 killed npc-35
+[nebula] ghost Npc(Clone)#844424930131973(e250,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e250,cell_0_0_2,auth) <- w3 (epoch 250, tick 1364125317)
+[nebula] handover OUT Npc(Clone)#844424930131973(e251,scav-outdoor-sw,ghost) -> w3 (epoch 251, tick 1364125354)
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 4.6ms dup 0 skip 0 gc 5 auth 40 ghosts 13 | npc.brain=0.05(3765) npc.move=0.33(3781) npc.fire=0.01(22) npc.path=0.00(103) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.11 simulate=0.82 poses=0.05 containers=0.27 band=0.09 publish=0.04 gap=15.14
+[nebula] ghost Npc(Clone)#1125899906842629(e11,outdoor-east-north,auth) -> w3
+[nebula] handover IN  Npc(Clone)#1125899906842629(e11,outdoor-east-north,auth) <- w3 (epoch 11, tick 1364125377)
+[nebula] handover OUT Npc(Clone)#1125899906842629(e12,outdoor-west-north,ghost) -> w3 (epoch 12, tick 1364125388)
+[nebula] ghost Npc(Clone)#1125899906842629(e13,outdoor-east-north,auth) -> w3
+[nebula] handover IN  Npc(Clone)#1125899906842629(e13,outdoor-east-north,auth) <- w3 (epoch 13, tick 1364125397)
+[nebula] handover OUT Npc(Clone)#1125899906842629(e14,outdoor-west-north,ghost) -> w3 (epoch 14, tick 1364125408)
+[nebula] ghost Npc(Clone)#844424930131973(e252,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e252,cell_0_0_2,auth) <- w3 (epoch 252, tick 1364125412)
+[nebula] ghost Npc(Clone)#1125899906842629(e15,outdoor-east-north,auth) -> w3
+[nebula] handover IN  Npc(Clone)#1125899906842629(e15,outdoor-east-north,auth) <- w3 (epoch 15, tick 1364125440)
+[nebula] local handover Npc(Clone)#1125899906842629(e15,loading-bay,auth) outdoor-east-north -> loading-bay
+[nebula] handover OUT Npc(Clone)#844424930131973(e253,scav-outdoor-sw,ghost) -> w3 (epoch 253, tick 1364125509)
+[nebula] ghost Npc(Clone)#844424930131973(e254,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e254,cell_0_0_2,auth) <- w3 (epoch 254, tick 1364125547)
+[nebula] kill: npc-47 killed npc-51
+[nebula] handover OUT Npc(Clone)#844424930131973(e255,scav-outdoor-sw,ghost) -> w3 (epoch 255, tick 1364125604)
+[nebula] local handover Npc(Clone)#1125899906842629(e15,outdoor-east-north,auth) loading-bay -> outdoor-east-north
+[nebula] profile 300 ticks/5s 300 frames avg 1.5ms max 3.5ms dup 0 skip 0 gc 6 auth 41 ghosts 16 | npc.brain=0.05(4000) npc.move=0.35(4053) npc.fire=0.00(11) npc.path=0.01(90) npc.presence=0.01(80) poll=0.05 ghosts=0.03 physics.sync=0.11 simulate=0.83 poses=0.05 containers=0.27 band=0.10 publish=0.04 gap=15.13
+[nebula] ghost Npc(Clone)#844424930131973(e256,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e256,cell_0_0_2,auth) <- w3 (epoch 256, tick 1364125692)
+[nebula] handover OUT Npc(Clone)#844424930131973(e257,scav-outdoor-sw,ghost) -> w3 (epoch 257, tick 1364125729)
+[nebula] kill: npc-51 killed npc-47
+[nebula] ghost Npc(Clone)#844424930131973(e258,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e258,cell_0_0_2,auth) <- w3 (epoch 258, tick 1364125787)
+[nebula] local handover Npc(Clone)#844424930131978(e4,scav-refinery-south,auth) scav-outdoor-s -> scav-refinery-south
+[nebula] handover OUT Npc(Clone)#844424930131973(e259,scav-outdoor-sw,ghost) -> w3 (epoch 259, tick 1364125884)
+[nebula] ghost Player(Clone)#844424930132006(e19,outdoor-east-north,auth) -> w3
+[nebula] handover IN  Player(Clone)#844424930132006(e19,outdoor-east-north,auth) <- w3 (epoch 19, tick 1364125889)
+[nebula] ghost Npc(Clone)#844424930131973(e260,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e260,cell_0_0_2,auth) <- w3 (epoch 260, tick 1364125922)
+[nebula] local handover Player(Clone)#844424930132006(e19,loading-bay,auth) outdoor-east-north -> loading-bay
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 5.1ms dup 0 skip 0 gc 6 auth 43 ghosts 14 | npc.brain=0.05(4076) npc.move=0.37(4198) npc.fire=0.00(4) npc.path=0.00(96) npc.presence=0.00(80) poll=0.05 ghosts=0.04 physics.sync=0.10 simulate=0.85 poses=0.05 containers=0.28 band=0.10 publish=0.05 gap=15.08
+[nebula] handover OUT Npc(Clone)#844424930131973(e261,scav-outdoor-sw,ghost) -> w3 (epoch 261, tick 1364125979)
+[nebula] kill: npc-47 killed npc-51
+[nebula] ghost Npc(Clone)#844424930131973(e262,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e262,cell_0_0_2,auth) <- w3 (epoch 262, tick 1364126078)
+[nebula] handover OUT Npc(Clone)#844424930131973(e263,scav-outdoor-sw,ghost) -> w3 (epoch 263, tick 1364126115)
+[nebula] kill: bot4 killed npc-19
+[nebula] local handover Player(Clone)#1125899906842652(e7,scav-outdoor-s,auth) scav-outdoor-center -> scav-outdoor-s
+[nebula] ghost Npc(Clone)#844424930131973(e264,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e264,cell_0_0_2,auth) <- w3 (epoch 264, tick 1364126173)
+[nebula] local handover Player(Clone)#1125899906842652(e7,scav-garage,auth) scav-outdoor-s -> scav-garage
+[nebula] handover OUT Npc(Clone)#844424930131973(e265,scav-outdoor-sw,ghost) -> w3 (epoch 265, tick 1364126249)
+[nebula] profile 300 ticks/5s 300 frames avg 1.6ms max 4.3ms dup 0 skip 0 gc 6 auth 42 ghosts 11 | npc.brain=0.05(4028) npc.move=0.39(4306) npc.fire=0.00(12) npc.path=0.00(119) npc.presence=0.01(80) poll=0.04 ghosts=0.03 physics.sync=0.10 simulate=0.89 poses=0.05 containers=0.30 band=0.10 publish=0.04 gap=15.04
+[nebula] local handover NPC npc-43#1125899906842635(e1,cell_0_0_1,auth) cell_0_0_2 -> cell_0_0_1
+[nebula] ghost Npc(Clone)#844424930131973(e266,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e266,cell_0_0_2,auth) <- w3 (epoch 266, tick 1364126287)
+[nebula] handover OUT Npc(Clone)#1125899906842629(e16,landing-tower,ghost) -> w2 (epoch 16, tick 1364126302)
+[nebula] local handover Player(Clone)#844424930132006(e19,outdoor-east-north,auth) loading-bay -> outdoor-east-north
+[nebula] ghost Player(Clone)#844424930132006(e19,outdoor-east-north,auth) -> w3
+[nebula] handover OUT Npc(Clone)#844424930131973(e267,scav-outdoor-sw,ghost) -> w3 (epoch 267, tick 1364126344)
+[nebula] local handover Npc(Clone)#844424930131978(e4,scav-outdoor-s,auth) scav-refinery-south -> scav-outdoor-s
+[nebula] kill: npc-51 killed npc-47
+[nebula] handover OUT Player(Clone)#844424930132006(e20,outdoor-west-north,ghost) -> w3 (epoch 20, tick 1364126375)
+[nebula] ghost Npc(Clone)#844424930131973(e268,cell_0_0_2,auth) -> w3
+[nebula] handover IN  Npc(Clone)#844424930131973(e268,cell_0_0_2,auth) <- w3 (epoch 268, tick 1364126448)
+[nebula] control plane: reading http://127.0.0.1:7080 failed: An error occurred while sending the request; mesh keeps running on its last known topology

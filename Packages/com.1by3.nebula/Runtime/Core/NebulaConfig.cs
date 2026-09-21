@@ -9,7 +9,7 @@ namespace Nebula
     /// to nebula-services.json for the standalone orchestrator and gateway. Command-line switches override fields at runtime.
     /// </summary>
     [CreateAssetMenu(menuName = "Nebula/Config", fileName = "NebulaConfig")]
-    public sealed class NebulaConfig : ScriptableObject
+    public sealed partial class NebulaConfig : ScriptableObject
     {
         [Header("Scene")]
         [Tooltip("Scene containing the Container volumes and gameplay. Loaded by workers and clients; builds export its containers for the services.")]
@@ -141,7 +141,53 @@ namespace Nebula
         [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]
         public float SceneEntityGraceSeconds = 2f;
 
-        [Header("Gateway interest management")]
+        [Header("Interest management")]
+        [Tooltip("How far a client hears about an entity, in metres. A prefab's RelevanceRadius overrides it per entity. This bounds what a client is sent, not what the mesh simulates. -nebula-interest-radius overrides.")]
+        public float InterestRadius = 120f;
+        [Tooltip("Extra metres an entity must travel past InterestRadius before it leaves a client's set. Stops an entity on the boundary from spawning and despawning repeatedly.")]
+        public float InterestExitMargin = 16f;
+        [Tooltip("Seconds an entity must stay past the exit radius before the client is told to despawn it.")]
+        public float InterestLingerSeconds = 1f;
+        [Tooltip("Edge of one interest region, in metres. With a world definition this is snapped to an integer division of the cell size so region edges fall on cell edges. -nebula-interest-cell overrides.")]
+        public float InterestCellSize = 64f;
+        [Tooltip("Regions are infinite columns: height does not take part in the region key. Right for a surface world; turn it off for a space or volume game.")]
+        public bool InterestPlanar = true;
+        [Tooltip("How often each client's interest set is re-evaluated, in times per second. Evaluations are staggered across ticks, and a client is also evaluated at once when its focus crosses a region edge.")]
+        public float InterestEvalHz = 4f;
+        [Tooltip("Extra metres of regions a gateway subscribes around a focus, so entities are already arriving before the client can see them. Must cover the distance a focus travels between two evaluations.")]
+        public float InterestSubscribeMargin = 32f;
+        [Tooltip("Seconds a region stays subscribed after the last client needed it, so a player pacing along a region edge does not make a worker start and stop sending.")]
+        public float InterestRegionLingerSeconds = 3f;
+        [Tooltip("Seconds a gateway keeps a worker connection after the last reason to hold it has gone.")]
+        public float InterestLinkLingerSeconds = 10f;
+        [Tooltip("Seconds between the audit snapshots a gateway sends of its whole subscription, whatever the deltas said.")]
+        public float InterestResyncSeconds = 30f;
+        [Tooltip("Ceiling on a prefab's RelevanceRadius, in metres. Also how far a wide entity may reach, which bounds the work of matching it against every client. It is never uncapped: a value of 0 or less is reported by Validate and replaced with InterestRadius.")]
+        public float InterestMaxRadius = 1024f;
+        [Tooltip("Most places one client may be interested in at once (an RTS camera plus owned units, a spectator's target). Foci beyond this are dropped.")]
+        public int InterestMaxFoci = 8;
+        [Tooltip("How far a client's focus hint may sit from its pawn, in metres. A further hint is clamped to this distance; a hint is an input, never authority.")]
+        public float InterestHintMaxDistance = 60f;
+        [Tooltip("Most focus hints accepted from one client per second. The rest are dropped.")]
+        public float InterestHintMaxHz = 5f;
+        [Tooltip("Most entities one client's policy may subscribe by id (party members, quest targets).")]
+        public int InterestMaxExplicitPerClient = 16;
+        [Tooltip("The fastest a player is expected to travel, in metres per second. Only used to check that InterestSubscribeMargin covers one evaluation of travel.")]
+        public float InterestMaxFocusSpeed = 12f;
+        [Tooltip("A worker warns when one container holds more than this many entities: the world wants partitioning, because one container is one worker's simulation budget. 0 turns the warning off.")]
+        public int PartitionWarnEntities = 2000;
+        [Tooltip("A worker warns when filtering its entities for the gateways takes longer than this many milliseconds per tick. 0 turns the warning off.")]
+        public float PartitionWarnFilterMs = 2f;
+
+        [Header("Chunked world")]
+        [Tooltip("Turnkey unbounded chunked world: with a RuntimeWorld assigned, Nebula builds the chunk grid from its cell size, leases chunks around every pawn on workers, keeps the floating origin near the pawn on clients, and raises NebulaChunks.Loaded/Unloading on every role. The game only supplies chunk content.")]
+        public bool ChunkedWorld = false;
+        [Tooltip("Chunks are columns: the grid has one layer at y = 0 and RuntimeWorld's CellSize.y is the column height. Right for a surface world; turn it off for a volumetric one.")]
+        public bool ChunkPlanar = true;
+        [Tooltip("Seconds a chunk nobody needs stays leased before the worker retires it (its persistent contents are checkpointed and come back).")]
+        public float ChunkRetireSeconds = 30f;
+
+        [Header("Rate tiers inside the interest set")]
         [Tooltip("Entities within this many metres of a client's pawn get every tick of the world-state stream.")]
         public float InterestNearRadius = 30f;
         [Tooltip("Entities between the near and far radius get every InterestMidDivisor-th tick.")]
@@ -164,6 +210,35 @@ namespace Nebula
         [Header("Prefabs")]
         [Tooltip("Every prefab that can be spawned over the network. The index is the prefab id on the wire.")]
         public List<GameObject> NetworkPrefabs = new List<GameObject>();
+
+        /// <summary>
+        /// Report the settings that do not work together as soon as they are typed, rather than at the first
+        /// missing entity in a running mesh. The same check runs in the setup window, in <c>nebula doctor</c> and
+        /// in each role's start-up log (<see cref="Validate(List{ConfigIssue})"/>).
+        /// </summary>
+        private void OnValidate()
+        {
+            // Editor-only and rare, so a list per edit is cheaper than static state a play session would have to reset.
+            var issues = new List<ConfigIssue>();
+            Validate(issues);
+            foreach (var issue in issues)
+            {
+                if (issue.Severity == ConfigSeverity.Error) NebulaLog.Error($"NebulaConfig.{issue.Field}: {issue.Message}");
+                else if (issue.Severity == ConfigSeverity.Warning) NebulaLog.Warn($"NebulaConfig.{issue.Field}: {issue.Message}");
+            }
+        }
+
+        /// <summary>The world definition's cell size, from a baked manifest or a runtime world; 0 when the game has neither.</summary>
+        private float WorldCellSize()
+        {
+            var world = WorldManifest != null && WorldManifest.World != null ? WorldManifest.World : RuntimeWorld;
+            if (world == null) return 0f;
+            var size = world.CellSize;
+            return Mathf.Max(0f, Mathf.Max(size.x, size.z));
+        }
+
+        /// <summary>Whether the world's cells are centred on <c>coord × CellSize</c> (baked cells) rather than starting there (a runtime grid).</summary>
+        private bool WorldCellsCentred() => WorldManifest != null && WorldManifest.World != null;
 
         public static NebulaConfig Load()
         {

@@ -1,0 +1,66 @@
+﻿==> control plane and saved entities in sqlite:C:\Dev\nebula-shootergame\Library\Nebula\nebula.db
+==> starting the orchestrator with 4 worker(s) (fixed) and the game-defined 'npcs' setting at 0
+    started 2 bot client(s)
+    waiting for the dashboard...
+  + mesh is up: 0 live worker(s), 0 player(s), 0 bot(s), 0 NPC(s), desired 4
+
+    dashboard   http://localhost:7080/
+    gateway     127.0.0.1:7000  (press Play in the Editor, or run the client build)
+    web client  http://127.0.0.1:7000/  (Builds/Web, served by the gateway)
+    logs        C:\Dev\nebula-shootergame\Builds\Win64\Logs  (`nebula logs orchestrator|gateway|w1`)
+    stop        nebula stop
+[smoke] 5s desired=4 live=4 players=0 bots=2 npcs=0 w1[ready c=19 p=0 b=0 n=0] w2[ready c=21 p=0 b=2 n=0] w3[ready c=27 p=0 b=0 n=0] w4[ready c=19 p=0 b=0 n=0]
+[smoke] 10s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=21 p=0 b=1 n=2] w3[ready c=27 p=0 b=0 n=9] w4[ready c=19 p=0 b=0 n=0]
+[smoke] 15s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=26 p=0 b=1 n=3] w2[ready c=18 p=0 b=1 n=1] w3[ready c=23 p=0 b=0 n=9] w4[ready c=20 p=0 b=0 n=0]
+[smoke] 20s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=26 p=0 b=1 n=3] w2[ready c=18 p=0 b=1 n=1] w3[ready c=23 p=0 b=0 n=9] w4[ready c=20 p=0 b=0 n=0]
+[smoke] 25s desired=4 live=4 players=0 bots=1 npcs=17 w1[ready c=20 p=0 b=0 n=2] w2[ready c=19 p=0 b=1 n=2] w3[ready c=23 p=0 b=0 n=9] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 30s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=0 n=2] w2[ready c=19 p=0 b=1 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 35s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=19 p=0 b=0 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 40s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=19 p=0 b=0 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 45s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=19 p=0 b=0 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 50s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=19 p=0 b=0 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 55s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=1 n=2] w2[ready c=19 p=0 b=0 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+[smoke] 60s desired=4 live=4 players=0 bots=2 npcs=13 w1[ready c=20 p=0 b=0 n=2] w2[ready c=19 p=0 b=1 n=2] w3[ready c=23 p=0 b=1 n=5] w4[ready c=25 p=0 b=0 n=4]
+
+[smoke] ===== results =====
+orchestrator: assignments=97 dead-declared=0 relaunched=0 scaled-up=4 retired=0 drain-timeouts=0
+gateway: workers-connected=8 clients-connected=4 spawn-requests=0
+w1: registered=1 peers=3 spawned=0 handover-out=13 handover-in=13 cross-worker-hits=0 kills=0 warnings=1 errors=0
+w2: registered=1 peers=3 spawned=2 handover-out=25 handover-in=17 cross-worker-hits=0 kills=0 warnings=1 errors=0
+w3: registered=1 peers=3 spawned=0 handover-out=19 handover-in=12 cross-worker-hits=0 kills=0 warnings=1 errors=0
+w4: registered=1 peers=3 spawned=0 handover-out=0 handover-in=15 cross-worker-hits=0 kills=0 warnings=1 errors=0
+bot1: welcome=1 local-player=1 errors=0
+bot2: welcome=1 local-player=1 errors=0
+TOTAL handovers: out=57 in=57
+
+[smoke] ===== interest (protocol v17) =====
+
+Bot  Samples Replicas ReplicasMax Dmin  Dmax Limit Beyond BeyondRun Dup
+---  ------- -------- ----------- ----  ---- ----- ------ --------- ---
+bot1      61       30          30  7.1  53.8   160      0         0   0
+bot2      62       33          33  5.9 113.2 169.6      0         0   0
+
+
+
+gateway interest: cached=65 regions=68 links=3 (region=3,foci=3,global=0,explicit=0,spawn=0,owned=2) setAvg=32.5 setMax=34 evalMs avg=0.017 max=0.021 spawns/s=0.0 despawns/s=0.0
+w1 interest: regions=21 gateways=1 filterMs=0.014 entries sent=0/0 bytes=0/0 
+w2 interest: regions=35 gateways=1 filterMs=0.015 entries sent=58/58 bytes=2772/2772 
+w3 interest: regions=33 gateways=1 filterMs=0.015 entries sent=0/0 bytes=0/0 
+w4 interest: regions=0 gateways=0 filterMs=0.013 entries sent=0/0 bytes=0/0 
+
+[smoke] ===== checks =====
+  PASS  every bot wrote probe lines (2/2)
+  PASS  every bot has a pawn
+  PASS  nothing lingers past the exit radius (longest run of beyond>0 samples: 0)
+  PASS  no entity spawned twice without a despawn (dup=0)
+  PASS  no replica in an unloaded chunk (orphans=0)
+  PASS  every carried replica arrives with its carrier (carrierless=0)
+  PASS  no exceptions or errors in any worker log (0)
+  PASS  no exceptions in the gateway log
+  PASS  the gateway reports its interest stats (cachedEntities=65)
+  PASS  the gateway holds worker links (workerLinks=3)
+  PASS  a client holds far less than the gateway does (mean replicas 31.5 < 52 = 80% of 65 cached)
+  FAIL  at least one worker filters what it publishes (0 of 4)
+
+[smoke] FAILED: 1 check(s)
+  - at least one worker filters what it publishes (0 of 4)

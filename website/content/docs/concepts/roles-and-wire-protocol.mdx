@@ -23,7 +23,7 @@ The gateway connects to every worker. It routes each client's input to the worke
 
 When a client connects, the gateway chooses a ready container and asks its worker to spawn the player's entity. It caches one keyframe for each sync behavior so a new client can create entities in the correct state.
 
-The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It filters entities by instance visibility, then reduces the update rate for visible entities farther from the client's pawn. Configure those distance bands in `NebulaConfig`.
+The gateway does not hold authoritative state. If a worker stops, the gateway removes that worker's entities and asks another worker to spawn affected players. It filters entities by [interest](/docs/guides/interest-management): instance visibility first, then which entities are near enough to a client's foci to be in its set, then a further update-rate reduction for entities farther from the client's pawn. A gateway connects to a worker only while it needs something from it — one of its clients' foci covers a region the worker publishes, or the worker holds an entity the gateway must follow — instead of connecting to every worker in the mesh. Configure the interest radii and the update-rate distance bands in `NebulaConfig`.
 
 One mesh can have several gateways. Each has a persistent ID (`-nebula-gateway-id`) and a random incarnation per start, and assigns every client a **session ID** that is unique across the mesh: `(incarnation << 32) | sequence`. That session ID is the client ID game code sees. The gateway's welcome carries a signed session token; a client that reconnects through any gateway of the mesh presents it and keeps its session ID and pawn. Workers key player state by session ID and accept input for a session only from the gateway that currently holds it. A gateway asked to drain refuses new clients and tells the ones it has to reconnect elsewhere, and every gateway reports its load on each control-plane heartbeat. See [Run more than one gateway](/docs/guides/orchestrator-and-dashboard#run-more-than-one-gateway).
 
@@ -86,7 +86,19 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `GatewayDraining` | gateway to client | Ask the client to reconnect elsewhere within a number of seconds because the gateway is leaving service. |
 | `Ping`, `Pong` | client to gateway and back | Round-trip time (RTT) measurement for the input lead. |
 | `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. |
-| `ContainerOwnership` | gateway to client | The container-to-worker table with lease epochs, for routing and the overlay. |
+| `ContainerOwnership` | gateway to client | The containers this client should know about, with lease epochs, for routing and the overlay. A per-client delta scoped to the client's [interest](/docs/guides/interest-management#scoped-container-ownership) window, not the mesh's whole lease table. |
+
+**Gateway to worker (interest subscription)**
+
+| Message | Direction | Purpose |
+| --- | --- | --- |
+| `InterestSubscribe` | gateway to worker | The set of regions and explicit entity IDs the gateway's clients currently need, sent as an idempotent delta or a full snapshot. |
+| `InterestResync` | worker to gateway | The worker could not apply a delta (its base sequence or the verifying hash did not match) and needs a full snapshot. |
+| `EntityRedirect` | worker to gateway | An entity the gateway follows explicitly (by ownership or subscription) moved to another worker. |
+| `EntityForget` | worker to gateway | An entity left every region this gateway subscribes on this worker. |
+| `ClientFocusHint` | client to gateway | Where a client's camera or scope is looking, as an unreliable, rate-limited, distance-clamped input. See [Interest management](/docs/guides/interest-management#client-focus-hints-are-inputs-never-authority). |
+
+See [Interest management](/docs/guides/interest-management) for how these messages are used, and the [wire protocol specification](/docs/specifications/wire-protocol#interest-management) for their exact layout.
 
 **Worker to gateway to client**
 
@@ -114,7 +126,7 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `GhostState` | Sequenced or Reliable | Selected root transform updates for ghosts, with the same opt-in and recovery rules as `WorldState`. |
 | `GhostVars` | Reliable | Sends the complete variable block after one variable changes. |
 | `GhostSyncState` | Reliable or Sequenced | Sends sync-component changes to ghosts. |
-| `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, existing ghost recipients, and the owner's session (generation and gateway) so the receiver accepts the owner's input at once. |
+| `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, existing ghost recipients, the owner's session (generation and gateway) so the receiver accepts the owner's input at once, and the gateways that were following the entity by explicit interest subscription rather than by region. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |
 | `ForwardInput` | Sequenced | Inputs that still arrived at the previous owner shortly after a handover, forwarded to the new one |
 

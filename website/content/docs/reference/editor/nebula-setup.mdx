@@ -92,6 +92,14 @@ public static Report SetUpActiveScene(bool createContainers);
 
 Configure the active scene as the game scene (see the class summary). Returns null when the scene cannot be set up (a cell scene, or an untitled scene the user declined to save).
 
+### ReportConfigIssues [#reportconfigissues]
+
+```csharp
+public static void ReportConfigIssues(NebulaConfig config, Report report);
+```
+
+Add every [`NebulaConfig.Validate`](/docs/reference/core/nebula-config#validate) issue to `report`, so a setup pass says "your interest radius does not fit in your load radius; it was raised" in the same dialog as everything else it did, instead of leaving it to a warning nobody reads at run time.
+
 ### EnsureConfig [#ensureconfig]
 
 ```csharp

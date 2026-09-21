@@ -1,0 +1,246 @@
+---
+title: "InterestIndex<T>"
+description: "Region → dense list of items, with swap-remove and O(1) rebucketing."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs)</div>
+
+```csharp
+public sealed class InterestIndex<T>
+```
+
+Region → dense list of items, with swap-remove and O(1) rebucketing. Used by the gateway for its entity records and by the worker for its authoritative entities, so both sides answer "what is near this focus" the same way.
+
+Carried entities (design D3) are bucketed in their **root carrier's** region and move with it: a ship and everything riding in it enter and leave a client's set as one unit at any speed. Bucketing a passenger by its own resolved position would let a seat straddle a region edge and pop separately from its ship.
+
+Steady state allocates nothing: bucket lists are pooled and reused, and a region is removed from the map (its list returned to the pool) only when it empties, which is also what keeps [`RegionCount`](#regioncount) meaningful for the subscriber-mask work on the worker.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+### RegionCount [#regioncount]
+
+```csharp
+public int RegionCount { get; }
+```
+
+Regions holding at least one item.
+
+### Regions [#regions]
+
+```csharp
+public Dictionary<ulong, List<Entry>>.KeyCollection Regions { get; }
+```
+
+Every non-empty region. Enumerating this is allocation free.
+
+### WideCount [#widecount]
+
+```csharp
+public int WideCount { get; }
+```
+
+### GlobalCount [#globalcount]
+
+```csharp
+public int GlobalCount { get; }
+```
+
+### Wide [#wide]
+
+```csharp
+public Bucket Wide { get; }
+```
+
+Entities whose own relevance radius exceeds the scan radius; tested against each focus directly.
+
+### Global [#global]
+
+```csharp
+public Bucket Global { get; }
+```
+
+Entities that are in every set.
+
+## Methods
+
+### Region [#region]
+
+```csharp
+public Bucket Region(ulong region);
+```
+
+Items of one region (empty when nothing is there). Allocation free.
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong id);
+```
+
+### TryGetValue [#trygetvalue]
+
+```csharp
+public bool TryGetValue(ulong id, out T value);
+```
+
+### TryGetPlacement [#trygetplacement]
+
+```csharp
+public bool TryGetPlacement(ulong id, out InterestPlacement placement, out ulong region);
+```
+
+Where the item sits, and in which region when it is bucketed in one.
+
+### CarrierOf [#carrierof]
+
+```csharp
+public ulong CarrierOf(ulong id);
+```
+
+The item's direct carrier, or 0 when it is not carried.
+
+### Add [#add]
+
+```csharp
+public void Add(ulong id, ulong region, in T value);
+```
+
+Add or update an item in a region. A carried item follows its carrier, so the region is ignored for one.
+
+### AddWide [#addwide]
+
+```csharp
+public void AddWide(ulong id, in T value);
+```
+
+Add or update an item in the wide list (its own relevance radius decides who hears about it).
+
+### AddGlobal [#addglobal]
+
+```csharp
+public void AddGlobal(ulong id, in T value);
+```
+
+Add or update an always-relevant item.
+
+### Move [#move]
+
+```csharp
+public bool Move(ulong id, ulong region);
+```
+
+Rebucket an item whose region key changed. Its carried subtree moves with it. Returns false for an unknown item, and for a carried one (which is bucketed with its carrier and must not move by itself).
+
+### SetValue [#setvalue]
+
+```csharp
+public bool SetValue(ulong id, in T value);
+```
+
+Replace the record kept for an item, leaving it where it is.
+
+### SetCarrier [#setcarrier]
+
+```csharp
+public void SetCarrier(ulong id, ulong carrier);
+```
+
+Link a carried entity to the entity carrying it (0 detaches). The child is moved into the carrier's region at once, and follows it from then on. The carrier need not be in the index yet; the link is remembered either way, and the child is placed the next time the carrier moves.
+
+### Remove [#remove]
+
+```csharp
+public bool Remove(ulong id);
+```
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+## Nested types
+
+### Entry [#entry]
+
+```csharp
+public struct Entry
+```
+
+One item in a bucket: the entity's net id and whatever record the owner of the index keeps.
+
+#### Fields
+
+##### Id [#id]
+
+```csharp
+public ulong Id;
+```
+
+##### Value [#value]
+
+```csharp
+public T Value;
+```
+
+### Bucket [#bucket]
+
+```csharp
+public readonly struct Bucket
+```
+
+Allocation-free view over one bucket.
+
+#### Properties
+
+##### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+##### this\[\] [#this]
+
+```csharp
+public Entry this[int i] => _list[i];
+```
+
+#### Methods
+
+##### GetEnumerator [#getenumerator]
+
+```csharp
+public Enumerator GetEnumerator();
+```
+
+#### Nested types
+
+##### Enumerator [#enumerator]
+
+```csharp
+public struct Enumerator
+```
+
+Stores the values used by enumerator.
+
+#### Properties
+
+##### Current [#current]
+
+```csharp
+public Entry Current { get; }
+```
+
+#### Methods
+
+##### MoveNext [#movenext]
+
+```csharp
+public bool MoveNext();
+```

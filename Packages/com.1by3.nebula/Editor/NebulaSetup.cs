@@ -134,11 +134,28 @@ namespace Nebula.Editor
             return report;
         }
 
+        /// <summary>
+        /// Add every <see cref="NebulaConfig.Validate(List{ConfigIssue})"/> issue to <paramref name="report"/>, so a
+        /// setup pass says "your interest radius does not fit in your load radius; it was raised" in the same
+        /// dialog as everything else it did, instead of leaving it to a warning nobody reads at run time.
+        /// </summary>
+        public static void ReportConfigIssues(NebulaConfig config, Report report)
+        {
+            if (config == null || report == null) return;
+            var issues = new List<ConfigIssue>();
+            config.Validate(issues);
+            foreach (var issue in issues)
+            {
+                if (issue.Severity == ConfigSeverity.Info) report.Did($"config {issue.Field}: {issue.Message}");
+                else report.Warn($"config {issue.Field}: {issue.Message}");
+            }
+        }
+
         /// <summary>The config every role loads (<c>Resources/NebulaConfig</c>), created at <see cref="ConfigAssetPath"/> if missing.</summary>
         public static NebulaConfig EnsureConfig(Report report)
         {
             var config = FindConfig();
-            if (config != null) return config;
+            if (config != null) { ReportConfigIssues(config, report); return config; }
             var stray = AssetDatabase.FindAssets("t:NebulaConfig").Select(AssetDatabase.GUIDToAssetPath).ToList();
             if (stray.Count > 0) report.Warn($"NebulaConfig asset(s) outside a Resources folder are never loaded at runtime: {string.Join(", ", stray)}");
             WorldAssets.EnsureFolder(Path.GetDirectoryName(ConfigAssetPath).Replace('\\', '/'));
