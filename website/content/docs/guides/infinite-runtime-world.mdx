@@ -59,7 +59,7 @@ Select `Resources/NebulaConfig`. In the Inspector, assign this asset to **Runtim
 
 ### Start the runtime world on every Unity process
 
-Add this component to an `Infinite World` object in the game scene. Assign the `InfiniteWorld` definition and a material for the generated ground.
+Create an empty GameObject named `Infinite World` in the game scene and add this component. Assign a material to **Ground Material**. The `InfiniteWorld` world definition is already assigned through `NebulaConfig.RuntimeWorld` in the previous step; this component does not have a separate definition field.
 
 ```csharp title="InfiniteWorldRuntime.cs"
 using System.Collections.Generic;
@@ -232,7 +232,7 @@ public struct PlayerInput : INetworkInput
 }
 ```
 
-Then create the predicted controller. Movement travels through Nebula's input and reconciliation path. Pressing F sends a reliable `ServerRpc` to the authoritative worker, which validates the request and spawns the block.
+Then create the predicted controller. Movement travels through Nebula's input and reconciliation path. On the owning client, the scene camera follows behind the predicted player. Pressing F sends a reliable `ServerRpc` to the authoritative worker, which validates the request and spawns the block.
 
 ```csharp title="PlayerController.cs"
 using Nebula;
@@ -244,9 +244,14 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
     [SerializeField] private GameObject blockPrefab;
     [SerializeField] private float speed = 6f;
     [SerializeField] private float placementDistance = 2.5f;
+    [SerializeField] private Vector3 cameraOffset = new(0f, 2.5f, -5f);
+    [SerializeField] private float cameraLookHeight = 1f;
+    [SerializeField] private float cameraFollowSharpness = 12f;
 
     private float yaw;
     private float nextPlacementAt;
+    private Camera ownerCamera;
+    private bool cameraInitialized;
 
     private void Update()
     {
@@ -257,6 +262,31 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
         var keyboard = Keyboard.current;
         if (keyboard != null && keyboard.fKey.wasPressedThisFrame)
             ServerRpc(RpcPlaceBlock);
+    }
+
+    private void LateUpdate()
+    {
+        if (!IsOwner) return;
+        if (ownerCamera == null) ownerCamera = Camera.main;
+        if (ownerCamera == null) return;
+
+        var cameraTransform = ownerCamera.transform;
+        var desiredPosition = transform.TransformPoint(cameraOffset);
+        if (!cameraInitialized)
+        {
+            cameraTransform.position = desiredPosition;
+            cameraInitialized = true;
+        }
+        else
+        {
+            float blend = 1f - Mathf.Exp(-cameraFollowSharpness * Time.unscaledDeltaTime);
+            cameraTransform.position = Vector3.Lerp(cameraTransform.position, desiredPosition, blend);
+        }
+
+        var lookTarget = transform.position + Vector3.up * cameraLookHeight;
+        cameraTransform.rotation = Quaternion.LookRotation(
+            lookTarget - cameraTransform.position,
+            Vector3.up);
     }
 
     protected override PlayerInput GatherInput()
@@ -319,6 +349,8 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 }
 ```
 
+Keep one camera in the game scene and set its tag to `MainCamera`. Do not add a camera to the `Player` prefab: every remote player copy would otherwise bring another active camera. `LateUpdate` runs the follow behavior only when `IsOwner` identifies this entity as the local player, and it follows the predicted transform after movement for the frame. Adjust **Camera Offset**, **Camera Look Height**, and **Camera Follow Sharpness** on the prefab to tune the view.
+
 The client never instantiates a networked block. It only asks through `ServerRpc`; the worker checks authority, rate-limits the request, rejects overlaps, selects the runtime container, and calls `SpawnPrefab`. Add your game's permissions, inventory cost, reach test, and placement rules in the same handler.
 
 The position is in the worker's current floating-origin frame. Nebula converts it to container-local placement when it spawns the entity, so the block remains stable across later origin shifts.
@@ -334,7 +366,9 @@ Create a capsule prefab named `Player` with these root components:
 - `NetworkTransform`
 - `PlayerController`
 
-On `NetworkTransform`, keep server authority, position and rotation synchronization, interpolation, and unreliable deltas enabled. Assign the block prefab in `PlayerController` after creating it.
+On `NetworkTransform`, keep server authority, position and rotation synchronization, interpolation, and unreliable deltas enabled.
+
+Keep the scene's `Main Camera` as a separate scene object with the `MainCamera` tag. The `PlayerController` finds and moves it for the local player, so the player prefab itself does not need a `Camera` or `AudioListener`.
 
 Create a 1 m cube prefab named `Block` with these root components:
 
@@ -343,14 +377,22 @@ Create a 1 m cube prefab named `Block` with these root components:
 
 Leave `PersistentEntity.PersistPose` enabled. The block does not move after placement, so it does not need `NetworkTransform`; its spawn includes its complete initial pose. Leave the persistence key empty so Nebula generates a unique key on the first save.
 
-Add both prefabs to `NebulaConfig.NetworkPrefabs`, or run **Nebula > Network Prefabs > Register All Network Prefabs**. Open each prefab and confirm that `NetworkIdentity.SceneId` is `0`.
+After both prefab assets exist, connect and register them:
+
+1. Open the `Player` prefab.
+2. On `PlayerController`, drag the `Block` prefab into **Block Prefab**. Save the prefab.
+3. Run **Nebula > Network Prefabs > Register All Network Prefabs**.
+4. Select `Resources/NebulaConfig` and expand **Network Prefabs**. Confirm that it contains both `Player` and `Block`, with no empty or duplicate entries.
+5. Open each prefab and confirm that `NetworkIdentity.SceneId` is `0`.
+
+Nebula assigns each registered prefab a network ID from its position in `NetworkPrefabs`. Every worker and client build must contain the same list in the same order.
 
 </Step>
 <Step>
 
 ### Allocate chunks and spawn players from the game mode
 
-Add this game mode to one `Game` object in the game scene and assign the player prefab:
+Create this game mode script:
 
 ```csharp title="InfiniteWorldGameMode.cs"
 using Nebula;
@@ -406,9 +448,22 @@ public sealed class InfiniteWorldGameMode : NebulaGameMode
 }
 ```
 
-`RuntimeGridAllocator` requests a 3D ring around each player-owned authoritative entity. `Ring = 1` keeps the surrounding 3 × 3 × 3 group available. The origin anchor also keeps that group available before the first player joins. The worker API queues requests made before registration and sends them once the control plane knows the worker.
+Return to the game scene and connect the game mode:
+
+1. Create an empty GameObject named `Game`.
+2. Add `InfiniteWorldGameMode` to it.
+3. Drag the `Player` prefab into **Player Prefab**.
+4. Save the scene.
+
+The scene must contain exactly one enabled `NebulaGameMode`. Without it, workers can register but cannot allocate the initial chunks or spawn a player.
+
+`RuntimeGridAllocator` requests a 3D ring around each player-owned authoritative entity. `Ring = 1` keeps the surrounding 3 × 3 × 3 group available. The origin anchor keeps its own 3 × 3 × 3 group available permanently, including after players move away. This gives later players a leased container to join through. Remove the anchor only if your game supplies another way to request a spawn container before `OnSpawnPlayer` runs. The worker API queues requests made before registration and sends them once the control plane knows the worker.
 
 Repeated requests create a missing lease or touch an existing lease so its owner knows another worker still needs the chunk. After a chunk remains unwanted, unoccupied, and idle for `RetireAfterSeconds`, the allocator checkpoints its persistent entities, despawns its contents, and releases its lease.
+
+The dashboard World map shows every authoritative entity in the public world. It is an operator view, not the client's content radius. A block remains on the map while its container is leased, even when that block is too far away for the client-side terrain loader. Blocks in the anchored origin ring remain live until you remove that anchor.
+
+The `contentRadius` field controls only the procedural ground generated by this example. Nebula continues to replicate public entities in every leased container in the same instance, so use game-side rendering or level-of-detail rules if distant active blocks should be hidden. When an unanchored container retires, Nebula removes its replicas from the client and restores its persistent blocks only after the container is requested again.
 
 The gateway may ask a worker to spawn into any currently leased chunk. This example deliberately spawns everyone in chunk `(0, 0, 0)`. If that chunk belongs to another worker, Nebula transfers the new player to its owner on the next tick.
 
@@ -420,6 +475,14 @@ The gateway may ask a worker to spawn into any currently leased chunk. This exam
 ### Configure persistence and run the mesh
 
 Keep `NebulaConfig.PersistenceMode` at `auto`. For a local mesh, the standalone orchestrator stores blocks in the SQLite database configured by `mesh.database`, which defaults to `Library/Nebula/nebula.db`.
+
+Before building, verify the complete setup:
+
+- `Resources/NebulaConfig` has `InfiniteWorld` in **Runtime World**, nothing in **World Manifest**, and both prefabs in **Network Prefabs**.
+- The game scene has one `NebulaBootstrap`, one `InfiniteWorldRuntime` with **Ground Material** assigned, and one `InfiniteWorldGameMode` with **Player Prefab** assigned.
+- The game scene has one enabled camera tagged `MainCamera`; the `Player` prefab has no camera of its own.
+- The `Player` prefab has **Block Prefab** assigned on `PlayerController`.
+- The `Player` and `Block` prefab roots each have `NetworkIdentity` with `SceneId` set to `0`.
 
 Run **Nebula > Validate Project**. A configured `RuntimeWorld` tells the validator that the game intentionally has no authored containers. Fix any prefab, game-mode, scene, or transform issues it reports.
 

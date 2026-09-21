@@ -102,6 +102,7 @@ namespace Nebula
         /// </summary>
         private readonly Dictionary<ContainerRef, List<EntitySpawnMsg>> _pendingByCarrier = new Dictionary<ContainerRef, List<EntitySpawnMsg>>();
         private readonly HashSet<ulong> _runtimeKeep = new HashSet<ulong>();
+        private readonly List<ulong> _retiredRuntimeEntities = new List<ulong>();
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly NetworkWriter _writer = new NetworkWriter(2048);
         private readonly NetworkWriter _inputWriter = new NetworkWriter(256);
@@ -627,25 +628,7 @@ namespace Nebula
                 }
                 case MsgId.ContainerOwnership:
                 {
-                    var entries = ContainerOwnershipMsg.Read(r);
-                    // Runtime containers come and go with their lease rows: register the ones that carry a box, forget the rest.
-                    _runtimeKeep.Clear();
-                    foreach (var e in entries)
-                    {
-                        if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
-                        _runtimeKeep.Add(runtimeId);
-                        if (ContainerRegistry.GetRuntime(runtimeId) == null) ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)), e.Instance);
-                    }
-                    ContainerRegistry.PruneRuntime(_runtimeKeep);
-                    _seenLeases.Clear();
-                    foreach (var e in entries)
-                    {
-                        ContainerRegistry.ApplyLease(e.ContainerId, e.WorkerId, e.WorkerIndex, e.Epoch, e.State);
-                        _seenLeases.Add(e.ContainerId);
-                    }
-                    foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
-                    ContainerRegistry.NotifyLeasesChanged();
-                    ContainerOwnershipChanged?.Invoke();
+                    ApplyContainerOwnership(ContainerOwnershipMsg.Read(r));
                     break;
                 }
                 case MsgId.EntitySpawn: OnEntitySpawn(EntitySpawnMsg.Read(r)); break;
@@ -657,6 +640,50 @@ namespace Nebula
                 case MsgId.OwnerState: OnOwnerState(OwnerStateMsg.Read(r)); break;
                 default: NebulaLog.Warn($"client got unexpected {id}"); break;
             }
+        }
+
+        /// <summary>
+        /// Apply the gateway's complete ownership snapshot. A runtime lease disappearing is also a despawn boundary:
+        /// the owning worker retires every entity in the container before removing the row. Remove those replicas
+        /// here as part of the same snapshot so a delayed or lost entity-despawn packet cannot leave an evacuated,
+        /// permanently stale client object behind.
+        /// </summary>
+        internal void ApplyContainerOwnership(IList<ContainerOwnershipEntry> entries)
+        {
+            // Runtime containers come and go with their lease rows: register the ones that carry a box, forget the rest.
+            _runtimeKeep.Clear();
+            foreach (var e in entries)
+            {
+                if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
+                _runtimeKeep.Add(runtimeId);
+                if (ContainerRegistry.GetRuntime(runtimeId) == null)
+                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)), e.Instance);
+            }
+
+            // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement
+            // guarantees that these entities were despawned by their authority; the snapshot is the durable proof.
+            _retiredRuntimeEntities.Clear();
+            foreach (var pair in _entities)
+            {
+                var container = pair.Value != null ? pair.Value.Container : null;
+                if (container != null && container.IsRuntime && !_runtimeKeep.Contains(container.RuntimeId))
+                    _retiredRuntimeEntities.Add(pair.Key);
+            }
+            ContainerRegistry.PruneRuntime(_runtimeKeep);
+            foreach (var netId in _retiredRuntimeEntities)
+                if (_entities.TryGetValue(netId, out var entity))
+                    OnEntityDespawn(new EntityDespawnMsg { NetId = netId, Epoch = entity.Epoch });
+            _retiredRuntimeEntities.Clear();
+
+            _seenLeases.Clear();
+            foreach (var e in entries)
+            {
+                ContainerRegistry.ApplyLease(e.ContainerId, e.WorkerId, e.WorkerIndex, e.Epoch, e.State);
+                _seenLeases.Add(e.ContainerId);
+            }
+            foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
+            ContainerRegistry.NotifyLeasesChanged();
+            ContainerOwnershipChanged?.Invoke();
         }
 
         // ---------------------------------------------------------------------------------------- entities
@@ -786,7 +813,8 @@ namespace Nebula
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
             if (e.IsSceneEntity) e.Unbind(); // the object belongs to its scene
-            else Destroy(e.gameObject);
+            else if (Application.isPlaying) Destroy(e.gameObject);
+            else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
         }
 
         private void OnEntityVars(EntityVarsMsg msg)

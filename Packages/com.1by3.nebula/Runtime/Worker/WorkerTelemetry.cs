@@ -183,7 +183,7 @@ namespace Nebula
             w.Prop("index", (int)workerIndex);
             w.Prop("tick", tick);
             w.Prop("detail", includeEntities);
-            if (ContainerRegistry.IsGridded && Nebula.World.WorldOrigin.Definition != null) MeshTelemetry.WriteCell(w, "origin", Nebula.World.WorldOrigin.Cell);
+            if (Nebula.World.WorldOrigin.Definition != null) MeshTelemetry.WriteCell(w, "origin", Nebula.World.WorldOrigin.Cell);
             if (loadedCells != null)
             {
                 w.Key("loadedCells");

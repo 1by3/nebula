@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
@@ -245,6 +247,63 @@ namespace Nebula.Tests
             Assert.AreEqual(1, ContainerRegistry.Runtime.Count);
             Assert.IsNull(ContainerRegistry.GetRuntime(IdOf(1, 0)));
             Assert.AreEqual(1, _unregistering.Count);
+        }
+
+        [Test]
+        public void ClientOwnershipSnapshotDespawnsEntitiesFromRetiredRuntimeContainers()
+        {
+            ulong keptId = IdOf(0, 0);
+            ulong retiredId = IdOf(1, 0);
+            var kept = ContainerRegistry.RegisterRuntime(keptId, ChunkBounds(0, 0));
+            var retired = ContainerRegistry.RegisterRuntime(retiredId, ChunkBounds(1, 0));
+
+            var clientObject = new GameObject("client");
+            _objects.Add(clientObject);
+            var client = clientObject.AddComponent<NebulaClient>();
+            var keptEntity = MakeClientEntity(1, kept);
+            var retiredEntity = MakeClientEntity(2, retired);
+            var entities = (IDictionary)typeof(NebulaClient).GetField("_entities", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client);
+            entities.Add(keptEntity.NetId, keptEntity);
+            entities.Add(retiredEntity.NetId, retiredEntity);
+
+            var writer = new NetworkWriter();
+            ContainerOwnershipMsg.Write(writer, new List<ContainerOwnershipEntry>
+            {
+                new ContainerOwnershipEntry
+                {
+                    ContainerIndex = ContainerRef.RuntimeIndex,
+                    ContainerId = ContainerRegistry.RuntimeContainerId(keptId),
+                    WorkerIndex = 1,
+                    WorkerId = "w1",
+                    Epoch = 1,
+                    State = LeaseState.Active,
+                    HasBounds = true,
+                    BoundsCenter = ChunkBounds(0, 0).center,
+                    BoundsSize = ChunkBounds(0, 0).size,
+                },
+            });
+            var reader = new NetworkReader(writer.ToSegment());
+            Assert.AreEqual((byte)MsgId.ContainerOwnership, reader.ReadByte());
+            client.ApplyContainerOwnership(ContainerOwnershipMsg.Read(reader));
+
+            Assert.AreEqual(1, client.EntityCount);
+            Assert.AreSame(keptEntity, client.Entities.Single());
+            Assert.IsNull(ContainerRegistry.GetRuntime(retiredId));
+            Assert.IsNotNull(ContainerRegistry.GetRuntime(keptId));
+            Assert.IsFalse(retiredEntity.IsSpawned);
+        }
+
+        private NetworkIdentity MakeClientEntity(ulong netId, Container container)
+        {
+            var go = new GameObject("client entity " + netId);
+            _objects.Add(go);
+            var entity = go.AddComponent<NetworkIdentity>();
+            entity.Initialize();
+            entity.NetId = netId;
+            entity.Epoch = 1;
+            entity.SetContainer(container);
+            entity.InvokeSpawn();
+            return entity;
         }
 
         [Test]

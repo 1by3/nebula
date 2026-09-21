@@ -141,6 +141,35 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void RuntimeOnlyWorldReportsAbsoluteEntityPositionsAndItsOrigin()
+        {
+            var world = ScriptableObject.CreateInstance<Nebula.World.WorldDefinition>();
+            try
+            {
+                world.WorldName = "Runtime world";
+                world.CellSize = new Vector3(64f, 256f, 64f);
+                NebulaWorld.LoadRuntime(world);
+                NebulaWorld.Streamer.ShiftOrigin(new Vector3Int(0, 0, -3));
+                ContainerRegistry.Load(new List<Container>(), gridded: false);
+                Assert.IsFalse(ContainerRegistry.IsGridded, "a runtime-only world intentionally has no authored container grid");
+
+                var player = MakeEntity("Player", 9, new Vector3(30.8f, 1f, -85.31f));
+                player.OwnerClientId = 7;
+                string doc = WorkerTelemetry.ForTests().Write("w3", 3, 10, new[] { player }, true, null);
+
+                StringAssert.Contains("\"origin\":[0,0,-3]", doc);
+                StringAssert.Contains("[\"9\",\"p\",30.8,1,-277.31", doc);
+                StringAssert.StartsWith("{\"partitioned\":true,", MeshTelemetry.BuildGeometryJson(null));
+            }
+            finally
+            {
+                NebulaWorld.Unload();
+                Object.DestroyImmediate(world);
+                ContainerRegistry.Rebuild();
+            }
+        }
+
+        [Test]
         public void GeometryDescribesEveryStaticContainerWithItsEnclosingContainer()
         {
             string g = MeshTelemetry.BuildGeometryJson(null);

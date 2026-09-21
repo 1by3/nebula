@@ -266,20 +266,22 @@ namespace Nebula
         // ---------------------------------------------------------------------------------------- geometry
 
         /// <summary>
-        /// Every static container of the loaded level as the map draws it: its box in absolute world coordinates
-        /// (<see cref="ToAbsolute(Vector3, out double, out double, out double)"/>), its cell in a partitioned world, the
-        /// smallest container enclosing it and its static neighbours, plus the world's cells and the ghost band and
-        /// hysteresis the mesh runs with. Main thread.
+        /// Every container of the loaded level as the map draws it: its box in absolute world coordinates
+        /// (<see cref="ToAbsolute(Vector3, out double, out double, out double)"/>), its cell when it belongs to an
+        /// authored partition, the smallest container enclosing it and its static neighbours, plus the world's cells
+        /// and the ghost band and hysteresis the mesh runs with. A runtime-only world is partitioned even though its
+        /// authored container grid is empty. Main thread.
         /// </summary>
         public static string BuildGeometryJson(NebulaConfig config)
         {
             var sb = new StringBuilder(4096);
             var w = new JsonWriter(sb);
             var world = WorldOrigin.Definition;
-            bool gridded = ContainerRegistry.IsGridded && world != null;
+            bool partitioned = world != null;
+            bool gridded = ContainerRegistry.IsGridded && partitioned;
             w.BeginObject();
-            w.Prop("partitioned", gridded);
-            if (gridded)
+            w.Prop("partitioned", partitioned);
+            if (partitioned)
             {
                 w.Key("world");
                 w.BeginObject();
@@ -352,7 +354,7 @@ namespace Nebula
         public static void ToAbsolute(Vector3 frame, out double x, out double y, out double z)
         {
             var world = WorldOrigin.Definition;
-            if (world == null || !ContainerRegistry.IsGridded)
+            if (world == null)
             {
                 x = frame.x; y = frame.y; z = frame.z;
                 return;
