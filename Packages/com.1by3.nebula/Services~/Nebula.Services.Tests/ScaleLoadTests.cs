@@ -99,8 +99,8 @@ public class ScaleLoadTests
         report.Note($"{clients} clients, {rates.Average():0} B/s each on average, {replicas.Average():0} replicas each");
         report.Write();
 
-        Assert.That(fleet.Clients.All(c => c.LastError.Length == 0), Is.True,
-            "a client failed to parse a packet: " + fleet.Clients.First(c => c.LastError.Length > 0).LastError);
+        string parseError = fleet.Clients.FirstOrDefault(c => c.LastError.Length > 0)?.LastError ?? "";
+        Assert.That(parseError, Is.Empty, "a client failed to parse a packet");
         Assert.That(replicas.Min(), Is.GreaterThan(0), "every client holds at least its own pawn");
         Assert.That(rates.Max(), Is.LessThan(ScaleThresholds.BytesPerClientPerSecond),
             "one client was sent more than the per-client bandwidth bound");

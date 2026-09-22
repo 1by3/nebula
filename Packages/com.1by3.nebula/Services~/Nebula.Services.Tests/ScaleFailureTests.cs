@@ -72,6 +72,40 @@ public class ScaleFailureTests
         foreach (var record in _contents[containerId]) worker.Spawn(record.NetId, record.Local, container);
     }
 
+    /// <summary>Which cell each client is watching. See <see cref="Watch"/>.</summary>
+    private readonly Dictionary<FakeClient, int> _watching = new();
+
+    /// <summary>
+    /// Point every client's interest at the cell it was given, in world coordinates, the way a real client tells
+    /// the gateway where its camera is looking. Without this the measurement would be circular: a client only
+    /// sees a container it is near, so "did the container come back" would be answered by wherever the gateway
+    /// happened to place that client's pawn after the failure rather than by the restore. A hint is a standing
+    /// request, so it is re-sent after anything that could have reset the gateway's view of this client.
+    /// </summary>
+    private byte _hintGeneration;
+
+    private void Watch(Fleet fleet)
+    {
+        _hintGeneration++;
+        foreach (var kv in _watching)
+        {
+            if (kv.Key.Welcome == null) continue;
+            // A hint is clamped to InterestSettings.HintMaxDistance from the pawn unless the server has decided
+            // otherwise, and is refused outright while the client has no pawn at all — which is exactly the state
+            // a worker kill leaves its players in. FocusMode.Free is that server-side decision (an observer
+            // camera); it is the gateway's call to make, never the client's, so the fixture makes it as a game
+            // would. Without it this scenario could not observe a container it does not stand in.
+            foreach (var gw in fleet.Gateways) gw.SetClientFocusMode(kv.Key.Welcome.Value.ClientId, FocusMode.Free);
+            var cell = ContainerRegistry.FindById(_world.Cells[kv.Value]);
+            kv.Key.SendFocusHint(cell!.ToWorld(Vector3.zero), _hintGeneration);
+        }
+        fleet.RunFor(0.3); // the hint has to arrive and be evaluated before anything is read back
+    }
+
+    /// <summary>The clients watching one cell: who should be able to tell whether it is back.</summary>
+    private List<FakeClient> Watchers(string containerId) =>
+        _watching.Where(kv => _world.Cells[kv.Value] == containerId).Select(kv => kv.Key).ToList();
+
     private Fleet Build(int gateways, int workers, int clients, out List<FakeClient> connected)
     {
         var fleet = new Fleet(gateways, workers: workers, world: _ => { });
@@ -80,10 +114,23 @@ public class ScaleFailureTests
         Populate(fleet);
         fleet.OnPump = () => { foreach (var w in fleet.Workers) w.PublishStates(); };
         connected = new List<FakeClient>();
-        for (int i = 0; i < clients; i++) connected.Add(fleet.Connect(i % gateways, "p" + i));
+        _watching.Clear();
+        for (int i = 0; i < clients; i++)
+        {
+            var c = fleet.Connect(i % gateways, "p" + i);
+            connected.Add(c);
+            _watching[c] = i % _world.Cells.Count;
+        }
         Assert.That(fleet.Run(() => fleet.Clients.All(c => c.Join == JoinState.Joined), seconds: 60), Is.True,
             "the mesh did not admit every client before the failure was injected");
-        fleet.RunFor(1.0);
+        Watch(fleet);
+        fleet.RunFor(2.0);
+        foreach (string id in _world.Cells)
+        {
+            var ids = _contents[id].Select(r => r.NetId).ToHashSet();
+            Assert.That(Watchers(id).Sum(c => c.Replicas.Count(ids.Contains)), Is.GreaterThan(0),
+                id + " was not visible to the clients watching it, so nothing about it can be measured");
+        }
         return fleet;
     }
 
@@ -99,8 +146,10 @@ public class ScaleFailureTests
         using var fleet = Build(gateways: 2, workers: Cells, clients: 40, out var clients);
         var victim = fleet.Workers[Cells - 1];
         var survivor = fleet.Workers[0];
-        var lost = _contents[_world.Cells[Cells - 1]].Select(r => r.NetId).ToHashSet();
-        int heldBefore = clients.Sum(c => c.Replicas.Count(lost.Contains));
+        string dyingCell = _world.Cells[Cells - 1];
+        var lost = _contents[dyingCell].Select(r => r.NetId).ToHashSet();
+        var watchers = Watchers(dyingCell);
+        int heldBefore = watchers.Sum(c => c.Replicas.Count(lost.Contains));
         Assert.That(heldBefore, Is.GreaterThan(0), "no client could see the dying worker's entities, so nothing is being measured");
 
         var clock = Stopwatch.StartNew();
@@ -114,15 +163,16 @@ public class ScaleFailureTests
         Assert.That(clients.All(c => !c.Disconnected), Is.True, "a worker death must not disconnect a client");
 
         foreach (string containerId in orphaned) Restore(fleet, survivor, containerId);
+        Watch(fleet);
         Assert.That(fleet.Run(() => clients.All(c => c.Join == JoinState.Joined) &&
-            clients.Sum(c => c.Replicas.Count(lost.Contains)) >= heldBefore, seconds: 60), Is.True,
-            "the restored container's entities did not come back to the clients that could see them");
+            watchers.Sum(c => c.Replicas.Count(lost.Contains)) >= heldBefore, seconds: 60), Is.True,
+            $"the restored container's entities did not come back: {watchers.Sum(c => c.Replicas.Count(lost.Contains))}/{heldBefore}");
         double restored = clock.Elapsed.TotalSeconds;
 
         int duplicates = clients.Sum(c => c.DuplicateSpawns), orphanUpdates = clients.Sum(c => c.OrphanUpdates);
         int pawns = fleet.Workers.Sum(w => w.Pawns.Count);
         report.Row(orphaned.Count, clients.Count, noticed, restored, restored / Math.Max(1, orphaned.Count),
-            duplicates, orphanUpdates, pawns, clients.Sum(c => c.Replicas.Count(lost.Contains)));
+            duplicates, orphanUpdates, pawns, watchers.Sum(c => c.Replicas.Count(lost.Contains)));
         report.Note($"{orphaned.Count} container(s) orphaned, noticed in {noticed:0.00} s, whole again in {restored:0.00} s");
         report.Write();
 
@@ -271,8 +321,7 @@ public class ScaleFailureTests
 
         using var fleet = Build(gateways: 2, workers: Cells, clients: 24, out var clients);
         var expected = _world.Cells.ToDictionary(id => id, id => _contents[id].Select(r => r.NetId).ToHashSet());
-        foreach (string id in _world.Cells)
-            Assert.That(clients.Sum(c => c.Replicas.Count(expected[id].Contains)), Is.GreaterThan(0), id + " was invisible before the restart");
+
 
         // Every worker dies. The gateways and the clients stay up, which is what makes this a mesh restart and
         // not a client restart: the measurement is how long a connected player waits for the world to come back.
@@ -289,11 +338,13 @@ public class ScaleFailureTests
             var worker = fleet.StartWorker();
             worker.SpawnIntoRequestedContainer = true;
             Restore(fleet, worker, id);
-            Assert.That(fleet.Run(() => clients.Sum(c => c.Replicas.Count(expected[id].Contains)) > 0, seconds: 45), Is.True,
-                id + " did not come back to any client");
+            Watch(fleet);
+            var watchers = Watchers(id);
+            Assert.That(fleet.Run(() => watchers.Sum(c => c.Replicas.Count(expected[id].Contains)) > 0, seconds: 45), Is.True,
+                id + " did not come back to the clients watching it");
             double at = clock.Elapsed.TotalSeconds;
             curve.Add((id, at));
-            report.Row(i + 1, id, worker.WorkerId, at, clients.Count(c => c.Replicas.Any(expected[id].Contains)));
+            report.Row(i + 1, id, worker.WorkerId, at, watchers.Count(c => c.Replicas.Any(expected[id].Contains)));
         }
         Assert.That(fleet.Run(() => clients.All(c => c.Join == JoinState.Joined), seconds: 60), Is.True,
             "not every player was given a pawn again once the mesh was back");

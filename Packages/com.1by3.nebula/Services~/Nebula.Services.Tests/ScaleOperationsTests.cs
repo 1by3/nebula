@@ -64,10 +64,9 @@ public class ScaleOperationsTests
     /// one held member would otherwise be split off; and a container that carries a whole tick on its own is
     /// reported as the reason growing the mesh would not help, naming what it is expensive in.
     /// <para>
-    /// <b>Extension point for NEB-235.</b> That issue adds explained moves (a reason per move) and a typed
-    /// <c>Saturated</c> report in place of reading <see cref="ScaleDecision.Reason"/> as prose. When it lands, the
-    /// three <c>ExtensionPoint</c> comments below are where the assertions become assertions on those types; the
-    /// scenario itself — who moves, who does not, and what is reported — does not change.
+    /// Everything is asserted on the typed reports NEB-235 added (<see cref="AssignmentMove"/>,
+    /// <see cref="SaturationReport"/>, <see cref="ScaleDecision.BlockedCause"/>) rather than on prose, so a reworded
+    /// sentence does not fail the suite and a changed <i>decision</i> does.
     /// </para>
     /// </summary>
     [Test]
@@ -75,7 +74,7 @@ public class ScaleOperationsTests
     {
         var report = new ScaleReport("autoscale-rebalance",
             "phase", "workers", "movesPlanned", "heldContainers", "unsplittableGroups", "action", "blockedBy",
-            "blockedComponent", "blockedSaturation", "reason");
+            "blockedComponent", "blockedSaturation", "blockedCause", "blockedReason", "explanation");
 
         var containers = Row(4);
         var workers = Workers(2);
@@ -84,20 +83,27 @@ public class ScaleOperationsTests
 
         // ---- 1. a plain re-deal: the tail of the curve goes to the idle worker.
         var free = policy.Compute(Input(containers, workers, leases));
-        report.Row("rebalance", workers.Count, free.Count, 0, policy.Unsplittable.Count, "-", "", "", 0.0, policy.Note);
+        foreach (var move in policy.Moves)
+            report.Row("rebalance", workers.Count, free.Count, 0, policy.Unsplittable.Count, "-", move.ContainerId,
+                "", 0.0, "", "", move.Reason);
         Assert.That(free.Select(m => m.Key), Does.Contain("c3"), "with nothing held the planner re-deals");
-        // ExtensionPoint(NEB-235): each of these moves will carry its own explanation; assert that here.
+        Assert.That(policy.Moves.Select(m => m.ContainerId), Is.EquivalentTo(free.Select(m => m.Key)),
+            "every applied change is explained (NEB-235)");
+        Assert.That(policy.Moves.All(m => m.Reason.Length > 0), Is.True, "a built-in policy explains every move it makes");
+        Assert.That(policy.Moves.All(m => m.To.Length > 0), Is.True, "and names the worker it is handing to");
 
         // ---- 2. the same re-deal with a hold on one member of a cohesion group.
         var holds = new Dictionary<string, float> { { "c2", 5f } };
         var cohesion = new List<CohesionGroupInfo> { NewGroup(7, "c2", "c3") };
         var held = policy.Compute(Input(containers, workers, leases, holds: holds, cohesion: cohesion));
-        report.Row("rebalance-under-hold", workers.Count, held.Count, holds.Count, policy.Unsplittable.Count, "-", "", "", 0.0, policy.Note);
+        foreach (var move in policy.Moves)
+            report.Row("rebalance-under-hold", workers.Count, held.Count, holds.Count, policy.Unsplittable.Count, "-",
+                move.ContainerId, "", 0.0, "", "", move.Reason);
         Assert.That(held.Select(m => m.Key), Does.Not.Contain("c2"), "a held container is not moved");
         Assert.That(held.Select(m => m.Key), Does.Not.Contain("c3"),
             "moving the rest of the group while one member is held would be the split cohesion forbids");
-        // ExtensionPoint(NEB-235): the re-deal along the boundary must still honour the hold; assert the reason
-        // the planner gives for leaving the group where it is.
+        Assert.That(policy.Moves.Select(m => m.ContainerId), Does.Not.Contain("c2"), "and no move is reported for it either");
+        Assert.That(policy.Moves.Select(m => m.ContainerId), Does.Not.Contain("c3"));
 
         // ---- 3. a container that cannot be split, with a cost row saying what it is expensive in.
         var busy = new Dictionary<string, float> { { "c0", 0.95f }, { "c1", 0.02f }, { "c2", 0.02f }, { "c3", 0.02f } };
@@ -116,18 +122,25 @@ public class ScaleOperationsTests
         var decision = scaler.Evaluate(settings.HoldSeconds + 0.1, measured, input, policy, workers.Count, settings, inFlight: false);
 
         report.Row("saturated", workers.Count, 0, 0, policy.Unsplittable.Count, decision.Action.ToString(),
-            decision.BlockedBy, decision.BlockedComponent.ToString(), decision.BlockedSaturation, decision.Reason);
-        report.Note($"blocked by {decision.BlockedBy} ({decision.BlockedComponent}, {decision.BlockedSaturation:0.00} of its budget): {decision.Reason}");
+            decision.BlockedBy, decision.BlockedComponent.ToString(), decision.BlockedSaturation,
+            SaturationReport.NameOf(decision.BlockedCause), decision.BlockedReason, decision.Reason);
+        var saturated = policy.Saturated.FirstOrDefault(r => r.ContainerId == "c0");
+        report.Note($"blocked by {decision.BlockedBy}: cause {decision.BlockedCause}, component {decision.BlockedComponent} " +
+                    $"at {decision.BlockedSaturation:0.00} of its budget - {decision.BlockedReason}");
         report.Write();
 
         Assert.That(decision.Action, Is.EqualTo(ScaleAction.None), "another worker cannot help, so the mesh does not grow");
-        Assert.That(decision.BlockedBy, Is.EqualTo("c0"), "the report names the container that is saturated");
+        Assert.That(decision.BlockedBy, Is.EqualTo("c0"), "the decision names the container that is saturated");
         Assert.That(decision.BlockedComponent, Is.EqualTo(CostComponent.Simulation), "and what it is expensive in (NEB-225)");
         Assert.That(decision.BlockedSaturation, Is.GreaterThan(0.5f), "and how much of that component's budget it uses");
-        Assert.That(decision.Reason, Does.Contain("cannot be split"));
-        Assert.That(decision.Reason, Does.Contain("mostly simulation"));
-        // ExtensionPoint(NEB-235): replace the prose assertions above with the typed `Saturated` report when it
-        // lands; `BlockedBy`/`BlockedComponent`/`BlockedSaturation` are already typed and stay as they are.
+        Assert.That(decision.BlockedCause, Is.EqualTo(SaturationCause.NoBoundary),
+            "one container carrying a whole tick with no authored boundary inside it is the NoBoundary cause (NEB-235)");
+        Assert.That(decision.BlockedReason, Is.Not.Empty, "the typed cause comes with a sentence an operator can act on");
+        Assert.That(policy.Saturated, Is.Not.Empty, "the planner itself reports what it could not relieve");
+        Assert.That(saturated.ContainerId, Is.EqualTo("c0"));
+        Assert.That(saturated.WorkerId, Is.EqualTo("w1"), "and which worker is carrying it");
+        Assert.That(saturated.Cause, Is.EqualTo(decision.BlockedCause), "the scaler reports the planner's cause unchanged");
+        Assert.That(saturated.ScopeKey, Is.Empty, "this world is the public one, so the row groups under the empty scope");
     }
 
     /// <summary>A cohesion group that does not fit one worker is reported rather than split, at scale-suite scale.</summary>
