@@ -712,6 +712,8 @@ public sealed class FakeClient : IDisposable
     public JoinRejectedMsg? Rejected;
     public string? Replaced;
     public JoinState Join;
+    /// <summary>Why the gateway says the join is held (<see cref="JoinHoldReason"/>).</summary>
+    public JoinHoldReason JoinReason;
     public int DrainWithin = -1;
     public bool Disconnected;
     /// <summary>Every spawn ever received, in order (a re-entry appears twice; that is what the churn tests read).</summary>
@@ -830,7 +832,7 @@ public sealed class FakeClient : IDisposable
             case MsgId.Welcome: Welcome = WelcomeMsg.Read(r); break;
             case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
             case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
-            case MsgId.JoinStatus: Join = JoinStatusMsg.Read(r).State; break;
+            case MsgId.JoinStatus: { var js = JoinStatusMsg.Read(r); Join = js.State; JoinReason = js.Reason; break; }
             case MsgId.GatewayDraining: DrainWithin = GatewayDrainingMsg.Read(r).ReconnectWithinSeconds; break;
             case MsgId.ContainerOwnership:
             {

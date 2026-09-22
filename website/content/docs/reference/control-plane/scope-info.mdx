@@ -59,7 +59,23 @@ The definition the first activation won with. A later activation with a differen
 public DateTime CreatedAt, UpdatedAt;
 ```
 
-When the row was created, and when it was last activated. NEB-240 aggregates idle age over these rows.
+When the row was created, and when it was last activated. The idle sweep aggregates over these rows.
+
+### StateSince [#statesince]
+
+```csharp
+public DateTime StateSince;
+```
+
+When [`State`](#state) last changed. The orchestrator's retire and restore deadlines run from here.
+
+### Acks [#acks]
+
+```csharp
+public List<ScopeAck> Acks = new List<ScopeAck>();
+```
+
+What the parts have finished, one entry per container at most ([`ScopeAck`](/docs/reference/control-plane/scope-ack)). Cleared on every state change, so an ack always belongs to the step that is running now.
 
 ### Requester [#requester]
 
@@ -68,3 +84,29 @@ public string Requester = "";
 ```
 
 Who last asked for it, for logs and the dashboard. Free-form; Nebula attaches no meaning to it.
+
+## Methods
+
+### FindAck [#findack]
+
+```csharp
+public ScopeAck FindAck(string containerId, string phase);
+```
+
+The acknowledgement for `containerId` in `phase`, or null.
+
+### AllAcked [#allacked]
+
+```csharp
+public bool AllAcked(string phase);
+```
+
+Every container of the scope has acknowledged `phase`.
+
+### AckedCount [#ackedcount]
+
+```csharp
+public int AckedCount(string phase);
+```
+
+The acknowledged counts for `phase`, summed over the parts.

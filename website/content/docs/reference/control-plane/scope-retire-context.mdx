@@ -1,0 +1,54 @@
+---
+title: "ScopeRetireContext"
+description: "What the retire policy is told about a scope."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeLifecycle.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeLifecycle.cs)</div>
+
+```csharp
+public struct ScopeRetireContext
+```
+
+What the retire policy is told about a scope. Everything here is derived from rows the whole mesh can see (the scope row, its lease rows, and the per-container occupancy the workers' telemetry reports), so the decision is reproducible on any orchestrator and a policy can be tested without a mesh.
+
+## Fields
+
+### Scope [#scope]
+
+```csharp
+public ScopeInfo Scope;
+```
+
+The row being judged. Never null when the policy is called.
+
+### IdleSeconds [#idleseconds]
+
+```csharp
+public double IdleSeconds;
+```
+
+Seconds since anything last wanted any part of this scope: the smallest age over its lease rows ([`ScopeLifecycle.IdleSeconds`](/docs/reference/control-plane/scope-lifecycle#idleseconds)). One busy part keeps the whole scope hot, which is what "all parts retire together" requires.
+
+### Entities [#entities]
+
+```csharp
+public int Entities;
+```
+
+Authoritative entities the workers last reported inside the scope's parts, summed.
+
+### Players [#players]
+
+```csharp
+public int Players;
+```
+
+Client-owned entities inside the scope's parts (players and bots), summed.
+
+### RetireAfterSeconds [#retireafterseconds]
+
+```csharp
+public float RetireAfterSeconds;
+```
+
+The configured idle threshold, in seconds (`NebulaConfig.ScopeIdleRetireSeconds`); 0 or less turns retiring off.

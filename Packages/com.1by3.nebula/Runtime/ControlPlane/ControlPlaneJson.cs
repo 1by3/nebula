@@ -297,7 +297,8 @@ namespace Nebula
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
             ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane",
             SetContainerHint = "SetContainerHint",
-            ActivateScope = "ActivateScope", RemoveScope = "RemoveScope";
+            ActivateScope = "ActivateScope", RemoveScope = "RemoveScope",
+            SetScopeState = "SetScopeState", AckScopePart = "AckScopePart";
 
         /// <summary>Builds one write object. Call <see cref="Op"/> then the <c>Arg</c> overloads, then <see cref="End"/>.</summary>
         public sealed class OpWriter
@@ -403,6 +404,8 @@ namespace Nebula
                     });
                     return null;
                 }
+                case SetScopeState: cp.SetScopeState(Str(o, "scopeKey"), Str(o, "state")); return null;
+                case AckScopePart: cp.AckScopePart(Str(o, "scopeKey"), Str(o, "containerId"), Str(o, "phase"), (int)Num(o, "count"), Str(o, "workerId")); return null;
                 case RemoveScope: cp.RemoveScope(Str(o, "scopeKey")); return null;
                 case ResetControlPlane: cp.ResetControlPlane(); return null;
                 default: return $"unknown control-plane op '{op}'";

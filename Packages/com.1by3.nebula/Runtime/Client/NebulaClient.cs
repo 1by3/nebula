@@ -58,6 +58,12 @@ namespace Nebula
         public JoinState Join { get; private set; }
         /// <summary>Roughly how many seconds the gateway expects the <see cref="JoinState.Starting"/> hold to last; 0 when unknown.</summary>
         public int JoinEstimatedSeconds { get; private set; }
+        /// <summary>
+        /// Why the gateway is holding the join, while <see cref="Join"/> is <see cref="JoinState.Starting"/>: the
+        /// world is booting, or the scope this client named is not ready, is restoring or is retiring. Read it in a
+        /// <see cref="JoinStateChanged"/> handler to say something more useful than "please wait".
+        /// </summary>
+        public JoinHoldReason JoinHoldReason { get; private set; }
         public int RttMs { get; private set; } = -1;
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
@@ -757,11 +763,12 @@ namespace Nebula
                 case MsgId.JoinStatus:
                 {
                     var j = JoinStatusMsg.Read(r);
-                    if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds) break;
+                    if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds && j.Reason == JoinHoldReason) break;
                     Join = j.State;
                     JoinEstimatedSeconds = j.EstimatedSeconds;
+                    JoinHoldReason = j.Reason;
                     if (Join == JoinState.Starting)
-                        NebulaLog.Info("world starting" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : "") + ": no worker is running yet; holding the join");
+                        NebulaLog.Info($"the join is held ({j.Reason})" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : ""));
                     else if (Join == JoinState.Joined) NebulaLog.Info("joined the world");
                     try { JoinStateChanged?.Invoke(Join, JoinEstimatedSeconds); }
                     catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
@@ -1219,6 +1226,7 @@ namespace Nebula
             {
                 Join = JoinState.None;
                 JoinEstimatedSeconds = 0;
+                JoinHoldReason = JoinHoldReason.None;
                 try { JoinStateChanged?.Invoke(Join, 0); }
                 catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
             }

@@ -119,13 +119,72 @@ curl -X POST http://orchestrator:7080/api/control-plane \
 
 The definition travels as a JSON document inside a JSON string. Read the result back from `GET /api/control-plane`, whose document carries a `scopes` array.
 
+## Retiring and re-activating a scope
+
+A scope with nobody in it does not have to keep a worker busy. The orchestrator retires it, and brings it back — the same scope, with the same saved contents — when somebody activates the key again.
+
+### When a scope is idle
+
+A scope's idle age is the **smallest** age over its parts, so one busy part keeps the whole scope hot. The owning worker keeps a part's clock at zero while it holds anything a retire would lose:
+
+- an entity a client owns (somebody is in it);
+- an entity that is not persistent (its state cannot be brought back);
+- a persistent entity whose latest changes have not been saved yet.
+
+A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula-scope-idle-retire`; 0 turns retirement off) and that the workers report as empty is retired. The public world has no scope row and is never retired.
+
+### What retiring does
+
+1. The scope is marked `retiring`. **It admits nobody from this moment**, before anything is saved.
+2. Each part runs the before-retire step, force-checkpoints every persistent entity inside it, and waits for the store to confirm the writes.
+3. Each part despawns its contents — persistent entities keep their saved records, anything else is gone — and reports back.
+4. Only when **every** part has reported does the orchestrator release the lease rows and mark the scope `retired`.
+
+The scope's row is kept, so the key keeps its identity and a later activation is the same scope rather than a new one. Nothing deletes a persisted record: `RemoveScope` is still the explicit way to forget a scope, and even that removes rows, not records.
+
+### What coming back does
+
+Activating a retired key puts the scope in `restoring` and brings its lease rows back with the same container IDs. Each worker that lands a part loads that part's persisted records in the ordinary way and reports the restore complete; only then does the scope become `active` and admit clients again.
+
+A client that asks for a scope which is not active is **held**, not refused: it stays welcomed and is placed with no reconnect the moment the scope admits again. Read why on the client:
+
+```csharp
+client.JoinStateChanged += (state, estimatedSeconds) =>
+{
+    if (state != JoinState.Starting) return;
+    ShowWaitScreen(client.JoinHoldReason switch
+    {
+        JoinHoldReason.ScopeRestoring => "Your instance is being restored…",
+        JoinHoldReason.ScopeRetiring  => "That instance is closing down.",
+        JoinHoldReason.ScopeNotReady  => "Waiting for your instance…",
+        _                             => "The world is starting…",
+    });
+};
+```
+
+### Deciding for yourself
+
+The time-based rule is the default, not the only one. Replace the policy to keep a scope hot for a reason Nebula cannot see — a party still in the matchmaking queue, a housing instance whose owner just logged out, a scheduled event:
+
+```csharp
+ScopeLifecycle.ShouldRetire = (in ScopeRetireContext scope) =>
+{
+    if (MyMatchmaker.HasPendingParty(scope.Scope.ScopeKey)) return false;
+    return ScopeLifecycle.RetireWhenIdle(scope);   // the default rule otherwise
+};
+```
+
+The context carries the scope row, its idle age in seconds, the players and entities the workers last reported in it, and the configured threshold. It is consulted only for scopes that are `active`; a policy that throws is logged and the scope is kept.
+
+The orchestrator's dashboard lists every scope with its state, occupancy, idle age and age, so you can see what a policy is doing.
+
 ## Remove a scope
 
 ```csharp
 controlPlane.RemoveScope(key);
 ```
 
-This drops the scope row, releases the claim on the key and removes the lease rows of its containers. It is the mechanism only: it does not wait for the scope to be empty, does not move anyone out and does not save anything. Deciding that a scope is idle, draining it and restoring it later is scope lifecycle, which is not available yet.
+This drops the scope row, releases the claim on the key and removes the lease rows of its containers. It is the mechanism only: it does not wait for the scope to be empty, does not move anyone out and does not save anything. It is not the way to put a scope to sleep — that is retirement, above, which checkpoints first and lets the scope come back. `RemoveScope` still leaves the persisted records themselves in the store; delete those yourself if the world should really be gone.
 
 ## What a scope key is worth knowing about
 
@@ -137,6 +196,7 @@ This drops the scope row, releases the claim on the key and removes the lease ro
 ## Limits
 
 - A scope definition lists its parts up front. Worlds whose chunks are decided at runtime are not covered yet.
-- `IsScopeReady` says a worker holds the leases, not that content is loaded or that persisted entities have been restored.
-- Retiring an idle scope and restoring it later is not available yet; `RemoveScope` removes it without ceremony.
+- `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
+- A retire loses whatever in the scope was not persistent. That is why the default rule refuses to retire a part that holds any; a game that is happy to discard its transient contents has to say so through `ScopeLifecycle.ShouldRetire`.
+- Each lifecycle step gives the workers 30 seconds to report in. Past that the orchestrator finishes the step anyway, with a warning, so a worker that died cannot leave a scope nobody can enter.
 - A control plane kept in memory only (no file, no database) cannot make activation idempotent across orchestrator restarts, because it keeps nothing to be idempotent about.

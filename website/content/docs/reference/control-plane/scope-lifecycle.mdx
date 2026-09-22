@@ -1,0 +1,72 @@
+---
+title: "ScopeLifecycle"
+description: "The scope lifecycle's pure parts: how idle age and occupancy are aggregated from a scope's parts, when a scope should retire, and whether a client may be admitted to it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeLifecycle.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeLifecycle.cs)</div>
+
+```csharp
+public static class ScopeLifecycle
+```
+
+The scope lifecycle's pure parts: how idle age and occupancy are aggregated from a scope's parts, when a scope should retire, and whether a client may be admitted to it. The orchestrator drives the state machine with these; they hold no state of their own, so a test can drive the whole sequence without a mesh. Design of record: `docs/scope-lifecycle.md`.
+
+## Fields
+
+### StepTimeoutSeconds [#steptimeoutseconds]
+
+```csharp
+public const float StepTimeoutSeconds = 30f;
+```
+
+How long the orchestrator waits for every part to acknowledge a retire or a restore before it gives up and finishes the step anyway. A worker that died mid-step must not leave a scope stuck in [`ScopeState.Retiring`](/docs/reference/control-plane/scope-state#retiring) (nothing could ever enter it again) or in [`ScopeState.Restoring`](/docs/reference/control-plane/scope-state#restoring) (nobody could ever join it).
+
+### ShouldRetire [#shouldretire]
+
+```csharp
+public static ScopeRetirePolicy ShouldRetire = RetireWhenIdle;
+```
+
+Consulted for every [`ScopeState.Active`](/docs/reference/control-plane/scope-state#active) scope on the orchestrator's idle sweep. Replace it to keep a scope hot for reasons Nebula cannot see — a raid whose party is still in the queue, a housing instance its owner is about to re-enter, a scope a live event is scheduled in. The default is [`RetireWhenIdle`](#retirewhenidle). It is consulted, never obeyed blindly: a scope that is not idle is never offered to it.
+
+## Methods
+
+### RetireWhenIdle [#retirewhenidle]
+
+```csharp
+public static bool RetireWhenIdle(in ScopeRetireContext context);
+```
+
+The default policy: retire once the scope has held no client-owned entity and no authoritative entity at all for [`ScopeRetireContext.RetireAfterSeconds`](/docs/reference/control-plane/scope-retire-context#retireafterseconds). Pure.
+
+### IdleSeconds [#idleseconds]
+
+```csharp
+public static double IdleSeconds(IControlPlane cp, ScopeInfo scope);
+```
+
+Seconds since anything last wanted any part of the scope: the smallest lease-row age over its containers. A part with no lease row does not take part (it is already gone), and a scope with no leased part at all is 0 — there is nothing there to retire. The row's age is the mesh-wide idle clock every worker already re-stamps while it wants a box ([`IControlPlane.TouchContainer`](/docs/reference/control-plane/i-control-plane#touchcontainer), [`NebulaWorker.RuntimeContainerIdleSeconds`](/docs/reference/worker/nebula-worker#runtimecontaineridleseconds)).
+
+### Occupancy [#occupancy]
+
+```csharp
+public static void Occupancy(ScopeInfo scope, IReadOnlyDictionary<string, ContainerLoad> occupancy, out int entities, out int players);
+```
+
+What the workers last reported inside the scope's parts, summed over them. Absent parts count 0.
+
+### Admits [#admits]
+
+```csharp
+public static bool Admits(IControlPlane cp, string scopeKey, out JoinHoldReason reason);
+```
+
+Whether a client naming `scopeKey` may be placed now, and why not when it may not. A key with no row at all is [`JoinHoldReason.ScopeNotReady`](/docs/reference/protocol/join-hold-reason#scopenotready): the gateway never activates a scope, so the client waits for whoever sent it there (`docs/scope-activation.md` §5). The public world (an empty key) is always admitted here; whether there is a container to spawn into is the caller's next question.
+
+### NextState [#nextstate]
+
+```csharp
+public static string NextState(ScopeInfo scope, double elapsedSeconds, out bool timedOut);
+```
+
+The next state of a scope in a step that waits on its parts, or null when it should stay where it is. Pure, so the ordering ("every part, or the deadline") is one testable function rather than a shape of the orchestrator's loop: [`ScopeState.Retiring`](/docs/reference/control-plane/scope-state#retiring) ends in [`ScopeState.Retired`](/docs/reference/control-plane/scope-state#retired) and [`ScopeState.Restoring`](/docs/reference/control-plane/scope-state#restoring) in [`ScopeState.Active`](/docs/reference/control-plane/scope-state#active), once every container has acknowledged the step's phase or `elapsedSeconds` has passed [`StepTimeoutSeconds`](#steptimeoutseconds).

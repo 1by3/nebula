@@ -1,0 +1,30 @@
+---
+title: "ScopePhase"
+description: "What a worker has finished doing to one part of a scope (ScopeAck)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public static class ScopePhase
+```
+
+What a worker has finished doing to one part of a scope ([`ScopeAck`](/docs/reference/control-plane/scope-ack)).
+
+## Fields
+
+### Checkpointed [#checkpointed]
+
+```csharp
+public const string Checkpointed = "checkpointed";
+```
+
+Every persistent entity in the part was saved and the save reached the store; the part was then emptied.
+
+### Restored [#restored]
+
+```csharp
+public const string Restored = "restored";
+```
+
+The part's persisted records were loaded and restored after the lease landed.

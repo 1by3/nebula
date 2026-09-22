@@ -113,14 +113,48 @@ See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes) and `docs/sco
 - A gateway spawns a player only into a container whose `Container.ScopeKey` equals the client's `HelloMsg.ScopeKey`. A client that named a scope with no live owner is held in `JoinState.Starting` and placed with no reconnect once the scope is ready; it is never placed in another scope as a fallback, and a client that named nothing is never placed inside an instance.
 - A second activation of a key with a *different* definition is refused and logged; the stored scope stands and nothing changes, so the caller keeps its current scope and may retry.
 
-**What activation does not do:** it does not decide who may enter, does not load content (that stays with `InstanceScenes` and the `PrepareTransfer` handshake), and does not retire anything. `RemoveScope` removes a scope's row, claim and lease rows without draining it; idle retirement and restore are a later item.
+**What activation does not do:** it does not decide who may enter and does not load content (that stays with `InstanceScenes` and the `PrepareTransfer` handshake). `RemoveScope` removes a scope's row, claim and lease rows without draining it; idle retirement and restore are the scope lifecycle, below.
+
+#### Scope lifecycle: idle retirement and re-activation
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes#retiring-and-re-activating-a-scope); the design record is `docs/scope-lifecycle.md`.
+
+**What changed and why.** A scope nobody was in kept its lease rows for ever: `RemoveScope` and the per-container `ReleaseRuntimeContainer` existed, but deciding a whole scope was finished with, saving what was in it, letting go of every part together and refusing admission while it came back was left to each game — and the instancing guide said so ("automatic empty-instance expiration and suspension are not currently provided"). The orchestrator now runs that sequence itself, with the policy as a hook.
+
+**Breaking wire format (protocol 18):**
+
+- `JoinStatus` (5) gained a trailing `u8 reason` (`JoinHoldReason`). A message that ends before it — from a gateway built before this release — reads as `WorldStarting`, which is the only reason such a gateway ever held a join.
+
+**Control-plane document (additive):** a scope row gained `stateSince` and, while a step is in flight, an `acks` array of `{container, phase, count, worker}`. A row without them reads as an active scope with no step running, so a document written by an earlier orchestrator is understood unchanged.
+
+**New behaviour:**
+
+- A scope whose parts have held nothing for `ScopeIdleRetireSeconds` is retired: marked `Retiring` (which refuses admission at once), each part runs the before-retire window, force-checkpoints every persistent entity in it, waits for the store to confirm the writes, empties itself and acknowledges; only when every part has acknowledged are the lease rows deleted and the scope marked `Retired`. The row is kept, so the key keeps its identity.
+- Idle age is the **smallest** lease-row age over the scope's parts, so one busy part keeps the whole scope hot. The owning worker re-stamps the lease of a part that holds a client-owned entity, a non-persistent entity, or a persistent entity with unsaved changes — the cases where retiring would lose something.
+- Activating a retired key puts the scope in `Restoring` and brings its lease rows back with the same derived container ids. The ordinary lease-landing restore loads the records; the scope becomes `Active`, and admits clients, only when every part has reported its restore complete.
+- A client whose `Hello` names a scope that is not `Active` is held in `JoinState.Starting` — welcomed, never dropped — and placed with no reconnect once the scope admits again. It is told why: `ScopeNotReady`, `ScopeRestoring` or `ScopeRetiring`.
+- Each step has a 30 s deadline (`ScopeLifecycle.StepTimeoutSeconds`), logged as a warning, so a worker that dies mid-step cannot leave a scope nobody can ever enter or join.
+- Nothing here deletes a persisted record. Transient (non-persistent) contents are lost by a retire, which is why the default policy refuses to retire a part that holds any.
+
+**New `NebulaConfig` field:** `ScopeIdleRetireSeconds` (300 s; 0 turns retiring off), with `-nebula-scope-idle-retire`, mirrored into the services config. It never applies to the public world.
+
+**New public API:**
+
+- `ScopeLifecycle` (`Runtime/ControlPlane/ScopeLifecycle.cs`): `ShouldRetire` (the policy hook), `RetireWhenIdle` (the default), `IdleSeconds`, `Occupancy`, `Admits`, `NextState`, `StepTimeoutSeconds`; `ScopeRetirePolicy`, `ScopeRetireContext`.
+- `ScopeState.Retiring`, `Retired`, `Restoring`, `ScopeState.AdmitsClients`; `ScopePhase`; `ScopeAck`; `ScopeInfo.StateSince`, `Acks`, `FindAck`, `AllAcked`, `AckedCount`.
+- `IControlPlane.SetScopeState(scopeKey, state)` and `IControlPlane.AckScopePart(scopeKey, containerId, phase, count, workerId)` — implemented by `LocalControlPlane`, `ControlPlaneHost` and `RemoteControlPlane`, and reachable over `POST /api/control-plane` as the ops `SetScopeState` and `AckScopePart`. A custom `IControlPlane` must implement both.
+- `NebulaPersistence.CheckpointContainer(containerId)`, `ContainerRestored` (`Action<string, int>`), `IsContainerRestored`, `RestoredCountFor`.
+- `NebulaWorker.EmptyContainer(container)` (the contents half of `ReleaseRuntimeContainer`) and `NebulaWorker.ScopeLifecycleAgent`; `WorkerScopeLifecycle` with `IsBusy`, `RetiringParts`.
+- `JoinHoldReason`, `JoinStatusMsg.Reason`, `NebulaClient.JoinHoldReason`.
+
+**Dashboard:** `/api/state` gained a `scopes` array (`key`, `state`, `parts`, `ready`, `players`, `entities`, `idleSeconds`, `stateSeconds`, `ageSeconds`, `acked`, `containers`) and `scopeIdleRetireSeconds`; the dashboard shows a Scopes card, hidden until a mesh activates one.
 
 #### Conformance suite
 
 A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools/conformance.ps1` (`-DotnetOnly` for the pure C# tier while the Editor is open). Every test is tagged `[Category("Conformance")]`; the script runs the category in `Nebula.Services.Tests` (`dotnet test`) and in `Nebula.Tests.EditMode` (Unity batchmode), and prints one PASS/FAIL summary with counts. Design and scenario ledger: `docs/conformance-suite.md`; user page: [Run the conformance suite](https://nebula.1by3.co/docs/guides/conformance-suite).
 
 - `ConformanceMesh` (`Tests/EditMode/ConformanceMesh.cs`): two or more real `NebulaWorker` components in one Editor process, each with a recording transport and peer records for the others; `Pump()` delivers every recorded message into the receiving worker's own `Dispatch`. Handovers here run the production builder, wire format and applier end to end, with no gateway, leases or tick loop.
-- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 6 (historical state, `ConformanceStateHistoryTests`), scenario 8 (server-driven handover state, below), scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`) and scenario 10 (the persistence durability window, `ConformancePersistenceDurabilityTests`). Scenarios 3, 4 and 7 wait for their items.
+- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 3 (the scope lifecycle, `ConformanceScopeLifecycleTests`, `ConformanceScopeCheckpointTests` and `ConformanceScopeAdmissionTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 6 (historical state, `ConformanceStateHistoryTests`), scenario 8 (server-driven handover state, below), scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`) and scenario 10 (the persistence durability window, `ConformancePersistenceDurabilityTests`). Scenarios 4 and 7 wait for their items.
 - Scenario 8, covered: a server-driven entity with `WriteHandoverState`/`ReadHandoverState` state, NetworkVariables and a `NetworkTransform` crosses workers and keeps every field, bumps its epoch by one, fires `OnLostAuthority`/`OnGainedAuthority` once each in order, and ignores a replayed transfer (`ConformanceHandoverStateTests`). The wire leg (`ConformanceHandoverWireTests`, every `AuthorityTransferMsg` field) also compiles into the service tests.
 - Tagged into the suite: `ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks` and `PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord`.
 

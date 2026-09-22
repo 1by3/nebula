@@ -1,0 +1,22 @@
+---
+title: "JoinHoldReason"
+description: "Why a join is being held in JoinState.Starting."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public enum JoinHoldReason : byte
+```
+
+Why a join is being held in [`JoinState.Starting`](/docs/reference/protocol/join-state#starting). A reason, not an error: the gateway holds the client and places it as soon as the reason goes away, with no reconnect. See `docs/scope-lifecycle.md`.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | Not held (or a gateway from before the field existed, which only ever held for `WorldStarting`). |
+| <span id="worldstarting"></span>`WorldStarting` | `1` | No worker holds an active lease yet: the mesh is booting one. |
+| <span id="scopenotready"></span>`ScopeNotReady` | `2` | The scope the client named has not been activated, or has no container with a live owner yet. Whoever sent the player to the key is the one that activates it. |
+| <span id="scoperestoring"></span>`ScopeRestoring` | `3` | The scope is coming back from a retire and its persisted entities are still being restored. |
+| <span id="scoperetiring"></span>`ScopeRetiring` | `4` | The scope is retiring: it is checkpointing and emptying itself and admits nobody. |

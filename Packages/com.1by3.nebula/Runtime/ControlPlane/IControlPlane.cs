@@ -286,6 +286,17 @@ namespace Nebula
         /// </summary>
         void ActivateScope(ScopeActivationRequest request);
         /// <summary>
+        /// Move a scope's lifecycle state on (<see cref="ScopeState"/>). The orchestrator's idle sweep is the single
+        /// writer of the machine; nothing else in a mesh should call it. See <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        void SetScopeState(string scopeKey, string state);
+        /// <summary>
+        /// A worker reporting that it finished the step the scope is in for one of its containers: the checkpoint
+        /// before a retire, or the restore after a re-activation (<see cref="ScopePhase"/>). The orchestrator waits
+        /// for one ack per container before taking the next step.
+        /// </summary>
+        void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+        /// <summary>
         /// Drop a scope's row, its durable claim and the lease rows of its containers. The mechanism only: when a
         /// scope should go is the game's or NEB-240's decision, and entities still in it are not moved.
         /// </summary>

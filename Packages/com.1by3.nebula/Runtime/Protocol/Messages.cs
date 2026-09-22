@@ -335,21 +335,50 @@ namespace Nebula
         Joined = 2,
     }
 
-    /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown).</summary>
+    /// <summary>
+    /// Why a join is being held in <see cref="JoinState.Starting"/>. A reason, not an error: the gateway holds the
+    /// client and places it as soon as the reason goes away, with no reconnect. See <c>docs/scope-lifecycle.md</c>.
+    /// </summary>
+    public enum JoinHoldReason : byte
+    {
+        /// <summary>Not held (or a gateway from before the field existed, which only ever held for <see cref="WorldStarting"/>).</summary>
+        None = 0,
+        /// <summary>No worker holds an active lease yet: the mesh is booting one.</summary>
+        WorldStarting = 1,
+        /// <summary>The scope the client named has not been activated, or has no container with a live owner yet. Whoever sent the player to the key is the one that activates it.</summary>
+        ScopeNotReady = 2,
+        /// <summary>The scope is coming back from a retire and its persisted entities are still being restored.</summary>
+        ScopeRestoring = 3,
+        /// <summary>The scope is retiring: it is checkpointing and emptying itself and admits nobody.</summary>
+        ScopeRetiring = 4,
+    }
+
+    /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>
     public struct JoinStatusMsg
     {
         public JoinState State;
         /// <summary>Roughly how long the client should expect to wait, in seconds; 0 when nobody can say.</summary>
         public ushort EstimatedSeconds;
+        /// <summary>Why the join is held, while <see cref="JoinState.Starting"/>.</summary>
+        public JoinHoldReason Reason;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.JoinStatus);
             w.WriteByte((byte)State);
             w.WriteUShort(EstimatedSeconds);
+            w.WriteByte((byte)Reason);
         }
 
-        public static JoinStatusMsg Read(NetworkReader r) => new JoinStatusMsg { State = (JoinState)r.ReadByte(), EstimatedSeconds = r.ReadUShort() };
+        public static JoinStatusMsg Read(NetworkReader r)
+        {
+            var m = new JoinStatusMsg { State = (JoinState)r.ReadByte(), EstimatedSeconds = r.ReadUShort() };
+            // Appended after the rest of v18 was settled: a message that ends here came from a gateway that only
+            // ever held a join because the world was starting.
+            m.Reason = r.Remaining > 0 ? (JoinHoldReason)r.ReadByte()
+                : m.State == JoinState.Starting ? JoinHoldReason.WorldStarting : JoinHoldReason.None;
+            return m;
+        }
     }
 
     public struct PingMsg

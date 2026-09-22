@@ -159,6 +159,22 @@ Ask the mesh for a shared simulation scope by key, creating its containers from 
 
 Like every other control-plane write this is fire and forget: the answer is the [`Scopes`](#scopes) row, which appears on this process (and on every other) once the orchestrator has applied it. Poll it with [`ControlPlaneExtensions.FindScope`](/docs/reference/control-plane/control-plane-extensions#findscope) and ask whether it can be entered with [`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready).
 
+### SetScopeState [#setscopestate]
+
+```csharp
+void SetScopeState(string scopeKey, string state);
+```
+
+Move a scope's lifecycle state on ([`ScopeState`](/docs/reference/control-plane/scope-state)). The orchestrator's idle sweep is the single writer of the machine; nothing else in a mesh should call it. See `docs/scope-lifecycle.md`.
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
+A worker reporting that it finished the step the scope is in for one of its containers: the checkpoint before a retire, or the restore after a re-activation ([`ScopePhase`](/docs/reference/control-plane/scope-phase)). The orchestrator waits for one ack per container before taking the next step.
+
 ### RemoveScope [#removescope]
 
 ```csharp

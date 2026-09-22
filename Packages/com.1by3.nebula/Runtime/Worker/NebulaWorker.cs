@@ -48,6 +48,13 @@ namespace Nebula
         /// (<c>-nebula-persistence-mode off</c>, or no store handed to <see cref="Initialize"/>).
         /// </summary>
         public NebulaPersistence Persistence { get; private set; }
+
+        /// <summary>
+        /// This worker's half of the scope lifecycle: the idle clock of the scope parts it owns, the retire
+        /// sequence for a scope the orchestrator is retiring, and the restore acknowledgement a restored scope
+        /// waits on. See <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        public WorkerScopeLifecycle ScopeLifecycleAgent => _scopeLifecycle ??= new WorkerScopeLifecycle(this);
         public string WorkerId { get; private set; }
         /// <summary>This start of the process (<see cref="HelloMsg.Incarnation"/>), so peers can tell a restart from a reconnect.</summary>
         public uint Incarnation { get; private set; }
@@ -191,6 +198,7 @@ namespace Nebula
         private float _nextUnownedWarning;
         private NebulaGameMode _gameMode;
         private WorkerTelemetry _telemetry;
+        private WorkerScopeLifecycle _scopeLifecycle;
         /// <summary>What this worker reports to the dashboard's World map; null when telemetry is off (see <see cref="WorkerTelemetry.Create"/>).</summary>
         public WorkerTelemetry Telemetry => _telemetry;
         private readonly ContainerCostMeter _costMeter = new ContainerCostMeter();
@@ -475,16 +483,29 @@ namespace Nebula
             var c = ContainerRegistry.GetRuntime(id);
             if (c == null || !c.IsOwnedBy(WorkerId)) return false;
             if (!_registered || !ControlPlane.IsConnected) return false;
+            EmptyContainer(c);
+            ControlPlane.RemoveContainer(c.ContainerId);
+            return true;
+        }
+
+        /// <summary>
+        /// Despawn everything this worker is authoritative for inside <paramref name="container"/>, keeping the
+        /// records of persistent entities (they come back when the box is asked for again) and losing everything
+        /// else. The contents half of <see cref="ReleaseRuntimeContainer"/>, split out because the scope lifecycle
+        /// empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every
+        /// part has reported its checkpoint done (<c>docs/scope-lifecycle.md</c>).
+        /// </summary>
+        public void EmptyContainer(Container container)
+        {
+            if (container == null) return;
             _contentsScratch.Clear();
-            _contentsScratch.AddRange(c.Entities);
+            _contentsScratch.AddRange(container.Entities);
             foreach (var e in _contentsScratch)
             {
                 if (e == null || !e.HasAuthority) continue;
                 Despawn(e, keepPersisted: e.Persistent != null);
             }
             _contentsScratch.Clear();
-            ControlPlane.RemoveContainer(c.ContainerId);
-            return true;
         }
 
         /// <summary>Worker id for a worker index: this worker, or a connected peer. Dynamic containers derive their owner through this.</summary>
@@ -543,6 +564,7 @@ namespace Nebula
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
             if (_registered) _telemetry?.Update(this);
+            if (_registered) ScopeLifecycleAgent.Update();
             ExpireSessions();
             if (_registered && Time.unscaledTime >= _nextScenePass)
             {

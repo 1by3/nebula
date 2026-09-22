@@ -84,6 +84,8 @@ namespace Nebula
             /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
             public JoinState Join;
             public ushort JoinEstimate;
+            /// <summary>Why the join is being held, as the client was last told (<see cref="JoinHoldReason"/>).</summary>
+            public JoinHoldReason JoinReason;
             public float NextSpawnAttempt;
             /// <summary>
             /// When the gateway first found itself unable to place this client's pawn (no record, or a record
@@ -1250,17 +1252,20 @@ namespace Nebula
         /// orchestrator published for this worker host (<see cref="IWorkerHost.TypicalBootSeconds"/>, seeded as the
         /// <see cref="MeshSettings.BootSeconds"/> mesh setting), so the game can show "world starting, about N s".
         /// </summary>
-        private void SendJoinStatus(ClientConn c, JoinState state)
+        private void SendJoinStatus(ClientConn c, JoinState state, JoinHoldReason reason = JoinHoldReason.None)
         {
             ushort estimate = state == JoinState.Starting ? (ushort)Mathf.Clamp(ControlPlane.GetSettingInt(MeshSettings.BootSeconds, 0), 0, ushort.MaxValue) : (ushort)0;
-            if (c.Join == state && c.JoinEstimate == estimate) return;
+            if (state != JoinState.Starting) reason = JoinHoldReason.None;
+            else if (reason == JoinHoldReason.None) reason = JoinHoldReason.WorldStarting;
+            if (c.Join == state && c.JoinEstimate == estimate && c.JoinReason == reason) return;
             c.Join = state;
             c.JoinEstimate = estimate;
+            c.JoinReason = reason;
             _writer.Reset();
-            new JoinStatusMsg { State = state, EstimatedSeconds = estimate }.Write(_writer);
+            new JoinStatusMsg { State = state, EstimatedSeconds = estimate, Reason = reason }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             if (state == JoinState.Starting)
-                NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting for the world to start" + (estimate > 0 ? $" (about {estimate} s)" : ""));
+                NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting ({reason})" + (estimate > 0 ? $", about {estimate} s" : ""));
         }
 
         // ---------------------------------------------------------------------------------------- authentication
@@ -1541,6 +1546,14 @@ namespace Nebula
                 ReserveCoordinatedSpawn(c, reserved, c.SpawnContainer);
                 return;
             }
+            // A scope that is retiring or restoring admits nobody, whatever its lease rows say: the hold is what
+            // makes "all parts restore before admission" true from the client's point of view (docs/scope-lifecycle.md).
+            if (!ScopeLifecycle.Admits(ControlPlane, c.ScopeKey, out var holdReason) && holdReason != JoinHoldReason.ScopeNotReady)
+            {
+                SendJoinStatus(c, JoinState.Starting, holdReason);
+                NebulaLog.Debugf($"scope '{c.ScopeKey}' is {holdReason}; holding the join of client {c.ClientId}");
+                return;
+            }
             // Any container with an active lease whose worker we are connected to.
             var candidates = new List<Container>();
             CollectSpawnCandidates(ContainerRegistry.All, candidates, c.ScopeKey);
@@ -1550,7 +1563,7 @@ namespace Nebula
                 // Nothing to spawn into: with MinWorkers at 0 this is the normal first join after an idle period.
                 // The client is held rather than dropped, the orchestrator sees the pending join on the next
                 // heartbeat and boots a worker, and this retry (every 3 s) places the player with no reconnect.
-                SendJoinStatus(c, JoinState.Starting);
+                SendJoinStatus(c, JoinState.Starting, c.ScopeKey.Length == 0 ? JoinHoldReason.WorldStarting : JoinHoldReason.ScopeNotReady);
                 NebulaLog.Debugf(c.ScopeKey.Length == 0
                     ? $"no container available to spawn client {c.ClientId} yet; holding the join (world starting)"
                     : $"scope '{c.ScopeKey}' has no container with a live owner yet; holding the join of client {c.ClientId}");

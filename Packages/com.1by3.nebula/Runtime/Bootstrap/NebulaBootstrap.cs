@@ -412,6 +412,7 @@ namespace Nebula
             cfg.PersistenceMode = CommandLine.Get("nebula-persistence-mode", cfg.PersistenceMode);
             cfg.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", cfg.PersistenceLocalFile);
             cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
+            cfg.ScopeIdleRetireSeconds = CommandLine.GetFloat("nebula-scope-idle-retire", cfg.ScopeIdleRetireSeconds);
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
             cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);

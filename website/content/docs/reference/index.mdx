@@ -113,6 +113,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
+| [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
 
 ## Client
@@ -207,13 +208,17 @@ Register processes and share container assignments and settings through the cont
 | [MemoryControlPlaneStorage](/docs/reference/control-plane/memory-control-plane-storage) | Class. Keeps nothing: the control plane starts empty on every orchestrator run. |
 | [MeshSettings](/docs/reference/control-plane/mesh-settings) | Static class. Mesh-wide settings Nebula itself writes, in the same key/value channel the game uses (IControlPlane.Settings). |
 | [RemoteControlPlane](/docs/reference/control-plane/remote-control-plane) | Class. IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address. |
+| [ScopeAck](/docs/reference/control-plane/scope-ack) | Class. One worker's acknowledgement that it finished a lifecycle step for one part of a scope. |
 | [ScopeActivationRequest](/docs/reference/control-plane/scope-activation-request) | Class. What a caller asks for when it wants a scope to exist. |
 | [ScopeDefinition](/docs/reference/control-plane/scope-definition) | Class. What a scope is made of: the containers to bring into being and how their occupants see the public world. |
 | [ScopeInfo](/docs/reference/control-plane/scope-info) | Class. A shared simulation scope the mesh has been asked to bring into being: the opaque key that names it, the definition it was activated from, and the containers that now exist for it. |
 | [ScopeJson](/docs/reference/control-plane/scope-json) | Static class. The scope row and the scope definition as JSON, inside the control-plane document and the activation op. |
 | [ScopeKeys](/docs/reference/control-plane/scope-keys) | Static class. How a scope key becomes the ids every role agrees on. |
 | [ScopeKind](/docs/reference/control-plane/scope-kind) | Static class. The shapes a ScopeDefinition can take. |
+| [ScopeLifecycle](/docs/reference/control-plane/scope-lifecycle) | Static class. The scope lifecycle's pure parts: how idle age and occupancy are aggregated from a scope's parts, when a scope should retire, and whether a client may be admitted to it. |
 | [ScopePart](/docs/reference/control-plane/scope-part) | Class. One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates. |
+| [ScopePhase](/docs/reference/control-plane/scope-phase) | Static class. What a worker has finished doing to one part of a scope (ScopeAck). |
+| [ScopeRetireContext](/docs/reference/control-plane/scope-retire-context) | Struct. What the retire policy is told about a scope. |
 | [ScopeState](/docs/reference/control-plane/scope-state) | Static class. The states a ScopeInfo row can be in. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
@@ -286,9 +291,10 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [InterestResyncMsg](/docs/reference/protocol/interest-resync-msg) | Struct. Worker -\> gateway: the last InterestSubscribeMsg could not be applied (wrong base sequence, or the result did not verify). |
 | [InterestSubscribeFlags](/docs/reference/protocol/interest-subscribe-flags) | Enum. Lists the supported interest subscribe flags values. |
 | [InterestSubscribeMsg](/docs/reference/protocol/interest-subscribe-msg) | Struct. Gateway -\> worker: the set of regions this gateway wants entities from. |
+| [JoinHoldReason](/docs/reference/protocol/join-hold-reason) | Enum. Why a join is being held in JoinState.Starting. |
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
-| [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown). |
+| [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |

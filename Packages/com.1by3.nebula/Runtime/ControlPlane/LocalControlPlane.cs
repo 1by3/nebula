@@ -22,7 +22,14 @@ namespace Nebula
         private bool _dirty;
 
         public bool IsConnected { get; private set; }
-        public DateTime Now => DateTime.UtcNow;
+        /// <summary>
+        /// The clock every row is stamped with. A seam, not a setting: the lifecycle's idle age is measured in
+        /// lease-row ages, so a test that has to age a scope by minutes drives this instead of waiting
+        /// (<c>docs/scope-lifecycle.md</c> D7). Defaults to the wall clock and nothing in Nebula changes it.
+        /// </summary>
+        internal Func<DateTime> Clock = () => DateTime.UtcNow;
+
+        public DateTime Now => Clock();
         public event Action Changed;
         public IReadOnlyList<WorkerInfo> Workers => _workers;
         public IReadOnlyList<LeaseInfo> Leases => _leases;

@@ -56,6 +56,8 @@ namespace Nebula
         private readonly Dictionary<string, float> _leasedSince = new Dictionary<string, float>();
         /// <summary>Containers whose records have been asked for, so a lease that stays put is loaded once.</summary>
         private readonly HashSet<string> _loadRequested = new HashSet<string>();
+        /// <summary>Containers whose load came back and was judged, and how many entities each one brought back (see <see cref="ContainerRestored"/>).</summary>
+        private readonly Dictionary<string, int> _restoreComplete = new Dictionary<string, int>();
         /// <summary>Records held back because their saver may still hand the entity over; re-judged after another grace.</summary>
         private readonly Dictionary<string, PersistedEntityRecord> _waiting = new Dictionary<string, PersistedEntityRecord>();
         private readonly Dictionary<string, float> _waitingUntil = new Dictionary<string, float>();
@@ -114,6 +116,45 @@ namespace Nebula
 
         /// <summary>An entity was brought back from the store and spawned on this worker.</summary>
         public event Action<NetworkIdentity> EntityRestored;
+
+        /// <summary>
+        /// Every persisted record of a container this worker has just gained has been read and dealt with: the
+        /// container id, and how many entities were actually brought back (0 when there was nothing saved). Raised
+        /// once per lease, on the main thread, after the grace period and the load. This is the seam the scope
+        /// lifecycle waits on before a restored scope admits clients (<c>docs/scope-lifecycle.md</c>); NEB-242
+        /// exposes it to games as <c>OnContainerRestored</c>.
+        /// </summary>
+        public event Action<string, int> ContainerRestored;
+
+        /// <summary>The container's records have been read and restored since this worker gained its lease.</summary>
+        public bool IsContainerRestored(string containerId) => !string.IsNullOrEmpty(containerId) && _restoreComplete.ContainsKey(containerId);
+
+        /// <summary>How many entities that restore brought back; 0 when it has not finished or there was nothing saved.</summary>
+        public int RestoredCountFor(string containerId) =>
+            !string.IsNullOrEmpty(containerId) && _restoreComplete.TryGetValue(containerId, out int n) ? n : 0;
+
+        /// <summary>
+        /// Save every authoritative persistent entity in <paramref name="containerId"/> right now, whatever the
+        /// checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence:
+        /// the saves are issued here and <see cref="IPersistenceStore.WhenWritten"/> is the barrier that says they
+        /// reached the store. Does not despawn anything.
+        /// </summary>
+        public int CheckpointContainer(string containerId)
+        {
+            if (string.IsNullOrEmpty(containerId) || _store == null) return 0;
+            int saved = 0;
+            for (int i = 0; i < _tracked.Count; i++)
+            {
+                var pe = _tracked[i];
+                var identity = pe != null ? pe.Identity : null;
+                if (identity == null || !identity.IsSpawned || !identity.HasAuthority) continue;
+                var container = identity.Container;
+                if (container == null || !string.Equals(container.ContainerId, containerId, StringComparison.Ordinal)) continue;
+                SaveNow(identity);
+                saved++;
+            }
+            return saved;
+        }
 
         /// <summary>The live entity saving under <paramref name="key"/> in this process, or null.</summary>
         public NetworkIdentity Find(string key)
@@ -391,7 +432,7 @@ namespace Nebula
 
         private void OnContainerRecords(string containerId, IReadOnlyList<PersistedEntityRecord> records)
         {
-            if (records == null || records.Count == 0) return;
+            if (records == null || records.Count == 0) { CompleteRestore(containerId, 0); return; }
             var container = ContainerRegistry.FindById(containerId);
             if (container == null || !container.IsOwnedBy(_worker.WorkerId)) return; // the lease moved on while we asked
             int restored = 0;
@@ -414,6 +455,20 @@ namespace Nebula
                 }
             }
             if (restored > 0) NebulaLog.Info($"persistence: restored {restored} persisted entities into {containerId}");
+            CompleteRestore(containerId, restored);
+        }
+
+        /// <summary>
+        /// The container's records have been read and judged. Records held back for a handover that may still
+        /// arrive (<see cref="RestorePlan.Wait"/>) do not delay this: the restore of what is saved has happened,
+        /// and a record that is waiting is one the mesh is about to hand over anyway.
+        /// </summary>
+        private void CompleteRestore(string containerId, int restored)
+        {
+            if (string.IsNullOrEmpty(containerId) || _restoreComplete.ContainsKey(containerId)) return;
+            _restoreComplete[containerId] = restored;
+            try { ContainerRestored?.Invoke(containerId, restored); }
+            catch (Exception e) { NebulaLog.Error($"ContainerRestored handler threw: {e}"); }
         }
 
         private RestorePlan Judge(PersistedEntityRecord record, float now)
@@ -515,7 +570,7 @@ namespace Nebula
                 {
                     if (!_leasedSince.ContainsKey(c.ContainerId)) _leasedSince[c.ContainerId] = now;
                 }
-                else if (_leasedSince.Remove(c.ContainerId)) _loadRequested.Remove(c.ContainerId);
+                else if (_leasedSince.Remove(c.ContainerId)) { _loadRequested.Remove(c.ContainerId); _restoreComplete.Remove(c.ContainerId); }
             }
         }
 
