@@ -46,7 +46,9 @@ planner scenarios (about 12 ms together) stay in it.
 | S2 | Burst: 150 clients join at once, no ramp | synthetic | nobody refused; one session each; one pawn each | covered — `ABurstOfJoinsIsAdmittedWithoutRejectingAnyoneOrLosingASession` |
 | S3 | Many scopes: 4 keyed scopes of 20 clients plus 20 public clients | synthetic | zero cross-scope leaks; per-scope bandwidth recorded | covered — `ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything` |
 | S4 | Worker kill: a worker dies with clients watching its container | synthetic | restore ≤ 2 s per container; zero duplicate entities; nobody disconnected; loss ≤ the NEB-224 bound | covered — `ScaleFailureTests.AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities`; the loss bound itself is conformance scenario 10 |
-| S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: **not recovered** | covered, and the hard-kill half is a pinned gap (D7a) |
+| S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: every session reclaimed, ≤ 9 s | covered — `ScaleFailureTests.AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale`; D7a closed by NEB-229, see `docs/gateway-fleet-audit.md` finding 4 |
+| | the same, fanned out (3 gateways, 2 workers, 18 clients, 6 doomed) | synthetic | reclaim bound must hold regardless of how many claimants queue behind the same dead owner | covered — `ScaleGatewayAuditTests.EveryClientOnAHardKilledGatewayReclaimsWithinTheDocumentedBoundRegardlessOfFleetSize` |
+| | no authoritative state lost, same pawn after reclaim | synthetic | worker's pawn count and NetId unchanged across the kill; reclaiming client sees the same pawn | covered — `ScaleGatewayAuditTests.AHardGatewayKillLosesNoAuthoritativeStateAndTheReclaimingClientSeesTheSamePawn` |
 | S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (D7c) |
 | S7 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
 | S8 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
@@ -57,7 +59,8 @@ planner scenarios (about 12 ms together) stay in it.
 | Threshold | Value | Derivation |
 |---|---|---|
 | Worker-kill loss | `PersistenceCheckpointSeconds + MinSaveIntervalSeconds + ceil(N/64)×framePeriod + storeLatency` ≈ **5.6 s** at the defaults | **Derived** from the scheduler in `Runtime/Persistence/NebulaPersistence.cs`; see `docs/persistence-durability.md` D2. Asserted by conformance scenario 10, which reuses the `NebulaPersistence.Now` clock seam; this suite does not re-derive it. |
-| Gateway reclaim | **≤ 10 s** | **Derived**: `GatewaySessionAdmission` gives a coordinated welcome a `CoordinationDeadline` of 10 s. Past it the join is refused, so anything slower is not a reclaim at all. The measured abrupt-stop reclaim is 0.05 s. |
+| Gateway reclaim (abrupt stop) | **≤ 10 s** | **Derived**: `GatewaySessionAdmission` gives a coordinated welcome a `CoordinationDeadline` of 10 s. Past it the join is refused, so anything slower is not a reclaim at all. The measured abrupt-stop reclaim is 0.05 s. |
+| Gateway reclaim (hard kill) | **≤ 9 s** | **Derived + measured** (NEB-229, `docs/gateway-fleet-audit.md` finding 4): `WorkerHeartbeatSeconds` (1 s) + `GatewayStaleAfterSeconds` (5 s) + coordination retry/round trip ≈ 6.25 s derived; measured 4.73–5.02 s across single-pair and fan-out runs; threshold set with ~1.9× headroom. |
 | Restore per container | **≤ 2 s** | **Provisional, measured.** The synthetic restore is an in-process re-spawn (measured 0.31 s per container, of which 0.3 s is the fixture's own settle after a focus hint), so this budget has headroom for a scene load it has never seen. A real Unity number needs the tier-D run. |
 | Control-plane stall | **≤ 5 s** | **Provisional, measured** (0.003 s in process). What is *not* provisional is the assertion beside it: no client is disconnected and no session changes, because a gateway's client links do not depend on the control plane. |
 | Per-client bandwidth | **< 512 kB/s** | **Provisional.** It is a property of this fixture's world (how many entities sit inside one interest window), not a production budget. It exists to catch an interest regression that starts sending a client the world; measured 6.4 kB/s. |
@@ -111,7 +114,7 @@ looks.
 
 ## D6. Measured on this machine
 
-The numbers below are one run of the synthetic layer (12 scenarios, **1 m 19 s** wall clock) on a Windows
+The numbers below are one run of the synthetic layer (14 scenarios, **1 m 30 s** wall clock) on a Windows
 development machine. They are what the CSVs held; treat absolute values as machine-dependent.
 
 | Scenario | Result |
@@ -121,7 +124,8 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | many-scopes | 4 scopes × 20 clients + 20 public; 8.5 kB/s per scoped client, 5.7 kB/s per public client, **0 cross-scope leaks** |
 | worker-kill | 1 container orphaned; the gateways dropped its entities in 0.03 s; whole again in 1.08 s; 0 duplicate spawns; 40 clients, 40 pawns; 34 orphan updates (see below) |
 | gateway-stop (abrupt) | 12/12 sessions reclaimed on the surviving gateway in 0.05 s, same session ids |
-| gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7a |
+| gateway-kill (hard) | **4/4 reclaimed** in 4.73–4.76 s (three runs); fan-out variant (18 clients, 3 gateways, 6 doomed) 6/6 reclaimed in 5.02 s — D7a closed, see `docs/gateway-fleet-audit.md` finding 4 |
+| gateway-kill (state) | 4 pawns before and after a hard kill and reclaim, same `NetId`, **0 duplicates** |
 | control-plane-restart | 4 leases back in 0.003 s, 0 disconnected, 0 session changes |
 | control-plane-cold-restart | gateway re-registered; **0 workers, 0 leases** — see D7b |
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
@@ -136,21 +140,20 @@ one counts it, which is the whole point of the counter).
 
 ## D7. Gaps this suite measures rather than hides
 
-Two of the issue's scenarios depend on work that is not done (NEB-227, control-plane availability; NEB-229, the
-gateway audit). Both are **built against what exists**, and the current behaviour is pinned by a test that will
-fail when it changes, so the issue that closes the gap is told to come back here.
+One of the issue's scenarios still depends on work that is not done (NEB-227, control-plane availability). It is
+**built against what exists**, and the current behaviour is pinned by a test that will fail when it changes, so
+the issue that closes the gap is told to come back here.
 
-**D7a. A hard gateway loss does not reclaim its sessions.** `GatewaySessionDirectory` grants a takeover only
-when the previous gateway *releases* its claim. A gateway that is stopped cleanly does release (its `Dispose`
-sends a `release` for every session it holds), and the measured reclaim is 0.05 s. A gateway that is *killed*
-never does: every claim on it stays pending for 15 s, is re-pended by the next attempt, and nothing evicts it —
-a gateway that has stopped heartbeating is not treated as gone. Every reclaim is therefore refused after the
-10 s coordination deadline with `the other session could not be disconnected`. There is no operator workaround
-in the code today: `release` is matched on the owning gateway's key **and** its per-connection claim id
-(`GatewaySessionDirectory.Matches`), which nobody outside the dead process knows, and a drain request is read
-by a gateway that is still ticking — which this one is not.
-`AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims` asserts this **negative** and says
-in its failure message that closing the gap means updating this document and turning the assertion around.
+**D7a. Closed by NEB-229.** A hard gateway loss used to strand its sessions: `GatewaySessionDirectory` granted a
+takeover only when the previous gateway *released* its claim, and a killed gateway never does — every claim on it
+stayed pending for 15 s, was re-pended by the next attempt, and nothing evicted it, because a gateway that had
+stopped heartbeating was not treated as gone. NEB-229 wires the control plane's existing gateway heartbeat
+(`GatewayInfo.LastHeartbeat`, already used by the orchestrator to evict a stale gateway from the fleet) into
+`GatewaySessionDirectory`: a claim against an owner whose heartbeat is stale (`GatewayStaleAfterSeconds`,
+5 s default) is evicted and granted to the waiting claimant instead of parked or re-parked. Measured hard-kill
+reclaim: 4.73–5.02 s across single-pair and fan-out runs, against a 9 s threshold
+(`ScaleThresholds.HardKillGatewayReclaimSeconds`). `AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale`
+(formerly the pinned negative test) now asserts the positive. Full audit: `docs/gateway-fleet-audit.md`.
 
 **D7b. A control plane that comes back empty loses its workers.** `NebulaGateway.OnControlPlaneChanged`
 re-registers the gateway when it notices its row has gone. `NebulaWorker` has no such path: it registers once
@@ -229,7 +232,7 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 ## D11. What was verified, and what was not
 
-The synthetic layer was run in full and is green: **12 scenarios, 0 failed, 1 m 19 s**. Its numbers are in D6.
+The synthetic layer was run in full and is green: **14 scenarios, 0 failed, 1 m 30 s**. Its numbers are in D6.
 
 The tier-D runner was verified in three ways: `-DryRun` (reports the missing player build, prints the plan and
 the port state, exits 0), `-Synthetic` (runs the other layer and reports its wall clock, exits 0), and a real run

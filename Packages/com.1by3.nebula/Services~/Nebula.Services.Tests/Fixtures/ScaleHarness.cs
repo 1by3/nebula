@@ -26,6 +26,17 @@ public static class ScaleThresholds
     public const double GatewayReclaimSeconds = 10.0;
 
     /// <summary>
+    /// Wall-clock seconds from a hard gateway kill (no Dispose, no release: D7a / NEB-229) to every one of its
+    /// clients holding its old session again on another gateway. Derived: <c>NebulaConfig.WorkerHeartbeatSeconds</c>
+    /// (1 s, how stale the last-seen heartbeat can already be when the kill happens) +
+    /// <c>LocalControlPlane.GatewayStaleAfterSeconds</c> (5 s, how long a heartbeat may go missing before the
+    /// gateway's row is treated as gone) + coordination (retry cadence and one claim round trip) ≈ 6.25 s,
+    /// with headroom for a loaded CI machine. See docs/scale-suite.md D2/D6 and docs/gateway-fleet-audit.md
+    /// finding 1 for the measured number this threshold was set from.
+    /// </summary>
+    public const double HardKillGatewayReclaimSeconds = 9.0;
+
+    /// <summary>
     /// Wall-clock seconds from a worker's death to every orphaned container being owned again and every client
     /// holding its replicas again. Per container, so a mesh scales the budget with its container count.
     /// Provisional: the restore here is an in-process re-spawn, not a Unity scene load.

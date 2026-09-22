@@ -269,6 +269,16 @@ Measured, repeatable evidence of what a mesh does under load and when something 
 - **Test fixtures** (`Services~/Nebula.Services.Tests/Fixtures/`): `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway(hard)`, `RestartControlPlane(snapshot)`, `FakeWorker.SpawnIntoRequestedContainer`, and the new `ScaleHarness`/`ScaleWorld` helpers.
 - **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there is no protocol compatibility window at all — a gateway requires an exact version match — so a rolling upgrade may replace processes at one protocol version but may not span two.
 
+#### Gateway fleet operations gap audit (NEB-229)
+
+Closes the hard-gateway-kill session-reclaim gap the scale suite pinned (D7a). Design record:
+`docs/gateway-fleet-audit.md`; user page: [Connecting clients](https://nebula.1by3.co/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway).
+
+- **A gateway that has stopped heartbeating is now treated as gone by session coordination.** `GatewaySessionDirectory` (`Runtime/ControlPlane/GatewaySessionCoordination.cs`) takes an optional gateway-liveness predicate; `LocalControlPlane` wires it to the control plane's existing `GatewayInfo.LastHeartbeat` (a new `GatewayStaleAfterSeconds`, default 5 s, the same cutoff a worker row uses). A claim against an owner already confirmed gone is granted immediately instead of parked for the 15 s pending window; a claim already pending re-checks the owner's liveness on every retry, so an owner that dies mid-wait is evicted as soon as it goes stale. An incarnation check keeps a merely slow-but-alive owner from ever being evicted.
+- **Measured, not assumed:** a hard-killed gateway's sessions now reclaim in 4.7–5.0 s across single-pair and fan-out runs (was: never, refused after the 10 s coordination deadline). `ScaleThresholds.HardKillGatewayReclaimSeconds = 9.0 s` is set from the measurement with headroom. `ScaleFailureTests`' pinned negative test now asserts the positive; new `ScaleGatewayAuditTests.cs` adds a higher-fan-out measurement and asserts directly that a hard kill loses no authoritative worker state (same `NetId`, zero duplicate pawns).
+- **Everything else in the audit — load balancing, drain, gateway replacement, client-side reconnect behaviour — was already correct** and is recorded closed with its evidence in `docs/gateway-fleet-audit.md`; nothing else changed. Nebula still does not run a load balancer in front of the gateway fleet; that boundary in `website/CONTENT_GUIDE.md` is restated, not changed.
+- No wire format or protocol version change.
+
 #### Lifecycle hooks for materialization and dematerialization (NEB-242)
 
 Game callbacks at the moments the mesh brings a container or a scope to life, or puts it to sleep, with the ordering a game needs to seed from — or collapse into — its own state. Design record: `docs/lifecycle-hooks.md`; user page: [Lifecycle hooks](https://nebula.1by3.co/docs/guides/lifecycle-hooks). Conformance scenario 11.

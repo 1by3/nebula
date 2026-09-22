@@ -174,6 +174,67 @@ public class GatewaySessionDirectoryTests
         Assert.That(directory.Handle(request).Session.Worker, Is.EqualTo("w2"));
     }
 
+    // --------------------------------------------------------------------------- NEB-229 / D7a: stale-owner eviction
+
+    [Test]
+    public void AClaimIsGrantedImmediatelyWhenTheOwningGatewayIsAlreadyStale()
+    {
+        bool gatewayAlive = false; // "a" has already stopped heartbeating before "b" ever asks
+        var directory = new GatewaySessionDirectory(_ => true, gatewayAlive: _ => gatewayAlive);
+        var first = Claim("a", "first"); directory.Handle(first);
+        var second = Claim("b", "second", 2);
+        var reply = directory.Handle(second);
+        Assert.That(reply.Status, Is.EqualTo("granted"), "a claim on a gateway that is confirmed gone must not wait out the 15 s pending window");
+        Assert.That(reply.Session!.Gateway, Is.EqualTo("b"));
+    }
+
+    [Test]
+    public void APendingClaimIsGrantedAsSoonAsItsOwnerIsConfirmedStale()
+    {
+        bool gatewayAlive = true;
+        var directory = new GatewaySessionDirectory(_ => true, gatewayAlive: _ => gatewayAlive);
+        var first = Claim("a", "first"); directory.Handle(first);
+        var second = Claim("b", "second", 2);
+        Assert.That(directory.Handle(second).Status, Is.EqualTo("pending"), "the owner was still alive when the claim arrived");
+        gatewayAlive = false; // "a" is killed while "b" is waiting
+        var retry = directory.Handle(second);
+        Assert.That(retry.Status, Is.EqualTo("granted"), "a retry must not wait for the 15 s pending window once the owner is confirmed gone");
+        Assert.That(retry.Session!.Gateway, Is.EqualTo("b"));
+    }
+
+    [Test]
+    public void AClaimStillWaitsWhenTheOwningGatewayIsMerelySlowNotGone()
+    {
+        var directory = new GatewaySessionDirectory(_ => true, gatewayAlive: _ => true);
+        var first = Claim("a", "first"); directory.Handle(first);
+        var second = Claim("b", "second", 2);
+        Assert.That(directory.Handle(second).Status, Is.EqualTo("pending"), "a merely-slow owner must not be evicted; only a confirmed-gone one is");
+    }
+
+    [Test]
+    public void ADifferentIncarnationUnderTheSameGatewayIdIsTreatedAsGone()
+    {
+        // The owner's key is "gw#1" (incarnation 1). By the time "b" claims, the control plane reports "gw" is
+        // back but as incarnation 2 (a restarted process under the same id): the process that made the original
+        // claim no longer exists, so its claim is evictable even though something named "gw" is heartbeating.
+        var directory = new GatewaySessionDirectory(_ => true, gatewayAlive: key => key != "gw#1");
+        var first = Claim("gw#1", "first"); directory.Handle(first);
+        var second = Claim("b", "second", 2);
+        Assert.That(directory.Handle(second).Status, Is.EqualTo("granted"));
+    }
+
+    [Test]
+    public void ANullGatewayAlivePredicateNeverEvictsAnOwner()
+    {
+        // The pre-NEB-229 default: nobody wired a liveness check, so a claim on a live-looking owner waits exactly
+        // as it always did. This is what keeps every caller that constructs the directory without the new
+        // parameter compiling and behaving unchanged.
+        var directory = new GatewaySessionDirectory(_ => true);
+        var first = Claim("a", "first"); directory.Handle(first);
+        var second = Claim("b", "second", 2);
+        Assert.That(directory.Handle(second).Status, Is.EqualTo("pending"));
+    }
+
     [Test]
     public void EnvelopePreservesEveryBitOfSessionAndContainerIds()
     {
