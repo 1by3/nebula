@@ -160,6 +160,22 @@ namespace Nebula
             _callbacks.Enqueue(() => onLoaded(result));
         }
 
+        public void CountRecords(string scopeKey, string containerId, Action<int> onCounted)
+        {
+            if (onCounted == null) return;
+            string scope = scopeKey ?? "";
+            string container = containerId ?? "";
+            int count = 0;
+            foreach (var kv in _records)
+            {
+                var r = kv.Value;
+                if (!string.Equals(r.ScopeKey ?? "", scope, StringComparison.Ordinal)) continue;
+                if (container.Length != 0 && !string.Equals(r.ContainerId ?? "", container, StringComparison.Ordinal)) continue;
+                count++;
+            }
+            _callbacks.Enqueue(() => onCounted(count));
+        }
+
         public void Clear()
         {
             if (_records.Count == 0 && !_fileDirty) return;

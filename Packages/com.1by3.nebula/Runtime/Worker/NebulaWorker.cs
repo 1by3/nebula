@@ -359,6 +359,9 @@ namespace Nebula
             if (persistenceStore != null)
             {
                 Persistence = new NebulaPersistence(this, config, persistenceStore);
+                // A scope's parts do not restore before the game has been told the scope is coming to life
+                // (NebulaLifecycle.OnScopeActivating); the gate is free when nothing is listening.
+                Persistence.RestoreGate = ScopeLifecycleAgent.MayRestore;
                 NebulaLog.Info($"persistence: {persistenceStore.Backend} store, checkpoint every {config.PersistenceCheckpointSeconds:0.#}s");
             }
             var boot = NebulaBootstrap.Instance;
