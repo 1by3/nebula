@@ -219,6 +219,9 @@ namespace Nebula
         public static Container Resolve(ContainerRef r) => r.IsRuntime ? (RuntimeById.TryGetValue(r.RuntimeId, out var c) ? c : null) : r.IsStatic && r.Index < All.Count ? All[r.Index] : null;
         public static IReadOnlyList<Container> InCell(Vector3Int cell) => ByCell.TryGetValue(cell, out var list) ? list : Array.Empty<Container>();
         public static Bounds ToAbsolute(Bounds b) => b;
+        /// <summary>The services hold every box in absolute coordinates already; the scope-frame overload exists so
+        /// code shared with the Unity registry (<see cref="WorkerRegistration"/>) compiles against both.</summary>
+        public static Bounds ToAbsolute(Bounds b, ulong instanceId) => b;
         public static string RuntimeContainerId(ulong id) => "rt_" + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         public static bool IsDynamicId(string id) => id != null && id.IndexOf('#') >= 0;
         public static ulong CarrierNetIdOf(string id) => id != null && id.LastIndexOf('#') is int i && i >= 0 && ulong.TryParse(id.Substring(i + 1), out var n) ? n : 0;
