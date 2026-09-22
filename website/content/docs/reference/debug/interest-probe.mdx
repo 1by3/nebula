@@ -37,7 +37,7 @@ Seconds between lines. One per second is small enough to leave on for hours and 
 public float SlackMeters = 24f;
 ```
 
-Metres past `InterestRadius + InterestExitMargin` a replica may sit before it is counted in `beyond`. Not zero: a replica is measured against a pose that is one interpolation delay old and the gateway evaluates at `InterestEvalHz`, so a few metres of overshoot is correct behaviour and only a persistent count is a bug.
+Meters past `InterestRadius + InterestExitMargin` a replica may sit before it is counted in `beyond`. Not zero: a replica is measured against a pose that is one interpolation delay old and the gateway evaluates at `InterestEvalHz`, so a few meters of overshoot is correct behavior and only a persistent count is a bug.
 
 ### SlackSeconds [#slackseconds]
 
@@ -45,7 +45,7 @@ Metres past `InterestRadius + InterestExitMargin` a replica may sit before it is
 public float SlackSeconds = 1.6f;
 ```
 
-Seconds of the client's own motion added to [`SlackMeters`](#slackmeters). An entity may only leave a set after it has been beyond the exit radius for `InterestLingerSeconds`, the gateway re-evaluates at `InterestEvalHz`, and the pose measured here is an interpolated one a few ticks old. A walking player covers a metre or two in that window and the flat slack absorbs it, but a client in a ship at 60 m/s leaves everything it holds tens of metres behind entirely correctly. Without this the probe reports a leak every time anyone flies.
+Seconds of the client's own motion added to [`SlackMeters`](#slackmeters). An entity may only leave a set after it has been beyond the exit radius for `InterestLingerSeconds`, the gateway re-evaluates at `InterestEvalHz`, and the pose measured here is an interpolated one a few ticks old. A walking player covers a meter or two in that window and the flat slack absorbs it, but a client in a ship at 60 m/s leaves everything it holds tens of meters behind entirely correctly. Without this the probe reports a leak every time anyone flies.
 
 ### Log [#log]
 

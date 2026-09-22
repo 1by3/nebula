@@ -1,6 +1,6 @@
 ---
 title: "InterestSettings"
-description: "The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate)."
+description: "The interest settings, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestSettings.cs)</div>
@@ -9,7 +9,7 @@ description: "The interest knobs, resolved from NebulaConfig and already clamped
 public struct InterestSettings
 ```
 
-The interest knobs, resolved from [`NebulaConfig`](/docs/reference/core/nebula-config) and already clamped into a set of values that work together (see [`Validate`](#validate)). Everything downstream — grid, per-client evaluation, subscription margins, worker publishing — reads this and nothing else, so the standalone gateway and the Unity worker cannot drift apart over what "near" means.
+The interest settings, resolved from [`NebulaConfig`](/docs/reference/core/nebula-config) and already clamped into a set of values that work together (see [`Validate`](#validate)). Everything downstream — grid, per-client evaluation, subscription margins, worker publishing — reads this and nothing else, so the standalone gateway and the Unity worker cannot drift apart over what "near" means.
 
 ## Fields
 
@@ -19,7 +19,7 @@ The interest knobs, resolved from [`NebulaConfig`](/docs/reference/core/nebula-c
 public float Radius;
 ```
 
-Metres a client hears about an entity at, unless the entity's prefab overrides it.
+Meters a client hears about an entity at, unless the entity's prefab overrides it.
 
 ### ExitMargin [#exitmargin]
 
@@ -115,7 +115,7 @@ Most foci one client may have (RTS camera plus owned units, spectators).
 public float HintMaxDistance;
 ```
 
-Metres a client's focus hint may sit from its pawn before it is clamped.
+Meters a client's focus hint may sit from its pawn before it is clamped.
 
 ### HintMaxHz [#hintmaxhz]
 
@@ -209,7 +209,7 @@ The shipped defaults. A game that sets nothing gets these.
 public float ExitRadius { get; }
 ```
 
-Metres an entity must be outside before the linger clock even starts.
+Meters an entity must be outside before the linger clock even starts.
 
 ### SubscribeRadius [#subscriberadius]
 
@@ -217,7 +217,7 @@ Metres an entity must be outside before the linger clock even starts.
 public float SubscribeRadius { get; }
 ```
 
-Metres of regions a gateway subscribes around a focus: the exit radius plus the pre-subscription margin.
+Meters of regions a gateway subscribes around a focus: the exit radius plus the pre-subscription margin.
 
 ### EvalInterval [#evalinterval]
 

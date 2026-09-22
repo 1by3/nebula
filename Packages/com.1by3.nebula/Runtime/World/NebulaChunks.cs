@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Nebula.World
 {
     /// <summary>
-    /// What a game is told about one chunk of a turnkey chunked world.
+    /// What a game is told about one chunk of a chunked world.
     /// Passed by <c>in</c> reference so a content callback that runs for every chunk entering and leaving a role's
     /// window costs no allocation.
     /// </summary>
@@ -53,12 +53,12 @@ namespace Nebula.World
     public delegate void ChunkHandler(in ChunkContext chunk);
 
     /// <summary>
-    /// The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which
+    /// The content-streaming face of a chunked world: one place, on every role, where a game is told which
     /// chunks exist. <see cref="NebulaBootstrap"/> activates it from <see cref="NebulaConfig.ChunkedWorld"/> plus a
     /// <see cref="NebulaConfig.RuntimeWorld"/>; a game supplies content and nothing else.
     /// <para>
     /// Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and
-    /// that is exactly the point: a worker sees the cells it and its neighbours lease, a client sees the containers
+    /// that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers
     /// the gateway told it about (its interest window), and both learn about them through the same two events. A
     /// game's callback therefore never needs to know which role it is running on, nor to poll.
     /// </para>
@@ -179,7 +179,7 @@ namespace Nebula.World
 
         /// <summary>
         /// The deterministic per-chunk seed (<see cref="ChunkContext.Seed"/>). A 64-bit finalizer mix of the packed
-        /// id, so neighbouring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never
+        /// id, so neighboring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never
         /// zero-sensitive: chunk (0,0,0) gets a seed like any other.
         /// </summary>
         public static int SeedOf(ulong id)

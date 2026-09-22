@@ -9,9 +9,9 @@ description: "Opt-in worker-side allocator for a game built on RuntimeGrid: keep
 public sealed class RuntimeGridAllocator
 ```
 
-Opt-in worker-side allocator for a game built on [`RuntimeGrid`](/docs/reference/world/runtime-grid): keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. the origin), re-touches them every tick so a neighbour's owner does not retire them, and retires cells this worker owns once nobody has wanted them for a while and nothing occupies them. This packages the allocation policy that procedural-world games otherwise implement themselves; a game adopting [`RuntimeGrid`](/docs/reference/world/runtime-grid) can use it instead of writing the same logic again.
+Opt-in worker-side allocator for a game built on [`RuntimeGrid`](/docs/reference/world/runtime-grid): keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. the origin), re-touches them every tick so a neighbor's owner does not retire them, and retires cells this worker owns once nobody has wanted them for a while and nothing occupies them. This packages the allocation policy that procedural-world games otherwise implement themselves; a game adopting [`RuntimeGrid`](/docs/reference/world/runtime-grid) can use it instead of writing the same logic again.
 
-Plain C# class, not a `MonoBehaviour`: construct one and call [`Tick`](#tick) from whatever the game already updates every frame (its own `MonoBehaviour`, a worker-side manager, ...). Nothing here is wired in automatically; a game that does not construct one sees no behaviour change.
+With `NebulaConfig.ChunkedWorld` enabled, [`NebulaChunkedWorld`](/docs/reference/world/nebula-chunked-world) constructs and updates the allocator. For a custom allocation workflow, construct this class and call [`Tick`](#tick) from your worker's update loop.
 
 ## Constructors
 

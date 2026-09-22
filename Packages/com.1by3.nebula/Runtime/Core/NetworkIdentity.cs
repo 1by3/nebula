@@ -166,7 +166,7 @@ namespace Nebula
         internal NetworkBehaviour[] SyncBehaviours = Array.Empty<NetworkBehaviour>();
 
         /// <summary>
-        /// Every this many ticks a dirty sync behaviour writes a keyframe instead of a delta, and an unreliable one
+        /// Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one
         /// writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to
         /// late joiners.
         /// </summary>
@@ -176,8 +176,8 @@ namespace Nebula
         public RemoteInterpolator Interpolator { get; internal set; }
 
         /// <summary>
-        /// The <see cref="PersistentEntity"/> on this entity, or null when it is transient. Cached by
-        /// <see cref="Initialize"/>; everything about persistence hangs off it (see <see cref="NebulaPersistence"/>).
+        /// The <see cref="PersistentEntity"/> on this entity, or null when it is transient. Cached during
+        /// initialization; see <see cref="NebulaPersistence"/> for checkpoint and restore behavior.
         /// </summary>
         public PersistentEntity Persistent { get; private set; }
 
@@ -379,7 +379,7 @@ namespace Nebula
             for (int i = 0; i < AllVars.Length; i++) AllVars[i].Read(reader);
         }
 
-        /// <summary>Handover-only state from every behaviour (see <see cref="NetworkBehaviour.WriteHandoverState"/>).</summary>
+        /// <summary>Handover-only state from every behavior (see <see cref="NetworkBehaviour.WriteHandoverState"/>).</summary>
         public void WriteHandoverState(NetworkWriter writer)
         {
             writer.WriteByte((byte)Behaviours.Length);
@@ -395,8 +395,8 @@ namespace Nebula
         private static readonly NetworkReader ChunkReader = new NetworkReader(Array.Empty<byte>());
 
         /// <summary>
-        /// Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is
-        /// logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
+        /// Each behavior reads from a reader bounded to its own chunk, so one that reads too much throws (and is
+        /// logged) instead of eating the next behavior's bytes, and one that reads too little leaves no residue.
         /// </summary>
         /// <summary>True while an incoming handover blob is applied: authority lands right after, so variable writes are the new owner's.</summary>
         public bool ReceivingHandover { get; private set; }
@@ -438,7 +438,7 @@ namespace Nebula
 
         // ---- sync channel ---------------------------------------------------------------------------------
 
-        /// <summary>A keyframe from every sync behaviour: what rides the spawn/handover message.</summary>
+        /// <summary>A keyframe from every sync behavior: what rides the spawn/handover message.</summary>
         public void WriteSyncSnapshot(NetworkWriter writer)
         {
             int at = SyncStateCodec.BeginEnvelope(writer);
@@ -454,7 +454,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Authority, once per tick per delivery class and per destination: the chunks due this tick. A behaviour is
+        /// Authority, once per tick per delivery class and per destination: the chunks due this tick. A behavior is
         /// written when it is dirty, or (unreliable only) when a keyframe is due. The keyframe decision depends only
         /// on the tick and on state that <see cref="ClearDirty"/> advances, so every destination written in the same
         /// tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns
@@ -491,7 +491,7 @@ namespace Nebula
         /// </summary>
         public Container SyncContainer { get; internal set; }
 
-        /// <summary>Non-authoritative copies: hand each chunk to its behaviour. Chunks for unknown indices are skipped.</summary>
+        /// <summary>Non-authoritative copies: hand each chunk to its behavior. Chunks for unknown indices are skipped.</summary>
         public void ReadSyncState(NetworkReader reader, uint tick, Container container)
         {
             SyncContainer = container;
@@ -505,7 +505,7 @@ namespace Nebula
             });
         }
 
-        /// <summary>Present the tick <paramref name="renderTick"/> on every behaviour (ghosts and remote client copies).</summary>
+        /// <summary>Present the tick <paramref name="renderTick"/> on every behavior (ghosts and remote client copies).</summary>
         public void RemoteTick(double renderTick)
         {
             ReplayPendingState();

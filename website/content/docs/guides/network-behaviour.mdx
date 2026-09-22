@@ -53,7 +53,7 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 
 ### Role flags
 
-A process is either a worker (server) or a client, never both. The flags on a behaviour combine the process role with the identity's state:
+A process is either a worker (server) or a client, never both. The flags on a behavior combine the process role with the identity's state:
 
 | Flag | Definition |
 | --- | --- |
@@ -61,7 +61,7 @@ A process is either a worker (server) or a client, never both. The flags on a be
 | `IsClient` | This process is a client. |
 | `IsOwner` | `IsClient` and the identity is the local player. |
 | `HasAuthority` | `IsServer` and this worker simulates the entity right now. |
-| `IsGhost` | `IsServer` and this worker holds a non-authoritative replica driven by a neighbouring worker. |
+| `IsGhost` | `IsServer` and this worker holds a non-authoritative replica driven by a neighboring worker. |
 
 What each process sees for one entity:
 
@@ -74,7 +74,7 @@ What each process sees for one entity:
 
 Check `IsOwner` only for client ownership. On a worker, check `HasAuthority` and read `OwnerClientId`. A server-driven entity has `OwnerClientId == 0` and no owning client.
 
-Convenience accessors on the behaviour forward to the identity: `NetId`, `IsSpawned`, `OwnerClientId`, `Container` and `Identity` itself.
+Convenience accessors on the behavior forward to the identity: `NetId`, `IsSpawned`, `OwnerClientId`, `Container` and `Identity` itself.
 
 ### Lifecycle hooks
 
@@ -85,7 +85,7 @@ All hooks are `virtual` with empty defaults.
 | `OnNetworkSpawn()` | The entity became known to this process: on the spawning worker, on a worker that just received a ghost, and on every client that instantiated it. `IsSpawned` is already true. |
 | `OnGainedAuthority()` | Worker only. This worker became authoritative: right after `OnNetworkSpawn` on the spawning worker, or on the receiving side of a handover after the handed state has been applied. |
 | `NetworkTick(uint tick, float deltaTime)` | Worker only, authoritative entities only, once per tick at 60 Hz. Ghosts and clients never get it. |
-| `OnLostAuthority()` | Worker only. Authority moved to a neighbour. The object stays alive as a ghost. |
+| `OnLostAuthority()` | Worker only. Authority moved to a neighbor. The object stays alive as a ghost. |
 | `OnContainerChanged(Container previous, Container current)` | The identity's container changed. Fires on every process that tracks the entity, including during spawn (with `previous == null`) and whenever the entity crosses a boundary. |
 | `OnNetworkDespawn()` | The entity is about to be destroyed on this process. |
 
@@ -105,10 +105,10 @@ Two more pairs of hooks exist for state that is not a `NetworkVariable`: `WriteH
 A **ghost** is a non-authoritative copy of an entity on another worker. Nebula creates one near a container boundary so the next worker has the entity's state before a handover. On a ghost:
 
 - `HasAuthority` is false and `IsGhost` is true.
-- `NetworkTick` is not called. The pose is driven by the neighbour's `GhostState` stream through an interpolator, one tick behind the simulation tick; any Rigidbody is set kinematic.
+- `NetworkTick` is not called. The pose is driven by the neighbor's `GhostState` stream through an interpolator, one tick behind the simulation tick; any Rigidbody is set kinematic.
 - `NetworkVariable` values arrive through `GhostVars` and raise `OnValueChanged`; writes are refused.
 - The ghost's colliders are real, so raycasts and overlaps on the authoritative worker hit it. That is how a hitscan resolves against a victim simulated elsewhere.
-- `RemoteTick(double renderTick)` is called once per tick before physics syncs, so interpolating behaviours can present their buffers.
+- `RemoteTick(double renderTick)` is called once per tick before physics syncs, so interpolating behaviors can present their buffers.
 
 `OnNetworkSpawn` runs on a ghost exactly as it does everywhere else, so gate authority-only setup on `HasAuthority` or put it in `OnGainedAuthority`. A ghost may later become authoritative (handover in) and an authoritative entity may become a ghost (handover out) any number of times without being respawned.
 

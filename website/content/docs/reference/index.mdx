@@ -64,13 +64,13 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | Type | Summary |
 | --- | --- |
 | [ChunkContent](/docs/reference/world/chunk-content) | Abstract class. Scene-object form of NebulaChunks.Loaded/NebulaChunks.Unloading: drop a subclass in the game scene and override OnChunkLoaded. |
-| [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a turnkey chunked world. |
+| [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a chunked world. |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
 | [NebulaChunkedWorld](/docs/reference/world/nebula-chunked-world) | Class. The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld plus a NebulaConfig.RuntimeWorld). |
-| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist. |
+| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist. |
 | [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
-| [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. |
+| [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Maps runtime containers to a planar or three-dimensional grid. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |
 | [WorldAnchor](/docs/reference/world/world-anchor) | Class. Anchor component: keeps the cells around this transform loaded. |
 | [WorldCell](/docs/reference/world/world-cell) | Class. Marks the root of a cell scene with its grid coordinate. |
@@ -331,7 +331,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [InterestPolicies](/docs/reference/interest/interest-policies) | Static class. Combining policies, so a game can add one concern (parties) without rewriting another (fog of war). |
 | [InterestQuery](/docs/reference/interest/interest-query) | Class. What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. |
 | [InterestSchedule](/docs/reference/interest/interest-schedule) | Class. Which clients a gateway re-evaluates on this tick. |
-| [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
+| [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest settings, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
 | [RegionPublisher](/docs/reference/interest/region-publisher) | Class. The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them. |
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |
 | [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |

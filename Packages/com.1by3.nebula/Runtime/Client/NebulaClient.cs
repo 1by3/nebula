@@ -119,8 +119,7 @@ namespace Nebula
 
         /// <summary>
         /// What this client's <b>content</b> follows: which cells or chunks are kept loaded, and where the
-        /// floating origin sits. Null (the default) means the local pawn, which is what a shooter wants and
-        /// what every existing project gets without changing a line.
+        /// floating origin sits. Null (the default) means the local pawn.
         /// <para>
         /// A strategy game does not want that. Its camera flies over a front the commander has no pawn near —
         /// or has no pawn at all — and content anchored to the pawn would leave the camera looking at unloaded

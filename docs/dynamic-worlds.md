@@ -147,12 +147,12 @@ wired in automatically, and the underlying primitives (`ContainerRegistry.Regist
 - The persistence store's `LoadContainer` is asked once per lease; a chunk that is retired and
   re-requested within `PersistenceRestoreGraceSeconds` waits the grace period before its props return.
 
-## Turnkey chunked worlds (2026-09-20)
+## Configure runtime chunks
 
-The opt-in helpers above are now also available as a wired-up default, because a game that wants an unbounded
-grid of chunks was still writing the same allocator, loader and origin policy around them. `NebulaConfig`'s
-`ChunkedWorld` + a `RuntimeWorld` definition make `NebulaBootstrap` add `NebulaChunkedWorld` on every role; the
-game supplies chunk content through `NebulaChunks.Loaded`/`Unloading` (or a `ChunkContent` subclass) and nothing
-else. See `docs/interest-management.md` §10 and §15 for the decisions, and `nebula-virtualworld`'s README for the
-worked shape. Games with their own chunk model are unaffected: `ChunkedWorld` defaults to false and every
-primitive underneath (`RuntimeGrid`, `RuntimeGridAllocator`, `RegisterRuntime`) still works on its own.
+Assign `NebulaConfig.RuntimeWorld` and enable `ChunkedWorld` to install `NebulaChunkedWorld` on every role.
+It manages the chunk grid, allocator, and floating origin. Supply terrain through `NebulaChunks.Loaded` and
+`Unloading`, or a `ChunkContent` subclass. Your game supplies gameplay and networked entity spawning.
+Follow the [runtime-world tutorial](../website/content/docs/guides/infinite-runtime-world.mdx) for a complete example.
+
+For a custom allocation workflow, leave `ChunkedWorld` disabled and use `RuntimeGrid`, `RuntimeGridAllocator`,
+and `ContainerRegistry.RegisterRuntime` directly.

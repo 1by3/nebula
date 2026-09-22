@@ -9,7 +9,7 @@ description: "Full description of an entity."
 public struct EntitySpawnMsg
 ```
 
-Full description of an entity. Sent as EntitySpawn (to gateway/clients), GhostSpawn (to a neighbour worker) and as the payload of AuthorityTransfer. Receivers treat a spawn for a known netId as an update (owner/epoch/container/vars), never as a duplicate instantiation.
+Full description of an entity. Sent as EntitySpawn (to gateway/clients), GhostSpawn (to a neighbor worker) and as the payload of AuthorityTransfer. Receivers treat a spawn for a known netId as an update (owner/epoch/container/vars), never as a duplicate instantiation.
 
 ## Fields
 
@@ -101,7 +101,7 @@ public byte[] Vars;
 public byte[] State;
 ```
 
-Keyframe from every sync behaviour ([`NetworkIdentity.WriteSyncSnapshot`](/docs/reference/core/network-identity#writesyncsnapshot)); empty when the prefab has none.
+Keyframe from every sync behavior ([`NetworkIdentity.WriteSyncSnapshot`](/docs/reference/core/network-identity#writesyncsnapshot)); empty when the prefab has none.
 
 ### OwnerIdentity [#owneridentity]
 
@@ -117,7 +117,7 @@ The owning player's [`PlayerIdentity`](/docs/reference/gateway/player-identity);
 public float RelevanceRadius;
 ```
 
-Metres this entity is relevant at, from its prefab ([`NetworkIdentity.RelevanceRadius`](/docs/reference/core/network-identity#relevanceradius)); 0 means the mesh default. Sent as an f16, so it is precise to about a metre at the default ceiling.
+Meters this entity is relevant at, from its prefab ([`NetworkIdentity.RelevanceRadius`](/docs/reference/core/network-identity#relevanceradius)); 0 means the mesh default. Sent as an f16, so it is precise to about a meter at the default ceiling.
 
 ### InterestFlags [#interestflags]
 

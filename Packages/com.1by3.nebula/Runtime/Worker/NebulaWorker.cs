@@ -1260,7 +1260,7 @@ namespace Nebula
         /// <summary>
         /// Refresh the band timestamp of every inherited ghost target we already have an entry for, so the first
         /// <see cref="UpdateGhostBand"/> after a handover cannot expire (and immediately re-create) a copy the
-        /// neighbour never lost. Targets we have no entry for are left alone: <see cref="ResumeInheritedGhosts"/>
+        /// neighbor never lost. Targets we have no entry for are left alone: <see cref="ResumeInheritedGhosts"/>
         /// creates them, and creating one here would suppress the snapshot spawn that opens the new owner's stream.
         /// </summary>
         private void SeedInheritedTargets(ulong netId, HashSet<string> inherited, float now)
@@ -1623,7 +1623,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// One EntitySyncMsg per delivery class that has chunks due this tick. Deltas ride the behaviour's own channel;
+        /// One EntitySyncMsg per delivery class that has chunks due this tick. Deltas ride the behavior's own channel;
         /// keyframes are decided per tick inside <see cref="NetworkIdentity.WriteSyncState"/>, so calling this once
         /// per destination in the same tick sends every destination the same chunks.
         /// </summary>

@@ -34,9 +34,9 @@ namespace Nebula
         public float IntervalSeconds = 1f;
 
         /// <summary>
-        /// Metres past <c>InterestRadius + InterestExitMargin</c> a replica may sit before it is counted in
+        /// Meters past <c>InterestRadius + InterestExitMargin</c> a replica may sit before it is counted in
         /// <c>beyond</c>. Not zero: a replica is measured against a pose that is one interpolation delay old and
-        /// the gateway evaluates at <c>InterestEvalHz</c>, so a few metres of overshoot is correct behaviour and
+        /// the gateway evaluates at <c>InterestEvalHz</c>, so a few meters of overshoot is correct behavior and
         /// only a persistent count is a bug.
         /// </summary>
         public float SlackMeters = 24f;
@@ -45,8 +45,8 @@ namespace Nebula
         /// Seconds of the client's own motion added to <see cref="SlackMeters"/>. An entity may only leave a set
         /// after it has been beyond the exit radius for <c>InterestLingerSeconds</c>, the gateway re-evaluates at
         /// <c>InterestEvalHz</c>, and the pose measured here is an interpolated one a few ticks old. A walking
-        /// player covers a metre or two in that window and the flat slack absorbs it, but a client in a ship at
-        /// 60 m/s leaves everything it holds tens of metres behind entirely correctly. Without this the probe
+        /// player covers a meter or two in that window and the flat slack absorbs it, but a client in a ship at
+        /// 60 m/s leaves everything it holds tens of meters behind entirely correctly. Without this the probe
         /// reports a leak every time anyone flies.
         /// </summary>
         public float SlackSeconds = 1.6f;
@@ -85,7 +85,7 @@ namespace Nebula
         private float _lastOriginAt;
         private bool _hadOrigin;
 
-        /// <summary>Metres per second above which a sample-to-sample jump is a teleport or an origin shift, not motion.</summary>
+        /// <summary>Meters per second above which a sample-to-sample jump is a teleport or an origin shift, not motion.</summary>
         private const float MaxPlausibleSpeed = 400f;
 
         /// <summary>Attach a probe to the object holding <paramref name="client"/> (idempotent).</summary>

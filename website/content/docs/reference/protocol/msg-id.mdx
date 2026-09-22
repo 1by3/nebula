@@ -30,7 +30,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | <span id="worldstate"></span>`WorldState` | `14` |  |
 | <span id="ownerstate"></span>`OwnerState` | `15` |  |
 | <span id="containerownership"></span>`ContainerOwnership` | `16` |  |
-| <span id="entitystate"></span>`EntityState` | `17` | Per-behaviour sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick. |
+| <span id="entitystate"></span>`EntityState` | `17` | Per-behavior sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick. |
 | <span id="batch"></span>`Batch` | `18` | Gateway -\> client: several reliable messages in one packet: `[count:ushort]{[len:ushort][message]}`. A big mesh produces hundreds of small reliable messages a second (an RPC per shot, a vars update per hit); one packet each was most of a client's packet rate. |
 | <span id="instanceprepare"></span>`InstancePrepare` | `19` |  |
 | <span id="clientinput"></span>`ClientInput` | `20` |  |

@@ -47,6 +47,12 @@ export default function InterestManagementPage() {
               Stop treating a public world as one broadcast room
             </h2>
             <p className="mt-4 text-fd-muted-foreground">
+              A gateway routes client input and replicated state. A worker is
+              a headless Unity process that simulates entities in assigned
+              box-shaped containers. These processes, clients, the orchestrator,
+              and its control-plane registry form a mesh.
+            </p>
+            <p className="mt-4 text-fd-muted-foreground">
               Before this release, every client in a public instance was told
               about every entity in that instance. Distance changed how often
               an entity&apos;s transform was sent, but it did not stop the spawn,
@@ -211,7 +217,7 @@ export default function InterestManagementPage() {
               allocates a chunk; allocation remains a server decision.
             </p>
             <p className="mt-4 text-fd-muted-foreground">
-              The release also adds an optional turnkey chunked world. With{' '}
+              You can also configure a runtime chunked world. With{' '}
               <code>NebulaConfig.ChunkedWorld</code> enabled, Nebula allocates
               and retires chunks around simulated pawns, maintains the client&apos;s
               floating origin, and raises content load and unload hooks. The
@@ -252,7 +258,7 @@ export default function InterestManagementPage() {
               Interest management ships in <code>0.1.0-alpha.29</code> and
               changes the wire protocol from version 16 to 17. Rebuild and
               restart every client, gateway, worker, and orchestrator together;
-              mixed protocol versions do not connect.
+              gateways reject clients whose protocol version differs.
             </p>
             <p className="mt-4 text-fd-muted-foreground">
               Audit any feature that assumed every public entity was always

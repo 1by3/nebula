@@ -205,7 +205,7 @@ namespace Nebula
 
         /// <summary>
         /// How far a point inside this container is from its seam with <paramref name="neighbor"/>. For a sibling or
-        /// an inner box that is the neighbour's surface; for a neighbour that encloses this one (a building inside
+        /// an inner box that is the neighbor's surface; for a neighbor that encloses this one (a building inside
         /// the outdoor area, the area around a ship) the seam is this container's own surface, so the answer is how
         /// far the point is from getting out - not "inside the enclosing box", which would put every entity in every
         /// building in the band permanently.

@@ -245,7 +245,7 @@ namespace Nebula
             return Mathf.Max(0f, Mathf.Max(size.x, size.z));
         }
 
-        /// <summary>Whether the world's cells are centred on <c>coord × CellSize</c> (baked cells) rather than starting there (a runtime grid).</summary>
+        /// <summary>Whether the world's cells are centered on <c>coord × CellSize</c> (baked cells) rather than starting there (a runtime grid).</summary>
         private bool WorldCellsCentred() => WorldManifest != null && WorldManifest.World != null;
 
         public static NebulaConfig Load()

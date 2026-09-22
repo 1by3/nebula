@@ -50,7 +50,7 @@ namespace Nebula
         WorldState = 14,
         OwnerState = 15,
         ContainerOwnership = 16,
-        /// <summary>Per-behaviour sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick.</summary>
+        /// <summary>Per-behavior sync chunks (NetworkTransform/NetworkAnimator) for one entity and tick.</summary>
         EntityState = 17,
         /// <summary>
         /// Gateway -> client: several reliable messages in one packet: <c>[count:ushort]{[len:ushort][message]}</c>.
@@ -360,7 +360,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Full description of an entity. Sent as EntitySpawn (to gateway/clients), GhostSpawn (to a neighbour worker) and
+    /// Full description of an entity. Sent as EntitySpawn (to gateway/clients), GhostSpawn (to a neighbor worker) and
     /// as the payload of AuthorityTransfer. Receivers treat a spawn for a known netId as an update (owner/epoch/container/vars),
     /// never as a duplicate instantiation.
     /// </summary>
@@ -381,13 +381,13 @@ namespace Nebula
         /// <summary>Non-zero: bind the receiver's own copy of the scene object with this <see cref="NetworkIdentity.SceneId"/> instead of instantiating <see cref="PrefabId"/>.</summary>
         public uint SceneId;
         public byte[] Vars;
-        /// <summary>Keyframe from every sync behaviour (<see cref="NetworkIdentity.WriteSyncSnapshot"/>); empty when the prefab has none.</summary>
+        /// <summary>Keyframe from every sync behavior (<see cref="NetworkIdentity.WriteSyncSnapshot"/>); empty when the prefab has none.</summary>
         public byte[] State;
         /// <summary>The owning player's <see cref="PlayerIdentity"/>; empty for entities no player owns. Travels with the entity through ghosting and handover.</summary>
         public string OwnerIdentity;
         /// <summary>
-        /// Metres this entity is relevant at, from its prefab (<see cref="NetworkIdentity.RelevanceRadius"/>);
-        /// 0 means the mesh default. Sent as an f16, so it is precise to about a metre at the default ceiling.
+        /// Meters this entity is relevant at, from its prefab (<see cref="NetworkIdentity.RelevanceRadius"/>);
+        /// 0 means the mesh default. Sent as an f16, so it is precise to about a meter at the default ceiling.
         /// </summary>
         public float RelevanceRadius;
         /// <summary>Per-prefab interest flags (<see cref="NetworkIdentity.AlwaysRelevant"/>).</summary>
@@ -1028,7 +1028,7 @@ namespace Nebula
         public EntitySpawnMsg Entity;
         public uint NewEpoch;
         public byte[] PendingInputs;
-        /// <summary>Per-behaviour handover-only state (<see cref="NetworkIdentity.WriteHandoverState"/>).</summary>
+        /// <summary>Per-behavior handover-only state (<see cref="NetworkIdentity.WriteHandoverState"/>).</summary>
         public byte[] HandoverState;
         public string[] GhostWorkers;
         /// <summary>The owner's session as the sender knew it (<see cref="PlayerSessions"/>), so the receiver accepts the owner's gateway at once. 0/"" for an unowned entity.</summary>

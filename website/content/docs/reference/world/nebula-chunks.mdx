@@ -1,6 +1,6 @@
 ---
 title: "NebulaChunks"
-description: "The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist."
+description: "The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs)</div>
@@ -9,9 +9,9 @@ description: "The content-streaming face of a turnkey chunked world: one place, 
 public static class NebulaChunks
 ```
 
-The content-streaming face of a turnkey chunked world: one place, on every role, where a game is told which chunks exist. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates it from [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) plus a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); a game supplies content and nothing else.
+The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates it from [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) plus a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); a game supplies content and nothing else.
 
-Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbours lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
+Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
 
 [`Loaded`](#loaded) back-fills: subscribing after chunks already exist raises the event for each of them at once, so a handler added from `Start` on a late-loaded scene object cannot miss a chunk and no game has to write the "and now walk the existing ones" loop that every hand-rolled chunk loader begins with.
 
@@ -141,4 +141,4 @@ public static int SeedOf(ulong id);
 public static int SeedOf(Vector3Int coord);
 ```
 
-The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighbouring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.
+The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighboring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.

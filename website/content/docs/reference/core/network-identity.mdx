@@ -60,7 +60,7 @@ A number your interest policy can filter on (team markers, quest objects). Nebul
 public const uint SyncKeyframeInterval = 30;
 ```
 
-Every this many ticks a dirty sync behaviour writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
+Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
 ### PoseHistoryTicks [#posehistoryticks]
 
@@ -245,7 +245,7 @@ public RemoteInterpolator Interpolator { get; }
 public PersistentEntity Persistent { get; }
 ```
 
-The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached by [`Initialize`](#initialize); everything about persistence hangs off it (see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence)).
+The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached during initialization; see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) for checkpoint and restore behavior.
 
 ### HasSyncState [#hassyncstate]
 
@@ -259,7 +259,7 @@ public bool HasSyncState { get; }
 public bool ReceivingHandover { get; }
 ```
 
-Each behaviour reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behaviour's bytes, and one that reads too little leaves no residue.
+Each behavior reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behavior's bytes, and one that reads too little leaves no residue.
 
 ### SyncContainer [#synccontainer]
 
@@ -319,7 +319,7 @@ public void ReadVars(NetworkReader reader);
 public void WriteHandoverState(NetworkWriter writer);
 ```
 
-Handover-only state from every behaviour (see [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate)).
+Handover-only state from every behavior (see [`NetworkBehaviour.WriteHandoverState`](/docs/reference/core/network-behaviour#writehandoverstate)).
 
 ### ReadHandoverState [#readhandoverstate]
 
@@ -339,7 +339,7 @@ public void ClearDirty();
 public void WriteSyncSnapshot(NetworkWriter writer);
 ```
 
-A keyframe from every sync behaviour: what rides the spawn/handover message.
+A keyframe from every sync behavior: what rides the spawn/handover message.
 
 ### WriteSyncState [#writesyncstate]
 
@@ -347,7 +347,7 @@ A keyframe from every sync behaviour: what rides the spawn/handover message.
 public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery);
 ```
 
-Authority, once per tick per delivery class and per destination: the chunks due this tick. A behaviour is written when it is dirty, or (unreliable only) when a keyframe is due. The keyframe decision depends only on the tick and on state that [`ClearDirty`](#cleardirty) advances, so every destination written in the same tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns the number of chunks written; when zero the writer has been left untouched.
+Authority, once per tick per delivery class and per destination: the chunks due this tick. A behavior is written when it is dirty, or (unreliable only) when a keyframe is due. The keyframe decision depends only on the tick and on state that [`ClearDirty`](#cleardirty) advances, so every destination written in the same tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns the number of chunks written; when zero the writer has been left untouched.
 
 ### ReadSyncState [#readsyncstate]
 
@@ -355,7 +355,7 @@ Authority, once per tick per delivery class and per destination: the chunks due 
 public void ReadSyncState(NetworkReader reader, uint tick, Container container);
 ```
 
-Non-authoritative copies: hand each chunk to its behaviour. Chunks for unknown indices are skipped.
+Non-authoritative copies: hand each chunk to its behavior. Chunks for unknown indices are skipped.
 
 ### RemoteTick [#remotetick]
 
@@ -363,7 +363,7 @@ Non-authoritative copies: hand each chunk to its behaviour. Chunks for unknown i
 public void RemoteTick(double renderTick);
 ```
 
-Present the tick `renderTick` on every behaviour (ghosts and remote client copies).
+Present the tick `renderTick` on every behavior (ghosts and remote client copies).
 
 ### SetLocalPose [#setlocalpose]
 

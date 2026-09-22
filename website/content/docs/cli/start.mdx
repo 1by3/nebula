@@ -17,7 +17,7 @@ The orchestrator keeps the control plane and every saved entity in one database,
 
 --reset-sessions clears held player-session claims without deleting saved entities. Use it only after every gateway of this mesh has stopped, to recover claims whose previous gateway cannot acknowledge disconnection.
 
---bots starts headless client processes with -nebula-bot; what they do is the game's code. --bot-args appends its value to every one of those command lines unchanged, which is how a game selects a deterministic bot behaviour for a soak run (`nebula start --bots 4 --bot-args "-vw-bot-line"`).
+--bots starts headless client processes with -nebula-bot; what they do is the game's code. --bot-args appends its value to every one of those command lines unchanged, which is how a game selects a deterministic bot behavior for a soak run. The example flag must be implemented by your game (`nebula start --bots 4 --bot-args "-mygame-bot-line"`).
 
 ## Options
 
@@ -51,5 +51,5 @@ nebula start --open-ui
 nebula start --build --workers 2
 nebula start --min 1 --max 4
 nebula start --reset-persistence
-nebula start --bots 3 --bot-args "-vw-bot-line"
+nebula start --bots 3 --bot-args "-mygame-bot-line"
 ```

@@ -1,11 +1,13 @@
 ---
 title: Interest management
-description: Bound what each client is told about the world, tune the knobs that control it, and understand where it stops scaling simulation.
+description: Configure entity visibility, update rates, camera focus, and game-specific authorization rules.
 ---
 
-**Interest management** decides which entities a client hears about. It controls whether an entity is sent to a client and how often an entity already in the client's set receives transform updates.
+Use **interest management** to choose which entities a client receives and how often it receives their transform updates. The entities a client receives form its **interest set**.
 
-Interest management bounds who **hears about** an entity. It does not bound who **simulates** it. A [container](/docs/concepts/containers-and-handover) is still one worker's simulation budget, whatever a client is or is not told. See [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) before you rely on this feature to reach MMO scale.
+A **gateway** routes client input and replicated state. A **worker** is a headless Unity process that simulates entities in assigned box-shaped areas called **containers**. Together with clients, the orchestrator, and the control-plane service, they form a **mesh**. See [Architecture](/docs/concepts/architecture) for the roles and shared registry.
+
+Interest management bounds who **hears about** an entity. It does not bound who **simulates** it. A [container](/docs/concepts/containers-and-handover) is still one worker's simulation budget, whatever a client is or is not told. See [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) before choosing a container size.
 
 ## How it flows
 
@@ -13,11 +15,11 @@ Interest management bounds who **hears about** an entity. It does not bound who 
 2. **Regions.** The world is divided into **regions**, a uniform grid over absolute world coordinates (`InterestCellSize`, default 64 m). A focus covers the regions within its interest radius, plus a subscribe margin.
 3. **Gateway subscriptions.** For every region a client's foci need, the gateway subscribes that region from the workers that own overlapping containers. A gateway receives only what its clients need.
 4. **Worker filtering.** Each worker buckets its authoritative entities by region and publishes each region only to the gateways that subscribed it. A worker with 4,000 entities across 40 containers sends a gateway near one corner only the handful of regions its clients are in.
-5. **Per-client exact filtering.** From the entities a gateway has cached, it decides per client which ones belong in that client's interest set, using the exact radius, hysteresis, level of detail, and any policy `Authorize` check. This set gates every kind of entity traffic: spawns, despawns, transforms, variables, sync state, and RPCs.
+5. **Per-client exact filtering.** From the entities a gateway has cached, it decides per client which ones belong in that client's interest set, using the exact radius, hysteresis (different entry and exit distances), level of detail, and any policy `Authorize` check. This set gates every kind of entity traffic: spawns, despawns, transforms, variables, synchronization state, and remote procedure calls (RPCs).
 
 Nothing about this flow depends on how the game partitions its world. A single unpartitioned container works the same way as a baked grid of cells — see [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) for what changes and what does not.
 
-## Zero-config defaults
+## Default behavior
 
 With no interest-specific setup, a client:
 
@@ -26,9 +28,9 @@ With no interest-specific setup, a client:
 - gets full-rate updates within 30 m, a quarter-rate update between 30 m and 80 m, and a twelfth-rate update beyond that (`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, and `InterestFarDivisor`); and
 - with no pawn (a spectator or a client still joining) hears only about [`AlwaysRelevant`](#per-prefab-overrides) entities, until a policy gives it a focus.
 
-No game code, config change, or world partitioning is required to get a bandwidth-bounded client. Partitioning becomes necessary only when you also want to add more workers — see the limits section.
+These defaults limit the spatial extent of replication. Entity density, always-relevant entities, and explicit subscriptions still affect bandwidth. Partition the world into more containers to distribute simulation across workers.
 
-## The knobs
+## Configure interest management
 
 Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a matching field in the exported service manifest that the standalone gateway and worker read.
 
@@ -57,20 +59,20 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMidDivisor` | 4 | Send every Nth tick between the near and far radius. |
 | `InterestFarDivisor` | 12 | Send every Nth tick beyond the far radius, and to a pawn-less client for anything not `AlwaysRelevant`. |
 
-`NebulaConfig.Validate` (also `OnValidate`, the setup window, and role start-up logs) checks these against each other and against `ClientLoadRadiusCells` and `GhostBandMargin`. A value that would make behavior wrong (`InterestRadius <= 0`, `InterestCellSize <= 0`) is an error that blocks start-up; everything else is clamped to a working value and logged as a warning. For example: `InterestFarRadius` above `InterestRadius` is lowered to it; `InterestSubscribeMargin` below one evaluation of travel at `InterestMaxFocusSpeed` is raised to cover it; `ClientLoadRadiusCells` too small to cover `InterestRadius + InterestExitMargin` is raised until it does; and a `GhostBandMargin` as large as `InterestCellSize` is reported (a region would be narrower than the band a gateway must subscribe around it).
+`NebulaConfig.Validate` (also `OnValidate`, the setup window, and role start-up logs) checks these against each other and against `ClientLoadRadiusCells` and `GhostBandMargin`. A value that would make behavior wrong (`InterestRadius <= 0`, `InterestCellSize <= 0`) is an error that blocks start-up; other invalid values are adjusted, with warnings for most corrections. For example: `InterestFarRadius` above `InterestRadius` is lowered to it; `InterestSubscribeMargin` below one evaluation of travel at `InterestMaxFocusSpeed` is raised to cover it; `ClientLoadRadiusCells` too small to cover `InterestRadius + InterestExitMargin` is raised until it does; and a `GhostBandMargin` as large as `InterestCellSize` is reported (a region would be narrower than the band a gateway must subscribe around it).
 
 ## One notion of "near"
 
-Client content streaming, the runtime chunk allocator's ring, and the containers a client is told it owns all derive from the same computed value, so they never disagree about how far "near" reaches:
+Client content streaming, the runtime chunk allocator's ring, and the containers a client is told about all derive from the same computed value, to size the content window consistently:
 
 ```text
 overshoot          = InterestMaxFocusSpeed * (InterestLingerSeconds + 1 / InterestEvalHz)
 NearCells(cellSize) = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin + overshoot) / cellSize))
 ```
 
-The overshoot term is not decoration. `InterestRadius + InterestExitMargin` is where an entity *starts* to leave a
+The overshoot term accounts for movement during removal delays. `InterestRadius + InterestExitMargin` is where an entity *starts* to leave a
 set, not where it is gone: it has to stay outside for `InterestLingerSeconds`, and the set is only re-evaluated
-`InterestEvalHz` times a second, so a client travelling at `InterestMaxFocusSpeed` legitimately still holds
+`InterestEvalHz` times a second, so a client traveling at `InterestMaxFocusSpeed` legitimately still holds
 entities that much further out. Sizing the content window to the exit radius alone leaves a client holding a
 replica standing on a cell it has not loaded. (With no world definition — `cellSize` of 0 — the formula
 short-circuits to `ClientLoadRadiusCells`.)
@@ -112,7 +114,9 @@ public interface IInterestPolicy
 }
 ```
 
-Set it once, on every gateway of the mesh:
+The policy examples below use the `Nebula` namespace. Their lookup methods are placeholders for your game data; replace them before using the policy. Installing a policy replaces the default, so call `DefaultInterestPolicy.Instance.Collect` when you want to retain pawn and hint focus.
+
+Set it once, on every gateway of the mesh (`gateway` is your `NebulaGateway` instance):
 
 ```csharp
 gateway.InterestPolicy = new FogOfWarPolicy();
@@ -122,7 +126,7 @@ gateway.InterestPolicy = new FogOfWarPolicy();
 `gateway.InterestPolicy` is only reachable from whoever constructs the `NebulaGateway` object. `nebula start` and a deployed mesh run the standalone `nebula-gateway` executable, which is built from Nebula's own sources and has no game assembly to call this from. Install a policy there — and tag clients with a team, or set a focus mode — through a [gateway extension](/docs/guides/gateway-extensions) instead.
 </Callout>
 
-`InterestPolicies.Combine(a, b)` composes two policies: `Collect` calls both (their foci and explicit entities are unioned), and `Authorize` is the logical AND of both. A combined policy can only narrow what another policy allowed, never widen it.
+`InterestPolicies.Combine(a, b)` composes two policies: `Collect` calls both (their foci and explicit entities are unioned), and `Authorize` is the logical AND of both. Its authorization check can only narrow access, although the combined foci can expand the spatial view.
 
 ### What a policy is told
 
@@ -132,7 +136,7 @@ Both methods receive a snapshot the gateway fills once per evaluation, not a liv
 
 `InterestEntity` — `NetId`, `PrefabId`, `OwnerClientId`, `Container`, `X`/`Y`/`Z` (absolute, resolved through carriers), `RelevanceRadius`, `AlwaysRelevant`, `InterestGroup` (the entity's own, not its carrier's — a filter on "what kind of thing is this" is about the passenger, not the ship), `InstanceId` (resolved through the carrier chain), and `CarrierNetId` (the entity immediately carrying this one; the interest decision itself is made on the *root* carrier).
 
-### RTS and strategy cameras
+### Strategy cameras
 
 A focus is a camera, a selected formation, an observed front, or some other small spatial anchor — not a stand-in for every unit a player owns. `InterestMaxFoci` caps a client at 8 foci by default, so a strategy game with dozens or hundreds of owned units cannot give each one its own focus; even under the cap, doing that spends the budget describing "near every unit" instead of "near the camera," and still tells the client nothing about an off-screen unit's surroundings.
 
@@ -199,13 +203,14 @@ public sealed class PartyInterestPolicy : IInterestPolicy
 {
     public void Collect(in InterestClient client, InterestQuery query)
     {
+        DefaultInterestPolicy.Instance.Collect(client, query);
         foreach (ulong memberNetId in PartyMembersOf(client.ClientId))
             query.AddEntity(memberNetId);
     }
 
     public bool Authorize(in InterestClient client, in InterestEntity entity) => true;
 
-    private IEnumerable<ulong> PartyMembersOf(ulong clientId) => System.Array.Empty<ulong>();
+    private System.Collections.Generic.IEnumerable<ulong> PartyMembersOf(ulong clientId) => System.Array.Empty<ulong>();
 }
 ```
 
@@ -216,7 +221,8 @@ public sealed class PartyInterestPolicy : IInterestPolicy
 ```csharp
 public sealed class FogOfWarPolicy : IInterestPolicy
 {
-    public void Collect(in InterestClient client, InterestQuery query) { }
+    public void Collect(in InterestClient client, InterestQuery query) =>
+        DefaultInterestPolicy.Instance.Collect(client, query);
 
     public bool Authorize(in InterestClient client, in InterestEntity entity)
     {
@@ -260,7 +266,8 @@ Three built-in paths already revoke synchronously, so you do not have to remembe
 A client can suggest where it is looking — a sniper scope, a strategy camera scrolled away from the pawn — with:
 
 ```csharp
-client.FocusHint = new Vector3(x, y, z);
+// client is your NebulaClient; camera is the Unity Camera whose view you want.
+client.FocusHint = camera.transform.position;
 // ...
 client.ClearFocusHint();
 ```
@@ -281,7 +288,7 @@ Nothing the client sends can change its own mode, and a client cannot even tell 
 
 Every hint the gateway receives goes through these steps. The cheap, non-negotiable checks come first, so a client cannot reach your game code by sending garbage or by sending quickly:
 
-1. **Generation fence.** A hint older than the newest generation the gateway has seen is dropped, so a hint that overtook a clear cannot re-establish a focus the client gave up. A dropped hint still advances the fence — it is evidence of where the client is up to.
+1. **Generation fence.** A hint older than the newest generation the gateway has seen is dropped, so a hint that overtook a clear cannot re-establish a focus the client gave up. A newer generation advances the counter even if later validation rejects the hint.
 2. **Clear.** A `ClearFocusHint()` is applied here and is never rate-limited: narrowing interest is never an attack, and dropping a clear would leave the client paying for a view it no longer has.
 3. **Malformed check.** A coordinate that is NaN, infinite, or larger in magnitude than `FocusHintFilter.MaxMagnitude` (1e9 m) is **rejected, not clamped**. Clamping would invent a place the client never asked about and then stream it. This runs before the client snapshot and before any game code, so a NaN never reaches an `IFocusHintPolicy`.
 4. **Attempt rate limit.** Every hint that gets this far spends the client's budget, whatever becomes of it afterwards. That is what bounds calls into your hint policy at `InterestHintMaxHz` (5 per second by default) — a client with no pawn, or one your policy refuses every time, pays for the asking. A server-side authorization change (`SetClientFocusMode`, `SetClientTag`, `SetClientTags`) resets the budget, so a freshly granted commander camera answers immediately instead of waiting out a budget it spent while being refused. Only the server can reset it.
@@ -291,7 +298,7 @@ Every hint the gateway receives goes through these steps. The cheap, non-negotia
 
 Instance isolation is checked separately, during evaluation, in every mode: a free focus is a bigger view of the instance the client is already in, never a way to see into another one.
 
-Five counters on `NebulaGateway` say what is happening to one client's hints: `FocusHintsAccepted`, `FocusHintsClamped`, `FocusHintsDroppedByRate`, `FocusHintsDroppedMalformed`, and `FocusHintsDroppedUnauthorized`. `DroppedByRate` counts *attempts*, so a client whose hints are all refused for some other reason still shows up there rather than nowhere.
+Five counters on `NebulaGateway` report hints across its clients: `FocusHintsAccepted`, `FocusHintsClamped`, `FocusHintsDroppedByRate`, `FocusHintsDroppedMalformed`, and `FocusHintsDroppedUnauthorized`. `DroppedByRate` counts *attempts*, so a client whose hints are all refused for some other reason still shows up there rather than nowhere.
 
 Implement the optional `IFocusHintPolicy` on the same object as your `IInterestPolicy` when the per-client mode is not enough on its own — for example, when whether a commander camera is allowed depends on where it is pointed:
 
@@ -304,7 +311,7 @@ public interface IFocusHintPolicy
 }
 ```
 
-A refusal also revokes: a policy that has just said no, or a free camera whose pawn is gone, drops the hint the gateway was holding rather than leaving the last accepted one in place.
+A refusal also revokes: a policy that has just said no, or a pawn-clamped camera whose pawn is gone, drops the hint the gateway was holding rather than leaving the last accepted one in place.
 
 A hint that only moves within the same region waits for the client's next scheduled evaluation (`InterestEvalHz`); one that crosses into a new region triggers an immediate re-evaluation.
 
@@ -354,7 +361,8 @@ This is bounded, not unlimited: a box focus wider than `InterestMaxRadius` on an
 **Strategy camera recipe.** Give a commander camera content and interest together:
 
 ```csharp
-gateway.SetClientFocusMode(clientId, FocusMode.Free); // server decision, once
+// On the server: gateway is a NebulaGateway; clientId identifies an authorized client.
+gateway.SetClientFocusMode(clientId, FocusMode.Free);
 
 // On the client, each time the camera moves:
 client.FocusHint = camera.transform.position;
@@ -373,7 +381,7 @@ client.SetContentAnchor(camera.transform);
 
 **Debug overlay:** a worker line reads `interest regions=<n> sent=<pct>% filter=<ms>ms`; a gateway line reads `interest set=<avg>/<max> regions=<n> links=<n> (<reasons>) +<spawns>/s -<despawns>/s eval=<avg>/<max>ms`.
 
-**`InterestProbe`:** attach `InterestProbe.Attach(client)` to a client to log a `[nebula-probe]` line once a second, checking the four properties worth failing a soak on: replicas beyond the exit radius, duplicate spawns without a matching despawn, a replica in a chunk that is not loaded, and whether the replica count stays bounded as the client explores. Both reference games attach the same component, so a soak run produces the same log line regardless of which sample it is run against. See [Load testing](/docs/guides/load-testing#soak-tests) for how the same properties are asserted automatically.
+**`InterestProbe`:** attach `InterestProbe.Attach(client)` to a client to log a `[nebula-probe]` line once a second, checking the four properties worth failing a soak on: replicas beyond the exit radius, duplicate spawns without a matching despawn, a replica in a chunk that is not loaded, and whether the replica count stays bounded as the client explores. See [Load testing](/docs/guides/load-testing#soak-tests) for how the same properties are asserted automatically.
 
 ## Scaling limits and when to partition
 
@@ -385,14 +393,14 @@ Interest management bounds who **hears about** an entity. It does not bound who 
 | Several zone containers | yes | yes (container + region) | yes, as far as the zones allow |
 | One big container | yes | partial (region filter, single worker source) | no — limited by the one worker |
 
-An unpartitioned game — a single scene, a single container — still gets correct, bandwidth-bounded clients with zero setup: interest management works the same way regardless of how many containers exist, because a region is just "all of a container" when the container is small, or a subdivision of it when the container is large. What it cannot do is add a second worker's CPU to a container that is still one box. A single container's entity count and tick cost are exactly what one worker can do, no matter how few of those entities any one client hears about.
+An unpartitioned game — a single scene, a single container — still gets correct, bandwidth-bounded clients with zero setup: interest management works the same way regardless of how many containers exist, because a region is just "all of a container" when the container is small, or a subdivision of it when the container is large. What it cannot do is add a second worker's processing capacity to a container that is still one box. A single container's entity count and tick cost are exactly what one worker can do, no matter how few of those entities any one client hears about.
 
-Reaching a larger simulated population means partitioning the world into more containers, so more workers each own a share of it. [Turnkey chunked worlds](/docs/guides/infinite-runtime-world) and [baked world partition](/docs/guides/world-partition) both make this the easy path rather than a manual one.
+Reaching a larger simulated population means partitioning the world into more containers, so more workers each own a share of it. [chunked worlds](/docs/guides/infinite-runtime-world) and [baked world partition](/docs/guides/world-partition) provide authored and runtime partitioning workflows.
 
 A worker warns — in its log and in the dashboard, at most once a minute — when one container holds more than `PartitionWarnEntities` entities (2,000 by default) or when filtering its entities for its gateways takes longer than `PartitionWarnFilterMs` per tick (2 ms by default): "partition this world." Treat either warning as a sign that a container has outgrown one worker, not as something interest management can absorb by itself.
 
 <Cards>
-  <Card title="Build an infinite runtime world" href="/docs/guides/infinite-runtime-world" description="Use the turnkey chunked-world path to partition without hand-rolled allocation." />
+  <Card title="Build an infinite runtime world" href="/docs/guides/infinite-runtime-world" description="Allocate runtime chunks around players and supply their content." />
   <Card title="World partition" href="/docs/guides/world-partition" description="Divide an authored level into baked cells." />
   <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Register containers while the mesh runs and balance them across workers." />
   <Card title="Load testing a gateway fleet" href="/docs/guides/load-testing" description="Run the soak scenarios that assert bounded replicas and bytes per client." />

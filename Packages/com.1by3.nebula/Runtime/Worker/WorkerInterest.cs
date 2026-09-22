@@ -516,7 +516,7 @@ namespace Nebula
         /// <summary>
         /// A gateway link came up: give it a mask bit and a subscription set. Nothing is announced here beyond the
         /// entities that are relevant without a subscription — the always-relevant ones and the pawns of sessions it
-        /// speaks for. The v16 behaviour of announcing every authoritative entity is exactly what interest
+        /// speaks for. The v16 behavior of announcing every authoritative entity is exactly what interest
         /// management exists to remove.
         /// </summary>
         private void AddGatewayLink(Peer gateway)
