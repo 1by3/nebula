@@ -27,6 +27,14 @@ DateTime Now { get; }
 
 Best estimate of the control plane's clock (for heartbeat age checks).
 
+### DocumentId [#documentid]
+
+```csharp
+string DocumentId { get; }
+```
+
+Identity of the document this plane holds. It changes only when the document is started again from nothing (a fresh orchestrator, `-nebula-reset`, a restore of storage that never held this mesh) and survives a restart that kept its storage. A row missing from the *same* document was removed on purpose; a row missing from a *new* document was lost, and is what [`WorkerRegistration`](/docs/reference/worker/worker-registration) puts back. Empty until a mirror has received its first document.
+
 ### Workers [#workers]
 
 ```csharp

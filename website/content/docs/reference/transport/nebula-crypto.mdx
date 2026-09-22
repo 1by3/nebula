@@ -1,0 +1,50 @@
+---
+title: "NebulaCrypto"
+description: "The primitives the encrypted client link is built from, in managed C# so the same code runs in the Unity player (Mono and IL2CPP), in WebGL and in the .NET services."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
+
+```csharp
+public static class NebulaCrypto
+```
+
+The primitives the encrypted client link is built from, in managed C# so the same code runs in the Unity player (Mono and IL2CPP), in WebGL and in the .NET services. Unity's profile has no `System.Security.Cryptography.AesGcm` or `ChaCha20Poly1305`, and no X25519 at all, so `docs/transport-encryption.md` D2 settles on implementing RFC 7748 and RFC 8439 here. Only SHA-256, HMAC-SHA256, RSA (verify and sign, PKCS#1) and the random number generator come from the platform: every Unity runtime has those and [`OidcTokenValidator`](/docs/reference/gateway/oidc-token-validator) already relies on them.
+
+These are not constant-time implementations. The key agreement uses a key pair that is generated for one connection and thrown away, and the AEAD's secret-dependent work is table-free 32-bit arithmetic; see the design record's "what was not verified" for the limits of that argument.
+
+## Methods
+
+### Random [#random]
+
+```csharp
+public static byte[] Random(int bytes);
+```
+
+### FixedTimeEquals [#fixedtimeequals]
+
+```csharp
+public static bool FixedTimeEquals(byte[] a, byte[] b);
+```
+
+Equality that does not stop at the first differing byte.
+
+### Sha256 [#sha256]
+
+```csharp
+public static byte[] Sha256(byte[] data);
+```
+
+### HmacSha256 [#hmacsha256]
+
+```csharp
+public static byte[] HmacSha256(byte[] key, byte[] data);
+```
+
+### Hkdf [#hkdf]
+
+```csharp
+public static byte[] Hkdf(byte[] salt, byte[] ikm, string info, int length);
+```
+
+HKDF (RFC 5869) over SHA-256: extract then expand to `length` bytes.

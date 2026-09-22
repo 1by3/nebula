@@ -144,6 +144,13 @@ namespace Nebula
             c.AuthAudience = CommandLine.Get("nebula-auth-audience", c.AuthAudience);
             c.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", c.AuthAnonymous);
             c.AuthSigningKey = CommandLine.Get("nebula-auth-key", Environment.GetEnvironmentVariable("NEBULA_AUTH_KEY") is { Length: > 0 } authKey ? authKey : c.AuthSigningKey);
+            c.EncryptClients = CommandLine.GetBool("nebula-encrypt-clients", c.EncryptClients);
+            c.RequireEncryption = CommandLine.GetBool("nebula-require-encryption", c.RequireEncryption);
+            c.EncryptionCertPath = CommandLine.Get("nebula-encryption-cert", c.EncryptionCertPath);
+            c.EncryptionKeyPath = CommandLine.Get("nebula-encryption-key", c.EncryptionKeyPath);
+            c.EncryptionCertPem = Environment.GetEnvironmentVariable("NEBULA_ENCRYPTION_CERT") is { Length: > 0 } certPem ? certPem : c.EncryptionCertPem;
+            c.EncryptionKeyPem = Environment.GetEnvironmentVariable("NEBULA_ENCRYPTION_KEY") is { Length: > 0 } certKeyPem ? certKeyPem : c.EncryptionKeyPem;
+            c.EncryptionSelfSignedPath = CommandLine.Get("nebula-encryption-store", c.EncryptionSelfSignedPath);
             c.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", c.SingleSessionPerPlayer);
             c.GameContentVersion = CommandLine.GetUInt("nebula-content-version", c.GameContentVersion);
             c.MinGameContentVersion = CommandLine.GetUInt("nebula-min-content-version", c.MinGameContentVersion);

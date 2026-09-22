@@ -517,6 +517,12 @@ namespace Nebula
             if (!Config.AuthAnonymous) args += " -nebula-auth-anonymous false";
             if (!string.IsNullOrEmpty(Config.AuthSigningKey)) args += $" -nebula-auth-key {Config.AuthSigningKey}";
             if (!Config.SingleSessionPerPlayer) args += " -nebula-single-session false";
+            // Client link encryption is the gateway's business, but its configuration arrives here (docs/transport-encryption.md).
+            if (!Config.EncryptClients) args += " -nebula-encrypt-clients false";
+            if (Config.RequireEncryption) args += " -nebula-require-encryption true";
+            if (!string.IsNullOrEmpty(Config.EncryptionCertPath)) args += $" -nebula-encryption-cert {Config.EncryptionCertPath}";
+            if (!string.IsNullOrEmpty(Config.EncryptionKeyPath)) args += $" -nebula-encryption-key {Config.EncryptionKeyPath}";
+            if (!string.IsNullOrEmpty(Config.EncryptionSelfSignedPath)) args += $" -nebula-encryption-store {Config.EncryptionSelfSignedPath}";
             // Workers keep their persistent entities through this orchestrator's store, or not at all.
             args += $" -nebula-persistence-mode {(Persistence != null ? "remote" : "off")}";
             if (CommandLine.GetBool("nebula-verbose", false)) args += " -nebula-verbose";

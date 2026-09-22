@@ -358,10 +358,14 @@ namespace Nebula
             _storedToken = _keepsIdentity ? PlayerPrefs.GetString(StoredTokenPref, "") : "";
             NebulaRuntime.RpcSink = this;
 #if UNITY_WEBGL && !UNITY_EDITOR
-            // A browser has no UDP sockets: a web build reaches the gateway over WebRTC data channels.
+            // A browser has no UDP sockets: a web build reaches the gateway over WebRTC data channels, which
+            // DTLS already encrypts, so the encryption setting does not apply to this transport.
             _transport = new WebRtcClientTransport("client");
 #else
-            _transport = new LiteNetTransport("client");
+            ITransport udp = new LiteNetTransport("client");
+            if (CommandLine.GetBool("nebula-encrypt", config.ClientEncryption))
+                udp = EncryptedTransport.ForClient(udp, new ClientEncryption { Fingerprint = CommandLine.Get("nebula-gateway-fingerprint", config.GatewayFingerprint) });
+            _transport = udp;
 #endif
             _transport.StartClient();
             SceneEntities.Registered += OnSceneEntityRegistered;
@@ -684,7 +688,10 @@ namespace Nebula
                     break;
                 case TransportEvent.Kind.Disconnected:
                     if (!WantsConnection) break; // we hung up ourselves
-                    LastError = ConnectionState == State.Connecting
+                    string security = TransportSecurity.ErrorOf(_transport);
+                    LastError = !string.IsNullOrEmpty(security)
+                        ? $"encrypted connection refused: {security}"
+                        : ConnectionState == State.Connecting
                         ? $"could not reach {Config.GatewayAddress}:{Config.GatewayPort} (retrying)"
                         : "disconnected from gateway (retrying)";
                     NebulaLog.Warn(LastError);

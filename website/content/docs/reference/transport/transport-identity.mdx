@@ -1,0 +1,112 @@
+---
+title: "TransportIdentity"
+description: "The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs)</div>
+
+```csharp
+public sealed class TransportIdentity : IDisposable
+```
+
+The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins. The certificate is an ordinary X.509 RSA certificate: either one the operator supplies as PEM (their own CA's, or the one the web port already uses) or one the gateway generates for itself on first run and keeps next to its other state. Encoding and decoding is done here, over `RSAParameters` and DER, because Unity's profile has neither `CertificateRequest` nor the PKCS#8 import helpers (`docs/transport-encryption.md` D3).
+
+## Properties
+
+### Certificate [#certificate]
+
+```csharp
+public byte[] Certificate { get; }
+```
+
+The DER certificate sent to every client during the handshake.
+
+### Key [#key]
+
+```csharp
+public RSA Key { get; }
+```
+
+The private key; only the gateway has it.
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint { get; }
+```
+
+SHA-256 of the certificate's SubjectPublicKeyInfo as 64 lowercase hex characters: what a client pins with `NebulaConfig.GatewayFingerprint`. It is the fingerprint of the key, not of the certificate, so re-issuing the certificate for the same key does not invalidate what players pinned.
+
+## Methods
+
+### Sign [#sign]
+
+```csharp
+public byte[] Sign(byte[] data);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### FingerprintOf [#fingerprintof]
+
+```csharp
+public static string FingerprintOf(byte[] certificateDer);
+```
+
+The fingerprint a client would pin for a certificate it received.
+
+### Verify [#verify]
+
+```csharp
+public static bool Verify(byte[] certificateDer, byte[] data, byte[] signature);
+```
+
+Check a signature the gateway made with the key in `certificateDer`.
+
+### Create [#create]
+
+```csharp
+public static TransportIdentity Create(string certificatePem, string keyPem, string certificatePath, string keyPath, string selfSignedPath, string subject);
+```
+
+Build the identity a gateway presents. In order: the PEM strings, then the PEM files, then a self-signed certificate read from (or written to) `selfSignedPath`.
+
+| Parameter | Description |
+| --- | --- |
+| `subject` | Common name of a generated certificate: the address clients dial. |
+
+### FromPem [#frompem]
+
+```csharp
+public static TransportIdentity FromPem(string certificatePem, string keyPem);
+```
+
+A certificate and key in PEM form, the two blocks in either order and optionally in one file.
+
+### SelfSigned [#selfsigned]
+
+```csharp
+public static TransportIdentity SelfSigned(string subject);
+```
+
+A fresh 2048-bit RSA key in a self-signed certificate valid for ten years.
+
+### ToPem [#topem]
+
+```csharp
+public string ToPem();
+```
+
+The certificate and its key as one PEM document, which is what the self-signed store holds.
+
+### FingerprintMatches [#fingerprintmatches]
+
+```csharp
+public static bool FingerprintMatches(string expected, string actual);
+```
+
+Compare fingerprints the way a player would paste them: case and separators do not matter.

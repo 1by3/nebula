@@ -474,6 +474,11 @@ namespace Nebula
         /// mean, and how a player gets the right one, is the game's business.
         /// </summary>
         ContentVersionMismatch = 4,
+        /// <summary>
+        /// The mesh accepts encrypted client links only (<see cref="NebulaConfig.RequireEncryption"/>) and this
+        /// one is in the clear. Retrying without turning encryption on will be refused again.
+        /// </summary>
+        EncryptionRequired = 5,
     }
 
     /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>

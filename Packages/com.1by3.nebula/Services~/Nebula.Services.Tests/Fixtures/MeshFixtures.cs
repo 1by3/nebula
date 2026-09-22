@@ -744,7 +744,12 @@ public sealed class FakeWorker : IDisposable
 /// <summary>A client link: sends Hello on connect and collects what the gateway says (unpacking batches).</summary>
 public sealed class FakeClient : IDisposable
 {
-    public readonly LiteNetTransport Transport = new("fake-client");
+    /// <summary>
+    /// The client's link. Plain UDP unless the constructor was given <see cref="ClientEncryption"/>, in which
+    /// case it is wrapped in an <see cref="EncryptedTransport"/> and everything from Hello on is encrypted
+    /// (docs/transport-encryption.md).
+    /// </summary>
+    public readonly ITransport Transport;
     public WelcomeMsg? Welcome;
     public JoinRejectedMsg? Rejected;
     public string? Replaced;
@@ -805,11 +810,17 @@ public sealed class FakeClient : IDisposable
     private readonly int _peer;
 
     /// <param name="scope">The simulation scope to join into (<see cref="HelloMsg.ScopeKey"/>); empty is the public world.</param>
-    public FakeClient(int port, string name, string token = "", string session = "", string scope = "")
+    /// <param name="encryption">Non-null connects over an encrypted link, pinning the gateway's fingerprint.</param>
+    public FakeClient(int port, string name, string token = "", string session = "", string scope = "", ClientEncryption? encryption = null)
     {
         _name = name; _token = token; _session = session; _scope = scope;
+        ITransport transport = new LiteNetTransport("fake-client");
+        Transport = encryption != null ? EncryptedTransport.ForClient(transport, encryption) : transport;
         _peer = Transport.Connect("127.0.0.1", port);
     }
+
+    /// <summary>Whether the gateway link is encrypted, which a test asserts after the handshake has settled.</summary>
+    public bool Encrypted => TransportSecurity.IsEncrypted(Transport, _peer);
 
     public void SendInput()
     {

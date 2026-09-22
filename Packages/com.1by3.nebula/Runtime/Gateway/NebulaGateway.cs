@@ -343,6 +343,7 @@ namespace Nebula
         private AnonymousIdentityIssuer _anonymous;
         private SessionTokens _sessions;
         private byte[] _peerKey;
+        private EncryptedTransport _encrypted;
 
         // Load figures for the heartbeat (GatewayStats): traffic counted per direction and per side, CPU from the
         // process clock, loop lag from a stopwatch around Tick.
@@ -364,6 +365,12 @@ namespace Nebula
         /// <summary>Issues and checks the session tokens clients reconnect with.</summary>
         public SessionTokens Sessions => _sessions;
 
+        /// <summary>
+        /// The SHA-256 SubjectPublicKeyInfo fingerprint of the certificate this gateway presents to clients, or
+        /// null when it accepts no encrypted links. A client pins this value (<c>NebulaConfig.GatewayFingerprint</c>).
+        /// </summary>
+        public string CertificateFingerprint { get; private set; }
+
         /// <param name="browserTransport">A second transport clients arrive on, already listening: the standalone
         /// gateway's WebRTC listener for web builds. Null accepts UDP clients only.</param>
         /// <param name="gatewayId">This gateway's id; null reads <c>-nebula-gateway-id</c> ("gw1" by default).</param>
@@ -376,13 +383,53 @@ namespace Nebula
             _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
             var udp = new LiteNetTransport("gateway");
             udp.Listen(config.GatewayPort);
-            _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
+            ITransport clientLink = InitializeEncryption(config, udp);
+            _transport = browserTransport != null ? new MultiTransport(clientLink, browserTransport) : clientLink;
             InitializeInterest();
             ControlPlane.Changed += OnControlPlaneChanged;
             NebulaLog.Info($"gateway {GatewayId} (incarnation {Incarnation:x8}) listening on udp/{config.GatewayPort}" + (_peerKey == null ? "; no mesh token: any worker is trusted" : ""));
             InitializeAuth(config);
             _statsSince = _clock.Elapsed.TotalSeconds;
             _lastCpu = ProcessorTime();
+        }
+
+        /// <summary>
+        /// Wrap the client socket so a client that asks for an encrypted link gets one
+        /// (<see cref="EncryptedTransport"/>). Worker and gateway peers share this socket and are left in the
+        /// clear on purpose: <c>docs/transport-encryption.md</c> D1 makes a private network around them a
+        /// deployment requirement. A gateway that cannot get a certificate keeps accepting plaintext clients
+        /// unless <see cref="NebulaConfig.RequireEncryption"/> says it must not, which is a configuration error
+        /// worth failing on.
+        /// </summary>
+        private ITransport InitializeEncryption(NebulaConfig config, ITransport udp)
+        {
+            if (!config.EncryptClients && !config.RequireEncryption) return udp;
+            if (!config.EncryptClients) NebulaLog.Warn("transport encryption: RequireEncryption is on, so EncryptClients being off is ignored");
+            try
+            {
+                string store = string.IsNullOrEmpty(config.EncryptionSelfSignedPath) ? DefaultStatePath("nebula-transport.pem") : config.EncryptionSelfSignedPath;
+                var identity = TransportIdentity.Create(config.EncryptionCertPem, config.EncryptionKeyPem, config.EncryptionCertPath, config.EncryptionKeyPath, store, config.GatewayAddress);
+                _encrypted = EncryptedTransport.ForGateway(udp, identity);
+                CertificateFingerprint = identity.Fingerprint;
+                NebulaLog.Info($"transport encryption: clients may encrypt this link{(config.RequireEncryption ? " and must" : "")}; certificate fingerprint {identity.Fingerprint} (clients pin it with GatewayFingerprint / -nebula-gateway-fingerprint)");
+                return _encrypted;
+            }
+            catch (Exception e)
+            {
+                if (config.RequireEncryption) throw new InvalidOperationException($"RequireEncryption is on but the gateway has no usable certificate: {e.Message}", e);
+                NebulaLog.Warn($"transport encryption: off, no usable certificate ({e.Message}); clients connect in the clear");
+                return udp;
+            }
+        }
+
+        /// <summary>Where per-gateway state (the self-signed certificate, the auth key) lives.</summary>
+        private static string DefaultStatePath(string file)
+        {
+#if NEBULA_SERVICE
+            return System.IO.Path.Combine(AppContext.BaseDirectory, file);
+#else
+            return System.IO.Path.Combine(Application.persistentDataPath, file);
+#endif
         }
 
         /// <summary>
@@ -1202,6 +1249,11 @@ namespace Nebula
                     _clientsById[c.ClientId] = c;
                 }
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
+                if (Config.RequireEncryption && !TransportSecurity.IsEncrypted(_transport, peerId))
+                {
+                    Reject(c, "this gateway only accepts encrypted connections; update your client", false, JoinRejectReason.EncryptionRequired);
+                    return;
+                }
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
                 // ---- NEB-228 compatibility window (docs/compatibility-policy.md). Refuse with a code the game
                 // can turn into "update required" or "this server is older than your build", and record the

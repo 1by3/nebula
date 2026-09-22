@@ -1,0 +1,32 @@
+---
+title: "ISecureTransport"
+description: "A transport that can tell, per peer, whether the link is encrypted."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public interface ISecureTransport
+```
+
+A transport that can tell, per peer, whether the link is encrypted. [`EncryptedTransport`](/docs/reference/transport/encrypted-transport), [`MultiTransport`](/docs/reference/transport/multi-transport) and the WebRTC transports implement it; the gateway asks it before it lets a client's `Hello` through when `NebulaConfig.RequireEncryption` is set.
+
+## Properties
+
+### SecurityError [#securityerror]
+
+```csharp
+string SecurityError { get; }
+```
+
+The last handshake failure, for the connection UI. Empty when nothing has failed.
+
+## Methods
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+bool IsEncrypted(int peerId);
+```
+
+Whether traffic with this peer is encrypted and its far end authenticated as far as the configuration asked.

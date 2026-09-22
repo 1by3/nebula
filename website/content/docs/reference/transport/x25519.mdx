@@ -1,0 +1,44 @@
+---
+title: "X25519"
+description: "X25519 (RFC 7748 §5) over BigInteger."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
+
+```csharp
+public static class X25519
+```
+
+X25519 (RFC 7748 §5) over `BigInteger`. A scalar multiplication costs well under a millisecond and happens once per connection, so the field arithmetic is written for reviewability rather than speed.
+
+## Fields
+
+### KeySize [#keysize]
+
+```csharp
+public const int KeySize = 32;
+```
+
+## Methods
+
+### NewPrivateKey [#newprivatekey]
+
+```csharp
+public static byte[] NewPrivateKey();
+```
+
+A fresh private scalar. [`PublicKey`](#publickey) turns it into the value sent on the wire.
+
+### PublicKey [#publickey]
+
+```csharp
+public static byte[] PublicKey(byte[] privateKey);
+```
+
+### Agree [#agree]
+
+```csharp
+public static byte[] Agree(byte[] privateKey, byte[] peerPublicKey);
+```
+
+The shared secret, or null when the peer sent a point of small order (an all-zero result).

@@ -118,6 +118,6 @@ For these clients, `ConnectsAutomatically` is `true`. See [Configuration](/docs/
 
 A web build connects to the gateway over WebRTC and reads the same options from the page's query string, such as `?nebula-name=Player&nebula-connect`. By default it connects to the gateway that served the page. See [Build for the web](/docs/guides/web-builds).
 
-<Callout type="warn" title="UDP connections are not encrypted">
-Nebula does not encrypt the UDP client link. By default anyone who can reach the gateway address can join with an anonymous identity; to require a sign-in, see [Authentication](/docs/guides/authentication).
+<Callout type="warn" title="UDP connections are not encrypted by default">
+A native client's UDP link is encrypted only when you turn it on. See [Encrypt client connections](/docs/deploy/encryption). By default anyone who can reach the gateway address can join with an anonymous identity; to require a sign-in, see [Authentication](/docs/guides/authentication).
 </Callout>

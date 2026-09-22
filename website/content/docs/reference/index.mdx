@@ -267,11 +267,19 @@ Send reliable ordered or unreliable sequenced messages through LiteNetLib.
 
 | Type | Summary |
 | --- | --- |
+| [ChaCha20Poly1305Managed](/docs/reference/transport/cha-cha20-poly1305-managed) | Static class. ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce, a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext. |
+| [ClientEncryption](/docs/reference/transport/client-encryption) | Class. How a client treats the gateway's certificate. |
 | [Delivery](/docs/reference/transport/delivery) | Enum. Delivery classes supported by each Nebula network link. |
+| [EncryptedTransport](/docs/reference/transport/encrypted-transport) | Class. Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and the client exchange exactly the messages they always did, and this layer seals each packet. |
+| [ISecureTransport](/docs/reference/transport/i-secure-transport) | Interface. A transport that can tell, per peer, whether the link is encrypted. |
 | [ITransport](/docs/reference/transport/i-transport) | Interface. Provides the network transport used by Nebula. |
 | [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
 | [MultiTransport](/docs/reference/transport/multi-transport) | Class. Several transports behind one ITransport, so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. |
+| [NebulaCrypto](/docs/reference/transport/nebula-crypto) | Static class. The primitives the encrypted client link is built from, in managed C# so the same code runs in the Unity player (Mono and IL2CPP), in WebGL and in the .NET services. |
 | [TransportEvent](/docs/reference/transport/transport-event) | Struct. Stores the values used by transport event. |
+| [TransportIdentity](/docs/reference/transport/transport-identity) | Class. The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins. |
+| [TransportSecurity](/docs/reference/transport/transport-security) | Static class. Whether a link is encrypted, for callers that hold a plain ITransport. |
+| [X25519](/docs/reference/transport/x25519) | Static class. X25519 (RFC 7748 §5) over BigInteger. |
 
 ## Protocol
 
