@@ -46,10 +46,19 @@ public static CapacityInfo Worse(in CapacityInfo a, in CapacityInfo b);
 
 The more saturated of two readings, preferring a known one over an unknown one. An unknown reading never wins, so one worker that has not reported yet cannot make a busy scope look idle.
 
+### IsPerContainer [#ispercontainer]
+
+```csharp
+public static bool IsPerContainer(ScopeInfo scope);
+public static bool IsPerContainer(IControlPlane cp, string scopeKey);
+```
+
+Whether this scope is judged one container at a time rather than as a whole. A grid scope ([`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid)) is an unbounded procedural world whose row names only the anchor chunk: its chunks are separate places, so "the world is full" is not a thing it can be. A parts scope is one authored interaction domain and is judged whole (D3).
+
 ### Target [#target]
 
 ```csharp
 public static CapacityInfo Target(IControlPlane cp, string scopeKey, string containerId);
 ```
 
-The capacity of the target a client is asking to enter: the scope when it named one, otherwise the container it would be placed in. This is the one call a gateway or a worker makes.
+The capacity of the target a client is asking to enter: the scope when it named one that is judged as a whole, otherwise the container it would be placed in. This is the one call a gateway or a worker makes.
