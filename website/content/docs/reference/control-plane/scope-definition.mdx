@@ -1,0 +1,63 @@
+---
+title: "ScopeDefinition"
+description: "What a scope is made of: the containers to bring into being and how their occupants see the public world."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+[Serializable]
+public sealed class ScopeDefinition
+```
+
+What a scope is made of: the containers to bring into being and how their occupants see the public world. A definition is compared by value (its canonical JSON), so activating the same key twice with the same definition is a no-op and activating it with a different one is refused rather than silently merged.
+
+[`Kind`](#kind) and [`Payload`](#payload) are the extension seam: scoped chunk grids (NEB-239) add a kind of their own and put the grid definition in the payload. Nebula carries the payload verbatim and never parses it.
+
+## Fields
+
+### Kind [#kind]
+
+```csharp
+public string Kind = ScopeKind.Parts;
+```
+
+### Parts [#parts]
+
+```csharp
+public List<ScopePart> Parts = new List<ScopePart>();
+```
+
+### ObservePublic [#observepublic]
+
+```csharp
+public bool ObservePublic;
+```
+
+Occupants may receive public entities inside [`ObservationCenter`](#observationcenter)/[`ObservationSize`](#observationsize).
+
+### ObservationCenter, ObservationSize [#observationcenter-observationsize]
+
+```csharp
+public Vector3 ObservationCenter, ObservationSize;
+```
+
+The outward view box, in absolute world coordinates.
+
+### Payload [#payload]
+
+```csharp
+public string Payload = "";
+```
+
+An opaque blob the game or a later milestone attaches to the definition. Never parsed by Nebula.
+
+## Methods
+
+### Validate [#validate]
+
+```csharp
+public string Validate();
+```
+
+The reason this definition cannot be activated, or null when it is well formed.

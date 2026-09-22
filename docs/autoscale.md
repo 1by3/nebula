@@ -133,6 +133,7 @@ ScaleHoldSeconds = 30, ScaleWindowSeconds = 20
 IdlePoolSeconds = 0 (host default)
 AssignmentPolicy = auto | baked | cost    // auto = cost
 CostRebalanceThreshold, CostWeights      // unchanged
+CostLinkBudgetMbps = 100                 // added 2026-09-21; yardstick only, see docs/cost-telemetry.md
 ```
 
 `nebula start --workers N` keeps meaning a fixed count (sets Min = Max = N); `--min/--max` added.
@@ -228,6 +229,52 @@ needs the Hetzner trial. `nebula stop` left no Nebula process behind.
 | Tests | 209 | 219 EditMode and 48 service tests: `WorkerLoadTrackerTests`, `WorkerScalerTests` (including the settle check with a parked worker, the two unbelievable dry runs and the cold-window rule), `AssignmentPolicyTests` (predict, the `ScaleMinGain` gate and its floor), `ContainerHintTests` (including the no-hint overload), `IdlePoolTests` (including an idle pool shorter than the billing margin), `ScaleToZeroTests`, plus service tests for the hint round trip, the 409 on resuming at the ceiling, and a real-UDP `GatewayHoldsTheJoinWhenNoWorkerIsRunning` |
 | Docs | - | `guides/configuration.mdx` gains an Autoscaling table with every field, its switch and its `nebula.json` key; `orchestrator-and-dashboard.mdx`, `runtime-containers.mdx`, `world-partition.mdx`, `docs/cli.md`, and the generated CLI and API reference |
 
+## Addendum (2026-09-21): what a hot container is hot in
+
+`CostWeights` is per category, and the per-container report was a head count, so "cell_3_0_1 cannot
+be split" said nothing about *why*. Per-entity cost hints and per-container cost telemetry
+(`docs/cost-telemetry.md`) change three things here:
+
+- **The weights are per entity.** `NetworkIdentity.CostWeight` multiplies the category weight and
+  `NebulaCost.EntityWeight` can decide it at spawn. The worker tallies the weighted sum per
+  container and reports it; `CostWeights.Of` prefers that sum over counting heads, so the cost
+  policy, `WorkerLoadTracker.Attribute` and the scaler's dry runs all see it. A world that sets no
+  weights gets exactly the numbers it got before.
+- **Simulation time is measured.** The worker times each entity's `NetworkTick` and charges it to
+  the entity's container, so a container of static props and a container of pathing NPCs no longer
+  cost the same merely for holding the same number of entities. The rest of the tick belongs to no
+  container and is left out, which is why the rows add up to less than a worker's utilization.
+- **The blocked reason names the component.** `ScaleDecision.BlockedComponent` is `simulation`,
+  `replication` or `gateway`, from the container's cost row, and the reason string says which:
+  three different fixes, one sentence apart.
+
+This closes the first follow-up below in part: occupancy reports still carry no positions, so seam
+grace is still unenforced, but they no longer carry only counts.
+
+## Addendum (2026-09-22): explained moves and saturation (NEB-235)
+
+Design of record: `docs/cohesion-rebalancing.md`. Three things changed around the planner; the cut
+itself, `MinGain`, `MinGainFloor` and `Threshold` are untouched.
+
+- **Every move is explained.** The cost policy emits an `AssignmentMove` (container, from, to,
+  reason) beside every change, offered through the second interface `IExplainsAssignment` so a
+  game's own `IAssignmentPolicy` keeps compiling. The reason names the boundary the cut fell on, the
+  before/after peak, and the group that kept containers together. The orchestrator logs it in
+  brackets after `assign c -> w`, publishes it under `assignment.moves` and shows it on the
+  dashboard's **Assignment plan** card.
+- **Saturation is typed and reported.** When the busiest worker is at or above
+  `CostBalancedAssignmentPolicy.SaturationUtilization` (0.7), nothing moved off it, and its heaviest
+  item is itself that hot, the pass emits a `SaturationReport`: the container, its scope key, the
+  item, the utilization and a `SaturationCause` — `CohesionGroup`, `AffinityGroup`, `Held`,
+  `Dedicated` or `NoBoundary`. The scaler appends its sentence to the blocked reason and records
+  `ScaleDecision.BlockedCause` / `BlockedReason` beside the unchanged `BlockedComponent`. This
+  closes the last follow-up below for cohesion and affinity groups: an oversize group is no longer
+  silent.
+- **Dry runs carry the constraints.** `AssignmentPlanner.Predict` built its hypothetical input from a
+  subset of fields that left out `Cohesion`, so a dry run could split a group the real deal may not,
+  predict a relief that never arrives, and grow the mesh for nothing. It now carries `Cohesion`,
+  `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
+
 ## Follow-ups
 
 - **Seam grace is configured, not enforced.** `SeamGraceMeters` needs a per-container distance
@@ -256,5 +303,6 @@ needs the Hetzner trial. `nebula stop` left no Nebula process behind.
   through `WorkerTimeoutSeconds` (5 s) and the orchestrator relaunches the worker, repeatedly, until
   the load is spread over more workers. Either the load needs to yield or a starting worker needs a
   longer grace.
-- **Dedicated is per worker, not per size**, and an `AffinityGroup` larger than one worker's budget
-  is still dealt to one worker and simply runs hot, with no warning. Mixed host sizes are unmodelled.
+- **Dedicated is per worker, not per size.** An `AffinityGroup` larger than one worker's budget is
+  still dealt to one worker and simply runs hot - it is now reported (`SaturationReport`, the
+  addendum above) rather than silent, but nothing makes it smaller. Mixed host sizes are unmodelled.

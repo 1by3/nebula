@@ -29,6 +29,12 @@ namespace Nebula
         public uint ServerDrivenCount;
         /// <summary>The worker holds at least one always-relevant entity (see <see cref="WorkerStats.HasGlobalEntities"/>).</summary>
         public bool HasGlobalEntities;
+        /// <summary>
+        /// How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint, in
+        /// seconds; 0 when persistence is off or nothing is dirty. See <see cref="WorkerStats.OldestDirtySeconds"/>
+        /// and docs/persistence-durability.md.
+        /// </summary>
+        public float OldestDirtySeconds;
     }
 
     /// <summary>What a worker reports about itself on every heartbeat.</summary>
@@ -48,6 +54,11 @@ namespace Nebula
         /// and nothing else would make the gateway ask for it.
         /// </summary>
         public bool HasGlobalEntities;
+        /// <summary>
+        /// <see cref="NebulaPersistence.OldestDirtyAgeSeconds"/> on this worker, or 0 when persistence is off. An
+        /// additive field on the existing heartbeat message: older orchestrators simply do not read it.
+        /// </summary>
+        public float OldestDirtySeconds;
     }
 
     /// <summary>Describes the current worker assignment for one container.</summary>
@@ -77,6 +88,26 @@ namespace Nebula
         public bool HasHint;
         /// <summary>The runtime hint, when <see cref="HasHint"/>.</summary>
         public ContainerHint Hint = ContainerHint.Default;
+        /// <summary>
+        /// The orchestrator has published a capacity reading for this container
+        /// (<see cref="IControlPlane.SetContainerCapacity"/>, docs/capacity-admission.md). False means no worker has
+        /// reported cost for it lately, and an unknown container is never at capacity.
+        /// </summary>
+        public bool HasCapacity;
+        /// <summary>The dominant cost component's share of its own budget, when <see cref="HasCapacity"/>. 1 = the whole budget.</summary>
+        public float Saturation;
+        /// <summary>Which component <see cref="Saturation"/> is about.</summary>
+        public CostComponent Dominant;
+        /// <summary>
+        /// <see cref="Saturation"/> reached <c>NebulaConfig.CapacitySaturation</c>. The orchestrator decides it, so
+        /// every gateway of a mesh answers the same way without knowing the threshold.
+        /// </summary>
+        public bool AtCapacity;
+        /// <summary>
+        /// Why the planner cannot relieve it by moving anything (<see cref="SaturationReport.Cause"/>), or
+        /// <see cref="Nebula.SaturationCause.None"/> when the reading is cost telemetry alone.
+        /// </summary>
+        public SaturationCause SaturationCause;
     }
 
     /// <summary>
@@ -224,6 +255,11 @@ namespace Nebula
         IReadOnlyList<LeaseInfo> Leases { get; }
         IReadOnlyList<GatewayInfo> Gateways { get; }
         /// <summary>
+        /// The shared simulation scopes that have been activated (<see cref="ActivateScope"/>), one row per key,
+        /// mirrored to every role. The public world has no row. Design of record: <c>docs/scope-activation.md</c>.
+        /// </summary>
+        IReadOnlyList<ScopeInfo> Scopes { get; }
+        /// <summary>
         /// Mesh-wide live settings: string key/values Nebula attaches no meaning to. The orchestrator seeds them
         /// (<c>-nebula-settings k=v,k=v</c>), the dashboard edits them, and game code on a worker may write them.
         /// They are the game's low-volume coordination channel across workers (e.g. a spawn budget every worker
@@ -255,6 +291,37 @@ namespace Nebula
         /// <summary>Set (or create) one mesh-wide setting. Every subscriber sees it through <see cref="Changed"/>.</summary>
         void SetSetting(string key, string value);
 
+        /// <summary>
+        /// Ask the mesh for a shared simulation scope by key, creating its containers from
+        /// <see cref="ScopeActivationRequest.Definition"/> the first time. Idempotent: the first caller creates the
+        /// rows, every later caller with the same definition changes nothing, and a caller with a *different*
+        /// definition under the same key is refused so two worlds never share one scope. A game-supplied unique key
+        /// is how a private copy is asked for; there is no separate call.
+        /// <para>
+        /// Like every other control-plane write this is fire and forget: the answer is the
+        /// <see cref="Scopes"/> row, which appears on this process (and on every other) once the orchestrator has
+        /// applied it. Poll it with <see cref="ControlPlaneExtensions.FindScope"/> and ask whether it can be
+        /// entered with <see cref="ControlPlaneExtensions.IsScopeReady"/>.
+        /// </para>
+        /// </summary>
+        void ActivateScope(ScopeActivationRequest request);
+        /// <summary>
+        /// Move a scope's lifecycle state on (<see cref="ScopeState"/>). The orchestrator's idle sweep is the single
+        /// writer of the machine; nothing else in a mesh should call it. See <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        void SetScopeState(string scopeKey, string state);
+        /// <summary>
+        /// A worker reporting that it finished the step the scope is in for one of its containers: the checkpoint
+        /// before a retire, or the restore after a re-activation (<see cref="ScopePhase"/>). The orchestrator waits
+        /// for one ack per container before taking the next step.
+        /// </summary>
+        void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+        /// <summary>
+        /// Drop a scope's row, its durable claim and the lease rows of its containers. The mechanism only: when a
+        /// scope should go is the game's or NEB-240's decision, and entities still in it are not moved.
+        /// </summary>
+        void RemoveScope(string scopeKey);
+
         void EnsureContainer(string containerId);
         /// <summary>
         /// Make sure a lease row exists for a runtime container, carrying its box (absolute coordinates) and, when
@@ -284,6 +351,14 @@ namespace Nebula
         /// clears the runtime hint and lets the baked one stand again.
         /// </summary>
         void SetContainerHint(string containerId, in ContainerHint hint);
+        /// <summary>
+        /// Publish what the cost telemetry says about how full a container is, so a gateway can answer "is this
+        /// target at capacity" from the document it already mirrors instead of asking the orchestrator
+        /// (docs/capacity-admission.md). The orchestrator is the only writer. It does <b>not</b> stamp
+        /// <see cref="LeaseInfo.UpdatedAt"/>: that is the mesh's idle clock, and a reading published every pass
+        /// would keep every scope hot for ever.
+        /// </summary>
+        void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
         void ReleaseContainer(string containerId);
         /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>
         void RemoveContainer(string containerId);
@@ -309,6 +384,46 @@ namespace Nebula
             foreach (var l in cp.Leases) if (l.ContainerId == containerId) return l;
             return null;
         }
+
+        /// <summary>The scope row for <paramref name="scopeKey"/>, or null when the key has not been activated here yet.</summary>
+        public static ScopeInfo FindScope(this IControlPlane cp, string scopeKey)
+        {
+            if (string.IsNullOrEmpty(scopeKey) || cp.Scopes == null) return null;
+            foreach (var s in cp.Scopes) if (string.Equals(s.ScopeKey, scopeKey, StringComparison.Ordinal)) return s;
+            return null;
+        }
+
+        /// <summary>
+        /// Whether the scope can be entered: every container of it has a lease row in an owning state
+        /// (<see cref="LeaseState.IsOwning"/>) held by a worker that is still heartbeating. It does <b>not</b> say
+        /// that the worker has loaded the scope's content — that stays with the per-crossing handshake
+        /// (<see cref="NebulaWorker.PrepareTransfer"/>). See <c>docs/scope-activation.md</c> §4.
+        /// </summary>
+        public static bool IsScopeReady(this IControlPlane cp, ScopeInfo scope, float workerTimeoutSeconds = 15f)
+        {
+            if (scope == null || scope.ContainerIds == null || scope.ContainerIds.Count == 0) return false;
+            foreach (var containerId in scope.ContainerIds)
+            {
+                var lease = cp.FindLease(containerId);
+                if (lease == null || !LeaseState.IsOwning(lease.State) || string.IsNullOrEmpty(lease.WorkerId)) return false;
+                if (!cp.IsWorkerAlive(cp.FindWorker(lease.WorkerId), workerTimeoutSeconds)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// How full a container is, as the orchestrator last published it (<see cref="NebulaCapacity.Of"/>).
+        /// </summary>
+        public static CapacityInfo CapacityOf(this IControlPlane cp, string containerId) => NebulaCapacity.Of(cp, containerId);
+
+        /// <summary>
+        /// How full a whole scope is: the worst of its parts (<see cref="NebulaCapacity.OfScope"/>).
+        /// </summary>
+        public static CapacityInfo ScopeCapacityOf(this IControlPlane cp, string scopeKey) => NebulaCapacity.OfScope(cp, scopeKey);
+
+        /// <summary>Shorthand for <see cref="IsScopeReady(IControlPlane, ScopeInfo, float)"/> by key.</summary>
+        public static bool IsScopeReady(this IControlPlane cp, string scopeKey, float workerTimeoutSeconds = 15f) =>
+            cp.IsScopeReady(cp.FindScope(scopeKey), workerTimeoutSeconds);
 
         public static string GetSetting(this IControlPlane cp, string key, string fallback = null)
         {

@@ -8,6 +8,11 @@ namespace Nebula.World
     /// expressed in this frame (a "frame position"). When the frame moves, <see cref="Shifted"/> reports the delta
     /// to add to every frame position the streamer did not move itself (cached positions, history buffers,
     /// world-space particle systems...).
+    /// <para>
+    /// This is the <b>public</b> world's frame, and is <see cref="ScopeFrames.Public"/>. A scope that asked for a
+    /// frame of its own (a scoped chunk grid) keeps its origin in a <see cref="ScopeFrame"/> instead, so two scopes
+    /// on one worker can both sit near Unity's origin; see <c>docs/scope-frames.md</c>.
+    /// </para>
     /// </summary>
     public static class WorldOrigin
     {
@@ -24,6 +29,9 @@ namespace Nebula.World
             Definition = definition;
             Cell = Vector3Int.zero;
             ShiftCount = 0;
+            // A new world means new scopes: every per-scope frame (docs/scope-frames.md) goes with it. The public
+            // frame is this class and is reset by the three lines above.
+            ScopeFrames.Clear();
         }
 
         /// <summary>Delta every frame position gets when the origin moves from <paramref name="from"/> to <paramref name="to"/>.</summary>

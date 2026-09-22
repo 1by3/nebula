@@ -116,6 +116,12 @@ public int PendingWrites { get; }
 
 Writes waiting to be sent.
 
+### Scopes [#scopes]
+
+```csharp
+public IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
 ## Events
 
 ### Changed [#changed]
@@ -240,6 +246,12 @@ public void SetLeaseState(string containerId, string state);
 public void SetContainerHint(string containerId, in ContainerHint hint);
 ```
 
+### SetContainerCapacity [#setcontainercapacity]
+
+```csharp
+public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
+```
+
 ### ReleaseContainer [#releasecontainer]
 
 ```csharp
@@ -256,4 +268,28 @@ public void RemoveContainer(string containerId);
 
 ```csharp
 public void ResetControlPlane();
+```
+
+### ActivateScope [#activatescope]
+
+```csharp
+public void ActivateScope(ScopeActivationRequest request);
+```
+
+### SetScopeState [#setscopestate]
+
+```csharp
+public void SetScopeState(string scopeKey, string state);
+```
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
+### RemoveScope [#removescope]
+
+```csharp
+public void RemoveScope(string scopeKey);
 ```

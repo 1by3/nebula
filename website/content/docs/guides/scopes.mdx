@@ -1,0 +1,322 @@
+---
+title: Simulation scopes
+description: Ask the mesh for a shared world by key from anywhere, get the same world for the same key, and route players into it at join.
+---
+
+A **simulation scope** is a world the mesh simulates separately from every other: its own containers, its own authority, its own physics, and no visibility into any other scope. The public world is the scope whose key is the empty string. Every other scope is named by an opaque **scope key** the game chooses, and two players who ask for the same key land in the same world no matter which gateway or worker they came through.
+
+[Instances](/docs/guides/instancing) are scopes. So is a housing interior, a raid copy, a match, a season shard. The difference between them is entirely the key the game picks.
+
+Activating a scope is the mechanism only. Which key a player should go to, whether they are allowed in, and what the loading screen looks like stay with your game.
+
+## Ask for a scope
+
+```csharp
+controlPlane.ActivateScope(new ScopeActivationRequest
+{
+    ScopeKey  = "raid/molten-core#run-4812",
+    Requester = "matchmaker",
+    Definition = new ScopeDefinition
+    {
+        Kind = ScopeKind.Parts,
+        ObservePublic = false,
+        Parts =
+        {
+            new ScopePart
+            {
+                PartId = "interior",
+                Center = new Vector3(2000, 0, 0),    // absolute world coordinates
+                Size   = new Vector3(120, 40, 120),
+                ContentResource = "Instances/MoltenCore",
+            },
+        },
+    },
+});
+```
+
+Each part becomes one [runtime container](/docs/guides/runtime-containers) with a lease row the orchestrator can deal out. The call is available on any `IControlPlane`: a worker, a gateway, the orchestrator, or a standalone service holding a `RemoteControlPlane`. **Nothing has to be running inside the scope**, and no player has to be standing anywhere.
+
+The bounds are absolute world coordinates, the same frame the control plane's lease rows use. `ObservePublic` and the observation box let the scope's occupants receive public entities within a box, exactly as an instance template's `PublicView` does.
+
+### Asking twice is safe
+
+`ActivateScope` is idempotent. The first caller creates the rows; every later caller with the same key and the same definition changes nothing and sees the same rows. That holds when two requesters ask at the same moment, and across an orchestrator restart, because the scope key is a uniqueness constraint in the control plane's storage — a primary key in SQL, an exclusive file create for a file-backed control plane.
+
+A second caller that asks for the same key with a **different** definition is refused, and the stored scope stands. Two different worlds never share one key. Nothing changes on a refusal, so the caller keeps whatever scope it is already in and can retry.
+
+### Private copies
+
+There is no separate call for a private scope. A private copy is the same call with a key the game made unique:
+
+| Key | What you get |
+| --- | --- |
+| `raid/molten-core` | one world, shared by everyone who asks for it |
+| `raid/molten-core#party-91` | a copy for that party |
+| `home/<player identity>` | a copy per player |
+
+Nebula never parses the key, so the structure above is a convention, not a rule. Two different keys are two scopes with different containers and no visibility into each other.
+
+## Wait for it to be ready
+
+`ActivateScope` is a control-plane write like any other: it is queued, batched and applied in order, and the answer is the row every process mirrors.
+
+```csharp
+var scope = controlPlane.FindScope(key);        // null until the orchestrator applied the request
+if (controlPlane.IsScopeReady(key))
+{
+    // every container of the scope has a lease held by a worker that is still heartbeating
+}
+```
+
+`IsScopeReady` tells you there is a worker simulating the scope. It does **not** tell you that the worker has loaded the scope's content:
+
+| Question | How to answer it |
+| --- | --- |
+| Does the scope exist? | `controlPlane.FindScope(key) != null` |
+| Is a worker simulating it? | `controlPlane.IsScopeReady(key)` |
+| Is a destination container's content loaded there? | `InstanceTransfer.Ready` after `worker.PrepareTransfer(...)` |
+
+A worker asking for a scope it intends to simulate itself can skip the wait by setting `PreferredWorkerId`, which creates the rows already assigned to it. That is what `NebulaWorker.PrepareInstance` does; for every other caller the rows are created unowned and the orchestrator assigns them on its next rebalance.
+
+## A scope can be a whole world
+
+A scope does not have to be a room you listed the parts of. It can be an entire procedural [chunked world](/docs/guides/infinite-runtime-world) — a second map, an instanced open area, one copy of a region per party — with its own cell size, its own chunks, its own leases and its own saved entities:
+
+```csharp
+NebulaChunkedWorld.ActivateGrid(controlPlane, "world/arena#run-4812", new ChunkGridDefinition
+{
+    CellSize = new Vector3(64, 512, 64),
+    Planar   = true,
+    Ring     = 2,                  // chunks leased around each pawn; 0 uses the mesh's own setting
+    Anchor   = Vector3Int.zero,    // the chunk that always exists: the world's spawn area
+});
+```
+
+Activation creates exactly **one** container, the anchor chunk. A grid has no edge, so listing its chunks is not possible; every other chunk is leased on demand around the players who are actually in that world, and retired when nobody is.
+
+Everything else about the scope works as above: the same key gives the same world, a unique key gives a private copy, and a client that names the key at join is spawned into that world's anchor chunk.
+
+### Reaching a scoped world in your game
+
+`NebulaChunks` is keyed by scope. Everything you already call keeps meaning the public world:
+
+| Public world | A scope |
+| --- | --- |
+| `NebulaChunks.Grid` | `NebulaChunks.GridFor(key)` |
+| `NebulaChunks.At(position)` | `NebulaChunks.At(position, key)` |
+| `NebulaChunks.CoordOf(position)` | `NebulaChunks.CoordOf(position, key)` |
+| `NebulaChunks.EnsureAt(position, cb)` | `NebulaChunks.EnsureAt(position, key, cb)` |
+| `NebulaChunks.Allocator` | `NebulaChunks.AllocatorFor(key)` |
+
+Content callbacks are shared. One `Loaded` handler builds chunks for every world your process has joined, and `ChunkContext.ScopeKey` says which one a chunk belongs to:
+
+```csharp
+NebulaChunks.Loaded += (in ChunkContext chunk) =>
+{
+    // chunk.Seed differs per scope, so two worlds at the same coordinate generate differently
+    BuildTerrain(chunk.Root, chunk.Coord, chunk.Seed, biome: BiomeFor(chunk.ScopeKey));
+};
+```
+
+A process only pays for the worlds it is actually in: a grid appears the first time a container of that scope turns up in the process, and never before.
+
+### What two worlds never share
+
+Chunk `(3, 0, -7)` of two scopes is two containers standing on the same coordinates, and nothing passes between them:
+
+- two lease rows, so two workers can own them independently;
+- two container IDs, so two persistence records — what one world saves never appears in the other;
+- no adjacency, so an entity in one never ghosts into, interacts with, or is handed over to the other;
+- no interest: a client in one world is never told that the other's chunks exist, and never receives its entities.
+- no frame: each scope keeps its own floating origin, so both worlds can sit next to Unity's origin on one worker and neither loses precision because of the other;
+- no physics: each scope's containers are loaded into their own physics scene, so two boxes on the same ground never collide.
+
+Their chunk seeds differ too, so the same coordinate generates different content in each world unless your game deliberately keys off the coordinate alone.
+
+<Callout>Entities do not cross a scope boundary by proximity, however close two worlds are in metres. Moving a player from one world to another is the same prepared transfer as entering any other scope.</Callout>
+
+## Send a player into a scope
+
+### At join
+
+A client names the scope it wants before it connects:
+
+```csharp
+client.ScopeKey = "raid/molten-core#run-4812";   // or -nebula-scope on the command line
+client.Connect();
+```
+
+The gateway spawns the player only into a container of that scope. If the scope has no container with a live owner yet, the join is **held** in `JoinState.Starting` — the same hold a client gets when it arrives before the first worker has booted — and completes with no reconnect as soon as the scope is ready. The gateway never falls back to another scope, in either direction: a client that named a scope is never dropped into the public world, and a client that named nothing is never placed inside somebody's instance.
+
+The gateway does not activate the scope. Whatever told the player to go to that key — your matchmaker, your travel menu, your login flow — is what calls `ActivateScope` first.
+
+### From inside the mesh
+
+A player already in the world crosses with the prepared-transfer pair, which keeps their connection, session and network identity and is fenced against the destination changing worker mid-crossing:
+
+```csharp
+var transfer = worker.PrepareTransfer(pawn, destination);
+// ... later, once transfer.Ready
+worker.TryCommitTransfer(transfer, position, rotation);
+```
+
+[`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
+
+## From outside the mesh
+
+Activation is an ordinary control-plane write, so a service that is not part of the mesh can post it to the orchestrator:
+
+```bash
+curl -X POST http://orchestrator:7080/api/control-plane \
+  -H 'X-Nebula-Token: <mesh token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+```
+
+The definition travels as a JSON document inside a JSON string. Read the result back from `GET /api/control-plane`, whose document carries a `scopes` array.
+
+## Retiring and re-activating a scope
+
+A scope with nobody in it does not have to keep a worker busy. The orchestrator retires it, and brings it back — the same scope, with the same saved contents — when somebody activates the key again.
+
+### When a scope is idle
+
+A scope's idle age is the **smallest** age over its parts, so one busy part keeps the whole scope hot. The owning worker keeps a part's clock at zero while it holds anything a retire would lose:
+
+- an entity a client owns (somebody is in it);
+- an entity that is not persistent (its state cannot be brought back);
+- a persistent entity whose latest changes have not been saved yet.
+
+A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula-scope-idle-retire`; 0 turns retirement off) and that the workers report as empty is retired. The public world has no scope row and is never retired.
+
+### What retiring does
+
+1. The scope is marked `retiring`. **It admits nobody from this moment**, before anything is saved.
+2. Each part runs the before-retire step, force-checkpoints every persistent entity inside it, and waits for the store to confirm the writes.
+3. Each part despawns its contents — persistent entities keep their saved records, anything else is gone — and reports back.
+4. Only when **every** part has reported does the orchestrator release the lease rows and mark the scope `retired`.
+
+Your game can run its own code in step 2 — collapsing the box into a summary row of its own, for instance — through [`NebulaLifecycle.OnBeforeRetire`](/docs/guides/lifecycle-hooks), and is told when the part is finally let go through `OnRetired`.
+
+The scope's row is kept, so the key keeps its identity and a later activation is the same scope rather than a new one. Nothing deletes a persisted record: `RemoveScope` is still the explicit way to forget a scope, and even that removes rows, not records.
+
+### What coming back does
+
+Activating a retired key puts the scope in `restoring` and brings its lease rows back with the same container IDs. Each worker that lands a part loads that part's persisted records in the ordinary way and reports the restore complete; only then does the scope become `active` and admit clients again.
+
+On the way back your game is told that the scope is coming to life, and whether anything is saved under its key, before any of its parts restores ([`OnScopeActivating`](/docs/guides/lifecycle-hooks)), and told again once each part's records are back (`OnContainerRestored`). That ordering is what lets a game rebuild a world from its own summary without racing the records.
+
+A client that asks for a scope which is not active is **held**, not refused: it stays welcomed and is placed with no reconnect the moment the scope admits again. Read why on the client:
+
+```csharp
+client.JoinStateChanged += (state, estimatedSeconds) =>
+{
+    if (state != JoinState.Starting) return;
+    ShowWaitScreen(client.JoinHoldReason switch
+    {
+        JoinHoldReason.ScopeRestoring => "Your instance is being restored…",
+        JoinHoldReason.ScopeRetiring  => "That instance is closing down.",
+        JoinHoldReason.ScopeNotReady  => "Waiting for your instance…",
+        _                             => "The world is starting…",
+    });
+};
+```
+
+### Deciding for yourself
+
+The time-based rule is the default, not the only one. Replace the policy to keep a scope hot for a reason Nebula cannot see — a party still in the matchmaking queue, a housing instance whose owner just logged out, a scheduled event:
+
+```csharp
+ScopeLifecycle.ShouldRetire = (in ScopeRetireContext scope) =>
+{
+    if (MyMatchmaker.HasPendingParty(scope.Scope.ScopeKey)) return false;
+    return ScopeLifecycle.RetireWhenIdle(scope);   // the default rule otherwise
+};
+```
+
+The context carries the scope row, its idle age in seconds, the players and entities the workers last reported in it, and the configured threshold. It is consulted only for scopes that are `active`; a policy that throws is logged and the scope is kept.
+
+The orchestrator's dashboard lists every scope with its state, occupancy, idle age and age, so you can see what a policy is doing.
+
+## When a target is full
+
+A scope is one interaction domain. Its parts are authored, and past them it cannot be split: a station with six hundred people arriving in five minutes is still one station. Rather than quietly making a second copy or letting the tick collapse, Nebula reports that the target is at capacity and lets your game decide what to do about it.
+
+The signal comes from the [cost telemetry](/docs/guides/orchestrator-and-dashboard#container-cost) the workers already report. A container is **at capacity** when its dominant cost component — simulation, replication or gateway relay — reaches `CapacitySaturation` of its own budget (default `0.9`, `-nebula-capacity-saturation`; `0` turns the whole signal off). A container the [planner](/docs/guides/cohesion) reports it cannot relieve by moving anything — a cohesion or affinity group spans it, it is held, or the world authored no boundary inside it — is at capacity too, whatever its own cost row says: no rebalance is coming to save it, and `request.Capacity.Cause` says which constraint it is.
+
+A scope is as full as its **worst** part. A [chunk-grid scope](/docs/guides/infinite-runtime-world) is the exception: it is an unbounded world whose chunks are separate places, so it is judged one chunk at a time, like the public world.
+
+By default, a join or a [prepared transfer](/docs/guides/instancing) into a target at capacity is refused:
+
+```csharp
+client.JoinRefused += rejected =>
+{
+    if (rejected.Code == JoinRejectReason.AtCapacity)
+        ShowQueueScreen($"That station is full ({rejected.Saturation:P0}).");
+    else
+        ShowError(rejected.Reason);
+};
+```
+
+`JoinRejectReason.AtCapacity` is not a credentials problem and not a gateway problem, so the client does **not** reconnect on a timer: it is your game's turn to act — put the player in a queue, offer another instance, or try again later.
+
+### Decide who gets in anyway
+
+`NebulaAdmission.Decide` is asked about every arrival into a target that is at capacity. It is the place to say that a party member of somebody inside, or a staff account, gets in regardless:
+
+```csharp
+NebulaAdmission.Decide = (in AdmissionRequest request) =>
+{
+    if (MyRoster.IsStaff(request.Identity)) return AdmissionDecision.Admit();
+    if (MyParties.HasMemberInside(request.Identity, request.ScopeKey)) return AdmissionDecision.Admit();
+    return AdmissionDecision.Reject($"{request.ScopeKey} is full ({request.Capacity.DominantName} at {request.Capacity.Saturation:P0}).");
+};
+```
+
+The request carries the kind (a join or a transfer), the scope key and container, the capacity reading, and who is arriving: client ID, identity, name, bot flag and the [tags](/docs/guides/interest-management) your game set on the client. A policy that throws is logged and read as a refusal. Set `NebulaAdmission.AlwaysConsult = true` to be asked about every arrival, not only the ones into a full target.
+
+### Hold instead of refusing
+
+Return `AdmissionDecision.Hold()` and the client is kept welcomed rather than disconnected, exactly as it is while a scope restores. It is told `JoinHoldReason.AtCapacity`, and the gateway places it — with no reconnect — as soon as room appears:
+
+```csharp
+NebulaAdmission.Decide = (in AdmissionRequest request) => AdmissionDecision.Hold();
+
+// on the client
+client.JoinStateChanged += (state, seconds) =>
+{
+    if (state == JoinState.Starting && client.JoinHoldReason == JoinHoldReason.AtCapacity)
+        ShowWaitScreen($"Docking queue: position {MyQueue.PositionOf(client.ClientId)}");
+};
+```
+
+Nebula does not keep the queue and promises no order: it holds the client and admits it when the target has room. The queue, its position and its rules are yours.
+
+A prepared transfer has no join to hold, so `NebulaWorker.PrepareTransfer` reads a hold as a refusal. It returns a finished `InstanceTransfer` with `Error` set and `RejectReason` / `Saturation` typed the same way, and nothing was sent to the destination.
+
+## Remove a scope
+
+```csharp
+controlPlane.RemoveScope(key);
+```
+
+This drops the scope row, releases the claim on the key and removes the lease rows of its containers. It is the mechanism only: it does not wait for the scope to be empty, does not move anyone out and does not save anything. It is not the way to put a scope to sleep — that is retirement, above, which checkpoints first and lets the scope come back. `RemoveScope` still leaves the persisted records themselves in the store; delete those yourself if the world should really be gone.
+
+## What a scope key is worth knowing about
+
+- Nebula compares scope keys with ordinal string equality and never parses, hashes into a contract, orders or measures them. Put whatever your game needs in them.
+- An entity reports its scope on `NetworkIdentity.ScopeKey` and in its [entity location](/docs/specifications/entity-location); a persisted record keeps it.
+- A scope's container IDs are derived from the key, so the same key produces the same IDs on every process and after every restart. Changing a part ID renames the place.
+- Keep a key stable for as long as the world behind it should be the same world. Put a run ID in the key for something that should be a fresh copy each time.
+
+## Limits
+
+- A `ScopeKind.Parts` definition lists its parts up front. A world whose chunks are decided at runtime is a `ScopeKind.Grid` scope instead, which lists only its anchor.
+- Each scope has its own origin frame and physics scene, but *within* one scope there is still a single frame per worker: two players thousands of kilometres apart in the same world share an origin, and the far one loses float precision. Spread that world over more workers rather than expecting more frames.
+- An **instance** scope (a room, a dungeon — a `ScopeKind.Parts` scope) shares the public world's origin frame. Only a scope that is a whole world (`ScopeKind.Grid`) takes a frame of its own, because only a whole world can be millions of metres from the public one.
+- `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
+- Capacity is measured per container from what a worker reports, so it lags real load by one telemetry interval (about a second), and a container no worker has reported is never at capacity.
+- A retire loses whatever in the scope was not persistent. That is why the default rule refuses to retire a part that holds any; a game that is happy to discard its transient contents has to say so through `ScopeLifecycle.ShouldRetire`.
+- Each lifecycle step gives the workers 30 seconds to report in. Past that the orchestrator finishes the step anyway, with a warning, so a worker that died cannot leave a scope nobody can enter.
+- A control plane kept in memory only (no file, no database) cannot make activation idempotent across orchestrator restarts, because it keeps nothing to be idempotent about.

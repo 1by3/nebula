@@ -95,6 +95,24 @@ namespace Nebula
         private CostBalancedAssignmentPolicy _costPolicy;
         private readonly AssignmentInput _assignmentInput = new AssignmentInput();
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>
+        /// The latest cost row of every container the mesh holds, one per lease (<see cref="ContainerCost"/>,
+        /// docs/cost-telemetry.md): what it costs in simulation, in replication and in gateway relay. Refreshed
+        /// once per pass from telemetry, read by the scaler and served at <c>GET /api/cost</c>.
+        /// </summary>
+        private readonly Dictionary<string, ContainerCost> _containerCost = new Dictionary<string, ContainerCost>(StringComparer.Ordinal);
+        /// <summary>The cost row of one container, or all zeroes when no worker has reported it lately.</summary>
+        public ContainerCost CostOf(string containerId) => containerId != null && _containerCost.TryGetValue(containerId, out var row) ? row : default;
+        private readonly List<ContainerCost> _costRows = new List<ContainerCost>();
+        /// <summary>
+        /// What the mesh last published about how full each container is (docs/capacity-admission.md). Kept so a
+        /// reading is only written to the control plane when it actually moved: the document is mirrored to every
+        /// role and a per-pass rewrite of every lease would be a broadcast per pass.
+        /// </summary>
+        private readonly Dictionary<string, CapacityInfo> _capacity = new Dictionary<string, CapacityInfo>(StringComparer.Ordinal);
+        /// <summary>How full a container is, as this orchestrator last derived it. Unknown when no worker has reported it lately.</summary>
+        public CapacityInfo CapacityOf(string containerId) =>
+            containerId != null && _capacity.TryGetValue(containerId, out var info) ? info : new CapacityInfo { ContainerId = containerId ?? "" };
         /// <summary>Per-worker interest summary for the state document, refreshed from telemetry on every build.</summary>
         private readonly Dictionary<string, MeshTelemetry.WorkerInterest> _interestByWorker = new Dictionary<string, MeshTelemetry.WorkerInterest>(StringComparer.Ordinal);
         /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
@@ -113,6 +131,10 @@ namespace Nebula
         private string _hintNote = "";
         /// <summary>The baked hints merged with the ones set while the mesh runs, rebuilt each pass (<see cref="AssignmentInput.Hints"/>).</summary>
         private readonly Dictionary<string, ContainerHint> _containerHints = new Dictionary<string, ContainerHint>(StringComparer.Ordinal);
+        /// <summary>Containers under a live hold, with the seconds each has to run (<see cref="AssignmentInput.Holds"/>).</summary>
+        private readonly Dictionary<string, float> _holds = new Dictionary<string, float>(StringComparer.Ordinal);
+        /// <summary>The entity cohesion groups the workers report, rebuilt each pass (<see cref="AssignmentInput.Cohesion"/>).</summary>
+        private readonly List<CohesionGroupInfo> _cohesion = new List<CohesionGroupInfo>();
         /// <summary>What the scaler decided last pass; shown on the dashboard as the scaling line.</summary>
         private ScaleDecision _scale = new ScaleDecision { BlockedBy = "", RetireWorkerId = "", Reason = "idle" };
 
@@ -122,6 +144,10 @@ namespace Nebula
         public int DesiredWorkers { get; private set; }
         public int Rebalances { get; private set; }
         public IReadOnlyList<string> LastAssignmentLog => _log;
+        /// <summary>The last pass's moves and why the planner made them (<c>docs/cohesion-rebalancing.md</c>).</summary>
+        public IReadOnlyList<AssignmentMove> LastMoves => _moves;
+        /// <summary>What the planner reported it could not relieve, and why (<see cref="SaturationReport"/>).</summary>
+        public IReadOnlyList<SaturationReport> Saturated => _saturated;
         public IReadOnlyList<OrchestratorEvent> Events => _events;
         public string DashboardUrl => _http != null ? _http.Url : "";
         /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
@@ -167,6 +193,14 @@ namespace Nebula
 
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
+        /// <summary>
+        /// The last pass's moves with the sentence that explains each one, when the policy in force explains itself
+        /// (<see cref="IExplainsAssignment"/>). Kept until the next pass that moves something, so the dashboard's
+        /// assignment card still says why the mesh looks the way it does (<c>docs/cohesion-rebalancing.md</c>).
+        /// </summary>
+        private readonly List<AssignmentMove> _moves = new List<AssignmentMove>();
+        /// <summary>What the planner could not relieve last pass, hottest first (<see cref="SaturationReport"/>).</summary>
+        private readonly List<SaturationReport> _saturated = new List<SaturationReport>();
         private readonly List<OrchestratorEvent> _events = new List<OrchestratorEvent>();
         /// <summary>Workers we have seen alive during this orchestrator's lifetime. Rows left behind by a previous run are never "declared dead", only reset.</summary>
         private readonly HashSet<string> _seenAlive = new HashSet<string>();
@@ -214,6 +248,10 @@ namespace Nebula
             _local = new ProcessWorkerHost(config.WorkerExecutable, config.WorkerAdvertiseAddress);
             _host = CreateHost(config);
             Log("info", $"orchestrator {OrchestratorId}: desired workers = {DesiredWorkers}, host={_host.Name}, spawnGateway={config.OrchestratorSpawnsGateway}");
+            // The two yardsticks a container's cost components are weighed against (docs/cost-telemetry.md).
+            Telemetry.TickPeriodMs = WorkerLoadTracker.TickPeriodMs;
+            Telemetry.LinkBytesPerSec = config.CostLinkBytesPerSec;
+            Telemetry.CapacitySaturation = config.CapacitySaturation;
             Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(config));
             ContainerRegistry.RuntimeRegistered += OnRuntimeContainersChanged;
             ContainerRegistry.RuntimeUnregistering += OnRuntimeContainersChanged;
@@ -270,6 +308,9 @@ namespace Nebula
                 });
                 _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
                 _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
+                // Per-container cost rows (docs/cost-telemetry.md). Served straight off the telemetry store, like
+                // the map, so a monitor polling it never waits on the orchestrator's frame.
+                _http.MapDirect("GET", "/api/cost", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildCostJson()));
                 // Recent log lines from every process of the mesh (see LogBuffer): posted by the machines, read by
                 // whoever operates the mesh. With a mesh token both directions need it.
                 _http.MapDirect("POST", "/api/logs", req =>
@@ -348,6 +389,8 @@ namespace Nebula
             WakeForDemand();
             ReconcileDesiredCount();
             Rebalance();
+            PublishCapacity();
+            SweepScopes();
             FinishRetirements();
             RelaunchIfNeeded();
             PublishState();
@@ -901,6 +944,7 @@ namespace Nebula
         private AssignmentInput BuildAssignmentInput(IList<WorkerInfo> eligible)
         {
             Telemetry.CopyOccupancy(_occupancy);
+            Telemetry.CopyContainerCost(_containerCost);
             Loads.CopyUtilization(eligible, _utilization);
             WorkerLoadTracker.Attribute(_utilization, ControlPlane.Leases, _occupancy, Config.CostWeights, _containerUtilization);
             _assignmentInput.Utilization = _containerUtilization;
@@ -909,8 +953,15 @@ namespace Nebula
             _assignmentInput.Eligible = eligible;
             _assignmentInput.Leases = ControlPlane.Leases;
             _assignmentInput.Occupancy = _occupancy;
+            _assignmentInput.Cost = _containerCost;
             BuildHints();
             _assignmentInput.Hints = _containerHints;
+            // The cohesion hints the workers reported: holds as seconds still to run on this orchestrator's clock,
+            // and the containers each entity cohesion group spans (docs/cohesion-hints.md).
+            Telemetry.CopyHolds(_holds);
+            Telemetry.CopyCohesion(_cohesion);
+            _assignmentInput.Holds = _holds;
+            _assignmentInput.Cohesion = _cohesion;
             _assignmentInput.KeepOrder = ContainerRegistry.IsGridded;
             return _assignmentInput;
         }
@@ -1170,26 +1221,166 @@ namespace Nebula
             TotalCost = _costPolicy.TotalCost(input);
             AutoScale(input, policy);
             var changes = policy.Compute(input);
-            // The cost policy reports what it could not honour (too few workers for the dedicated containers).
+            // A held container does not move, whichever policy computed the change (docs/cohesion-hints.md, D8).
+            // The built-in policies already leave held items alone; this is the backstop for a game's own policy.
+            int deferred = input.DropHeldChanges(changes);
+            if (deferred > 0) Log("info", $"{deferred} move(s) deferred: their containers are held");
+            // The cost policy reports what it could not honour (too few workers for the dedicated containers, a
+            // group that does not fit one worker).
             string note = ReferenceEquals(policy, _costPolicy) ? _costPolicy.Note : "";
             if (note != _hintNote)
             {
                 _hintNote = note;
                 if (note != "") Log("warn", "hints: " + note);
             }
+            // What the planner could not relieve, and why it may not split it (docs/cohesion-rebalancing.md). Kept
+            // for the dashboard whether or not anything moved: saturation is exactly the case where nothing does.
+            _saturated.Clear();
+            if (policy is IExplainsAssignment reporter && reporter.Saturated != null) _saturated.AddRange(reporter.Saturated);
             if (changes.Count == 0) return;
             Rebalances++;
             _log.Clear();
+            // The explanation the policy attached to each move, by container, so the log line and the dashboard say
+            // which boundary the cut fell on and what constrained it.
+            _moves.Clear();
+            var why = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (policy is IExplainsAssignment explains && explains.Moves != null)
+            {
+                // A move whose container was held is dropped above, so only the moves actually applied are shown.
+                var applied = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var kv in changes) applied.Add(kv.Key);
+                foreach (var move in explains.Moves) if (applied.Contains(move.ContainerId)) _moves.Add(move);
+                for (int i = 0; i < _moves.Count; i++) why[_moves[i].ContainerId] = _moves[i].Reason ?? "";
+            }
             foreach (var kv in changes)
             {
                 ControlPlane.AssignContainer(kv.Key, kv.Value);
-                var line = $"assign {kv.Key} -> {kv.Value}";
+                string reason = why.TryGetValue(kv.Key, out string r) ? r : "";
+                var line = $"assign {kv.Key} -> {kv.Value}" + (reason == "" ? "" : " (" + reason + ")");
                 _log.Add(line);
                 Log("info", line);
             }
         }
 
         // ---------------------------------------------------------------------------------------- dashboard
+
+        // ---------------------------------------------------------------------------------------- scope lifecycle
+
+        /// <summary>
+        /// The scope state machine, one step per pass. The orchestrator is its single writer: it already aggregates
+        /// leases and load, and a scope's parts are leases. Every step is a control-plane write, so every role sees
+        /// the same sequence through the ordinary document. Design of record: <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        private void SweepScopes()
+        {
+            var scopes = ControlPlane.Scopes;
+            if (scopes == null || scopes.Count == 0) return;
+            // The per-container counts the workers report. Rebalance refreshes these too, but it can return early
+            // (nothing to plan), and a scope must not be judged on a stale reading of what is inside it.
+            Telemetry.CopyOccupancy(_occupancy);
+            for (int i = 0; i < scopes.Count; i++)
+            {
+                var scope = scopes[i];
+                if (scope == null || string.IsNullOrEmpty(scope.ScopeKey)) continue;
+                double elapsed = Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds);
+                switch (scope.State)
+                {
+                    case ScopeState.Active:
+                        JudgeScope(scope);
+                        break;
+                    case ScopeState.Retiring:
+                    {
+                        // Every part checkpointed and emptied itself, or the deadline passed. Only now are the lease
+                        // rows deleted: the checkpoint has to finish while the owner still holds the box.
+                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish checkpointing within {ScopeLifecycle.StepTimeoutSeconds:0} s; retiring it anyway");
+                        int saved = scope.AckedCount(ScopePhase.Checkpointed);
+                        int parts = scope.ContainerIds.Count;
+                        for (int c = 0; c < scope.ContainerIds.Count; c++) ControlPlane.RemoveContainer(scope.ContainerIds[c]);
+                        ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Retired);
+                        Log("info", $"scope '{scope.ScopeKey}' retired: {parts} container(s) released, {saved} persistent entities checkpointed");
+                        break;
+                    }
+                    case ScopeState.Restoring:
+                    {
+                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish restoring within {ScopeLifecycle.StepTimeoutSeconds:0} s; admitting clients anyway");
+                        int restored = scope.AckedCount(ScopePhase.Restored);
+                        ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Active);
+                        Log("info", $"scope '{scope.ScopeKey}' restored {restored} persistent entities and admits clients again");
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Derive the capacity signal from the cost rows and publish what changed onto the lease rows, so every
+        /// gateway can answer "is this target at capacity" from the document it already mirrors, with no RPC
+        /// (docs/capacity-admission.md). Only rows whose reading moved are written, and the write never stamps the
+        /// lease's <c>UpdatedAt</c>: that is the idle clock the scope lifecycle retires on.
+        /// </summary>
+        private void PublishCapacity()
+        {
+            float threshold = Config.CapacitySaturation;
+            Telemetry.CapacitySaturation = threshold;
+            // Rebalance refreshes the cost rows too, but it can return early with nothing to plan, and a capacity
+            // signal must not be derived from a stale reading of what the workers are carrying.
+            Telemetry.CopyContainerCost(_containerCost);
+            NebulaCapacity.Derive(_containerCost, threshold, _capacity);
+            // And what the planner says it cannot relieve by moving anything (docs/cohesion-rebalancing.md): a
+            // container held by a cohesion or affinity group, under a hold, without an authored boundary or asking
+            // for a worker of its own is at capacity however cheap its own cost row looks, because no rebalance
+            // is coming to save it.
+            NebulaCapacity.Apply(_saturated, threshold, _capacity);
+            var leases = ControlPlane.Leases;
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var lease = leases[i];
+                string id = lease.ContainerId;
+                if (string.IsNullOrEmpty(id)) continue;
+                // Nothing reported for this container lately: the last published reading stands rather than being
+                // cleared, so a worker that missed one telemetry post cannot open a full station.
+                if (!_capacity.TryGetValue(id, out var info) || !info.Known) continue;
+                bool moved = !lease.HasCapacity || lease.AtCapacity != info.AtCapacity || lease.Dominant != info.Dominant ||
+                             lease.SaturationCause != info.Cause ||
+                             Math.Abs(lease.Saturation - info.Saturation) >= CapacityPublishStep;
+                if (!moved) continue;
+                if (lease.HasCapacity && lease.AtCapacity != info.AtCapacity)
+                    Log("info", info.AtCapacity
+                        ? $"container {id} is at capacity ({info.DominantName} at {info.Saturation * 100f:0} % of its budget); joins and transfers into it go to the admission hook"
+                        : $"container {id} is below capacity again ({info.DominantName} at {info.Saturation * 100f:0} %)");
+                ControlPlane.SetContainerCapacity(id, info.Saturation, info.Dominant, info.AtCapacity, info.Cause);
+            }
+        }
+
+        /// <summary>How far a saturation reading has to move before it is worth another control-plane document.</summary>
+        private const float CapacityPublishStep = 0.02f;
+
+        /// <summary>Ask the retire policy about one active scope (<see cref="ScopeLifecycle.ShouldRetire"/>).</summary>
+        private void JudgeScope(ScopeInfo scope)
+        {
+            ScopeLifecycle.Occupancy(scope, _occupancy, out int entities, out int players);
+            var context = new ScopeRetireContext
+            {
+                Scope = scope,
+                IdleSeconds = ScopeLifecycle.IdleSeconds(ControlPlane, scope),
+                Entities = entities,
+                Players = players,
+                RetireAfterSeconds = Config.ScopeIdleRetireSeconds,
+            };
+            bool retire;
+            // The policy is the game's code. One that throws must not stop the sweep or retire the scope by accident.
+            try { retire = (ScopeLifecycle.ShouldRetire ?? ScopeLifecycle.RetireWhenIdle)(context); }
+            catch (Exception e)
+            {
+                Log("error", $"the scope retire policy threw for '{scope.ScopeKey}': {e.Message}; keeping the scope");
+                return;
+            }
+            if (!retire) return;
+            ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Retiring);
+            Log("info", $"scope '{scope.ScopeKey}' has been idle for {context.IdleSeconds:0} s; retiring it");
+        }
 
         private void Log(string level, string message)
         {
@@ -1461,6 +1652,115 @@ namespace Nebula
             w.EndObject();
         }
 
+        /// <summary>
+        /// The cohesion block of the state document (<c>docs/cohesion-hints.md</c>): the containers under a hold
+        /// with the seconds each has to run, the entity cohesion groups the workers report with the containers they
+        /// span, and the groups the planner had to keep whole although they do not fit one worker. Read from the
+        /// last pass's snapshots, so the dashboard shows what the planner actually saw.
+        /// </summary>
+        private void WriteCohesionState(JsonWriter w)
+        {
+            w.Key("cohesion");
+            w.BeginObject();
+            w.Key("holds");
+            w.BeginArray();
+            foreach (var kv in _holds)
+            {
+                w.BeginObject();
+                w.Prop("container", kv.Key);
+                w.Prop("seconds", Math.Round(kv.Value, 1));
+                w.Prop("worker", Telemetry.HolderOf(kv.Key));
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("groups");
+            w.BeginArray();
+            for (int i = 0; i < _cohesion.Count; i++)
+            {
+                var group = _cohesion[i];
+                w.BeginObject();
+                w.Prop("group", (long)group.Group);
+                w.Prop("members", group.Members);
+                w.Key("containers");
+                w.BeginArray();
+                for (int c = 0; c < group.Containers.Count; c++) w.Value(group.Containers[c]);
+                w.EndArray();
+                w.Key("workers");
+                w.BeginArray();
+                for (int c = 0; c < group.Workers.Count; c++) w.Value(group.Workers[c]);
+                w.EndArray();
+                // More than one worker right now: a handover is in flight, or the group could not be moved as a unit.
+                w.Prop("split", group.Workers.Count > 1);
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("unsplittable");
+            w.BeginArray();
+            var oversize = _costPolicy != null ? _costPolicy.Unsplittable : null;
+            if (oversize != null)
+                for (int i = 0; i < oversize.Count; i++)
+                {
+                    var row = oversize[i];
+                    w.BeginObject();
+                    w.Prop("group", row.Group ?? "");
+                    w.Prop("utilization", Math.Round(row.Utilization, 3));
+                    w.Prop("limit", row.Limit);
+                    w.Key("containers");
+                    w.BeginArray();
+                    if (row.Containers != null) for (int c = 0; c < row.Containers.Length; c++) w.Value(row.Containers[c]);
+                    w.EndArray();
+                    w.Prop("reason", row.ToString());
+                    w.EndObject();
+                }
+            w.EndArray();
+            w.EndObject();
+        }
+
+        /// <summary>
+        /// The assignment block of the state document (<c>docs/cohesion-rebalancing.md</c>): the last pass's moves
+        /// with the sentence that explains each one, and what the planner could not relieve with the constraint that
+        /// stops it. Both are empty for a policy that does not explain itself.
+        /// </summary>
+        private void WriteAssignmentState(JsonWriter w)
+        {
+            w.Key("assignment");
+            w.BeginObject();
+            w.Prop("policy", PolicyName);
+            w.Prop("rebalances", Rebalances);
+            w.Key("moves");
+            w.BeginArray();
+            for (int i = 0; i < _moves.Count; i++)
+            {
+                w.BeginObject();
+                w.Prop("container", _moves[i].ContainerId ?? "");
+                w.Prop("from", _moves[i].From ?? "");
+                w.Prop("to", _moves[i].To ?? "");
+                w.Prop("reason", _moves[i].Reason ?? "");
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("saturated");
+            w.BeginArray();
+            for (int i = 0; i < _saturated.Count; i++)
+            {
+                var row = _saturated[i];
+                w.BeginObject();
+                w.Prop("container", row.ContainerId ?? "");
+                w.Prop("scope", row.ScopeKey ?? "");
+                w.Prop("worker", row.WorkerId ?? "");
+                w.Prop("utilization", Math.Round(row.Utilization, 3));
+                w.Prop("cause", SaturationReport.NameOf(row.Cause));
+                w.Prop("reason", row.Reason ?? "");
+                w.Key("containers");
+                w.BeginArray();
+                if (row.Containers != null) for (int c = 0; c < row.Containers.Length; c++) w.Value(row.Containers[c]);
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+            w.EndObject();
+        }
+
         /// <summary>Everything the dashboard shows, as one JSON document.</summary>
         public string BuildStateJson()
         {
@@ -1505,6 +1805,12 @@ namespace Nebula
             w.Prop("heldSeconds", _scale.HeldSeconds);
             w.Prop("holdSeconds", _scale.HoldSeconds);
             w.Prop("blockedBy", _scale.BlockedBy ?? "");
+            // What the blocking container is mostly expensive in, so the dashboard can say which fix to reach for.
+            w.Prop("blockedComponent", string.IsNullOrEmpty(_scale.BlockedBy) ? "" : ContainerCost.NameOf(_scale.BlockedComponent));
+            w.Prop("blockedSaturation", _scale.BlockedSaturation);
+            // Why the planner may not split the blocking container away (docs/cohesion-rebalancing.md).
+            w.Prop("blockedCause", SaturationReport.NameOf(_scale.BlockedCause));
+            w.Prop("blockedReason", _scale.BlockedReason ?? "");
             w.Prop("reason", _scale.Reason ?? "");
             w.Prop("outUtilization", Config.ScaleOutUtilization);
             w.Prop("inUtilization", Config.ScaleInUtilization);
@@ -1514,6 +1820,9 @@ namespace Nebula
             w.Prop("pendingJoins", PendingJoins);
             w.Prop("scaleToZero", Config.AutoScale && !Config.UseLocalControlPlane && MinWorkers == 0);
             w.EndObject();
+
+            WriteCohesionState(w);
+            WriteAssignmentState(w);
 
             // Workers: the union of control-plane rows and processes we manage (a freshly launched worker has no row yet).
             var ids = new List<string>();
@@ -1563,6 +1872,7 @@ namespace Nebula
                 w.Prop("relaunchInSeconds", m != null && m.RelaunchAt >= 0f ? Math.Max(0f, m.RelaunchAt - now) : -1f);
                 w.Prop("drainRemainingSeconds", retiring ? Math.Max(0f, _retiring[id] - now) : -1f);
                 w.Prop("tickMs", row != null ? row.TickMs : 0f);
+                w.Prop("oldestDirtySeconds", row != null ? row.OldestDirtySeconds : 0f);
                 w.Prop("utilization", Loads.Utilization(id));
                 w.Prop("tickCount", row != null ? row.TickCount : 0UL);
                 w.Prop("entities", row != null ? row.EntityCount : 0U);
@@ -1621,6 +1931,22 @@ namespace Nebula
             foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers, _containerHints);
             w.EndArray();
 
+            // Cost telemetry: one row per container the mesh has heard about lately, heaviest first
+            // (docs/cost-telemetry.md). The same rows are served on their own at GET /api/cost.
+            w.Key("cost");
+            w.BeginObject();
+            w.Prop("tickPeriodMs", WorkerLoadTracker.TickPeriodMs);
+            w.Prop("linkBytesPerSec", Config.CostLinkBytesPerSec);
+            w.Prop("capacitySaturation", Config.CapacitySaturation);
+            w.Key("containers");
+            w.BeginArray();
+            _costRows.Clear();
+            foreach (var kv in _containerCost) _costRows.Add(kv.Value);
+            _costRows.Sort((a, b) => b.TickShareMs != a.TickShareMs ? b.TickShareMs.CompareTo(a.TickShareMs) : string.CompareOrdinal(a.ContainerId, b.ContainerId));
+            for (int i = 0; i < _costRows.Count; i++) ContainerCost.Write(w, _costRows[i], Config.CapacitySaturation);
+            w.EndArray();
+            w.EndObject();
+
             // Carried containers: leases workers create for the containers their entities carry (ships, lifts).
             // They follow their carrier unless pinned to a worker of their own.
             w.Key("carried");
@@ -1642,6 +1968,43 @@ namespace Nebula
                 w.EndObject();
             }
             w.EndArray();
+
+            // Scopes: the keyed worlds the mesh has been asked to bring into being, with their lifecycle state, what
+            // is inside them and how long nothing has wanted them (docs/scope-lifecycle.md).
+            w.Key("scopes");
+            w.BeginArray();
+            foreach (var scope in ControlPlane.Scopes.OrderBy(x => x.ScopeKey, StringComparer.Ordinal))
+            {
+                ScopeLifecycle.Occupancy(scope, _occupancy, out int scopeEntities, out int scopePlayers);
+                w.BeginObject();
+                w.Prop("key", scope.ScopeKey);
+                w.Prop("state", scope.State ?? ScopeState.Active);
+                w.Prop("requester", scope.Requester ?? "");
+                w.Prop("parts", scope.ContainerIds.Count);
+                w.Prop("ready", ControlPlane.IsScopeReady(scope, Config.WorkerTimeoutSeconds));
+                w.Prop("entities", scopeEntities);
+                w.Prop("players", scopePlayers);
+                w.Prop("idleSeconds", ScopeLifecycle.IdleSeconds(ControlPlane, scope));
+                w.Prop("stateSeconds", Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds));
+                w.Prop("ageSeconds", Math.Max(0.0, (ControlPlane.Now - scope.CreatedAt).TotalSeconds));
+                w.Prop("acked", scope.Acks != null ? scope.Acks.Count : 0);
+                // How full the scope is, as the whole mesh sees it: the worst of its parts, because a scope is one
+                // interaction domain and cannot be split past its authored boundaries (docs/capacity-admission.md).
+                var scopeCapacity = NebulaCapacity.OfScope(ControlPlane, scope.ScopeKey);
+                w.Prop("capacityKnown", scopeCapacity.Known);
+                w.Prop("saturation", Math.Round(scopeCapacity.Saturation, 4));
+                w.Prop("dominant", scopeCapacity.Known ? scopeCapacity.DominantName : "");
+                w.Prop("atCapacity", scopeCapacity.AtCapacity);
+                w.Prop("capacityCause", SaturationReport.NameOf(scopeCapacity.Cause));
+                w.Key("containers");
+                w.BeginArray();
+                foreach (var id in scope.ContainerIds) w.Value(id ?? "");
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Prop("scopeIdleRetireSeconds", Config.ScopeIdleRetireSeconds);
+            w.Prop("capacitySaturation", Config.CapacitySaturation);
 
             w.Key("gateways");
             w.BeginArray();

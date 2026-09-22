@@ -126,6 +126,12 @@ public IReadOnlyList<GatewayInfo> Gateways { get; }
 public IReadOnlyDictionary<string, string> Settings { get; }
 ```
 
+### Scopes [#scopes]
+
+```csharp
+public IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
 ## Events
 
 ### Changed [#changed]
@@ -250,6 +256,12 @@ public void SetLeaseState(string containerId, string state);
 public void SetContainerHint(string containerId, in ContainerHint hint);
 ```
 
+### SetContainerCapacity [#setcontainercapacity]
+
+```csharp
+public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
+```
+
 ### ReleaseContainer [#releasecontainer]
 
 ```csharp
@@ -283,3 +295,27 @@ public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpSe
 ```
 
 Main thread: apply a batch of writes when `req` is one. Returns false for any other request so the caller can handle it.
+
+### ActivateScope [#activatescope]
+
+```csharp
+public void ActivateScope(ScopeActivationRequest request);
+```
+
+### SetScopeState [#setscopestate]
+
+```csharp
+public void SetScopeState(string scopeKey, string state);
+```
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
+### RemoveScope [#removescope]
+
+```csharp
+public void RemoveScope(string scopeKey);
+```

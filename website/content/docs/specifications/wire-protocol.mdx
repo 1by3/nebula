@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 17, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 18, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 17. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 18. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `17`. Every `Hello` carries that version.
+The current protocol version is `18`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `17`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `18`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -113,7 +113,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 17 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 18 sender MUST write them as zero.
 
 ## Message registry
 
@@ -156,11 +156,12 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 43 | `GhostDespawn` | `W-W` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
 | 44 | `AuthorityTransfer` | `W-W` | Reliable ordered | [`AuthorityTransfer`](#authority-transfer) |
 | 45 | `ForwardInput` | `W-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
-| 46 | `AuthorityRpc` | `W-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 46 | `AuthorityRpc` | `W-W` | Reliable ordered | [`AuthorityCall`](#authority-calls) |
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
+| 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 
-IDs not listed in this table are reserved. A version 17 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 18 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -170,11 +171,11 @@ The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Rep
 
 ```text
 Hello           := u16 protocol_version, u8 role, string id, u32 index, u8 flags,
-                   string token, string session, u32 incarnation
+                   string token, string session, u32 incarnation, string scope_key
 Welcome         := u64 client_id, u8 tick_rate, u32 server_tick, string identity,
                    string token, string session_token, bool reclaimed
-JoinStatus      := u8 state, u16 estimated_seconds
-JoinRejected    := string reason, bool retry
+JoinStatus      := u8 state, u16 estimated_seconds, u8 reason
+JoinRejected    := string reason, bool retry, u8 code, f16 saturation
 GatewayDraining := u16 reconnect_within_seconds
 SessionReplaced := string reason
 Ping            := f64 client_time
@@ -183,13 +184,17 @@ Pong            := f64 client_time, u32 server_tick
 
 For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity, `session` is the `session_token` from the last `Welcome` or empty on a first connection, and `incarnation` is zero.
 
+`scope_key` is the [simulation scope](/docs/guides/scopes) the client asks to be placed in: the opaque key the game chose, or empty for the public world. The gateway spawns the player only into a container whose scope key is ordinally equal to it, and holds the join in `JoinStatus.state` `1` while no such container has a live owner; it never falls back to another scope. The gateway does not activate the scope, so the key must already have been activated through the control plane. `scope_key` was appended to `Hello` after the rest of protocol 18 was settled: a `Hello` that ends before it reads as the public world, and the protocol version is unchanged. It is ignored on a gateway or worker `Hello`.
+
 For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. Both send a nonzero `incarnation`, a random number drawn when the process started, so a peer that sees the same ID twice can tell a restart from a reconnect. When the mesh has a mesh token, `token` on a gateway or worker `Hello` is the credential `unix_seconds.base64url(HMAC-SHA256(key, role|id|incarnation|unix_seconds))`, where `key = SHA-256("nebula-peer-auth:" + mesh_token)` and `role` is the decimal `PeerRole` value. A receiver rejects a credential whose timestamp differs from its clock by more than 300 seconds or whose MAC does not match. Without a mesh token, `token` is empty and every peer is accepted.
 
 The gateway assigns the client ID, a mesh-wide session ID, and sends the fixed tick rate, currently `60`, in `Welcome`. `Welcome.identity` is the player's identity: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. `Welcome.token` is set only when the client presented no token; it is the anonymous token the gateway issued for that identity, which the client keeps for its next `Hello`. `Welcome.session_token` is a signed token naming the session: an HS256 JSON Web Token over the session ID, identity, display name, bot flag, and connection generation, valid for 24 hours. The client keeps it for the life of the process and presents it as `Hello.session` when it reconnects. A gateway that verifies it, for the identity that just authenticated, welcomes the client with the same `client_id` and sets `reclaimed`; the pawn is the same one when the worker still holds it. A session token for another identity, an expired one, or one signed for another mesh is ignored; single-session coordination can still reclaim a session using the authenticated identity. See [Authentication](/docs/guides/authentication).
 
-`JoinStatus.state` is `0` (none), `1` (starting: welcomed, but no worker holds a lease yet) or `2` (joined). `estimated_seconds` is a rough wait while starting; `0` means unknown.
+`JoinStatus.state` is `0` (none), `1` (starting: welcomed, but not placed yet) or `2` (joined). `estimated_seconds` is a rough wait while starting; `0` means unknown. `reason` says why a join is being held: `0` none, `1` the world is starting (no worker holds a lease yet), `2` the named scope has not been activated or has no live owner, `3` the scope is restoring after a retire, `4` the scope is retiring, `5` every container the client could be placed in is at capacity and the game's [admission hook](/docs/guides/scopes#when-a-target-is-full) asked for the client to wait rather than be refused. `reason` was appended after the rest of protocol 18 was settled: a `JoinStatus` that ends before it reads as `1` while starting and `0` otherwise, and the protocol version is unchanged.
 
 A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. `retry` set means the refusal is about the gateway, not the client: it is draining, and the client SHOULD reconnect after a short delay, which a load balancer then hands to another gateway. `retry` clear means the client must wait for the player to retry. This includes refused credentials and a session takeover whose previous connection could not be disconnected.
+
+`code` is the refusal in typed form: `0` none (read `reason` and `retry`), `1` the target is at capacity and the admission hook refused the arrival, `2` the admission hook refused this particular arrival although the target had room. `saturation` is how full the target was for `code` `1`: the dominant cost component's share of its own budget, `1.0` being the whole of it; `0` when the gateway did not say. A client that receives `code` `1` or `2` MUST NOT reconnect on a timer: the refusal is neither about its credentials nor about this gateway, and the game decides what happens next (a queue, another instance, a different scope). `code` and `saturation` were appended after the rest of protocol 18 was settled: a `JoinRejected` that ends before them reads as `0` and `0`, and the protocol version is unchanged.
 
 `GatewayDraining` tells a connected client that the gateway is leaving service. The client SHOULD reconnect within `reconnect_within_seconds`, presenting its session token, so the session and pawn carry over to the gateway that answers.
 
@@ -219,7 +224,9 @@ EntitySpawnBody :=
   f16 relevance_radius,
   u8 interest_flags,
   u8 interest_group,
-  u16 view_seq
+  u16 view_seq,
+  u32 cohesion_group,
+  f16 cost_weight
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
@@ -227,7 +234,11 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 
 `EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate. `owner_identity` is the owning player's identity (see `Welcome`), or empty for an entity no player owns.
 
+`cost_weight` is what the game says the entity costs to simulate, as a multiplier on its category weight in `CostWeights` (see [Container cost](/docs/guides/orchestrator-and-dashboard#container-cost)). It travels so the worker an entity hands over to reports the same cost for it. `0` means "no opinion": the receiver keeps the weight it already has.
+
 `relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in meters (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved.
+
+`cohesion_group` is the entity's [cohesion group](/docs/guides/cohesion), or `0` for none: the game's declaration that every entity carrying the same non-zero value is simulated by one worker and moves between workers as a unit. Nebula only carries the number; the ids are the game's own. Because the field travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, every process holding a copy of the entity knows the group.
 
 `view_seq` is assigned by the gateway, per client and per entity, and increases every time the entity enters that client's set. A client MUST ignore an `EntityDespawn` whose `view_seq` is older than the view it currently holds for that `net_id`, so a despawn delayed behind a re-entry cannot remove the replica the client has just been given. Workers write `0` in both messages; only the gateway-to-client link uses the field.
 
@@ -267,12 +278,43 @@ EntityRpcBody :=
   u8 behavior_index,
   u32 method_hash,
   u64 client_id,
+  f32 radius,
   bytes args
 ```
 
-`EntityRpc`, `ServerRpc`, and `AuthorityRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
+`EntityRpc` and `ServerRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
 
-Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. The gateway overwrites `ServerRpc.client_id` with the sending connection's session ID and only forwards a call for an entity that connection owns. A worker accepts a `ServerRpc` for a session only from the gateway that currently holds that session.
+Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. `radius` applies to an `EntityRpc` broadcast: a nonzero value delivers it only to clients whose pawn is within that many meters of the entity. It is written as `0` on a targeted `EntityRpc` and on `ServerRpc`. The gateway overwrites `ServerRpc.client_id` with the sending connection's session ID and only forwards a call for an entity that connection owns. A worker accepts a `ServerRpc` for a session only from the gateway that currently holds that session.
+
+### Authority calls
+
+```text
+AuthorityCall :=
+  u64 call_id,
+  u8 hops,
+  u8 flags,
+  u64 net_id,
+  u32 entity_epoch,
+  u8 behavior_index,
+  u32 method_hash,
+  bytes args
+
+AuthorityCallReply :=
+  u64 call_id,
+  u8 outcome,
+  u32 entity_epoch,
+  u8 hops
+```
+
+`AuthorityRpc` carries an `AuthorityCall`: an RPC from a worker that holds a ghost of the entity to the worker it believes has authority. `method_hash` and `args` are encoded as in `EntityRpcBody`.
+
+`call_id` is minted by the sending worker: its worker index in the top 16 bits and a per-sender sequence in the low 48. A worker that forwards the call MUST keep `call_id` and `flags`, and MUST increment `hops`. `flags` bit 0 (`WantsReply`) asks the deciding worker for an `AuthorityCallReply`; bits 1–7 are reserved and MUST be written as zero. `entity_epoch` is the epoch of the sender's copy when it made the call.
+
+The receiving worker decides the call in this order: reject `RejectedUnknownEntity` (3) when it holds no copy of `net_id`; reject `RejectedStaleEpoch` (2) when `entity_epoch` is greater than its copy's epoch or more than `AuthorityCallMaxHops` (default 3) below it; apply the call once when it has authority, or reject `RejectedDuplicate` (5) when it has already applied this `call_id`; reject `RejectedHopLimit` (4) when `hops` has reached `AuthorityCallMaxHops`; forward to the worker it believes has authority, or reject `RejectedUnreachable` (6) when it has no connection to one. An applied call reports `Accepted` (1).
+
+A worker remembers applied call IDs for at most 4096 calls and 600 ticks. Beyond either bound a repeated ID is applied again.
+
+`AuthorityRpcReply` is sent only when `WantsReply` was set, to the worker whose index the `call_id` carries, with the deciding worker's `entity_epoch` for the entity (`0` when it held none) and the `hops` the call had when decided. `outcome` `7` (`TimedOut`) is a sender-side value and MUST NOT appear on the wire.
 
 ### Batched transform state
 
@@ -359,12 +401,17 @@ Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-align
 
 ```text
 InstanceContainerInfo := u64 instance_id, string content_resource,
-  bool observe_public, vector3 observation_center, vector3 observation_size
+  bool observe_public, vector3 observation_center, vector3 observation_size,
+  string scope_key, string part_id
 InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
   u16 source_worker, u64 lease_epoch, bool success
 ```
 
 Preparation asks the destination worker and owning client to load content before crossing. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
+
+`scope_key` is the opaque instance key the game chose (`TemplateId/key`); `instance_id` is its 64-bit hash. A receiver MUST NOT parse `scope_key`; it is compared with ordinal string equality only. The [entity location contract](/docs/specifications/entity-location) defines how it names an entity's scope. A sender MUST write it on the wire; only the Base64 copy stored on a control-plane lease row written by an earlier release may end before it, in which case it reads as empty.
+
+`part_id` says which part of its scope this container is: the `ScopePart.PartId` the scope was activated with. For a chunk of a [scoped chunk grid](/docs/guides/scopes#a-scope-can-be-a-whole-world) it is the chunk's coordinate, written as `c/x/y/z`, which is what lets a receiver place a container whose id is a hash of the scope key rather than a packed coordinate. A receiver MUST treat any other value as opaque. It is written after `scope_key` and read with the same tolerance: a message or stored row that ends before it reads as empty, which is what every row written before protocol 18 does.
 
 ### Reliable message batch
 
@@ -411,7 +458,7 @@ AuthorityTransfer :=
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 17. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 18. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,
@@ -465,6 +512,15 @@ ClientFocusHint := u8 generation, u8 clear, [f64 x, f64 y, f64 z]   ; x, y, z ar
 A region's coordinate on each axis is `floor((position - offset) / edge)` in double precision, over absolute world
 coordinates rather than a peer's floating-origin frame. With `planar` set, the Y coordinate is always zero and
 regions are infinite columns.
+
+A region **identifier** is that coordinate packed into three signed 21-bit fields, X in the high bits, XORed with
+the scope's salt. The salt is the SplitMix64 finalizer of the scope's 64-bit isolation ID, and is **zero for the
+public world** — so a mesh with no scopes puts exactly the packed coordinate on the wire, as it always did. Two
+scopes may hold the same absolute coordinates, because each scope has its own floating-origin frame; the salt is
+what keeps their regions, and therefore their subscriptions, disjoint. It is an XOR, so a peer that knows which
+scope an identifier belongs to — and both ends always do, since a subscription, a focus and an entity each sit in
+exactly one scope — recovers the coordinate by XORing again. `add_region`, `remove_region` and `focus_region` all
+carry salted identifiers.
 
 `flags` bit 0 (`Full`) means the message replaces the worker's whole set; bit 1 (`Commit`) marks the last message of
 an update. A set too large for one message is split into several with the same `seq`, and a worker MUST NOT adopt

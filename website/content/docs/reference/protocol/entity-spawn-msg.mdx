@@ -143,6 +143,22 @@ public ushort ViewSeq;
 
 Gateway -\> client: which view of this net id the spawn belongs to. It increases every time the gateway lets the entity into this client's set, so a despawn from an older view cannot kill a replica the client has just re-entered. Workers send 0.
 
+### CohesionGroup [#cohesiongroup]
+
+```csharp
+public uint CohesionGroup;
+```
+
+The entity's cohesion group ([`NetworkIdentity.CohesionGroup`](/docs/reference/core/network-identity#cohesiongroup)), 0 for none. It travels with every spawn, ghost spawn and handover, so each worker holding a copy knows which group the entity is in and a handover of any member can take the rest with it (protocol 18, `docs/cohesion-hints.md`).
+
+### CostWeight [#costweight]
+
+```csharp
+public float CostWeight;
+```
+
+What the game says this entity costs to simulate, as a multiplier on its category weight ([`NetworkIdentity.EffectiveCostWeight`](/docs/reference/core/network-identity#effectivecostweight), protocol 18). It travels with the entity so the worker it lands on reports the same cost for it. Sent as an f16; zero is a valid weight. A missing field reads as -1, which leaves the receiver's current weight unchanged.
+
 ## Methods
 
 ### From [#from]

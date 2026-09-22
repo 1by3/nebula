@@ -45,13 +45,21 @@ public uint SceneId;
 
 Non-zero: the record belongs to a scene entity with this [`NetworkIdentity.SceneId`](/docs/reference/core/network-identity#sceneid).
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey = "";
+```
+
+Opaque scope key of the scope the entity was in ([`NetworkIdentity.ScopeKey`](/docs/reference/core/network-identity#scopekey) at save time): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) for the public world, the instance key inside an instance. A record written before the key was recorded reads as the public world.
+
 ### ContainerId [#containerid]
 
 ```csharp
 public string ContainerId = "";
 ```
 
-Static container the entity was in (its [`Container.ContainerId`](/docs/reference/containers/container#containerid)), or "" when it was in none or inside a carrier.
+Static or runtime container the entity was in (its [`Container.ContainerId`](/docs/reference/containers/container#containerid)), or "" when it was in none or inside a carrier.
 
 ### CarrierKey [#carrierkey]
 
@@ -142,6 +150,16 @@ public string SavedBy = "";
 ```
 
 Id of the worker that wrote the record.
+
+## Properties
+
+### Location [#location]
+
+```csharp
+public EntityLocation Location { get; set; }
+```
+
+The saved location as the contract's triple ([`EntityLocation`](/docs/reference/containers/entity-location)): [`ScopeKey`](#scopekey), [`ContainerId`](#containerid) and the local pose. For an entity saved inside a carrier the container id is empty and [`CarrierKey`](#carrierkey) names the carrier instead, because a dynamic container's id lives only as long as its carrier's net id. Setting it writes the three fields back and leaves [`CarrierKey`](#carrierkey) alone.
 
 ## Methods
 

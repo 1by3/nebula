@@ -156,6 +156,8 @@ namespace Nebula
             c.DashboardPort = Port("nebula-dashboard-port", c.DashboardPort, true);
             c.UseLocalControlPlane = CommandLine.GetBool("nebula-local-control-plane", c.UseLocalControlPlane);
             c.OrchestratorSpawnsGateway = CommandLine.GetBool("nebula-spawn-gateway", c.OrchestratorSpawnsGateway);
+            c.ScopeIdleRetireSeconds = CommandLine.GetFloat("nebula-scope-idle-retire", c.ScopeIdleRetireSeconds);
+            c.CapacitySaturation = CommandLine.GetFloat("nebula-capacity-saturation", c.CapacitySaturation);
             c.PersistenceMode = CommandLine.Get("nebula-persistence-mode", c.PersistenceMode);
             c.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", c.PersistenceLocalFile);
             c.GatewayExtension = CommandLine.Get("nebula-gateway-extension", c.GatewayExtension);

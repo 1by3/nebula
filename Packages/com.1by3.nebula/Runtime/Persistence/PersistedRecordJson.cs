@@ -23,6 +23,7 @@ namespace Nebula
             w.Prop("prefabId", (int)r.PrefabId);
             w.Prop("prefabName", r.PrefabName ?? "");
             w.Prop("sceneId", r.SceneId);
+            w.Prop("scopeKey", r.ScopeKey ?? "");
             w.Prop("containerId", r.ContainerId ?? "");
             w.Prop("carrierKey", r.CarrierKey ?? "");
             w.Key("position"); ControlPlaneJson.Vec(w, r.LocalPosition);
@@ -77,6 +78,7 @@ namespace Nebula
                 PrefabId = (ushort)ControlPlaneJson.Num(o, "prefabId"),
                 PrefabName = ControlPlaneJson.Str(o, "prefabName"),
                 SceneId = (uint)ControlPlaneJson.Num(o, "sceneId"),
+                ScopeKey = ControlPlaneJson.Str(o, "scopeKey"), // absent in older documents: the public world
                 ContainerId = ControlPlaneJson.Str(o, "containerId"),
                 CarrierKey = ControlPlaneJson.Str(o, "carrierKey"),
                 LocalPosition = ControlPlaneJson.Vec(o, "position"),

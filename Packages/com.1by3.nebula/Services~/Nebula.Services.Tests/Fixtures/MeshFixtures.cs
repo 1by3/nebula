@@ -65,6 +65,13 @@ public sealed class FakeWorker : IDisposable
     public Func<ulong, Vector3> PawnPlacement = _ => Vector3.zero;
     /// <summary>The container pawns are spawned into.</summary>
     public ContainerRef PawnContainer = new(0);
+    /// <summary>
+    /// Put a pawn in the container the gateway's <see cref="SpawnPlayerMsg"/> named, rather than in
+    /// <see cref="PawnContainer"/>. A real worker always does this; the fixture does not by default because the
+    /// interest tests place pawns themselves. The scale suite needs it: a client that joined a scope must have its
+    /// pawn inside that scope, or per-scope isolation cannot be measured at all (docs/scale-suite.md, D3).
+    /// </summary>
+    public bool SpawnIntoRequestedContainer;
 
     private readonly Dictionary<ulong, Entity> _entities = new();
     private readonly Dictionary<int, GatewayLink> _links = new();
@@ -158,7 +165,7 @@ public sealed class FakeWorker : IDisposable
         e.Local = local;
         if (e.Placement != InterestPlacement.Region) { _index.SetValue(netId, e); PublishOwned(e); return; }
         if (_index.CarrierOf(netId) != 0) { _index.SetValue(netId, e); return; }
-        ulong to = Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z);
+        ulong to = RegionOf(e);
         if (to == e.Region) { _index.SetValue(netId, e); return; }
         _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Move(netId, to);
@@ -185,7 +192,7 @@ public sealed class FakeWorker : IDisposable
         _index.SetCarrier(netId, carrierNetId);
         // Free again: its own position decides where it sits, and its own subtree comes along.
         if (carrierNetId == 0 && e.Placement == InterestPlacement.Region)
-            _index.Move(netId, Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z));
+            _index.Move(netId, RegionOf(e));
         PublishCarried();
     }
 
@@ -534,7 +541,8 @@ public sealed class FakeWorker : IDisposable
                 {
                     netId = _nextNetId++;
                     _pawns[msg.ClientId] = netId;
-                    Spawn(netId, PawnPlacement(msg.ClientId), PawnContainer, msg.ClientId);
+                    var into = SpawnIntoRequestedContainer && !msg.Container.IsNone ? msg.Container : PawnContainer;
+                    Spawn(netId, PawnPlacement(msg.ClientId), into, msg.ClientId);
                 }
                 else SendSpawn(peerId, _entities[netId]); // a reclaim: re-announce the pawn to its new gateway
                 break;
@@ -583,7 +591,7 @@ public sealed class FakeWorker : IDisposable
         else if (e.RelevanceRadius > Settings.Radius) { _index.AddWide(e.NetId, e); e.Placement = InterestPlacement.Wide; }
         else
         {
-            e.Region = Grid.RegionOf(abs.x, abs.y, abs.z);
+            e.Region = RegionOf(e);
             _index.Add(e.NetId, e.Region, e);
             e.Placement = InterestPlacement.Region;
         }
@@ -591,6 +599,24 @@ public sealed class FakeWorker : IDisposable
         // it with the carrier, and that - not its own resolved position - is where it is.
         _index.SetCarrier(e.NetId, e.Container.IsDynamic ? e.Container.NetId : 0);
         SyncPlacement(e);
+    }
+
+    /// <summary>
+    /// The scope an entity's region key is salted with (docs/scope-frames.md D7): its root carrier's, exactly as
+    /// the gateway resolves it, so a crate in a ship in a scope is bucketed in that scope and not in the public
+    /// world. Zero for the public world, and then the key is the plain packing, as it has always been.
+    /// </summary>
+    private ulong ScopeOf(Entity e)
+    {
+        var root = _entities.TryGetValue(_index.RootOf(e.NetId), out var r) ? r : e;
+        return ContainerRegistry.Resolve(root.Container)?.InstanceId ?? 0;
+    }
+
+    /// <summary>The region key an entity is held under: its absolute position, packed, salted with its scope.</summary>
+    private ulong RegionOf(Entity e)
+    {
+        var abs = Abs(e);
+        return RegionKeys.Salt(Grid.RegionOf(abs.x, abs.y, abs.z), ScopeOf(e));
     }
 
     private bool IsOwnersGateway(Entity e, int peerId) =>
@@ -616,8 +642,9 @@ public sealed class FakeWorker : IDisposable
         var subject = _entities.TryGetValue(_index.RootOf(e.NetId), out var root) ? root : e;
         var abs = Abs(subject);
         var foci = link.Receiver.FociRegions;
+        ulong salt = RegionKeys.SaltOf(ScopeOf(subject));
         double r2 = (double)subject.RelevanceRadius * subject.RelevanceRadius;
-        for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i], abs.x, abs.y, abs.z) <= r2) return true;
+        for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i] ^ salt, abs.x, abs.y, abs.z) <= r2) return true;
         return false;
     }
 
@@ -712,6 +739,8 @@ public sealed class FakeClient : IDisposable
     public JoinRejectedMsg? Rejected;
     public string? Replaced;
     public JoinState Join;
+    /// <summary>Why the gateway says the join is held (<see cref="JoinHoldReason"/>).</summary>
+    public JoinHoldReason JoinReason;
     public int DrainWithin = -1;
     public bool Disconnected;
     /// <summary>Every spawn ever received, in order (a re-entry appears twice; that is what the churn tests read).</summary>
@@ -743,12 +772,13 @@ public sealed class FakeClient : IDisposable
 
     private readonly Dictionary<ulong, ushort> _viewSeq = new();
     private readonly HashSet<string> _inMessage = new();
-    private readonly string _token, _session, _name;
+    private readonly string _token, _session, _name, _scope;
     private readonly int _peer;
 
-    public FakeClient(int port, string name, string token = "", string session = "")
+    /// <param name="scope">The simulation scope to join into (<see cref="HelloMsg.ScopeKey"/>); empty is the public world.</param>
+    public FakeClient(int port, string name, string token = "", string session = "", string scope = "")
     {
-        _name = name; _token = token; _session = session;
+        _name = name; _token = token; _session = session; _scope = scope;
         _peer = Transport.Connect("127.0.0.1", port);
     }
 
@@ -800,7 +830,7 @@ public sealed class FakeClient : IDisposable
             if (e.Type == TransportEvent.Kind.Connected)
             {
                 var w = new NetworkWriter();
-                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session }.Write(w);
+                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope }.Write(w);
                 Transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
             }
             else if (e.Type == TransportEvent.Kind.Disconnected) Disconnected = true;
@@ -829,7 +859,7 @@ public sealed class FakeClient : IDisposable
             case MsgId.Welcome: Welcome = WelcomeMsg.Read(r); break;
             case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
             case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
-            case MsgId.JoinStatus: Join = JoinStatusMsg.Read(r).State; break;
+            case MsgId.JoinStatus: { var js = JoinStatusMsg.Read(r); Join = js.State; JoinReason = js.Reason; break; }
             case MsgId.GatewayDraining: DrainWithin = GatewayDrainingMsg.Read(r).ReconnectWithinSeconds; break;
             case MsgId.ContainerOwnership:
             {
@@ -922,6 +952,12 @@ public sealed class Fleet : IDisposable
     public Action? OnPump;
 
     private readonly string _meshToken;
+    private readonly float _reclaimSeconds;
+    private readonly bool _singleSession;
+    private readonly Action<NebulaConfig>? _configure;
+    private InterestGrid _grid = InterestGrid.Resolve(InterestSettings.Default);
+    private InterestSettings _settings = InterestSettings.Default;
+    private int _gatewaySeq, _workerSeq;
 
     /// <summary>The single-worker mesh the fleet-safety tests use (one container, one worker).</summary>
     public FakeWorker Worker => Workers[0];
@@ -930,33 +966,110 @@ public sealed class Fleet : IDisposable
         int workers = 1, Action<NebulaConfig>? configure = null, Action<Fleet>? world = null)
     {
         _meshToken = meshToken;
+        _reclaimSeconds = reclaimSeconds;
+        _singleSession = singleSession;
+        _configure = configure;
         Plane.Connect();
-        for (int i = 0; i < workers; i++)
-        {
-            var worker = new FakeWorker(meshToken, "w" + (i + 1), (ushort)(i + 1));
-            Workers.Add(worker);
-            Plane.RegisterWorker(worker.WorkerId, (uint)(i + 1), "127.0.0.1", (ushort)worker.Port);
-            Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
-        }
+        for (int i = 0; i < workers; i++) StartWorker();
         if (world != null) world(this);
         else Assign("c0", Workers[0].WorkerId);
-        for (int i = 0; i < gateways; i++)
+        for (int i = 0; i < gateways; i++) StartGateway();
+    }
+
+    // -------------------------------------------------------------------- growing the mesh, and losing parts of it
+    //
+    // The scale and failure suite (docs/scale-suite.md) needs a mesh whose pieces come and go while clients stay
+    // connected. These are the only ways to do that here: a fixture that reached into the gateway or the control
+    // plane to fake a loss would be testing the fake.
+
+    /// <summary>
+    /// Add a worker: a new process registering with the control plane. It owns nothing until a container is
+    /// assigned to it, exactly as a launched worker does.
+    /// </summary>
+    public FakeWorker StartWorker(string? workerId = null)
+    {
+        ushort index = (ushort)(++_workerSeq);
+        var worker = new FakeWorker(_meshToken, workerId ?? "w" + index, index) { Grid = _grid, Settings = _settings };
+        Workers.Add(worker);
+        Plane.RegisterWorker(worker.WorkerId, index, "127.0.0.1", (ushort)worker.Port);
+        Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        return worker;
+    }
+
+    /// <summary>
+    /// A worker process dies: its socket goes away (so every gateway link drops) and the control plane loses its
+    /// registration, which orphans every lease it held. Nothing is handed over and nothing is drained — that is the
+    /// point. The gateways keep running and their clients keep their connections.
+    /// <para>Returns the containers left orphaned, which is what the restore has to place again.</para>
+    /// </summary>
+    public List<string> KillWorker(FakeWorker worker)
+    {
+        var orphaned = new List<string>();
+        foreach (var lease in Plane.Leases) if (lease.WorkerId == worker.WorkerId) orphaned.Add(lease.ContainerId);
+        Workers.Remove(worker);
+        Plane.UnregisterWorker(worker.WorkerId);
+        worker.Dispose();
+        return orphaned;
+    }
+
+    /// <summary>Start another gateway process; returns its index in <see cref="Gateways"/>.</summary>
+    public int StartGateway(Action<NebulaConfig>? configure = null)
+    {
+        using var reserve = new UdpClient(0);
+        int port = ((IPEndPoint)reserve.Client.LocalEndPoint!).Port; reserve.Close();
+        var config = new NebulaConfig
         {
-            using var reserve = new UdpClient(0);
-            int port = ((IPEndPoint)reserve.Client.LocalEndPoint!).Port; reserve.Close();
-            var config = new NebulaConfig
-            {
-                GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = meshToken, WebClients = false,
-                SessionReclaimSeconds = reclaimSeconds, SingleSessionPerPlayer = singleSession, GatewayDrainReconnectSeconds = 7,
-            };
-            configure?.Invoke(config);
-            var gw = new NebulaGateway();
-            gw.Initialize(config, Plane, null, "gw" + (i + 1));
-            Gateways.Add(gw);
-            Ports.Add(port);
-            foreach (var worker in Workers) worker.Grid = config.ToInterestGrid();
-            foreach (var worker in Workers) worker.Settings = config.ToInterestSettings();
-        }
+            GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = _meshToken, WebClients = false,
+            SessionReclaimSeconds = _reclaimSeconds, SingleSessionPerPlayer = _singleSession, GatewayDrainReconnectSeconds = 7,
+        };
+        _configure?.Invoke(config);
+        configure?.Invoke(config);
+        var gw = new NebulaGateway();
+        gw.Initialize(config, Plane, null, "gw" + (++_gatewaySeq));
+        Gateways.Add(gw);
+        Ports.Add(port);
+        _grid = config.ToInterestGrid();
+        _settings = config.ToInterestSettings();
+        foreach (var worker in Workers) { worker.Grid = _grid; worker.Settings = _settings; }
+        return Gateways.Count - 1;
+    }
+
+    /// <summary>
+    /// Lose a gateway <b>without a drain</b>, in one of the two ways that actually happen, because they are
+    /// different failures and the suite measures both (docs/scale-suite.md, D7a):
+    /// <list type="bullet">
+    /// <item><b>Hard</b> (<paramref name="hard"/> true): the process is gone as far as everyone else is concerned.
+    /// It stops ticking, so it stops heartbeating, stops answering its clients and never releases the session
+    /// claims it holds in the coordinator. Its socket is not closed from outside (nothing here can), so a client
+    /// notices by transport timeout rather than by a reset; that is the only difference from a killed process and
+    /// it shortens nothing.</item>
+    /// <item><b>Abrupt stop</b> (<paramref name="hard"/> false): <see cref="NebulaGateway.Dispose"/> — the socket
+    /// closes, the control-plane row goes and the session claims are released, but no drain was requested and no
+    /// client was told to reconnect. A container being stopped, not a crash.</item>
+    /// </list>
+    /// The gateway leaves the pump either way; its port stays in <see cref="Ports"/> so indices stay stable.
+    /// </summary>
+    public void KillGateway(int index, bool hard = true)
+    {
+        var gw = Gateways[index];
+        PausedGateways.Add(gw);
+        if (!hard) { Gateways.Remove(gw); gw.Dispose(); }
+    }
+
+    /// <summary>
+    /// The control plane restarts: an orchestrator process restart, or a database failover under it. Everything it
+    /// holds goes, and what was durable comes back. <paramref name="snapshot"/> is a document taken earlier with
+    /// <see cref="LocalControlPlane.ToJson"/>; null models a restart that came back with nothing at all.
+    /// <para>
+    /// The gateways and workers are untouched, which is the point: this measures what the rest of the mesh does
+    /// while the control plane is away, and how long it takes to be whole again.
+    /// </para>
+    /// </summary>
+    public void RestartControlPlane(string? snapshot)
+    {
+        Plane.ResetControlPlane();
+        Plane.Tick();
+        if (snapshot != null) Plane.Import(ControlPlaneJson.Parse(snapshot));
     }
 
     /// <summary>Give a container an owner. The container itself comes from the manifest the test loaded.</summary>
@@ -967,9 +1080,9 @@ public sealed class Fleet : IDisposable
         if (!ContainerIds.Contains(containerId)) ContainerIds.Add(containerId);
     }
 
-    public FakeClient Connect(int gateway, string name, string token = "", string session = "")
+    public FakeClient Connect(int gateway, string name, string token = "", string session = "", string scope = "")
     {
-        var c = new FakeClient(Ports[gateway], name, token, session);
+        var c = new FakeClient(Ports[gateway], name, token, session, scope);
         Clients.Add(c);
         return c;
     }

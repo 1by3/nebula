@@ -1,0 +1,108 @@
+---
+title: "AdmissionRequest"
+description: "What the game is told when something asks to enter a target that is at capacity."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs)</div>
+
+```csharp
+public struct AdmissionRequest
+```
+
+What the game is told when something asks to enter a target that is at capacity. Everything here is derived from rows the mesh already keeps, so a policy is a pure function of its argument and can be unit tested. See `docs/capacity-admission.md`.
+
+## Fields
+
+### Kind [#kind]
+
+```csharp
+public AdmissionKind Kind;
+```
+
+Whether this is a client being placed or an entity crossing in.
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey;
+```
+
+The scope being entered ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)); empty for the public world.
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId;
+```
+
+The container the arrival would land in. Empty when the answer is about a whole scope and no part has been picked yet.
+
+### Capacity [#capacity]
+
+```csharp
+public CapacityInfo Capacity;
+```
+
+How saturated the target is, and in what ([`NebulaCapacity`](/docs/reference/orchestrator/nebula-capacity)).
+
+### ClientId [#clientid]
+
+```csharp
+public ulong ClientId;
+```
+
+The gateway's id for this client, or 0 for a transfer of a server-driven entity.
+
+### Identity [#identity]
+
+```csharp
+public string Identity;
+```
+
+The player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)), empty when unauthenticated or for a transfer.
+
+### Name [#name]
+
+```csharp
+public string Name;
+```
+
+The name the client gave in its `Hello`.
+
+### IsBot [#isbot]
+
+```csharp
+public bool IsBot;
+```
+
+The client is a bot (a load generator or an AI player).
+
+### Team [#team]
+
+```csharp
+public byte Team;
+```
+
+The game's own tags on this client ([`NebulaGateway.SetClientTag`](/docs/reference/gateway/nebula-gateway#setclienttag) / `SetClientTags`): the natural place for "party 7" or "staff".
+
+### Tags [#tags]
+
+```csharp
+public ulong Tags;
+```
+
+### EntityNetId [#entitynetid]
+
+```csharp
+public ulong EntityNetId;
+```
+
+The entity crossing in, for [`AdmissionKind.Transfer`](/docs/reference/gateway/admission-kind#transfer); 0 otherwise.
+
+### OwnerClientId [#ownerclientid]
+
+```csharp
+public ulong OwnerClientId;
+```
+
+The client that owns that entity, for [`AdmissionKind.Transfer`](/docs/reference/gateway/admission-kind#transfer); 0 for a server-driven entity.

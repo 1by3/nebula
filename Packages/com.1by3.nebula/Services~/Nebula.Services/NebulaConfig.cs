@@ -30,6 +30,15 @@ namespace Nebula
         public string AssignmentPolicy = "auto";
         public float CostRebalanceThreshold = 0.3f;
         public CostWeights CostWeights = CostWeights.Default;
+
+        /// <summary>The default of <see cref="CostLinkBudgetMbps"/> in bytes per second: 100 Mbit/s.</summary>
+        public const double DefaultCostLinkBytesPerSec = 100.0 * 1000.0 * 1000.0 / 8.0;
+
+        /// <summary><see cref="CostLinkBudgetMbps"/> in bytes per second; the default when it is 0 or less.</summary>
+        public double CostLinkBytesPerSec => CostLinkBudgetMbps > 0f ? CostLinkBudgetMbps * 1000.0 * 1000.0 / 8.0 : DefaultCostLinkBytesPerSec;
+        public float CostLinkBudgetMbps = 100f;
+        /// <summary>How full a target may get before the mesh calls it at capacity (docs/capacity-admission.md); 0 turns the signal off.</summary>
+        public float CapacitySaturation = 0.9f;
         public bool AutoScale = true;
         public int MinWorkers = 1;
         public float ScaleOutUtilization = 0.7f;
@@ -58,10 +67,13 @@ namespace Nebula
         public float GhostBandMargin = 4f;
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;
+        public int StateHistoryTicks = 32;
+        public int AuthorityCallMaxHops = 3;
         public string PersistenceMode = "auto";
         public string PersistenceLocalFile = "";
         public float PersistenceCheckpointSeconds = 5f;
         public float PersistenceRestoreGraceSeconds = 3f;
+        public float ScopeIdleRetireSeconds = 300f;
         public float SceneEntityGraceSeconds = 2f;
         public float InterestRadius = 120f;
         public float InterestExitMargin = 16f;

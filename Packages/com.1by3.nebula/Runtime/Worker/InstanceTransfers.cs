@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
-using System.Text;
 using UnityEngine;
 
 namespace Nebula
@@ -17,6 +15,16 @@ namespace Nebula
         public string Error { get; internal set; }
         /// <summary>Static container selected when preparation began.</summary>
         public Container Destination { get; internal set; }
+        /// <summary>
+        /// Why the preparation was refused, in typed form: <see cref="JoinRejectReason.AtCapacity"/> when the
+        /// destination was at capacity and the admission hook refused this crossing, and
+        /// <see cref="JoinRejectReason.Denied"/> when the hook refused a destination that was not
+        /// (<see cref="NebulaAdmission"/>, docs/capacity-admission.md). <see cref="JoinRejectReason.None"/> for
+        /// every other failure, which <see cref="Error"/> describes.
+        /// </summary>
+        public JoinRejectReason RejectReason { get; internal set; }
+        /// <summary>How saturated the destination was when it was refused; 0 when that was not the reason.</summary>
+        public float Saturation { get; internal set; }
         internal NetworkIdentity Entity;
         internal Container Source;
         internal uint Epoch;
@@ -32,17 +40,9 @@ namespace Nebula
         private readonly List<uint> _expiredInstanceRequests = new List<uint>();
 
         /// <summary>Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.</summary>
-        public static ulong InstanceKey(string key)
-        {
-            if (string.IsNullOrEmpty(key)) throw new ArgumentException("An instance key is required", nameof(key));
-            using (var hash = SHA256.Create())
-            {
-                var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(key));
-                ulong id = 0;
-                for (int i = 0; i < 8; i++) id = (id << 8) | bytes[i];
-                return id == 0 ? 1UL : id;
-            }
-        }
+        /// <remarks>The derivation itself is <see cref="ScopeKeys.Hash"/>, so a gateway, an orchestrator or a
+        /// matchmaking service can name the same scope without a worker and without Unity.</remarks>
+        public static ulong InstanceKey(string key) => ScopeKeys.Hash(key);
 
         /// <summary>Create or find stable instance container leases. Resolve the returned references after the control-plane update. This does not automatically persist entity state.</summary>
         /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
@@ -62,20 +62,36 @@ namespace Nebula
                 if (part == null || string.IsNullOrEmpty(part.Id) || !ids.Add(part.Id) || part.Bounds.size.x <= 0 || part.Bounds.size.y <= 0 || part.Bounds.size.z <= 0)
                     throw new ArgumentException("Instance parts need unique IDs and positive bounds");
             }
+            // An instance is a scope: the template and the origin become a ScopeDefinition, and preparing it is the
+            // same ActivateScope a matchmaking service or a travel menu would call from outside the mesh
+            // (docs/scope-activation.md D2). PreferredWorkerId keeps the old behaviour that the worker that asked
+            // owns the new containers from the first change anyone sees.
+            var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
+            var definition = new ScopeDefinition
+            {
+                Kind = ScopeKind.Parts,
+                ObservePublic = template.ObservePublic,
+                ObservationCenter = view.center,
+                ObservationSize = view.size,
+            };
             for (int i = 0; i < template.Parts.Length; i++)
             {
                 var part = template.Parts[i];
                 ulong id = InstanceKey(prefix + "/" + part.Id);
                 references[i] = ContainerRef.Runtime(id);
                 var bounds = ContainerRegistry.ToAbsolute(new Bounds(origin + part.Bounds.center, part.Bounds.size));
-                var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
-                var info = new InstanceContainerInfo { InstanceId = scope, ContentResource = part.ContentResource,
-                    ObservePublic = template.ObservePublic, ObservationCenter = view.center, ObservationSize = view.size };
+                definition.Parts.Add(new ScopePart { PartId = part.Id, Center = bounds.center, Size = bounds.size, ContentResource = part.ContentResource ?? "" });
                 var existing = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
                 if (existing != null && (existing.Instance?.InstanceId != scope || existing.Bounds != bounds || existing.Instance.ContentResource != part.ContentResource))
                     throw new InvalidOperationException("Instance key already names different content or bounds");
-                if (existing == null) ControlPlane.EnsureRuntimeContainer(ContainerRegistry.RuntimeContainerId(id), bounds, WorkerId, info);
+                // The stored scope key is the contract's key for this scope (EntityLocation.ScopeKey). A row written
+                // before the key was recorded has none and stands; a row with a different key under the same hash is
+                // a collision and is refused rather than silently merged.
+                if (existing != null && !string.IsNullOrEmpty(existing.Instance.ScopeKey) && !string.Equals(existing.Instance.ScopeKey, prefix, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Instance key collides with an existing scope key: " + existing.Instance.ScopeKey);
             }
+            ControlPlane.ActivateScope(new ScopeActivationRequest
+            { ScopeKey = prefix, Definition = definition, PreferredWorkerId = WorkerId, Requester = WorkerId });
             return references;
         }
 
@@ -110,6 +126,39 @@ namespace Nebula
                 throw new ArgumentException("An authoritative entity and a static destination are required");
             var transfer = new InstanceTransfer { Entity = entity, Source = entity.Container, Epoch = entity.Epoch,
                 Destination = destination, ClientReady = entity.OwnerClientId == 0, Deadline = Time.unscaledTime + Mathf.Max(1, timeoutSeconds) };
+            if (!TransferScopeAdmits(destination))
+            {
+                transfer.Error = "Destination scope is not accepting transfers";
+                transfer.Finished = true;
+                return transfer;
+            }
+            // Capacity, before anything is sent: a crossing into a destination that is at capacity fails typed, with
+            // the same reason and the same hook a join goes through, so a travel service gets one answer for both
+            // ways in (docs/capacity-admission.md). Nothing is ever split silently to make room.
+            var capacity = NebulaCapacity.Target(ControlPlane, destination.ScopeKey ?? "", destination.ContainerId);
+            if (capacity.AtCapacity || NebulaAdmission.AlwaysConsult)
+            {
+                var decision = NebulaAdmission.Ask(new AdmissionRequest
+                {
+                    Kind = AdmissionKind.Transfer,
+                    ScopeKey = destination.ScopeKey ?? "",
+                    ContainerId = destination.ContainerId,
+                    Capacity = capacity,
+                    EntityNetId = entity.NetId,
+                    OwnerClientId = entity.OwnerClientId,
+                    ClientId = entity.OwnerClientId,
+                }, $"entity {entity.NetId} crossing into {destination.ContainerId}");
+                // A transfer has nobody to hold: there is no join to keep open, so "wait" is a refusal the caller
+                // retries by preparing again.
+                if (decision.Action != AdmissionAction.Admit)
+                {
+                    transfer.RejectReason = capacity.AtCapacity ? JoinRejectReason.AtCapacity : JoinRejectReason.Denied;
+                    transfer.Saturation = capacity.Saturation;
+                    transfer.Error = string.IsNullOrEmpty(decision.Reason) ? NebulaAdmission.DefaultReason(capacity) : decision.Reason;
+                    transfer.Finished = true;
+                    return transfer;
+                }
+            }
             transfer.Message = new InstancePreparationMsg { RequestId = ++_nextInstanceRequest, EntityId = entity.NetId,
                 Destination = destination.Ref, SourceWorker = WorkerIndex, LeaseEpoch = destination.LeaseEpoch };
             _instanceTransfers.Add(transfer.Message.RequestId, transfer);
@@ -151,7 +200,10 @@ namespace Nebula
         private bool ValidTransfer(InstanceTransfer transfer) => transfer.Entity != null && transfer.Entity.IsSpawned &&
             transfer.Entity.HasAuthority && transfer.Entity.Epoch == transfer.Epoch && transfer.Entity.Container == transfer.Source &&
             transfer.Destination != null && transfer.Destination.LeaseEpoch == transfer.Message.LeaseEpoch &&
-            LeaseState.IsOwning(transfer.Destination.LeaseState);
+            LeaseState.IsOwning(transfer.Destination.LeaseState) && TransferScopeAdmits(transfer.Destination);
+
+        private bool TransferScopeAdmits(Container destination) =>
+            ScopeLifecycle.Admits(ControlPlane, destination.ScopeKey, out _);
 
         private void UpdateInstancePreparations()
         {
@@ -160,7 +212,7 @@ namespace Nebula
             {
                 var transfer = pair.Value;
                 if (Time.unscaledTime < transfer.Deadline && ValidTransfer(transfer)) continue;
-                transfer.Error = "Preparation expired or container authority changed";
+                transfer.Error = "Preparation expired, container authority changed, or destination scope stopped admitting";
                 transfer.Finished = true;
                 _expiredInstanceRequests.Add(pair.Key);
             }
@@ -172,7 +224,7 @@ namespace Nebula
             if (peer.Role != PeerRole.Worker || peer.Index != message.SourceWorker) return;
             var destination = message.Destination.Resolve();
             message.Success = destination != null && destination.OwnerWorkerId == WorkerId &&
-                destination.LeaseEpoch == message.LeaseEpoch && InstanceScenes.Prepare(destination);
+                destination.LeaseEpoch == message.LeaseEpoch && TransferScopeAdmits(destination) && InstanceScenes.Prepare(destination);
             _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
             _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }

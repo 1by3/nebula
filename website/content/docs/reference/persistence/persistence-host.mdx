@@ -13,6 +13,7 @@ Serves the orchestrator's [`IPersistenceStore`](/docs/reference/persistence/i-pe
 
 - `POST /api/store/save` `{"records":[...]}`, `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear`
 - `GET /api/store/record?key=`, `GET /api/store/container?id=`, `GET /api/store/carried?key=`, `GET /api/store/all`
+- `GET /api/store/count?scope=&container=`: how many records a scope (optionally one of its containers) holds, without reading them
 - `GET /api/store/status`: backend, whether it is connected, how many records it holds
 
 Requests carry the mesh token in `X-Nebula-Token` when the mesh has one.

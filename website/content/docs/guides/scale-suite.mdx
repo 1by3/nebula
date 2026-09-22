@@ -1,0 +1,85 @@
+---
+title: Run the scale and failure suite
+description: Measure what a Nebula mesh does under sustained load, a burst, a worker kill, a lost gateway, a control-plane restart and a whole-mesh restart, against explicit thresholds.
+---
+
+The conformance suite answers "does this guarantee hold?". The scale and failure suite answers a different question: **what happens to a busy mesh when something breaks, and how long does it take to be whole again?** It is phrased in workers, containers, scopes, entities, sessions and milliseconds — never in game content — so the numbers it produces are about Nebula and not about your game. Scenarios specific to your game belong in your own repository and do not gate a Nebula release.
+
+Every scenario has a stated threshold, writes a CSV artifact under `Logs/scale/`, and says which of the two layers measured it.
+
+## Two layers
+
+| | Synthetic | Real workers |
+|---|---|---|
+| Runs | `dotnet test --filter "TestCategory=Scale"` | `pwsh Tools/scale-suite.ps1` |
+| Needs | nothing but the .NET SDK | a player build and the `nebula` CLI on `PATH` |
+| What is real | the gateway, the control plane, the interest code, client handshakes over loopback UDP — all in one process | everything: Unity worker processes, a gateway, an orchestrator, real sockets |
+| Measures | admission, sessions, leases, replica counts, per-client bandwidth, the planner's moves and reports | worker tick time, scene restore cost, process lifetime |
+| Artifacts | `Logs/scale/synthetic-*.csv` | `Logs/scale/unity-*.csv` |
+
+The two never share a series. Every artifact's first column, and every line of output, says which layer produced it.
+
+## Run the synthetic layer
+
+From the repository root:
+
+```powershell
+dotnet test Packages/com.1by3.nebula/Services~/Nebula.Services.slnx --filter "TestCategory=Scale"
+```
+
+or, for the same thing with a timing summary:
+
+```powershell
+pwsh Tools/scale-suite.ps1 -Synthetic
+```
+
+It takes about eighty seconds and needs no build, no mesh and no Editor. The scenarios that run a mesh for several seconds are also tagged `Soak`, so an ordinary `--filter "TestCategory!=Soak"` run is unaffected by them.
+
+## Run the real-worker layer
+
+```powershell
+pwsh Tools/scale-suite.ps1 -DryRun                                   # check this machine can do it
+pwsh Tools/scale-suite.ps1 -Scenario sustained -Clients 300 -Seconds 120
+pwsh Tools/scale-suite.ps1 -Scenario worker-kill -Workers 4 -KillWorker w2
+pwsh Tools/scale-suite.ps1 -Scenario all -Build
+```
+
+The runner starts and stops the mesh through the `nebula` CLI, drives it with the [load-test client](/docs/guides/load-testing), kills real processes, and scrapes the orchestrator's `/api/state` and `/api/cost` plus each worker log's `[nebula] profile` line into CSV. `-DryRun` checks the preconditions — the CLI on `PATH`, a player build at `Builds/Win64/Nebula.exe`, the load-test project, free ports — and prints the plan without running anything. If there is no player build it says so and tells you to pass `-Build` or use `-Synthetic`.
+
+An open Unity Editor is a warning, not a blocker: `nebula build` mirrors the project to a scratch directory and builds there.
+
+## The scenarios
+
+**Sustained load.** Clients, workers, gateways and scenery at a fixed shape, held for several seconds. Asserts that no client is sent more than the per-client bandwidth bound, that no client is sent state for an entity it does not hold, and that no client is given a second live view of an entity it already holds. On real workers it also asserts the worst worker tick stays inside one tick period.
+
+**Burst.** Every client joins at once with no ramp. Asserts that nobody is refused, that each client gets its own session, and that each gets exactly one pawn.
+
+**Many scopes.** Several keyed scopes of clients plus public clients, each scope holding its own entities. Asserts **zero cross-scope leaks** — no client ever hears about an entity belonging to a scope it is not in — and records each scope's bandwidth separately, so one busy instance cannot hide inside a mesh-wide average.
+
+**Worker kill.** A worker dies with clients watching the container it owns. Asserts that the gateways drop its entities rather than leaving clients holding replicas nobody owns, that no client is disconnected, that the restore is inside the per-container budget, and that no entity comes back twice. How much *unsaved* work a kill can lose is a separate, derived number: see [the durability window](/docs/guides/persistence).
+
+**Gateway lost without a drain.** Two cases. A gateway *stopped* cleanly releases its session claims, and every session is reclaimed on another gateway within the bound, keeping its session id. A gateway that is *killed outright* never releases them, and reclaims are refused — see "Known gaps" below.
+
+**Control-plane restart.** The orchestrator restarts under a running mesh. Asserts that every lease comes back with the same owner, state and epoch, that the stall is inside the bound, that no client is disconnected and that no session id changes — a gateway's client links do not depend on the control plane.
+
+**Whole-mesh restart.** Every worker dies, then they come back one at a time. Records the container-by-container restore curve and compares it against a checked-in baseline (`docs/baselines/mesh-restart.csv`): same containers, monotonic, each step inside the per-container budget.
+
+**Autoscale and rebalance.** Asserts that a rebalance explains every move it makes, that it moves nothing under a [hold](/docs/guides/cohesion) — including the rest of a cohesion group whose one held member would otherwise be split off — and that a container carrying a whole tick on its own is reported with a typed cause and the cost component it is expensive in, instead of the mesh growing pointlessly.
+
+**Rolling upgrade.** See below.
+
+## Known gaps
+
+These are measured rather than hidden. Each is pinned by a test that fails when the behaviour changes, so whoever closes the gap is told to come back and update the suite.
+
+**A hard gateway loss does not reclaim its sessions.** A takeover is granted only when the previous gateway releases its claim. A gateway stopped cleanly does; a gateway that is killed never does, and nothing evicts the claim of a gateway that has stopped heartbeating, so every reclaim is refused after the coordination deadline. There is no workaround from outside the dead process: a release is matched on both the owning gateway and the per-connection claim id it minted.
+
+**A control plane that comes back empty loses its workers.** A gateway re-registers itself when it notices its row has gone; a worker registers once and never again. A control plane restarted *with* its storage keeps everything; one restarted *without* it has no workers and no leases until every worker process is restarted.
+
+**Database failover is not exercised.** The synthetic layer restarts the control plane in place through the same snapshot-and-import path the orchestrator uses at startup. That is the right shape, but no storage is swapped and no write is lost mid-flight.
+
+**There is no protocol compatibility window.** A gateway requires the client's protocol version to match exactly and disconnects otherwise; there is no negotiation and no minimum version. A rolling upgrade may therefore replace processes at one protocol version — which the suite proves works, with every session kept across a gateway replacement — but may not span two. Upgrading across a protocol bump means restarting the mesh.
+
+## Adding a scenario
+
+Decide the layer first: if what you want to prove is something a gateway or the control plane decides, it belongs in the synthetic layer; if it is what a worker costs, it belongs in the real-worker layer. Then add the test (or the runner function), put its threshold in one place with either its derivation or the word "provisional", and record the artifact. The full recipe, the threshold table and the reasoning behind every number are in the design record, `docs/scale-suite.md`.

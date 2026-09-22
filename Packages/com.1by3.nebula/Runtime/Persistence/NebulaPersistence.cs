@@ -38,6 +38,22 @@ namespace Nebula
         private readonly NebulaConfig _config;
         private readonly IPersistenceStore _store;
 
+        /// <summary>
+        /// Seconds on a monotonic clock, sampled once per <see cref="Update"/> pass. Defaults to
+        /// <c>UnityEngine.Time.unscaledTime</c>; a conformance test injects its own so the checkpoint scheduler
+        /// (<see cref="MinSaveIntervalSeconds"/>, <see cref="MaxSavesPerFrame"/>, the checkpoint interval) can be
+        /// driven deterministically without waiting on the wall clock. See docs/persistence-durability.md.
+        /// </summary>
+        internal Func<float> Now = () => UnityEngine.Time.unscaledTime;
+
+        /// <summary>
+        /// Asked before a leased container's records are read: false holds the restore for another frame. The worker
+        /// points this at <see cref="WorkerScopeLifecycle.MayRestore"/>, which keeps a scope's parts back until
+        /// <c>NebulaLifecycle.OnScopeActivating</c> has been raised for the scope (<c>docs/lifecycle-hooks.md</c>).
+        /// Null — the default — restores as soon as the grace period is over.
+        /// </summary>
+        internal Func<string, bool> RestoreGate;
+
         /// <summary>Every persistent entity alive in this process, authoritative or ghost, by key.</summary>
         private readonly Dictionary<string, NetworkIdentity> _byKey = new Dictionary<string, NetworkIdentity>();
         /// <summary>Checkpoint candidates, in spawn order; the cursor walks them across frames.</summary>
@@ -47,7 +63,9 @@ namespace Nebula
         /// <summary>Static containers this worker leases, and when the lease appeared.</summary>
         private readonly Dictionary<string, float> _leasedSince = new Dictionary<string, float>();
         /// <summary>Containers whose records have been asked for, so a lease that stays put is loaded once.</summary>
-        private readonly HashSet<string> _loadRequested = new HashSet<string>();
+        private readonly Dictionary<string, object> _loadRequested = new Dictionary<string, object>();
+        /// <summary>Containers whose load came back and was judged, and how many entities each one brought back (see <see cref="ContainerRestored"/>).</summary>
+        private readonly Dictionary<string, int> _restoreComplete = new Dictionary<string, int>();
         /// <summary>Records held back because their saver may still hand the entity over; re-judged after another grace.</summary>
         private readonly Dictionary<string, PersistedEntityRecord> _waiting = new Dictionary<string, PersistedEntityRecord>();
         private readonly Dictionary<string, float> _waitingUntil = new Dictionary<string, float>();
@@ -81,8 +99,70 @@ namespace Nebula
         /// <summary>Entities this service has brought back since the process started.</summary>
         public int RestoredCount { get; private set; }
 
+        /// <summary>
+        /// How long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, in seconds;
+        /// 0 when nothing is dirty. A live reading of how much of the documented durability window
+        /// (docs/persistence-durability.md) is in use on this worker right now; reported per worker on the
+        /// heartbeat (<see cref="WorkerInfo.OldestDirtySeconds"/>) for the orchestrator dashboard.
+        /// </summary>
+        public float OldestDirtyAgeSeconds
+        {
+            get
+            {
+                float now = Now();
+                float oldest = 0f;
+                for (int i = 0; i < _tracked.Count; i++)
+                {
+                    var pe = _tracked[i];
+                    if (pe == null || !pe.IsDirty || pe.DirtySince <= 0f) continue;
+                    float age = now - pe.DirtySince;
+                    if (age > oldest) oldest = age;
+                }
+                return oldest;
+            }
+        }
+
         /// <summary>An entity was brought back from the store and spawned on this worker.</summary>
         public event Action<NetworkIdentity> EntityRestored;
+
+        /// <summary>
+        /// Every persisted record of a container this worker has just gained has been read and dealt with: the
+        /// container id, and how many entities were actually brought back (0 when there was nothing saved). Raised
+        /// once per lease, on the main thread, after the grace period and the load. This is the seam the scope
+        /// lifecycle waits on before a restored scope admits clients (<c>docs/scope-lifecycle.md</c>); NEB-242
+        /// exposes it to games as <c>OnContainerRestored</c>.
+        /// </summary>
+        public event Action<string, int> ContainerRestored;
+
+        /// <summary>The container's records have been read and restored since this worker gained its lease.</summary>
+        public bool IsContainerRestored(string containerId) => !string.IsNullOrEmpty(containerId) && _restoreComplete.ContainsKey(containerId);
+
+        /// <summary>How many entities that restore brought back; 0 when it has not finished or there was nothing saved.</summary>
+        public int RestoredCountFor(string containerId) =>
+            !string.IsNullOrEmpty(containerId) && _restoreComplete.TryGetValue(containerId, out int n) ? n : 0;
+
+        /// <summary>
+        /// Save every authoritative persistent entity in <paramref name="containerId"/> right now, whatever the
+        /// checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence:
+        /// the saves are issued here and <see cref="IPersistenceStore.WhenWritten"/> is the barrier that says they
+        /// reached the store. Does not despawn anything.
+        /// </summary>
+        public int CheckpointContainer(string containerId)
+        {
+            if (string.IsNullOrEmpty(containerId) || _store == null) return 0;
+            int saved = 0;
+            for (int i = 0; i < _tracked.Count; i++)
+            {
+                var pe = _tracked[i];
+                var identity = pe != null ? pe.Identity : null;
+                if (identity == null || !identity.IsSpawned || !identity.HasAuthority) continue;
+                var container = identity.Container;
+                if (container == null || !string.Equals(container.ContainerId, containerId, StringComparison.Ordinal)) continue;
+                SaveNow(identity);
+                saved++;
+            }
+            return saved;
+        }
 
         /// <summary>The live entity saving under <paramref name="key"/> in this process, or null.</summary>
         public NetworkIdentity Find(string key)
@@ -120,6 +200,7 @@ namespace Nebula
                 PrefabId = identity.PrefabId,
                 PrefabName = PrefabNameOf(identity),
                 SceneId = identity.SceneId,
+                ScopeKey = identity.ScopeKey,
                 Epoch = identity.Epoch,
                 ServerDriven = identity.IsServerDriven,
                 Owned = identity.OwnerClientId != 0,
@@ -170,7 +251,8 @@ namespace Nebula
             SavedCount++;
             pe.HasBeenSaved = true;
             pe.IsDirty = false;
-            pe.LastSavedAt = Time.unscaledTime;
+            pe.DirtySince = 0f;
+            pe.LastSavedAt = Now();
             pe.LastSavedPosition = identity.transform.position;
             pe.LastSavedRotation = identity.transform.rotation;
             if (!_byKey.ContainsKey(record.Key)) _byKey[record.Key] = identity;
@@ -201,8 +283,9 @@ namespace Nebula
                 pe.Key = record.Key;
                 pe.HasBeenSaved = true;
                 pe.LastSavedVersion = record.Version;
-                pe.LastSavedAt = Time.unscaledTime;
+                pe.LastSavedAt = Now();
                 pe.IsDirty = false;
+                pe.DirtySince = 0f;
             }
             PersistentStateCodec.Read(record.State, identity);
             if (identity.IsSpawned && identity.HasAuthority)
@@ -337,7 +420,7 @@ namespace Nebula
         /// <summary>Called once per frame by the worker: restores what is due, then checkpoints what is dirty.</summary>
         internal void Update()
         {
-            float now = Time.unscaledTime;
+            float now = Now();
             PumpRestores(now);
             PumpWaiting(now);
             PumpCheckpoints(now);
@@ -349,19 +432,28 @@ namespace Nebula
             foreach (var kv in _leasedSince)
             {
                 if (now - kv.Value < _config.PersistenceRestoreGraceSeconds) continue;
-                if (!_loadRequested.Add(kv.Key)) continue;
+                // The scope's activation hook comes first when there is one (docs/lifecycle-hooks.md D4). The gate
+                // is asked again every frame and opens on its own deadline, so nothing can wedge a restore here.
+                if (RestoreGate != null && !RestoreGate(kv.Key)) continue;
+                if (_loadRequested.ContainsKey(kv.Key)) continue;
                 string containerId = kv.Key;
-                _store.LoadContainer(containerId, records => OnContainerRecords(containerId, records));
+                var request = new object();
+                _loadRequested[containerId] = request;
+                _store.LoadContainer(containerId, records =>
+                {
+                    if (!_loadRequested.TryGetValue(containerId, out var current) || !ReferenceEquals(current, request)) return;
+                    OnContainerRecords(containerId, records);
+                });
             }
         }
 
         private void OnContainerRecords(string containerId, IReadOnlyList<PersistedEntityRecord> records)
         {
-            if (records == null || records.Count == 0) return;
+            if (records == null || records.Count == 0) { CompleteRestore(containerId, 0); return; }
             var container = ContainerRegistry.FindById(containerId);
             if (container == null || !container.IsOwnedBy(_worker.WorkerId)) return; // the lease moved on while we asked
             int restored = 0;
-            float now = Time.unscaledTime;
+            float now = Now();
             for (int i = 0; i < records.Count; i++)
             {
                 var record = records[i];
@@ -380,6 +472,23 @@ namespace Nebula
                 }
             }
             if (restored > 0) NebulaLog.Info($"persistence: restored {restored} persisted entities into {containerId}");
+            CompleteRestore(containerId, restored);
+        }
+
+        /// <summary>
+        /// The container's records have been read and judged. Records held back for a handover that may still
+        /// arrive (<see cref="RestorePlan.Wait"/>) do not delay this: the restore of what is saved has happened,
+        /// and a record that is waiting is one the mesh is about to hand over anyway.
+        /// </summary>
+        private void CompleteRestore(string containerId, int restored)
+        {
+            if (string.IsNullOrEmpty(containerId) || _restoreComplete.ContainsKey(containerId)) return;
+            _restoreComplete[containerId] = restored;
+            try { ContainerRestored?.Invoke(containerId, restored); }
+            catch (Exception e) { NebulaLog.Error($"ContainerRestored handler threw: {e}"); }
+            // The game's hook, raised from the same call: after the restore, and before the worker's next pass turns
+            // this into the scope's Restored acknowledgement (docs/lifecycle-hooks.md D2).
+            NebulaLifecycle.RaiseContainerRestored(ContainerRegistry.FindById(containerId), restored);
         }
 
         private RestorePlan Judge(PersistedEntityRecord record, float now)
@@ -466,7 +575,21 @@ namespace Nebula
 
         private void OnLeasesChanged()
         {
-            float now = Time.unscaledTime;
+            // SyncRuntime removes retired boxes before this event. Clear their lease bookkeeping even when
+            // the old container no longer exists in either registry list.
+            var lost = new List<string>();
+            foreach (var id in _leasedSince.Keys)
+            {
+                var container = ContainerRegistry.FindById(id);
+                if (container == null || !container.IsOwnedBy(_worker.WorkerId)) lost.Add(id);
+            }
+            foreach (var id in lost)
+            {
+                _leasedSince.Remove(id);
+                _loadRequested.Remove(id);
+                _restoreComplete.Remove(id);
+            }
+            float now = Now();
             DateLeases(ContainerRegistry.All, now);
             DateLeases(ContainerRegistry.Runtime, now); // runtime boxes are leased like baked ones; carried containers come back with their carrier
         }
@@ -481,7 +604,7 @@ namespace Nebula
                 {
                     if (!_leasedSince.ContainsKey(c.ContainerId)) _leasedSince[c.ContainerId] = now;
                 }
-                else if (_leasedSince.Remove(c.ContainerId)) _loadRequested.Remove(c.ContainerId);
+                else if (_leasedSince.Remove(c.ContainerId)) { _loadRequested.Remove(c.ContainerId); _restoreComplete.Remove(c.ContainerId); }
             }
         }
 
@@ -560,7 +683,7 @@ namespace Nebula
         {
             var pe = identity != null ? identity.Persistent : null;
             if (pe == null) return;
-            pe.LastSavedAt = Time.unscaledTime;
+            pe.LastSavedAt = Now();
             pe.LastSavedPosition = identity.transform.position;
             pe.LastSavedRotation = identity.transform.rotation;
             if (!_tracked.Contains(pe)) _tracked.Add(pe);

@@ -85,6 +85,7 @@ autoscaling grow it towards `B`.
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
+| `StateHistoryTicks` | `32` | Ticks of pose and `[SyncHistory]` state each worker keeps per entity, for `NetworkIdentity.StateAt`. About half a second at 60 Hz. `0` turns recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 
 ### Persistence
 
@@ -96,6 +97,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `PersistenceLocalFile` | empty | Set the file the `local` store writes to. Empty uses `<persistentDataPath>/nebula-persistence.bin`. |
 | `PersistenceCheckpointSeconds` | `5` | Choose how often an authoritative persistent entity is checkpointed. A change or a move saves sooner. |
 | `PersistenceRestoreGraceSeconds` | `3` | Wait this long after gaining a container lease before restoring that container's saved entities. |
+| `ScopeIdleRetireSeconds` | `300` | Retire a [simulation scope](/docs/guides/scopes#retiring-and-re-activating-a-scope) that has held nothing for this long: checkpoint its persistent entities, release its containers, and bring it back when the key is activated again. `0` turns retirement off. Never applies to the public world. |
 
 ### Interest management
 
@@ -205,6 +207,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-reset-persistence` | orchestrator | Delete every saved entity at startup. |
 | `-nebula-persistence-file <path>` | worker, orchestrator | Override `PersistenceLocalFile`. |
 | `-nebula-persistence-checkpoint <seconds>` | worker | Override `PersistenceCheckpointSeconds`. |
+| `-nebula-scope-idle-retire <seconds>` | orchestrator | Override `ScopeIdleRetireSeconds`. `0` turns scope retirement off. |
 | `-nebula-workers <number>` | orchestrator | Set the initial worker count. |
 | `-nebula-min-workers <number>`, `-nebula-max-workers <number>` | orchestrator | Override `MinWorkers` and `MaxWorkers`, the autoscaling band. |
 | `-nebula-autoscale true\|false` | orchestrator | Override `AutoScale`. |
@@ -219,6 +222,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-build-dir <path>` | orchestrator | Serve worker build files from this directory at `/build/`. |
 | `-nebula-ghost-band <meters>` | worker | Override `GhostBandMargin`. |
 | `-nebula-hysteresis <meters>` | worker | Override `HandoverHysteresis`. |
+| `-nebula-state-history <ticks>` | worker | Override `StateHistoryTicks`. `0` turns state recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 | `-nebula-interest-radius <meters>` | gateway, worker | Override `InterestRadius`. See [Interest management](/docs/guides/interest-management). |
 | `-nebula-interest-cell <meters>` | gateway, worker | Override `InterestCellSize`. |
 | `-nebula-gateway-extension <file>` | gateway | Override `GatewayExtension`. The orchestrator forwards it to the gateway it launches. See [Extend the gateway](/docs/guides/gateway-extensions). |

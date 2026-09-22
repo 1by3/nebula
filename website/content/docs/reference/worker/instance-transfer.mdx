@@ -44,3 +44,19 @@ public Container Destination { get; }
 ```
 
 Static container selected when preparation began.
+
+### RejectReason [#rejectreason]
+
+```csharp
+public JoinRejectReason RejectReason { get; }
+```
+
+Why the preparation was refused, in typed form: [`JoinRejectReason.AtCapacity`](/docs/reference/protocol/join-reject-reason#atcapacity) when the destination was at capacity and the admission hook refused this crossing, and [`JoinRejectReason.Denied`](/docs/reference/protocol/join-reject-reason#denied) when the hook refused a destination that was not ([`NebulaAdmission`](/docs/reference/gateway/nebula-admission), docs/capacity-admission.md). [`JoinRejectReason.None`](/docs/reference/protocol/join-reject-reason#none) for every other failure, which [`Error`](#error) describes.
+
+### Saturation [#saturation]
+
+```csharp
+public float Saturation { get; }
+```
+
+How saturated the destination was when it was refused; 0 when that was not the reason.

@@ -54,6 +54,30 @@ public const double ExpireSeconds = 15.0;
 
 A worker document older than this is dropped: its worker died, retired or stopped posting.
 
+### TickPeriodMs [#tickperiodms]
+
+```csharp
+public float TickPeriodMs = WorkerLoadTracker.TickPeriodMs;
+```
+
+The tick budget a container's measured simulation time is weighed against when its dominant cost component is decided ([`ContainerCost.Resolve`](/docs/reference/orchestrator/container-cost#resolve)). The orchestrator sets it from the mesh's tick rate; it is [`WorkerLoadTracker.TickPeriodMs`](/docs/reference/orchestrator/worker-load-tracker#tickperiodms) by default.
+
+### LinkBytesPerSec [#linkbytespersec]
+
+```csharp
+public double LinkBytesPerSec = NebulaConfig.DefaultCostLinkBytesPerSec;
+```
+
+The outbound budget a container's bytes are weighed against, in bytes per second ([`NebulaConfig.CostLinkBudgetMbps`](/docs/reference/core/nebula-config#costlinkbudgetmbps)). Only the comparison between the three components depends on it; the reported bytes are measured either way.
+
+### CapacitySaturation [#capacitysaturation]
+
+```csharp
+public float CapacitySaturation;
+```
+
+How saturated a container has to be before it counts as at capacity ([`NebulaConfig.CapacitySaturation`](/docs/reference/core/nebula-config#capacitysaturation), docs/capacity-admission.md). Only reported here; the orchestrator is what publishes the flag to the mesh. 0 leaves every row below capacity.
+
 ## Properties
 
 ### DetailWanted [#detailwanted]
@@ -114,13 +138,31 @@ public void CopyOccupancy(Dictionary<string, ContainerLoad> result);
 
 Snapshot the latest per-container counts into `result` (cleared first), dropping reports older than [`ExpireSeconds`](#expireseconds). Containers nobody reported are absent. This is what the cost-aware assignment policy reads once per pass.
 
+### CopyContainerCost [#copycontainercost]
+
+```csharp
+public void CopyContainerCost(Dictionary<string, ContainerCost> result);
+```
+
+Snapshot the latest cost row of every container into `result` (cleared first), dropping reports older than [`ExpireSeconds`](#expireseconds). One row per container, which is one row per lease: this is the typed per-container signal the scaler explains a blocked grow with and `GET /api/cost` serves (docs/cost-telemetry.md).
+
+### BuildCostJson [#buildcostjson]
+
+```csharp
+public string BuildCostJson();
+```
+
+The cost rows as one JSON document, newest first by cost: the body of `GET /api/cost`.
+
 ### ParseContainers [#parsecontainers]
 
 ```csharp
-public static void ParseContainers(string json, List<KeyValuePair<string, ContainerLoad>> result);
+public static void ParseContainers(string json, List<KeyValuePair<string, ContainerLoad>> result, List<ContainerCost> costs = null);
 ```
 
 Pull the per-container counts out of a worker document without parsing the rest of it (the entity list can be megabytes). The array looks like `"containers":[{"id":"arena","players":1,"bots":0,...},...]` as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it; the slot for entities in no container ("") is skipped.
+
+When `costs` is given, the same pass also collects the cost row of each container ([`ContainerCost`](/docs/reference/orchestrator/container-cost), docs/cost-telemetry.md). A document from a worker that does not write those keys yields rows of zeroes rather than nothing, which is what [`ContainerLoad.HasEntityCost`](/docs/reference/orchestrator/container-load#hasentitycost) is for: the counts still balance the mesh as they always did.
 
 ### CopyInterest [#copyinterest]
 
@@ -153,6 +195,46 @@ public string BuildMapJson();
 ```
 
 The live map document: every worker's latest telemetry, with its age in seconds, sorted by worker id. Reading it marks the map as watched, which asks workers for their entities ([`DetailWanted`](#detailwanted)).
+
+### CopyHolds [#copyholds]
+
+```csharp
+public void CopyHolds(Dictionary<string, float> result);
+```
+
+Snapshot the live holds into `result` (cleared first) as container id -\> seconds still to run, dropping the ones that have expired. This is what the planner skips moves for.
+
+### HolderOf [#holderof]
+
+```csharp
+public string HolderOf(string containerId);
+```
+
+The worker that asked for a container's hold, or "" when it is not held.
+
+### CopyCohesion [#copycohesion]
+
+```csharp
+public void CopyCohesion(List<CohesionGroupInfo> result);
+```
+
+Snapshot the cohesion groups every live worker reported into `result` (cleared first), one row per group with the union of the containers its members sit in and the workers that reported it. Rows from a worker that stopped reporting are dropped after [`ExpireSeconds`](#expireseconds).
+
+### ParseHolds [#parseholds]
+
+```csharp
+public static void ParseHolds(string json, List<KeyValuePair<string, float>> result);
+```
+
+Pull the `"holds"` array out of a worker document: `[{"id":"arena","seconds":4.2},...]`, as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it before the container counts and the entity list.
+
+### ParseCohesion [#parsecohesion]
+
+```csharp
+public static void ParseCohesion(string json, List<CohesionSpan> result);
+```
+
+Pull the `"cohesion"` array out of a worker document: `[{"group":17,"members":3,"in":["a","b"]},...]`. The containers are under `"in"` rather than `"containers"` so that [`ParseContainers`](#parsecontainers), which scans for the first `"containers"` key in the document, cannot land in this block. Rows without a group are ignored.
 
 ### BuildGeometryJson [#buildgeometryjson]
 
@@ -225,6 +307,46 @@ public long EntriesSent, EntriesTotal, BytesSent, BytesUnfiltered;
 
 ```csharp
 public string Warning;
+```
+
+##### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt;
+```
+
+### CohesionSpan [#cohesionspan]
+
+```csharp
+public struct CohesionSpan
+```
+
+What one worker said about one cohesion group in its latest document.
+
+#### Fields
+
+##### Group [#group]
+
+```csharp
+public uint Group;
+```
+
+##### Members [#members]
+
+```csharp
+public int Members;
+```
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
+
+##### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
 ```
 
 ##### ReceivedAt [#receivedat]

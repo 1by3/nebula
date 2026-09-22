@@ -39,6 +39,8 @@ When the orchestrator assigns a container to a different worker, it increments t
 
 Every entity has its own authority `Epoch`, which increases when its controlling worker changes. Entity messages include the network ID and epoch. The gateway and workers reject a message with an older epoch or an invalid sender. This prevents two workers from controlling the same entity after a temporary disagreement.
 
+The epoch and the owning worker say who simulates an entity. Where the entity is, independent of that, is its location: a scope key, the container's `ContainerId`, and the pose in the container's local space. `NetworkIdentity.Location` reports it, it does not change on a handover, and every process resolves it to the same container. The [entity location contract](/docs/specifications/entity-location) defines it.
+
 ## The worker's tick
 
 Each worker calculates its current tick from the wall clock and a fixed origin with `NetworkTime.DerivedTick`. This keeps tick numbers aligned without a coordinator. On every tick, a worker:
@@ -48,7 +50,7 @@ Each worker calculates its current tick from the wall clock and a fixed origin w
 3. Re-evaluates container membership for its authoritative entities, with hysteresis, and transfers authority for entities that crossed into a container owned by another worker.
 4. Maintains the **ghost band**, which is the area within `GhostBandMargin` of a neighboring container. It sends `GhostSpawn` once, `GhostState` for changed root transforms and reliable placement or recovery updates, `GhostVars` when a `NetworkVariable` changes, and `GhostSyncState` for component sync data. It sends entities in a dynamic container to each worker that has a ghost of the carrier.
 5. Streams `WorldState`, `OwnerState`, `EntityVars` and `EntityState` for its authoritative entities to the gateway.
-6. Records every resident entity's pose for the lag-compensation history (`NetworkIdentity.TryGetPoseAt`).
+6. Records every entity it has authority over for the lag-compensation history (`NetworkIdentity.StateAt`); a ghost is recorded instead when its owner's stream arrives, tagged with the owner's tick.
 
 Workers discover each other through the control plane and peer directly over UDP; the lower index dials.
 
@@ -56,11 +58,13 @@ Workers discover each other through the control plane and peer directly over UDP
 
 On a worker that does not control it, an entity exists as a ghost. `GhostSpawn` identifies the prefab and includes its container, pose, velocity, `NetworkVariable` values, and component sync keyframes.
 
-On a ghost, `IsGhost` is `true` and `HasAuthority` is `false`. Nebula does not call `NetworkTick`, allow `NetworkVariable` writes, or send RPCs from that copy. `NetworkRigidbody` makes its rigidbody kinematic.
+On a ghost, `IsGhost` is `true` and `HasAuthority` is `false`. Nebula does not call `NetworkTick`, allow `NetworkVariable` writes, or send `ClientRpc` from that copy. A ghost can send `AuthorityRpc` to the entity's worker. The worker makes a ghost's `Rigidbody` kinematic, with or without `NetworkRigidbody`.
 
 An enabled `NetworkTransform` moves a ghost from state sent by its controlling worker. Without one, the ghost keeps its initial placement until a container change or new spawn snapshot. Local raycasts and dynamic entities can detect the ghost. A local entity can collide with and respond to a ghost, but the collision does not change the ghost on its controlling worker.
 
 The neighbour thus holds full warm state before the entity can cross. If the entity leaves the band without crossing, the ghost lingers for `GhostLingerSeconds` and is then despawned.
+
+For what a collision with a ghost does and does not do, and why a joint across two workers is unsupported, see [Distributed physics](/docs/concepts/distributed-physics).
 
 ## Complete the handover
 
@@ -90,7 +94,7 @@ The client's copy keeps the same network ID during a handover. New snapshots inc
 
 Use `[AuthorityRpc]` to apply an interaction to an entity controlled by another worker. For example, a worker can raycast against a ghost and call a damage method on the target. Nebula calls the method locally when the same worker controls both entities. Otherwise, it sends the call to the target's worker.
 
-Nebula does not automatically validate the claim on the receiving worker. Implement validation in your game when needed. Use `NetworkIdentity.TryGetPoseAt` to read recorded poses for a lag-compensated query. See [Prediction](/docs/guides/prediction).
+Nebula does not automatically validate the claim on the receiving worker. Implement validation in your game when needed. Use `NetworkIdentity.StateAt` to read recorded state for a lag-compensated query. See [Lag compensation](/docs/guides/lag-compensation).
 
 ## Container reassignment
 

@@ -29,4 +29,7 @@ void SendServerRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHas
 
 ```csharp
 void SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args);
+ulong SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds);
 ```
+
+As [`SendAuthorityRpc`](#sendauthorityrpc), with the outcome reported to `onDone` exactly once: the reply from the worker that decided the call, or [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout) after `timeoutSeconds`. Returns the call id, or 0 when nothing was sent (the callback still runs, with the reason).

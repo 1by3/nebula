@@ -1,0 +1,88 @@
+---
+title: "SaturationReport"
+description: "The planner's answer to \"why is this still hot?\"."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs)</div>
+
+```csharp
+public struct SaturationReport
+```
+
+The planner's answer to "why is this still hot?". Emitted when the busiest worker's load cannot be reduced by moving anything it holds, and read by [`WorkerScaler`](/docs/reference/orchestrator/worker-scaler) (which names it in [`ScaleDecision.Reason`](/docs/reference/orchestrator/scale-decision#reason)), by the dashboard, and by admission reporting, which groups the rows by [`ScopeKey`](#scopekey). A report is a statement, never an action: Nebula does not split a container, and never breaks a group or a hold to relieve a worker (`docs/cohesion-rebalancing.md`, D5).
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId;
+```
+
+The heaviest container of the item that cannot move: what the operator should look at first.
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey;
+```
+
+The scope the container belongs to ("" for the public world), so the rows group per scope.
+
+### Containers [#containers]
+
+```csharp
+public string[] Containers;
+```
+
+Every container of the item, including [`ContainerId`](#containerid).
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+The worker that is carrying it, or "" when the item has no owner.
+
+### Utilization [#utilization]
+
+```csharp
+public float Utilization;
+```
+
+What the whole item costs its worker, in tick budgets (1 = a whole worker).
+
+### Cause [#cause]
+
+```csharp
+public SaturationCause Cause;
+```
+
+Which constraint stops the planner.
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+The cause as a sentence: "cohesion 7 spans c0, c3", "held for another 4.2 s", "no boundary hint".
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+The short form the scaler appends to its blocked reason and the dashboard prints.
+
+### NameOf [#nameof]
+
+```csharp
+public static string NameOf(SaturationCause cause);
+```
+
+The cause as it goes into JSON.

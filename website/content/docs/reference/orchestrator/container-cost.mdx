@@ -1,0 +1,170 @@
+---
+title: "ContainerCost"
+description: "What one container cost the worker that leases it, split into the three components of CostComponent."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/ContainerCost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/ContainerCost.cs)</div>
+
+```csharp
+public struct ContainerCost
+```
+
+What one container cost the worker that leases it, split into the three components of [`CostComponent`](/docs/reference/orchestrator/cost-component). One row per container per worker, refreshed at the telemetry cadence ([`WorkerTelemetry.IdleIntervalSeconds`](/docs/reference/worker/worker-telemetry#idleintervalseconds)) and kept by the orchestrator per lease ([`MeshTelemetry.CopyContainerCost`](/docs/reference/orchestrator/mesh-telemetry#copycontainercost)); the dashboard, `GET /api/cost` and the scaler's "unsplittable container" reason all read the same rows. Design record: docs/cost-telemetry.md.
+
+Absolute numbers, not shares: a share cannot say whether one container alone on a worker is hot because of what it simulates or because of what it sends. [`Dominant`](#dominant) is decided by [`Resolve`](#resolve), which measures every component against a budget of its own.
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId;
+```
+
+The container these numbers are about.
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey;
+```
+
+Its scope ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)): empty in the public world, the instance key inside an instance.
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
+```
+
+The worker that reported it.
+
+### EntityCostSum [#entitycostsum]
+
+```csharp
+public float EntityCostSum;
+```
+
+The cost-weighted sum of the authoritative entities inside it: for each one, its category weight from [`CostWeights`](/docs/reference/orchestrator/cost-weights) times its own [`NebulaCost`](/docs/reference/core/nebula-cost) weight. [`CostWeights.Base`](/docs/reference/orchestrator/cost-weights#base) is *not* included; the orchestrator adds it (a leased container costs something when empty).
+
+### TickShareMs [#ticksharems]
+
+```csharp
+public float TickShareMs;
+```
+
+Milliseconds of `NetworkTick` per simulated tick spent on this container's entities, measured.
+
+### TickShare [#tickshare]
+
+```csharp
+public float TickShare;
+```
+
+[`TickShareMs`](#ticksharems) as a fraction of the simulation time this worker attributed to containers at all. The parts of a tick that belong to no container (physics, interest, publishing) are outside it, so the rows of one worker sum to 1 and not to its utilization.
+
+### BytesOutPerSec [#bytesoutpersec]
+
+```csharp
+public long BytesOutPerSec;
+```
+
+Bytes per second of world state, netvars and sync state sent to gateways for this container's entities, counted once per receiving gateway.
+
+### GatewayBytesPerSec [#gatewaybytespersec]
+
+```csharp
+public long GatewayBytesPerSec;
+```
+
+Bytes per second of owner state: the part of the traffic a gateway relays to one client each.
+
+### GhostCount [#ghostcount]
+
+```csharp
+public int GhostCount;
+```
+
+Ghosts of other workers' entities this worker holds for this container.
+
+### Dominant [#dominant]
+
+```csharp
+public CostComponent Dominant;
+```
+
+Which component this container is most expensive in (see [`Resolve`](#resolve)).
+
+### DominantSaturation [#dominantsaturation]
+
+```csharp
+public float DominantSaturation;
+```
+
+How saturated [`Dominant`](#dominant) is, against its budget. 1 = the whole budget.
+
+### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt;
+```
+
+When the report arrived, on the telemetry clock.
+
+## Properties
+
+### DominantName [#dominantname]
+
+```csharp
+public string DominantName { get; }
+```
+
+The name [`Dominant`](#dominant) goes by in a reason string, the JSON and the dashboard.
+
+## Methods
+
+### NameOf [#nameof]
+
+```csharp
+public static string NameOf(CostComponent c);
+```
+
+The lowercase wire name of a component.
+
+### ComponentOf [#componentof]
+
+```csharp
+public static CostComponent ComponentOf(string name);
+```
+
+The component a wire name ([`NameOf`](#nameof)) stands for; anything unknown reads as [`CostComponent.Simulation`](/docs/reference/orchestrator/cost-component#simulation).
+
+### Resolve [#resolve]
+
+```csharp
+public static void Resolve(ref ContainerCost row, float tickPeriodMs, double linkBytesPerSec);
+```
+
+Decide [`Dominant`](#dominant) and [`DominantSaturation`](#dominantsaturation) for one row by measuring each component against a budget of its own: simulation against the tick period, replication and the gateway relay against `linkBytesPerSec` ([`NebulaConfig.CostLinkBudgetMbps`](/docs/reference/core/nebula-config#costlinkbudgetmbps)). Comparing the three against each other directly would be comparing milliseconds with bytes, and comparing each container's share of its worker would call the only container on a worker dominant in everything at once - which is exactly the case the scaler needs an answer for. Ties go to simulation, then replication, so the answer is stable between passes. Pure function.
+
+### Normalize [#normalize]
+
+```csharp
+public static void Normalize(IList<ContainerCost> rows, float tickPeriodMs, double linkBytesPerSec);
+```
+
+Fill in [`TickShare`](#tickshare) for every row of one worker (they are a fraction of that worker's own attributed simulation time) and resolve each row's dominant component. Called once per accepted telemetry document, over that document's rows only.
+
+### Write [#write]
+
+```csharp
+public static void Write(JsonWriter w, in ContainerCost row, float capacitySaturation = 0f);
+```
+
+One row as the dashboard and `GET /api/cost` serve it. `capacitySaturation` is [`NebulaConfig.CapacitySaturation`](/docs/reference/core/nebula-config#capacitysaturation), so the row can also say whether this container counts as at capacity (docs/capacity-admission.md); 0 leaves `atCapacity` false.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

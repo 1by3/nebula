@@ -1,0 +1,70 @@
+---
+title: "AuthorityCallResult"
+description: "The outcome of one AuthorityRpcWithReply call, handed to its callback exactly once."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public readonly struct AuthorityCallResult
+```
+
+The outcome of one `AuthorityRpcWithReply` call, handed to its callback exactly once.
+
+## Constructors
+
+### AuthorityCallResult [#authoritycallresult]
+
+```csharp
+public AuthorityCallResult(ulong callId, AuthorityCallOutcome outcome, uint targetEpoch, byte hops);
+```
+
+## Properties
+
+### CallId [#callid]
+
+```csharp
+public ulong CallId { get; }
+```
+
+The call id the sender minted ([`AuthorityCallId`](/docs/reference/worker/authority-call-id)); 0 for a call applied locally without a wire trip.
+
+### Outcome [#outcome]
+
+```csharp
+public AuthorityCallOutcome Outcome { get; }
+```
+
+What happened to the call.
+
+### TargetEpoch [#targetepoch]
+
+```csharp
+public uint TargetEpoch { get; }
+```
+
+The entity's epoch on the worker that decided the outcome; 0 when that worker did not hold the entity.
+
+### Hops [#hops]
+
+```csharp
+public byte Hops { get; }
+```
+
+How many times the call was forwarded before it was decided.
+
+### Succeeded [#succeeded]
+
+```csharp
+public bool Succeeded { get; }
+```
+
+True when [`Outcome`](#outcome) is [`AuthorityCallOutcome.Accepted`](/docs/reference/worker/authority-call-outcome#accepted).
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

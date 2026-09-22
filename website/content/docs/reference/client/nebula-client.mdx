@@ -61,6 +61,14 @@ public string SessionToken { get; set; } = "";
 
 The session token from the last Welcome ([`WelcomeMsg.SessionToken`](/docs/reference/protocol/welcome-msg#sessiontoken)), presented on every reconnection so the gateway that answers, whichever one of the mesh it is, gives this client its session and pawn back. Kept for the life of the process; [`Disconnect`](#disconnect) keeps it too, so a deliberate reconnect continues the session. Clear it to start a new session on the next connection.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; set; } = CommandLine.Get("nebula-scope", "");
+```
+
+The simulation scope this client asks to be placed in, as the opaque key the game chose ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty, the default, is the public world. Set it before connecting — a travel menu or a matchmaking reply hands the key over — and the gateway spawns the player into that scope's containers instead of the public ones. The scope must already have been activated ([`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope)); the gateway holds the join until it is ready. Seeded from `-nebula-scope`. Changing it takes effect on the next connection.
+
 ### SessionReclaimed [#sessionreclaimed]
 
 ```csharp
@@ -90,6 +98,30 @@ public int JoinEstimatedSeconds { get; }
 ```
 
 Roughly how many seconds the gateway expects the [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) hold to last; 0 when unknown.
+
+### JoinHoldReason [#joinholdreason]
+
+```csharp
+public JoinHoldReason JoinHoldReason { get; }
+```
+
+Why the gateway is holding the join, while [`Join`](#join) is [`JoinState.Starting`](/docs/reference/protocol/join-state#starting): the world is booting, or the scope this client named is not ready, is restoring or is retiring. Read it in a [`JoinStateChanged`](#joinstatechanged) handler to say something more useful than "please wait".
+
+### JoinRejectReason [#joinrejectreason]
+
+```csharp
+public JoinRejectReason JoinRejectReason { get; }
+```
+
+Why the last join was refused, in typed form ([`JoinRejectReason`](/docs/reference/protocol/join-reject-reason)). The reason string is for the player; this is what the game's code branches on - a full station wants a queue or another instance, a bad token wants a sign-in screen. See `docs/capacity-admission.md`.
+
+### JoinRejectSaturation [#joinrejectsaturation]
+
+```csharp
+public float JoinRejectSaturation { get; }
+```
+
+How full the target was when it refused the join, for `Nebula.JoinRejectReason.AtCapacity`: 1 = the whole of the dominant cost component's budget. 0 when the gateway did not say.
 
 ### RttMs [#rttms]
 
@@ -290,6 +322,14 @@ public event Action<string> JoinRejected;
 ```
 
 The gateway refused the join (the reason is fit to show the player); see [`LastError`](#lasterror). The client stops reconnecting unless the refused token was a saved anonymous one, which it forgets and retries without.
+
+### JoinRefused [#joinrefused]
+
+```csharp
+public event Action<JoinRejectedMsg> JoinRefused;
+```
+
+The same refusal, typed: the reason code and how saturated the target was ([`JoinRejectedMsg`](/docs/reference/protocol/join-rejected-msg)). Raised after [`JoinRejected`](#joinrejected), on the main thread. A game that wants to put the player in a docking queue when a station is full listens here.
 
 ### JoinStateChanged [#joinstatechanged]
 

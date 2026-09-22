@@ -48,6 +48,13 @@ namespace Nebula
         /// (<c>-nebula-persistence-mode off</c>, or no store handed to <see cref="Initialize"/>).
         /// </summary>
         public NebulaPersistence Persistence { get; private set; }
+
+        /// <summary>
+        /// This worker's half of the scope lifecycle: the idle clock of the scope parts it owns, the retire
+        /// sequence for a scope the orchestrator is retiring, and the restore acknowledgement a restored scope
+        /// waits on. See <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        public WorkerScopeLifecycle ScopeLifecycleAgent => _scopeLifecycle ??= new WorkerScopeLifecycle(this);
         public string WorkerId { get; private set; }
         /// <summary>This start of the process (<see cref="HelloMsg.Incarnation"/>), so peers can tell a restart from a reconnect.</summary>
         public uint Incarnation { get; private set; }
@@ -64,10 +71,24 @@ namespace Nebula
         public int HandoversOut { get; private set; }
         public int HandoversIn { get; private set; }
         public int LocalHandovers { get; private set; }
+        /// <summary>
+        /// AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost
+        /// copy of the target (see <see cref="NebulaDiagnostics.RejectedAuthorityRpcSends"/>). Reported as
+        /// <c>rpcRejected</c> on the profile log line.
+        /// </summary>
+        public int RejectedAuthorityRpcSends => NebulaDiagnostics.RejectedAuthorityRpcSends;
         public int GhostsSent { get; private set; }
         public int GhostsHeld { get; private set; }
         public int AuthoritativeCount => _authoritative.Count;
         public int EntityCount => _entities.Count;
+        /// <summary>AuthorityRpc calls from other workers this worker has applied since it started (see the cross-worker call contract).</summary>
+        public long AuthorityCallsApplied => _callRouter?.Applied ?? 0;
+        /// <summary>AuthorityRpc calls this worker has forwarded to the entity's new owner since it started.</summary>
+        public long AuthorityCallsForwarded => _callRouter?.Forwarded ?? 0;
+        /// <summary>AuthorityRpc calls this worker has rejected (stale epoch, unknown entity, hop limit, duplicate, unreachable) since it started.</summary>
+        public long AuthorityCallsRejected => _callRouter?.Rejected ?? 0;
+        /// <summary>AuthorityRpc calls this worker sent with a reply requested and is still waiting on.</summary>
+        public int AuthorityCallsPending => _callTracker?.PendingCount ?? 0;
         /// <summary>Authoritative entities owned by human clients / by bot clients / by nobody (server-driven), as of the last heartbeat.</summary>
         public int PlayerCount { get; private set; }
         public int BotCount { get; private set; }
@@ -97,6 +118,13 @@ namespace Nebula
         private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
         /// <summary>Entities we handed off recently: netId -> new owner. Inputs that still arrive here are forwarded.</summary>
         private readonly Dictionary<ulong, string> _handedOff = new Dictionary<ulong, string>();
+        /// <summary>
+        /// The cross-worker call contract (docs/cross-worker-calls.md): the rules that apply, forward or reject an
+        /// incoming AuthorityRpc and the ledger of call ids applied here, and the calls this worker sent with a
+        /// reply requested. Created in <see cref="Initialize"/>, once the worker index and incarnation are known.
+        /// </summary>
+        private AuthorityCallRouter _callRouter;
+        private AuthorityCallTracker _callTracker;
         private readonly List<NetworkIdentity> _scratchEntities = new List<NetworkIdentity>();
         private readonly List<string> _scratchStrings = new List<string>();
 
@@ -127,7 +155,7 @@ namespace Nebula
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
-        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool)>();
+        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint, InstanceContainerInfo Instance)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool, InstanceContainerInfo)>();
 
         /// <summary>netId -> the entities ghosted to each worker this tick, rebuilt in <see cref="UpdateGhostBand"/>; lists are pooled.</summary>
         private readonly Dictionary<string, List<NetworkIdentity>> _ghostByWorker = new Dictionary<string, List<NetworkIdentity>>();
@@ -170,8 +198,16 @@ namespace Nebula
         private float _nextUnownedWarning;
         private NebulaGameMode _gameMode;
         private WorkerTelemetry _telemetry;
+        private WorkerScopeLifecycle _scopeLifecycle;
         /// <summary>What this worker reports to the dashboard's World map; null when telemetry is off (see <see cref="WorkerTelemetry.Create"/>).</summary>
         public WorkerTelemetry Telemetry => _telemetry;
+        private readonly ContainerCostMeter _costMeter = new ContainerCostMeter();
+        /// <summary>
+        /// What each container this worker leases costs it, measured per tick (see <see cref="ContainerCostMeter"/>).
+        /// Always on: it is two stopwatch reads and a field add per authoritative entity per tick, and the rows it
+        /// produces are what the scaler and the dashboard explain a hot container with (docs/cost-telemetry.md).
+        /// </summary>
+        public ContainerCostMeter CostMeter => _costMeter;
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
         public IReadOnlyList<NetworkIdentity> Authoritative => _authoritative;
 
@@ -300,6 +336,9 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
+            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks);
+            _callRouter = new AuthorityCallRouter(config.AuthorityCallMaxHops);
+            _callTracker = new AuthorityCallTracker(WorkerIndex, AuthorityCallId.InitialSequence(Incarnation));
             InitializeInterest();
 
             _gameMode = FindFirstObjectByType<NebulaGameMode>();
@@ -320,6 +359,9 @@ namespace Nebula
             if (persistenceStore != null)
             {
                 Persistence = new NebulaPersistence(this, config, persistenceStore);
+                // A scope's parts do not restore before the game has been told the scope is coming to life
+                // (NebulaLifecycle.OnScopeActivating); the gate is free when nothing is listening.
+                Persistence.RestoreGate = ScopeLifecycleAgent.MayRestore;
                 NebulaLog.Info($"persistence: {persistenceStore.Backend} store, checkpoint every {config.PersistenceCheckpointSeconds:0.#}s");
             }
             var boot = NebulaBootstrap.Instance;
@@ -363,7 +405,18 @@ namespace Nebula
         /// the three-argument overload survives every later approach. Use that overload to change it.
         /// </para>
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: null);
+
+        /// <summary>
+        /// Ask for a runtime container that belongs to a scope rather than to the public world: a chunk of a scoped
+        /// grid (<c>docs/scoped-chunk-grids.md</c>). <paramref name="instance"/> is what makes the lease row carry
+        /// the scope — its isolation id, its key and the part id the coordinate is — so every role that mirrors the
+        /// row registers the container in that scope and nothing in it ever ghosts, spawns or is announced across
+        /// the scope boundary. It is written only when the row is created; a row that exists keeps the scope it was
+        /// born with.
+        /// </summary>
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
+            Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: instance);
 
         /// <summary>
         /// Ask for a runtime container and tell the planner what kind of box it is in the same breath
@@ -372,7 +425,7 @@ namespace Nebula
         /// restart does not lose it. A default hint writes nothing. Idempotent like the two-argument overload; the
         /// hint is re-applied when it differs from the row, so a game may raise and lower it as the box heats up.
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true, instance: null);
 
         /// <summary>
         /// Should this approach write the hint row? Only a caller that actually named a hint may, and only when what
@@ -392,18 +445,20 @@ namespace Nebula
             return rowHasHint && rowHint != wanted;
         }
 
-        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint)
+        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance)
         {
             if (!_registered || !ControlPlane.IsConnected)
             {
-                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint); // OnWorkerStarted runs before registration; ask as soon as we can
+                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint, instance); // OnWorkerStarted runs before registration; ask as soon as we can
                 return;
             }
             string containerId = ContainerRegistry.RuntimeContainerId(id);
             var lease = ControlPlane.FindLease(containerId);
             if (lease == null)
             {
-                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId);
+                // The box on the lease row is absolute, and a scope with an origin frame of its own converts
+                // through that frame, not through the public world's (docs/scope-frames.md D4).
+                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds, instance?.InstanceId ?? 0UL), WorkerId, instance);
                 if (writeHint && !hint.IsDefault) ControlPlane.SetContainerHint(containerId, hint);
                 return;
             }
@@ -429,7 +484,7 @@ namespace Nebula
         private void FlushRuntimeRequests()
         {
             if (_pendingRuntimeRequests.Count == 0 || !_registered || !ControlPlane.IsConnected) return;
-            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint);
+            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint, kv.Value.Instance);
             _pendingRuntimeRequests.Clear();
         }
 
@@ -444,16 +499,29 @@ namespace Nebula
             var c = ContainerRegistry.GetRuntime(id);
             if (c == null || !c.IsOwnedBy(WorkerId)) return false;
             if (!_registered || !ControlPlane.IsConnected) return false;
+            EmptyContainer(c);
+            ControlPlane.RemoveContainer(c.ContainerId);
+            return true;
+        }
+
+        /// <summary>
+        /// Despawn everything this worker is authoritative for inside <paramref name="container"/>, keeping the
+        /// records of persistent entities (they come back when the box is asked for again) and losing everything
+        /// else. The contents half of <see cref="ReleaseRuntimeContainer"/>, split out because the scope lifecycle
+        /// empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every
+        /// part has reported its checkpoint done (<c>docs/scope-lifecycle.md</c>).
+        /// </summary>
+        public void EmptyContainer(Container container)
+        {
+            if (container == null) return;
             _contentsScratch.Clear();
-            _contentsScratch.AddRange(c.Entities);
+            _contentsScratch.AddRange(container.Entities);
             foreach (var e in _contentsScratch)
             {
                 if (e == null || !e.HasAuthority) continue;
                 Despawn(e, keepPersisted: e.Persistent != null);
             }
             _contentsScratch.Clear();
-            ControlPlane.RemoveContainer(c.ContainerId);
-            return true;
         }
 
         /// <summary>Worker id for a worker index: this worker, or a connected peer. Dynamic containers derive their owner through this.</summary>
@@ -512,6 +580,7 @@ namespace Nebula
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
             if (_registered) _telemetry?.Update(this);
+            if (_registered) ScopeLifecycleAgent.Update();
             ExpireSessions();
             if (_registered && Time.unscaledTime >= _nextScenePass)
             {
@@ -521,6 +590,8 @@ namespace Nebula
             // Checkpoints and restores run here, off the tick, bounded per frame.
             Persistence?.Update();
             _entityRequests?.Update();
+            _callRouter?.Ledger.Expire(CurrentTick);
+            _callTracker?.Expire(CurrentTick);
         }
 
         // ---------------------------------------------------------------------------------------- scene entities
@@ -681,6 +752,7 @@ namespace Nebula
                 BotCount = (uint)bots,
                 ServerDrivenCount = (uint)serverDriven,
                 HasGlobalEntities = HasGlobalEntities,
+                OldestDirtySeconds = Persistence?.OldestDirtyAgeSeconds ?? 0f,
             };
         }
 
@@ -744,7 +816,7 @@ namespace Nebula
             int gc = GC.CollectionCount(0);
             int gcs = gc - _lastGcCount;
             _lastGcCount = gc;
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} | {NebulaProfiler.ReportAndReset(_profileTicks)}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} | {NebulaProfiler.ReportAndReset(_profileTicks)}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -760,6 +832,7 @@ namespace Nebula
             CurrentTick = tick;
             NetworkTime.Tick = tick;
             TickCount++;
+            _costMeter.CountTick();
             float dt = NetworkTime.TickInterval;
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
@@ -798,11 +871,15 @@ namespace Nebula
                     if (d > depth) { deeper = true; continue; }
                     if (d < depth) continue;
                     var behaviours = e.Behaviours;
+                    // Two stopwatch reads per entity per tick, so what a container costs is measured rather than
+                    // guessed from what is standing in it (docs/cost-telemetry.md, D5).
+                    long simStart = Stopwatch.GetTimestamp();
                     for (int b = 0; b < behaviours.Length; b++)
                     {
                         try { behaviours[b].NetworkTick(tick, dt); }
                         catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
                     }
+                    _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
                     if (e.Carried != null) carrierTicked = true;
                 }
                 if (!deeper) break;
@@ -816,14 +893,16 @@ namespace Nebula
             ProfSimulate.End();
             InstanceScenes.Simulate(dt);
 
-            // Remember where everything ended up this tick (ghosts included) for lag-compensated hit tests. An
-            // identity whose object was destroyed behind our back (game code, a scene unload) is dropped here rather
-            // than allowed to throw: an exception at this point would skip the publish below and blind every client.
+            // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
+            // validation (docs/state-history.md). Ghosts record themselves when the owner's stream is applied, with
+            // the owner's tick, so a ghost entry is never tagged with a tick this worker invented. An identity whose
+            // object was destroyed behind our back (game code, a scene unload) is dropped here rather than allowed to
+            // throw: an exception at this point would skip the publish below and blind every client.
             ProfRecordPose.Begin();
             foreach (var e in _entities.Values)
             {
                 if (e == null) { _scratchEntities.Add(e); continue; }
-                e.RecordPose(tick);
+                if (e.HasAuthority) e.RecordAuthoritativeState(tick);
             }
             if (_scratchEntities.Count > 0) PurgeDestroyed();
             ProfRecordPose.End();
@@ -957,6 +1036,7 @@ namespace Nebula
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
             identity.IsServerDriven = serverDriven && ownerClientId == 0;
             identity.OwnerWorkerIndex = WorkerIndex;
+            identity.RecomputeCostWeight(); // once, here: never per tick (see NebulaCost)
             identity.HasAuthority = true;
             identity.SetContainer(container ?? ContainerRegistry.Find(identity.transform.position));
             _entities[identity.NetId] = identity;
@@ -966,6 +1046,7 @@ namespace Nebula
             identity.InvokeSpawn();
             foreach (var b in identity.Behaviours) b.OnGainedAuthority();
             identity.ClearDirty();
+            PhysicsIslands.CheckOnAuthority(identity);
             if (identity.Carried != null) SyncCarriedLeases();
 
             // Index it before announcing: which gateways hear about a spawn is decided from where it landed.
@@ -1082,6 +1163,21 @@ namespace Nebula
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
 
+        /// <summary>
+        /// What the entity <paramref name="netId"/> looked like at server tick <paramref name="tick"/>, from this
+        /// worker's own recorded history (<see cref="NetworkIdentity.StateAt"/>). Answers for anything this worker
+        /// holds, authoritative or ghosted; false when it holds no copy or the tick is outside the recorded window
+        /// (<see cref="NebulaConfig.StateHistoryTicks"/>). Nothing is extrapolated. See
+        /// <c>docs/state-history.md</c>.
+        /// </summary>
+        public bool TryGetStateAt(ulong netId, uint tick, out HistoricalState state)
+        {
+            var e = Find(netId);
+            if (e != null) return e.TryGetStateAt(tick, out state);
+            state = default;
+            return false;
+        }
+
         public NetworkIdentity FindPlayer(ulong clientId) => _players.TryGetValue(clientId, out var e) ? e : null;
 
         // ---------------------------------------------------------------------------------------- ghost band
@@ -1171,6 +1267,19 @@ namespace Nebula
                 {
                     var e = targets[i];
                     if (e == null || !e.HasAuthority) continue;
+                    // Variables before the state entry of the same tick: applying the entry is what makes the
+                    // receiving worker record the tick in its state history (docs/state-history.md), and a
+                    // [SyncHistory] variable should be snapshotted with the value this tick's stream carries, not
+                    // with the previous one. On a reliable link that ordering holds; the unreliable batch travels on
+                    // another channel and can still cross, which is why the bound is stated as one tick.
+                    if (e.VarsDirty)
+                    {
+                        _scratch.Reset();
+                        e.WriteVars(_scratch);
+                        _writer.Reset();
+                        new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
+                        Send(peer, Delivery.ReliableOrdered);
+                    }
                     if (e.HasReplicationState)
                     {
                         var entry = e.ReplicationState;
@@ -1194,14 +1303,6 @@ namespace Nebula
                                 slot = -1; count = 0;
                             }
                         }
-                    }
-                    if (e.VarsDirty)
-                    {
-                        _scratch.Reset();
-                        e.WriteVars(_scratch);
-                        _writer.Reset();
-                        new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
-                        Send(peer, Delivery.ReliableOrdered);
                     }
                     if (e.HasSyncState)
                     {
@@ -1290,6 +1391,13 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- handover
 
+        /// <summary>Members of cohesion groups still to hand to the same target this handoff (<see cref="CollectCohesionMembers"/>).</summary>
+        private readonly List<NetworkIdentity> _cohesionPending = new List<NetworkIdentity>();
+        /// <summary>Groups already expanded this handoff, so a group is collected once however many members move.</summary>
+        private readonly HashSet<uint> _cohesionExpanded = new HashSet<uint>();
+        /// <summary>True while the queue is being drained, so a member's own transfer does not start a second drain.</summary>
+        private bool _cohesionDraining;
+
         /// <summary>
         /// Record everything that will follow <paramref name="carrier"/> to the new owner: its authoritative
         /// contents, to any depth, unless an interior is pinned to a worker of its own — those stay here, are
@@ -1322,11 +1430,71 @@ namespace Nebula
         /// </summary>
         private void TransferAuthority(NetworkIdentity e, Peer target)
         {
-            using (var frame = _handover.Begin())
+            bool outermost = _handover.Depth == 0 && !_cohesionDraining;
+            try
             {
-                if (frame.IsOutermost) CollectHandoverFollowers(e);
-                TransferAuthorityInScope(e, target);
+                // Collect before authority changes, and keep collection and the first transfer inside cleanup:
+                // persistence or a handoff subscriber may throw before the queue starts draining.
+                if (e.CohesionGroup != 0 && _cohesionExpanded.Add(e.CohesionGroup)) CollectCohesionMembers(e, target);
+                using (var frame = _handover.Begin())
+                {
+                    if (frame.IsOutermost) CollectHandoverFollowers(e);
+                    TransferAuthorityInScope(e, target);
+                }
+                // A queued carrier opens its own handover scope so its passengers are collected too.
+                if (!outermost) return;
+                _cohesionDraining = true;
+                // Grows while it is walked: a member of one group may belong to another that is expanded in turn.
+                for (int i = 0; i < _cohesionPending.Count; i++)
+                {
+                    var member = _cohesionPending[i];
+                    if (member != null && member.HasAuthority) TransferAuthority(member, target);
+                }
             }
+            finally
+            {
+                if (outermost)
+                {
+                    _cohesionDraining = false;
+                    _cohesionPending.Clear();
+                    _cohesionExpanded.Clear();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Queue the other members of <paramref name="e"/>'s cohesion group that this worker owns, so they leave with
+        /// it. A member this worker holds only as a ghost cannot be included: the group is about to be split across
+        /// two workers, which is a reported failure of the transfer and never a silent split
+        /// (<see cref="NebulaDiagnostics.SplitCohesionGroups"/>, <c>docs/cohesion-hints.md</c> D4). The transfer
+        /// itself still goes ahead: refusing it would strand the entity in a container this worker no longer leases.
+        /// </summary>
+        private void CollectCohesionMembers(NetworkIdentity e, Peer target)
+        {
+            var members = CohesionGroups.Members(e.CohesionGroup);
+            string foreign = null;
+            int split = 0;
+            for (int i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                if (member == null || member == e) continue;
+                // The group table is process-wide, so in a test mesh that runs two workers in one process it also
+                // holds the other worker's copies. This worker only ever deals with the copy it knows under that
+                // net id; in a live mesh, which has one copy per process, the check always passes.
+                if (Find(member.NetId) != member) continue;
+                if (member.HasAuthority && _authoritative.Contains(member))
+                {
+                    if (!_cohesionPending.Contains(member)) _cohesionPending.Add(member);
+                    continue;
+                }
+                // A ghost whose owner is the worker the entity is going to is not a split: the group is meeting up.
+                if (member.OwnerWorkerIndex == target.Index) continue;
+                split++;
+                if (foreign == null) foreign = member.ToString();
+            }
+            if (split == 0) return;
+            NebulaDiagnostics.SplitCohesionGroups++;
+            NebulaLog.Warn($"cohesion group {e.CohesionGroup} cannot be handed over as a unit: {e} leaves, but {split} member(s) of the group are not owned here (for example {foreign}). The group is split across workers until they meet again; keep a group inside one worker's containers or use a container hold (https://nebula.1by3.co/docs/guides/cohesion).");
         }
 
         /// <summary>One transfer's work, always inside the handover scope <see cref="TransferAuthority"/> opened.</summary>
@@ -1459,6 +1627,7 @@ namespace Nebula
                 _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway);
             }
             e.SetAuthority(true);
+            PhysicsIslands.CheckOnAuthority(e);
             // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
             // including for motionless entities that will never emit another pose update.
             if (msg.GhostWorkers != null)
@@ -1560,6 +1729,12 @@ namespace Nebula
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
+            // The cohesion group travels with the entity, so this worker expands the same group the previous owner
+            // did when it hands the entity on (docs/cohesion-hints.md, D3).
+            e.JoinCohesionGroup(msg.CohesionGroup);
+            // The cost weight travels with the entity, so a boss costs the same on the worker it hands over to
+            // (docs/cost-telemetry.md, D4). Zero is valid; a negative value means the field was absent.
+            if (msg.CostWeight >= 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {
@@ -1644,6 +1819,7 @@ namespace Nebula
                     Reliable = delivery == Delivery.ReliableOrdered,
                     Chunks = _scratch.ToArray(),
                 }.Write(_writer, id);
+                _costMeter.AddReplication(e.Container, _writer.Length); // once per destination: this is what it costs
                 Send(to, delivery);
             }
         }
@@ -1703,7 +1879,7 @@ namespace Nebula
                         if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex); }
                         e.ReplicationState.Write(_writer);
                         count++;
-                        CountEntry(mask);
+                        CountEntry(e, mask);
                         if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
                         {
                             WorldStateMsg.End(_writer, slot, count);
@@ -1730,6 +1906,7 @@ namespace Nebula
                     e.WriteVars(_scratch);
                     _writer.Reset();
                     new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.EntityVars);
+                    _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
                     SendToMask(mask, Delivery.ReliableOrdered);
                 }
                 if (e.HasSyncState)
@@ -1762,6 +1939,9 @@ namespace Nebula
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                     }.Write(_writer);
+                    // Owner state has exactly one destination client, so it is the gateway's relay cost rather
+                    // than replication: it grows with players in the container, not with entities in it.
+                    _costMeter.AddGateway(e.Container, _writer.Length);
                     Send(session, Delivery.Sequenced);
                 }
             }
@@ -1938,27 +2118,86 @@ namespace Nebula
             }
         }
 
-        private void OnAuthorityRpc(Peer from, EntityRpcMsg msg)
+        /// <summary>
+        /// An AuthorityRpc from another worker, decided by the call contract (<see cref="AuthorityCallRouter"/>):
+        /// applied here once when this worker has authority, forwarded (hop + 1) to the worker this one believes has
+        /// it now, or rejected with a reason that is logged and, when the sender asked, sent back to it.
+        /// </summary>
+        private void OnAuthorityRpc(Peer from, AuthorityCallMsg msg)
         {
             var e = Find(msg.NetId);
-            if (e == null) return;
-            if (e.HasAuthority)
+            Peer next = null;
+            AuthorityCallTarget target;
+            if (e == null) target = AuthorityCallTarget.Unknown;
+            else if (e.HasAuthority) target = AuthorityCallTarget.Authoritative(e.Epoch);
+            else
             {
-                InvokeRpc(e, msg);
+                next = ForwardPeerFor(e, from);
+                target = AuthorityCallTarget.Ghost(e.Epoch, next != null);
             }
-            else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer) && peer != from)
+            var decision = _callRouter.Decide(msg.CallId, msg.Epoch, msg.Hops, target, CurrentTick);
+            switch (decision.Action)
             {
-                _writer.Reset();
-                msg.Write(_writer, MsgId.AuthorityRpc);
-                Send(peer, Delivery.ReliableOrdered);
+                case AuthorityCallAction.Apply:
+                    InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+                    if (msg.WantsReply) ReplyToCall(msg.CallId, AuthorityCallOutcome.Accepted, e.Epoch, msg.Hops);
+                    break;
+                case AuthorityCallAction.Forward:
+                    msg.Hops++;
+                    _writer.Reset();
+                    msg.Write(_writer);
+                    Send(next, Delivery.ReliableOrdered);
+                    break;
+                default:
+                    NebulaLog.Warn($"AuthorityRpc {msg.CallId:x} for #{msg.NetId} from {from.Id} rejected: {decision.Outcome} (call epoch {msg.Epoch}, entity {(e != null ? e.ToString() : "unknown here")}, {msg.Hops} hops)");
+                    if (msg.WantsReply) ReplyToCall(msg.CallId, decision.Outcome, e != null ? e.Epoch : 0, msg.Hops);
+                    break;
             }
         }
 
-        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg)
+        /// <summary>
+        /// Where a call for the ghost <paramref name="e"/> goes next: the worker we handed it to if we were its
+        /// last authority, else the worker our ghost names as owner. Never back to <paramref name="from"/>, and
+        /// only over a link that has said hello. Null when there is no such worker.
+        /// </summary>
+        private Peer ForwardPeerFor(NetworkIdentity e, Peer from)
         {
-            if (msg.BehaviourIndex >= e.Behaviours.Length) return;
-            _reader.Set(new ArraySegment<byte>(msg.Args));
-            RpcRegistry.Invoke(e.Behaviours[msg.BehaviourIndex], msg.MethodHash, _reader);
+            Peer next = null;
+            if (_handedOff.TryGetValue(e.NetId, out var to)) _workerPeersById.TryGetValue(to, out next);
+            if (next == null) _workerPeersByIndex.TryGetValue(e.OwnerWorkerIndex, out next);
+            if (next == null || next == from || !next.HelloReceived) return null;
+            return next;
+        }
+
+        /// <summary>Tell the worker that minted <paramref name="callId"/> what became of its call; settled in-process when that worker is this one.</summary>
+        private void ReplyToCall(ulong callId, AuthorityCallOutcome outcome, uint epoch, byte hops)
+        {
+            var reply = new AuthorityCallReplyMsg { CallId = callId, Outcome = outcome, Epoch = epoch, Hops = hops };
+            ushort origin = AuthorityCallId.WorkerIndexOf(callId);
+            if (origin == WorkerIndex)
+            {
+                _callTracker.Complete(callId, reply.ToResult());
+                return;
+            }
+            if (!_workerPeersByIndex.TryGetValue(origin, out var peer) || !peer.HelloReceived) return; // the sender times out
+            _writer.Reset();
+            reply.Write(_writer);
+            Send(peer, Delivery.ReliableOrdered);
+        }
+
+        private void OnAuthorityRpcReply(Peer from, AuthorityCallReplyMsg msg)
+        {
+            if (!_callTracker.Complete(msg.CallId, msg.ToResult()))
+                NebulaLog.Info($"late AuthorityRpc reply {msg.CallId:x} ({msg.Outcome}) from {from.Id}; the call had already settled");
+        }
+
+        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg) => InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+
+        private void InvokeRpc(NetworkIdentity e, byte behaviourIndex, uint methodHash, byte[] args)
+        {
+            if (behaviourIndex >= e.Behaviours.Length) return;
+            _reader.Set(new ArraySegment<byte>(args));
+            RpcRegistry.Invoke(e.Behaviours[behaviourIndex], methodHash, _reader);
         }
 
         // ---------------------------------------------------------------------------------------- IRpcSink
@@ -1986,18 +2225,49 @@ namespace Nebula
 
         void IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)
         {
-            Peer target = null;
-            if (_handedOff.TryGetValue(identity.NetId, out var to)) _workerPeersById.TryGetValue(to, out target);
-            if (target == null) _workerPeersByIndex.TryGetValue(identity.OwnerWorkerIndex, out target);
-            if (target == null || !target.HelloReceived)
+            SendAuthorityCall(identity, behaviourIndex, methodHash, args, null, 0f);
+        }
+
+        ulong IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            return SendAuthorityCall(identity, behaviourIndex, methodHash, args, onDone, timeoutSeconds);
+        }
+
+        /// <summary>
+        /// Mint a call id and send the call to the worker this one believes has authority. With
+        /// <paramref name="onDone"/> the call asks for a reply and is tracked until one arrives or
+        /// <paramref name="timeoutSeconds"/> passes; without it the outcome is only logged where it is decided.
+        /// </summary>
+        private ulong SendAuthorityCall(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            var target = ForwardPeerFor(identity, null);
+            if (target == null)
             {
-                NebulaLog.Warn($"AuthorityRpc on {identity}: owner worker {identity.OwnerWorkerIndex} not connected");
-                return;
+                NebulaLog.Warn($"AuthorityRpc on {identity} rejected: {AuthorityCallOutcome.RejectedUnreachable} (owner worker {identity.OwnerWorkerIndex} not connected)");
+                onDone?.Invoke(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, identity.Epoch, 0));
+                return 0;
             }
-            var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = 0, Args = ToArray(args) };
+            ulong callId = _callTracker.Mint();
+            var msg = new AuthorityCallMsg
+            {
+                CallId = callId,
+                Hops = 0,
+                Flags = onDone != null ? AuthorityCallFlags.WantsReply : AuthorityCallFlags.None,
+                NetId = identity.NetId,
+                Epoch = identity.Epoch,
+                BehaviourIndex = behaviourIndex,
+                MethodHash = methodHash,
+                Args = ToArray(args),
+            };
+            if (onDone != null)
+            {
+                uint ticks = (uint)Math.Max(1, Math.Ceiling(timeoutSeconds * NetworkTime.TickRate));
+                _callTracker.Track(callId, CurrentTick + ticks, onDone);
+            }
             _writer.Reset();
-            msg.Write(_writer, MsgId.AuthorityRpc);
+            msg.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
+            return callId;
         }
 
         private static byte[] ToArray(ArraySegment<byte> seg)
@@ -2170,7 +2440,8 @@ namespace Nebula
                 case MsgId.GhostSyncState: OnGhostSyncState(peer, EntitySyncMsg.Read(r)); break;
                 case MsgId.GhostDespawn: OnGhostDespawn(peer, EntityDespawnMsg.Read(r)); break;
                 case MsgId.AuthorityTransfer: OnAuthorityTransfer(peer, AuthorityTransferMsg.Read(r)); break;
-                case MsgId.AuthorityRpc: OnAuthorityRpc(peer, EntityRpcMsg.Read(r)); break;
+                case MsgId.AuthorityRpc: if (peer.Role == PeerRole.Worker) OnAuthorityRpc(peer, AuthorityCallMsg.Read(r)); break;
+                case MsgId.AuthorityRpcReply: if (peer.Role == PeerRole.Worker) OnAuthorityRpcReply(peer, AuthorityCallReplyMsg.Read(r)); break;
                 case MsgId.WorkerMessage: if (peer.Role == PeerRole.Worker) OnWorkerMessage(peer, r); break;
                 case MsgId.Ping:
                 {

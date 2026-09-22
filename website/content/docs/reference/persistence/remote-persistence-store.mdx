@@ -141,6 +141,14 @@ public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadO
 
 Fetches every record and filters here: the predicate cannot travel. For tools, not the restore path.
 
+### CountRecords [#countrecords]
+
+```csharp
+public void CountRecords(string scopeKey, string containerId, Action<int> onCounted);
+```
+
+Counted on the orchestrator (`GET /api/store/count`): only the number travels, never the records.
+
 ### Dispose [#dispose]
 
 ```csharp

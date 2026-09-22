@@ -1,0 +1,129 @@
+---
+title: Distributed physics
+description: What a physics interaction does on one worker, across a container seam through a ghost, and why a joint between two workers is unsupported.
+---
+
+Read this page before you build a physics mechanism that could straddle a container boundary. It states what Nebula's cross-worker physics does and does not do, and describes the checks that warn you when a project depends on an unsupported case.
+
+A **container** is a box-shaped area of the game world assigned to a **worker**, a headless Unity process that simulates the entities inside it. The worker that simulates an entity has **authority** over it. A **ghost** is a non-authoritative copy of that entity on another worker. See [Containers and handover](/docs/concepts/containers-and-handover) for how authority moves between workers.
+
+## The model in one table
+
+| Interaction | Behavior | Support |
+| --- | --- | --- |
+| Two bodies simulated by the same worker | Ordinary PhysX. Contacts, joints, and articulations resolve in one solver. | Exact |
+| A body and a ghost (a **ghost contact**) | The local body collides with a kinematic copy that is one tick behind. The collision does not change the entity on its authoritative worker. | One-sided, one tick behind |
+| A `Joint` or `ArticulationBody` between entities in different containers | Each worker solves its side against a kinematic copy of the other body. The two results do not agree. | Unsupported |
+
+The rest of this page explains each row and what to do instead.
+
+## Physics on one worker
+
+Every worker runs its own PhysX simulation with `Physics.simulationMode = SimulationMode.FixedUpdate`. Each `FixedUpdate`, the worker runs the ticks that have elapsed since its last one; PhysX steps once when the `FixedUpdate` ends. Inside a tick, the worker:
+
+1. Moves every ghost to the pose its authoritative worker streamed for the previous tick and calls `RemoteTick` on its behaviors.
+2. Calls `Physics.SyncTransforms()`, so ghost colliders are in place before anything raycasts against them.
+3. Calls `NetworkTick` on every entity it has authority over, carriers before their contents.
+4. Steps every loaded private instance scene (see [Instances](#instances)).
+5. Records every entity it has authority over for `NetworkIdentity.StateAt`; ghosts record themselves when their owner's stream arrives, with the owner's tick.
+
+A dynamic `Rigidbody` on an authoritative entity is simulated by PhysX on that worker only. Two authoritative bodies on the same worker interact exactly as in a single-process Unity game: contacts, stacking, joints, and articulations all resolve in one solver. This is the only configuration in which a two-body constraint is solved with both bodies dynamic.
+
+Authority is decided per container. Two containers that happen to be owned by one worker today can be assigned to different workers after a rebalance, a worker failure, or a scale change. Treat the container, not the current worker, as the unit within which physics is exact.
+
+## Physics across a seam: ghost contacts
+
+When an authoritative entity comes within `GhostBandMargin` of a container owned by another worker, that worker receives a ghost. On the ghost, `NetworkBehaviour.IsGhost` is `true` and `HasAuthority` is `false`.
+
+A ghost's body is kinematic. `NetworkRigidbody` sets `Rigidbody.isKinematic` to `true` on every copy that lacks authority and back to the entity's own setting when the worker gains authority. An entity with a plain `Rigidbody` and no `NetworkRigidbody` is also made kinematic by the worker when it becomes a ghost.
+
+A ghost moves only where its authoritative worker's root transform stream says. The worker applies the pose for tick `t - 1` at the start of tick `t`, so a ghost is one tick (16.7 ms at 60 ticks per second) behind the body it copies. This is a property of the design, not a tuning value: the owner has not yet simulated tick `t` when the ghost's worker starts it.
+
+Because of this, a ghost contact is one-sided:
+
+- A local dynamic body collides with the ghost as with any moving kinematic collider. The local body reacts; the ghost does not, because PhysX treats a kinematic body as having infinite mass.
+- Nothing about that collision travels to the authoritative worker. The entity behind the ghost continues as if the contact never happened. To affect it, game code must send an `AuthorityRpc` (see [Call the worker that controls another entity](/docs/guides/rpcs#call-the-worker-that-controls-another-entity)).
+- Raycasts, sweeps, and overlap queries on the ghost's worker see the ghost's colliders at the previous tick's pose. Use [`NetworkIdentity.StateAt`](/docs/guides/lag-compensation) when a hit test must account for that lag.
+- A ghost's `Rigidbody` reports no velocity of its own. `NetworkIdentity.Motion.Velocity` holds the linear velocity the owner streamed.
+
+A ghost contact is enough for many mechanics: a player pushing against a crate owned by the next worker feels a solid wall until the crate is handed over; a projectile owned by one worker hits an enemy owned by another and claims damage with an `AuthorityRpc`. It is not enough for anything that expects the other body to move in response.
+
+## Joints and constraints across workers
+
+A `Joint` (`HingeJoint`, `FixedJoint`, `SpringJoint`, `CharacterJoint`, `ConfigurableJoint`) or a child `ArticulationBody` connects two bodies. PhysX solves the constraint by correcting both bodies' velocities in one solver step, with the correction split by their masses.
+
+When the two bodies belong to entities in different containers, the entities can be simulated by different workers. Each worker then sees one dynamic body and one kinematic ghost:
+
+- Worker A solves the joint between its dynamic body and the kinematic ghost of B. The dynamic body takes the full correction; the ghost takes none.
+- Worker B does the same with the roles reversed.
+- Each ghost is one tick behind, so each worker corrects against a pose the other worker has already moved past.
+
+The two solutions are not mirror images of each other, and they are never combined. The visible result ranges from a joint that feels twice as stiff to one that oscillates or drifts apart, depending on masses and speeds. Nebula does not, and cannot, make this symmetric: no process holds both bodies as dynamic, so no solver sees the whole constraint. Making it symmetric would require a shared solver across processes or a rule that the two entities always share a worker. Nebula provides neither today.
+
+<Callout type="warn" title="Cross-container joints are unsupported">
+Nebula does not simulate a `Joint` or `ArticulationBody` between entities in different containers correctly, and does not try to compensate. Nebula > Validate Project and the worker warn about each such joint. Fix the project rather than tuning around the warning.
+</Callout>
+
+`ArticulationBody` has one more limitation: Nebula has no component that replicates articulation state. A ghost's `ArticulationBody` is not made kinematic and receives no joint targets; only the entity's root pose follows the owner through `NetworkTransform`.
+
+## Carried (dynamic) containers
+
+A [dynamic container](/docs/guides/dynamic-containers) is a container carried by an entity, such as a ship interior. Entities inside it are parented under the carrier and replicated in its local space. The carrier and its contents move together without any physics constraint between them: the worker ticks the carrier first, calls `Physics.SyncTransforms()`, and then ticks the contents, so a pawn standing in a moving ship casts against the hull where the hull is this tick.
+
+By default the worker that has authority over the carrier also has authority over its contents, and a handover of the carrier hands over everything inside it in the same tick. A pinned dynamic container is the exception: another worker simulates the contents and holds a permanent ghost of the carrier. A joint between a carried entity and its carrier is therefore a cross-container joint, and the checks report it whether or not the container is pinned. Use the carrier's frame, not a joint, to keep an object attached to a vehicle.
+
+## Instances
+
+Each private [instance](/docs/guides/instancing) has its own Unity physics scene. The worker steps every loaded instance scene once per tick, after `NetworkTick`. Entities in different instances never collide, even at the same coordinates, and a global `Physics` query only inspects the public scene. Use `NetworkIdentity.PhysicsScene` for raycasts and overlaps from an entity, or `InstanceScenes.PhysicsFor(instanceId)` for a known instance.
+
+Ghosts follow the same rule: a ghost is instantiated under its container's transform and lands in that container's scene, so it collides only with bodies in the same instance.
+
+## What to do instead
+
+Keep every body that a constraint touches under one authority:
+
+- **Put the whole mechanism in one entity.** Joints and articulations between colliders and rigidbodies inside one prefab hierarchy are always solved by that entity's worker. A ragdoll, a door on its frame, or a crane with its hook belong in a single `NetworkIdentity`.
+- **Keep the island in one container.** A mechanism made of several entities works while all of them are in the same container. Place it away from the container's faces, so no part drifts across a seam during play. Ghosting starts `GhostBandMargin` (default 4 m) before the boundary and does not change which worker simulates the body, so the margin does not help here.
+- **Move the seam.** If a mechanism must sit where two containers meet, change the container bounds so it sits inside one of them. Select **Fit Size and Center to Bounds** on the `Container` or edit `Size` and `Center` directly, then rebake if the world is [partitioned](/docs/guides/world-partition).
+- **Attach through a carrier, not a joint.** To keep an object on a vehicle or lift, give the vehicle a `DynamicContainer` and let the object ride in its frame.
+- **Replace the constraint with a claim.** When two entities in different containers must react to each other, raycast or overlap against the ghost and send an `AuthorityRpc` to the other entity. Nebula delivers the claim; the receiving worker decides what it does with it.
+
+- **Declare a cohesion group.** When two entities really must be simulated together, put them in one [cohesion group](/docs/guides/cohesion): one worker then simulates both, a handover of either takes the other with it, and the checks below stop reporting joints between them. Nebula does not infer a group and does not check that one fits a worker; it reports a group that does not.
+
+The checks below report every cross-container joint that no cohesion group covers, including one whose entities share a worker by coincidence today. `PhysicsIslands.IsCohesive` is the extension point for a guarantee that comes from somewhere other than a group; it is `null` by default.
+
+## Diagnostics
+
+Nebula reports two kinds of reliance on unsupported behavior.
+
+### Joints across containers
+
+**In the Editor**, run **Nebula > Validate Project**. `NebulaValidator.CheckPhysicsIslands` inspects every `Joint` and child `ArticulationBody` in the open scenes and in the prefabs listed in `NebulaConfig.NetworkPrefabs`. It adds a warning for each constraint whose two bodies belong to entities that resolve to different containers, or to one container and none, naming both containers and linking to this page. The joint is the log line's context; click the line to select it.
+
+At edit time, an entity's container is the `Container` component above it in the hierarchy. Without one, it is the smallest scene container whose box holds the entity's position. A carrier's own box is skipped, because a carrier sits in the container around it.
+
+**On a worker**, `PhysicsIslands.CheckOnAuthority` runs when the worker spawns an entity or gains authority through a handover. It logs one warning per entity through `NebulaLog.Warn`, listing each cross-container constraint, and stays silent on later authority changes of the same entity. An entity without a `Joint` or `ArticulationBody` costs one component lookup per spawn and nothing per tick. Set `PhysicsIslands.WarnOnAuthority` to `false` to turn the check off.
+
+Both checks share `PhysicsIslands`:
+
+| Member | Purpose |
+| --- | --- |
+| `SameIsland(Container a, Container b)` | `true` when both are the same container, including two `null` values. |
+| `SameIsland(NetworkIdentity a, NetworkIdentity b, resolve)` | `true` for the same entity, a body without a `NetworkIdentity`, two members of one [cohesion group](/docs/guides/cohesion), a pair `IsCohesive` accepts, or two entities in one container. |
+| `ContainerOf(NetworkIdentity)` | The entity's container: `NetworkIdentity.Container` once spawned, otherwise the nearest `Container` above it in the hierarchy. |
+| `FindCrossIslandJoints(root, results, resolve)` | Appends a `CrossIslandJoint` for each constraint under `root` whose bodies are in different islands. |
+| `IsCohesive` | A `Func<NetworkIdentity, NetworkIdentity, bool>` that can exempt a pair beyond what the cohesion groups already exempt. `null` by default. |
+
+### AuthorityRpc from a copy that is neither authoritative nor a ghost
+
+`AuthorityRpc` must be sent from a worker that either simulates the target or holds a ghost of it. On a worker, every spawned copy is one or the other, so a rejection means the call came from a client, from a process with no worker role, or on an entity that is not spawned. `NetworkBehaviour` logs a warning that names the method and the rule, discards the call, and increments `NebulaDiagnostics.RejectedAuthorityRpcSends`. `NebulaWorker.RejectedAuthorityRpcSends` exposes the same count, and the worker's `profile` log line reports it as `rpcRejected`. A count that grows during play means game code calls `AuthorityRpc` from the wrong process.
+
+## Related
+
+<Cards>
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="Ghosts, the ghost band, and authority transfer." />
+  <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="Configure NetworkRigidbody and carry state through a handover." />
+  <Card title="RPCs and worker messages" href="/docs/guides/rpcs" description="Send an AuthorityRpc to the worker that controls another entity." />
+  <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carry entities in a moving container instead of a joint." />
+  <Card title="Cohesion hints" href="/docs/guides/cohesion" description="Declare that a set of entities must share one worker." />
+</Cards>

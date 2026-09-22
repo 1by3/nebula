@@ -23,7 +23,8 @@ namespace Nebula
     {
         /// <summary>Magic and version at the head of the backing file.</summary>
         private const uint FileMagic = 0x504e4245; // "EBNP"
-        private const byte FileVersion = 1;
+        // 1: the original record; 2: appends the scope key (EntityLocation.ScopeKey) to every record.
+        private const byte FileVersion = 2;
 
         /// <summary>Seconds between rewrites of the backing file while records keep changing.</summary>
         public float WriteIntervalSeconds = 1f;
@@ -159,6 +160,22 @@ namespace Nebula
             _callbacks.Enqueue(() => onLoaded(result));
         }
 
+        public void CountRecords(string scopeKey, string containerId, Action<int> onCounted)
+        {
+            if (onCounted == null) return;
+            string scope = scopeKey ?? "";
+            string container = containerId ?? "";
+            int count = 0;
+            foreach (var kv in _records)
+            {
+                var r = kv.Value;
+                if (!string.Equals(r.ScopeKey ?? "", scope, StringComparison.Ordinal)) continue;
+                if (container.Length != 0 && !string.Equals(r.ContainerId ?? "", container, StringComparison.Ordinal)) continue;
+                count++;
+            }
+            _callbacks.Enqueue(() => onCounted(count));
+        }
+
         public void Clear()
         {
             if (_records.Count == 0 && !_fileDirty) return;
@@ -282,7 +299,7 @@ namespace Nebula
                 int count = r.ReadInt();
                 for (int i = 0; i < count; i++)
                 {
-                    var record = ReadRecord(r);
+                    var record = ReadRecord(r, version);
                     if (!string.IsNullOrEmpty(record.Key)) _records[record.Key] = record;
                 }
             }
@@ -311,9 +328,10 @@ namespace Nebula
             w.WriteULong(r.Version);
             w.WriteLong(r.SavedAt.ToBinary());
             w.WriteString(r.SavedBy);
+            w.WriteString(r.ScopeKey); // version 2
         }
 
-        private static PersistedEntityRecord ReadRecord(NetworkReader r)
+        private static PersistedEntityRecord ReadRecord(NetworkReader r, byte fileVersion)
         {
             var record = new PersistedEntityRecord
             {
@@ -336,6 +354,7 @@ namespace Nebula
             record.Version = r.ReadULong();
             record.SavedAt = DateTime.FromBinary(r.ReadLong());
             record.SavedBy = r.ReadString();
+            record.ScopeKey = fileVersion >= 2 ? r.ReadString() : ""; // a version 1 record is in the public world
             return record;
         }
     }

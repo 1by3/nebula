@@ -62,3 +62,31 @@ public int Ring { get; }
 ```
 
 Chebyshev ring of chunks the worker keeps leased around every pawn.
+
+### ScopedAllocators [#scopedallocators]
+
+```csharp
+public IReadOnlyDictionary<string, RuntimeGridAllocator> ScopedAllocators { get; }
+```
+
+The scoped grids' allocators on a worker, by scope key. Empty on every other role.
+
+## Methods
+
+### ActivateGrid [#activategrid]
+
+```csharp
+public static void ActivateGrid(IControlPlane controlPlane, string scopeKey, ChunkGridDefinition definition, string requester = "", string preferredWorkerId = "");
+```
+
+Bring a second (third, hundredth) chunk grid into being, namespaced by `scopeKey`: an instanced open area, a second map, a per-party copy of a procedural region. One control-plane write ([`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope)) with [`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid); the definition travels in the scope row's payload, so every role builds the same grid from the row alone and none of them has to be told separately. Idempotent by key, exactly like every other activation: two callers naming the same key with the same definition get one world (`docs/scope-activation.md` §3).
+
+Only the scope's [`ChunkGridDefinition.Anchor`](/docs/reference/world/chunk-grid-definition#anchor) chunk is created — a grid is unbounded, so activation must not enumerate it. Every other chunk is leased on demand by the allocator of whichever worker a pawn of that scope is simulated on.
+
+### EnsureLocalGrid [#ensurelocalgrid]
+
+```csharp
+public RuntimeGrid EnsureLocalGrid(string scopeKey, ChunkGridDefinition definition);
+```
+
+Make sure this process has a local grid for a scope whose row the control plane shows, and — on a worker — an allocator for it. Called for a scope the first time one of its containers turns up here, which is the one rule that works on every role: a worker gets the anchor dealt to it or an entity transferred into it, a client is told about a chunk of the scope it joined, a gateway mirrors the lease. A process that never touches a scope never pays for it.

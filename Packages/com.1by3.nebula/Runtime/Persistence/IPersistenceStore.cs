@@ -24,13 +24,37 @@ namespace Nebula
         public string PrefabName = "";
         /// <summary>Non-zero: the record belongs to a scene entity with this <see cref="NetworkIdentity.SceneId"/>.</summary>
         public uint SceneId;
-        /// <summary>Static container the entity was in (its <see cref="Container.ContainerId"/>), or "" when it was in none or inside a carrier.</summary>
+        /// <summary>
+        /// Opaque scope key of the scope the entity was in (<see cref="NetworkIdentity.ScopeKey"/> at save time):
+        /// <see cref="EntityLocation.PublicScope"/> (empty) for the public world, the instance key inside an
+        /// instance. A record written before the key was recorded reads as the public world.
+        /// </summary>
+        public string ScopeKey = "";
+        /// <summary>Static or runtime container the entity was in (its <see cref="Container.ContainerId"/>), or "" when it was in none or inside a carrier.</summary>
         public string ContainerId = "";
         /// <summary>When the entity was inside a dynamic container: the persistence key of the carrier. "" otherwise.</summary>
         public string CarrierKey = "";
         /// <summary>Pose in the container's local space (world space when there was no container).</summary>
         public Vector3 LocalPosition;
         public Quaternion LocalRotation = Quaternion.identity;
+
+        /// <summary>
+        /// The saved location as the contract's triple (<see cref="EntityLocation"/>): <see cref="ScopeKey"/>,
+        /// <see cref="ContainerId"/> and the local pose. For an entity saved inside a carrier the container id is
+        /// empty and <see cref="CarrierKey"/> names the carrier instead, because a dynamic container's id lives only
+        /// as long as its carrier's net id. Setting it writes the three fields back and leaves <see cref="CarrierKey"/> alone.
+        /// </summary>
+        public EntityLocation Location
+        {
+            get => new EntityLocation(ScopeKey, ContainerId, LocalPosition, LocalRotation);
+            set
+            {
+                ScopeKey = value.ScopeKey;
+                ContainerId = value.ContainerId;
+                LocalPosition = value.LocalPosition;
+                LocalRotation = value.LocalRotation;
+            }
+        }
         public Vector3 Velocity;
         /// <summary>Authority epoch at save time. The store rejects a save whose epoch is older than what it holds.</summary>
         public uint Epoch;
@@ -103,8 +127,23 @@ namespace Nebula
         void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
         /// <summary>Every record whose <see cref="PersistedEntityRecord.CarrierKey"/> is <paramref name="carrierKey"/>.</summary>
         void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
-        /// <summary>Every record that matches <paramref name="predicate"/>. For tools and game directors, not for the per-lease restore path.</summary>
+        /// <summary>
+        /// Every record that matches <paramref name="predicate"/>. For tools and game directors, not for the
+        /// per-lease restore path. This is the <b>offline read</b>: the records of a scope nothing is simulating are
+        /// ordinary records and can be read, and written, without activating it (<c>docs/lifecycle-hooks.md</c> §5).
+        /// </summary>
         void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+
+        /// <summary>
+        /// How many records the store holds for a scope, <b>without reading them</b>. <paramref name="scopeKey"/> is
+        /// matched exactly (<see cref="EntityLocation.PublicScope"/>, the empty key, is the public world) and
+        /// <paramref name="containerId"/> narrows the count to one container when it is non-empty; records inside a
+        /// carrier are counted like any other. Cheap on purpose — a <c>COUNT</c> on the backend, never a list — so
+        /// that "is there anything saved here?" can be asked on the path that brings a scope to life. The answer
+        /// lands on the main thread like every other read. Behind
+        /// <c>NebulaLifecycle.OnScopeActivating</c>'s <c>hasRecords</c>.
+        /// </summary>
+        void CountRecords(string scopeKey, string containerId, Action<int> onCounted);
 
         /// <summary>Delete every record (dashboard / dev reset).</summary>
         void Clear();

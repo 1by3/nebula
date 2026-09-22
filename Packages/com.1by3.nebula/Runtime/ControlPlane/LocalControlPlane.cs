@@ -22,7 +22,14 @@ namespace Nebula
         private bool _dirty;
 
         public bool IsConnected { get; private set; }
-        public DateTime Now => DateTime.UtcNow;
+        /// <summary>
+        /// The clock every row is stamped with. A seam, not a setting: the lifecycle's idle age is measured in
+        /// lease-row ages, so a test that has to age a scope by minutes drives this instead of waiting
+        /// (<c>docs/scope-lifecycle.md</c> D7). Defaults to the wall clock and nothing in Nebula changes it.
+        /// </summary>
+        internal Func<DateTime> Clock = () => DateTime.UtcNow;
+
+        public DateTime Now => Clock();
         public event Action Changed;
         public IReadOnlyList<WorkerInfo> Workers => _workers;
         public IReadOnlyList<LeaseInfo> Leases => _leases;
@@ -54,7 +61,7 @@ namespace Nebula
         }
 
         /// <summary>The whole state as one document (see <see cref="ControlPlaneJson"/>).</summary>
-        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings);
+        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings, _scopes);
 
         /// <summary>Replace the whole state with <paramref name="snapshot"/> (a stored document coming back at startup).</summary>
         public void Import(ControlPlaneJson.Snapshot snapshot)
@@ -63,11 +70,13 @@ namespace Nebula
             _leases.Clear();
             _gateways.Clear();
             _settings.Clear();
+            ImportScopes(null);
             if (snapshot != null)
             {
                 _workers.AddRange(snapshot.Workers);
                 _leases.AddRange(snapshot.Leases);
                 _gateways.AddRange(snapshot.Gateways);
+                ImportScopes(snapshot.Scopes);
                 foreach (var kv in snapshot.Settings) _settings[kv.Key] = kv.Value;
                 if (snapshot.Version > Version) Version = snapshot.Version;
             }
@@ -101,6 +110,7 @@ namespace Nebula
             w.BotCount = stats.BotCount;
             w.ServerDrivenCount = stats.ServerDrivenCount;
             w.HasGlobalEntities = stats.HasGlobalEntities;
+            w.OldestDirtySeconds = stats.OldestDirtySeconds;
             Touch();
         }
 
@@ -236,6 +246,22 @@ namespace Nebula
             Touch();
         }
 
+        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None)
+        {
+            var l = this.FindLease(containerId);
+            if (l == null) return;
+            if (float.IsNaN(saturation) || saturation < 0f) saturation = 0f;
+            if (l.HasCapacity && l.AtCapacity == atCapacity && l.Dominant == dominant && l.SaturationCause == cause &&
+                Math.Abs(l.Saturation - saturation) < 0.0005f) return;
+            l.HasCapacity = true;
+            l.Saturation = saturation;
+            l.Dominant = dominant;
+            l.AtCapacity = atCapacity;
+            l.SaturationCause = cause;
+            // Deliberately not l.UpdatedAt: that is the idle clock the scope lifecycle retires on.
+            Touch();
+        }
+
         public void SetLeaseState(string containerId, string state)
         {
             var l = this.FindLease(containerId);
@@ -266,6 +292,7 @@ namespace Nebula
             _leases.Clear();
             _gateways.Clear();
             _settings.Clear();
+            ClearScopes();
             Touch();
         }
     }

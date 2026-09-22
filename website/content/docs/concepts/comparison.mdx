@@ -109,7 +109,7 @@ We treat the matrix as a work list. These are the gaps, roughly in the order we 
 | Gap | Today | Where we want to be |
 | --- | --- | --- |
 | Interest management | The gateway lowers the update rate with distance, but every observer of an instance receives every spawn. | Spatial culling at the gateway so a client receives only the entities near it. |
-| Hit validation | `TryGetPoseAt` returns past poses. Rewinding colliders and validating a claim from another worker are yours to build. | A lag-compensated query API that works across container boundaries. |
+| Hit validation | `StateAt(tick)` returns past poses and marked variables, on the authority and on ghosts, within a configurable window. Rewinding colliders and validating a claim are yours to build; a reference sample ships with the package. | A turnkey lag-compensated hit API. |
 | Remote damage claims | `[AuthorityRpc]` delivers the call; it does not validate it. | Validation hooks on the target's worker, with a documented pattern. |
 | Encryption | Native UDP clients and worker links are not encrypted. | Encrypted client links on every transport, and authenticated, encrypted worker links. |
 | Rollouts | A rollout restarts the orchestrator and disconnects players. | Rolling updates that drain workers and gateways without ending sessions. |

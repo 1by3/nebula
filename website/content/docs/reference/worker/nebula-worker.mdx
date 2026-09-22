@@ -37,6 +37,14 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
 
+### MaxHoldSeconds [#maxholdseconds]
+
+```csharp
+public const float MaxHoldSeconds = 120f;
+```
+
+Longest a single [`HoldContainer`](#holdcontainer) can defer rebalancing, in seconds.
+
 ## Properties
 
 ### Config [#config]
@@ -58,6 +66,14 @@ public NebulaPersistence Persistence { get; }
 ```
 
 Long-term storage for the entities that opted into it ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)): checkpoints of what this worker owns, and restores of what the containers it leases held. Null when persistence is off (`-nebula-persistence-mode off`, or no store handed to [`Initialize`](#initialize)).
+
+### ScopeLifecycleAgent [#scopelifecycleagent]
+
+```csharp
+public WorkerScopeLifecycle ScopeLifecycleAgent { get; }
+```
+
+This worker's half of the scope lifecycle: the idle clock of the scope parts it owns, the retire sequence for a scope the orchestrator is retiring, and the restore acknowledgement a restored scope waits on. See `docs/scope-lifecycle.md`.
 
 ### WorkerId [#workerid]
 
@@ -135,6 +151,14 @@ public int HandoversIn { get; }
 public int LocalHandovers { get; }
 ```
 
+### RejectedAuthorityRpcSends [#rejectedauthorityrpcsends]
+
+```csharp
+public int RejectedAuthorityRpcSends { get; }
+```
+
+AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost copy of the target (see [`NebulaDiagnostics.RejectedAuthorityRpcSends`](/docs/reference/core/nebula-diagnostics#rejectedauthorityrpcsends)). Reported as `rpcRejected` on the profile log line.
+
 ### GhostsSent [#ghostssent]
 
 ```csharp
@@ -158,6 +182,38 @@ public int AuthoritativeCount { get; }
 ```csharp
 public int EntityCount { get; }
 ```
+
+### AuthorityCallsApplied [#authoritycallsapplied]
+
+```csharp
+public long AuthorityCallsApplied { get; }
+```
+
+AuthorityRpc calls from other workers this worker has applied since it started (see the cross-worker call contract).
+
+### AuthorityCallsForwarded [#authoritycallsforwarded]
+
+```csharp
+public long AuthorityCallsForwarded { get; }
+```
+
+AuthorityRpc calls this worker has forwarded to the entity's new owner since it started.
+
+### AuthorityCallsRejected [#authoritycallsrejected]
+
+```csharp
+public long AuthorityCallsRejected { get; }
+```
+
+AuthorityRpc calls this worker has rejected (stale epoch, unknown entity, hop limit, duplicate, unreachable) since it started.
+
+### AuthorityCallsPending [#authoritycallspending]
+
+```csharp
+public int AuthorityCallsPending { get; }
+```
+
+AuthorityRpc calls this worker sent with a reply requested and is still waiting on.
 
 ### PlayerCount [#playercount]
 
@@ -186,6 +242,14 @@ public WorkerTelemetry Telemetry { get; }
 ```
 
 What this worker reports to the dashboard's World map; null when telemetry is off (see [`WorkerTelemetry.Create`](/docs/reference/worker/worker-telemetry#create)).
+
+### CostMeter [#costmeter]
+
+```csharp
+public ContainerCostMeter CostMeter { get; }
+```
+
+What each container this worker leases costs it, measured per tick (see [`ContainerCostMeter`](/docs/reference/worker/container-cost-meter)). Always on: it is two stopwatch reads and a field add per authoritative entity per tick, and the rows it produces are what the scaler and the dashboard explain a hot container with (docs/cost-telemetry.md).
 
 ### Entities [#entities]
 
@@ -230,6 +294,14 @@ public bool IsRegistered { get; }
 ```
 
 Registered with the control plane; the mesh knows about this worker.
+
+### HeldContainers [#heldcontainers]
+
+```csharp
+public int HeldContainers { get; }
+```
+
+How many containers this worker is holding right now (expired holds are dropped when read).
 
 ### InterestGrid [#interestgrid]
 
@@ -387,6 +459,7 @@ Start the worker with a persistence store: entities carrying a [`PersistentEntit
 
 ```csharp
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds);
+public void RequestRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance);
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint);
 ```
 
@@ -425,6 +498,14 @@ public bool ReleaseRuntimeContainer(ulong id);
 
 Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box. Persistent entities still inside are checkpointed and despawned (they come back when the box is asked for again); anything else inside is despawned for good. Returns false when the container is not here or belongs to another worker.
 
+### EmptyContainer [#emptycontainer]
+
+```csharp
+public void EmptyContainer(Container container);
+```
+
+Despawn everything this worker is authoritative for inside `container`, keeping the records of persistent entities (they come back when the box is asked for again) and losing everything else. The contents half of [`ReleaseRuntimeContainer`](#releaseruntimecontainer), split out because the scope lifecycle empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every part has reported its checkpoint done (`docs/scope-lifecycle.md`).
+
 ### Spawn [#spawn]
 
 ```csharp
@@ -461,6 +542,14 @@ Remove an entity from the mesh. A persistent entity ([`PersistentEntity`](/docs/
 public NetworkIdentity Find(ulong netId);
 ```
 
+### TryGetStateAt [#trygetstateat]
+
+```csharp
+public bool TryGetStateAt(ulong netId, uint tick, out HistoricalState state);
+```
+
+What the entity `netId` looked like at server tick `tick`, from this worker's own recorded history ([`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat)). Answers for anything this worker holds, authoritative or ghosted; false when it holds no copy or the tick is outside the recorded window ([`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks)). Nothing is extrapolated. See `docs/state-history.md`.
+
 ### FindPlayer [#findplayer]
 
 ```csharp
@@ -474,6 +563,8 @@ public static ulong InstanceKey(string key);
 ```
 
 Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.
+
+The derivation itself is [`ScopeKeys.Hash`](/docs/reference/control-plane/scope-keys#hash), so a gateway, an orchestrator or a matchmaking service can name the same scope without a worker and without Unity.
 
 ### PrepareInstance [#prepareinstance]
 
@@ -524,6 +615,33 @@ public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quate
 
 Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.
 
+### HoldContainer [#holdcontainer]
+
+```csharp
+public void HoldContainer(string containerId, float seconds);
+public void HoldContainer(Container container, float seconds);
+```
+
+Ask the orchestrator to leave `containerId` where it is for `seconds`. Repeating the call extends the hold to the later of the two deadlines; `seconds` at or below zero releases it. Clamped to [`MaxHoldSeconds`](#maxholdseconds): a hold is a pause, not a pin - the permanent form is [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) or a pinned carried container.
+
+The hold reaches the orchestrator with the next telemetry document (at most [`WorkerTelemetry.IdleIntervalSeconds`](/docs/reference/worker/worker-telemetry#idleintervalseconds) later) and is forgotten if this worker stops reporting, so it never outlives the worker that asked for it.
+
+### ReleaseHold [#releasehold]
+
+```csharp
+public void ReleaseHold(string containerId);
+```
+
+Let a held container be rebalanced again before its hold expires.
+
+### HoldRemaining [#holdremaining]
+
+```csharp
+public float HoldRemaining(string containerId);
+```
+
+Seconds this worker's hold on a container still has to run, or 0 when it holds none.
+
 ### CopyGatewayInterest [#copygatewayinterest]
 
 ```csharp
@@ -541,6 +659,66 @@ public delegate void WorkerMessageHandler(string fromWorkerId, ushort fromWorker
 ```
 
 Handler for a game-defined worker message. `reader` is positioned at the payload.
+
+### ContainerHold [#containerhold]
+
+```csharp
+public readonly struct ContainerHold
+```
+
+One container this worker is asking the orchestrator not to move, and for how much longer.
+
+#### Constructors
+
+##### ContainerHold [#containerhold]
+
+```csharp
+public ContainerHold(string containerId, float secondsRemaining);
+```
+
+#### Fields
+
+##### ContainerId [#containerid]
+
+```csharp
+public readonly string ContainerId;
+```
+
+##### SecondsRemaining [#secondsremaining]
+
+```csharp
+public readonly float SecondsRemaining;
+```
+
+Seconds still to run when the hold was read. Always greater than zero.
+
+### CohesionSpan [#cohesionspan]
+
+```csharp
+public struct CohesionSpan
+```
+
+What one cohesion group costs this worker: which of its containers hold members of the group, and how many members it owns. The orchestrator unions the spans of every worker into the group the planner keeps on one worker (`docs/cohesion-hints.md`, D7).
+
+#### Fields
+
+##### Group [#group]
+
+```csharp
+public uint Group;
+```
+
+##### Members [#members]
+
+```csharp
+public int Members;
+```
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
 
 ### GatewayInterest [#gatewayinterest]
 

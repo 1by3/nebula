@@ -337,6 +337,179 @@ namespace Nebula.Tests
             Assert.AreEqual(Vector3Int.zero, WorldOrigin.Cell);
         }
 
+        // ------------------------------------------------------------------ scoped grids (NEB-239)
+
+        private static RuntimeGrid ScopedGrid(string scopeKey) =>
+            new RuntimeGrid(new Vector3(Size, Height, Size), planar: true, scopeKey: scopeKey);
+
+        private static Container RegisterScoped(RuntimeGrid grid, int x, int z)
+        {
+            var coord = new Vector3Int(x, 0, z);
+            return ContainerRegistry.RegisterRuntime(grid.IdOf(coord), grid.BoundsOf(coord), new InstanceContainerInfo
+            {
+                InstanceId = grid.InstanceId,
+                ScopeKey = grid.ScopeKey,
+                PartId = ChunkKeys.PartId(coord),
+            });
+        }
+
+        [Test]
+        public void ActivatingAnotherGridOnlyBackfillsItsOwnContentOnce()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            var loaded = new List<ulong>();
+            NebulaChunks.Loaded += (in ChunkContext c) =>
+            {
+                loaded.Add(c.Id);
+                new GameObject("generated content").transform.SetParent(c.Root, false);
+            };
+            var a = RegisterScoped(alpha, 0, 0);
+            var b = RegisterScoped(beta, 0, 0);
+            CollectionAssert.AreEqual(new[] { a.RuntimeId }, loaded);
+
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+
+            CollectionAssert.AreEqual(new[] { a.RuntimeId, b.RuntimeId }, loaded);
+            Assert.AreEqual(1, a.transform.Find("content").childCount, "alpha's generated content was not duplicated");
+            Assert.AreEqual(1, b.transform.Find("content").childCount, "repeated activation is idempotent");
+        }
+
+        [Test]
+        public void PublicOriginShiftTranslatesAnOrdinaryInstanceWithoutDecodingItsIdAsAChunk()
+        {
+            var grid = PlanarGrid();
+            NebulaChunks.Activate(grid, NebulaRoles.Client, headless: true, allocator: null);
+            var chunk = Register(grid, 2, 3);
+            const string scope = "dungeon/interior";
+            var bounds = new Bounds(new Vector3(350f, 20f, -110f), new Vector3(20f, 40f, 30f));
+            var interior = ContainerRegistry.RegisterRuntime(ScopeKeys.Hash(scope + "/main"), bounds,
+                new InstanceContainerInfo { InstanceId = ScopeKeys.Hash(scope), ScopeKey = scope, PartId = "main" });
+            Assert.IsNull(NebulaChunks.GridOf(interior));
+            var child = new GameObject("occupant");
+            child.transform.SetParent(interior.transform, false);
+            child.transform.localPosition = new Vector3(2f, 3f, 4f);
+            var before = child.transform.position;
+            var origin = new Vector3Int(4, 0, -2);
+            var delta = new Vector3(-4f * Size, 0f, 2f * Size);
+
+            grid.ShiftOrigin(origin);
+
+            Assert.AreEqual(bounds.center + delta, interior.transform.position);
+            Assert.AreEqual(before + delta, child.transform.position);
+            Assert.AreEqual(bounds.size, interior.WorldBounds.size);
+            Assert.AreEqual(grid.BoundsOf(new Vector3Int(2, 0, 3)), chunk.WorldBounds);
+            Assert.AreSame(interior, ContainerRegistry.Find(interior.transform.position, null, interior.InstanceId));
+        }
+
+        [Test]
+        public void OriginShiftStillUsesACustomPublicBoundsHook()
+        {
+            var container = ContainerRegistry.RegisterRuntime(123UL, new Bounds(Vector3.zero, Vector3.one));
+            var placed = new Vector3(10f, 20f, 30f);
+            ContainerRegistry.RuntimeBoundsInFrame = (id, fallback) => new Bounds(placed, fallback.size);
+
+            ContainerRegistry.ShiftRuntime(new Vector3(-100f, 0f, 0f));
+
+            Assert.AreEqual(placed, container.transform.position);
+        }
+
+        [Test]
+        public void TwoScopesAtTheSameCoordinateAreTwoChunksWithTwoIdsAndOneEventEach()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+
+            var loaded = new List<(string Scope, Vector3Int Coord, ulong Id)>();
+            NebulaChunks.Loaded += (in ChunkContext c) => loaded.Add((c.ScopeKey, c.Coord, c.Id));
+
+            var a = RegisterScoped(alpha, 0, 0);
+            var b = RegisterScoped(beta, 0, 0);
+
+            Assert.AreNotSame(a, b, "one coordinate, two worlds, two containers");
+            Assert.AreNotEqual(a.RuntimeId, b.RuntimeId);
+            Assert.AreNotEqual(a.ContainerId, b.ContainerId, "and two lease keys, so two persistence records");
+            Assert.AreEqual(2, loaded.Count);
+            Assert.AreEqual(("world/alpha", Vector3Int.zero, a.RuntimeId), loaded[0]);
+            Assert.AreEqual(("world/beta", Vector3Int.zero, b.RuntimeId), loaded[1]);
+            Assert.AreNotEqual(NebulaChunks.SeedOf(a.RuntimeId), NebulaChunks.SeedOf(b.RuntimeId), "a scoped copy is a different world, not the same one twice");
+        }
+
+        [Test]
+        public void LookupsAreScopeQualifiedAndThePublicWorldIsUnchanged()
+        {
+            var pub = PlanarGrid();
+            var alpha = ScopedGrid("world/alpha");
+            NebulaChunks.Activate(pub, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            var here = Register(pub, 0, 0);
+            var there = RegisterScoped(alpha, 0, 0);
+
+            var p = new Vector3(10f, 0f, 10f);
+            Assert.AreSame(here, NebulaChunks.At(p), "the unqualified call is still the public world's");
+            Assert.AreSame(there, NebulaChunks.At(p, "world/alpha"));
+            Assert.IsNull(NebulaChunks.At(p, "world/never-activated"));
+            Assert.AreEqual(Vector3Int.zero, NebulaChunks.CoordOf(p, "world/alpha"));
+
+            Assert.AreSame(pub, NebulaChunks.GridFor(""));
+            Assert.AreSame(alpha, NebulaChunks.GridFor("world/alpha"));
+            Assert.AreEqual("", NebulaChunks.ScopeOf(here));
+            Assert.AreEqual("world/alpha", NebulaChunks.ScopeOf(there));
+            Assert.AreSame(alpha, NebulaChunks.GridOf(there));
+        }
+
+        [Test]
+        public void TheBoundsHookPlacesEachScopesChunkWithItsOwnGrid()
+        {
+            var alpha = new RuntimeGrid(new Vector3(Size, Height, Size), planar: true, scopeKey: "world/alpha");
+            var beta = new RuntimeGrid(new Vector3(32f, Height, 32f), planar: true, scopeKey: "world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Worker, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Worker, headless: true, allocator: null);
+            RegisterScoped(alpha, 1, 0);
+            RegisterScoped(beta, 1, 0);
+
+            // One hook, two grids with different cell sizes: each id is placed by the grid that named it.
+            Assert.AreEqual(alpha.BoundsOf(new Vector3Int(1, 0, 0)), NebulaChunks.BoundsOfId(alpha.IdOf(new Vector3Int(1, 0, 0)), default));
+            Assert.AreEqual(beta.BoundsOf(new Vector3Int(1, 0, 0)), NebulaChunks.BoundsOfId(beta.IdOf(new Vector3Int(1, 0, 0)), default));
+            var unknown = new Bounds(Vector3.one * 7f, Vector3.one);
+            Assert.AreEqual(unknown, NebulaChunks.BoundsOfId(ChunkKeys.RuntimeId("world/gamma", Vector3Int.zero), unknown),
+                "and an id no grid here named keeps the box the caller had");
+        }
+
+        [Test]
+        public void AChunkOfAScopeWithNoGridHereIsNotContent()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            NebulaChunks.Activate(PlanarGrid(), NebulaRoles.Client, headless: true, allocator: null);
+            var loaded = new List<Vector3Int>();
+            NebulaChunks.Loaded += (in ChunkContext c) => loaded.Add(c.Coord);
+
+            RegisterScoped(alpha, 0, 0);
+            Assert.AreEqual(0, loaded.Count, "a process that has not joined a scope builds none of its content");
+
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            Assert.AreEqual(1, loaded.Count, "and back-fills the moment it does");
+        }
+
+        [Test]
+        public void DeactivateDropsOneScopeAndLeavesTheOthers()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Deactivate("world/alpha");
+
+            Assert.IsFalse(NebulaChunks.IsActiveFor("world/alpha"));
+            Assert.IsTrue(NebulaChunks.IsActiveFor("world/beta"));
+            Assert.IsTrue(NebulaChunks.IsActive);
+        }
+
         [Test]
         public void ResetForNewSessionDropsSubscribersAndGrid()
         {

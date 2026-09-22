@@ -38,11 +38,27 @@ namespace Nebula
     [Serializable]
     public sealed class InstanceContainerInfo
     {
+        /// <summary>The 64-bit simulation scope (<see cref="NebulaWorker.InstanceKey"/> of <see cref="ScopeKey"/>). Zero is the public world.</summary>
         public ulong InstanceId;
         public string ContentResource = "";
         public bool ObservePublic;
         public Vector3 ObservationCenter;
         public Vector3 ObservationSize;
+        /// <summary>
+        /// The opaque scope key the game chose for this instance (<c>TemplateId/key</c>, as passed to
+        /// <see cref="NebulaWorker.PrepareInstance"/>), carried so every process can report it in
+        /// <see cref="EntityLocation.ScopeKey"/> without inverting the hash. Nebula never parses it. Empty on a
+        /// lease row written before the key was recorded.
+        /// </summary>
+        public string ScopeKey = "";
+        /// <summary>
+        /// The scope part this container is (<see cref="ScopePart.PartId"/>), carried so a role that was handed the
+        /// row — a client, a gateway — can say <i>which</i> part of the scope it holds without inverting the hash
+        /// that named it. A scoped chunk's part id is its coordinate (<see cref="ChunkKeys.PartId"/>), which is how
+        /// every role rebuilds the chunk grid's coordinate map from lease rows alone. Empty on a row written before
+        /// the part id was recorded, and on a public-world container.
+        /// </summary>
+        public string PartId = "";
 
         public void Write(NetworkWriter writer)
         {
@@ -51,13 +67,18 @@ namespace Nebula
             writer.WriteBool(ObservePublic);
             writer.WriteVector3(ObservationCenter);
             writer.WriteVector3(ObservationSize);
+            writer.WriteString(ScopeKey ?? "");
+            writer.WriteString(PartId ?? "");
         }
 
         public static InstanceContainerInfo Read(NetworkReader reader) => new InstanceContainerInfo
         {
             InstanceId = reader.ReadULong(), ContentResource = reader.ReadString(),
             ObservePublic = reader.ReadBool(), ObservationCenter = reader.ReadVector3(),
-            ObservationSize = reader.ReadVector3()
+            ObservationSize = reader.ReadVector3(),
+            // A stored lease row from before the key was recorded ends here (Decode); on the wire it is always present.
+            ScopeKey = reader.Remaining > 0 ? reader.ReadString() : "",
+            PartId = reader.Remaining > 0 ? reader.ReadString() : ""
         };
 
         internal static string Encode(InstanceContainerInfo info)

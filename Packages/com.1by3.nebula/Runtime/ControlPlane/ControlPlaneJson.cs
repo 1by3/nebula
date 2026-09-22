@@ -33,9 +33,11 @@ namespace Nebula
             public List<LeaseInfo> Leases = new List<LeaseInfo>();
             public List<GatewayInfo> Gateways = new List<GatewayInfo>();
             public Dictionary<string, string> Settings = new Dictionary<string, string>();
+            /// <summary>Activated simulation scopes (<see cref="ScopeInfo"/>). Empty for a document written before scope activation.</summary>
+            public List<ScopeInfo> Scopes = new List<ScopeInfo>();
         }
 
-        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings)
+        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null)
         {
             var sb = new StringBuilder(4096);
             var w = new JsonWriter(sb);
@@ -63,6 +65,7 @@ namespace Nebula
                 w.Prop("botCount", x.BotCount);
                 w.Prop("serverDrivenCount", x.ServerDrivenCount);
                 w.Prop("hasGlobalEntities", x.HasGlobalEntities);
+                w.Key("oldestDirtySeconds"); Num(w, x.OldestDirtySeconds);
                 w.EndObject();
             }
             w.EndArray();
@@ -87,6 +90,15 @@ namespace Nebula
                 // The hint travels beside the lease in its compact string form, so a row costs a handful of bytes
                 // when nothing was hinted and stays readable in the stored document when something was.
                 if (l.HasHint) w.Prop("hint", l.Hint.ToString());
+                // The capacity reading (docs/capacity-admission.md), written only once the orchestrator has one, so
+                // a row costs nothing on a mesh with no cost telemetry and an older reader is unaffected.
+                if (l.HasCapacity)
+                {
+                    w.Key("saturation"); Num(w, l.Saturation);
+                    w.Prop("dominant", ContainerCost.NameOf(l.Dominant));
+                    w.Prop("atCapacity", l.AtCapacity);
+                    if (l.SaturationCause != SaturationCause.None) w.Prop("cause", SaturationReport.NameOf(l.SaturationCause));
+                }
                 w.EndObject();
             }
             w.EndArray();
@@ -113,6 +125,15 @@ namespace Nebula
                 foreach (var kv in settings) w.Prop(kv.Key, kv.Value ?? "");
             }
             w.EndObject();
+            // Scopes are written only when there are any, so a mesh that never activates one produces the same
+            // document it did before (and an older reader that ignores the key is unaffected either way).
+            if (scopes != null && scopes.Count > 0)
+            {
+                w.Key("scopes");
+                w.BeginArray();
+                for (int i = 0; i < scopes.Count; i++) ScopeJson.WriteScope(w, scopes[i]);
+                w.EndArray();
+            }
             w.EndObject();
             return sb.ToString();
         }
@@ -148,6 +169,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                     });
                 }
             }
@@ -173,6 +195,15 @@ namespace Nebula
                     }
                     string hint = Str(o, "hint");
                     if (!string.IsNullOrEmpty(hint)) { l.HasHint = true; l.Hint = ContainerHint.Parse(hint); }
+                    string dominant = Str(o, "dominant");
+                    if (!string.IsNullOrEmpty(dominant))
+                    {
+                        l.HasCapacity = true;
+                        l.Saturation = (float)Num(o, "saturation");
+                        l.Dominant = ContainerCost.ComponentOf(dominant);
+                        l.AtCapacity = Bool(o, "atCapacity");
+                        l.SaturationCause = CauseOf(Str(o, "cause"));
+                    }
                     s.Leases.Add(l);
                 }
             }
@@ -196,6 +227,11 @@ namespace Nebula
             if (root.TryGetValue("settings", out var settings) && settings is Dictionary<string, object> sd)
             {
                 foreach (var kv in sd) s.Settings[kv.Key] = PersistenceJson.AsString(kv.Value) ?? "";
+            }
+            if (root.TryGetValue("scopes", out var scopes) && scopes is List<object> sl)
+            {
+                foreach (var item in sl)
+                    if (item is Dictionary<string, object> o && !string.IsNullOrEmpty(Str(o, "scopeKey"))) s.Scopes.Add(ScopeJson.ReadScope(o));
             }
             return s;
         }
@@ -278,7 +314,9 @@ namespace Nebula
             EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer",
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
             ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane",
-            SetContainerHint = "SetContainerHint";
+            SetContainerHint = "SetContainerHint", SetContainerCapacity = "SetContainerCapacity",
+            ActivateScope = "ActivateScope", RemoveScope = "RemoveScope",
+            SetScopeState = "SetScopeState", AckScopePart = "AckScopePart";
 
         /// <summary>Builds one write object. Call <see cref="Op"/> then the <c>Arg</c> overloads, then <see cref="End"/>.</summary>
         public sealed class OpWriter
@@ -352,6 +390,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                     };
                     cp.HeartbeatWorker(Str(o, "workerId"), Str(o, "status"), stats);
                     return null;
@@ -370,14 +409,43 @@ namespace Nebula
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case SetLeaseState: cp.SetLeaseState(Str(o, "containerId"), Str(o, "state")); return null;
                 case SetContainerHint: cp.SetContainerHint(Str(o, "containerId"), ContainerHint.Parse(Str(o, "hint"))); return null;
+                case SetContainerCapacity: cp.SetContainerCapacity(Str(o, "containerId"), (float)Num(o, "saturation"), ContainerCost.ComponentOf(Str(o, "dominant")), Bool(o, "atCapacity"), CauseOf(Str(o, "cause"))); return null;
                 case ReleaseContainer: cp.ReleaseContainer(Str(o, "containerId")); return null;
                 case RemoveContainer: cp.RemoveContainer(Str(o, "containerId")); return null;
+                case ActivateScope:
+                {
+                    cp.ActivateScope(new ScopeActivationRequest
+                    {
+                        ScopeKey = Str(o, "scopeKey"),
+                        Definition = ScopeJson.ReadDefinition(Str(o, "definition")),
+                        PreferredWorkerId = Str(o, "workerId"),
+                        Requester = Str(o, "requester"),
+                    });
+                    return null;
+                }
+                case SetScopeState: cp.SetScopeState(Str(o, "scopeKey"), Str(o, "state")); return null;
+                case AckScopePart: cp.AckScopePart(Str(o, "scopeKey"), Str(o, "containerId"), Str(o, "phase"), (int)Num(o, "count"), Str(o, "workerId")); return null;
+                case RemoveScope: cp.RemoveScope(Str(o, "scopeKey")); return null;
                 case ResetControlPlane: cp.ResetControlPlane(); return null;
                 default: return $"unknown control-plane op '{op}'";
             }
         }
 
         // ---------------------------------------------------------------------------------------- helpers
+
+        /// <summary>The saturation cause a wire name (<see cref="SaturationReport.NameOf"/>) stands for; anything unknown reads as none.</summary>
+        public static SaturationCause CauseOf(string name)
+        {
+            switch (name)
+            {
+                case "no-boundary": return SaturationCause.NoBoundary;
+                case "cohesion-group": return SaturationCause.CohesionGroup;
+                case "affinity-group": return SaturationCause.AffinityGroup;
+                case "held": return SaturationCause.Held;
+                case "dedicated": return SaturationCause.Dedicated;
+                default: return SaturationCause.None;
+            }
+        }
 
         private static readonly DateTime Epoch1970 = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 

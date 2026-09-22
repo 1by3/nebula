@@ -37,6 +37,15 @@ namespace Nebula
         /// reconnect continues the session. Clear it to start a new session on the next connection.
         /// </summary>
         public string SessionToken { get; set; } = "";
+        /// <summary>
+        /// The simulation scope this client asks to be placed in, as the opaque key the game chose
+        /// (<see cref="EntityLocation.ScopeKey"/>). Empty, the default, is the public world. Set it before
+        /// connecting — a travel menu or a matchmaking reply hands the key over — and the gateway spawns the player
+        /// into that scope's containers instead of the public ones. The scope must already have been activated
+        /// (<see cref="IControlPlane.ActivateScope"/>); the gateway holds the join until it is ready. Seeded from
+        /// <c>-nebula-scope</c>. Changing it takes effect on the next connection.
+        /// </summary>
+        public string ScopeKey { get; set; } = CommandLine.Get("nebula-scope", "");
         /// <summary>True when the last Welcome reclaimed the session (the pawn is the one from before the reconnection).</summary>
         public bool SessionReclaimed { get; private set; }
         public NetworkIdentity LocalPlayer { get; private set; }
@@ -49,6 +58,23 @@ namespace Nebula
         public JoinState Join { get; private set; }
         /// <summary>Roughly how many seconds the gateway expects the <see cref="JoinState.Starting"/> hold to last; 0 when unknown.</summary>
         public int JoinEstimatedSeconds { get; private set; }
+        /// <summary>
+        /// Why the gateway is holding the join, while <see cref="Join"/> is <see cref="JoinState.Starting"/>: the
+        /// world is booting, or the scope this client named is not ready, is restoring or is retiring. Read it in a
+        /// <see cref="JoinStateChanged"/> handler to say something more useful than "please wait".
+        /// </summary>
+        public JoinHoldReason JoinHoldReason { get; private set; }
+        /// <summary>
+        /// Why the last join was refused, in typed form (<see cref="JoinRejectReason"/>). The reason string is for
+        /// the player; this is what the game's code branches on - a full station wants a queue or another instance,
+        /// a bad token wants a sign-in screen. See <c>docs/capacity-admission.md</c>.
+        /// </summary>
+        public JoinRejectReason JoinRejectReason { get; private set; }
+        /// <summary>
+        /// How full the target was when it refused the join, for <see cref="Nebula.JoinRejectReason.AtCapacity"/>:
+        /// 1 = the whole of the dominant cost component's budget. 0 when the gateway did not say.
+        /// </summary>
+        public float JoinRejectSaturation { get; private set; }
         public int RttMs { get; private set; } = -1;
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
@@ -189,6 +215,12 @@ namespace Nebula
         public event Action<State> ConnectionStateChanged;
         /// <summary>The gateway refused the join (the reason is fit to show the player); see <see cref="LastError"/>. The client stops reconnecting unless the refused token was a saved anonymous one, which it forgets and retries without.</summary>
         public event Action<string> JoinRejected;
+        /// <summary>
+        /// The same refusal, typed: the reason code and how saturated the target was
+        /// (<see cref="JoinRejectedMsg"/>). Raised after <see cref="JoinRejected"/>, on the main thread. A game that
+        /// wants to put the player in a docking queue when a station is full listens here.
+        /// </summary>
+        public event Action<JoinRejectedMsg> JoinRefused;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
         /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
@@ -626,7 +658,7 @@ namespace Nebula
                     _writer.Reset();
                     string token = !string.IsNullOrEmpty(AuthToken) ? AuthToken : _storedToken;
                     _presentedStoredToken = string.IsNullOrEmpty(AuthToken) && token.Length > 0;
-                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "" }.Write(_writer);
+                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "", ScopeKey = ScopeKey ?? "" }.Write(_writer);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:
@@ -694,7 +726,18 @@ namespace Nebula
                 case MsgId.JoinRejected:
                 {
                     var rejected = JoinRejectedMsg.Read(r);
-                    if (rejected.Retry)
+                    JoinRejectReason = rejected.Code;
+                    JoinRejectSaturation = rejected.Saturation;
+                    if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
+                    {
+                        // Not about this client's credentials and not about this gateway: reconnecting on a timer
+                        // would hammer a destination that is already full. The game decides what happens next -
+                        // a queue, another instance, a different scope - which is the whole point of the typed code.
+                        LastError = "join refused: " + rejected.Reason;
+                        WantsConnection = false;
+                        NebulaLog.Warn(LastError);
+                    }
+                    else if (rejected.Retry)
                     {
                         // The gateway, not this client, is the problem (draining, not ready): try again shortly; a
                         // load balancer hands the retry to another gateway.
@@ -716,6 +759,7 @@ namespace Nebula
                         NebulaLog.Warn(LastError);
                     }
                     JoinRejected?.Invoke(rejected.Reason);
+                    JoinRefused?.Invoke(rejected);
                     break;
                 }
                 case MsgId.SessionReplaced:
@@ -747,11 +791,12 @@ namespace Nebula
                 case MsgId.JoinStatus:
                 {
                     var j = JoinStatusMsg.Read(r);
-                    if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds) break;
+                    if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds && j.Reason == JoinHoldReason) break;
                     Join = j.State;
                     JoinEstimatedSeconds = j.EstimatedSeconds;
+                    JoinHoldReason = j.Reason;
                     if (Join == JoinState.Starting)
-                        NebulaLog.Info("world starting" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : "") + ": no worker is running yet; holding the join");
+                        NebulaLog.Info($"the join is held ({j.Reason})" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : ""));
                     else if (Join == JoinState.Joined) NebulaLog.Info("joined the world");
                     try { JoinStateChanged?.Invoke(Join, JoinEstimatedSeconds); }
                     catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
@@ -810,7 +855,7 @@ namespace Nebula
                 if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                 _runtimeKeep.Add(runtimeId);
                 if (ContainerRegistry.GetRuntime(runtimeId) == null)
-                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)), e.Instance);
+                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize), e.Instance?.InstanceId ?? 0UL), e.Instance);
             }
 
             // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement
@@ -1209,6 +1254,9 @@ namespace Nebula
             {
                 Join = JoinState.None;
                 JoinEstimatedSeconds = 0;
+                JoinHoldReason = JoinHoldReason.None;
+                JoinRejectReason = JoinRejectReason.None;
+                JoinRejectSaturation = 0f;
                 try { JoinStateChanged?.Invoke(Join, 0); }
                 catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
             }
@@ -1236,6 +1284,13 @@ namespace Nebula
         void IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)
         {
             NebulaLog.Warn("AuthorityRpc sent from a client; ignored");
+        }
+
+        ulong IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            NebulaLog.Warn("AuthorityRpc sent from a client; ignored");
+            onDone?.Invoke(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
+            return 0;
         }
     }
 }

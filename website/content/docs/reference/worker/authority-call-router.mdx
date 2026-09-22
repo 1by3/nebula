@@ -1,0 +1,98 @@
+---
+title: "AuthorityCallRouter"
+description: "The rules every worker applies to an incoming AuthorityRpc call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public sealed class AuthorityCallRouter
+```
+
+The rules every worker applies to an incoming `AuthorityRpc` call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code. The rules, in the order they are checked:
+
+1. The entity is unknown here: [`AuthorityCallOutcome.RejectedUnknownEntity`](/docs/reference/worker/authority-call-outcome#rejectedunknownentity).
+2. The call's epoch is ahead of the entity's, or more than [`MaxHops`](#maxhops) behind it: [`AuthorityCallOutcome.RejectedStaleEpoch`](/docs/reference/worker/authority-call-outcome#rejectedstaleepoch). A handover bumps the epoch by one and costs one forward, so a call that reached its authority within the hop bound is never more than [`MaxHops`](#maxhops) behind; anything further behind came from a copy that had missed several authority changes (design D3).
+3. This worker has authority: apply, unless the ledger has the id, which is [`AuthorityCallOutcome.RejectedDuplicate`](/docs/reference/worker/authority-call-outcome#rejectedduplicate) (design D5).
+4. The call has already been forwarded [`MaxHops`](#maxhops) times: [`AuthorityCallOutcome.RejectedHopLimit`](/docs/reference/worker/authority-call-outcome#rejectedhoplimit) (design D4).
+5. There is a peer to forward to: forward. Otherwise [`AuthorityCallOutcome.RejectedUnreachable`](/docs/reference/worker/authority-call-outcome#rejectedunreachable).
+
+## Constructors
+
+### AuthorityCallRouter [#authoritycallrouter]
+
+```csharp
+public AuthorityCallRouter(int maxHops, AuthorityCallLedger ledger = null);
+```
+
+## Properties
+
+### MaxHops [#maxhops]
+
+```csharp
+public int MaxHops { get; }
+```
+
+Forwards a call may take after its first send, and the epoch lag tolerated with it. See [`NebulaConfig.AuthorityCallMaxHops`](/docs/reference/core/nebula-config#authoritycallmaxhops).
+
+### Ledger [#ledger]
+
+```csharp
+public AuthorityCallLedger Ledger { get; }
+```
+
+The applied-call ids this worker remembers.
+
+### Applied [#applied]
+
+```csharp
+public long Applied { get; }
+```
+
+Calls decided here by outcome, for the worker's statistics.
+
+### Forwarded [#forwarded]
+
+```csharp
+public long Forwarded { get; }
+```
+
+### Rejected [#rejected]
+
+```csharp
+public long Rejected { get; }
+```
+
+## Methods
+
+### Decide [#decide]
+
+```csharp
+public AuthorityCallDecision Decide(ulong callId, uint callEpoch, byte hops, in AuthorityCallTarget target, uint tick);
+```
+
+Decide what to do with a call and record the decision. An [`AuthorityCallAction.Apply`](/docs/reference/worker/authority-call-action#apply) has already put the call id in the [`Ledger`](#ledger) when this returns; the caller runs the method exactly then.
+
+| Parameter | Description |
+| --- | --- |
+| `callId` | The id the sender minted. |
+| `callEpoch` | The entity epoch the sender observed when it made the call. |
+| `hops` | How many times the call has been forwarded before reaching this worker. |
+| `target` | What this worker knows about the entity. |
+| `tick` | This worker's current tick, for the ledger. |
+
+### DecideOnly [#decideonly]
+
+```csharp
+public AuthorityCallDecision DecideOnly(uint callEpoch, byte hops, in AuthorityCallTarget target);
+```
+
+The rules without the ledger: what [`Decide`](#decide) does before it checks for a duplicate. An apply here may still be a [`AuthorityCallOutcome.RejectedDuplicate`](/docs/reference/worker/authority-call-outcome#rejectedduplicate) there.
+
+### IsStale [#isstale]
+
+```csharp
+public bool IsStale(uint callEpoch, uint entityEpoch);
+```
+
+Whether a call made at `callEpoch` is too old (or too new) for an entity at `entityEpoch`: ahead of the entity, or more than [`MaxHops`](#maxhops) behind it.

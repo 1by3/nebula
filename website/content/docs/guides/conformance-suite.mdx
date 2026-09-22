@@ -1,0 +1,86 @@
+---
+title: Run the conformance suite
+description: Run the deterministic test suite that checks Nebula's handover, scope, and interaction guarantees, and read what each scenario proves.
+---
+
+The conformance suite is a set of deterministic tests that check Nebula's cross-worker guarantees on a small mesh built inside one process. Run it after you change Nebula itself, or when you want to confirm that a package version keeps the guarantees this page lists. It needs no build, no running mesh, and no game content.
+
+To run the whole suite from the repository root, close the Unity Editor for this project and run:
+
+```powershell
+powershell -File Tools/conformance.ps1
+```
+
+To run only the pure C# part, which takes seconds and works while the Editor is open, run:
+
+```powershell
+powershell -File Tools/conformance.ps1 -DotnetOnly
+```
+
+The script prints one row per test tier with the number of passed, failed, and skipped tests, the names of any failed tests, and a final `PASS` or `FAIL`. It exits with code 0 only when every tier that ran passed. Result files are written to `Logs/conformance/`.
+
+## Prerequisites
+
+- The .NET SDK, for the pure C# tier (`dotnet test`).
+- Unity 6000.6.0f1 installed through Unity Hub, for the Unity tier. Pass `-UnityVersion` or `-UnityPath` for another install.
+- The Unity Editor must be closed for this project when you run the Unity tier. The script refuses to start the Editor while `Temp/UnityLockfile` exists and tells you to close it or use `-DotnetOnly`.
+
+## What the suite runs
+
+Every conformance test is an NUnit test tagged with the category `Conformance`. The script runs that category in two places:
+
+| Tier | Where the tests are | How the script runs them |
+| --- | --- | --- |
+| Pure C# | `Packages/com.1by3.nebula/Services~/Nebula.Services.Tests` | `dotnet test --filter "TestCategory=Conformance"` |
+| Unity | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+
+The Unity tier stands up two real workers (the `NebulaWorker` component) in one Editor process. Each worker writes to a recording transport instead of a socket, and the test delivers the recorded bytes into the other worker's message handler. A handover in this tier is built, serialized, parsed, and applied by the same code a live mesh runs. What this tier does not include: a gateway, the orchestrator, leases, and the fixed-tick loop. A test triggers a handover directly instead of waiting for a worker to detect that an entity left its container.
+
+The pure C# tier runs the parts of a scenario that need no Unity types, such as the wire format of a message. The standalone gateway is built from the same sources, so this tier is also what confirms that the gateway and a worker agree on those bytes.
+
+You can also run the tests from the Unity Test Runner window (Window > General > Test Runner), filtered by the `Conformance` category, or with `dotnet test` directly using the filter above.
+
+## Scenarios
+
+Each scenario checks one guarantee. A scenario marked **available** has a test in the suite today. A scenario marked **not yet available** describes a guarantee that Nebula does not provide yet, or that has no test yet; the row is listed so that you can see what the suite will cover, not what you can rely on now.
+
+| # | Guarantee | Status |
+| --- | --- | --- |
+| 1 | The same [entity location](/docs/specifications/entity-location) (scope key, container ID, container-local pose) resolves to the same container in every process that holds the container, and still does after a handover, a restart, and a round trip through the persistence store. | Available |
+| 2 | Activating a scope is idempotent when two requesters ask at the same time, and a private key produces a distinct scope. See [Simulation scopes](/docs/guides/scopes). | Available |
+| 3 | An idle scope retires, restores with the same persisted entities, and refuses admission until the restore completes. See [Simulation scopes](/docs/guides/scopes). | Available |
+| 4 | Two scopes whose chunks share coordinates get distinct leases and distinct records, and neither sees the other's ghosts or replicated entities. See [scoped chunk grids](/docs/guides/scopes#a-scope-can-be-a-whole-world). | Available |
+| 5 | A cross-worker call is applied at most once when its target changes worker between send and apply, and a call carrying an outdated epoch is rejected with a reason. See [the cross-worker call contract](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call). | Available |
+| 6 | `StateAt(tick)` returns a pose that matches the recorded history on the authoritative worker and on a ghost, within a documented bound: a ghost is exactly one tick behind the owner, and a tick outside the recorded window is reported as unavailable rather than extrapolated. See [Lag compensation](/docs/guides/lag-compensation). | Available |
+| 7 | Entities in one [cohesion group](/docs/guides/cohesion) change worker together, the planner never assigns their containers to different workers, and a group too large for one worker is reported instead of being split. A held container is not rebalanced until its hold expires. | Available |
+| 8 | A server-driven entity that carries custom handover state keeps every field when it changes worker: position, rotation, velocity, `NetworkVariable` values, the bytes written by `WriteHandoverState`, the server-driven flag, and an epoch increased by exactly one. `OnLostAuthority` runs once on the old worker and `OnGainedAuthority` runs once on the new one, after the handover state is applied. A duplicate of the transfer message is ignored. | Available |
+| 9 | Nebula reports a physics joint that connects entities in different containers when those entities are not in a [cohesion group](/docs/guides/cohesion), and stays silent when they are. See [Distributed physics](/docs/concepts/distributed-physics). | Available |
+| 10 | Loss after a worker is killed with several entities dirty never exceeds the documented [durability window](/docs/guides/persistence#durability-window). | Available |
+| 11 | The lifecycle hooks fire in the documented order: the game is told a scope is coming to life, and whether anything is saved under its key, before any of the scope's containers restores; `OnContainerRestored` only after the restore; the before-retire window completes before anything is checkpointed; `OnRetired` only after the leases are released. See [Lifecycle hooks](/docs/guides/lifecycle-hooks). | Available |
+| 12 | A join or a transfer into a target that is at capacity is refused with a typed reason, and only the game's [admission hook](/docs/guides/scopes#when-a-target-is-full) can let one in anyway. Nothing is split or copied to make room. | Available |
+| 13 | A container that has grown hot is re-dealt to another worker along a boundary the game authored, without separating the entities of a [cohesion group](/docs/guides/cohesion) and without moving a container whose hold has not expired. When no such cut exists, the planner reports the container as saturated with the reason instead of shuffling containers pointlessly. | Available |
+| 14 | One worker holds two [scopes](/docs/guides/scopes) whose local coordinates overlap. Each shifts its floating origin on its own, moving only its own containers, entities and history; entities in each keep their precision; neither scope's container queries or physics answer for the other's; and the autoscaler's dry run puts both on one worker at low load. | Available |
+
+Scenario 13 is covered by `ConformanceRebalanceTests` (both tiers). See [Cohesion hints](/docs/guides/cohesion#rebalancing-a-hot-area) and [the Assignment plan card](/docs/guides/orchestrator-and-dashboard#assignment-plan).
+
+Scenario 4 is covered by `ConformanceScopedGridTests`, in both tiers: the .NET tier stands up two chunk grids at the same coordinates behind a real gateway and checks that a client in one is told about neither the other's entities nor its chunk rows, and the Unity tier checks that an entity ghosts across its own world's seam but never into a world standing on exactly the same ground.
+
+Scenario 14 is covered by `ConformanceScopeFrameTests` (both tiers: the autoscaler's dry run consolidating two low-load worlds onto one worker, and the per-scope region identifiers) and `ConformanceScopeFrameWorkerTests` (Unity tier: one real worker holding two worlds on the same ground, each shifting its own origin). The Unity tier drives real origin shifts, but it cannot create a scope's physics scene, which only exists in play mode — the live two-scene half is covered by the play-mode instance physics tests. See [Each world keeps its own floating origin](/docs/guides/infinite-runtime-world#each-world-keeps-its-own-floating-origin).
+
+Scenario 7 is covered by `ConformanceCohesionTests` (both tiers: the assignment policy and the telemetry the orchestrator reads) and `ConformanceCohesionHandoverTests` (Unity tier: two and three real workers handing a group over). See [Cohesion hints](/docs/guides/cohesion).
+
+Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `ConformanceHandoverWireTests` (both tiers), plus two older tests that check the handover-state format and a persistent entity's key crossing a handover. See [Physics and handover state](/docs/guides/physics-and-handover-state) for how to write handover state in your own behaviors.
+
+## Read a failure
+
+A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result, including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
+
+If the Unity tier reports `not run`, the summary says why: the Editor was not found, the project is open in an Editor, or the Editor produced no result file. The last case usually means a compile error; the Editor log names it.
+
+## What this suite does not measure
+
+The conformance suite is not a load test, a soak or a benchmark: every scenario runs in one process in
+milliseconds, and a slow machine never changes its answer. What a busy mesh does when a worker dies, a gateway is
+lost, the control plane restarts, or everything comes back at once — and how long each of those takes — is the
+[scale and failure suite](/docs/guides/scale-suite), which runs under its own category and is never picked up by
+`Tools/conformance.ps1`.

@@ -2,6 +2,414 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
+
+Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.
+
+#### Cross-worker call contract
+
+See [RPCs and worker messages](https://nebula.1by3.co/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call) and the [wire protocol specification](https://nebula.1by3.co/docs/specifications/wire-protocol#authority-calls); the design record is `docs/cross-worker-calls.md`.
+
+**What changed and why.** An `AuthorityRpc` sent to a ghost's owner was a bare RPC on the worker link: applied if the receiver had authority, forwarded once if it had just handed the entity off, otherwise dropped in silence. Nothing identified a call, so nothing could tell a repeat from a first arrival; the epoch on the message was never read; a forward could loop; the sender never learned the outcome. There is now a stated and tested contract: every call carries a sender-minted id, the epoch the sender saw and a hop count; the receiving worker applies it once, forwards it after a handover (bounded), or rejects it with a reason; and a caller may ask for that outcome.
+
+**Breaking wire format (protocol 18):**
+
+- `AuthorityRpc` (46) now carries `AuthorityCallMsg` (`u64 call_id, u8 hops, u8 flags, u64 net_id, u32 entity_epoch, u8 behavior_index, u32 method_hash, bytes args`) instead of `EntityRpcBody`. `EntityRpc` (13) and `ServerRpc` (21) are unchanged.
+- New message `AuthorityRpcReply` (49): `u64 call_id, u8 outcome, u32 entity_epoch, u8 hops`, sent to the worker that minted the call id when the call asked for a reply.
+- A worker now ignores an `AuthorityRpc` from a peer that is not a worker.
+
+**Behaviour that changed:**
+
+- A cross-worker `AuthorityRpc` is applied **at most once** per call id: each worker keeps the ids it has applied for 4096 calls or 600 ticks (10 s), and rejects a repeat as `RejectedDuplicate`.
+- A call whose epoch is ahead of the receiver's copy, or more than `AuthorityCallMaxHops` handovers behind it, is rejected as `RejectedStaleEpoch` instead of being applied (design D3: the window is the hop bound, because a call that legitimately chased its target through forwarding is never further behind than that).
+- Forwarding after a handover is bounded to `AuthorityCallMaxHops` forwards (default 3) and ends in `RejectedHopLimit`; before, it was once, then silence. A worker holding a ghost now also forwards to the owner its ghost names, not only to a worker it handed the entity to itself, and never back to the peer the call came from.
+- Every rejection is logged as a warning on the worker that decided it, with the reason, the call id, the epochs and the hop count.
+
+**New `NebulaConfig` field:** `AuthorityCallMaxHops` (3), with the `-nebula-authority-call-hops` command-line override, mirrored into the services config.
+
+**New public API:**
+
+- `NetworkBehaviour.AuthorityRpcWithReply(method, args…, onDone, timeoutSeconds = 5)` (0–4 arguments) — as `AuthorityRpc`, and reports the outcome to `onDone` exactly once, on the worker's main thread: `Accepted`, `RejectedStaleEpoch`, `RejectedUnknownEntity`, `RejectedHopLimit`, `RejectedDuplicate`, `RejectedUnreachable` or `TimedOut`. Returns the call id (0 when applied locally or refused before sending). `NetworkBehaviour.DefaultAuthorityCallTimeoutSeconds`.
+- `AuthorityCallOutcome`, `AuthorityCallResult` (`CallId`, `Outcome`, `TargetEpoch`, `Hops`, `Succeeded`).
+- `AuthorityCallId`, `AuthorityCallLedger`, `AuthorityCallRouter`, `AuthorityCallTracker`, `AuthorityCallTarget`, `AuthorityCallDecision`, `AuthorityCallAction` (`Runtime/Worker/AuthorityCallContract.cs`) — the pure C# rules the worker runs, compiled into `Services~` too and covered by `ConformanceCallContractTests` (`[Category("Conformance")]`).
+- `AuthorityCallMsg`, `AuthorityCallReplyMsg`, `AuthorityCallFlags`, `MsgId.AuthorityRpcReply`.
+- `IRpcSink.SendAuthorityRpc(identity, behaviourIndex, methodHash, args, onDone, timeoutSeconds)` — the reply-requesting overload. A custom `IRpcSink` must implement it.
+- `NebulaWorker.AuthorityCallsApplied`, `AuthorityCallsForwarded`, `AuthorityCallsRejected`, `AuthorityCallsPending`.
+
+**Unchanged:** the fire-and-forget `AuthorityRpc` overloads keep their signatures and are governed by the same rules. Worker messages (`SendToWorker`) remain fire-and-forget: one delivery on the chosen channel, no call id, no forwarding, no reply; the guide now says so.
+
+**Migration notes:**
+
+- Rebuild and restart every worker, gateway, orchestrator, and client build together.
+- A handler that relied on a cross-worker call arriving after several handovers should expect `RejectedHopLimit` past three; raise `AuthorityCallMaxHops` if your world hands entities over that often, or use `AuthorityRpcWithReply` and retry from the caller.
+- A custom `IRpcSink` implementation must add the new `SendAuthorityRpc` overload.
+
+#### Entity location contract
+
+See the [entity location contract](https://nebula.1by3.co/docs/specifications/entity-location) and `docs/location-contract.md`.
+
+**What changed and why.** There was no single, protocol-visible way to say where an entity durably is that did not depend on which worker held it: the wire named a container by a dense index or a carrier's net id, the instance an entity was in was known only as a 64-bit hash, and a persisted record carried no scope at all. `EntityLocation` is now that one answer: an opaque scope key, the container's string id and the container-local pose, the same value on the worker, gateway, orchestrator and client and in the store, unchanged by handover, worker restart, mesh restart and a store round trip. Nebula never parses the scope key.
+
+**Breaking wire format (protocol 18):**
+
+- `InstanceContainerInfo` (carried in `ContainerOwnership` entries and stored Base64-encoded on a runtime container's lease row) gained a trailing `string scope_key`: the instance key the game chose (`TemplateId/key`), beside the hash that was already there. A lease row stored by an earlier release has no key and reads as empty; the instance keeps working and reports an empty scope key until it is retired and prepared again.
+
+**New public API:**
+
+- `EntityLocation` (`Runtime/Containers/EntityLocation.cs`, pure C#, also in the standalone services) — the triple, with exact equality, `ToString`, `Write`/`Read`, `ContainerKind`, `IsPublic`, `HasContainer`, `Of(container, pose)` and `Resolve()`, which finds the container by id in this process's `ContainerRegistry` and refuses one in another scope. `LocationContainerKind` classifies a container id by its form (`None`, `Static`, `Runtime`, `Dynamic`).
+- `NetworkIdentity.Location` and `NetworkIdentity.ScopeKey`; `Container.ScopeKey` (following the carrier for a dynamic container); `InstanceContainerInfo.ScopeKey`.
+- `PersistedEntityRecord.ScopeKey` and `PersistedEntityRecord.Location` (get and set). `NebulaPersistence.BuildRecord` fills the scope key. The JSON body gained `"scopeKey"`, the local store file is now version 2 (version 1 files still load, as the public world), and the SQL store gained a `scope_key` column added on first open.
+- `NebulaWorker.PrepareInstance` records the scope key on the lease it ensures and refuses a key that collides with a different non-empty key under the same hash.
+
+**Conformance tests:** `Tests/EditMode/ConformanceLocationTests.cs` (`[Category("Conformance")]`) runs against the Unity registry in the package and against the service registry in `Services~/Nebula.Services.Tests`: the same triple resolves the same container in two independently populated registries, survives a handover and a store round trip, pins the wire bytes of a fixed triple, and reads older rows and records as the public world.
+
+**Migration notes:**
+
+- Rebuild and restart every worker, gateway, orchestrator and client build together.
+- Persisted records and lease rows from earlier releases are read as the public world (`ScopeKey == ""`). Nothing has to be reset; retire and re-prepare an instance if its entities should report their scope key.
+- A dynamic container's id (`label#netId`) is reported honestly as living for one mesh run; persistence continues to name a carried entity's place by `CarrierKey`, not by that id.
+
+#### Distributed physics model and diagnostics
+
+Concepts page and developer-time checks (`docs` design: the [Distributed physics](https://nebula.1by3.co/docs/concepts/distributed-physics) page). Added:
+
+- [Distributed physics](https://nebula.1by3.co/docs/concepts/distributed-physics) concepts page: what a physics interaction is on one worker, across a seam through a kinematic ghost one tick behind, and why a joint or `ArticulationBody` between entities in different containers is unsupported.
+- `PhysicsIslands`: the runtime rule for whether two networked bodies share one authority (`SameIsland`, `ContainerOf`, `FindCrossIslandJoints`) with an `IsCohesive` hook reserved for cohesion hints (NEB-223). Until those exist every cross-container joint is reported.
+- **Nebula > Validate Project** warns about every `Joint` or child `ArticulationBody` in the open scenes and the network prefabs whose bodies belong to entities in different containers, naming both containers with the joint as the log context (`NebulaValidator.CheckPhysicsIslands`).
+- A worker logs one warning per entity when it spawns or gains authority over an entity with such a joint (`PhysicsIslands.CheckOnAuthority`; set `PhysicsIslands.WarnOnAuthority` to false to turn it off). Entities without a joint cost one component lookup per spawn.
+- `NebulaDiagnostics.RejectedAuthorityRpcSends` and `NebulaWorker.RejectedAuthorityRpcSends` count `AuthorityRpc` sends discarded because the caller held neither an authoritative nor a ghost copy; the worker's `profile` log line reports it as `rpcRejected`.
+
+Changed:
+
+- The warning for an `AuthorityRpc` sent from a copy that is neither authoritative nor a ghost now states the rule and the reason, and is checked before the RPC sink so it also fires in a process without one. Routing is unchanged.
+
+#### Keyed simulation scopes activated on demand
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes) and `docs/scope-activation.md`.
+
+**What changed and why.** The only way to bring a private world into being was `NebulaWorker.PrepareInstance`, which needs an authored `InstanceBoundary` and a worker that is already running to ask. Matchmaking services, travel menus and login flows all decide where a player goes *before* the player is anywhere. `IControlPlane.ActivateScope(key, definition)` is that call: ask the mesh for a shared simulation scope by key, from any process that holds a control plane, and get the same containers for the same key however many requesters ask and whichever orchestrator run they ask in.
+
+**Breaking wire format (protocol 18, appended after the rest of 18 was settled; the version is unchanged):**
+
+- `HelloMsg` gained a trailing `string scope_key`. A `Hello` that ends before it reads as the public world, so a client built against an earlier snapshot of protocol 18 still joins. It is ignored on a gateway or worker `Hello`.
+
+**Control-plane document and storage:**
+
+- The control-plane document gained a `"scopes"` array, written only when at least one scope has been activated. A document without it parses to an empty list, so a stored document from an earlier release reads as before.
+- New control-plane ops `ActivateScope` and `RemoveScope` on `POST /api/control-plane`, which is the whole HTTP surface for activation — there is no new endpoint.
+- New table `nebula_scope (scope_key TEXT PRIMARY KEY, definition TEXT NOT NULL, created_at BIGINT NOT NULL)` in the orchestrator's SQLite/PostgreSQL database, created by `EnsureSchema`. A file-backed control plane keeps the same claims under `<control-plane>.scopes/`. This primary key is the uniqueness constraint that makes activation idempotent across concurrent requesters and across orchestrator runs; a memory-only control plane has no such constraint and is idempotent only while it lives.
+
+**New public API:**
+
+- `IControlPlane.Scopes`, `IControlPlane.ActivateScope(ScopeActivationRequest)`, `IControlPlane.RemoveScope(string)`; extension methods `FindScope(key)` and `IsScopeReady(key or ScopeInfo, workerTimeoutSeconds = 15)`.
+- `ScopeInfo`, `ScopeActivationRequest`, `ScopeDefinition`, `ScopePart`, `ScopeKind`, `ScopeState`, `ScopeJson`, `IScopeStore` and `ScopeKeys` (`Runtime/ControlPlane/ScopeActivation.cs`, pure C#, compiled into `Services~` too). `ScopeKeys.Hash(key)` is the derivation `NebulaWorker.InstanceKey` has always used — `InstanceKey` now calls it — and `ScopeKeys.ContainerId(key, partId)` is the runtime container id that follows from it.
+- `NebulaClient.ScopeKey` (seeded from `-nebula-scope`) and `HelloMsg.ScopeKey`.
+
+**Behaviour that changed:**
+
+- `NebulaWorker.PrepareInstance` now builds a `ScopeDefinition` and calls `ActivateScope` with itself as the preferred worker. Its signature, its return value, its collision exceptions and the guarantee that the asking worker owns the new containers from the first change are unchanged; an instance created by a boundary now also has a scope row.
+- A gateway spawns a player only into a container whose `Container.ScopeKey` equals the client's `HelloMsg.ScopeKey`. A client that named a scope with no live owner is held in `JoinState.Starting` and placed with no reconnect once the scope is ready; it is never placed in another scope as a fallback, and a client that named nothing is never placed inside an instance.
+- A second activation of a key with a *different* definition is refused and logged; the stored scope stands and nothing changes, so the caller keeps its current scope and may retry.
+
+**What activation does not do:** it does not decide who may enter and does not load content (that stays with `InstanceScenes` and the `PrepareTransfer` handshake). `RemoveScope` removes a scope's row, claim and lease rows without draining it; idle retirement and restore are the scope lifecycle, below.
+
+#### Scope lifecycle: idle retirement and re-activation
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes#retiring-and-re-activating-a-scope); the design record is `docs/scope-lifecycle.md`.
+
+**What changed and why.** A scope nobody was in kept its lease rows for ever: `RemoveScope` and the per-container `ReleaseRuntimeContainer` existed, but deciding a whole scope was finished with, saving what was in it, letting go of every part together and refusing admission while it came back was left to each game — and the instancing guide said so ("automatic empty-instance expiration and suspension are not currently provided"). The orchestrator now runs that sequence itself, with the policy as a hook.
+
+**Breaking wire format (protocol 18):**
+
+- `JoinStatus` (5) gained a trailing `u8 reason` (`JoinHoldReason`). A message that ends before it — from a gateway built before this release — reads as `WorldStarting`, which is the only reason such a gateway ever held a join.
+
+**Control-plane document (additive):** a scope row gained `stateSince` and, while a step is in flight, an `acks` array of `{container, phase, count, worker}`. A row without them reads as an active scope with no step running, so a document written by an earlier orchestrator is understood unchanged.
+
+**New behaviour:**
+
+- A scope whose parts have held nothing for `ScopeIdleRetireSeconds` is retired: marked `Retiring` (which refuses admission at once), each part runs the before-retire window, force-checkpoints every persistent entity in it, waits for the store to confirm the writes, empties itself and acknowledges; only when every part has acknowledged are the lease rows deleted and the scope marked `Retired`. The row is kept, so the key keeps its identity.
+- Idle age is the **smallest** lease-row age over the scope's parts, so one busy part keeps the whole scope hot. The owning worker re-stamps the lease of a part that holds a client-owned entity, a non-persistent entity, or a persistent entity with unsaved changes — the cases where retiring would lose something.
+- Activating a retired key puts the scope in `Restoring` and brings its lease rows back with the same derived container ids. The ordinary lease-landing restore loads the records; the scope becomes `Active`, and admits clients, only when every part has reported its restore complete.
+- A client whose `Hello` names a scope that is not `Active` is held in `JoinState.Starting` — welcomed, never dropped — and placed with no reconnect once the scope admits again. It is told why: `ScopeNotReady`, `ScopeRestoring` or `ScopeRetiring`.
+- Each step has a 30 s deadline (`ScopeLifecycle.StepTimeoutSeconds`), logged as a warning, so a worker that dies mid-step cannot leave a scope nobody can ever enter or join.
+- Nothing here deletes a persisted record. Transient (non-persistent) contents are lost by a retire, which is why the default policy refuses to retire a part that holds any.
+
+**New `NebulaConfig` field:** `ScopeIdleRetireSeconds` (300 s; 0 turns retiring off), with `-nebula-scope-idle-retire`, mirrored into the services config. It never applies to the public world.
+
+**New public API:**
+
+- `ScopeLifecycle` (`Runtime/ControlPlane/ScopeLifecycle.cs`): `ShouldRetire` (the policy hook), `RetireWhenIdle` (the default), `IdleSeconds`, `Occupancy`, `Admits`, `NextState`, `StepTimeoutSeconds`; `ScopeRetirePolicy`, `ScopeRetireContext`.
+- `ScopeState.Retiring`, `Retired`, `Restoring`, `ScopeState.AdmitsClients`; `ScopePhase`; `ScopeAck`; `ScopeInfo.StateSince`, `Acks`, `FindAck`, `AllAcked`, `AckedCount`.
+- `IControlPlane.SetScopeState(scopeKey, state)` and `IControlPlane.AckScopePart(scopeKey, containerId, phase, count, workerId)` — implemented by `LocalControlPlane`, `ControlPlaneHost` and `RemoteControlPlane`, and reachable over `POST /api/control-plane` as the ops `SetScopeState` and `AckScopePart`. A custom `IControlPlane` must implement both.
+- `NebulaPersistence.CheckpointContainer(containerId)`, `ContainerRestored` (`Action<string, int>`), `IsContainerRestored`, `RestoredCountFor`.
+- `NebulaWorker.EmptyContainer(container)` (the contents half of `ReleaseRuntimeContainer`) and `NebulaWorker.ScopeLifecycleAgent`; `WorkerScopeLifecycle` with `IsBusy`, `RetiringParts`.
+- `JoinHoldReason`, `JoinStatusMsg.Reason`, `NebulaClient.JoinHoldReason`.
+
+**Dashboard:** `/api/state` gained a `scopes` array (`key`, `state`, `parts`, `ready`, `players`, `entities`, `idleSeconds`, `stateSeconds`, `ageSeconds`, `acked`, `containers`) and `scopeIdleRetireSeconds`; the dashboard shows a Scopes card, hidden until a mesh activates one.
+
+#### Scoped procedural chunk grids
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes#a-scope-can-be-a-whole-world) and [Build an infinite runtime world](https://nebula.1by3.co/docs/guides/infinite-runtime-world); the design record is `docs/scoped-chunk-grids.md`.
+
+**What changed and why.** The turnkey chunked world was one grid per process: `NebulaChunks.Grid`, a static `RuntimeGrid`, with a chunk's id spending all 63 usable bits of the runtime id on three signed 21-bit axes. Chunk (x, y, z) was therefore one container, one lease row and one persistence record for the whole mesh, so a game with instanced open areas, several maps or one procedural region per party could not use it. There is now one grid **per scope**, each with its own definition, allocator, leases, persistence container ids and interest.
+
+**Breaking wire format (protocol 18):**
+
+- `InstanceContainerInfo` (carried in `ContainerOwnership` entries and stored Base64-encoded on a runtime container's lease row) gained a trailing `string part_id`: which part of its scope the container is, appended after `scope_key` and read with the same tolerance — a row stored by an earlier release has none and reads as empty. For a scoped chunk the part id is its coordinate (`c/x/y/z`), which is how a client or gateway places a chunk whose hashed id it never computed.
+
+**Ids and migration:** the public world's chunk ids are unchanged (`RuntimeGrid.PackId`, still pinned by `RuntimeGridTests`), and a scoped grid's chunk id is `ScopeKeys.ContainerId(scopeKey, "c/x/y/z")` — the same derivation every other scope's containers already used. No persisted id was rewritten, no coordinate range narrowed, and rows from protocol 17 read as the public scope.
+
+**New public API:**
+
+- `ChunkGridDefinition` (`CellSize`, `Planar`, `Ring`, `RetireSeconds`, `Anchor`, `Validate`, `ToJson`/`FromJson`, `ToScopeDefinition`, `Of(scope)`, `Infer(coord, box)`) and `ChunkKeys` (`PartId`, `TryParsePartId`, `RuntimeId`, `ContainerId`) — pure C#, compiled into `Services~` as well.
+- `ScopeKind.Grid`: a scope whose payload is a `ChunkGridDefinition` and whose only part is the anchor chunk, so activating an unbounded world does not enumerate it.
+- `NebulaChunkedWorld.ActivateGrid(controlPlane, scopeKey, definition, requester, preferredWorkerId)` and `EnsureLocalGrid(scopeKey, definition)`; `NebulaChunkedWorld.ScopedAllocators`.
+- `NebulaChunks.GridFor(key)`, `AllocatorFor(key)`, `Grids`, `ActiveScopeKeys`, `IsActiveFor(key)`, `GridOf(container)`, `GridOf(id)`, `ScopeOf(container)`, `BoundsOfId(id, fallback)`, and scope-qualified overloads of `At`, `CoordOf`, `EnsureAt` and `SeedOf`. `ChunkContext` gained `ScopeKey` and `Grid`.
+- `RuntimeGrid(cellSize, planar, scopeKey)`, `RuntimeGrid.From(definition, scopeKey)`, `ScopeKey`, `InstanceId`, `IsPublic`, `IdOf(coord)`, `ContainerIdOf(coord)`, `TryCoordOf(id, out coord)`, `Adopt(id, partId, out coord)`, `Owns(container)`.
+- `RuntimeGridAllocator.ScopeKey`, `AddPin(coord)`, `RemovePin(coord)`.
+- `NebulaWorker.RequestRuntimeContainer(id, frameBounds, InstanceContainerInfo)` — ask for a runtime container that belongs to a scope.
+
+**Behaviour that changed:**
+
+- `NebulaChunks.Grid`, `.Allocator` and every unqualified lookup still mean the public world, and a game with one world sees no change.
+- A gateway collects a client's container rows in the client's own scope, and additionally in the public world only when the client is public or its scope sets `ObservePublic`. Before, the window query ran in the public world only: a scoped client was never told about its own scope's empty terrain, and was told about the public world's whether or not it observed it.
+- The worker-side chunk allocator rings only pawns of its own scope, retires only its own grid's chunks, and a worker's floating origin follows the centroid of the **public** cells it leases.
+- `ContainerRegistry.RuntimeBoundsInFrame` is consulted for every runtime container on an origin shift (with the translated box as the fallback), not only for public ones, so a scoped chunk is recomputed from its coordinate instead of drifting. `NebulaChunks` installs a hook that routes by grid.
+- `InstanceScenes.Prepare` no longer tries to create a scene outside play mode; it returns true after its resource checks. This only affects EditMode tests and tooling.
+
+**Unchanged:** entities never ghost, interact or are announced across scopes — container adjacency was already qualified by isolation id, and the conformance scenario now pins it. Interest region ids stayed scope-free in this item (design D12); per-scope origin frames, below, salt them.
+
+#### Per-scope origin frames
+
+See [Each world keeps its own floating origin](https://nebula.1by3.co/docs/guides/infinite-runtime-world#each-world-keeps-its-own-floating-origin) and [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes); the design record is `docs/scope-frames.md`.
+
+**What changed and why.** A process had one floating origin: `WorldOrigin.Cell` was a static, the chunked world computed one centroid over every cell a worker leased, and `ContainerRegistry.ShiftRuntime` translated every runtime container by that one delta. That is correct for one world and wrong for two: an arena at (0, 0, 0) and a continent at (100000, 0, 100000) cannot both sit near Unity's origin, so one of them was simulated 6.4 million metres out, where a 32-bit float has about half a metre of resolution. Putting each scope on its own worker would have made worker count follow the number of worlds instead of the amount of play. Each scope now owns its origin frame instead, so one worker hosts as many worlds as its load allows and each of them stays precision-safe.
+
+**No wire change.** Protocol stays 18. `InterestSubscribe` carries the same fields with the same encoding; region identifiers in `add_region`, `remove_region` and `focus_region` are now XORed with the scope's salt, and the public world's salt is zero, so a mesh with no scopes puts exactly the bytes it did before on the wire. Lease rows, telemetry and persistence still carry absolute boxes and are unchanged.
+
+**New public API:**
+
+- `ScopeFrame` and `ScopeFrames` (`Packages/com.1by3.nebula/World/ScopeFrames.cs`): `ScopeFrames.Public` (which *is* `WorldOrigin`), `Of(instanceId)`, `Of(scopeKey)`, `HasFrame`, `FrameIdOf`, `Ensure`, `Remove`, `All`, `ScopedCount`, `AnyShifted`; per frame `Cell`, `CellSize`, `ShiftCount`, `OriginOffset`, `ShiftDelta`, `Shifted`.
+- `RuntimeGrid.Frame` and `RuntimeGrid.ShiftOrigin(coord)` — move this grid's origin and nothing else. The static `RuntimeGrid.ShiftOriginTo` is unchanged and still means the public world.
+- `ContainerRegistry.ShiftRuntime(instanceId, delta)`, `ToFrame(box, instanceId)`, `ToAbsolute(box, instanceId)`. The existing no-argument forms remain and mean the public frame.
+- `RegionKeys` (`SaltOf`, `Salt`, `Unsalt`) — pure C#, compiled into `Services~` as well.
+- `RegionPublisher.WideMask(grid, instanceId, x, y, z, radius)` and `ClientInterest.ScopeSalt`.
+
+**Behaviour that changed:**
+
+- A worker follows a centroid **per scope** (`NebulaChunkedWorld.FollowOwnedCells`) and shifts each scope's origin on its own, moving only that scope's containers, the entities in them, their `StateHistory` world poses, their interpolation buffers and the content parented under `ChunkContext.Root`. The public world's shift no longer moves a scoped grid's containers, and vice versa.
+- A scope gets a frame of its own only when it has a chunk grid in this process. Instance scopes (`ScopeKind.Parts` — a room, a dungeon) share the public frame and behave exactly as before.
+- A client still keeps exactly one origin; it is now the frame of the scope its pawn stands in, which for an unscoped game is the public world's. Poses, prediction and interpolation are unchanged.
+- Interest region identifiers are salted per scope end to end — the worker's index, the publisher's masks and wide-entity matching, the gateway's per-client windows, foci, region → clients map and worker resolution, and the subscribe messages. This closes the cost recorded as design D12 of the scoped chunk grids: a worker no longer streams a gateway the entities of a scope that gateway has no client in. The per-client instance check that decides what a client actually sees is unchanged.
+- `NebulaWorker` writes a scoped chunk's lease box through that scope's frame, and `NebulaClient` reads one back through it. A container that reached a process before its grid did is re-placed when the grid activates.
+- `ContainerRegistry.Overlapping` and `Find` are asked in the client's own scope when the gateway resolves which workers own a region.
+- **Bug fix, all worlds:** `StateHistory.Shift` moved only the recorded poses of entries with *no* container, on the reasoning that a contained entry is rebuilt from its container. Nothing rebuilds it — `StateAt` returns the stored pose — so after an origin shift a contained entity's history answered with a pose from the previous frame. Every entry of the frame that moved is now shifted. This was wrong in the public world too and is corrected there as well.
+
+**Unchanged:** the assignment policy, the assignment planner and the autoscaler never mention a scope; twelve quiet worlds consolidate onto one worker exactly as twelve quiet chunks of one world would, which conformance scenario 14 asserts both ways. `RuntimeGrid.PackId` and `InterestGrid.PackRegion` are untouched and still pinned.
+
+**Known gap:** `WorkerTelemetry` reports entity positions through the public origin, so a scoped entity's reported absolute position on a worker whose scoped frames have moved is off by that scope's offset. It is a diagnostic surface only — nothing routes, leases or simulates on it.
+
+#### Conformance suite
+
+A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools/conformance.ps1` (`-DotnetOnly` for the pure C# tier while the Editor is open). Every test is tagged `[Category("Conformance")]`; the script runs the category in `Nebula.Services.Tests` (`dotnet test`) and in `Nebula.Tests.EditMode` (Unity batchmode), and prints one PASS/FAIL summary with counts. Design and scenario ledger: `docs/conformance-suite.md`; user page: [Run the conformance suite](https://nebula.1by3.co/docs/guides/conformance-suite).
+
+- `ConformanceMesh` (`Tests/EditMode/ConformanceMesh.cs`): two or more real `NebulaWorker` components in one Editor process, each with a recording transport and peer records for the others; `Pump()` delivers every recorded message into the receiving worker's own `Dispatch`. Handovers here run the production builder, wire format and applier end to end, with no gateway, leases or tick loop.
+- Covered in this release: scenario 14 (per-scope origin frames, `ConformanceScopeFrameTests` in both tiers and `ConformanceScopeFrameWorkerTests` in the Unity tier), scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 3 (the scope lifecycle, `ConformanceScopeLifecycleTests`, `ConformanceScopeCheckpointTests` and `ConformanceScopeAdmissionTests`), scenario 4 (scoped chunk grids, `ConformanceScopedGridTests` in both tiers), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 6 (historical state, `ConformanceStateHistoryTests`), scenario 8 (server-driven handover state, below), scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`) and scenario 10 (the persistence durability window, `ConformancePersistenceDurabilityTests`). Scenario 7 is covered by the cohesion item below.
+- Scenario 8, covered: a server-driven entity with `WriteHandoverState`/`ReadHandoverState` state, NetworkVariables and a `NetworkTransform` crosses workers and keeps every field, bumps its epoch by one, fires `OnLostAuthority`/`OnGainedAuthority` once each in order, and ignores a replayed transfer (`ConformanceHandoverStateTests`). The wire leg (`ConformanceHandoverWireTests`, every `AuthorityTransferMsg` field) also compiles into the service tests.
+- Tagged into the suite: `ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks` and `PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord`.
+
+No runtime behaviour changed.
+
+#### Cohesion hints
+
+The game can now declare that a set of entities must be simulated by one worker and move between workers as a unit, and that a container should not be rebalanced for a bounded time. See [Cohesion hints](https://nebula.1by3.co/docs/guides/cohesion); the design record is `docs/cohesion-hints.md`.
+
+**Wire (protocol 18, no further version bump):** `EntitySpawnMsg` gains a trailing `u32 cohesion_group` (0 for none), written after `view_seq` and before `cost_weight`. It therefore travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, so every process holding a copy knows which group the entity is in.
+
+**New public API:**
+
+- `NetworkIdentity.CohesionGroup` (`uint`, 0 = none), `JoinCohesionGroup(uint)`, `LeaveCohesionGroup()`, and a **Cohesion** section in the inspector for authoring one on a prefab.
+- `CohesionGroups` (`Runtime/Core/CohesionGroups.cs`): the process-wide table of group membership - `Members`, `MemberCount`, `GroupCount`, `Groups`, `Same(a, b)`.
+- `NebulaWorker.HoldContainer(container | containerId, seconds)`, `ReleaseHold(containerId)`, `HoldRemaining(containerId)`, `HeldContainers`, `MaxHoldSeconds` (120), `NebulaWorker.ContainerHold`, `NebulaWorker.CohesionSpan`.
+- `NebulaDiagnostics.SplitCohesionGroups`: handovers that could not move a whole group because a member was not owned here. Each is also logged as a warning.
+- `AssignmentInput.Holds`, `AssignmentInput.Cohesion`, `AssignmentInput.IsHeld(id)`, `AssignmentInput.DropHeldChanges(changes)`; `CohesionGroupInfo`, `UnsplittableGroup`; `CostBalancedAssignmentPolicy.MaxGroupUtilization` (1) and `.Unsplittable`.
+- `MeshTelemetry.CopyHolds`, `CopyCohesion`, `HolderOf`, `ParseHolds`, `ParseCohesion`, `MeshTelemetry.CohesionSpan`.
+
+**Behaviour that changed:**
+
+- A handover of any member of a cohesion group now also hands over every other member the sending worker owns, to the same worker, each as a handover of its own (so a member that is a carrier still takes its passengers). A member the sender does not own cannot be included: that is logged and counted, never a silent split, and the transfer that was asked for still goes ahead.
+- `PhysicsIslands.SameIsland` treats two entities in one cohesion group as one island, so `Nebula > Validate Project` and the worker's authority check no longer warn about a joint between them. `PhysicsIslands.IsCohesive` remains as the extension point for a guarantee that comes from elsewhere.
+- The worker telemetry document gains `holds` (container id and seconds remaining) and `cohesion` (group, members, and the containers it spans under `in`) arrays. The orchestrator turns a reported hold into a deadline on its own clock, so the two processes need no common time base; a hold dies with the worker that asked for it.
+- `CostBalancedAssignmentPolicy` deals the containers of a cohesion group as one item, together with any affinity groups they touch, and skips moves for held items. A group whose containers need more than `MaxGroupUtilization` of a tick budget is dealt whole anyway and reported in `Unsplittable`, in `Note` and on the dashboard.
+- The orchestrator state document gains a `cohesion` object (`holds`, `groups`, `unsplittable`) and the dashboard a **Cohesion** card, shown only when there is something in it.
+- Conformance scenario 7 is covered (`ConformanceCohesionTests`, both builds; `ConformanceCohesionHandoverTests`, real workers), and the cohesion-group test of scenario 9 is no longer `[Ignore]`d.
+
+#### Capacity refusals on the join messages (protocol 18)
+
+`JoinRejected` (6) gained two trailing fields, `u8 code` (`JoinRejectReason`: `0` none, `1` at capacity, `2` denied by the admission hook) and `f16 saturation` (how full the target was, `1.0` being the whole of the dominant cost component's budget). A message that ends before them — from a gateway built before this release — reads as `None` and `0`, and nothing is assumed. `JoinStatus.reason` gained the value `5`, `JoinHoldReason.AtCapacity`, for a client the admission hook asked to hold rather than refuse. The protocol version is **not** bumped again: 18 is already unreleased and already breaking. See `docs/capacity-admission.md`.
+
+#### Per-entity cost weights (protocol 18)
+
+`EntitySpawnMsg` gained a trailing `f16 cost_weight` (last in the body, after `cohesion_group`), the entity's cost multiplier
+(`NetworkIdentity.EffectiveCostWeight`). It travels on `EntitySpawn`, `GhostSpawn` and
+`AuthorityTransfer`, so the worker an entity hands over to reports the same cost for it. `0` on the
+wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-telemetry.md`.
+
+### Added
+
+#### Scale and failure suite (NEB-237)
+
+Measured, repeatable evidence of what a mesh does under load and when something breaks, in two clearly separated layers. Design record: `docs/scale-suite.md`; user page: [Run the scale and failure suite](https://nebula.1by3.co/docs/guides/scale-suite). No runtime behaviour changed; this is test and tooling only.
+
+- **Synthetic layer**: twelve scenarios over the in-process fake mesh (real gateways, real control plane, real interest code, real client handshakes on loopback), tagged `[Category("Scale")]` so `Tools/conformance.ps1` never picks them up — `dotnet test --filter "TestCategory=Scale"`, about eighty seconds. Sustained load (120 clients, 4 workers, 2 gateways), a 150-client burst, four keyed scopes asserted for zero cross-scope leakage, a worker kill with its restore and no duplicate entities, a gateway lost without a drain, a control-plane restart with and without its storage, a whole-mesh restart curve, autoscale and rebalance under holds, and a rolling upgrade. The ones that run a mesh for seconds also carry `Soak`, so the default `TestCategory!=Soak` run is unaffected.
+- **Real-worker layer**: `Tools/scale-suite.ps1`, which starts a real mesh through the `nebula` CLI, drives `Services~/Nebula.LoadGen`, kills real processes, and scrapes `/api/state`, `/api/cost` and each worker log's `[nebula] profile` line into CSV. Modes `-DryRun` (check preconditions, run nothing), `-Synthetic` (run the other layer) and the real run, plus `-Build`.
+- **Artifacts**: one CSV per scenario under `Logs/scale/`, stamped `synthetic` or `unity` in the first column and in every line of runner output, so the two layers are never read as one series. The whole-mesh restore curve is compared against a checked-in baseline, `docs/baselines/mesh-restart.csv`.
+- **Test fixtures** (`Services~/Nebula.Services.Tests/Fixtures/`): `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway(hard)`, `RestartControlPlane(snapshot)`, `FakeWorker.SpawnIntoRequestedContainer`, and the new `ScaleHarness`/`ScaleWorld` helpers.
+- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there is no protocol compatibility window at all — a gateway requires an exact version match — so a rolling upgrade may replace processes at one protocol version but may not span two.
+
+#### Lifecycle hooks for materialization and dematerialization (NEB-242)
+
+Game callbacks at the moments the mesh brings a container or a scope to life, or puts it to sleep, with the ordering a game needs to seed from — or collapse into — its own state. Design record: `docs/lifecycle-hooks.md`; user page: [Lifecycle hooks](https://nebula.1by3.co/docs/guides/lifecycle-hooks). Conformance scenario 11.
+
+- `NebulaLifecycle`, a static hook set raised on the main thread on the worker that owns the container: `OnScopeActivating(ScopeInfo scope, bool hasRecords)`, `OnContainerRestored(Container container, int restored)`, `OnBeforeRetire(Container container, CancellationToken cancel)` (async, awaited) and `OnRetired(Container container)`. `NebulaLifecycle.Reset()` clears them and runs at the start of a play session. A handler that throws is logged and ignored; the retire or the restore carries on.
+- **Ordering guarantees**, each covered by a test: `OnScopeActivating` runs before any of that scope's containers restores on that worker (the restore is held for it); `OnContainerRestored` runs after the restore, once per lease, including for a container with nothing saved; `OnBeforeRetire` completes — or is cancelled on the existing 10 s window, with a warning — before the forced checkpoint is issued and before anything is despawned; `OnRetired` runs after the orchestrator has released the part's lease.
+- New store method `IPersistenceStore.CountRecords(scopeKey, containerId, onCounted)`: how many records a scope holds, without reading them. A `SELECT COUNT(*)` on SQLite and PostgreSQL (with a new `nebula_entity_scope` index), a walk in `LocalPersistenceStore`, and the new additive endpoint `GET /api/store/count?scope=&container=` for `RemotePersistenceStore` — only the number travels. **A custom `IPersistenceStore` implementation must add it.** No wire protocol change and no persisted-row change.
+- `IPersistenceStore.LoadWhere` is documented as the **offline read** for the records of a world nothing is simulating, with a new "Offline reads" section in the persistence guide. Nebula owns the moments, never the game's summary: persistence saves entities, not worlds.
+- New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
+- `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
+
+<<<<<<< HEAD
+#### Cohesion-aware rebalancing along game-defined boundaries (NEB-235)
+
+The planner already cut along the boundaries the game authored and already refused to split a cohesion group or move
+a held container. It now explains what it did, and says why when it could not. Design record:
+`docs/cohesion-rebalancing.md`; user pages:
+[Cohesion → Rebalancing a hot area](https://nebula.1by3.co/docs/guides/cohesion#rebalancing-a-hot-area) and
+[Orchestrator → Assignment plan](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#assignment-plan).
+
+- **New public API** (`Runtime/Orchestrator/AssignmentReport.cs`): `AssignmentMove` (container, from, to, reason),
+  `SaturationReport` (container, scope key, the whole item, worker, utilization, cause, reason), `SaturationCause`
+  (`NoBoundary`, `CohesionGroup`, `AffinityGroup`, `Held`, `Dedicated`) and `IExplainsAssignment`, the second
+  interface a policy implements to offer both. `IAssignmentPolicy` is unchanged, so a policy a game wrote itself
+  keeps compiling and simply explains nothing.
+- `CostBalancedAssignmentPolicy` implements `IExplainsAssignment`: `Moves` carries one explained move per change,
+  naming the boundary the cut fell on, the before/after peak and the group that kept containers together;
+  `Saturated` names what the pass could not relieve. New knob `SaturationUtilization` (0.7).
+- `ScaleDecision.BlockedCause` and `BlockedReason` append the constraint to the blocked reason, beside the unchanged
+  `BlockedComponent` / `BlockedSaturation`. `AssignmentInput.HoldSeconds(containerId)`.
+- `NebulaOrchestrator.LastMoves` and `Saturated`; `/api/state` gains an `assignment` block (`policy`, `rebalances`,
+  `moves`, `saturated`) and `scale.blockedCause` / `scale.blockedReason`; the dashboard gains an **Assignment plan**
+  card, and `assign c -> w` log lines carry the reason in brackets.
+- **Fixed:** `AssignmentPlanner.Predict` did not carry `AssignmentInput.Cohesion` into its dry run, so a prediction
+  could split a cohesion group the real deal may not and promise the scaler a relief that never arrives. It now
+  carries `Cohesion`, `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
+- Conformance scenario 13 (`Tests/EditMode/ConformanceRebalanceTests.cs`, 10 tests, both builds).
+=======
+#### Explicit capacity limits and admission reporting (NEB-236)
+
+See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-target-is-full) and [Capacity and admission](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#capacity-and-admission); the design record is `docs/capacity-admission.md`.
+
+**What changed and why.** When an interaction domain exceeded what one worker could simulate, the mesh had no way to say so: a gateway could refuse a client for a bad token or because it was draining, and nothing else. A station that six hundred players jump to in five minutes is one authored domain that cannot be split past its parts, so the mesh now reports that it is at capacity and the game decides what to do — queue, deny or degrade. Nothing is ever silently split or copied to make room.
+
+**New behaviour:**
+
+- A per-container capacity reading is derived once per orchestrator pass from the cost rows (`docs/cost-telemetry.md`): the dominant component's share of its own budget, and whether that reached `CapacitySaturation`. A parts scope is as full as its **worst** part; a grid scope is judged one chunk at a time, like the public world, because its chunks are separate places. A container no worker has reported lately is *unknown*, not full, so a mesh without cost telemetry admits exactly what it did before.
+- A container the planner reports it cannot relieve by moving anything (`SaturationReport`, NEB-235: a cohesion or affinity group spanning it, a hold, no authored boundary, a dedicated worker) is at capacity once its item's utilization reaches the threshold, whatever its own cost row says, and `CapacityInfo.Cause` carries which constraint it is all the way to the admission hook.
+- The orchestrator publishes the reading on the container's lease row, so a gateway answers without an RPC. The write deliberately does **not** stamp the lease's `UpdatedAt` (that is the idle clock the scope lifecycle retires on), and only a reading that actually moved is written.
+- A join into a target at capacity goes to `NebulaAdmission.Decide`, which refuses by default; the client is sent `JoinRejected` with `JoinRejectReason.AtCapacity`, the saturation, and `retry` clear, and `NebulaClient` does not reconnect by itself. `AdmissionDecision.Hold()` instead holds the client in `JoinState.Starting` with `JoinHoldReason.AtCapacity` and places it, with no reconnect, when room appears.
+- In the public world the gateway prefers spawn candidates that are not at capacity and only refuses when every candidate is full.
+- `NebulaWorker.PrepareTransfer` goes through the same hook. A refused crossing returns a finished `InstanceTransfer` with `Error`, `RejectReason` and `Saturation` set, and nothing is sent to the destination worker or the client's gateway.
+- A policy that throws is counted in `NebulaAdmission.PolicyErrors`, logged, and read as a refusal.
+
+**New `NebulaConfig` field:** `CapacitySaturation` (0.9; 0 turns the signal off and admits everything), with `-nebula-capacity-saturation`, mirrored into the services config.
+
+**Control-plane document (additive):** a lease row gained `saturation`, `dominant`, `atCapacity` and (when the planner named one) `cause`, written only once the orchestrator has a reading. A row without them reads exactly as before.
+
+**New public API:**
+
+- `CapacityInfo` and `NebulaCapacity` (`Runtime/Orchestrator/CapacityInfo.cs`): `Derive`, `Of`, `OfScope`, `Target`, `Worse`; `IControlPlane` extensions `CapacityOf(containerId)` and `ScopeCapacityOf(scopeKey)`; `NebulaOrchestrator.CapacityOf`.
+- `NebulaAdmission` (`Runtime/Gateway/NebulaAdmission.cs`): `Decide`, `AlwaysConsult`, `RejectWhenAtCapacity`, `Ask`, `DefaultReason`, `PolicyErrors`, `Reset`; `AdmissionPolicy`, `AdmissionRequest`, `AdmissionDecision`, `AdmissionAction`, `AdmissionKind`.
+- `IControlPlane.SetContainerCapacity(containerId, saturation, dominant, atCapacity)` — implemented by `LocalControlPlane`, `ControlPlaneHost` and `RemoteControlPlane`, and reachable over `POST /api/control-plane` as the op `SetContainerCapacity`. A custom `IControlPlane` must implement it.
+- `LeaseInfo.HasCapacity`, `Saturation`, `Dominant`, `AtCapacity`, `SaturationCause`; `ContainerCost.ComponentOf`; `ControlPlaneJson.CauseOf`; `MeshTelemetry.CapacitySaturation`; `NebulaCapacity.Apply` (the planner's saturation reports folded into the readings).
+- `JoinRejectReason`, `JoinRejectedMsg.Code`/`Saturation`, `JoinHoldReason.AtCapacity`, `NebulaClient.JoinRejectReason`, `NebulaClient.JoinRejectSaturation`, `NebulaClient.JoinRefused`; `InstanceTransfer.RejectReason`, `InstanceTransfer.Saturation`.
+
+**Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant`, `atCapacity` and `capacityCause`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
+
+**Conformance:** scenario 12 of `docs/conformance-suite.md` is covered by `Services~/Nebula.Services.Tests/ConformanceCapacityAdmissionTests.cs`, with the derivation unit tested in both builds by `Tests/EditMode/CapacityAdmissionTests.cs`.
+>>>>>>> d059a5c (NEB-236: explicit capacity limits and admission reporting)
+
+#### Persistence durability window (NEB-224)
+
+Docs and a conformance test state and check the bound on how much a worker crash can lose between checkpoints.
+Design record: `docs/persistence-durability.md`; user page: [Persistence → Durability window](https://nebula.1by3.co/docs/guides/persistence#durability-window).
+
+- The bound is `PersistenceCheckpointSeconds + MinSaveIntervalSeconds + ceil(N_dirty / MaxSavesPerFrame) frames + store write latency`, derived from `NebulaPersistence.IsDue`/`PumpCheckpoints`; with the defaults and a lightly loaded worker it is about 5.6 s.
+- `ConformancePersistenceDurabilityTests` (`[Category("Conformance")]`, scenario 10 in `docs/conformance-suite.md` §4) kills a worker with 200 simultaneously dirty entities and asserts loss stays within the bound, and that the min-save throttle and per-frame budget terms are each real rather than vacuous.
+- `NebulaPersistence.Now` is a new internal clock seam (`Func<float>`, defaults to `Time.unscaledTime`) so the checkpoint scheduler's timers can be driven deterministically in tests; no behaviour change at the default.
+- `NebulaPersistence.OldestDirtyAgeSeconds`: how long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, 0 when nothing is dirty.
+- New additive heartbeat field `WorkerStats.OldestDirtySeconds` / `WorkerInfo.OldestDirtySeconds`, wired through `ControlPlaneJson`, `LocalControlPlane` and `RemoteControlPlane`; an older worker or orchestrator simply does not read it, so this is not a protocol version bump. The orchestrator's `/api/status` reports it as `workers[].oldestDirtySeconds`, and `NebulaDashboard.html` shows it per worker next to tick time.
+
+#### Historical state on workers (`StateAt`)
+
+See [Lag compensation](https://nebula.1by3.co/docs/guides/lag-compensation); the design record is `docs/state-history.md`. Conformance scenario 6.
+
+A worker can now ask, for any entity it holds — one it simulates or a ghost of a neighbour's — what that entity looked like at a recent server tick. This is what lag compensation and time-sensitive validation need and what only the replication layer can supply, especially for ghosts.
+
+- `NetworkIdentity.StateAt(tick)` / `TryGetStateAt(tick, out HistoricalState)`, plus `OldestAvailableTick`, `NewestAvailableTick` and `History`. `NebulaWorker.TryGetStateAt(netId, tick, out state)` answers the same question by net id for anything the worker holds.
+- `HistoricalState`: `Available`, `Tick`, `Position`, `Rotation`, `Velocity`, `Container`, `Epoch`, `FromAuthority`, `TryGetValue(variable, out value)`.
+- `StateHistory` — the bounded per-entity ring (`Capacity`, `HasEntries`, `OldestAvailableTick`, `NewestAvailableTick`, `DefaultWindowTicks` 32, `MaxWindowTicks` 1024, `GapToleranceTicks` 4). Allocated on an entity's first recorded tick and reused; recording a tick after that allocates nothing.
+- `[SyncHistory]` (`SyncHistoryAttribute`) on a `NetworkVariable` field snapshots its value every recorded tick, readable through `HistoricalState.TryGetValue`. Pose, velocity, container and epoch are always recorded; a variable is not, because a snapshot costs a serialization per tick per copy. `NetworkVariableBase.SyncHistory` reports the flag.
+- New `NebulaConfig` field `StateHistoryTicks` (32, about half a second at 60 Hz), with the `-nebula-state-history` command-line override, mirrored into the services config. `0` turns recording off entirely and allocates nothing.
+- New sample `Samples~/LagCompensatedHitscan`: a reference hitscan validator that rewinds candidates to the tick a client claims, tests the shot there and applies the result through an `[AuthorityRpc]`. Rewinding colliders, performing the hit test and deciding which tick a client may claim stay game decisions; Nebula ships the history, not the policy.
+
+**The bound.** A ghost entry is tagged with the **owner's** tick, so `StateAt(t)` means the same instant on every worker. A ghost holder's `NewestAvailableTick` is exactly one tick behind the authority's (the owner built that stream during its previous tick). Inside the window a tick nothing was recorded for is answered by the nearest recorded entry within 4 ticks, and the result says which tick it actually is; outside the window the result is unavailable, never an extrapolation and never the nearest edge.
+
+#### Per-entity cost hints and per-container cost telemetry
+
+A game can say what one entity costs, and an operator can see what one container costs, split into
+simulation, replication and gateway relay. Design record: `docs/cost-telemetry.md`; user docs:
+[Container cost](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#container-cost) and
+[Entity cost weights](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#entity-cost-weights).
+
+- `NetworkIdentity.CostWeight` (inspector, default `1`) is a **multiplier** on the entity's category
+  weight in `NebulaConfig.CostWeights`, so a world that sets nothing behaves exactly as before.
+  `NetworkIdentity.EffectiveCostWeight` is what it carries; `NetworkIdentity.SetCostWeight(w)` pins one.
+- `NebulaCost.EntityWeight` (`Func<NetworkIdentity, float>`) decides a weight at spawn; a negative
+  return declines and leaves the authored value. Precedence: `SetCostWeight` or a carried weight >
+  the callback > `CostWeight`. Evaluated on spawn and on `SetCostWeight`, never per tick.
+  `NebulaCost.MaxWeight` (1024), `NebulaCost.Clamp`, `NebulaCost.Reset`.
+- `ContainerCost` and `CostComponent` (`Runtime/Orchestrator/ContainerCost.cs`): one typed row per
+  container - `EntityCostSum`, measured `TickShareMs` / `TickShare`, `BytesOutPerSec`,
+  `GatewayBytesPerSec`, `GhostCount`, `ScopeKey`, `WorkerId`, `Dominant`, `DominantSaturation`.
+  The orchestrator keeps the latest row per container (which is per lease):
+  `MeshTelemetry.CopyContainerCost`, `MeshTelemetry.BuildCostJson`, `NebulaOrchestrator.CostOf`,
+  `AssignmentInput.Cost`.
+- `ContainerCostMeter` (`Runtime/Worker/ContainerCostMeter.cs`) and `NebulaWorker.CostMeter`: the
+  worker **measures** the `NetworkTick` time of each container's own entities (two stopwatch reads
+  per entity per tick) and the bytes their replication and owner state cost. The rest of the tick
+  (physics, ghosts, interest, publishing) belongs to no container and is not attributed, so a
+  worker's rows add up to less than its utilization.
+- The telemetry document's `containers` rows gained `scope`, `cost`, `tickMs`, `bytesOut` and
+  `gatewayBytes`, additively. A document without them reads exactly as before.
+- `CostWeights.Of` prefers the worker's reported entity cost sum
+  (`ContainerLoad.EntityCostSum` / `HasEntityCost`) over counting heads, so weights reach the cost
+  policy, `WorkerLoadTracker.Attribute` and the scaler's dry runs, not only the dashboard.
+- `WorkerScaler` names the dominant component of a container it reports as unsplittable, in the
+  reason string and as `ScaleDecision.BlockedComponent` / `BlockedSaturation`
+  (`scale.blockedComponent` / `scale.blockedSaturation` in `/api/state`).
+- `GET /api/cost` serves the rows, and `/api/state` carries them under `cost`. The dashboard has a
+  **Container cost** table that highlights the blocked container.
+- New `NebulaConfig` field: `CostLinkBudgetMbps` (100), the yardstick a container's bytes are
+  weighed against when its dominant component is chosen. It limits nothing.
+
+### Changed
+
+- The worker's per-tick pose recording now records only entities it has authority over; a ghost records itself when the owner's stream is applied, tagged with the owner's tick instead of the receiving worker's. Before, every copy was recorded with the receiver's tick, so a ghost's history was silently off by a tick and an interpolating ghost recorded a smoothing artefact rather than the pose the owner reported.
+- A worker sends an entity's `GhostVars` update ahead of that entity's state entry for the same tick, so a `[SyncHistory]` variable is snapshotted with the values the tick's stream carries. Nothing else depends on the order of those two messages.
+- `NetworkIdentity.TryGetPoseAt(tick, out position, out rotation)` keeps its signature and behaviour (false plus the current pose) and is now a wrapper over `StateAt`. The constant `NetworkIdentity.PoseHistoryTicks` (64) is **removed**: the window is `NebulaConfig.StateHistoryTicks` (default 32) and the constant behind it is `StateHistory.DefaultWindowTicks`.
+
 ## [0.1.0-alpha.29] - 2026-09-21
 
 ### Breaking: protocol 16 → 17, interest management

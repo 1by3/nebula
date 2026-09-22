@@ -23,6 +23,13 @@ namespace Nebula
         /// <summary>Assigned since the last time this variable was written into a persistence blob.</summary>
         public bool PersistDirty { get; internal set; }
 
+        /// <summary>
+        /// The field carries <see cref="SyncHistoryAttribute"/>: its value is snapshotted into the entity's
+        /// <see cref="StateHistory"/> every recorded tick and can be read back through
+        /// <see cref="HistoricalState.TryGetValue{T}"/>.
+        /// </summary>
+        public bool SyncHistory { get; internal set; }
+
         public abstract void Write(NetworkWriter writer);
         public abstract void Read(NetworkReader reader);
     }

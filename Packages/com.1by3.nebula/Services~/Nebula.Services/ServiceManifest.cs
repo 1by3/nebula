@@ -111,6 +111,8 @@ namespace Nebula
         public ulong CarrierNetId => 0;
         public InstanceContainerInfo Instance;
         public ulong InstanceId => Instance?.InstanceId ?? 0;
+        /// <summary>The opaque scope key of the container's scope (<see cref="EntityLocation.ScopeKey"/>); empty for the public world.</summary>
+        public string ScopeKey => Instance?.ScopeKey ?? EntityLocation.PublicScope;
         public string OwnerWorkerId { get; set; } = "";
         public ushort OwnerWorkerIndex { get; set; } = ushort.MaxValue;
         public ulong LeaseEpoch { get; set; }

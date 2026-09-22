@@ -27,7 +27,7 @@ Grid coordinate of the chunk. In a planar world y is always 0.
 public readonly ulong Id;
 ```
 
-The chunk's stable 64-bit id: [`RuntimeGrid.PackId`](/docs/reference/world/runtime-grid#packid) of [`Coord`](#coord), and the control-plane lease key.
+The chunk's stable 64-bit id ([`RuntimeGrid.IdOf`](/docs/reference/world/runtime-grid#idof)), and the control-plane lease key.
 
 ### Seed [#seed]
 
@@ -35,7 +35,7 @@ The chunk's stable 64-bit id: [`RuntimeGrid.PackId`](/docs/reference/world/runti
 public readonly int Seed;
 ```
 
-A deterministic seed for procedural content, derived from [`Id`](#id) alone: every role, every process and every run generate the same chunk without replicating a byte of it.
+A deterministic seed for procedural content, derived from [`Id`](#id) alone: every role, every process and every run generate the same chunk without replicating a byte of it. Two scopes' chunks at the same coordinate have different ids, so they also have different seeds — a scoped copy of a world is a different world, not the same one twice.
 
 ### Container [#container]
 
@@ -68,6 +68,22 @@ public readonly bool IsHeadless;
 ```
 
 No one is looking: strip renderers and keep colliders. True on workers and on batchmode clients (bots).
+
+### ScopeKey [#scopekey]
+
+```csharp
+public readonly string ScopeKey;
+```
+
+The scope this chunk belongs to: `""` for the public world, otherwise the key the grid was activated under. Content that is per-world (a seed offset, a biome table) keys off this.
+
+### Grid [#grid]
+
+```csharp
+public readonly RuntimeGrid Grid;
+```
+
+The grid this chunk is a cell of.
 
 ## Properties
 

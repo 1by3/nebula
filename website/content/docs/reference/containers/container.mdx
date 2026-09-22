@@ -112,6 +112,14 @@ public ulong InstanceId { get; }
 
 Private simulation scope, or zero for the public world. Carried containers follow their carrier.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The opaque scope key of the scope this container belongs to ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) for the public world, the instance key for an instance container. Carried containers follow their carrier. Never null.
+
 ### Instance [#instance]
 
 ```csharp

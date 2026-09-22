@@ -85,6 +85,16 @@ namespace Nebula
         public float CostRebalanceThreshold = 0.3f;
         [Tooltip("Cost policy: what one player / bot / server-driven entity / other entity costs, and what a leased container costs by itself.")]
         public CostWeights CostWeights = CostWeights.Default;
+
+        /// <summary>The default of <see cref="CostLinkBudgetMbps"/> in bytes per second: 100 Mbit/s.</summary>
+        public const double DefaultCostLinkBytesPerSec = 100.0 * 1000.0 * 1000.0 / 8.0;
+
+        /// <summary><see cref="CostLinkBudgetMbps"/> in bytes per second; the default when it is 0 or less.</summary>
+        public double CostLinkBytesPerSec => CostLinkBudgetMbps > 0f ? CostLinkBudgetMbps * 1000.0 * 1000.0 / 8.0 : DefaultCostLinkBytesPerSec;
+        [Tooltip("Cost telemetry: the outbound budget one worker's traffic is weighed against, in megabits per second. It decides nothing about what is sent; it is the yardstick that lets a container's bytes be compared with its simulation time, so the dashboard and the scaler can say whether a hot container is hot in simulation, in replication or in gateway relay.")]
+        public float CostLinkBudgetMbps = 100f;
+        [Tooltip("How full one container (or one scope, taken as the worst of its parts) may get before the mesh calls it at capacity: the dominant cost component's share of its own budget, 0.9 = 90 %. A join or a prepared transfer into a target at capacity is refused with a typed reason unless NebulaAdmission.Decide admits it. 0 turns the signal off and admits everything, as before. -nebula-capacity-saturation overrides.")]
+        public float CapacitySaturation = 0.9f;
         [Tooltip("Keep the worker count between MinWorkers and MaxWorkers from how busy the workers are: add one when the busiest worker's tick time stays over ScaleOutUtilization of the tick budget, remove one when the mesh's mean stays under ScaleInUtilization. Every change is checked against a dry run of the assignment policy first.")]
         public bool AutoScale = true;
         [Tooltip("The fewest workers autoscaling will leave running. 0 allows scaling to zero (the first player then waits for a worker to boot).")]
@@ -134,6 +144,10 @@ namespace Nebula
         public float HandoverHysteresis = 0.35f;
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;
+        [Tooltip("Ticks of pose and [SyncHistory] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second at 60 Hz by default. 0 turns recording off. -nebula-state-history overrides.")]
+        public int StateHistoryTicks = StateHistory.DefaultWindowTicks;
+        [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
+        public int AuthorityCallMaxHops = 3;
 
         [Header("Persistence")]
         [Tooltip("Where entities carrying a PersistentEntity are stored: 'auto' (the orchestrator uses its database, a worker asks the orchestrator, a single-process run uses a local file), 'database', 'remote', 'local' (a file next to the process), 'memory' or 'off'. -nebula-persistence-mode overrides.")]
@@ -144,6 +158,9 @@ namespace Nebula
         public float PersistenceCheckpointSeconds = 5f;
         [Tooltip("After gaining a container lease, how long a worker waits before restoring that container's persisted entities. Gives the previous owner's handover time to arrive so nothing comes back twice.")]
         public float PersistenceRestoreGraceSeconds = 3f;
+
+        [Tooltip("Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.")]
+        public float ScopeIdleRetireSeconds = 300f;
 
         [Header("Scene entities")]
         [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]

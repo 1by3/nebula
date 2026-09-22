@@ -412,8 +412,12 @@ namespace Nebula
             cfg.PersistenceMode = CommandLine.Get("nebula-persistence-mode", cfg.PersistenceMode);
             cfg.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", cfg.PersistenceLocalFile);
             cfg.PersistenceCheckpointSeconds = CommandLine.GetFloat("nebula-persistence-checkpoint", cfg.PersistenceCheckpointSeconds);
+            cfg.ScopeIdleRetireSeconds = CommandLine.GetFloat("nebula-scope-idle-retire", cfg.ScopeIdleRetireSeconds);
+            cfg.CapacitySaturation = CommandLine.GetFloat("nebula-capacity-saturation", cfg.CapacitySaturation);
             cfg.GhostBandMargin = CommandLine.GetFloat("nebula-ghost-band", cfg.GhostBandMargin);
             cfg.HandoverHysteresis = CommandLine.GetFloat("nebula-hysteresis", cfg.HandoverHysteresis);
+            cfg.AuthorityCallMaxHops = CommandLine.GetInt("nebula-authority-call-hops", cfg.AuthorityCallMaxHops);
+            cfg.StateHistoryTicks = CommandLine.GetInt("nebula-state-history", cfg.StateHistoryTicks);
             // Interest is the knob a load test or a soak run wants to sweep without rebuilding.
             cfg.InterestRadius = CommandLine.GetFloat("nebula-interest-radius", cfg.InterestRadius);
             cfg.InterestCellSize = CommandLine.GetFloat("nebula-interest-cell", cfg.InterestCellSize);

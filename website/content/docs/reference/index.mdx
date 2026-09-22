@@ -14,11 +14,16 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [AuthorityMode](/docs/reference/core/authority-mode) | Enum. Lists which process produces state for a synchronized component. |
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
+| [CohesionGroups](/docs/reference/core/cohesion-groups) | Static class. Which entities belong to which NetworkIdentity.CohesionGroup, in this process. |
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
+| [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
+| [HistoricalState](/docs/reference/core/historical-state) | Struct. What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt. |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
+| [NebulaCost](/docs/reference/core/nebula-cost) | Static class. Where a game says what one entity costs to simulate, beyond the category it falls into. |
+| [NebulaDiagnostics](/docs/reference/core/nebula-diagnostics) | Static class. Process-wide counters for rule violations Nebula rejects at the call site, so tests and the worker's profile log line can see how often game code hits them. |
 | [NebulaGameMode](/docs/reference/core/nebula-game-mode) | Abstract class. Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. |
 | [NebulaLog](/docs/reference/core/nebula-log) | Static class. Thin logging wrapper so every Nebula line is greppable by prefix in headless logs. |
 | [NebulaRuntime](/docs/reference/core/nebula-runtime) | Static class. Process-wide role context. |
@@ -33,12 +38,15 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NetworkTransform](/docs/reference/core/network-transform) | Class. Replicates selected position, rotation, and scale axes from the authoritative worker to clients and ghost workers. |
 | [NetworkVariable\<T\>](/docs/reference/core/network-variable) | Class. A field replicated from the authoritative worker to clients and ghost workers. |
 | [NetworkVariableBase](/docs/reference/core/network-variable-base) | Abstract class. Defines the serialization and change tracking used by every NetworkVariable\<T\>. |
+| [PhysicsIslands](/docs/reference/core/physics-islands) | Static class. Decides whether two networked bodies are simulated by one authority (the same island) and finds the joints that are not. |
 | [PlayerInfo](/docs/reference/core/player-info) | Struct. Who is joining, as the gateway told the worker (NebulaGameMode.OnSpawnPlayer). |
 | [PredictedBehaviour\<TInput\>](/docs/reference/core/predicted-behaviour) | Abstract class. A server-authoritative, client-predicted behaviour (the player controller, typically). |
 | [PredictedBehaviourBase](/docs/reference/core/predicted-behaviour-base) | Abstract class. Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour\<TInput\>. |
 | [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
 | [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
+| [StateHistory](/docs/reference/core/state-history) | Class. The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity. |
+| [SyncHistoryAttribute](/docs/reference/core/sync-history-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue\<T\>. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
 
 ## Containers
@@ -52,9 +60,11 @@ Define container volumes and look up their current worker assignments.
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
+| [EntityLocation](/docs/reference/containers/entity-location) | Struct. Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. |
 | [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their world pose. |
 | [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
 | [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
+| [LocationContainerKind](/docs/reference/containers/location-container-kind) | Enum. Which kind of container an EntityLocation.ContainerId names. |
 | [NebulaContainerHelpers](/docs/reference/containers/nebula-container-helpers) | Static class. Geometry helpers for placing things inside a Container. |
 
 ## World partition
@@ -65,13 +75,17 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | --- | --- |
 | [ChunkContent](/docs/reference/world/chunk-content) | Abstract class. Scene-object form of NebulaChunks.Loaded/NebulaChunks.Unloading: drop a subclass in the game scene and override OnChunkLoaded. |
 | [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a chunked world. |
+| [ChunkGridDefinition](/docs/reference/world/chunk-grid-definition) | Class. What one procedural chunk grid is: the cell arithmetic every role must agree on, plus the one chunk that is brought into being with the scope so a client always has somewhere to arrive. |
+| [ChunkKeys](/docs/reference/world/chunk-keys) | Static class. How a chunk coordinate becomes the ids a scope's containers are named by. |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
 | [NebulaChunkedWorld](/docs/reference/world/nebula-chunked-world) | Class. The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld plus a NebulaConfig.RuntimeWorld). |
-| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist. |
+| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. Reports the runtime chunks available on each role so your game can load their content. |
 | [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
 | [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Maps runtime containers to a planar or three-dimensional grid. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |
+| [ScopeFrame](/docs/reference/world/scope-frame) | Class. One scope's floating origin: which cell of that scope's grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves. |
+| [ScopeFrames](/docs/reference/world/scope-frames) | Static class. The origin frames this process holds, one per scope. |
 | [WorldAnchor](/docs/reference/world/world-anchor) | Class. Anchor component: keeps the cells around this transform loaded. |
 | [WorldCell](/docs/reference/world/world-cell) | Class. Marks the root of a cell scene with its grid coordinate. |
 | [WorldContainerManifest](/docs/reference/world/world-container-manifest) | Class. The baked container tree of a partitioned world: one container per cell plus every hand-authored Container found inside the cell scenes, with cell-local poses. |
@@ -86,13 +100,25 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 
 | Type | Summary |
 | --- | --- |
+| [AuthorityCallAction](/docs/reference/worker/authority-call-action) | Enum. What a worker does with an incoming call. |
+| [AuthorityCallDecision](/docs/reference/worker/authority-call-decision) | Struct. The decision for one incoming call: the action and, for a rejection, the reason. |
+| [AuthorityCallId](/docs/reference/worker/authority-call-id) | Static class. The identity of one cross-worker call: the sending worker's index in the top 16 bits and a per-sender sequence in the low 48, the same shape as an entity NetId. |
+| [AuthorityCallLedger](/docs/reference/worker/authority-call-ledger) | Class. The call ids a worker has applied, so a call that arrives twice runs once (design D5). |
+| [AuthorityCallOutcome](/docs/reference/worker/authority-call-outcome) | Enum. Where an AuthorityRpc call ended up. |
+| [AuthorityCallResult](/docs/reference/worker/authority-call-result) | Struct. The outcome of one AuthorityRpcWithReply call, handed to its callback exactly once. |
+| [AuthorityCallRouter](/docs/reference/worker/authority-call-router) | Class. The rules every worker applies to an incoming AuthorityRpc call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code. |
+| [AuthorityCallTarget](/docs/reference/worker/authority-call-target) | Struct. What the receiving worker knows about a call's target when the call arrives. |
+| [AuthorityCallTracker](/docs/reference/worker/authority-call-tracker) | Class. The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about. |
+| [ContainerCostMeter](/docs/reference/worker/container-cost-meter) | Class. What each container this worker leases is actually costing it, measured rather than guessed: the NetworkTick time spent on its entities, the replication bytes they put on the wire, and the owner state a gateway has to relay for them. |
 | [EntityRequestResult](/docs/reference/worker/entity-request-result) | Struct. Outcome of one EntityRequests.Request call. |
 | [EntityRequestStatus](/docs/reference/worker/entity-request-status) | Enum. Where a EntityRequests call ended up. |
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. Defines the worker messaging operations used by WorkerQuery. |
 | [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
+| [NebulaLifecycle](/docs/reference/worker/nebula-lifecycle) | Static class. The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
+| [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
 
 ## Client
@@ -110,11 +136,16 @@ Accept client connections, route input to workers, and send replicated state to 
 
 | Type | Summary |
 | --- | --- |
+| [AdmissionAction](/docs/reference/gateway/admission-action) | Enum. What the admission hook may answer (AdmissionDecision). |
+| [AdmissionDecision](/docs/reference/gateway/admission-decision) | Struct. The game's answer to AdmissionRequest. |
+| [AdmissionKind](/docs/reference/gateway/admission-kind) | Enum. Why somebody is asking to enter a target (AdmissionRequest.Kind). |
+| [AdmissionRequest](/docs/reference/gateway/admission-request) | Struct. What the game is told when something asks to enter a target that is at capacity. |
 | [AnonymousIdentityIssuer](/docs/reference/gateway/anonymous-identity-issuer) | Class. Identities the gateway hands to clients that present no token: an HS256 token with iss PlayerIdentity.AnonymousIssuer and a random sub, which the client keeps and presents on its next connection to get the same AuthResult.Identity back. |
 | [AuthResult](/docs/reference/gateway/auth-result) | Struct. Outcome of checking the token a client presented in Hello (see OidcTokenValidator). |
 | [InterestLinkReason](/docs/reference/gateway/interest-link-reason) | Enum. Why a gateway holds a link to a worker. |
 | [JsonWebToken](/docs/reference/gateway/json-web-token) | Static class. Compact JSON Web Token (JWT) encoding: split, decode and sign. |
 | [MeshPeerAuth](/docs/reference/gateway/mesh-peer-auth) | Static class. How gateways and workers prove to each other that they belong to the mesh: HelloMsg.Token on an infrastructure link carries unixSeconds.base64url(HMAC-SHA256(key, role\|id\|incarnation\|unixSeconds)) with a key derived from the mesh token (... |
+| [NebulaAdmission](/docs/reference/gateway/nebula-admission) | Static class. The hook that decides what happens when an interaction domain is full. |
 | [NebulaGateway](/docs/reference/gateway/nebula-gateway) | Class. Accepts client connections and maintains a connection to every worker. |
 | [OidcTokenValidator](/docs/reference/gateway/oidc-token-validator) | Class. Checks OpenID Connect ID tokens against the issuers a mesh trusts (NebulaConfig.AuthIssuers): signature (RS256/384/512 and ES256/384/512 with the provider's published keys), issuer, expiry, and audience. |
 | [PlayerIdentity](/docs/reference/gateway/player-identity) | Static class. A player's identity across sessions: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. |
@@ -129,30 +160,40 @@ Start and stop workers, assign containers, and serve the dashboard.
 | Type | Summary |
 | --- | --- |
 | [AssignmentInput](/docs/reference/orchestrator/assignment-input) | Class. Everything an assignment policy may look at. |
+| [AssignmentMove](/docs/reference/orchestrator/assignment-move) | Struct. One container the planner decided to hand to another worker, with the sentence that explains why (docs/cohesion-rebalancing.md). |
 | [AssignmentPlan](/docs/reference/orchestrator/assignment-plan) | Class. What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them. |
 | [AssignmentPlanner](/docs/reference/orchestrator/assignment-planner) | Static class. Runs an IAssignmentPolicy as a dry run against a hypothetical worker count. |
 | [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
+| [CapacityInfo](/docs/reference/orchestrator/capacity-info) | Struct. How close one container - or one whole scope - is to what a single worker can carry, derived from the cost telemetry the worker already reports (ContainerCost, docs/cost-telemetry.md). |
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
 | [CloudWorkerHost](/docs/reference/orchestrator/cloud-worker-host) | Class. An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa... |
 | [CloudWorkerHostSettings](/docs/reference/orchestrator/cloud-worker-host-settings) | Class. Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. |
+| [CohesionGroupInfo](/docs/reference/orchestrator/cohesion-group-info) | Class. One entity cohesion group as the orchestrator sees it: the union of what every worker reported about the members it owns (NebulaWorker.CohesionSpan, docs/cohesion-hints.md D7). |
+| [ContainerCost](/docs/reference/orchestrator/container-cost) | Struct. What one container cost the worker that leases it, split into the three components of CostComponent. |
 | [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
 | [CostBalancedAssignmentPolicy](/docs/reference/orchestrator/cost-balanced-assignment-policy) | Class. Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ... |
+| [CostComponent](/docs/reference/orchestrator/cost-component) | Enum. The three things a container can be expensive in. |
 | [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
 | [HetznerWorkerHost](/docs/reference/orchestrator/hetzner-worker-host) | Class. One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` |
 | [IAssignmentPolicy](/docs/reference/orchestrator/i-assignment-policy) | Interface. Decides which worker simulates which container. |
+| [IExplainsAssignment](/docs/reference/orchestrator/i-explains-assignment) | Interface. A policy that can say why it moved what it moved. |
 | [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
 | [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
 | [LogBuffer](/docs/reference/orchestrator/log-buffer) | Class. The mesh's recent log lines, kept on the orchestrator so one place holds what every process of the mesh said last: workers, gateways and the orchestrator's own shipper post batches to POST /api/logs (\{"lines":\[\{"at","role","instance","le... |
 | [MeshTelemetry](/docs/reference/orchestrator/mesh-telemetry) | Class. The data behind the World map page of the Nebula Dashboard (/map). |
+| [NebulaCapacity](/docs/reference/orchestrator/nebula-capacity) | Static class. Deriving the capacity signal from cost rows, and reading it back off the control plane. |
 | [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
 | [PersistenceEditor](/docs/reference/orchestrator/persistence-editor) | Class. Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence). |
 | [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs each worker as a child Unity process using the configured worker executable. |
+| [SaturationCause](/docs/reference/orchestrator/saturation-cause) | Enum. Why the planner could not take load off the busiest worker (SaturationReport). |
+| [SaturationReport](/docs/reference/orchestrator/saturation-report) | Struct. The planner's answer to "why is this still hot?". |
 | [ScaleAction](/docs/reference/orchestrator/scale-action) | Enum. What the scaler decided this pass. |
 | [ScaleDecision](/docs/reference/orchestrator/scale-decision) | Struct. The scaler's answer, and everything the dashboard needs to explain it. |
 | [ScaleSettings](/docs/reference/orchestrator/scale-settings) | Struct. The two lines and the two clocks the scaler works to; a copy of the matching NebulaConfig fields. |
+| [UnsplittableGroup](/docs/reference/orchestrator/unsplittable-group) | Struct. A group of containers the planner had to keep on one worker but could not fit there (docs/cohesion-hints.md, D9). |
 | [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum. Lists the supported worker handle state values. |
 | [WorkerHostBase](/docs/reference/orchestrator/worker-host-base) | Abstract class. Base class for hosts that do not park: Park kills, Unpark fails, and the orchestrator never parks into them. |
 | [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |
@@ -176,12 +217,25 @@ Register processes and share container assignments and settings through the cont
 | [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Provides process registration, container assignments with epochs, and game-defined settings. |
 | [IControlPlaneStorage](/docs/reference/control-plane/i-control-plane-storage) | Interface. Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup. |
 | [IGatewaySessionControlPlane](/docs/reference/control-plane/i-gateway-session-control-plane) | Interface. Optional control-plane extension for single-session gateway admission. |
+| [IScopeStore](/docs/reference/control-plane/i-scope-store) | Interface. Where the orchestrator keeps the claim on a scope key between runs. |
 | [LeaseInfo](/docs/reference/control-plane/lease-info) | Class. Describes the current worker assignment for one container. |
 | [LeaseState](/docs/reference/control-plane/lease-state) | Static class. Provides the states used by a container lease. |
 | [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. |
 | [MemoryControlPlaneStorage](/docs/reference/control-plane/memory-control-plane-storage) | Class. Keeps nothing: the control plane starts empty on every orchestrator run. |
 | [MeshSettings](/docs/reference/control-plane/mesh-settings) | Static class. Mesh-wide settings Nebula itself writes, in the same key/value channel the game uses (IControlPlane.Settings). |
 | [RemoteControlPlane](/docs/reference/control-plane/remote-control-plane) | Class. IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address. |
+| [ScopeAck](/docs/reference/control-plane/scope-ack) | Class. One worker's acknowledgement that it finished a lifecycle step for one part of a scope. |
+| [ScopeActivationRequest](/docs/reference/control-plane/scope-activation-request) | Class. What a caller asks for when it wants a scope to exist. |
+| [ScopeDefinition](/docs/reference/control-plane/scope-definition) | Class. What a scope is made of: the containers to bring into being and how their occupants see the public world. |
+| [ScopeInfo](/docs/reference/control-plane/scope-info) | Class. A shared simulation scope the mesh has been asked to bring into being: the opaque key that names it, the definition it was activated from, and the containers that now exist for it. |
+| [ScopeJson](/docs/reference/control-plane/scope-json) | Static class. The scope row and the scope definition as JSON, inside the control-plane document and the activation op. |
+| [ScopeKeys](/docs/reference/control-plane/scope-keys) | Static class. How a scope key becomes the ids every role agrees on. |
+| [ScopeKind](/docs/reference/control-plane/scope-kind) | Static class. The shapes a ScopeDefinition can take. |
+| [ScopeLifecycle](/docs/reference/control-plane/scope-lifecycle) | Static class. The scope lifecycle's pure parts: how idle age and occupancy are aggregated from a scope's parts, when a scope should retire, and whether a client may be admitted to it. |
+| [ScopePart](/docs/reference/control-plane/scope-part) | Class. One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates. |
+| [ScopePhase](/docs/reference/control-plane/scope-phase) | Static class. What a worker has finished doing to one part of a scope (ScopeAck). |
+| [ScopeRetireContext](/docs/reference/control-plane/scope-retire-context) | Struct. What the retire policy is told about a scope. |
+| [ScopeState](/docs/reference/control-plane/scope-state) | Static class. The states a ScopeInfo row can be in. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
 | [WorkerStatus](/docs/reference/control-plane/worker-status) | Static class. Provides the lifecycle states reported by a worker. |
@@ -224,6 +278,9 @@ Inspect messages exchanged by clients, the gateway, and workers.
 
 | Type | Summary |
 | --- | --- |
+| [AuthorityCallFlags](/docs/reference/protocol/authority-call-flags) | Enum. Flags on an AuthorityCallMsg. |
+| [AuthorityCallMsg](/docs/reference/protocol/authority-call-msg) | Struct. An AuthorityRpc on the worker-to-worker link (MsgId.AuthorityRpc). |
+| [AuthorityCallReplyMsg](/docs/reference/protocol/authority-call-reply-msg) | Struct. The outcome of an AuthorityCallMsg that set AuthorityCallFlags.WantsReply (MsgId.AuthorityRpcReply), sent by the worker that decided it to the worker whose index the call id carries. |
 | [AuthorityTransferMsg](/docs/reference/protocol/authority-transfer-msg) | Struct. The authority event. |
 | [ClientFocusHintMsg](/docs/reference/protocol/client-focus-hint-msg) | Struct. Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). |
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
@@ -250,9 +307,11 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [InterestResyncMsg](/docs/reference/protocol/interest-resync-msg) | Struct. Worker -\> gateway: the last InterestSubscribeMsg could not be applied (wrong base sequence, or the result did not verify). |
 | [InterestSubscribeFlags](/docs/reference/protocol/interest-subscribe-flags) | Enum. Lists the supported interest subscribe flags values. |
 | [InterestSubscribeMsg](/docs/reference/protocol/interest-subscribe-msg) | Struct. Gateway -\> worker: the set of regions this gateway wants entities from. |
+| [JoinHoldReason](/docs/reference/protocol/join-hold-reason) | Enum. Why a join is being held in JoinState.Starting. |
+| [JoinRejectReason](/docs/reference/protocol/join-reject-reason) | Enum. Why a join was refused, in typed form. |
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
-| [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown). |
+| [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |
@@ -332,6 +391,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [InterestQuery](/docs/reference/interest/interest-query) | Class. What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. |
 | [InterestSchedule](/docs/reference/interest/interest-schedule) | Class. Which clients a gateway re-evaluates on this tick. |
 | [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest settings, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
+| [RegionKeys](/docs/reference/interest/region-keys) | Static class. How an interest region id is made unique to its scope. |
 | [RegionPublisher](/docs/reference/interest/region-publisher) | Class. The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them. |
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |
 | [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |

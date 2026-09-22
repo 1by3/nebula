@@ -1,0 +1,114 @@
+---
+title: "AuthorityCallLedger"
+description: "The call ids a worker has applied, so a call that arrives twice runs once (design D5)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public sealed class AuthorityCallLedger
+```
+
+The call ids a worker has applied, so a call that arrives twice runs once (design D5). Bounded two ways: at most [`Capacity`](#capacity) ids are remembered, oldest forgotten first, and an id older than [`TtlTicks`](#ttlticks) ticks is forgotten on the next [`Expire`](#expire). A duplicate of a forgotten call would be applied again; the bounds say how long "at most once" is enforced for.
+
+## Constructors
+
+### AuthorityCallLedger [#authoritycallledger]
+
+```csharp
+public AuthorityCallLedger(int capacity = DefaultCapacity, uint ttlTicks = DefaultTtlTicks);
+```
+
+## Fields
+
+### DefaultCapacity [#defaultcapacity]
+
+```csharp
+public const int DefaultCapacity = 4096;
+```
+
+Ids remembered per worker by default: 4096, a few seconds of busy cross-worker traffic.
+
+### DefaultTtlTicks [#defaultttlticks]
+
+```csharp
+public const uint DefaultTtlTicks = 600;
+```
+
+Ticks an id is remembered by default: 600, ten seconds at 60 ticks per second.
+
+## Properties
+
+### Capacity [#capacity]
+
+```csharp
+public int Capacity { get; }
+```
+
+The most ids remembered at once.
+
+### TtlTicks [#ttlticks]
+
+```csharp
+public uint TtlTicks { get; }
+```
+
+How many ticks an id stays remembered.
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+Ids currently remembered.
+
+### Duplicates [#duplicates]
+
+```csharp
+public long Duplicates { get; }
+```
+
+Calls refused as duplicates since the ledger was created.
+
+### Evictions [#evictions]
+
+```csharp
+public long Evictions { get; }
+```
+
+Ids forgotten because the ledger was full, since it was created.
+
+## Methods
+
+### TryRecord [#tryrecord]
+
+```csharp
+public bool TryRecord(ulong callId, uint tick);
+```
+
+Record that `callId` is being applied at `tick`. False when the id is already remembered: the caller must not apply it. Recording past [`Capacity`](#capacity) forgets the oldest id.
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong callId);
+```
+
+Whether `callId` is remembered as applied.
+
+### Expire [#expire]
+
+```csharp
+public void Expire(uint tick);
+```
+
+Forget every id recorded more than [`TtlTicks`](#ttlticks) ticks before `tick`. Call once a tick.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget everything.

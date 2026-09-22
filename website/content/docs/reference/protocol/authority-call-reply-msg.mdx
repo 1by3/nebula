@@ -1,0 +1,64 @@
+---
+title: "AuthorityCallReplyMsg"
+description: "The outcome of an AuthorityCallMsg that set AuthorityCallFlags.WantsReply (MsgId.AuthorityRpcReply), sent by the worker that decided it to the worker whose index the call id carries."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct AuthorityCallReplyMsg
+```
+
+The outcome of an [`AuthorityCallMsg`](/docs/reference/protocol/authority-call-msg) that set [`AuthorityCallFlags.WantsReply`](/docs/reference/protocol/authority-call-flags#wantsreply) ([`MsgId.AuthorityRpcReply`](/docs/reference/protocol/msg-id#authorityrpcreply)), sent by the worker that decided it to the worker whose index the call id carries.
+
+## Fields
+
+### CallId [#callid]
+
+```csharp
+public ulong CallId;
+```
+
+### Outcome [#outcome]
+
+```csharp
+public AuthorityCallOutcome Outcome;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+The entity's epoch on the deciding worker, or 0 when it did not hold the entity.
+
+### Hops [#hops]
+
+```csharp
+public byte Hops;
+```
+
+The call's hop count when it was decided.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static AuthorityCallReplyMsg Read(NetworkReader r);
+```
+
+### ToResult [#toresult]
+
+```csharp
+public AuthorityCallResult ToResult();
+```
+
+The result a sender's callback receives for this reply.

@@ -96,6 +96,11 @@ namespace Nebula
         GhostDespawn = 43,
         AuthorityTransfer = 44,
         ForwardInput = 45,
+        /// <summary>
+        /// Worker -> worker: an <c>AuthorityRpc</c> for an entity the sender holds only a ghost of
+        /// (<see cref="AuthorityCallMsg"/>). Carries a call id, a hop count and the epoch the sender observed, so
+        /// the receiver can apply it once, forward it after a handover, or reject it with a reason.
+        /// </summary>
         AuthorityRpc = 46,
         GhostSyncState = 47,
         /// <summary>
@@ -103,6 +108,11 @@ namespace Nebula
         /// <see cref="NebulaWorker.RegisterMessageHandler"/>; sent with <see cref="NebulaWorker.SendToWorker"/>.
         /// </summary>
         WorkerMessage = 48,
+        /// <summary>
+        /// Worker -> worker: the outcome of an <see cref="AuthorityRpc"/> that asked for one
+        /// (<see cref="AuthorityCallReplyMsg"/>), sent to the worker that minted the call id.
+        /// </summary>
+        AuthorityRpcReply = 49,
     }
 
     public enum PeerRole : byte
@@ -143,7 +153,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 17;
+        public const ushort ProtocolVersion = 18;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -166,6 +176,14 @@ namespace Nebula
         /// same id twice can tell a restart from a reconnect. Clients send 0.
         /// </summary>
         public uint Incarnation;
+        /// <summary>
+        /// Client only: the simulation scope to be placed in, as an opaque key (<see cref="EntityLocation.ScopeKey"/>).
+        /// Empty is the public world, which is what every client sent before this field existed. The gateway spawns
+        /// the player only into containers of that scope, and holds the join while the scope is not ready
+        /// (<c>docs/scope-activation.md</c> §5). It does not activate the scope: whoever sent the player to the key
+        /// is the one that called <see cref="IControlPlane.ActivateScope"/>.
+        /// </summary>
+        public string ScopeKey;
         public ushort Version;
 
         public void Write(NetworkWriter w)
@@ -179,6 +197,7 @@ namespace Nebula
             w.WriteString(Token ?? "");
             w.WriteString(Session ?? "");
             w.WriteUInt(Incarnation);
+            w.WriteString(ScopeKey ?? "");
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -192,6 +211,8 @@ namespace Nebula
             m.Token = r.ReadString() ?? "";
             m.Session = r.ReadString() ?? "";
             m.Incarnation = r.ReadUInt();
+            // Appended after the rest of v18 was settled: a Hello that ends here is the public world.
+            m.ScopeKey = r.Remaining > 0 ? r.ReadString() ?? "" : "";
             return m;
         }
     }
@@ -269,15 +290,35 @@ namespace Nebula
         /// and retrying with the same ones is pointless.
         /// </summary>
         public bool Retry;
+        /// <summary>
+        /// The refusal in typed form (<see cref="JoinRejectReason"/>), appended after the rest of v18 was settled.
+        /// <see cref="JoinRejectReason.None"/> from a gateway that does not write it.
+        /// </summary>
+        public JoinRejectReason Code;
+        /// <summary>
+        /// How saturated the target was, for <see cref="JoinRejectReason.AtCapacity"/>: 1 = the whole of the
+        /// dominant component's budget (<see cref="CapacityInfo.Saturation"/>). Sent as an f16; 0 when unknown.
+        /// </summary>
+        public float Saturation;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.JoinRejected);
             w.WriteString(Reason ?? "");
             w.WriteByte(Retry ? (byte)1 : (byte)0);
+            w.WriteByte((byte)Code);
+            w.WriteHalf(Saturation);
         }
 
-        public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
+        public static JoinRejectedMsg Read(NetworkReader r)
+        {
+            var m = new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
+            // A message that ends here came from a gateway that only ever refused a join for reasons the string
+            // already carried; there is nothing typed to read and nothing is assumed.
+            if (r.Remaining > 0) m.Code = (JoinRejectReason)r.ReadByte();
+            if (r.Remaining > 0) m.Saturation = r.ReadHalf();
+            return m;
+        }
     }
 
     /// <summary>
@@ -314,21 +355,72 @@ namespace Nebula
         Joined = 2,
     }
 
-    /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown).</summary>
+    /// <summary>
+    /// Why a join is being held in <see cref="JoinState.Starting"/>. A reason, not an error: the gateway holds the
+    /// client and places it as soon as the reason goes away, with no reconnect. See <c>docs/scope-lifecycle.md</c>.
+    /// </summary>
+    public enum JoinHoldReason : byte
+    {
+        /// <summary>Not held (or a gateway from before the field existed, which only ever held for <see cref="WorldStarting"/>).</summary>
+        None = 0,
+        /// <summary>No worker holds an active lease yet: the mesh is booting one.</summary>
+        WorldStarting = 1,
+        /// <summary>The scope the client named has not been activated, or has no container with a live owner yet. Whoever sent the player to the key is the one that activates it.</summary>
+        ScopeNotReady = 2,
+        /// <summary>The scope is coming back from a retire and its persisted entities are still being restored.</summary>
+        ScopeRestoring = 3,
+        /// <summary>The scope is retiring: it is checkpointing and emptying itself and admits nobody.</summary>
+        ScopeRetiring = 4,
+        /// <summary>
+        /// Every container the client could be placed in is at capacity and the game's admission hook asked for the
+        /// client to wait rather than be refused (<see cref="NebulaAdmission"/>, <c>docs/capacity-admission.md</c>).
+        /// This is the "docking queue" answer: the gateway keeps retrying and places the client as soon as room
+        /// appears, with no reconnect.
+        /// </summary>
+        AtCapacity = 5,
+    }
+
+    /// <summary>
+    /// Why a join was refused, in typed form. A reason string is for the player; this is for the game's client
+    /// code, which has to tell "your token is bad" (pointless to retry) from "that station is full" (try a queue,
+    /// another instance, or later). See <c>docs/capacity-admission.md</c>.
+    /// </summary>
+    public enum JoinRejectReason : byte
+    {
+        /// <summary>No typed reason: read <see cref="JoinRejectedMsg.Reason"/> and <see cref="JoinRejectedMsg.Retry"/>. What a gateway from before the field existed sends.</summary>
+        None = 0,
+        /// <summary>The target the client asked for is at capacity and the admission hook refused it (<see cref="JoinRejectedMsg.Saturation"/> says how full).</summary>
+        AtCapacity = 1,
+        /// <summary>The admission hook refused this particular arrival for its own reasons, with the target below capacity (<see cref="NebulaAdmission.AlwaysConsult"/>).</summary>
+        Denied = 2,
+    }
+
+    /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>
     public struct JoinStatusMsg
     {
         public JoinState State;
         /// <summary>Roughly how long the client should expect to wait, in seconds; 0 when nobody can say.</summary>
         public ushort EstimatedSeconds;
+        /// <summary>Why the join is held, while <see cref="JoinState.Starting"/>.</summary>
+        public JoinHoldReason Reason;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.JoinStatus);
             w.WriteByte((byte)State);
             w.WriteUShort(EstimatedSeconds);
+            w.WriteByte((byte)Reason);
         }
 
-        public static JoinStatusMsg Read(NetworkReader r) => new JoinStatusMsg { State = (JoinState)r.ReadByte(), EstimatedSeconds = r.ReadUShort() };
+        public static JoinStatusMsg Read(NetworkReader r)
+        {
+            var m = new JoinStatusMsg { State = (JoinState)r.ReadByte(), EstimatedSeconds = r.ReadUShort() };
+            // Appended after the rest of v18 was settled: a message that ends here came from a gateway that only
+            // ever held a join because the world was starting.
+            m.Reason = r.Remaining > 0 ? (JoinHoldReason)r.ReadByte()
+                : m.State == JoinState.Starting ? JoinHoldReason.WorldStarting : JoinHoldReason.None;
+            return m;
+        }
     }
 
     public struct PingMsg
@@ -400,6 +492,19 @@ namespace Nebula
         /// client has just re-entered. Workers send 0.
         /// </summary>
         public ushort ViewSeq;
+        /// <summary>
+        /// The entity's cohesion group (<see cref="NetworkIdentity.CohesionGroup"/>), 0 for none. It travels with
+        /// every spawn, ghost spawn and handover, so each worker holding a copy knows which group the entity is in
+        /// and a handover of any member can take the rest with it (protocol 18, <c>docs/cohesion-hints.md</c>).
+        /// </summary>
+        public uint CohesionGroup;
+        /// <summary>
+        /// What the game says this entity costs to simulate, as a multiplier on its category weight
+        /// (<see cref="NetworkIdentity.EffectiveCostWeight"/>, protocol 18). It travels with the entity so the
+        /// worker it lands on reports the same cost for it. Sent as an f16; zero is a valid weight. A missing
+        /// field reads as -1, which leaves the receiver's current weight unchanged.
+        /// </summary>
+        public float CostWeight;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -434,6 +539,8 @@ namespace Nebula
                 RelevanceRadius = id.RelevanceRadius,
                 InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
                 InterestGroup = id.InterestGroup,
+                CohesionGroup = id.CohesionGroup,
+                CostWeight = id.EffectiveCostWeight,
             };
         }
 
@@ -465,6 +572,8 @@ namespace Nebula
             w.WriteByte((byte)InterestFlags);
             w.WriteByte(InterestGroup);
             w.WriteUShort(ViewSeq);
+            w.WriteUInt(CohesionGroup);
+            w.WriteHalf(CostWeight);
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -490,6 +599,8 @@ namespace Nebula
                 InterestFlags = (EntityInterestFlags)r.ReadByte(),
                 InterestGroup = r.ReadByte(),
                 ViewSeq = r.ReadUShort(),
+                CohesionGroup = r.Remaining > 0 ? r.ReadUInt() : 0u,
+                CostWeight = r.Remaining > 0 ? r.ReadHalf() : -1f,
             };
         }
     }
@@ -606,6 +717,98 @@ namespace Nebula
             Radius = r.ReadFloat(),
             Args = r.ReadBytes(),
         };
+    }
+
+    /// <summary>Flags on an <see cref="AuthorityCallMsg"/>.</summary>
+    [Flags]
+    public enum AuthorityCallFlags : byte
+    {
+        None = 0,
+        /// <summary>The sender wants an <see cref="AuthorityCallReplyMsg"/> with the outcome.</summary>
+        WantsReply = 1,
+    }
+
+    /// <summary>
+    /// An <c>AuthorityRpc</c> on the worker-to-worker link (<see cref="MsgId.AuthorityRpc"/>). Beside the fields an
+    /// <see cref="EntityRpcMsg"/> carries, it names the call (<see cref="CallId"/>, minted by the sender: see
+    /// <see cref="AuthorityCallId"/>), counts the forwards it has taken (<see cref="Hops"/>) and says whether the
+    /// sender wants to hear the outcome. The contract is in <c>docs/cross-worker-calls.md</c>.
+    /// </summary>
+    public struct AuthorityCallMsg
+    {
+        /// <summary>The sender's id for this call; forwarding keeps it.</summary>
+        public ulong CallId;
+        /// <summary>How many workers have forwarded this call so far. 0 as sent.</summary>
+        public byte Hops;
+        public AuthorityCallFlags Flags;
+        public ulong NetId;
+        /// <summary>The entity's epoch on the sender's copy when the call was made.</summary>
+        public uint Epoch;
+        public byte BehaviourIndex;
+        public uint MethodHash;
+        public byte[] Args;
+
+        public bool WantsReply => (Flags & AuthorityCallFlags.WantsReply) != 0;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.AuthorityRpc);
+            w.WriteULong(CallId);
+            w.WriteByte(Hops);
+            w.WriteByte((byte)Flags);
+            w.WriteULong(NetId);
+            w.WriteUInt(Epoch);
+            w.WriteByte(BehaviourIndex);
+            w.WriteUInt(MethodHash);
+            w.WriteBytes(Args);
+        }
+
+        public static AuthorityCallMsg Read(NetworkReader r) => new AuthorityCallMsg
+        {
+            CallId = r.ReadULong(),
+            Hops = r.ReadByte(),
+            Flags = (AuthorityCallFlags)r.ReadByte(),
+            NetId = r.ReadULong(),
+            Epoch = r.ReadUInt(),
+            BehaviourIndex = r.ReadByte(),
+            MethodHash = r.ReadUInt(),
+            Args = r.ReadBytes(),
+        };
+    }
+
+    /// <summary>
+    /// The outcome of an <see cref="AuthorityCallMsg"/> that set <see cref="AuthorityCallFlags.WantsReply"/>
+    /// (<see cref="MsgId.AuthorityRpcReply"/>), sent by the worker that decided it to the worker whose index the
+    /// call id carries.
+    /// </summary>
+    public struct AuthorityCallReplyMsg
+    {
+        public ulong CallId;
+        public AuthorityCallOutcome Outcome;
+        /// <summary>The entity's epoch on the deciding worker, or 0 when it did not hold the entity.</summary>
+        public uint Epoch;
+        /// <summary>The call's hop count when it was decided.</summary>
+        public byte Hops;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.AuthorityRpcReply);
+            w.WriteULong(CallId);
+            w.WriteByte((byte)Outcome);
+            w.WriteUInt(Epoch);
+            w.WriteByte(Hops);
+        }
+
+        public static AuthorityCallReplyMsg Read(NetworkReader r) => new AuthorityCallReplyMsg
+        {
+            CallId = r.ReadULong(),
+            Outcome = (AuthorityCallOutcome)r.ReadByte(),
+            Epoch = r.ReadUInt(),
+            Hops = r.ReadByte(),
+        };
+
+        /// <summary>The result a sender's callback receives for this reply.</summary>
+        public AuthorityCallResult ToResult() => new AuthorityCallResult(CallId, Outcome, Epoch, Hops);
     }
 
     /// <summary>Selected axes and encoding of a root transform update.</summary>

@@ -1,0 +1,90 @@
+---
+title: "AuthorityCallMsg"
+description: "An AuthorityRpc on the worker-to-worker link (MsgId.AuthorityRpc)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct AuthorityCallMsg
+```
+
+An `AuthorityRpc` on the worker-to-worker link ([`MsgId.AuthorityRpc`](/docs/reference/protocol/msg-id#authorityrpc)). Beside the fields an [`EntityRpcMsg`](/docs/reference/protocol/entity-rpc-msg) carries, it names the call ([`CallId`](#callid), minted by the sender: see [`AuthorityCallId`](/docs/reference/worker/authority-call-id)), counts the forwards it has taken ([`Hops`](#hops)) and says whether the sender wants to hear the outcome. The contract is in `docs/cross-worker-calls.md`.
+
+## Fields
+
+### CallId [#callid]
+
+```csharp
+public ulong CallId;
+```
+
+The sender's id for this call; forwarding keeps it.
+
+### Hops [#hops]
+
+```csharp
+public byte Hops;
+```
+
+How many workers have forwarded this call so far. 0 as sent.
+
+### Flags [#flags]
+
+```csharp
+public AuthorityCallFlags Flags;
+```
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+The entity's epoch on the sender's copy when the call was made.
+
+### BehaviourIndex [#behaviourindex]
+
+```csharp
+public byte BehaviourIndex;
+```
+
+### MethodHash [#methodhash]
+
+```csharp
+public uint MethodHash;
+```
+
+### Args [#args]
+
+```csharp
+public byte[] Args;
+```
+
+## Properties
+
+### WantsReply [#wantsreply]
+
+```csharp
+public bool WantsReply { get; }
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static AuthorityCallMsg Read(NetworkReader r);
+```

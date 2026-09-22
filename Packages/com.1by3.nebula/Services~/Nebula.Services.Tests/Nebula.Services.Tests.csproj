@@ -10,8 +10,32 @@
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <Compile Include="../../Tests/EditMode/OrchestratorAssignmentTests.cs;../../Tests/EditMode/ControlPlaneJsonTests.cs" />
+    <!-- Per-container cost telemetry (docs/cost-telemetry.md) is parsed and weighed in pure C#, so the standalone
+         orchestrator runs the same round-trip tests the package does. -->
+    <Compile Include="../../Tests/EditMode/ContainerCostTests.cs" />
+    <!-- Capacity and admission (docs/capacity-admission.md) are derived from those rows and decided in pure C#. -->
+    <Compile Include="../../Tests/EditMode/CapacityAdmissionTests.cs" />
     <!-- Interest management is pure C#, so the standalone gateway runs the same tests the package does. -->
     <Compile Include="../../Tests/EditMode/InterestGridTests.cs;../../Tests/EditMode/InterestIndexTests.cs;../../Tests/EditMode/CarriedTransitionTests.cs;../../Tests/EditMode/HandoverScopeTests.cs;../../Tests/EditMode/InterestSubscriptionTests.cs;../../Tests/EditMode/RegionPublisherTests.cs;../../Tests/EditMode/InterestSettingsTests.cs;../../Tests/EditMode/InterestPolicyTests.cs;../../Tests/EditMode/ClientInterestTests.cs;../../Tests/EditMode/InterestWireTests.cs" />
+    <!-- The location contract (docs/location-contract.md) is pure C# too: the same conformance tests run against the
+         service registry here and against the Unity registry in the package. -->
+    <Compile Include="../../Tests/EditMode/ConformanceLocationTests.cs" />
+    <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
+         exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
+    <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
+    <!-- The cross-worker call contract (docs/cross-worker-calls.md) is pure C# too, so its conformance tests run here as well. -->
+    <Compile Include="../../Tests/EditMode/ConformanceCallContractTests.cs" />
+    <!-- Scope activation (docs/scope-activation.md) is decided by the control plane, which is pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceScopeActivationTests.cs" />
+    <!-- The scope lifecycle (docs/scope-lifecycle.md): the state machine and the admission rule are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceScopeLifecycleTests.cs" />
+    <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
+    <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
+    <!-- Per-scope origin frames (docs/scope-frames.md): the scaler's dry run and the scope-salted region ids are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />
+    <!-- The scale and failure suite (docs/scale-suite.md) is the synthetic layer: it drives the fake mesh at
+         scale and kills parts of it. Tagged `Scale` so the conformance runner never picks it up. -->
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

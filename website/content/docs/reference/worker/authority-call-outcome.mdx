@@ -1,0 +1,25 @@
+---
+title: "AuthorityCallOutcome"
+description: "Where an AuthorityRpc call ended up."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public enum AuthorityCallOutcome : byte
+```
+
+Where an `AuthorityRpc` call ended up. A caller that asked for a reply (`NetworkBehaviour.AuthorityRpcWithReply`) receives exactly one of these; a fire-and-forget call is decided by the same rules and only logs a rejection on the worker that made it. See the design in `docs/cross-worker-calls.md`.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="pending"></span>`Pending` | `0` | Not decided yet. Never sent on the wire. |
+| <span id="accepted"></span>`Accepted` | `1` | The worker with authority ran the method once. The handler may still have thrown or refused the claim. |
+| <span id="rejectedstaleepoch"></span>`RejectedStaleEpoch` | `2` | The call's entity epoch was more than [`NebulaConfig.AuthorityCallMaxHops`](/docs/reference/core/nebula-config#authoritycallmaxhops) authority changes behind the entity, or ahead of it: the caller's copy was not the entity the authority holds. |
+| <span id="rejectedunknownentity"></span>`RejectedUnknownEntity` | `3` | No worker on the call's path holds the entity: it was despawned, or never existed there. |
+| <span id="rejectedhoplimit"></span>`RejectedHopLimit` | `4` | The call was forwarded [`NebulaConfig.AuthorityCallMaxHops`](/docs/reference/core/nebula-config#authoritycallmaxhops) times without reaching the authority. |
+| <span id="rejectedduplicate"></span>`RejectedDuplicate` | `5` | A call with this id was already applied on this worker. At-most-once held; nothing ran a second time. |
+| <span id="rejectedunreachable"></span>`RejectedUnreachable` | `6` | The worker that should apply or forward the call has no connection to the entity's owner. |
+| <span id="timedout"></span>`TimedOut` | `7` | No reply arrived before the caller's deadline. The call may or may not have been applied. |

@@ -84,6 +84,8 @@ namespace Nebula
             /// <summary>What the client was last told about its join (<see cref="JoinStatusMsg"/>); only changes are sent.</summary>
             public JoinState Join;
             public ushort JoinEstimate;
+            /// <summary>Why the join is being held, as the client was last told (<see cref="JoinHoldReason"/>).</summary>
+            public JoinHoldReason JoinReason;
             public float NextSpawnAttempt;
             /// <summary>
             /// When the gateway first found itself unable to place this client's pawn (no record, or a record
@@ -95,6 +97,13 @@ namespace Nebula
             public bool PawnRecovering;
             public string SpawnWorkerId = "";
             public ContainerRef SpawnContainer = ContainerRef.None;
+            /// <summary>
+            /// The simulation scope this client asked for in its Hello (<see cref="HelloMsg.ScopeKey"/>), empty for
+            /// the public world. The gateway only ever spawns the player into a container whose
+            /// <see cref="Container.ScopeKey"/> is this, and holds the join while no such container has a live
+            /// owner (docs/scope-activation.md §5).
+            /// </summary>
+            public string ScopeKey = "";
             public string CoordinationClaim = "";
             public Action RetryCoordination;
             public bool CoordinationInFlight;
@@ -1183,6 +1192,7 @@ namespace Nebula
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
+                c.ScopeKey = hello.ScopeKey ?? "";
                 if (Draining) { Reject(c, "gateway is draining", true); return; }
                 Authenticate(c, hello.Token ?? "", hello.Session ?? "");
                 return;
@@ -1242,17 +1252,20 @@ namespace Nebula
         /// orchestrator published for this worker host (<see cref="IWorkerHost.TypicalBootSeconds"/>, seeded as the
         /// <see cref="MeshSettings.BootSeconds"/> mesh setting), so the game can show "world starting, about N s".
         /// </summary>
-        private void SendJoinStatus(ClientConn c, JoinState state)
+        private void SendJoinStatus(ClientConn c, JoinState state, JoinHoldReason reason = JoinHoldReason.None)
         {
             ushort estimate = state == JoinState.Starting ? (ushort)Mathf.Clamp(ControlPlane.GetSettingInt(MeshSettings.BootSeconds, 0), 0, ushort.MaxValue) : (ushort)0;
-            if (c.Join == state && c.JoinEstimate == estimate) return;
+            if (state != JoinState.Starting) reason = JoinHoldReason.None;
+            else if (reason == JoinHoldReason.None) reason = JoinHoldReason.WorldStarting;
+            if (c.Join == state && c.JoinEstimate == estimate && c.JoinReason == reason) return;
             c.Join = state;
             c.JoinEstimate = estimate;
+            c.JoinReason = reason;
             _writer.Reset();
-            new JoinStatusMsg { State = state, EstimatedSeconds = estimate }.Write(_writer);
+            new JoinStatusMsg { State = state, EstimatedSeconds = estimate, Reason = reason }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             if (state == JoinState.Starting)
-                NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting for the world to start" + (estimate > 0 ? $" (about {estimate} s)" : ""));
+                NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting ({reason})" + (estimate > 0 ? $", about {estimate} s" : ""));
         }
 
         // ---------------------------------------------------------------------------------------- authentication
@@ -1294,16 +1307,18 @@ namespace Nebula
         }
 
         /// <summary>Tell the client why and drop the link a moment later, once the message has had time to go out.</summary>
-        private void Reject(ClientConn c, string reason, bool retry = false)
+        private void Reject(ClientConn c, string reason, bool retry = false, JoinRejectReason code = JoinRejectReason.None, float saturation = 0f)
         {
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
             _writer.Reset();
-            new JoinRejectedMsg { Reason = reason, Retry = retry }.Write(_writer);
+            new JoinRejectedMsg { Reason = reason, Retry = retry, Code = code, Saturation = saturation }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             c.DisconnectAt = Time.unscaledTime + 0.5f;
         }
 
         private readonly List<ClientConn> _toDrop = new List<ClientConn>();
+        /// <summary>Spawn candidates that are not at capacity, reused between placements so the filter allocates nothing.</summary>
+        private readonly List<Container> _openCandidates = new List<Container>();
 
         private void DropRejectedClients()
         {
@@ -1533,18 +1548,68 @@ namespace Nebula
                 ReserveCoordinatedSpawn(c, reserved, c.SpawnContainer);
                 return;
             }
+            // A scope that is retiring or restoring admits nobody, whatever its lease rows say: the hold is what
+            // makes "all parts restore before admission" true from the client's point of view (docs/scope-lifecycle.md).
+            if (!ScopeLifecycle.Admits(ControlPlane, c.ScopeKey, out var holdReason) && holdReason != JoinHoldReason.ScopeNotReady)
+            {
+                SendJoinStatus(c, JoinState.Starting, holdReason);
+                NebulaLog.Debugf($"scope '{c.ScopeKey}' is {holdReason}; holding the join of client {c.ClientId}");
+                return;
+            }
             // Any container with an active lease whose worker we are connected to.
             var candidates = new List<Container>();
-            CollectSpawnCandidates(ContainerRegistry.All, candidates);
-            CollectSpawnCandidates(ContainerRegistry.Runtime, candidates);
+            CollectSpawnCandidates(ContainerRegistry.All, candidates, c.ScopeKey);
+            CollectSpawnCandidates(ContainerRegistry.Runtime, candidates, c.ScopeKey);
             if (candidates.Count == 0)
             {
                 // Nothing to spawn into: with MinWorkers at 0 this is the normal first join after an idle period.
                 // The client is held rather than dropped, the orchestrator sees the pending join on the next
                 // heartbeat and boots a worker, and this retry (every 3 s) places the player with no reconnect.
-                SendJoinStatus(c, JoinState.Starting);
-                NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet; holding the join (world starting)");
+                SendJoinStatus(c, JoinState.Starting, c.ScopeKey.Length == 0 ? JoinHoldReason.WorldStarting : JoinHoldReason.ScopeNotReady);
+                NebulaLog.Debugf(c.ScopeKey.Length == 0
+                    ? $"no container available to spawn client {c.ClientId} yet; holding the join (world starting)"
+                    : $"scope '{c.ScopeKey}' has no container with a live owner yet; holding the join of client {c.ClientId}");
                 return;
+            }
+            // Capacity: a target that is at capacity is not silently split and not silently overfilled. Candidates
+            // below capacity are preferred, and only when every one of them is full is the game asked what to do
+            // with this particular arrival (docs/capacity-admission.md).
+            var capacity = NebulaCapacity.Target(ControlPlane, c.ScopeKey, "");
+            if (NebulaCapacity.IsPerContainer(ControlPlane, c.ScopeKey))
+            {
+                _openCandidates.Clear();
+                for (int i = 0; i < candidates.Count; i++)
+                    if (!NebulaCapacity.Of(ControlPlane, candidates[i].ContainerId).AtCapacity) _openCandidates.Add(candidates[i]);
+                if (_openCandidates.Count > 0) { capacity = default; candidates.Clear(); candidates.AddRange(_openCandidates); }
+                else for (int i = 0; i < candidates.Count; i++) capacity = NebulaCapacity.Worse(capacity, NebulaCapacity.Of(ControlPlane, candidates[i].ContainerId));
+            }
+            if (capacity.AtCapacity || NebulaAdmission.AlwaysConsult)
+            {
+                var decision = NebulaAdmission.Ask(new AdmissionRequest
+                {
+                    Kind = AdmissionKind.Join,
+                    ScopeKey = c.ScopeKey,
+                    ContainerId = capacity.ContainerId ?? "",
+                    Capacity = capacity,
+                    ClientId = c.ClientId,
+                    Identity = c.Identity,
+                    Name = c.Name,
+                    IsBot = c.IsBot,
+                    Team = c.Team,
+                    Tags = c.Tags,
+                }, $"client {c.ClientId} joining '{(c.ScopeKey.Length == 0 ? "the public world" : c.ScopeKey)}'");
+                if (decision.Action == AdmissionAction.Hold)
+                {
+                    SendJoinStatus(c, JoinState.Starting, JoinHoldReason.AtCapacity);
+                    NebulaLog.Debugf($"admission holds client {c.ClientId}: the target is at capacity ({capacity})");
+                    return;
+                }
+                if (decision.Action == AdmissionAction.Reject)
+                {
+                    Reject(c, string.IsNullOrEmpty(decision.Reason) ? NebulaAdmission.DefaultReason(capacity) : decision.Reason,
+                        retry: false, code: capacity.AtCapacity ? JoinRejectReason.AtCapacity : JoinRejectReason.Denied, saturation: capacity.Saturation);
+                    return;
+                }
             }
 #if NEBULA_SERVICE
             var pick = candidates[System.Random.Shared.Next(candidates.Count)];
@@ -1561,12 +1626,19 @@ namespace Nebula
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
         }
 
-        private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates)
+        /// <summary>
+        /// The containers this client may be spawned into: owned by a worker this gateway can reach, and in the
+        /// scope the client asked for. The scope check is ordinal on <see cref="Container.ScopeKey"/> and fails
+        /// closed, so a client that named a scope is never placed in the public world by accident and a public
+        /// client is never placed inside somebody's instance.
+        /// </summary>
+        private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates, string scopeKey)
         {
             for (int i = 0; i < containers.Count; i++)
             {
                 var container = containers[i];
                 if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
+                if (!string.Equals(container.ScopeKey ?? "", scopeKey ?? "", StringComparison.Ordinal)) continue;
                 if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) continue;
                 candidates.Add(container);
             }

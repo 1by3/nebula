@@ -59,3 +59,5 @@ public static CostWeights Default { get; }
 ```csharp
 public float Of(in ContainerLoad load);
 ```
+
+What this container costs. When the worker reported a per-entity cost sum ([`ContainerLoad.HasEntityCost`](/docs/reference/orchestrator/container-load#hasentitycost)) that sum is used: it is these same category weights with each entity's own multiplier applied ([`NebulaCost`](/docs/reference/core/nebula-cost)), so a world that sets no weights gets exactly the number the head count below gives. Otherwise the heads are counted here, as they always were.

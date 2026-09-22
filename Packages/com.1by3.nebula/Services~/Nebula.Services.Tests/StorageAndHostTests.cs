@@ -318,6 +318,36 @@ public class StorageAndHostTests
         restored.Dispose();
     }
 
+    /// <summary>
+    /// The count behind <c>NebulaLifecycle.OnScopeActivating</c>'s <c>hasRecords</c> (docs/lifecycle-hooks.md D5):
+    /// a scope's records are counted in the database, never listed, and the public world is a scope key of its own.
+    /// </summary>
+    [Test]
+    public void SqlPersistenceStoreCountsAScopesRecordsWithoutReadingThem()
+    {
+        using var db = NebulaDatabase.Open(DatabaseUrl.Parse("sqlite:" + Path.Combine(directory, "scopes.db"), ""));
+        var store = new SqlPersistenceStore(db);
+        store.Connect();
+        var a = Record("a", "rt_1"); a.ScopeKey = "raid/molten-core#4812";
+        var b = Record("b", "rt_2"); b.ScopeKey = "raid/molten-core#4812";
+        store.Save(a);
+        store.Save(b);
+        store.Save(Record("c", "cell-1")); // the public world
+
+        int scope = -1, part = -1, other = -1, publicWorld = -1;
+        store.CountRecords("raid/molten-core#4812", "", n => scope = n);
+        store.CountRecords("raid/molten-core#4812", "rt_1", n => part = n);
+        store.CountRecords("raid/molten-core#9999", "", n => other = n);
+        store.CountRecords("", "", n => publicWorld = n);
+        WaitUntil(() => scope >= 0 && part >= 0 && other >= 0 && publicWorld >= 0, store.Tick);
+
+        Assert.That(scope, Is.EqualTo(2));
+        Assert.That(part, Is.EqualTo(1), "a container narrows the count to one part of the scope");
+        Assert.That(other, Is.Zero, "a key that was never activated holds nothing");
+        Assert.That(publicWorld, Is.EqualTo(1), "and the public world is counted under the empty key");
+        store.Dispose();
+    }
+
     [Test]
     public void RemotePersistenceStoreGoesThroughThePersistenceHost()
     {
@@ -357,6 +387,12 @@ public class StorageAndHostTests
             Assert.That(inC1!.Select(r => r.Key), Is.EquivalentTo(new[] { "a" }));
             Assert.That(carried!.Select(r => r.Key), Is.EquivalentTo(new[] { "b" }));
             Assert.That(filtered!.Select(r => r.Key), Is.EquivalentTo(new[] { "b" }));
+
+            // The count travels as a number, not as records (GET /api/store/count).
+            int counted = -1;
+            remote.CountRecords("", "c1", n => counted = n);
+            WaitUntil(() => counted >= 0, Pump);
+            Assert.That(counted, Is.EqualTo(2), "both records of c1 in the public world; a carried record counts like any other");
 
             remote.Delete("a");
             WaitUntil(() => backing.KnownCount == 1, Pump);

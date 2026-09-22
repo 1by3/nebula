@@ -34,6 +34,10 @@ namespace Nebula
             if (!string.IsNullOrEmpty(info.ContentResource) && prefab == null) return false;
             // Saved entities are spawned through the worker API; static content must not create duplicate scene IDs.
             if (prefab != null && prefab.GetComponentInChildren<NetworkIdentity>(true) != null) return false;
+            // The Editor outside play mode cannot create a runtime scene, and an EditMode test standing a scope's
+            // containers up (conformance tier B) does not need one: the container stays in the active scene and
+            // everything this method is really about — the resource check above — has already run.
+            if (!Application.isPlaying) return true;
             if (!Scenes.TryGetValue(info.InstanceId, out var scene))
             {
                 scene = SceneManager.CreateScene("Nebula instance " + info.InstanceId,

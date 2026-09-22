@@ -3,7 +3,9 @@ title: Create private instances
 description: Define private areas with containers, prepare player crossings, and allow a bounded view of the public world.
 ---
 
-An instance is a separate simulation scope containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
+An instance is a separate [simulation scope](/docs/guides/scopes) containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
+
+This page is the worker-side path: a player walks into an `InstanceBoundary` and the worker prepares the instance as they approach. To create a scope from outside a worker — from a matchmaker, a travel menu or a login flow — or to route a player into one at join, see [Simulation scopes](/docs/guides/scopes). Both paths produce the same scope for the same key.
 
 Use instances for private homes, party dungeons, training rooms, or separate copies of a mission. A container still defines where simulation happens and which [worker](/docs/concepts/containers-and-handover) is responsible. The instance ID determines which copy an entity belongs to. Creating an ordinary runtime container alone does not make it private.
 
@@ -109,7 +111,7 @@ public sealed class HomeAdmission : MonoBehaviour
 
 Set `HomeOwnerIdentity` from your server's housing data. A resolver selects a key; it does not enforce permission by itself. With no `CanEnter` callback, the entrance allows any player to use its resolved key. Keep the key stable while a player occupies the area so the boundary can recognize their private scope on exit. The built-in boundary permits occupants to leave even if admission is later revoked.
 
-For temporary runs, include a run identifier in the key. Container leases remain registered until explicitly removed; automatic empty-instance expiration and suspension are not currently provided.
+For temporary runs, include a run identifier in the key. An instance is a [simulation scope](/docs/guides/scopes), so an empty one is retired automatically after `ScopeIdleRetireSeconds`: its persistent entities are checkpointed, its container leases released, and it comes back — the same instance, with the same saved contents — when the key is activated again. Set `ScopeIdleRetireSeconds` to 0, or replace `ScopeLifecycle.ShouldRetire`, to decide otherwise.
 
 The scope is derived from `TemplateId + "/" + key`; each part's runtime ID also includes its part ID. Reusing those values selects the same copy. Changing them selects new container IDs. Use a consistent key format and delimiters. Reusing a key with different bounds or a different content resource is rejected while its lease exists; treat layout changes as a migration or choose a new template ID.
 
@@ -189,7 +191,7 @@ After a mesh restart, request the same template and key again at the same origin
 
 For cleanup, first transfer players out and stop admitting new occupants. On the owning worker for each part, call `ReleaseRuntimeContainer` with its runtime ID. This checkpoints and despawns persistent entities and despawns transient entities before removing the lease. **Transient contents are lost when you release a container.** Releasing a lease does not delete the saved persistent records.
 
-Retire every part of a multi-container instance. Unloading one part does not retire the others. Nebula does not automatically expire empty instances, suspend runs, or delete their saved records. Use your game's occupancy and session rules to decide when cleanup is safe; preparing an instance is not a player reservation.
+Releasing one part by hand does not retire the others; use the [scope lifecycle](/docs/guides/scopes#retiring-and-re-activating-a-scope) when you want all of an instance's parts to go together, which also checkpoints them first and refuses admission until a re-activated instance has finished restoring. Nebula never deletes an instance's saved records. Preparing an instance is not a player reservation: your game's occupancy and session rules still decide who may enter.
 
 ## Build and test
 
@@ -248,3 +250,4 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 - [InstanceTransfer](/docs/reference/worker/instance-transfer) reports preparation state.
 - [InstanceScenes](/docs/reference/containers/instance-scenes) exposes scoped physics and content preparation.
 - [Wire protocol](/docs/specifications/wire-protocol#instance-preparation) and [control plane](/docs/specifications/control-plane) describe preparation messages and lease metadata.
+- [Entity location contract](/docs/specifications/entity-location) explains how the instance key becomes the scope key that `NetworkIdentity.Location` and persisted records report.

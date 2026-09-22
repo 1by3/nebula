@@ -130,6 +130,7 @@ namespace Nebula
             _workers.Clear(); _workers.AddRange(incoming.Workers);
             _leases.Clear(); _leases.AddRange(incoming.Leases);
             _gateways.Clear(); _gateways.AddRange(incoming.Gateways);
+            _scopes.Clear(); _scopes.AddRange(incoming.Scopes);
             _settings.Clear();
             foreach (var kv in incoming.Settings) _settings[kv.Key] = kv.Value;
             Changed?.Invoke();
@@ -165,7 +166,8 @@ namespace Nebula
         public void HeartbeatWorker(string workerId, string status, in WorkerStats s) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatWorker).Arg("workerId", workerId).Arg("status", status)
                 .Arg("tickCount", s.TickCount).Arg("tickMs", s.TickMs).Arg("entityCount", s.EntityCount).Arg("authoritativeCount", s.AuthoritativeCount)
-                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities).End());
+                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities)
+                .Arg("oldestDirtySeconds", s.OldestDirtySeconds).End());
 
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
         public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) =>
@@ -200,6 +202,9 @@ namespace Nebula
         public void PinContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.PinContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void SetLeaseState(string containerId, string state) => Enqueue(_op.Op(ControlPlaneJson.SetLeaseState).Arg("containerId", containerId).Arg("state", state).End());
         public void SetContainerHint(string containerId, in ContainerHint hint) => Enqueue(_op.Op(ControlPlaneJson.SetContainerHint).Arg("containerId", containerId).Arg("hint", hint.ToString()).End());
+        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None) =>
+            Enqueue(_op.Op(ControlPlaneJson.SetContainerCapacity).Arg("containerId", containerId).Arg("saturation", saturation)
+                .Arg("dominant", ContainerCost.NameOf(dominant)).Arg("atCapacity", atCapacity).Arg("cause", SaturationReport.NameOf(cause)).End());
         public void ReleaseContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.ReleaseContainer).Arg("containerId", containerId).End());
         public void RemoveContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.RemoveContainer).Arg("containerId", containerId).End());
         public void ResetControlPlane() => Enqueue(_op.Op(ControlPlaneJson.ResetControlPlane).End());

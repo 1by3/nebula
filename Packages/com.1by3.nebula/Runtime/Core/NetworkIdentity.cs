@@ -37,6 +37,53 @@ namespace Nebula
         [Tooltip("A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.")]
         public byte InterestGroup;
 
+        [Header("Cohesion")]
+        [Tooltip("Entities sharing a non-zero cohesion group must be simulated by one worker: a handover of any member takes the others with it, and the planner treats their containers as one item. Set it here for a group that is authored (a ragdoll, a turret and its mount) or call JoinCohesionGroup at runtime. 0 means no group. See https://nebula.1by3.co/docs/guides/cohesion")]
+        [SerializeField] private uint _cohesionGroup;
+
+        [Header("Cost")]
+        [Tooltip("What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.")]
+        public float CostWeight = 1f;
+
+        /// <summary>
+        /// The multiplier this entity actually carries right now (see <see cref="NebulaCost"/> for how it is
+        /// chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only
+        /// changes when the game calls <see cref="SetCostWeight"/>: never per tick. Multiply it by the entity's
+        /// category weight in <see cref="CostWeights"/> to get what the mesh thinks it costs.
+        /// </summary>
+        public float EffectiveCostWeight { get; private set; } = 1f;
+
+        /// <summary>
+        /// Say what this entity costs from now on, overruling both <see cref="CostWeight"/> and
+        /// <see cref="NebulaCost.EntityWeight"/>. The value is clamped to [0, <see cref="NebulaCost.MaxWeight"/>]
+        /// and travels with the entity: the worker it hands over to reports the same cost for it.
+        /// </summary>
+        public void SetCostWeight(float weight)
+        {
+            EffectiveCostWeight = NebulaCost.Clamp(weight);
+            _costWeightPinned = true;
+        }
+
+        /// <summary>Re-ask <see cref="NebulaCost"/> for this entity's weight, unless the game pinned one with <see cref="SetCostWeight"/>.</summary>
+        internal void RecomputeCostWeight()
+        {
+            if (_costWeightPinned) return;
+            EffectiveCostWeight = NebulaCost.Evaluate(this);
+        }
+
+        /// <summary>
+        /// Take the weight that arrived with the entity's state (a ghost spawn or a handover). It is pinned: the
+        /// receiving worker does not re-ask the callback, so an entity reports the same cost wherever it is
+        /// simulated (docs/cost-telemetry.md, D4).
+        /// </summary>
+        internal void ApplyCarriedCostWeight(float weight)
+        {
+            EffectiveCostWeight = NebulaCost.Clamp(weight);
+            _costWeightPinned = true;
+        }
+
+        private bool _costWeightPinned;
+
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 
@@ -58,9 +105,49 @@ namespace Nebula
         public bool IsServerDriven { get; internal set; }
         /// <summary>Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.</summary>
         public uint Epoch { get; internal set; }
+        /// <summary>
+        /// The cohesion group this entity belongs to, or 0 for none: the game's promise that every member is
+        /// simulated by one worker and moves between workers as a unit (<see cref="CohesionGroups"/>,
+        /// <c>docs/cohesion-hints.md</c>). Authored in the inspector or set at runtime with
+        /// <see cref="JoinCohesionGroup"/>; it travels with the entity in the spawn, ghost and handover messages,
+        /// so every worker holding a copy knows it. The ids are the game's own - any non-zero number both sides of
+        /// an interaction agree on.
+        /// </summary>
+        public uint CohesionGroup => _cohesionGroup;
+
+        /// <summary>
+        /// Put this entity in a cohesion group, leaving the one it was in. The authority's value is the one that
+        /// counts: it is what a handover expands and what the worker reports to the orchestrator. Ghosts and client
+        /// replicas learn the new value with the next spawn, ghost spawn or handover of the entity, so join before
+        /// the interaction that needs the group rather than in the middle of it (<c>docs/cohesion-hints.md</c>, D3).
+        /// </summary>
+        /// <param name="group">A non-zero group id. 0 is <see cref="LeaveCohesionGroup"/>.</param>
+        public void JoinCohesionGroup(uint group)
+        {
+            if (_cohesionGroup == group) return;
+            CohesionGroups.Unregister(this, _cohesionGroup);
+            _cohesionGroup = group;
+            if (Initialized) CohesionGroups.Register(this);
+        }
+
+        /// <summary>Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.</summary>
+        public void LeaveCohesionGroup() => JoinCohesionGroup(0);
         public Container Container { get; internal set; }
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
+        /// <summary>
+        /// The opaque scope key of the entity's simulation scope (<see cref="Container.ScopeKey"/> of the current
+        /// container): <see cref="EntityLocation.PublicScope"/> (empty) in the public world or in no container, the
+        /// instance key inside an instance. Never null.
+        /// </summary>
+        public string ScopeKey => Container != null ? Container.ScopeKey : EntityLocation.PublicScope;
+        /// <summary>
+        /// Where the entity durably is right now (<see cref="EntityLocation"/>): its scope key, its container's id
+        /// and its pose in that container's local space (<see cref="LocalPosition"/>, <see cref="LocalRotation"/>).
+        /// The same value on every process that holds the entity, and the value <see cref="PersistedEntityRecord.Location"/>
+        /// saves for a persistent entity in a static or runtime container; it does not change on a handover.
+        /// </summary>
+        public EntityLocation Location => EntityLocation.Of(Container, LocalPosition, LocalRotation);
         /// <summary>Use this scene for raycasts and overlap tests to exclude entities in other instances.</summary>
         public PhysicsScene PhysicsScene => gameObject.scene.GetPhysicsScene();
         /// <summary>Wire index of the current container (<see cref="ContainerRef.DynamicIndex"/> inside a dynamic one, <see cref="ushort.MaxValue"/> in none). Prefer <see cref="ContainerRef"/>.</summary>
@@ -136,6 +223,7 @@ namespace Nebula
                 // The owner never consumes the root interpolation buffer. Adopt the worker's
                 // container/epoch while preserving the more recent locally simulated world pose.
                 SetContainer(container);
+                if (NebulaRuntime.IsServer) RecordGhostState(tick, container);
                 return true;
             }
             bool location = (entry.Fields & TransformFields.Location) != 0;
@@ -154,11 +242,15 @@ namespace Nebula
                 Interpolator?.Clear();
             }
             RootTransform?.ReceiveRoot(tick, container, entry);
+            // The stream says what the owner had at its tick, so the entry is tagged with that tick, not with ours.
+            if (NebulaRuntime.IsServer) RecordGhostState(tick, container);
             return true;
         }
 
         public NetworkBehaviour[] Behaviours { get; private set; } = Array.Empty<NetworkBehaviour>();
         internal NetworkVariableBase[] AllVars = Array.Empty<NetworkVariableBase>();
+        /// <summary>The <see cref="SyncHistoryAttribute"/> subset of <see cref="AllVars"/>, in the same order, snapshotted by <see cref="StateHistory"/>.</summary>
+        internal NetworkVariableBase[] HistoryVars = Array.Empty<NetworkVariableBase>();
         internal bool VarsDirty;
         internal bool SyncDirty;
         internal bool Initialized;
@@ -181,49 +273,117 @@ namespace Nebula
         /// </summary>
         public PersistentEntity Persistent { get; private set; }
 
-        // ---- pose history (worker side): what this entity looked like N ticks ago, for lag-compensated hit tests.
-        // A shooter aims at what its screen showed, which is interpolation delay + transit + input lead in the past;
-        // the worker records every entity's pose per tick (authoritative and ghost alike) so game code can test a
-        // shot against where the victim was at the shooter's aim tick instead of where it is now.
+        // ---- state history (worker side): what this entity looked like N ticks ago, for lag-compensated hit
+        // tests and time-sensitive validation. A shooter aims at what its screen showed, which is interpolation
+        // delay + transit + input lead in the past; a worker records every copy it holds per tick - its own after
+        // the tick's simulation, a ghost when the owner's stream is applied - so game code can test a claim against
+        // where the entity was at the claimed tick instead of where it is now. Design: docs/state-history.md.
 
-        /// <summary>Ticks of pose history kept per entity (about a second at 60 Hz).</summary>
-        public const int PoseHistoryTicks = 64;
+        private StateHistory _history;
 
-        private struct PoseSample { public uint Tick; public Vector3 Position; public Quaternion Rotation; public bool Valid; }
-        private PoseSample[] _poseHistory;
+        /// <summary>
+        /// The recorded ticks of this entity on this process, or null when nothing has been recorded (recording is
+        /// off, this is a client, or the entity is too young). See <see cref="StateAt"/>.
+        /// </summary>
+        public StateHistory History => _history;
 
-        internal void RecordPose(uint tick)
+        /// <summary>The oldest tick <see cref="StateAt"/> can answer for, or 0 when nothing is recorded.</summary>
+        public uint OldestAvailableTick => _history != null && _history.HasEntries ? _history.OldestAvailableTick : 0u;
+
+        /// <summary>The newest tick <see cref="StateAt"/> can answer for, or 0 when nothing is recorded.</summary>
+        public uint NewestAvailableTick => _history != null && _history.HasEntries ? _history.NewestAvailableTick : 0u;
+
+        /// <summary>
+        /// What this entity looked like at server tick <paramref name="tick"/>: its world pose, velocity, container,
+        /// epoch and the <see cref="SyncHistoryAttribute"/> variables. Answered on the worker that has authority and
+        /// on any worker holding a ghost of it; a ghost's newest tick is one behind the owner's (the tick the
+        /// owner's stream was built on). Outside the recorded window the result's
+        /// <see cref="HistoricalState.Available"/> is false and nothing is extrapolated.
+        /// </summary>
+        public HistoricalState StateAt(uint tick)
         {
-            if (_poseHistory == null) _poseHistory = new PoseSample[PoseHistoryTicks];
-            ref var s = ref _poseHistory[tick % PoseHistoryTicks];
-            s.Tick = tick;
-            s.Position = transform.position;
-            s.Rotation = transform.rotation;
-            s.Valid = true;
+            TryGetStateAt(tick, out var state);
+            return state;
+        }
+
+        /// <summary>As <see cref="StateAt"/>, in the try-pattern.</summary>
+        public bool TryGetStateAt(uint tick, out HistoricalState state)
+        {
+            if (_history != null) return _history.TryGetStateAt(tick, out state);
+            state = default;
+            return false;
         }
 
         /// <summary>
-        /// The pose recorded for <paramref name="tick"/>, or the nearest later one within a few ticks (a ghost
-        /// that arrived recently has a short history). False when nothing usable was recorded.
+        /// The pose recorded for <paramref name="tick"/>, or the nearest one within
+        /// <see cref="StateHistory.GapToleranceTicks"/>. False (with the entity's current pose) when nothing usable
+        /// was recorded. A thin wrapper over <see cref="StateAt"/>.
         /// </summary>
         public bool TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation)
         {
-            if (_poseHistory != null)
+            if (TryGetStateAt(tick, out var state))
             {
-                for (uint t = tick; t <= tick + 4; t++)
-                {
-                    ref var s = ref _poseHistory[t % PoseHistoryTicks];
-                    if (s.Valid && s.Tick == t)
-                    {
-                        position = s.Position;
-                        rotation = s.Rotation;
-                        return true;
-                    }
-                }
+                position = state.Position;
+                rotation = state.Rotation;
+                return true;
             }
             position = transform.position;
             rotation = transform.rotation;
             return false;
+        }
+
+        /// <summary>The ring for this entity, created on demand. Null when recording is off (window of 0 ticks).</summary>
+        private StateHistory EnsureHistory()
+        {
+            int window = StateHistory.WindowTicks;
+            if (window <= 0) return null;
+            if (_history == null) _history = new StateHistory(window, HistoryVars);
+            else if (_history.Capacity != Mathf.Min(window, StateHistory.MaxWindowTicks)) _history = new StateHistory(window, HistoryVars);
+            return _history;
+        }
+
+        /// <summary>
+        /// Record this tick from the authoritative copy, after its simulation. Called once per tick per
+        /// authoritative entity by <see cref="NebulaWorker"/>.
+        /// </summary>
+        internal void RecordAuthoritativeState(uint tick)
+        {
+            var history = EnsureHistory();
+            history?.Record(tick, transform.position, transform.rotation, Motion.Velocity, Container, Epoch, true);
+        }
+
+        /// <summary>
+        /// Record the tick a replicated entry belongs to on a ghost holder, from the pose the stream just delivered
+        /// rather than from the transform (an interpolating ghost has not moved there yet). <paramref name="tick"/>
+        /// is the owner's tick, carried by <see cref="WorldStateMsg"/>.
+        /// </summary>
+        internal void RecordGhostState(uint tick, Container container)
+        {
+            var history = EnsureHistory();
+            if (history == null) return;
+            var localPosition = LocalPosition;
+            var localRotation = LocalRotation;
+            var velocity = Motion.Velocity;
+            var frame = Container;
+            if (Interpolator != null && Interpolator.HasSamples && Interpolator.LatestTick == tick)
+            {
+                frame = Interpolator.LatestContainer;
+                localPosition = Interpolator.LatestLocalPosition;
+                localRotation = Interpolator.LatestLocalRotation;
+                velocity = Interpolator.LatestVelocity;
+            }
+            else if (container != null || Container == null)
+            {
+                frame = container;
+                if (container != Container)
+                {
+                    localPosition = container != null ? container.ToLocal(transform.position) : transform.position;
+                    localRotation = container != null ? container.InverseRotation * transform.rotation : transform.rotation;
+                }
+            }
+            var position = frame != null ? frame.ToWorld(localPosition) : localPosition;
+            var rotation = frame != null ? frame.Rotation * localRotation : localRotation;
+            history.Record(tick, position, rotation, velocity, frame, Epoch, false);
         }
 
         public event Action<Container, Container> ContainerChanged;
@@ -235,17 +395,24 @@ namespace Nebula
         /// The floating origin moved by <paramref name="delta"/>: entities under a container were moved with it, but
         /// cached frame positions (pose history, interpolation buffers, game-side state) must follow by hand.
         /// </summary>
-        internal static void ShiftFrameAll(Vector3 delta)
+        internal static void ShiftFrameAll(Vector3 delta) => ShiftFrameAll(0UL, delta);
+
+        /// <summary>
+        /// One origin frame moved: only the entities of that frame follow it. <paramref name="frameId"/> is 0 for
+        /// the public frame, which is also where every entity whose scope has no frame of its own lives
+        /// (<c>docs/scope-frames.md</c>).
+        /// </summary>
+        internal static void ShiftFrameAll(ulong frameId, Vector3 delta)
         {
-            foreach (var e in Live) if (e != null) e.ShiftFrame(delta);
+            foreach (var e in Live)
+                if (e != null && Nebula.World.ScopeFrames.FrameIdOf(e.InstanceId) == frameId) e.ShiftFrame(delta);
         }
 
         internal void ShiftFrame(Vector3 delta)
         {
             // A scene entity was moved with its scene's roots by the streamer, a contained one with its container.
             if (Container == null && !IsSceneEntity) transform.position += delta;
-            if (_poseHistory != null)
-                for (int i = 0; i < _poseHistory.Length; i++) if (_poseHistory[i].Valid) _poseHistory[i].Position += delta;
+            _history?.Shift(delta);
             Interpolator?.Shift(delta);
             for (int i = 0; i < Behaviours.Length; i++)
             {
@@ -267,6 +434,7 @@ namespace Nebula
         private void OnDestroy()
         {
             if (IsSceneEntity) SceneEntities.Unregister(this);
+            CohesionGroups.Unregister(this, _cohesionGroup);
             Live.Remove(this);
         }
 
@@ -285,6 +453,8 @@ namespace Nebula
             IsServerDriven = false;
             HasAuthority = false;
             IsLocalPlayer = false;
+            EffectiveCostWeight = NebulaCost.Clamp(CostWeight);
+            _costWeightPinned = false;
             OwnerWorkerIndex = 0;
             Motion.Velocity = Vector3.zero;
             HasStateTick = false;
@@ -296,7 +466,7 @@ namespace Nebula
                 Destroy(Interpolator);
                 Interpolator = null;
             }
-            _poseHistory = null;
+            _history = null;
             ClearDirty();
         }
 
@@ -305,6 +475,7 @@ namespace Nebula
             if (Initialized) return;
             Initialized = true;
             Live.Add(this);
+            CohesionGroups.Register(this);
 
             var found = GetComponentsInChildren<NetworkBehaviour>(true);
             // Deterministic order on every process: the same prefab yields the same component order.
@@ -327,6 +498,10 @@ namespace Nebula
                 if (b is PersistentEntity pe && Persistent == null) Persistent = pe;
             }
             AllVars = vars.ToArray();
+            var history = new List<NetworkVariableBase>();
+            foreach (var v in AllVars) if (v.SyncHistory) history.Add(v);
+            HistoryVars = history.Count > 0 ? history.ToArray() : Array.Empty<NetworkVariableBase>();
+            _history?.Rebind(HistoryVars);
             var sync = new List<NetworkBehaviour>();
             foreach (var b in Behaviours) if (b.HasSyncState) sync.Add(b);
             SyncBehaviours = sync.ToArray();
@@ -334,7 +509,7 @@ namespace Nebula
 
         private static NetworkVariableBase[] DiscoverVars(NetworkBehaviour b)
         {
-            var list = new List<(int token, NetworkVariableBase v, string name, bool persist)>();
+            var list = new List<(int token, NetworkVariableBase v, string name, bool persist, bool history)>();
             string typeName = b.GetType().Name;
             for (var t = b.GetType(); t != null && t != typeof(NetworkBehaviour); t = t.BaseType)
             {
@@ -348,7 +523,8 @@ namespace Nebula
                         f.SetValue(b, v);
                     }
                     // The name is what a persisted value is keyed by; it is cheap, so every variable gets one.
-                    list.Add((f.MetadataToken, v, $"{typeName}.{f.Name}", f.IsDefined(typeof(PersistAttribute), true)));
+                    list.Add((f.MetadataToken, v, $"{typeName}.{f.Name}", f.IsDefined(typeof(PersistAttribute), true),
+                        f.IsDefined(typeof(SyncHistoryAttribute), true)));
                 }
             }
             var ordered = list.OrderBy(x => x.token).ToArray();
@@ -360,6 +536,7 @@ namespace Nebula
                 v.Index = i;
                 v.Name = ordered[i].name;
                 v.Persist = ordered[i].persist;
+                v.SyncHistory = ordered[i].history;
                 vars[i] = v;
             }
             return vars;

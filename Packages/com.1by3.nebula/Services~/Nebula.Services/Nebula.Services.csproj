@@ -18,10 +18,15 @@
     <Compile Include="../../Runtime/Transport/**/*.cs" />
     <Compile Include="../../Runtime/Serialization/**/*.cs" />
     <Compile Include="../../Runtime/Core/CommandLine.cs;../../Runtime/Core/NetworkTime.cs;../../Runtime/Core/SyncState.cs;../../Runtime/Core/DatabaseUrl.cs" />
-    <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs" />
+    <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs;../../Runtime/Containers/EntityLocation.cs" />
+    <!-- The cross-worker call contract is pure C#: the same rules decide a call on a Unity worker and in the tests here. -->
+    <Compile Include="../../Runtime/Worker/AuthorityCallContract.cs" />
     <Compile Include="../../Runtime/Persistence/IPersistenceStore.cs;../../Runtime/Persistence/LocalPersistenceStore.cs;../../Runtime/Persistence/PersistedRecordJson.cs;../../Runtime/Persistence/PersistenceHost.cs;../../Runtime/Persistence/RemotePersistenceStore.cs" />
     <Compile Include="../../ThirdParty/LiteNetLib/**/*.cs" />
     <Compile Include="../../World/WorldGrid.cs" />
+    <!-- A chunk grid's definition and its id derivation are pure C#: the gateway, the orchestrator and a
+         matchmaker name a scope's chunks without Unity (docs/scoped-chunk-grids.md). -->
+    <Compile Include="../../Runtime/World/ChunkGridDefinition.cs" />
     <EmbeddedResource Include="../../Runtime/Orchestrator/Resources/*.html" LogicalName="%(Filename)%(Extension)" />
     <InternalsVisibleTo Include="Nebula.Services.Tests" />
     <InternalsVisibleTo Include="Nebula.Persistence.Benchmarks" />

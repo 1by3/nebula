@@ -1,0 +1,46 @@
+---
+title: "ScopeActivationRequest"
+description: "What a caller asks for when it wants a scope to exist."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public sealed class ScopeActivationRequest
+```
+
+What a caller asks for when it wants a scope to exist.
+
+## Fields
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey = "";
+```
+
+The opaque key. Two callers passing the same key get the same scope; a game-supplied unique key is a private copy.
+
+### Definition [#definition]
+
+```csharp
+public ScopeDefinition Definition = new ScopeDefinition();
+```
+
+What to bring into being. Required on the first activation; on a later one it must match the stored definition.
+
+### PreferredWorkerId [#preferredworkerid]
+
+```csharp
+public string PreferredWorkerId = "";
+```
+
+Create the lease rows already assigned to this worker, so the worker that asked owns them from the first change anyone sees (this is what [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker#prepareinstance) has always done). Empty when the caller is not a worker: the rows are born orphaned and the orchestrator deals them out.
+
+### Requester [#requester]
+
+```csharp
+public string Requester = "";
+```
+
+Free-form caller name, kept on the row for logs.

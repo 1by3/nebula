@@ -1,0 +1,80 @@
+---
+title: "CrossIslandJoint"
+description: "A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/PhysicsIslands.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/PhysicsIslands.cs)</div>
+
+```csharp
+public readonly struct CrossIslandJoint
+```
+
+A physics constraint Nebula cannot simulate symmetrically: a `Joint` or a child `ArticulationBody` whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. See Distributed physics.
+
+## Constructors
+
+### CrossIslandJoint [#crossislandjoint]
+
+```csharp
+public CrossIslandJoint(Component constraint, NetworkIdentity owner, NetworkIdentity connected, Container ownerContainer, Container connectedContainer);
+```
+
+## Fields
+
+### Constraint [#constraint]
+
+```csharp
+public readonly Component Constraint;
+```
+
+The `Joint` or `ArticulationBody` component that spans the seam.
+
+### Owner [#owner]
+
+```csharp
+public readonly NetworkIdentity Owner;
+```
+
+The entity the constraint component sits on.
+
+### Connected [#connected]
+
+```csharp
+public readonly NetworkIdentity Connected;
+```
+
+The entity that owns the body the constraint is connected to.
+
+### OwnerContainer [#ownercontainer]
+
+```csharp
+public readonly Container OwnerContainer;
+```
+
+The container [`Owner`](#owner) resolves to, or null for none.
+
+### ConnectedContainer [#connectedcontainer]
+
+```csharp
+public readonly Container ConnectedContainer;
+```
+
+The container [`Connected`](#connected) resolves to, or null for none.
+
+## Methods
+
+### Describe [#describe]
+
+```csharp
+public static string Describe(Container container);
+```
+
+The id of a container, or `"no container"` for null: what the diagnostics print.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+One line naming the constraint, both entities and both containers.

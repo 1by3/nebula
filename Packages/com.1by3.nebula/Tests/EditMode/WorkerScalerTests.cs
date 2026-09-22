@@ -114,6 +114,47 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void NamesWhatTheUnsplittableContainerIsActuallyExpensiveIn()
+        {
+            const float TickMs = 1000f / 60f;
+            const double Link = NebulaConfig.DefaultCostLinkBytesPerSec;
+            var ids = Row(2);
+            var occupancy = new Dictionary<string, ContainerLoad> { [ids[0]] = new ContainerLoad { Players = 20 } };
+            var workers = new Dictionary<string, float> { ["w1"] = 0.9f };
+
+            // Same blocked container, two different reasons for being blocked. Simulation first: a boss arena.
+            var sim = new ContainerCost { ContainerId = ids[0], TickShareMs = TickMs * 0.8f, BytesOutPerSec = 2000 };
+            ContainerCost.Resolve(ref sim, TickMs, Link);
+            var input = Input(new Dictionary<string, float> { [ids[0]] = 0.85f, [ids[1]] = 0.05f }, occupancy);
+            input.Cost = new Dictionary<string, ContainerCost> { [ids[0]] = sim };
+            var scaler = new WorkerScaler();
+            scaler.Evaluate(0.0, workers, input, _policy, 1, Settings(), false);
+            var d = scaler.Evaluate(31.0, workers, input, _policy, 1, Settings(), false);
+            Assert.AreEqual(ids[0], d.BlockedBy);
+            Assert.AreEqual(CostComponent.Simulation, d.BlockedComponent);
+            StringAssert.Contains("mostly simulation", d.Reason);
+
+            // Then replication: the same crowd, but cheap to simulate and expensive to send.
+            var rep = new ContainerCost { ContainerId = ids[0], TickShareMs = TickMs * 0.05f, BytesOutPerSec = (long)(Link * 0.9) };
+            ContainerCost.Resolve(ref rep, TickMs, Link);
+            input.Cost = new Dictionary<string, ContainerCost> { [ids[0]] = rep };
+            var scaler2 = new WorkerScaler();
+            scaler2.Evaluate(0.0, workers, input, _policy, 1, Settings(), false);
+            d = scaler2.Evaluate(31.0, workers, input, _policy, 1, Settings(), false);
+            Assert.AreEqual(CostComponent.Replication, d.BlockedComponent);
+            StringAssert.Contains("mostly replication", d.Reason);
+            Assert.AreEqual(0.9f, d.BlockedSaturation, 1e-2f);
+
+            // And with no cost row at all the reason is exactly the sentence it always was.
+            input.Cost = new Dictionary<string, ContainerCost>();
+            var scaler3 = new WorkerScaler();
+            scaler3.Evaluate(0.0, workers, input, _policy, 1, Settings(), false);
+            d = scaler3.Evaluate(31.0, workers, input, _policy, 1, Settings(), false);
+            StringAssert.Contains("cannot be split; add a hint", d.Reason);
+            Assert.AreEqual(0f, d.BlockedSaturation);
+        }
+
+        [Test]
         public void DoesNotGrowPastTheCeiling()
         {
             var ids = Row(8);

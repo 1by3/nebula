@@ -242,6 +242,30 @@ public CostWeights CostWeights = CostWeights.Default;
 
 Cost policy: what one player / bot / server-driven entity / other entity costs, and what a leased container costs by itself.
 
+### DefaultCostLinkBytesPerSec [#defaultcostlinkbytespersec]
+
+```csharp
+public const double DefaultCostLinkBytesPerSec = 100.0 * 1000.0 * 1000.0 / 8.0;
+```
+
+The default of [`CostLinkBudgetMbps`](#costlinkbudgetmbps) in bytes per second: 100 Mbit/s.
+
+### CostLinkBudgetMbps [#costlinkbudgetmbps]
+
+```csharp
+public float CostLinkBudgetMbps = 100f;
+```
+
+Cost telemetry: the outbound budget one worker's traffic is weighed against, in megabits per second. It decides nothing about what is sent; it is the yardstick that lets a container's bytes be compared with its simulation time, so the dashboard and the scaler can say whether a hot container is hot in simulation, in replication or in gateway relay.
+
+### CapacitySaturation [#capacitysaturation]
+
+```csharp
+public float CapacitySaturation = 0.9f;
+```
+
+How full one container (or one scope, taken as the worst of its parts) may get before the mesh calls it at capacity: the dominant cost component's share of its own budget, 0.9 = 90 %. A join or a prepared transfer into a target at capacity is refused with a typed reason unless NebulaAdmission.Decide admits it. 0 turns the signal off and admits everything, as before. -nebula-capacity-saturation overrides.
+
 ### AutoScale [#autoscale]
 
 ```csharp
@@ -428,6 +452,22 @@ public float GhostLingerSeconds = 2f;
 
 Ghosts stay resident this long after leaving the band.
 
+### StateHistoryTicks [#statehistoryticks]
+
+```csharp
+public int StateHistoryTicks = StateHistory.DefaultWindowTicks;
+```
+
+Ticks of pose and \[SyncHistory\] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second at 60 Hz by default. 0 turns recording off. -nebula-state-history overrides.
+
+### AuthorityCallMaxHops [#authoritycallmaxhops]
+
+```csharp
+public int AuthorityCallMaxHops = 3;
+```
+
+How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.
+
 ### PersistenceMode [#persistencemode]
 
 ```csharp
@@ -459,6 +499,14 @@ public float PersistenceRestoreGraceSeconds = 3f;
 ```
 
 After gaining a container lease, how long a worker waits before restoring that container's persisted entities. Gives the previous owner's handover time to arrive so nothing comes back twice.
+
+### ScopeIdleRetireSeconds [#scopeidleretireseconds]
+
+```csharp
+public float ScopeIdleRetireSeconds = 300f;
+```
+
+Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.
 
 ### SceneEntityGraceSeconds [#sceneentitygraceseconds]
 
@@ -707,6 +755,16 @@ public List<GameObject> NetworkPrefabs = new List<GameObject>();
 ```
 
 Every prefab that can be spawned over the network. The index is the prefab id on the wire.
+
+## Properties
+
+### CostLinkBytesPerSec [#costlinkbytespersec]
+
+```csharp
+public double CostLinkBytesPerSec { get; }
+```
+
+[`CostLinkBudgetMbps`](#costlinkbudgetmbps) in bytes per second; the default when it is 0 or less.
 
 ## Methods
 

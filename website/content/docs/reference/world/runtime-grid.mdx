@@ -21,6 +21,7 @@ Each id packs three signed 21-bit coordinates. Keep this format stable because c
 public RuntimeGrid(float cellSize);
 public RuntimeGrid(Vector3 cellSize);
 public RuntimeGrid(Vector3 cellSize, bool planar);
+public RuntimeGrid(Vector3 cellSize, bool planar, string scopeKey);
 ```
 
 ## Fields
@@ -57,7 +58,87 @@ public bool Planar { get; }
 
 Cells are columns: the grid has a single layer at y = 0 and [`CellSize`](#cellsize).y is the column's height, centered on absolute y = 0. Surface worlds want this — a chunk that is 64 m wide and 512 m tall is one container nothing ever leaves vertically, so verticality never costs a cell, a lease, or a neighborhood dimension. The packing is unchanged (y is simply always 0), so a planar and a volumetric grid produce the same ids for the same coordinates.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The scope this grid's chunks belong to: `""` is the public world, anything else a scope activated with [`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid). It is what makes chunk (x,y,z) of two worlds two different containers: it goes into every id this grid hands out ([`IdOf`](#idof)).
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId { get; }
+```
+
+The 64-bit isolation id of [`ScopeKey`](#scopekey) ([`ScopeKeys.Hash`](/docs/reference/control-plane/scope-keys#hash)); 0 for the public world.
+
+### IsPublic [#ispublic]
+
+```csharp
+public bool IsPublic { get; }
+```
+
+Whether this is the public world's grid, whose ids are the pinned packing and nothing else.
+
+### Frame [#frame]
+
+```csharp
+public ScopeFrame Frame { get; }
+```
+
+This grid's floating-origin frame: [`WorldOrigin`](/docs/reference/world/world-origin) for the public world, and a frame of its own for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on one worker both sit near Unity's origin (`docs/scope-frames.md`).
+
 ## Methods
+
+### From [#from]
+
+```csharp
+public static RuntimeGrid From(ChunkGridDefinition definition, string scopeKey);
+```
+
+The grid a [`ChunkGridDefinition`](/docs/reference/world/chunk-grid-definition) describes, for the scope it was activated under.
+
+### IdOf [#idof]
+
+```csharp
+public ulong IdOf(Vector3Int coord);
+```
+
+This grid's runtime container id for a chunk: the pinned packing in the public world, the scope's derivation ([`ChunkKeys.RuntimeId`](/docs/reference/world/chunk-keys#runtimeid)) in every other scope. The one place a chunk id is made; [`PackId`](#packid) stays public-world only and stays pinned.
+
+### ContainerIdOf [#containeridof]
+
+```csharp
+public string ContainerIdOf(Vector3Int coord);
+```
+
+This grid's control-plane container id for a chunk (`rt_` and [`IdOf`](#idof)).
+
+### TryCoordOf [#trycoordof]
+
+```csharp
+public bool TryCoordOf(ulong id, out Vector3Int coord);
+```
+
+The chunk an id names in this grid, or false when the id is not this grid's. Always true for the public grid (every 64-bit value unpacks to a coordinate); for a scoped grid it is true for a chunk this process has named or adopted from a lease row ([`Adopt`](#adopt)).
+
+### Adopt [#adopt]
+
+```csharp
+public bool Adopt(ulong id, string partId, out Vector3Int coord);
+```
+
+Learn the coordinate of a chunk this process never asked for, from the part id its lease row carries ([`InstanceContainerInfo.PartId`](/docs/reference/protocol/instance-container-info#partid)). Returns false when the part is not a chunk of this grid, which is how an instance's `interior` part is told apart from a chunk.
+
+### Owns [#owns]
+
+```csharp
+public bool Owns(Container container);
+```
+
+Whether a container is a chunk of this grid: same scope, and an id this grid can place.
 
 ### IsValid [#isvalid]
 
@@ -90,7 +171,7 @@ public Vector3Int CoordOf(Vector3 framePosition);
 public Vector3Int CoordOf(NetworkIdentity entity);
 ```
 
-Which cell a position in the current floating-origin frame falls in.
+Which cell a position in this grid's own floating-origin frame falls in.
 
 ### CenterOf [#centerof]
 
@@ -156,6 +237,14 @@ public static void ShiftOriginTo(Vector3Int target);
 ```
 
 Opt-in floating-origin policy for a grid world: shift the origin to `target` (a no-op when it is already there, or when no runtime world is loaded), suspending enabled `CharacterController`s on entities of runtime containers across the shift and syncing physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the shift. Call from the game's own update once it has decided where the origin belongs, or use [`KeepOriginNear`](#keeporiginnear) for the usual policy.
+
+### ShiftOrigin [#shiftorigin]
+
+```csharp
+public void ShiftOrigin(Vector3Int target);
+```
+
+Move **this grid's** origin to `target`. The public world's frame is the process's (the streamer moves the authored cell scenes with it), so that case is [`ShiftOriginTo`](#shiftoriginto) unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state history and interpolation buffers move, and no other scope on this worker notices (`docs/scope-frames.md` D3).
 
 ### KeepOriginNear [#keeporiginnear]
 

@@ -1,0 +1,22 @@
+---
+title: "SyncHistoryAttribute"
+description: "Marks a NetworkVariable<T> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue<T>."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs)</div>
+
+```csharp
+[AttributeUsage(AttributeTargets.Field, Inherited = true, AllowMultiple = false)]
+public sealed class SyncHistoryAttribute : Attribute
+```
+
+Marks a [`NetworkVariable<T>`](/docs/reference/core/network-variable) field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through [`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat) / [`HistoricalState.TryGetValue<T>`](/docs/reference/core/historical-state#trygetvalue). Pose, velocity and container are always recorded; a variable is not, because a snapshot costs a serialization of its value every tick on every worker that holds a copy.
+
+```csharp
+public sealed class Pawn : NetworkBehaviour
+{
+    [SyncHistory] public NetworkVariable<byte> Stance = new NetworkVariable<byte>();
+}
+```
+
+Recording happens only on a worker ([`NebulaRuntime.IsServer`](/docs/reference/core/nebula-runtime#isserver)) and only while [`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks) is above zero. See `docs/state-history.md`.

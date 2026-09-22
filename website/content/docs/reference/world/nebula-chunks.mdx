@@ -1,6 +1,6 @@
 ---
 title: "NebulaChunks"
-description: "The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist."
+description: "Reports the runtime chunks available on each role so your game can load their content."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs)</div>
@@ -9,7 +9,9 @@ description: "The content-streaming face of a chunked world: one place, on every
 public static class NebulaChunks
 ```
 
-The content-streaming face of a chunked world: one place, on every role, where a game is told which chunks exist. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates it from [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) plus a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); a game supplies content and nothing else.
+Reports the runtime chunks available on each role so your game can load their content. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates the public world's grid when [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) and [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld) are configured.
+
+Each scope, a separately identified simulation area, has its own grid. [`Grid`](#grid) returns the public world's grid. Activate additional grids with [`NebulaChunkedWorld.ActivateGrid`](/docs/reference/world/nebula-chunked-world#activategrid) and retrieve them with [`GridFor`](#gridfor). Each grid has its own cell size, planar setting, allocator, container assignments, and persistence identifiers.
 
 Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
 
@@ -23,7 +25,7 @@ Chunks are Nebula runtime containers, so "which chunks exist" means something sl
 public static RuntimeGrid Grid { get; }
 ```
 
-The grid this world is built on, or null when the process is not running a chunked world.
+The public world's grid, or null when this process runs no public chunked world.
 
 ### IsActive [#isactive]
 
@@ -31,7 +33,7 @@ The grid this world is built on, or null when the process is not running a chunk
 public static bool IsActive { get; }
 ```
 
-Whether a chunked world is wired up in this process.
+Whether any chunked world is wired up in this process.
 
 ### Role [#role]
 
@@ -55,7 +57,23 @@ Whether this process draws anything (see [`ChunkContext.IsHeadless`](/docs/refer
 public static RuntimeGridAllocator Allocator { get; }
 ```
 
-The worker-side allocator, when this process is a worker; null otherwise.
+The public world's worker-side allocator, when this process is a worker; null otherwise.
+
+### Grids [#grids]
+
+```csharp
+public static IEnumerable<RuntimeGrid> Grids { get; }
+```
+
+Every grid active in this process, public world first if it has one.
+
+### ActiveScopeKeys [#activescopekeys]
+
+```csharp
+public static IEnumerable<string> ActiveScopeKeys { get; }
+```
+
+The scope keys with a grid in this process (`""` is the public world).
 
 ### All [#all]
 
@@ -63,7 +81,7 @@ The worker-side allocator, when this process is a worker; null otherwise.
 public static IReadOnlyList<Container> All { get; }
 ```
 
-Chunks resident in this process right now.
+Chunks resident in this process right now, across every scope.
 
 ### LoadedCount [#loadedcount]
 
@@ -71,7 +89,7 @@ Chunks resident in this process right now.
 public static int LoadedCount { get; }
 ```
 
-How many chunks are resident in this process right now.
+How many chunks are resident in this process right now, across every scope.
 
 ## Events
 
@@ -93,21 +111,72 @@ A chunk is about to go: its container object, and everything under [`ChunkContex
 
 ## Methods
 
+### GridFor [#gridfor]
+
+```csharp
+public static RuntimeGrid GridFor(string scopeKey);
+```
+
+The grid of a scope (`""` for the public world), or null when that scope has no grid here.
+
+### AllocatorFor [#allocatorfor]
+
+```csharp
+public static RuntimeGridAllocator AllocatorFor(string scopeKey);
+```
+
+The worker-side allocator of a scope's grid, or null (not a worker, or no such grid).
+
+### IsActiveFor [#isactivefor]
+
+```csharp
+public static bool IsActiveFor(string scopeKey);
+```
+
+Whether a scope has a grid in this process.
+
+### GridOf [#gridof]
+
+```csharp
+public static RuntimeGrid GridOf(Container container);
+public static RuntimeGrid GridOf(ulong id);
+```
+
+The grid a container belongs to, or null when it is not a chunk of any grid here. The central "which scope does this container belong to" query: a dictionary lookup on the container's isolation id, which every role already carries on the container ([`Container.InstanceId`](/docs/reference/containers/container#instanceid)).
+
+### ScopeOf [#scopeof]
+
+```csharp
+public static string ScopeOf(Container container);
+```
+
+The scope key a container belongs to (`""` for the public world and for anything not in a grid).
+
+### BoundsOfId [#boundsofid]
+
+```csharp
+public static Bounds BoundsOfId(ulong id, Bounds fallback);
+```
+
+The bounds hook ([`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/container-registry#runtimeboundsinframe)) for every grid at once: the box a chunk id has in this process's frame, whichever scope's grid named it, and the caller's own box for an id no grid here knows. Installed by [`Activate`](#activate); a game with one grid and no scopes can keep using [`RuntimeGrid.UseAsRuntimeBounds`](/docs/reference/world/runtime-grid#useasruntimebounds) instead.
+
 ### CoordOf [#coordof]
 
 ```csharp
 public static Vector3Int CoordOf(Vector3 framePosition);
+public static Vector3Int CoordOf(Vector3 framePosition, string scopeKey);
 ```
 
-The chunk coordinate a position in the current floating-origin frame falls in.
+The chunk coordinate a position in the current floating-origin frame falls in, in the public world.
 
 ### At [#at]
 
 ```csharp
 public static Container At(Vector3 framePosition);
+public static Container At(Vector3 framePosition, string scopeKey);
 ```
 
-The chunk holding `framePosition` if it is resident in this process, else null.
+The public-world chunk holding `framePosition` if it is resident in this process, else null.
 
 ### IsLoadedAt [#isloadedat]
 
@@ -115,7 +184,7 @@ The chunk holding `framePosition` if it is resident in this process, else null.
 public static bool IsLoadedAt(Vector3 framePosition);
 ```
 
-Whether the chunk holding `framePosition` is resident in this process.
+Whether the public-world chunk holding `framePosition` is resident in this process.
 
 ### RootOf [#rootof]
 
@@ -129,7 +198,9 @@ The content root of a chunk (see [`ChunkContext.Root`](/docs/reference/world/chu
 
 ```csharp
 public static void EnsureAt(Vector3 framePosition, Action<Container> onReady);
+public static void EnsureAt(Vector3 framePosition, string scopeKey, Action<Container> onReady);
 public static void EnsureAt(Vector3Int coord, Action<Container> onReady);
+public static void EnsureAt(Vector3Int coord, string scopeKey, Action<Container> onReady);
 ```
 
 Make sure the chunk holding `framePosition` exists, then hand it over. The spawn-point helper: a game mode that wants to put a player or an object somewhere must not assume a container is there, and must not poll for one either. On a worker this requests the lease; on any role it waits for the registration event, and calls back at once when the chunk is already here.
@@ -139,6 +210,7 @@ Make sure the chunk holding `framePosition` exists, then hand it over. The spawn
 ```csharp
 public static int SeedOf(ulong id);
 public static int SeedOf(Vector3Int coord);
+public static int SeedOf(Vector3Int coord, string scopeKey);
 ```
 
 The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighboring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.

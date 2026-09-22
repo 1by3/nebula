@@ -20,6 +20,8 @@ Identifies a private container's simulation scope, content, and optional outward
 public ulong InstanceId;
 ```
 
+The 64-bit simulation scope ([`NebulaWorker.InstanceKey`](/docs/reference/worker/nebula-worker#instancekey) of [`ScopeKey`](#scopekey)). Zero is the public world.
+
 ### ContentResource [#contentresource]
 
 ```csharp
@@ -43,6 +45,22 @@ public Vector3 ObservationCenter;
 ```csharp
 public Vector3 ObservationSize;
 ```
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey = "";
+```
+
+The opaque scope key the game chose for this instance (`TemplateId/key`, as passed to [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker#prepareinstance)), carried so every process can report it in [`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey) without inverting the hash. Nebula never parses it. Empty on a lease row written before the key was recorded.
+
+### PartId [#partid]
+
+```csharp
+public string PartId = "";
+```
+
+The scope part this container is ([`ScopePart.PartId`](/docs/reference/control-plane/scope-part#partid)), carried so a role that was handed the row — a client, a gateway — can say *which* part of the scope it holds without inverting the hash that named it. A scoped chunk's part id is its coordinate ([`ChunkKeys.PartId`](/docs/reference/world/chunk-keys#partid)), which is how every role rebuilds the chunk grid's coordinate map from lease rows alone. Empty on a row written before the part id was recorded, and on a public-world container.
 
 ## Methods
 

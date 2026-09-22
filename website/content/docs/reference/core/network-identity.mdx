@@ -54,6 +54,14 @@ public byte InterestGroup;
 
 A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.
 
+### CostWeight [#costweight]
+
+```csharp
+public float CostWeight = 1f;
+```
+
+What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.
+
 ### SyncKeyframeInterval [#synckeyframeinterval]
 
 ```csharp
@@ -62,15 +70,15 @@ public const uint SyncKeyframeInterval = 30;
 
 Every this many ticks a dirty sync behavior writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
-### PoseHistoryTicks [#posehistoryticks]
+## Properties
+
+### EffectiveCostWeight [#effectivecostweight]
 
 ```csharp
-public const int PoseHistoryTicks = 64;
+public float EffectiveCostWeight { get; } = 1f;
 ```
 
-Ticks of pose history kept per entity (about a second at 60 Hz).
-
-## Properties
+The multiplier this entity actually carries right now (see [`NebulaCost`](/docs/reference/core/nebula-cost) for how it is chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only changes when the game calls [`SetCostWeight`](#setcostweight): never per tick. Multiply it by the entity's category weight in [`CostWeights`](/docs/reference/orchestrator/cost-weights) to get what the mesh thinks it costs.
 
 ### IsSceneEntity [#issceneentity]
 
@@ -124,6 +132,14 @@ public uint Epoch { get; }
 
 Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.
 
+### CohesionGroup [#cohesiongroup]
+
+```csharp
+public uint CohesionGroup { get; }
+```
+
+The cohesion group this entity belongs to, or 0 for none: the game's promise that every member is simulated by one worker and moves between workers as a unit ([`CohesionGroups`](/docs/reference/core/cohesion-groups), `docs/cohesion-hints.md`). Authored in the inspector or set at runtime with [`JoinCohesionGroup`](#joincohesiongroup); it travels with the entity in the spawn, ghost and handover messages, so every worker holding a copy knows it. The ids are the game's own - any non-zero number both sides of an interaction agree on.
+
 ### Container [#container]
 
 ```csharp
@@ -137,6 +153,22 @@ public ulong InstanceId { get; }
 ```
 
 The entity's simulation scope. Zero is the public world.
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The opaque scope key of the entity's simulation scope ([`Container.ScopeKey`](/docs/reference/containers/container#scopekey) of the current container): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) in the public world or in no container, the instance key inside an instance. Never null.
+
+### Location [#location]
+
+```csharp
+public EntityLocation Location { get; }
+```
+
+Where the entity durably is right now ([`EntityLocation`](/docs/reference/containers/entity-location)): its scope key, its container's id and its pose in that container's local space ([`LocalPosition`](#localposition), [`LocalRotation`](#localrotation)). The same value on every process that holds the entity, and the value [`PersistedEntityRecord.Location`](/docs/reference/persistence/persisted-entity-record#location) saves for a persistent entity in a static or runtime container; it does not change on a handover.
 
 ### PhysicsScene [#physicsscene]
 
@@ -247,6 +279,30 @@ public PersistentEntity Persistent { get; }
 
 The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached during initialization; see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) for checkpoint and restore behavior.
 
+### History [#history]
+
+```csharp
+public StateHistory History { get; }
+```
+
+The recorded ticks of this entity on this process, or null when nothing has been recorded (recording is off, this is a client, or the entity is too young). See [`StateAt`](#stateat).
+
+### OldestAvailableTick [#oldestavailabletick]
+
+```csharp
+public uint OldestAvailableTick { get; }
+```
+
+The oldest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
+
+### NewestAvailableTick [#newestavailabletick]
+
+```csharp
+public uint NewestAvailableTick { get; }
+```
+
+The newest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
+
 ### HasSyncState [#hassyncstate]
 
 ```csharp
@@ -293,13 +349,57 @@ public event Action<Container, Container> ContainerChanged;
 
 ## Methods
 
+### SetCostWeight [#setcostweight]
+
+```csharp
+public void SetCostWeight(float weight);
+```
+
+Say what this entity costs from now on, overruling both [`CostWeight`](#costweight) and [`NebulaCost.EntityWeight`](/docs/reference/core/nebula-cost#entityweight). The value is clamped to \[0, [`NebulaCost.MaxWeight`](/docs/reference/core/nebula-cost#maxweight)\] and travels with the entity: the worker it hands over to reports the same cost for it.
+
+### JoinCohesionGroup [#joincohesiongroup]
+
+```csharp
+public void JoinCohesionGroup(uint group);
+```
+
+Put this entity in a cohesion group, leaving the one it was in. The authority's value is the one that counts: it is what a handover expands and what the worker reports to the orchestrator. Ghosts and client replicas learn the new value with the next spawn, ghost spawn or handover of the entity, so join before the interaction that needs the group rather than in the middle of it (`docs/cohesion-hints.md`, D3).
+
+| Parameter | Description |
+| --- | --- |
+| `group` | A non-zero group id. 0 is [`LeaveCohesionGroup`](#leavecohesiongroup). |
+
+### LeaveCohesionGroup [#leavecohesiongroup]
+
+```csharp
+public void LeaveCohesionGroup();
+```
+
+Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.
+
+### StateAt [#stateat]
+
+```csharp
+public HistoricalState StateAt(uint tick);
+```
+
+What this entity looked like at server tick `tick`: its world pose, velocity, container, epoch and the [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute) variables. Answered on the worker that has authority and on any worker holding a ghost of it; a ghost's newest tick is one behind the owner's (the tick the owner's stream was built on). Outside the recorded window the result's [`HistoricalState.Available`](/docs/reference/core/historical-state#available) is false and nothing is extrapolated.
+
+### TryGetStateAt [#trygetstateat]
+
+```csharp
+public bool TryGetStateAt(uint tick, out HistoricalState state);
+```
+
+As [`StateAt`](#stateat), in the try-pattern.
+
 ### TryGetPoseAt [#trygetposeat]
 
 ```csharp
 public bool TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation);
 ```
 
-The pose recorded for `tick`, or the nearest later one within a few ticks (a ghost that arrived recently has a short history). False when nothing usable was recorded.
+The pose recorded for `tick`, or the nearest one within [`StateHistory.GapToleranceTicks`](/docs/reference/core/state-history#gaptoleranceticks). False (with the entity's current pose) when nothing usable was recorded. A thin wrapper over [`StateAt`](#stateat).
 
 ### WriteVars [#writevars]
 

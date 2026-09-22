@@ -1,0 +1,64 @@
+---
+title: "ScopeState"
+description: "The states a ScopeInfo row can be in."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public static class ScopeState
+```
+
+The states a [`ScopeInfo`](/docs/reference/control-plane/scope-info) row can be in. The orchestrator owns the machine; every other role reads it off the mirrored document. Design of record: `docs/scope-lifecycle.md`.
+
+```csharp
+(no row) --activate--> Active --idle & ShouldRetire--> Retiring --every part checkpointed--> Retired
+                         ^                                                                      |
+                         +------ every part restored ----- Restoring <----- activate ----------+
+```
+
+A row is never deleted by the lifecycle: [`IControlPlane.RemoveScope`](/docs/reference/control-plane/i-control-plane#removescope) stays the explicit way out.
+
+## Fields
+
+### Active [#active]
+
+```csharp
+public const string Active = "active";
+```
+
+The scope's lease rows exist and it admits clients. It says nothing about who owns them or what is loaded ([`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready)).
+
+### Retiring [#retiring]
+
+```csharp
+public const string Retiring = "retiring";
+```
+
+Retiring: admission is refused, and every part is checkpointing its persistent entities and emptying itself.
+
+### Retired [#retired]
+
+```csharp
+public const string Retired = "retired";
+```
+
+Every part was checkpointed and its lease row deleted. The row stays so the key keeps its identity and a re-activation is idempotent.
+
+### Restoring [#restoring]
+
+```csharp
+public const string Restoring = "restoring";
+```
+
+The scope was asked for again: the lease rows are back and admission waits until every part has reported its restore complete.
+
+## Methods
+
+### AdmitsClients [#admitsclients]
+
+```csharp
+public static bool AdmitsClients(string state);
+```
+
+A client may be placed in this scope (subject to [`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready)).

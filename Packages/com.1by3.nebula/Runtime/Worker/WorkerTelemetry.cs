@@ -41,6 +41,11 @@ namespace Nebula
         private struct Counts
         {
             public int Players, Bots, ServerDriven, Other, Ghosts;
+            public string Owner;
+            /// <summary>The cost-weighted sum of the authoritative entities in this container, without <see cref="CostWeights.Base"/>.</summary>
+            public float Cost;
+            /// <summary>The container's scope key; "" in the public world (<see cref="Container.ScopeKey"/>).</summary>
+            public string Scope;
         }
 
         /// <summary>
@@ -70,8 +75,14 @@ namespace Nebula
         private readonly Dictionary<string, int> _slotById = new Dictionary<string, int>();
         private readonly List<string> _slotIds = new List<string>();
         private readonly List<Counts> _counts = new List<Counts>();
+        /// <summary>The measured per-container costs of the window this document covers; null before the first sample.</summary>
+        private ContainerCostMeter _costs;
+        /// <summary>The category weights the entity cost sum is computed with (<see cref="NebulaConfig.CostWeights"/>).</summary>
+        private CostWeights _weights = CostWeights.Default;
         private readonly List<NetworkIdentity> _carriers = new List<NetworkIdentity>();
         private readonly List<NetworkIdentity> _points = new List<NetworkIdentity>();
+        private readonly List<NebulaWorker.ContainerHold> _holds = new List<NebulaWorker.ContainerHold>();
+        private readonly List<NebulaWorker.CohesionSpan> _cohesion = new List<NebulaWorker.CohesionSpan>();
         private float _next;
         private int _inFlight;
         private volatile bool _detail;
@@ -123,6 +134,14 @@ namespace Nebula
             _next = now + (_detail ? DetailIntervalSeconds : IdleIntervalSeconds);
 
             SampleInterest(worker, now);
+            // The cohesion hints are read here, on the main thread, and written into the document below.
+            worker.CopyHolds(_holds);
+            worker.CopyCohesion(_cohesion);
+            // Close the cost window on the same beat as the document, so a row's ms/tick and bytes/s cover exactly
+            // the interval between two documents (docs/cost-telemetry.md).
+            worker.CostMeter.Sample(now);
+            _costs = worker.CostMeter;
+            _weights = worker.Config != null ? worker.Config.CostWeights : CostWeights.Default;
             var streamer = NebulaWorld.IsActive ? NebulaWorld.Streamer : null;
             string json = Write(worker.WorkerId, worker.WorkerIndex, worker.CurrentTick, worker.Entities, _detail, streamer != null ? streamer.LoadedCells : null);
             Sent++;
@@ -200,6 +219,44 @@ namespace Nebula
             w.EndObject();
         }
 
+        /// <summary>
+        /// The cohesion block: the containers this worker is holding, with the seconds each hold still has to run,
+        /// and one row per cohesion group it owns members of, whose <c>"in"</c> array names the containers its
+        /// members sit in (<c>docs/cohesion-hints.md</c>, D7/D8). Both blocks are always written, so a document that
+        /// carries neither says so with two empty arrays.
+        /// </summary>
+        private void WriteCohesion(JsonWriter w)
+        {
+            w.Key("holds");
+            w.BeginArray();
+            for (int i = 0; i < _holds.Count; i++)
+            {
+                w.BeginObject();
+                w.Prop("id", _holds[i].ContainerId ?? "");
+                w.Prop("seconds", Math.Round(_holds[i].SecondsRemaining, 2));
+                w.EndObject();
+            }
+            w.EndArray();
+
+            w.Key("cohesion");
+            w.BeginArray();
+            for (int i = 0; i < _cohesion.Count; i++)
+            {
+                var span = _cohesion[i];
+                w.BeginObject();
+                w.Prop("group", (long)span.Group);
+                w.Prop("members", span.Members);
+                // "in", not "containers": MeshTelemetry.ParseContainers finds the document's container counts by
+                // scanning for the first "containers" key, so no block before it may carry one.
+                w.Key("in");
+                w.BeginArray();
+                if (span.Containers != null) for (int j = 0; j < span.Containers.Count; j++) w.Value(span.Containers[j]);
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+        }
+
         private async Task PostAsync(string json)
         {
             try
@@ -241,6 +298,11 @@ namespace Nebula
             _counts.Clear();
             _carriers.Clear();
             _points.Clear();
+            // An owned box is still a measurement when its last entity has left. Omitting it would leave the
+            // last published capacity on its lease indefinitely, because missing telemetry is not a zero.
+            SeedOwnedContainers(ContainerRegistry.All, workerId);
+            SeedOwnedContainers(ContainerRegistry.Runtime, workerId);
+            SeedOwnedContainers(ContainerRegistry.Dynamic, workerId);
             if (entities != null)
             {
                 foreach (var e in entities)
@@ -249,10 +311,10 @@ namespace Nebula
                     int slot = SlotOf(e.Container);
                     var c = _counts[slot];
                     if (!e.HasAuthority) c.Ghosts++;
-                    else if (e.IsServerDriven) c.ServerDriven++;
-                    else if (e.OwnerClientId == 0) c.Other++;
-                    else if (e.OwnerIsBot) c.Bots++;
-                    else c.Players++;
+                    else if (e.IsServerDriven) { c.ServerDriven++; c.Cost += _weights.ServerDriven * e.EffectiveCostWeight; }
+                    else if (e.OwnerClientId == 0) { c.Other++; c.Cost += _weights.Other * e.EffectiveCostWeight; }
+                    else if (e.OwnerIsBot) { c.Bots++; c.Cost += _weights.Bot * e.EffectiveCostWeight; }
+                    else { c.Players++; c.Cost += _weights.Player * e.EffectiveCostWeight; }
                     _counts[slot] = c;
                     if (!e.HasAuthority) continue;
                     if (e.Carried != null && e.Carried.IsDynamic) _carriers.Add(e);
@@ -284,18 +346,34 @@ namespace Nebula
                 w.EndArray();
             }
 
+            WriteCohesion(w);
+
             w.Key("containers");
             w.BeginArray();
             for (int i = 0; i < _slotIds.Count; i++)
             {
                 var c = _counts[i];
+                var cost = _costs != null ? _costs.Of(_slotIds[i]) : default;
                 w.BeginObject();
                 w.Prop("id", _slotIds[i]);
+                // Keep ghost counts in the map document, but do not let a neighbor's row replace the owner's
+                // occupancy or cost reading in the orchestrator. Unleased entities can still report their cost.
+                bool owned = !string.IsNullOrEmpty(c.Owner) ? c.Owner == workerId
+                    : c.Players + c.Bots + c.ServerDriven + c.Other > 0;
+                w.Prop("owned", owned ? 1 : 0);
                 w.Prop("players", c.Players);
                 w.Prop("bots", c.Bots);
                 w.Prop("serverDriven", c.ServerDriven);
                 w.Prop("other", c.Other);
                 w.Prop("ghosts", c.Ghosts);
+                // Cost telemetry (docs/cost-telemetry.md). Additive: a reader that does not know these keys skips
+                // them, and a worker that never measured anything still writes zeroes rather than leaving them out,
+                // so "reported 0" and "never reported" stay distinguishable from the presence of the row.
+                w.Prop("scope", c.Scope ?? "");
+                w.Prop("cost", Math.Round(c.Cost, 3));
+                w.Prop("tickMs", Math.Round(cost.TickMs, 4));
+                w.Prop("bytesOut", cost.BytesOutPerSec);
+                w.Prop("gatewayBytes", cost.GatewayBytesPerSec);
                 w.EndObject();
             }
             w.EndArray();
@@ -368,8 +446,16 @@ namespace Nebula
             slot = _slotIds.Count;
             _slotById[id] = slot;
             _slotIds.Add(id);
-            _counts.Add(default);
+            _counts.Add(new Counts { Scope = container != null ? container.ScopeKey : EntityLocation.PublicScope,
+                Owner = container != null ? container.OwnerWorkerId : "" });
             return slot;
+        }
+
+        private void SeedOwnedContainers(IReadOnlyList<Container> containers, string workerId)
+        {
+            if (string.IsNullOrEmpty(workerId)) return;
+            for (int i = 0; i < containers.Count; i++)
+                if (containers[i].OwnerWorkerId == workerId) SlotOf(containers[i]);
         }
 
         public void Dispose()

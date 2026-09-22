@@ -1,0 +1,109 @@
+---
+title: Entity location contract
+description: Name where an entity durably is with a scope key, a container id, and a container-local pose that stay the same across handover, restarts, and a persistence round trip.
+---
+
+Use the entity location contract when your game, a tool, or a gateway extension must record or compare where an entity is without depending on which worker currently simulates it. Nebula exposes the same three values on a live entity and on its saved record, and every Nebula process resolves the same values to the same container.
+
+The source of truth is `Packages/com.1by3.nebula/Runtime/Containers/EntityLocation.cs`. The conformance tests are in `Packages/com.1by3.nebula/Tests/EditMode/ConformanceLocationTests.cs`; they run against the Unity runtime and the standalone services.
+
+## The three values
+
+An [`EntityLocation`](/docs/reference/containers/entity-location) is a value with three parts:
+
+| Part | Type | Meaning |
+| --- | --- | --- |
+| `ScopeKey` | string | The simulation scope the entity is in. The empty string is the public world. |
+| `ContainerId` | string | The `ContainerId` of the container the pose is expressed in. The empty string means no container. |
+| `LocalPosition`, `LocalRotation` | `Vector3`, `Quaternion` | The pose in the container's local space, or in world space when there is no container. |
+
+Read it from a live entity with [`NetworkIdentity.Location`](/docs/reference/core/network-identity) and from a saved entity with [`PersistedEntityRecord.Location`](/docs/reference/persistence/persisted-entity-record). `NetworkIdentity.ScopeKey` and `PersistedEntityRecord.ScopeKey` expose the first part on its own.
+
+Two locations are equal when both strings match exactly (ordinal comparison, case matters) and every component of the pose is the same number. Nebula does not compare poses approximately here.
+
+## What the scope key is
+
+Nebula treats the scope key as opaque bytes. It never splits, orders, hashes, or otherwise interprets it, and neither should your code beyond comparing it. Today there are two kinds of scope:
+
+- **The public world.** `ScopeKey` is `""`. Every scene container, every public runtime container, and every entity outside a container is in it.
+- **An instance.** `ScopeKey` is the instance key your game passed when it prepared the instance: `TemplateId` + `/` + `key`, the same string [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker) and [`InstanceBoundary`](/docs/reference/containers/instance-boundary) build. Nebula carries this string on the instance container's lease row, so every process reports it without recomputing it. See [Instancing](/docs/guides/instancing).
+
+`NetworkIdentity.InstanceId`, the 64-bit hash Nebula uses for scope isolation, is derived from the scope key and travels beside it. It is not part of the contract.
+
+## What the container id is, per kind
+
+The form of the id tells the kind. `EntityLocation.ContainerKind` classifies it without needing the container.
+
+| Kind | `ContainerId` | Stable for |
+| --- | --- | --- |
+| Static (a scene `Container` or a baked world cell) | The authored `ContainerId`. | As long as you keep the authored id. |
+| Runtime (registered while the mesh runs) | `rt_` followed by the decimal 64-bit id the game registered. | As long as the game derives the same id from the same input. |
+| Dynamic (carried by a `DynamicContainer` entity) | `label#netId`, with the carrier's network id. | One mesh run. The carrier gets a new network id when the mesh restarts. |
+| None | `""`. | Not applicable. |
+
+<Callout type="warn">
+A dynamic container's id lives only as long as its carrier's network id. Persistence therefore does not store it: a record saved inside a carrier has an empty `ContainerId` and names the carrier by its persistence key in `CarrierKey`. `PersistedEntityRecord.Location` for such a record has an empty container id. See [Carried entities](/docs/guides/persistence#carried-entities).
+</Callout>
+
+## What stays the same
+
+For an entity in a static or runtime container, the location is the same value on the worker, the gateway, the orchestrator, and the client, and it does not change across:
+
+- A **handover** to another worker. The authority epoch and owning worker are not part of the location.
+- A **worker restart** or a **mesh restart**. Static ids are authored; runtime ids and scope keys come back from the control plane, or are derived again from the same input when the control plane was reset.
+- A **persistence round trip**. The three values are stored as they are in the JSON body, the local file, and the SQL columns.
+- A **library upgrade** within one wire-protocol version. The wire form below is pinned by a conformance test.
+
+What the location does not tell you:
+
+- Which of two locations is newer. Compare `Epoch` for that.
+- A world position for an entity outside a container in a floating-origin world. The pose is in that process's frame.
+- Whether a renamed scene container is the same place as before. Renaming a container's authored id changes its location.
+
+## Resolve a location on any process
+
+`EntityLocation.Resolve()` returns the container the location names on the current process, or `null`. The lookup is by `ContainerId` in [`ContainerRegistry`](/docs/reference/containers/container-registry), which every role fills from the same scene or manifest and the same lease rows. A container found under the id but in a different scope is not returned: a public location never resolves an instance container, and a location in one instance never resolves a container of another.
+
+`null` also means the container has not arrived on this process yet. A dynamic container arrives with its carrier and a runtime container with its lease.
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+public class ReturnPoint : NetworkBehaviour
+{
+    // Recorded on the worker, for example before a teleport.
+    private EntityLocation _saved;
+
+    public void Remember() => _saved = Identity.Location;
+
+    public bool TryReturn()
+    {
+        Container container = _saved.Resolve();
+        if (container == null && _saved.HasContainer) return false; // not known here yet
+        Identity.SetLocalPose(container, _saved.LocalPosition, _saved.LocalRotation);
+        return true;
+    }
+}
+```
+
+`Identity` is the `NetworkIdentity` of the behavior's entity. `SetLocalPose` places the entity in the container's local space and accepts `null` for world space.
+
+## Wire form
+
+```text
+EntityLocation := string scope_key, string container_id, vector3 local_position, quaternion local_rotation
+```
+
+The primitives are those of the [wire protocol](/docs/specifications/wire-protocol#primitive-encodings): a `string` is a `u16` byte count plus one followed by UTF-8, and `vector3` and `quaternion` are `f32` components, little-endian. `EntityLocation.Write` and `EntityLocation.Read` produce and consume this form. No standard Nebula message carries an `EntityLocation` as a unit; the location is assembled from the container id and instance metadata in `ContainerOwnership` and the container-local pose in entity messages. Use `Write` and `Read` when your own messages or files need the value.
+
+## Older rows and records
+
+A control-plane lease row or a persisted record written before Nebula recorded scope keys has none. Nebula reads it as the public world: `ScopeKey` is `""`. An instance prepared under such a row keeps working, and its entities report an empty scope key until the instance is retired and prepared again. A saved record without a scope key does not `Resolve()` against a re-prepared instance container that now has one; Nebula's own restore path does not use `Resolve()` and is unaffected.
+
+## Related
+
+- [Containers and handover](/docs/concepts/containers-and-handover) explains containers, leases, and epochs.
+- [Persistence](/docs/guides/persistence) explains how records are saved and restored.
+- [Instancing](/docs/guides/instancing) explains instance templates and keys.
+- [Wire protocol specification](/docs/specifications/wire-protocol) defines the primitive encodings and `ContainerOwnership`.

@@ -6,7 +6,7 @@ description: "Deal by load: every container (baked or runtime) costs what CostWe
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
 
 ```csharp
-public sealed class CostBalancedAssignmentPolicy : IAssignmentPolicy
+public sealed class CostBalancedAssignmentPolicy : IAssignmentPolicy, IExplainsAssignment
 ```
 
 Deal by load: every container (baked or runtime) costs what [`CostWeights`](/docs/reference/orchestrator/cost-weights) says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous run of roughly equal cost per worker. Each run goes to the worker that already holds most of it, so a rebalance moves containers at run edges and nothing else. Nothing moves at all while the most loaded worker is within [`Threshold`](#threshold) of the average and every container has an owner; an orphan is then placed next to its neighbours' owner without disturbing anyone.
@@ -59,6 +59,22 @@ public float SeamGraceMeters = 10f;
 
 TODO (phase 3): a container with a player within this many metres of the seam that would move is left alone for a pass rather than handed over mid-fight. The occupancy report carries counts, not positions - only the detail documents the map page asks for have positions - so the check needs a cheap per-container "nearest player to each face" figure from the worker before it can be implemented honestly.
 
+### MaxGroupUtilization [#maxgrouputilization]
+
+```csharp
+public float MaxGroupUtilization = 1f;
+```
+
+A group (cohesion or affinity) whose containers cost more than one worker's tick budget is kept whole anyway and reported. This is that budget, as a fraction of a tick: 1 is "a whole worker". Raise it for a mesh that runs its workers past their tick budget on purpose; lower it to be told earlier.
+
+### SaturationUtilization [#saturationutilization]
+
+```csharp
+public float SaturationUtilization = 0.7f;
+```
+
+How busy the busiest worker must be before the planner bothers to say why it cannot be relieved (a fraction of a tick budget; the scale-out line). Below it "nothing moved" is simply "nothing needed to".
+
 ## Properties
 
 ### Name [#name]
@@ -73,7 +89,31 @@ public string Name { get; }
 public string Note { get; } = "";
 ```
 
-What the last [`Compute`](#compute) could not honour, for the dashboard and the log ("" when everything fitted). Today only one thing can go wrong: more [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) containers than the mesh has workers to spare, in which case none of them is reserved and they share like anything else.
+What the last [`Compute`](#compute) could not honour, for the dashboard and the log ("" when everything fitted). Two things can go wrong: more [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) containers than the mesh has workers to spare, in which case none of them is reserved and they share like anything else; and a group that does not fit one worker ([`Unsplittable`](#unsplittable)), which is kept whole regardless.
+
+### Unsplittable [#unsplittable]
+
+```csharp
+public IReadOnlyList<UnsplittableGroup> Unsplittable { get; }
+```
+
+The groups the last [`Compute`](#compute) kept whole although they do not fit one worker (`docs/cohesion-hints.md`, D9). Empty when everything fitted. Read by the orchestrator for the log and the dashboard.
+
+### Moves [#moves]
+
+```csharp
+public IReadOnlyList<AssignmentMove> Moves { get; }
+```
+
+Every move of the last [`Compute`](#compute) with the sentence that explains it (`docs/cohesion-rebalancing.md`). Same order and same containers as the returned change list.
+
+### Saturated [#saturated]
+
+```csharp
+public IReadOnlyList<SaturationReport> Saturated { get; }
+```
+
+What the last [`Compute`](#compute) could not relieve, hottest first: the busiest worker is over [`SaturationUtilization`](#saturationutilization) and nothing it holds may be moved away, because a cohesion or affinity group spans it, because it is held, because it asked for a worker of its own, or because the game authored no boundary inside it. Empty when the mesh has measured no utilization.
 
 ## Methods
 

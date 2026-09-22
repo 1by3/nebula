@@ -1,0 +1,44 @@
+---
+title: "ScopeAck"
+description: "One worker's acknowledgement that it finished a lifecycle step for one part of a scope."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public sealed class ScopeAck
+```
+
+One worker's acknowledgement that it finished a lifecycle step for one part of a scope. The orchestrator waits for one of these per container before it takes the next step, which is what makes "all parts retire together, all parts restore before admission" true rather than hoped for.
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId = "";
+```
+
+### Phase [#phase]
+
+```csharp
+public string Phase = "";
+```
+
+See [`ScopePhase`](/docs/reference/control-plane/scope-phase).
+
+### Count [#count]
+
+```csharp
+public int Count;
+```
+
+Entities saved (for [`ScopePhase.Checkpointed`](/docs/reference/control-plane/scope-phase#checkpointed)) or restored (for [`ScopePhase.Restored`](/docs/reference/control-plane/scope-phase#restored)).
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId = "";
+```
+
+The worker that acknowledged, for logs.

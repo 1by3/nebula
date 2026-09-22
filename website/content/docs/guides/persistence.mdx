@@ -61,6 +61,10 @@ An entity inside a [dynamic container](/docs/guides/dynamic-containers) is saved
 
 For this to work the carrier itself must carry a `PersistentEntity`. When it does, the pair comes back together: restoring or spawning the carrier on a worker with authority loads everything saved inside it. When it does not, Nebula logs a debug line and saves only the carried entity's pose, and the container's records are never restored automatically.
 
+### Where a record says the entity is
+
+A record stores the entity's location as three values: `ScopeKey` (the empty string for the public world, or the instance key inside an instance), `ContainerId`, and the local pose. `PersistedEntityRecord.Location` returns them as one `EntityLocation`, the same value `NetworkIdentity.Location` reports on a live entity, and it does not change across a handover or a restart. The [entity location contract](/docs/specifications/entity-location) defines the three values and what stays stable. A record saved before Nebula recorded scope keys reads as the public world.
+
 ## Opt variables and state in
 
 Mark a `NetworkVariable` field with `[Persist]`:
@@ -142,6 +146,42 @@ Call `worker.Persistence.SaveNow(identity)` at a moment the game knows is worth 
 
 Two limits keep the pass cheap: at most one save per entity every 0.5 s (`NebulaPersistence.MinSaveIntervalSeconds`), and at most 64 saves per frame (`NebulaPersistence.MaxSavesPerFrame`). Neither the checkpoint nor an unreachable store can stall the simulation. If the store is down, the mesh keeps running and the saves are retried later.
 
+### Durability window
+
+Because entities are checkpointed periodically rather than on every change, a worker that crashes can lose whatever
+changed since an entity's last checkpoint. The worst-case size of that loss — the number to design around — is:
+
+```
+loss window  ≤  PersistenceCheckpointSeconds
+              + 0.5 s (NebulaPersistence.MinSaveIntervalSeconds, fixed)
+              + ceil(N_dirty / 64) × frame period (NebulaPersistence.MaxSavesPerFrame, fixed)
+              + store write latency
+```
+
+- **`PersistenceCheckpointSeconds`** is the term to tune: `IsDue` guarantees an unconditional save at least this
+  often, whatever the dirty flag says. Lowering it lowers the bound by the same amount.
+- **The minimum save interval** (0.5 s, not configurable) is the throttle that keeps one entity from saving more
+  than twice a second: a change can land the instant after a checkpoint and then wait out nearly the whole interval
+  before it is even eligible to save again.
+- **The per-frame save budget** (64 saves per frame, not configurable) spreads out a burst of simultaneously dirty
+  entities across frames; `N_dirty` is how many other tracked entities become due in the same window, not the
+  worker's total entity count.
+- **Store write latency** is 0 for an in-memory store, up to `LocalPersistenceStore.WriteIntervalSeconds` (default
+  1 s) for a `local` store with a file, and `RemotePersistenceStore.FlushIntervalSeconds` (0.25 s) plus a network
+  round trip and the orchestrator's own commit for a `remote` (mesh) store — the worker's own unflushed batch is
+  what a worker crash can still lose after the save left `NebulaPersistence`.
+
+With the defaults and a lightly loaded worker, the bound is about 5.6 seconds. A wave of 40 NPCs taking damage in
+the same tick against a mesh's `remote` store adds roughly another 0.27 s (one frame of budget plus the flush
+interval and a commit), for about 5.8 seconds total.
+
+This is a bound on loss *per change*, not a promise that nothing is ever lost — see
+[current limitations](#current-limitations). Use `SaveNow` for a moment that must not wait for the periodic
+checkpoint at all (a completed objective, a player logging out). The full derivation, with each term tied to its
+line of code, is in [`docs/persistence-durability.md`](https://github.com/1by3/nebula/blob/main/docs/persistence-durability.md)
+in the repository; a conformance test (`ConformancePersistenceDurabilityTests`) keeps the bound honest by killing a
+worker mid-checkpoint with 200 dirty entities and asserting the loss stays within it.
+
 ### The epoch rule
 
 Every record carries the entity's authority **epoch**: the number that increases when authority or a container assignment changes. The store keeps a save only when its epoch is at least the stored epoch. A worker that lost authority and does not know it yet cannot overwrite the new owner's state with older data.
@@ -158,6 +198,8 @@ When a worker gains the lease of a static container, it does not restore that co
 4. **Restore what is left.** The entity is instantiated from its prefab (by ID, falling back to the prefab name if the prefab list was reordered), placed in the container at its saved pose, given its saved state, and spawned with authority at the saved epoch plus one. The worker logs one line per container: `persistence: restored N persisted entities into <containerId>`.
 
 If a handover arrives for a key that was already restored, the incoming entity wins and the restored copy is despawned **without** deleting the record.
+
+When the restore of a container finishes — including a container that had nothing saved in it — Nebula raises [`NebulaLifecycle.OnContainerRestored`](/docs/guides/lifecycle-hooks). It is the moment at which the box is as the store left it, so it is the safe place to spawn anything of your own into it.
 
 After a whole-mesh restart, the same path runs for every container as its first lease lands, so the world comes back container by container rather than all at once.
 
@@ -244,7 +286,7 @@ An unrecognized mode logs a warning and turns persistence off.
 
 ## The orchestrator's database
 
-Saved entities live in the `nebula_entity` table of the orchestrator's database, next to the control-plane document. `DatabaseUrl` names the engine: `sqlite:<file>` (the default for `nebula start`, at `Library/Nebula/nebula.db`) or `postgres://user:password@host:port/database` for a deployed mesh whose world must outlive its VMs. Both use the same statements; the orchestrator creates the table and its two indexes (`container_id`, `carrier_key`) when it starts.
+Saved entities live in the `nebula_entity` table of the orchestrator's database, next to the control-plane document. `DatabaseUrl` names the engine: `sqlite:<file>` (the default for `nebula start`, at `Library/Nebula/nebula.db`) or `postgres://user:password@host:port/database` for a deployed mesh whose world must outlive its VMs. Both use the same statements; the orchestrator creates the table and its indexes (`container_id`, `carrier_key`, `scope_key`) when it starts.
 
 The table's columns are the record fields: `entity_key`, prefab ID and name, scene ID, `container_id` and `carrier_key`, pose and velocity, `epoch`, `server_driven`, `owned`, `name`, the `state` blob, `version`, `saved_at`, and `saved_by`.
 
@@ -267,6 +309,7 @@ A worker's `remote` store talks to the orchestrator's dashboard address, the sam
 | `POST /api/store/save` `{"records":[...]}` | Save a batch. A worker gathers its checkpoints for a quarter of a second and coalesces them per key, so a checkpoint pass is one request. |
 | `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear` | Delete records. |
 | `GET /api/store/record?key=`, `.../container?id=`, `.../carried?key=`, `.../all` | Load one record, a container's records, a carrier's records, or everything. |
+| `GET /api/store/count?scope=&container=` | How many records a scope holds (optionally narrowed to one container), counted in the database — only the number travels. |
 | `GET /api/store/status` | Backend, whether it is connected, and how many records it holds. The worker probes it every five seconds for `IsConnected` and `KnownCount`. |
 
 Records travel as JSON with the state blob base64-encoded. A batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away; a load is retried until it succeeds.
@@ -300,6 +343,23 @@ The **Clear persistence** button deletes every saved entity through `POST /api/p
 <Callout type="warn" title="Clearing persistence cannot be undone">
 The running mesh keeps simulating what it is holding, and its next checkpoints write fresh records. Everything that was not alive at that moment is gone.
 </Callout>
+
+## Offline reads
+
+The records of a world nothing is simulating are ordinary records: you do not have to activate a [scope](/docs/guides/scopes) to read what is saved in it.
+
+**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load` and `LoadContainer` are the same read narrowed to one key or one container. `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
+
+```csharp
+store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records =>
+{
+    foreach (var r in records) Debug.Log($"{r.Key} at {r.LocalPosition} in {r.ContainerId}");
+});
+```
+
+A tool or a service outside the mesh reaches the same store through `RemotePersistenceStore` over the endpoints above, with the mesh token, and needs no worker.
+
+Two limits. `LoadWhere` filters in the caller for the local and remote stores (only `CountRecords` is pushed down to SQL), so it is meant for tools and game directors, not for a per-frame path. And a record written behind a worker that owns the entity loses to that worker's next checkpoint — the epoch rule doing its job. Write to a world that is not running, or go through the live entity.
 
 ## Current limitations
 

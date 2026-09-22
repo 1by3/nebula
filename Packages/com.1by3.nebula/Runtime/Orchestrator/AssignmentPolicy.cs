@@ -22,6 +22,14 @@ namespace Nebula
         public string WorkerId;
         /// <summary>When the report arrived, on the telemetry clock.</summary>
         public double ReceivedAt;
+        /// <summary>
+        /// What the worker's own tally of the entities inside came to, each one's category weight times its
+        /// <see cref="NebulaCost"/> multiplier (docs/cost-telemetry.md). Valid only when
+        /// <see cref="HasEntityCost"/>; <see cref="CostWeights.Base"/> is not in it.
+        /// </summary>
+        public float EntityCostSum;
+        /// <summary>The report carried an entity cost sum, so <see cref="CostWeights.Of"/> uses it instead of counting heads.</summary>
+        public bool HasEntityCost;
 
         public int Authoritative => Players + Bots + ServerDriven + Other;
     }
@@ -43,7 +51,56 @@ namespace Nebula
 
         public static CostWeights Default => new CostWeights { Base = 1f, Player = 4f, Bot = 2f, ServerDriven = 1f, Other = 0.5f };
 
-        public float Of(in ContainerLoad load) => Base + load.Players * Player + load.Bots * Bot + load.ServerDriven * ServerDriven + load.Other * Other;
+        /// <summary>
+        /// What this container costs. When the worker reported a per-entity cost sum
+        /// (<see cref="ContainerLoad.HasEntityCost"/>) that sum is used: it is these same category weights with each
+        /// entity's own multiplier applied (<see cref="NebulaCost"/>), so a world that sets no weights gets exactly
+        /// the number the head count below gives. Otherwise the heads are counted here, as they always were.
+        /// </summary>
+        public float Of(in ContainerLoad load) => Base + (load.HasEntityCost
+            ? load.EntityCostSum
+            : load.Players * Player + load.Bots * Bot + load.ServerDriven * ServerDriven + load.Other * Other);
+    }
+
+    /// <summary>
+    /// One entity cohesion group as the orchestrator sees it: the union of what every worker reported about the
+    /// members it owns (<see cref="NebulaWorker.CohesionSpan"/>, <c>docs/cohesion-hints.md</c> D7). The planner
+    /// deals its containers as one item, so the group never ends up split across two workers.
+    /// </summary>
+    public sealed class CohesionGroupInfo
+    {
+        /// <summary>The group id the game chose (<c>NetworkIdentity.CohesionGroup</c>); never 0.</summary>
+        public uint Group;
+        /// <summary>How many members the mesh holds, across every worker that reported the group.</summary>
+        public int Members;
+        /// <summary>The containers its members are in, in report order. Members in no container name none.</summary>
+        public readonly List<string> Containers = new List<string>(2);
+        /// <summary>The workers that reported members. More than one means the group is split right now.</summary>
+        public readonly List<string> Workers = new List<string>(1);
+
+        /// <summary>The group as it is named in a log line, a telemetry row and on the dashboard.</summary>
+        public override string ToString() => "cohesion " + Group.ToString();
+    }
+
+    /// <summary>
+    /// A group of containers the planner had to keep on one worker but could not fit there
+    /// (<c>docs/cohesion-hints.md</c>, D9). Reported, never acted on by splitting the group: the mesh keeps running
+    /// with the group whole on an overloaded worker, and this row says so on the dashboard and in the log.
+    /// </summary>
+    public struct UnsplittableGroup
+    {
+        /// <summary>"cohesion 17" or "affinity dungeon-3": which kind of group and which one.</summary>
+        public string Group;
+        /// <summary>Its containers, as the planner dealt them.</summary>
+        public string[] Containers;
+        /// <summary>The measured utilization of the whole group, in tick budgets (1 = a whole worker).</summary>
+        public float Utilization;
+        /// <summary>What it was compared against (<see cref="CostBalancedAssignmentPolicy.MaxGroupUtilization"/>).</summary>
+        public float Limit;
+
+        /// <summary>One line for the log and the dashboard.</summary>
+        public override string ToString() =>
+            $"{Group} needs {Utilization:0.##} of a worker's tick budget across {(Containers != null ? Containers.Length : 0)} container(s), more than the {Limit:0.##} one worker can give it; it is kept whole and never split";
     }
 
     /// <summary>Everything an assignment policy may look at. Built by the orchestrator once per pass.</summary>
@@ -73,8 +130,52 @@ namespace Nebula
         /// <see cref="ContainerHint.Default"/>.
         /// </summary>
         public IReadOnlyDictionary<string, ContainerHint> Hints = new Dictionary<string, ContainerHint>();
+        /// <summary>
+        /// What each container is measured to cost its worker, split into simulation, replication and gateway
+        /// relay (<see cref="ContainerCost"/>, docs/cost-telemetry.md). Containers nobody reported are absent.
+        /// The policies do not read it; the scaler does, to name what makes a hot container hot.
+        /// </summary>
+        public IReadOnlyDictionary<string, ContainerCost> Cost = new Dictionary<string, ContainerCost>();
         /// <summary>The baked order is spatial (a partitioned world) and should be kept when dealing.</summary>
         public bool KeepOrder;
+        /// <summary>
+        /// Containers a worker asked not to be rebalanced, by container id, with the seconds each hold still has
+        /// to run on the orchestrator's clock (<see cref="NebulaWorker.HoldContainer(string, float)"/>,
+        /// <c>docs/cohesion-hints.md</c> D8). Containers nobody holds are absent.
+        /// </summary>
+        public IReadOnlyDictionary<string, float> Holds = new Dictionary<string, float>();
+        /// <summary>
+        /// The entity cohesion groups the mesh is holding (<see cref="CohesionGroupInfo"/>). Their containers are
+        /// dealt as one item, exactly like an <see cref="ContainerHint.AffinityGroup"/>, and are never split.
+        /// </summary>
+        public IReadOnlyList<CohesionGroupInfo> Cohesion = Array.Empty<CohesionGroupInfo>();
+
+        /// <summary>Whether a container is under a live hold, so moving it now is deferred.</summary>
+        public bool IsHeld(string containerId) => Holds != null && containerId != null && Holds.ContainsKey(containerId);
+
+        /// <summary>How many seconds a container's hold still has to run, or 0 when it is not held.</summary>
+        public float HoldSeconds(string containerId)
+        {
+            return Holds != null && containerId != null && Holds.TryGetValue(containerId, out float s) ? s : 0f;
+        }
+
+        /// <summary>
+        /// Remove the changes that would move a held container, so a hold defers a rebalance whichever policy
+        /// computed it. A hold never keeps an <b>orphan</b> where it is: a container with no live owner has to be
+        /// placed, and the hold is about not being moved, not about staying unowned. Returns how many were dropped.
+        /// </summary>
+        public int DropHeldChanges(List<KeyValuePair<string, string>> changes)
+        {
+            if (changes == null || Holds == null || Holds.Count == 0) return 0;
+            int dropped = 0;
+            for (int i = changes.Count - 1; i >= 0; i--)
+            {
+                if (!IsHeld(changes[i].Key) || OwnerOf(changes[i].Key) == "") continue;
+                changes.RemoveAt(i);
+                dropped++;
+            }
+            return dropped;
+        }
 
         /// <summary>The hint for a container, or <see cref="ContainerHint.Default"/> when nothing was said about it.</summary>
         public ContainerHint HintOf(string containerId)
@@ -140,7 +241,7 @@ namespace Nebula
     /// while the most loaded worker is within <see cref="Threshold"/> of the average and every container has an
     /// owner; an orphan is then placed next to its neighbours' owner without disturbing anyone.
     /// </summary>
-    public sealed class CostBalancedAssignmentPolicy : IAssignmentPolicy
+    public sealed class CostBalancedAssignmentPolicy : IAssignmentPolicy, IExplainsAssignment
     {
         /// <summary>Metres per Morton cell when ordering containers; coarse enough that a chunk's centre never straddles it.</summary>
         public const float OrderQuantum = 8f;
@@ -187,15 +288,62 @@ namespace Nebula
             public float Seam;
             /// <summary>Any member asked for a worker to itself.</summary>
             public bool Dedicated;
+            /// <summary>A member is under a live hold and the item already has an owner: it does not move this pass.</summary>
+            public bool Held;
+            /// <summary>The longest hold still to run over the members, in seconds; 0 when nothing is held.</summary>
+            public float HoldSeconds;
+            /// <summary>What made this item more than one container ("cohesion 17", "affinity hub"), or "".</summary>
+            public string GroupLabel;
+            /// <summary>The scope key of the first member ("" for the public world), for the saturation rows.</summary>
+            public string Scope;
             public string Id => Ids[0];
         }
 
         /// <summary>
+        /// A group (cohesion or affinity) whose containers cost more than one worker's tick budget is kept whole
+        /// anyway and reported. This is that budget, as a fraction of a tick: 1 is "a whole worker". Raise it for a
+        /// mesh that runs its workers past their tick budget on purpose; lower it to be told earlier.
+        /// </summary>
+        public float MaxGroupUtilization = 1f;
+
+        /// <summary>
         /// What the last <see cref="Compute"/> could not honour, for the dashboard and the log ("" when everything
-        /// fitted). Today only one thing can go wrong: more <see cref="ContainerHint.Dedicated"/> containers than the
-        /// mesh has workers to spare, in which case none of them is reserved and they share like anything else.
+        /// fitted). Two things can go wrong: more <see cref="ContainerHint.Dedicated"/> containers than the mesh has
+        /// workers to spare, in which case none of them is reserved and they share like anything else; and a group
+        /// that does not fit one worker (<see cref="Unsplittable"/>), which is kept whole regardless.
         /// </summary>
         public string Note { get; private set; } = "";
+
+        /// <summary>
+        /// The groups the last <see cref="Compute"/> kept whole although they do not fit one worker
+        /// (<c>docs/cohesion-hints.md</c>, D9). Empty when everything fitted. Read by the orchestrator for the log
+        /// and the dashboard.
+        /// </summary>
+        public IReadOnlyList<UnsplittableGroup> Unsplittable => _unsplittable;
+
+        /// <summary>
+        /// How busy the busiest worker must be before the planner bothers to say why it cannot be relieved
+        /// (a fraction of a tick budget; the scale-out line). Below it "nothing moved" is simply "nothing needed to".
+        /// </summary>
+        public float SaturationUtilization = 0.7f;
+
+        /// <summary>
+        /// Every move of the last <see cref="Compute"/> with the sentence that explains it
+        /// (<c>docs/cohesion-rebalancing.md</c>). Same order and same containers as the returned change list.
+        /// </summary>
+        public IReadOnlyList<AssignmentMove> Moves => _moves;
+
+        /// <summary>
+        /// What the last <see cref="Compute"/> could not relieve, hottest first: the busiest worker is over
+        /// <see cref="SaturationUtilization"/> and nothing it holds may be moved away, because a cohesion or
+        /// affinity group spans it, because it is held, because it asked for a worker of its own, or because the
+        /// game authored no boundary inside it. Empty when the mesh has measured no utilization.
+        /// </summary>
+        public IReadOnlyList<SaturationReport> Saturated => _saturated;
+
+        private readonly List<UnsplittableGroup> _unsplittable = new List<UnsplittableGroup>();
+        private readonly List<AssignmentMove> _moves = new List<AssignmentMove>();
+        private readonly List<SaturationReport> _saturated = new List<SaturationReport>();
 
         /// <summary>Cost of one container from what was last reported about it (<see cref="CostWeights.Base"/> when nothing was).</summary>
         public float CostOf(string containerId, IReadOnlyDictionary<string, ContainerLoad> occupancy)
@@ -231,6 +379,19 @@ namespace Nebula
         public List<KeyValuePair<string, string>> Compute(AssignmentInput input)
         {
             Note = "";
+            _unsplittable.Clear();
+            _moves.Clear();
+            _saturated.Clear();
+            List<Item> snapshot = null;
+            var changes = Deal(input, ref snapshot);
+            // Whatever the deal came to, say why the busiest worker is still hot when nothing it holds may move
+            // (docs/cohesion-rebalancing.md, D5). Runs last so it can see the change list it is judging.
+            ReportSaturation(snapshot, input, changes);
+            return changes;
+        }
+
+        private List<KeyValuePair<string, string>> Deal(AssignmentInput input, ref List<Item> snapshot)
+        {
             var changes = new List<KeyValuePair<string, string>>();
             var workers = input.Eligible.OrderBy(w => w.WorkerIndex).Select(w => w.WorkerId).ToList();
             int k = workers.Count;
@@ -240,9 +401,13 @@ namespace Nebula
             Collect(input.Baked, input, items);
             Collect(input.Runtime, input, items);
             items = MergeGroups(items, input);
+            ReportUnsplittable(items, input);
             int n = items.Count;
             if (n == 0) return changes;
             items = items.OrderBy(it => it.Key).ThenBy(it => it.Id, StringComparer.Ordinal).ToList();
+            // A copy of the items as they stand before anything is dealt: who owns what now, what each one costs and
+            // what binds it. The saturation report judges the mesh as it is, not as this pass leaves it.
+            snapshot = new List<Item>(items);
 
             // Dedicated containers are taken off the curve first and each given a worker of its own, so the rest is
             // dealt across what is left. That only works while the mesh has a worker to spare for everything else;
@@ -274,8 +439,9 @@ namespace Nebula
                     shared.RemoveAt(0);
                 }
                 foreach (int i in dedicated)
-                    if (items[i].Owner != reservedOf[i])
-                        foreach (string id in items[i].Ids) changes.Add(new KeyValuePair<string, string>(id, reservedOf[i]));
+                    if (items[i].Owner != reservedOf[i] && !items[i].Held)
+                        Move(changes, items[i], reservedOf[i],
+                            $"'dedicated' hint: {items[i].Id} is reserved a worker of its own, and {reservedOf[i]} is free for it");
                 items = items.Where(it => !it.Dedicated).ToList();
                 n = items.Count;
                 if (n == 0) return changes;
@@ -305,13 +471,19 @@ namespace Nebula
                 for (int i = 0; i < items.Count; i++)
                 {
                     if (items[i].Owner != "") continue;
-                    string pick = NeighbourOwner(items, i);
-                    if (pick == null || !shared.Contains(pick) || load[pick] + items[i].Cost > target * (1f + Threshold)) pick = LeastLoaded(shared, load);
+                    string pick = NeighbourOwner(items, i), why = "next to its neighbour on the curve";
+                    if (pick == null || !shared.Contains(pick) || load[pick] + items[i].Cost > target * (1f + Threshold))
+                    {
+                        pick = LeastLoaded(shared, load);
+                        why = "the least loaded worker";
+                    }
                     load[pick] += items[i].Cost;
                     var placed = items[i];
                     placed.Owner = pick;
                     items[i] = placed;
-                    foreach (string id in placed.Ids) changes.Add(new KeyValuePair<string, string>(id, pick));
+                    Move(changes, placed, pick,
+                        $"{Describe(placed)} has no owner; placed on {pick}, {why} (it costs {placed.Cost:0.#} of the {target:0.#} each worker is carrying)"
+                        + Constrained(placed));
                 }
                 return changes;
             }
@@ -370,7 +542,9 @@ namespace Nebula
             // and a visible seam, so a move that buys less than MinGain of a tick is not worth making. Only checked
             // when every container has an owner (an orphan must be placed regardless) and the mesh has measured
             // utilization to compare with; in weight units alone there is no budget to be a fraction of.
-            if (!anyUnowned && input.Utilization != null && input.Utilization.Count > 0)
+            bool measured = input.Utilization != null && input.Utilization.Count > 0;
+            float beforeMax = 0f, afterMax = 0f;
+            if (measured)
             {
                 var before = workers.ToDictionary(w => w, w => 0f);
                 var after = workers.ToDictionary(w => w, w => 0f);
@@ -380,19 +554,64 @@ namespace Nebula
                         float u = 0f;
                         foreach (string id in items[i].Ids) u += AssignmentPlanner.UtilizationOf(input, id);
                         if (items[i].Owner != "" && before.ContainsKey(items[i].Owner)) before[items[i].Owner] += u;
-                        after[runOwner[r]] += u;
+                        // Held items stay put when changes are emitted below, so relief must be measured against
+                        // that actual placement rather than the unconstrained run layout.
+                        string destination = items[i].Held ? items[i].Owner : runOwner[r];
+                        after[destination] += u;
                     }
-                float beforeMax = before.Values.Max();
-                if (beforeMax >= MinGainFloor && beforeMax - after.Values.Max() < MinGain) return changes;
+                beforeMax = before.Values.Max();
+                afterMax = after.Values.Max();
+                if (!anyUnowned && beforeMax >= MinGainFloor && beforeMax - afterMax < MinGain) return changes;
             }
 
+            string relief = measured
+                ? $"busiest worker {beforeMax:0.00} -> {afterMax:0.00} of a tick"
+                : $"{target:0.#} cost units per worker";
             for (int r = 0; r < runs.Count; r++)
             {
+                // Which authored boundary this run starts at: the cut falls between two neighbours on the curve, and
+                // the seam hints are what decided it could fall there (docs/cohesion-rebalancing.md, D3).
+                if (runs[r].start >= runs[r].end) continue; // more workers than items: this one gets nothing
+                string boundary = runs[r].start == 0
+                    ? "the start of the curve"
+                    : $"the boundary between {items[runs[r].start - 1].Id} and {items[runs[r].start].Id}";
+                float runCost = 0f;
+                for (int i = runs[r].start; i < runs[r].end; i++) runCost += items[i].Cost;
                 for (int i = runs[r].start; i < runs[r].end; i++)
-                    if (items[i].Owner != runOwner[r])
-                        foreach (string id in items[i].Ids) changes.Add(new KeyValuePair<string, string>(id, runOwner[r]));
+                    // A held item stays with the worker it is on until its hold expires (docs/cohesion-hints.md, D8).
+                    if (items[i].Owner != runOwner[r] && !items[i].Held)
+                        Move(changes, items[i], runOwner[r],
+                            $"re-deal along {boundary}: {Describe(items[i])} joins the run {runOwner[r]} takes "
+                            + $"({runs[r].end - runs[r].start} item(s), {runCost:0.#} of a {target:0.#} target); {relief}"
+                            + Constrained(items[i]));
             }
             return changes;
+        }
+
+        /// <summary>
+        /// Record one item's move and the sentence that explains it, then add its containers to the change list. A
+        /// group moves as one item, so every container of it gets the same explanation and they read as one decision
+        /// on the dashboard.
+        /// </summary>
+        private void Move(List<KeyValuePair<string, string>> changes, in Item item, string to, string reason)
+        {
+            foreach (string id in item.Ids)
+            {
+                changes.Add(new KeyValuePair<string, string>(id, to));
+                _moves.Add(new AssignmentMove { ContainerId = id, From = item.Owner ?? "", To = to, Reason = reason });
+            }
+        }
+
+        /// <summary>"c4", or "cohesion 7 (c1, c2)" when the item is a whole group.</summary>
+        private static string Describe(in Item item) =>
+            item.Ids.Count == 1 ? item.Id
+                : (item.GroupLabel != "" ? item.GroupLabel : "the group at " + item.Id) + " (" + AssignmentText.List(item.Ids) + ")";
+
+        /// <summary>The trailing clause that names what constrained the move, or "" when nothing did.</summary>
+        private static string Constrained(in Item item)
+        {
+            if (item.Ids.Count < 2) return "";
+            return $"; {(item.GroupLabel != "" ? item.GroupLabel : "the group")} spans {AssignmentText.List(item.Ids)} and is never cut, so they move together";
         }
 
         private void Collect(IReadOnlyList<Container> containers, AssignmentInput input, List<Item> items)
@@ -409,42 +628,263 @@ namespace Nebula
                     Owner = input.OwnerOf(c.ContainerId),
                     Seam = hint.EffectiveSeamCost,
                     Dedicated = hint.Dedicated,
+                    // A hold defers a move, so it only means anything while the container has an owner to stay with.
+                    Held = input.IsHeld(c.ContainerId) && input.OwnerOf(c.ContainerId) != "",
+                    HoldSeconds = input.HoldSeconds(c.ContainerId),
+                    GroupLabel = "",
+                    Scope = c.ScopeKey ?? "",
                 });
             }
         }
 
         /// <summary>
-        /// Fold the containers sharing an <see cref="ContainerHint.AffinityGroup"/> into one item, so the curve deals
-        /// them to a single worker: costs add up, the group sits at its lowest member's Morton key (its first
-        /// position on the curve), and it counts as owned only when every member is already on the same worker -
-        /// a group that got split is an orphan the next pass puts back together. Returns the list unchanged when
-        /// nothing carries a group, which is the common case.
+        /// Fold the containers that must be dealt together into one item, so the curve gives them to a single
+        /// worker: costs add up, the item sits at its lowest member's Morton key (its first position on the curve),
+        /// and it counts as owned only when every member is already on the same worker - an item that got split is
+        /// an orphan the next pass puts back together. Two things bind containers together, and they compose: an
+        /// <see cref="ContainerHint.AffinityGroup"/> on the hint, and an entity cohesion group whose members sit in
+        /// more than one container (<see cref="AssignmentInput.Cohesion"/>, <c>docs/cohesion-hints.md</c> D7). A
+        /// container in both is in one item with everything either of them names. Returns the list unchanged when
+        /// nothing binds anything, which is the common case.
         /// </summary>
         private static List<Item> MergeGroups(List<Item> items, AssignmentInput input)
         {
-            Dictionary<string, int> groups = null;
+            var bindings = Bindings(items, input);
+            if (bindings == null) return items;
+
+            // Union-find over item indices: a container named by two groups joins them into one item.
+            var index = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < items.Count; i++) index[items[i].Id] = i;
+            var parent = new int[items.Count];
+            for (int i = 0; i < parent.Length; i++) parent[i] = i;
+            int Find(int i) { while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+            var label = new string[items.Count];
+            bool any = false;
+            foreach (var binding in bindings)
+            {
+                int head = -1;
+                for (int m = 0; m < binding.Value.Count; m++)
+                {
+                    if (!index.TryGetValue(binding.Value[m], out int i)) continue; // a container the planner does not deal
+                    int root = Find(i);
+                    if (head < 0) { head = root; label[root] = label[root] ?? binding.Key; continue; }
+                    if (root == head) continue;
+                    parent[root] = head;
+                    label[head] = label[head] ?? binding.Key;
+                    any = true;
+                }
+            }
+            if (!any) return items;
+
+            var merged = new List<Item>(items.Count);
+            var slotOf = new Dictionary<int, int>();
             for (int i = 0; i < items.Count; i++)
             {
-                string group = input.HintOf(items[i].Id).Group;
-                if (group == "") continue;
-                groups = groups ?? new Dictionary<string, int>(StringComparer.Ordinal);
-                if (!groups.TryGetValue(group, out int at)) { groups[group] = i; continue; }
-                var head = items[at];
+                int root = Find(i);
+                if (!slotOf.TryGetValue(root, out int slot))
+                {
+                    var first = items[root];
+                    first.GroupLabel = label[root] ?? "";
+                    slotOf[root] = slot = merged.Count;
+                    merged.Add(first);
+                    if (root == i) continue;
+                }
+                if (root == i) continue;
+                var head = merged[slot];
                 var member = items[i];
                 head.Ids.AddRange(member.Ids);
                 head.Cost += member.Cost;
                 head.Key = Math.Min(head.Key, member.Key);
                 head.Seam = Math.Max(head.Seam, member.Seam);
                 head.Dedicated |= member.Dedicated;
-                // One dissenting owner makes the whole group unowned, which is what puts it back on one worker.
+                // Holding any member holds the whole item: honouring the hold on one container while its group
+                // moves would be the split the group exists to prevent.
+                head.Held |= member.Held;
+                head.HoldSeconds = Math.Max(head.HoldSeconds, member.HoldSeconds);
+                // One dissenting owner makes the whole item unowned, which is what puts it back on one worker.
                 if (head.Owner != member.Owner) head.Owner = "";
-                items[at] = head;
-                items[i] = default;
+                merged[slot] = head;
             }
-            if (groups == null) return items;
-            var merged = new List<Item>(items.Count);
-            for (int i = 0; i < items.Count; i++) if (items[i].Ids != null) merged.Add(items[i]);
+            for (int i = 0; i < merged.Count; i++)
+            {
+                var item = merged[i];
+                if (item.Owner == "") item.Held = false; // an item nobody owns is placed, hold or not
+                merged[i] = item;
+            }
             return merged;
+        }
+
+        /// <summary>
+        /// Every set of containers that must land on one worker, labelled for the reports: the affinity groups on
+        /// the hints and the cohesion groups the workers reported. Null when there are none.
+        /// </summary>
+        private static List<KeyValuePair<string, List<string>>> Bindings(List<Item> items, AssignmentInput input)
+        {
+            List<KeyValuePair<string, List<string>>> bindings = null;
+            Dictionary<string, List<string>> affinity = null;
+            for (int i = 0; i < items.Count; i++)
+            {
+                string group = input.HintOf(items[i].Id).Group;
+                if (group == "") continue;
+                affinity = affinity ?? new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                if (!affinity.TryGetValue(group, out var list)) affinity[group] = list = new List<string>(2);
+                list.Add(items[i].Id);
+            }
+            if (affinity != null)
+            {
+                bindings = new List<KeyValuePair<string, List<string>>>(affinity.Count);
+                foreach (var kv in affinity) bindings.Add(new KeyValuePair<string, List<string>>("affinity " + kv.Key, kv.Value));
+            }
+            if (input.Cohesion != null)
+            {
+                for (int i = 0; i < input.Cohesion.Count; i++)
+                {
+                    var group = input.Cohesion[i];
+                    if (group == null || group.Containers.Count < 2) continue; // one container is already one item
+                    bindings = bindings ?? new List<KeyValuePair<string, List<string>>>(1);
+                    bindings.Add(new KeyValuePair<string, List<string>>(group.ToString(), group.Containers));
+                }
+            }
+            return bindings;
+        }
+
+        /// <summary>
+        /// Name the items that had to be kept on one worker but cost more than one worker can give them
+        /// (<see cref="MaxGroupUtilization"/>). Nothing is done about it here: splitting the group is exactly what
+        /// the hint forbids, so the planner deals it whole and the mesh is told (<c>docs/cohesion-hints.md</c>, D9).
+        /// Measured utilization is the yardstick; a mesh that has reported none yet reports nothing.
+        /// </summary>
+        private void ReportUnsplittable(List<Item> items, AssignmentInput input)
+        {
+            if (input.Utilization == null || input.Utilization.Count == 0) return;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (items[i].Ids.Count < 2) continue;
+                float utilization = 0f;
+                foreach (string id in items[i].Ids) utilization += AssignmentPlanner.UtilizationOf(input, id);
+                if (utilization <= MaxGroupUtilization) continue;
+                _unsplittable.Add(new UnsplittableGroup
+                {
+                    Group = items[i].GroupLabel != "" ? items[i].GroupLabel : "group of " + items[i].Id,
+                    Containers = items[i].Ids.ToArray(),
+                    Utilization = utilization,
+                    Limit = MaxGroupUtilization,
+                });
+            }
+            if (_unsplittable.Count == 0) return;
+            string note = _unsplittable[0].ToString();
+            if (_unsplittable.Count > 1) note += $" (and {_unsplittable.Count - 1} more)";
+            Note = Note == "" ? note : Note + "; " + note;
+        }
+
+        /// <summary>
+        /// Say why the busiest worker is still over <see cref="SaturationUtilization"/> when this pass moved nothing
+        /// off it (<c>docs/cohesion-rebalancing.md</c>, D5). Two kinds of row: a group that does not fit one worker
+        /// at all, which is saturated whoever holds it, and the heaviest item on the busiest worker when that item
+        /// alone would keep the worker hot however the rest is re-dealt. The cause names the constraint the planner
+        /// refuses to break - a group, a hold, a reservation - or says there is no boundary to cut along.
+        /// </summary>
+        private void ReportSaturation(List<Item> items, AssignmentInput input, List<KeyValuePair<string, string>> changes)
+        {
+            if (items == null || items.Count == 0 || input.Utilization == null || input.Utilization.Count == 0) return;
+
+            var reported = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (items[i].Ids.Count < 2) continue;
+                float groupUtilization = Utilization(items[i], input);
+                if (groupUtilization <= MaxGroupUtilization) continue;
+                _saturated.Add(Report(items[i], input, groupUtilization));
+                reported.Add(items[i].Id);
+            }
+
+            // The busiest worker as it stands now, from the owners the pass started with.
+            var load = new Dictionary<string, float>(StringComparer.Ordinal);
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (items[i].Owner == "") continue;
+                load.TryGetValue(items[i].Owner, out float sum);
+                load[items[i].Owner] = sum + Utilization(items[i], input);
+            }
+            string hot = "";
+            float hottest = 0f;
+            foreach (var kv in load)
+                if (kv.Value > hottest || (kv.Value == hottest && string.CompareOrdinal(kv.Key, hot) < 0)) { hot = kv.Key; hottest = kv.Value; }
+            if (hot == "" || hottest < SaturationUtilization) return;
+            // Something is moving off it: it is being relieved, so there is nothing to explain this pass.
+            for (int i = 0; i < changes.Count; i++)
+                if (changes[i].Value != hot && input.OwnerOf(changes[i].Key) == hot) return;
+
+            int blocker = -1;
+            float blockerUtilization = 0f;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (items[i].Owner != hot) continue;
+                float u = Utilization(items[i], input);
+                if (blocker >= 0 && u <= blockerUtilization) continue;
+                blocker = i;
+                blockerUtilization = u;
+            }
+            // One item has to be hot enough on its own that moving everything else away would not bring the worker
+            // under the line. Otherwise the worker is merely unbalanced, which is not saturation.
+            if (blocker < 0 || blockerUtilization < SaturationUtilization || reported.Contains(items[blocker].Id)) return;
+            _saturated.Add(Report(items[blocker], input, blockerUtilization));
+        }
+
+        /// <summary>One saturation row for an item that may not be split, with the cause and the sentence.</summary>
+        private static SaturationReport Report(in Item item, AssignmentInput input, float utilization)
+        {
+            // The heaviest container of the item: what an operator should open first.
+            string heaviest = item.Id;
+            float best = -1f;
+            foreach (string id in item.Ids)
+            {
+                float u = AssignmentPlanner.UtilizationOf(input, id);
+                if (u > best) { best = u; heaviest = id; }
+            }
+            SaturationCause cause;
+            string reason;
+            if (item.Ids.Count > 1)
+            {
+                cause = (item.GroupLabel ?? "").StartsWith("affinity", StringComparison.Ordinal) ? SaturationCause.AffinityGroup : SaturationCause.CohesionGroup;
+                string label = item.GroupLabel != "" ? item.GroupLabel : "the group at " + item.Id;
+                reason = $"{label} spans {AssignmentText.List(item.Ids)}, so cutting between them would split it; the item needs "
+                    + $"{utilization:0.00} of a tick and is kept whole";
+            }
+            else if (item.Dedicated)
+            {
+                cause = SaturationCause.Dedicated;
+                reason = $"{item.Id} asked for a worker of its own ('dedicated' hint) and needs {utilization:0.00} of that worker's tick on its own";
+            }
+            else if (item.Held)
+            {
+                cause = SaturationCause.Held;
+                reason = $"{item.Id} is held for another {item.HoldSeconds:0.#} s and is not moved until the hold expires";
+            }
+            else
+            {
+                cause = SaturationCause.NoBoundary;
+                reason = $"no boundary hint: {item.Id} carries {utilization:0.00} of a tick on its own and the game authored no boundary inside it "
+                    + "(bake it as more cells, register runtime containers, or hint a seam); Nebula never subdivides a container";
+            }
+            return new SaturationReport
+            {
+                ContainerId = heaviest,
+                ScopeKey = item.Scope ?? "",
+                Containers = item.Ids.ToArray(),
+                WorkerId = item.Owner ?? "",
+                Utilization = utilization,
+                Cause = cause,
+                Reason = reason,
+            };
+        }
+
+        /// <summary>The measured utilization of a whole item: what its containers cost the worker that holds them.</summary>
+        private static float Utilization(in Item item, AssignmentInput input)
+        {
+            float u = 0f;
+            foreach (string id in item.Ids) u += AssignmentPlanner.UtilizationOf(input, id);
+            return u;
         }
 
         private static string NeighbourOwner(List<Item> items, int i)

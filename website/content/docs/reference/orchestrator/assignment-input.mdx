@@ -69,6 +69,14 @@ public IReadOnlyDictionary<string, ContainerHint> Hints = new Dictionary<string,
 
 What the game says about each container beyond what the mesh can measure, by container id ([`ContainerHint`](/docs/reference/containers/container-hint)). The orchestrator merges the baked hints with the ones set while the mesh runs, the runtime value winning. Containers nobody hinted are absent, which reads as [`ContainerHint.Default`](/docs/reference/containers/container-hint#default).
 
+### Cost [#cost]
+
+```csharp
+public IReadOnlyDictionary<string, ContainerCost> Cost = new Dictionary<string, ContainerCost>();
+```
+
+What each container is measured to cost its worker, split into simulation, replication and gateway relay ([`ContainerCost`](/docs/reference/orchestrator/container-cost), docs/cost-telemetry.md). Containers nobody reported are absent. The policies do not read it; the scaler does, to name what makes a hot container hot.
+
 ### KeepOrder [#keeporder]
 
 ```csharp
@@ -77,7 +85,47 @@ public bool KeepOrder;
 
 The baked order is spatial (a partitioned world) and should be kept when dealing.
 
+### Holds [#holds]
+
+```csharp
+public IReadOnlyDictionary<string, float> Holds = new Dictionary<string, float>();
+```
+
+Containers a worker asked not to be rebalanced, by container id, with the seconds each hold still has to run on the orchestrator's clock ([`NebulaWorker.HoldContainer`](/docs/reference/worker/nebula-worker#holdcontainer), `docs/cohesion-hints.md` D8). Containers nobody holds are absent.
+
+### Cohesion [#cohesion]
+
+```csharp
+public IReadOnlyList<CohesionGroupInfo> Cohesion = Array.Empty<CohesionGroupInfo>();
+```
+
+The entity cohesion groups the mesh is holding ([`CohesionGroupInfo`](/docs/reference/orchestrator/cohesion-group-info)). Their containers are dealt as one item, exactly like an [`ContainerHint.AffinityGroup`](/docs/reference/containers/container-hint#affinitygroup), and are never split.
+
 ## Methods
+
+### IsHeld [#isheld]
+
+```csharp
+public bool IsHeld(string containerId);
+```
+
+Whether a container is under a live hold, so moving it now is deferred.
+
+### HoldSeconds [#holdseconds]
+
+```csharp
+public float HoldSeconds(string containerId);
+```
+
+How many seconds a container's hold still has to run, or 0 when it is not held.
+
+### DropHeldChanges [#dropheldchanges]
+
+```csharp
+public int DropHeldChanges(List<KeyValuePair<string, string>> changes);
+```
+
+Remove the changes that would move a held container, so a hold defers a rebalance whichever policy computed it. A hold never keeps an **orphan** where it is: a container with no live owner has to be placed, and the hold is about not being moved, not about staying unowned. Returns how many were dropped.
 
 ### HintOf [#hintof]
 

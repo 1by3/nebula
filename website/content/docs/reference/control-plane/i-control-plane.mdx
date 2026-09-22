@@ -45,6 +45,14 @@ IReadOnlyList<LeaseInfo> Leases { get; }
 IReadOnlyList<GatewayInfo> Gateways { get; }
 ```
 
+### Scopes [#scopes]
+
+```csharp
+IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
+The shared simulation scopes that have been activated ([`ActivateScope`](#activatescope)), one row per key, mirrored to every role. The public world has no row. Design of record: `docs/scope-activation.md`.
+
 ### Settings [#settings]
 
 ```csharp
@@ -141,6 +149,40 @@ void SetSetting(string key, string value);
 
 Set (or create) one mesh-wide setting. Every subscriber sees it through [`Changed`](#changed).
 
+### ActivateScope [#activatescope]
+
+```csharp
+void ActivateScope(ScopeActivationRequest request);
+```
+
+Ask the mesh for a shared simulation scope by key, creating its containers from [`ScopeActivationRequest.Definition`](/docs/reference/control-plane/scope-activation-request#definition) the first time. Idempotent: the first caller creates the rows, every later caller with the same definition changes nothing, and a caller with a \*different\* definition under the same key is refused so two worlds never share one scope. A game-supplied unique key is how a private copy is asked for; there is no separate call.
+
+Like every other control-plane write this is fire and forget: the answer is the [`Scopes`](#scopes) row, which appears on this process (and on every other) once the orchestrator has applied it. Poll it with [`ControlPlaneExtensions.FindScope`](/docs/reference/control-plane/control-plane-extensions#findscope) and ask whether it can be entered with [`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready).
+
+### SetScopeState [#setscopestate]
+
+```csharp
+void SetScopeState(string scopeKey, string state);
+```
+
+Move a scope's lifecycle state on ([`ScopeState`](/docs/reference/control-plane/scope-state)). The orchestrator's idle sweep is the single writer of the machine; nothing else in a mesh should call it. See `docs/scope-lifecycle.md`.
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
+A worker reporting that it finished the step the scope is in for one of its containers: the checkpoint before a retire, or the restore after a re-activation ([`ScopePhase`](/docs/reference/control-plane/scope-phase)). The orchestrator waits for one ack per container before taking the next step.
+
+### RemoveScope [#removescope]
+
+```csharp
+void RemoveScope(string scopeKey);
+```
+
+Drop a scope's row, its durable claim and the lease rows of its containers. The mechanism only: when a scope should go is the game's or NEB-240's decision, and entities still in it are not moved.
+
 ### EnsureContainer [#ensurecontainer]
 
 ```csharp
@@ -192,6 +234,14 @@ void SetContainerHint(string containerId, in ContainerHint hint);
 ```
 
 Attach a balancing hint to a container, creating the lease row if it does not exist yet: the game (or the dashboard) telling the planner something it cannot measure while the mesh runs. The row outlives an orchestrator restart, and the value wins over whatever was baked. Setting [`ContainerHint.Default`](/docs/reference/containers/container-hint#default) clears the runtime hint and lets the baked one stand again.
+
+### SetContainerCapacity [#setcontainercapacity]
+
+```csharp
+void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
+```
+
+Publish what the cost telemetry says about how full a container is, so a gateway can answer "is this target at capacity" from the document it already mirrors instead of asking the orchestrator (docs/capacity-admission.md). The orchestrator is the only writer. It does **not** stamp [`LeaseInfo.UpdatedAt`](/docs/reference/control-plane/lease-info#updatedat): that is the mesh's idle clock, and a reading published every pass would keep every scope hot for ever.
 
 ### ReleaseContainer [#releasecontainer]
 

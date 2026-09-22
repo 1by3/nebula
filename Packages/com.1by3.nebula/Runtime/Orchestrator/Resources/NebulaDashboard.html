@@ -237,6 +237,40 @@
         <tbody id="carried"></tbody>
       </table>
     </section>
+    <section class="card wide" id="cohesionCard" style="display:none">
+      <h2>Cohesion</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">What the game says must stay together. A <b>hold</b> keeps a container on its worker for a bounded time; a <b>group</b> is a set of entities one worker must simulate, so the planner deals their containers as one item and never splits them.</div>
+      <div class="warn" id="cohesionWarn" style="display:none; font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>What</th><th>Worker(s)</th><th>Containers</th><th>Detail</th></tr></thead>
+        <tbody id="cohesion"></tbody>
+      </table>
+    </section>
+    <section class="card wide" id="assignmentCard" style="display:none">
+      <h2>Assignment plan</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">Why each container changed hands on the last re-deal: which authored boundary the cut fell on, what the busiest worker was carrying before and after, and which cohesion or affinity group kept containers together. Nebula never splits a container; it re-deals the ones the game authored.</div>
+      <div class="warn" id="saturatedNote" style="display:none; font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>Container</th><th>From</th><th>To</th><th>Why</th></tr></thead>
+        <tbody id="moves"></tbody>
+      </table>
+    </section>
+    <section class="card wide" id="scopesCard" hidden>
+      <h2>Scopes</h2>
+      <div class="muted" id="scopesHint" style="font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>Scope</th><th>State</th><th>Parts</th><th>Players</th><th>Entities</th><th>Idle</th><th>Age</th><th>Capacity</th><th>Requester</th></tr></thead>
+        <tbody id="scopes"></tbody>
+      </table>
+    </section>
+    <section class="card wide">
+      <h2>Container cost</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">What each container costs the worker that holds it, measured. <b>Sim</b> is the <span class="mono">NetworkTick</span> time its own entities take; <b>Out</b> is what replicating them costs; <b>Relay</b> is owner state, which a gateway forwards to one client each. <b>Dominant</b> is whichever of the three is closest to its budget, and it is what a hot container needs fixing in: simulation wants a split or cheaper entities, replication wants tighter interest, relay wants more gateways. <b>Full</b> means the dominant component reached the capacity threshold: joins and transfers into that container go to the game's admission hook, which refuses them by default.</div>
+      <table>
+        <thead><tr><th>Container</th><th>Scope</th><th>Worker</th><th>Cost</th><th>Sim</th><th>Share</th><th>Out</th><th>Relay</th><th>Ghosts</th><th>Dominant</th><th>Full</th></tr></thead>
+        <tbody id="cost"></tbody>
+      </table>
+    </section>
     <section class="card wide">
       <h2>Gateways</h2>
       <table>
@@ -402,6 +436,7 @@
             <div class="metric"><div class="v">${w.serverDriven}</div><div class="l">server-driven</div></div>
             <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
             <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
+            <div class="metric" title="How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint. Bounded by docs/persistence-durability.md's durability window; 0 means nothing unsaved."><div class="v">${w.alive ? Number(w.oldestDirtySeconds || 0).toFixed(1) + 's' : '—'}</div><div class="l">oldest dirty</div></div>
             ${interestMetrics(w)}
           </div>
           ${(w.interest && w.interest.warning) ? `<div class="meta" style="margin-bottom:8px;color:#e0a33e" title="Interest management bounds who hears about entities, not who simulates them">⚠ ${esc(w.interest.warning)}</div>` : ''}
@@ -420,6 +455,37 @@
       hintNote.style.display = (s.scale && s.scale.hintNote) ? '' : 'none';
     }
 
+    // Cohesion (docs/cohesion-hints.md): holds first, then the entity groups, then whatever did not fit a worker.
+    const coh = s.cohesion || { holds: [], groups: [], unsplittable: [] };
+    const cohRows = []
+      .concat((coh.holds || []).map(h => `
+        <tr><td>hold</td><td class="mono">${esc(h.worker || '')}</td><td class="mono">${esc(h.container)}</td>
+            <td>not rebalanced for ${Number(h.seconds).toFixed(1)}s</td></tr>`))
+      .concat((coh.groups || []).map(g => `
+        <tr><td>group ${g.group}</td><td class="mono">${esc((g.workers || []).join(', '))}</td>
+            <td class="mono">${esc((g.containers || []).join(', ')) || '<span class="muted">none</span>'}</td>
+            <td>${g.members} member(s)${g.split ? ' · <span class="warn">on more than one worker</span>' : ''}</td></tr>`));
+    $('cohesion').innerHTML = cohRows.join('');
+    const cohWarn = $('cohesionWarn');
+    const oversize = coh.unsplittable || [];
+    cohWarn.innerHTML = oversize.map(u => esc(u.reason)).join('<br>');
+    cohWarn.style.display = oversize.length ? '' : 'none';
+    $('cohesionCard').style.display = (cohRows.length || oversize.length) ? '' : 'none';
+
+    // Assignment plan (docs/cohesion-rebalancing.md): the explained moves, and what could not be relieved.
+    const asg = s.assignment || { moves: [], saturated: [] };
+    const moves = asg.moves || [], saturated = asg.saturated || [];
+    $('moves').innerHTML = moves.length ? moves.map(m => `
+      <tr><td class="mono">${esc(m.container)}</td>
+          <td class="mono">${m.from ? esc(m.from) : '<span class="muted">unowned</span>'}</td>
+          <td class="mono">${esc(m.to)}</td>
+          <td>${m.reason ? esc(m.reason) : '<span class="muted">the policy gave no reason</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">nothing has moved yet</td></tr>';
+    const satNote = $('saturatedNote');
+    satNote.innerHTML = saturated.map(u => `${esc(u.container)} (${(u.utilization || 0).toFixed(2)} of a tick${u.scope ? ', scope ' + esc(u.scope) : ''}): ${esc(u.reason)}`).join('<br>');
+    satNote.style.display = saturated.length ? '' : 'none';
+    $('assignmentCard').style.display = (moves.length || saturated.length) ? '' : 'none';
+
     $('containers').innerHTML = s.containers.map(c => `
       <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
@@ -435,6 +501,54 @@
             ? `<button class="small" data-act="unpin" data-id="${esc(c.id)}" title="Let it follow its carrier again">Unpin</button>`
             : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
+
+    // Per-container cost (docs/cost-telemetry.md): the rows the scaler names an unsplittable container from.
+    const costRows = (s.cost && s.cost.containers) || [];
+    const blockedBy = (s.scale && s.scale.blockedBy) || '';
+    // How full a container may get before the mesh calls it at capacity (docs/capacity-admission.md); 0 = off.
+    const capThreshold = s.capacitySaturation || 0;
+    $('cost').innerHTML = costRows.length ? costRows.map(c => `
+      <tr${c.id === blockedBy ? ' class="warnText"' : ''}>
+        <td class="mono">${esc(c.id)}</td>
+        <td class="mono">${c.scope ? esc(c.scope) : '<span class="muted">public</span>'}</td>
+        <td class="mono">${esc(c.worker || '')}</td>
+        <td title="Cost-weighted entities inside it (category weight x the entity's own NebulaCost weight)">${(c.cost || 0).toFixed(1)}</td>
+        <td title="Measured NetworkTick time for this container's entities">${(c.tickMs || 0).toFixed(2)} ms</td>
+        <td title="Its share of the simulation time this worker could attribute to containers at all">${((c.tickShare || 0) * 100).toFixed(0)}%</td>
+        <td>${fmtRate(c.bytesOut || 0)}</td>
+        <td>${fmtRate(c.gatewayBytes || 0)}</td>
+        <td>${c.ghosts || 0}</td>
+        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of that component's budget">${esc(c.dominant || '')}</td>
+        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of the ${esc(c.dominant || '')} budget${capThreshold > 0 ? `; at capacity from ${(capThreshold * 100).toFixed(0)}%` : '; the capacity signal is off'}">${
+          c.atCapacity ? '<span class="warnText">at capacity</span>' : capThreshold > 0 ? `${((c.saturation || 0) * 100).toFixed(0)}%` : '<span class="muted">off</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="11" class="muted">no worker has reported yet</td></tr>';
+
+    // Scopes: keyed worlds the mesh has been asked for. Hidden until something activates one, so a mesh that
+    // never uses them looks exactly as it did.
+    const scopes = s.scopes || [];
+    $('scopesCard').hidden = scopes.length === 0;
+    if (scopes.length) {
+      const retire = s.scopeIdleRetireSeconds || 0;
+      $('scopesHint').innerHTML = retire > 0
+        ? `A scope with nobody in it retires after <b>${fmtSecs(retire)}</b> idle: its persistent entities are checkpointed, its containers released, and it comes back when it is activated again.`
+        : 'Idle retirement is off (<span class="mono">ScopeIdleRetireSeconds = 0</span>): a scope keeps its containers until something removes it.';
+      $('scopesHint').innerHTML += capThreshold > 0
+        ? ` A scope counts as <b>at capacity</b> once the worst of its parts reaches <b>${(capThreshold * 100).toFixed(0)}%</b> of a cost budget; joins and transfers into it then go to the admission hook.`
+        : ' The capacity signal is off (<span class="mono">CapacitySaturation = 0</span>): every join is admitted.';
+      $('scopes').innerHTML = scopes.map(sc => `
+        <tr><td class="mono">${esc(sc.key)}</td>
+            <td>${esc(sc.state)}${sc.state === 'active' && !sc.ready ? ' <span class="muted">(no owner)</span>' : ''}</td>
+            <td>${sc.parts}</td>
+            <td>${sc.players}</td>
+            <td>${sc.entities}</td>
+            <td>${sc.state === 'active' ? fmtSecs(sc.idleSeconds) : '<span class="muted">—</span>'}</td>
+            <td>${fmtSecs(sc.ageSeconds)}</td>
+            <td title="${sc.capacityKnown ? `the worst of its parts: ${esc(sc.dominant || '')} at ${((sc.saturation || 0) * 100).toFixed(0)}% of its budget` : 'no worker has reported cost for any part of this scope yet'}">${
+              !sc.capacityKnown ? '<span class="muted">unknown</span>'
+                : sc.atCapacity ? `<span class="warnText">at capacity</span>${sc.capacityCause ? ` <span class="muted">(${esc(sc.capacityCause)})</span>` : ''}`
+                : `${((sc.saturation || 0) * 100).toFixed(0)}%`}</td>
+            <td class="mono">${sc.requester ? esc(sc.requester) : '<span class="muted">\u2014</span>'}</td></tr>`).join('');
+    }
 
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {
       const state = g.draining ? 'draining' : g.drainRequested ? 'drain requested' : g.ready ? 'ready' : 'starting';
