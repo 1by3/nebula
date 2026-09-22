@@ -58,6 +58,7 @@ namespace Nebula
             _token = string.IsNullOrEmpty(token) ? null : token;
             _restore = restore;
             _plane.SessionDirectory.Store = _storage as IGatewaySessionStore;
+            _plane.ScopeStore = _storage as IScopeStore;
         }
 
         /// <summary>The state machine itself, for tests.</summary>

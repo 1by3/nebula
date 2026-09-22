@@ -126,6 +126,12 @@ public IReadOnlyList<GatewayInfo> Gateways { get; }
 public IReadOnlyDictionary<string, string> Settings { get; }
 ```
 
+### Scopes [#scopes]
+
+```csharp
+public IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
 ## Events
 
 ### Changed [#changed]
@@ -283,3 +289,15 @@ public bool TryHandle(OrchestratorHttpServer.Request req, out OrchestratorHttpSe
 ```
 
 Main thread: apply a batch of writes when `req` is one. Returns false for any other request so the caller can handle it.
+
+### ActivateScope [#activatescope]
+
+```csharp
+public void ActivateScope(ScopeActivationRequest request);
+```
+
+### RemoveScope [#removescope]
+
+```csharp
+public void RemoveScope(string scopeKey);
+```

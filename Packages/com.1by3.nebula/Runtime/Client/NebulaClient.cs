@@ -37,6 +37,15 @@ namespace Nebula
         /// reconnect continues the session. Clear it to start a new session on the next connection.
         /// </summary>
         public string SessionToken { get; set; } = "";
+        /// <summary>
+        /// The simulation scope this client asks to be placed in, as the opaque key the game chose
+        /// (<see cref="EntityLocation.ScopeKey"/>). Empty, the default, is the public world. Set it before
+        /// connecting — a travel menu or a matchmaking reply hands the key over — and the gateway spawns the player
+        /// into that scope's containers instead of the public ones. The scope must already have been activated
+        /// (<see cref="IControlPlane.ActivateScope"/>); the gateway holds the join until it is ready. Seeded from
+        /// <c>-nebula-scope</c>. Changing it takes effect on the next connection.
+        /// </summary>
+        public string ScopeKey { get; set; } = CommandLine.Get("nebula-scope", "");
         /// <summary>True when the last Welcome reclaimed the session (the pawn is the one from before the reconnection).</summary>
         public bool SessionReclaimed { get; private set; }
         public NetworkIdentity LocalPlayer { get; private set; }
@@ -627,7 +636,7 @@ namespace Nebula
                     _writer.Reset();
                     string token = !string.IsNullOrEmpty(AuthToken) ? AuthToken : _storedToken;
                     _presentedStoredToken = string.IsNullOrEmpty(AuthToken) && token.Length > 0;
-                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "" }.Write(_writer);
+                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "", ScopeKey = ScopeKey ?? "" }.Write(_writer);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:

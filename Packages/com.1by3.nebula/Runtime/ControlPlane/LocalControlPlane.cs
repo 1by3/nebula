@@ -54,7 +54,7 @@ namespace Nebula
         }
 
         /// <summary>The whole state as one document (see <see cref="ControlPlaneJson"/>).</summary>
-        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings);
+        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings, _scopes);
 
         /// <summary>Replace the whole state with <paramref name="snapshot"/> (a stored document coming back at startup).</summary>
         public void Import(ControlPlaneJson.Snapshot snapshot)
@@ -63,11 +63,13 @@ namespace Nebula
             _leases.Clear();
             _gateways.Clear();
             _settings.Clear();
+            ImportScopes(null);
             if (snapshot != null)
             {
                 _workers.AddRange(snapshot.Workers);
                 _leases.AddRange(snapshot.Leases);
                 _gateways.AddRange(snapshot.Gateways);
+                ImportScopes(snapshot.Scopes);
                 foreach (var kv in snapshot.Settings) _settings[kv.Key] = kv.Value;
                 if (snapshot.Version > Version) Version = snapshot.Version;
             }
@@ -267,6 +269,7 @@ namespace Nebula
             _leases.Clear();
             _gateways.Clear();
             _settings.Clear();
+            ClearScopes();
             Touch();
         }
     }

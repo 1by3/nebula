@@ -3,7 +3,9 @@ title: Create private instances
 description: Define private areas with containers, prepare player crossings, and allow a bounded view of the public world.
 ---
 
-An instance is a separate simulation scope containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
+An instance is a separate [simulation scope](/docs/guides/scopes) containing one or more [runtime containers](/docs/guides/runtime-containers). Its entities have independent authority and physics. Instance ID `0` is the public world. Multiple instances can occupy the same coordinates.
+
+This page is the worker-side path: a player walks into an `InstanceBoundary` and the worker prepares the instance as they approach. To create a scope from outside a worker — from a matchmaker, a travel menu or a login flow — or to route a player into one at join, see [Simulation scopes](/docs/guides/scopes). Both paths produce the same scope for the same key.
 
 Use instances for private homes, party dungeons, training rooms, or separate copies of a mission. A container still defines where simulation happens and which [worker](/docs/concepts/containers-and-handover) is responsible. The instance ID determines which copy an entity belongs to. Creating an ordinary runtime container alone does not make it private.
 

@@ -190,12 +190,21 @@ Register processes and share container assignments and settings through the cont
 | [IControlPlane](/docs/reference/control-plane/i-control-plane) | Interface. Provides process registration, container assignments with epochs, and game-defined settings. |
 | [IControlPlaneStorage](/docs/reference/control-plane/i-control-plane-storage) | Interface. Where ControlPlaneHost keeps the control plane between orchestrator runs: one JSON document (ControlPlaneJson), written a little after every change and read once at startup. |
 | [IGatewaySessionControlPlane](/docs/reference/control-plane/i-gateway-session-control-plane) | Interface. Optional control-plane extension for single-session gateway admission. |
+| [IScopeStore](/docs/reference/control-plane/i-scope-store) | Interface. Where the orchestrator keeps the claim on a scope key between runs. |
 | [LeaseInfo](/docs/reference/control-plane/lease-info) | Class. Describes the current worker assignment for one container. |
 | [LeaseState](/docs/reference/control-plane/lease-state) | Static class. Provides the states used by a container lease. |
 | [LocalControlPlane](/docs/reference/control-plane/local-control-plane) | Class. The control plane's state machine: registrations, heartbeats, leases with epochs and settings, kept in plain lists in this process. |
 | [MemoryControlPlaneStorage](/docs/reference/control-plane/memory-control-plane-storage) | Class. Keeps nothing: the control plane starts empty on every orchestrator run. |
 | [MeshSettings](/docs/reference/control-plane/mesh-settings) | Static class. Mesh-wide settings Nebula itself writes, in the same key/value channel the game uses (IControlPlane.Settings). |
 | [RemoteControlPlane](/docs/reference/control-plane/remote-control-plane) | Class. IControlPlane for a worker or gateway: a mirror of the control plane the orchestrator hosts (ControlPlaneHost), reached over HTTP at the orchestrator's dashboard address. |
+| [ScopeActivationRequest](/docs/reference/control-plane/scope-activation-request) | Class. What a caller asks for when it wants a scope to exist. |
+| [ScopeDefinition](/docs/reference/control-plane/scope-definition) | Class. What a scope is made of: the containers to bring into being and how their occupants see the public world. |
+| [ScopeInfo](/docs/reference/control-plane/scope-info) | Class. A shared simulation scope the mesh has been asked to bring into being: the opaque key that names it, the definition it was activated from, and the containers that now exist for it. |
+| [ScopeJson](/docs/reference/control-plane/scope-json) | Static class. The scope row and the scope definition as JSON, inside the control-plane document and the activation op. |
+| [ScopeKeys](/docs/reference/control-plane/scope-keys) | Static class. How a scope key becomes the ids every role agrees on. |
+| [ScopeKind](/docs/reference/control-plane/scope-kind) | Static class. The shapes a ScopeDefinition can take. |
+| [ScopePart](/docs/reference/control-plane/scope-part) | Class. One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates. |
+| [ScopeState](/docs/reference/control-plane/scope-state) | Static class. The states a ScopeInfo row can be in. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
 | [WorkerStatus](/docs/reference/control-plane/worker-status) | Static class. Provides the lifecycle states reported by a worker. |

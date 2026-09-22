@@ -1,0 +1,22 @@
+---
+title: "ScopeState"
+description: "The states a ScopeInfo row can be in."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public static class ScopeState
+```
+
+The states a [`ScopeInfo`](/docs/reference/control-plane/scope-info) row can be in. NEB-240 adds retirement states here.
+
+## Fields
+
+### Active [#active]
+
+```csharp
+public const string Active = "active";
+```
+
+The scope's lease rows exist. It says nothing about who owns them or what is loaded ([`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready)).

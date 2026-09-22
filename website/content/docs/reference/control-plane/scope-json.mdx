@@ -1,0 +1,42 @@
+---
+title: "ScopeJson"
+description: "The scope row and the scope definition as JSON, inside the control-plane document and the activation op."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public static class ScopeJson
+```
+
+The scope row and the scope definition as JSON, inside the control-plane document and the activation op.
+
+## Methods
+
+### WriteDefinition [#writedefinition]
+
+```csharp
+public static string WriteDefinition(ScopeDefinition d);
+public static void WriteDefinition(JsonWriter w, ScopeDefinition d);
+```
+
+### ReadDefinition [#readdefinition]
+
+```csharp
+public static ScopeDefinition ReadDefinition(string json);
+public static ScopeDefinition ReadDefinition(Dictionary<string, object> o);
+```
+
+Read a definition written by [`WriteDefinition`](#writedefinition). An empty or malformed document reads as an empty definition.
+
+### WriteScope [#writescope]
+
+```csharp
+public static void WriteScope(JsonWriter w, ScopeInfo s);
+```
+
+### ReadScope [#readscope]
+
+```csharp
+public static ScopeInfo ReadScope(Dictionary<string, object> o);
+```

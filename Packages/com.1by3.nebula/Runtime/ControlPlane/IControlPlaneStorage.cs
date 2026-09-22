@@ -29,7 +29,7 @@ namespace Nebula
     }
 
     /// <summary>The document in one file, written beside it and moved into place so a crash mid-write keeps the previous copy.</summary>
-    public sealed class FileControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore
+    public sealed class FileControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore, IScopeStore
     {
         public string FilePath { get; }
         public string Backend => "file";
@@ -85,6 +85,49 @@ namespace Nebula
             string directory = FilePath + ".sessions";
             if (!Directory.Exists(directory)) return;
             foreach (string path in Directory.GetFiles(directory, "*.session")) File.Delete(path);
+        }
+
+        // ------------------------------------------------------------------------------------------- scopes
+
+        private string ScopesDirectory => FilePath + ".scopes";
+
+        private string ScopePath(string scopeKey)
+        {
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                return Path.Combine(ScopesDirectory, BitConverter.ToString(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(scopeKey))).Replace("-", "") + ".scope");
+        }
+
+        /// <summary>
+        /// The uniqueness constraint is the exclusive create: exactly one caller gets the file, and everybody else
+        /// reads what that one wrote. No lock is held between the create and the read.
+        /// </summary>
+        string IScopeStore.ClaimScope(string scopeKey, string definition)
+        {
+            string path = ScopePath(scopeKey);
+            Directory.CreateDirectory(ScopesDirectory);
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(stream))
+                    writer.Write(definition ?? "");
+                return definition ?? "";
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                return File.ReadAllText(path);
+            }
+        }
+
+        void IScopeStore.ReleaseScope(string scopeKey)
+        {
+            string path = ScopePath(scopeKey);
+            if (File.Exists(path)) File.Delete(path);
+        }
+
+        void IScopeStore.ClearScopes()
+        {
+            if (!Directory.Exists(ScopesDirectory)) return;
+            foreach (string path in Directory.GetFiles(ScopesDirectory, "*.scope")) File.Delete(path);
         }
     }
 }

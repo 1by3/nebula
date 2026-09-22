@@ -11,7 +11,7 @@ namespace Nebula
     /// mesh) or PostgreSQL (for a deployed mesh), behind one ADO.NET surface. It holds three tables:
     /// <c>nebula_control_plane</c> (the control plane document, see <see cref="SqlControlPlaneStorage"/>) and
     /// <c>nebula_entity</c> (saved entities, see <see cref="SqlPersistenceStore"/>), and
-    /// <c>nebula_gateway_session</c> (gateway admission claims). <see cref="EnsureSchema"/>
+    /// <c>nebula_gateway_session</c> (gateway admission claims), <c>nebula_scope</c> (scope-key claims). <see cref="EnsureSchema"/>
     /// creates them if they are missing; every SQL statement is written once and differs only in the few type
     /// names the two engines disagree on.
     /// </summary>
@@ -113,6 +113,9 @@ namespace Nebula
                 if (_schemaReady) return;
                 Execute(c, "CREATE TABLE IF NOT EXISTS nebula_control_plane (id INTEGER PRIMARY KEY, json TEXT NOT NULL, updated_at BIGINT NOT NULL)");
                 Execute(c, "CREATE TABLE IF NOT EXISTS nebula_gateway_session (identity TEXT PRIMARY KEY, state TEXT NOT NULL)");
+                // The uniqueness constraint behind scope activation (docs/scope-activation.md D5): the primary key
+                // is the scope key, so exactly one of two racing activations inserts and both read the same row.
+                Execute(c, "CREATE TABLE IF NOT EXISTS nebula_scope (scope_key TEXT PRIMARY KEY, definition TEXT NOT NULL, created_at BIGINT NOT NULL)");
                 Execute(c, $@"CREATE TABLE IF NOT EXISTS nebula_entity (
                     entity_key TEXT PRIMARY KEY,
                     prefab_id INTEGER NOT NULL,

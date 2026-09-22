@@ -1,0 +1,40 @@
+---
+title: "ScopeKeys"
+description: "How a scope key becomes the ids every role agrees on."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public static class ScopeKeys
+```
+
+How a scope key becomes the ids every role agrees on. The two derivations here are the ones [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker#prepareinstance) has always used, lifted out of the worker so a gateway, an orchestrator, a matchmaking service or a test can name a scope's containers without a worker and without Unity. Design of record: `docs/scope-activation.md`.
+
+## Fields
+
+### RuntimeIdPrefix [#runtimeidprefix]
+
+```csharp
+public const string RuntimeIdPrefix = "rt_";
+```
+
+The prefix of a runtime container's id ([`ContainerRegistry.RuntimeContainerId`](/docs/reference/containers/container-registry#runtimecontainerid)).
+
+## Methods
+
+### Hash [#hash]
+
+```csharp
+public static ulong Hash(string key);
+```
+
+The 64-bit isolation id of a scope key: the first eight bytes of its SHA-256, big-endian, never zero (zero is the public world). This is [`NebulaWorker.InstanceKey`](/docs/reference/worker/nebula-worker#instancekey), which now calls it.
+
+### ContainerId [#containerid]
+
+```csharp
+public static string ContainerId(string scopeKey, string partId);
+```
+
+The runtime container id of one part of a scope: `rt_` and [`Hash`](#hash) of `scopeKey + "/" + partId`. The same key and part id produce the same id on every process and after every restart, which is what makes activation idempotent (`docs/scope-activation.md` D3).

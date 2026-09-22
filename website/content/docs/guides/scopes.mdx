@@ -1,0 +1,142 @@
+---
+title: Simulation scopes
+description: Ask the mesh for a shared world by key from anywhere, get the same world for the same key, and route players into it at join.
+---
+
+A **simulation scope** is a world the mesh simulates separately from every other: its own containers, its own authority, its own physics, and no visibility into any other scope. The public world is the scope whose key is the empty string. Every other scope is named by an opaque **scope key** the game chooses, and two players who ask for the same key land in the same world no matter which gateway or worker they came through.
+
+[Instances](/docs/guides/instancing) are scopes. So is a housing interior, a raid copy, a match, a season shard. The difference between them is entirely the key the game picks.
+
+Activating a scope is the mechanism only. Which key a player should go to, whether they are allowed in, and what the loading screen looks like stay with your game.
+
+## Ask for a scope
+
+```csharp
+controlPlane.ActivateScope(new ScopeActivationRequest
+{
+    ScopeKey  = "raid/molten-core#run-4812",
+    Requester = "matchmaker",
+    Definition = new ScopeDefinition
+    {
+        Kind = ScopeKind.Parts,
+        ObservePublic = false,
+        Parts =
+        {
+            new ScopePart
+            {
+                PartId = "interior",
+                Center = new Vector3(2000, 0, 0),    // absolute world coordinates
+                Size   = new Vector3(120, 40, 120),
+                ContentResource = "Instances/MoltenCore",
+            },
+        },
+    },
+});
+```
+
+Each part becomes one [runtime container](/docs/guides/runtime-containers) with a lease row the orchestrator can deal out. The call is available on any `IControlPlane`: a worker, a gateway, the orchestrator, or a standalone service holding a `RemoteControlPlane`. **Nothing has to be running inside the scope**, and no player has to be standing anywhere.
+
+The bounds are absolute world coordinates, the same frame the control plane's lease rows use. `ObservePublic` and the observation box let the scope's occupants receive public entities within a box, exactly as an instance template's `PublicView` does.
+
+### Asking twice is safe
+
+`ActivateScope` is idempotent. The first caller creates the rows; every later caller with the same key and the same definition changes nothing and sees the same rows. That holds when two requesters ask at the same moment, and across an orchestrator restart, because the scope key is a uniqueness constraint in the control plane's storage — a primary key in SQL, an exclusive file create for a file-backed control plane.
+
+A second caller that asks for the same key with a **different** definition is refused, and the stored scope stands. Two different worlds never share one key. Nothing changes on a refusal, so the caller keeps whatever scope it is already in and can retry.
+
+### Private copies
+
+There is no separate call for a private scope. A private copy is the same call with a key the game made unique:
+
+| Key | What you get |
+| --- | --- |
+| `raid/molten-core` | one world, shared by everyone who asks for it |
+| `raid/molten-core#party-91` | a copy for that party |
+| `home/<player identity>` | a copy per player |
+
+Nebula never parses the key, so the structure above is a convention, not a rule. Two different keys are two scopes with different containers and no visibility into each other.
+
+## Wait for it to be ready
+
+`ActivateScope` is a control-plane write like any other: it is queued, batched and applied in order, and the answer is the row every process mirrors.
+
+```csharp
+var scope = controlPlane.FindScope(key);        // null until the orchestrator applied the request
+if (controlPlane.IsScopeReady(key))
+{
+    // every container of the scope has a lease held by a worker that is still heartbeating
+}
+```
+
+`IsScopeReady` tells you there is a worker simulating the scope. It does **not** tell you that the worker has loaded the scope's content:
+
+| Question | How to answer it |
+| --- | --- |
+| Does the scope exist? | `controlPlane.FindScope(key) != null` |
+| Is a worker simulating it? | `controlPlane.IsScopeReady(key)` |
+| Is a destination container's content loaded there? | `InstanceTransfer.Ready` after `worker.PrepareTransfer(...)` |
+
+A worker asking for a scope it intends to simulate itself can skip the wait by setting `PreferredWorkerId`, which creates the rows already assigned to it. That is what `NebulaWorker.PrepareInstance` does; for every other caller the rows are created unowned and the orchestrator assigns them on its next rebalance.
+
+## Send a player into a scope
+
+### At join
+
+A client names the scope it wants before it connects:
+
+```csharp
+client.ScopeKey = "raid/molten-core#run-4812";   // or -nebula-scope on the command line
+client.Connect();
+```
+
+The gateway spawns the player only into a container of that scope. If the scope has no container with a live owner yet, the join is **held** in `JoinState.Starting` — the same hold a client gets when it arrives before the first worker has booted — and completes with no reconnect as soon as the scope is ready. The gateway never falls back to another scope, in either direction: a client that named a scope is never dropped into the public world, and a client that named nothing is never placed inside somebody's instance.
+
+The gateway does not activate the scope. Whatever told the player to go to that key — your matchmaker, your travel menu, your login flow — is what calls `ActivateScope` first.
+
+### From inside the mesh
+
+A player already in the world crosses with the prepared-transfer pair, which keeps their connection, session and network identity and is fenced against the destination changing worker mid-crossing:
+
+```csharp
+var transfer = worker.PrepareTransfer(pawn, destination);
+// ... later, once transfer.Ready
+worker.TryCommitTransfer(transfer, position, rotation);
+```
+
+[`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
+
+## From outside the mesh
+
+Activation is an ordinary control-plane write, so a service that is not part of the mesh can post it to the orchestrator:
+
+```bash
+curl -X POST http://orchestrator:7080/api/control-plane \
+  -H 'X-Nebula-Token: <mesh token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"ops":[{"op":"ActivateScope","scopeKey":"raid/molten-core#run-4812","workerId":"","requester":"matchmaker",
+       "definition":"{\"kind\":\"parts\",\"parts\":[{\"partId\":\"interior\",\"center\":[2000,0,0],\"size\":[120,40,120],\"content\":\"Instances/MoltenCore\"}],\"observePublic\":false,\"observationCenter\":[0,0,0],\"observationSize\":[0,0,0],\"payload\":\"\"}"}]}'
+```
+
+The definition travels as a JSON document inside a JSON string. Read the result back from `GET /api/control-plane`, whose document carries a `scopes` array.
+
+## Remove a scope
+
+```csharp
+controlPlane.RemoveScope(key);
+```
+
+This drops the scope row, releases the claim on the key and removes the lease rows of its containers. It is the mechanism only: it does not wait for the scope to be empty, does not move anyone out and does not save anything. Deciding that a scope is idle, draining it and restoring it later is scope lifecycle, which is not available yet.
+
+## What a scope key is worth knowing about
+
+- Nebula compares scope keys with ordinal string equality and never parses, hashes into a contract, orders or measures them. Put whatever your game needs in them.
+- An entity reports its scope on `NetworkIdentity.ScopeKey` and in its [entity location](/docs/specifications/entity-location); a persisted record keeps it.
+- A scope's container IDs are derived from the key, so the same key produces the same IDs on every process and after every restart. Changing a part ID renames the place.
+- Keep a key stable for as long as the world behind it should be the same world. Put a run ID in the key for something that should be a fresh copy each time.
+
+## Limits
+
+- A scope definition lists its parts up front. Worlds whose chunks are decided at runtime are not covered yet.
+- `IsScopeReady` says a worker holds the leases, not that content is loaded or that persisted entities have been restored.
+- Retiring an idle scope and restoring it later is not available yet; `RemoveScope` removes it without ceremony.
+- A control plane kept in memory only (no file, no database) cannot make activation idempotent across orchestrator restarts, because it keeps nothing to be idempotent about.

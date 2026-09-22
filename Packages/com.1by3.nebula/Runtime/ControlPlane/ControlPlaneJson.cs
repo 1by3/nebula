@@ -33,9 +33,11 @@ namespace Nebula
             public List<LeaseInfo> Leases = new List<LeaseInfo>();
             public List<GatewayInfo> Gateways = new List<GatewayInfo>();
             public Dictionary<string, string> Settings = new Dictionary<string, string>();
+            /// <summary>Activated simulation scopes (<see cref="ScopeInfo"/>). Empty for a document written before scope activation.</summary>
+            public List<ScopeInfo> Scopes = new List<ScopeInfo>();
         }
 
-        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings)
+        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null)
         {
             var sb = new StringBuilder(4096);
             var w = new JsonWriter(sb);
@@ -114,6 +116,15 @@ namespace Nebula
                 foreach (var kv in settings) w.Prop(kv.Key, kv.Value ?? "");
             }
             w.EndObject();
+            // Scopes are written only when there are any, so a mesh that never activates one produces the same
+            // document it did before (and an older reader that ignores the key is unaffected either way).
+            if (scopes != null && scopes.Count > 0)
+            {
+                w.Key("scopes");
+                w.BeginArray();
+                for (int i = 0; i < scopes.Count; i++) ScopeJson.WriteScope(w, scopes[i]);
+                w.EndArray();
+            }
             w.EndObject();
             return sb.ToString();
         }
@@ -199,6 +210,11 @@ namespace Nebula
             {
                 foreach (var kv in sd) s.Settings[kv.Key] = PersistenceJson.AsString(kv.Value) ?? "";
             }
+            if (root.TryGetValue("scopes", out var scopes) && scopes is List<object> sl)
+            {
+                foreach (var item in sl)
+                    if (item is Dictionary<string, object> o && !string.IsNullOrEmpty(Str(o, "scopeKey"))) s.Scopes.Add(ScopeJson.ReadScope(o));
+            }
             return s;
         }
 
@@ -280,7 +296,8 @@ namespace Nebula
             EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer",
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
             ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane",
-            SetContainerHint = "SetContainerHint";
+            SetContainerHint = "SetContainerHint",
+            ActivateScope = "ActivateScope", RemoveScope = "RemoveScope";
 
         /// <summary>Builds one write object. Call <see cref="Op"/> then the <c>Arg</c> overloads, then <see cref="End"/>.</summary>
         public sealed class OpWriter
@@ -375,6 +392,18 @@ namespace Nebula
                 case SetContainerHint: cp.SetContainerHint(Str(o, "containerId"), ContainerHint.Parse(Str(o, "hint"))); return null;
                 case ReleaseContainer: cp.ReleaseContainer(Str(o, "containerId")); return null;
                 case RemoveContainer: cp.RemoveContainer(Str(o, "containerId")); return null;
+                case ActivateScope:
+                {
+                    cp.ActivateScope(new ScopeActivationRequest
+                    {
+                        ScopeKey = Str(o, "scopeKey"),
+                        Definition = ScopeJson.ReadDefinition(Str(o, "definition")),
+                        PreferredWorkerId = Str(o, "workerId"),
+                        Requester = Str(o, "requester"),
+                    });
+                    return null;
+                }
+                case RemoveScope: cp.RemoveScope(Str(o, "scopeKey")); return null;
                 case ResetControlPlane: cp.ResetControlPlane(); return null;
                 default: return $"unknown control-plane op '{op}'";
             }

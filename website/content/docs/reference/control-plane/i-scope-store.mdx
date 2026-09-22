@@ -1,0 +1,38 @@
+---
+title: "IScopeStore"
+description: "Where the orchestrator keeps the claim on a scope key between runs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+public interface IScopeStore
+```
+
+Where the orchestrator keeps the claim on a scope key between runs. The claim is a genuine uniqueness constraint on the key (a unique column, or an exclusive file create), not a lock: two callers racing on the same key are both handed the same stored definition, whichever of them got there first, and the loser's definition is discarded. Implemented by [`FileControlPlaneStorage`](/docs/reference/control-plane/file-control-plane-storage) and `SqlControlPlaneStorage`; a storage that does not implement it (memory) leaves activation idempotent only for as long as the orchestrator lives.
+
+## Methods
+
+### ClaimScope [#claimscope]
+
+```csharp
+string ClaimScope(string scopeKey, string definition);
+```
+
+Store `definition` under `scopeKey` if the key is free, and return the definition that is stored under it now — the caller's, or the one that was already there.
+
+### ReleaseScope [#releasescope]
+
+```csharp
+void ReleaseScope(string scopeKey);
+```
+
+Drop the claim, so the key may be activated again with a different definition.
+
+### ClearScopes [#clearscopes]
+
+```csharp
+void ClearScopes();
+```
+
+Drop every claim (a control-plane reset).

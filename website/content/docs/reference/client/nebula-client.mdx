@@ -61,6 +61,14 @@ public string SessionToken { get; set; } = "";
 
 The session token from the last Welcome ([`WelcomeMsg.SessionToken`](/docs/reference/protocol/welcome-msg#sessiontoken)), presented on every reconnection so the gateway that answers, whichever one of the mesh it is, gives this client its session and pawn back. Kept for the life of the process; [`Disconnect`](#disconnect) keeps it too, so a deliberate reconnect continues the session. Clear it to start a new session on the next connection.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; set; } = CommandLine.Get("nebula-scope", "");
+```
+
+The simulation scope this client asks to be placed in, as the opaque key the game chose ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty, the default, is the public world. Set it before connecting — a travel menu or a matchmaking reply hands the key over — and the gateway spawns the player into that scope's containers instead of the public ones. The scope must already have been activated ([`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope)); the gateway holds the join until it is ready. Seeded from `-nebula-scope`. Changing it takes effect on the next connection.
+
 ### SessionReclaimed [#sessionreclaimed]
 
 ```csharp

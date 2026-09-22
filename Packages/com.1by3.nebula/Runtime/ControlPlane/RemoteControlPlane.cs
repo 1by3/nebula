@@ -130,6 +130,7 @@ namespace Nebula
             _workers.Clear(); _workers.AddRange(incoming.Workers);
             _leases.Clear(); _leases.AddRange(incoming.Leases);
             _gateways.Clear(); _gateways.AddRange(incoming.Gateways);
+            _scopes.Clear(); _scopes.AddRange(incoming.Scopes);
             _settings.Clear();
             foreach (var kv in incoming.Settings) _settings[kv.Key] = kv.Value;
             Changed?.Invoke();

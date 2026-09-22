@@ -7,7 +7,7 @@ namespace Nebula
     /// <c>nebula_control_plane</c>, replaced on every save. Each call opens its own connection (pooled), so the
     /// host's background save and the persistence store's writer never share one.
     /// </summary>
-    public sealed class SqlControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore
+    public sealed class SqlControlPlaneStorage : IControlPlaneStorage, IGatewaySessionStore, IScopeStore
     {
         private readonly NebulaDatabase _db;
 
@@ -57,6 +57,33 @@ namespace Nebula
         {
             using var c = _db.Open();
             NebulaDatabase.Execute(c, "DELETE FROM nebula_gateway_session");
+        }
+
+        /// <summary>
+        /// The uniqueness constraint is <c>nebula_scope</c>'s primary key: the insert does nothing when the key is
+        /// taken, and the read that follows returns whichever definition won. Two callers racing on the same key
+        /// therefore agree on the scope without anyone holding a lock.
+        /// </summary>
+        string IScopeStore.ClaimScope(string scopeKey, string definition)
+        {
+            using var c = _db.Open();
+            NebulaDatabase.Execute(c,
+                "INSERT INTO nebula_scope (scope_key, definition, created_at) VALUES (@key, @definition, @at) ON CONFLICT (scope_key) DO NOTHING",
+                ("@key", scopeKey), ("@definition", definition ?? ""), ("@at", ControlPlaneJson.ToUnixMs(DateTime.UtcNow)));
+            using var cmd = NebulaDatabase.Command(c, "SELECT definition FROM nebula_scope WHERE scope_key = @key", ("@key", scopeKey));
+            return cmd.ExecuteScalar() as string ?? definition ?? "";
+        }
+
+        void IScopeStore.ReleaseScope(string scopeKey)
+        {
+            using var c = _db.Open();
+            NebulaDatabase.Execute(c, "DELETE FROM nebula_scope WHERE scope_key = @key", ("@key", scopeKey));
+        }
+
+        void IScopeStore.ClearScopes()
+        {
+            using var c = _db.Open();
+            NebulaDatabase.Execute(c, "DELETE FROM nebula_scope");
         }
     }
 }

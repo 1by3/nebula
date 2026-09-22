@@ -95,6 +95,13 @@ namespace Nebula
             public bool PawnRecovering;
             public string SpawnWorkerId = "";
             public ContainerRef SpawnContainer = ContainerRef.None;
+            /// <summary>
+            /// The simulation scope this client asked for in its Hello (<see cref="HelloMsg.ScopeKey"/>), empty for
+            /// the public world. The gateway only ever spawns the player into a container whose
+            /// <see cref="Container.ScopeKey"/> is this, and holds the join while no such container has a live
+            /// owner (docs/scope-activation.md §5).
+            /// </summary>
+            public string ScopeKey = "";
             public string CoordinationClaim = "";
             public Action RetryCoordination;
             public bool CoordinationInFlight;
@@ -1183,6 +1190,7 @@ namespace Nebula
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
+                c.ScopeKey = hello.ScopeKey ?? "";
                 if (Draining) { Reject(c, "gateway is draining", true); return; }
                 Authenticate(c, hello.Token ?? "", hello.Session ?? "");
                 return;
@@ -1535,15 +1543,17 @@ namespace Nebula
             }
             // Any container with an active lease whose worker we are connected to.
             var candidates = new List<Container>();
-            CollectSpawnCandidates(ContainerRegistry.All, candidates);
-            CollectSpawnCandidates(ContainerRegistry.Runtime, candidates);
+            CollectSpawnCandidates(ContainerRegistry.All, candidates, c.ScopeKey);
+            CollectSpawnCandidates(ContainerRegistry.Runtime, candidates, c.ScopeKey);
             if (candidates.Count == 0)
             {
                 // Nothing to spawn into: with MinWorkers at 0 this is the normal first join after an idle period.
                 // The client is held rather than dropped, the orchestrator sees the pending join on the next
                 // heartbeat and boots a worker, and this retry (every 3 s) places the player with no reconnect.
                 SendJoinStatus(c, JoinState.Starting);
-                NebulaLog.Debugf($"no container available to spawn client {c.ClientId} yet; holding the join (world starting)");
+                NebulaLog.Debugf(c.ScopeKey.Length == 0
+                    ? $"no container available to spawn client {c.ClientId} yet; holding the join (world starting)"
+                    : $"scope '{c.ScopeKey}' has no container with a live owner yet; holding the join of client {c.ClientId}");
                 return;
             }
 #if NEBULA_SERVICE
@@ -1561,12 +1571,19 @@ namespace Nebula
             NebulaLog.Info($"asked {worker.WorkerId} to spawn client {c.ClientId} in {pick.ContainerId}");
         }
 
-        private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates)
+        /// <summary>
+        /// The containers this client may be spawned into: owned by a worker this gateway can reach, and in the
+        /// scope the client asked for. The scope check is ordinal on <see cref="Container.ScopeKey"/> and fails
+        /// closed, so a client that named a scope is never placed in the public world by accident and a public
+        /// client is never placed inside somebody's instance.
+        /// </summary>
+        private void CollectSpawnCandidates(IReadOnlyList<Container> containers, List<Container> candidates, string scopeKey)
         {
             for (int i = 0; i < containers.Count; i++)
             {
                 var container = containers[i];
                 if (string.IsNullOrEmpty(container.OwnerWorkerId)) continue;
+                if (!string.Equals(container.ScopeKey ?? "", scopeKey ?? "", StringComparison.Ordinal)) continue;
                 if (!_workersById.TryGetValue(container.OwnerWorkerId, out var w) || !w.Ready) continue;
                 candidates.Add(container);
             }
