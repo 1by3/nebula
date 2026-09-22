@@ -187,6 +187,7 @@ public class ScaleOperationsTests
     /// </para>
     /// </summary>
     [Test]
+    [Category("Soak")]
     public void AProtocolMismatchIsRefusedCleanlyAndTheSameVersionRollsForward()
     {
         var report = new ScaleReport("rolling-upgrade", "case", "version", "admitted", "welcomed", "disconnected", "note");
