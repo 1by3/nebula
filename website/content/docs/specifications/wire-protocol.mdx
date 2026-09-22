@@ -220,13 +220,16 @@ EntitySpawnBody :=
   f16 relevance_radius,
   u8 interest_flags,
   u8 interest_group,
-  u16 view_seq
+  u16 view_seq,
+  f16 cost_weight
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 ```
 
 `EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate. `owner_identity` is the owning player's identity (see `Welcome`), or empty for an entity no player owns.
+
+`cost_weight` is what the game says the entity costs to simulate, as a multiplier on its category weight in `CostWeights` (see [Container cost](/docs/guides/orchestrator-and-dashboard#container-cost)). It travels so the worker an entity hands over to reports the same cost for it. `0` means "no opinion": the receiver keeps the weight it already has.
 
 `relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in metres (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved.
 

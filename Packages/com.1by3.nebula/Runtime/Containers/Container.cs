@@ -78,6 +78,14 @@ namespace Nebula
         private ushort _ownerWorkerIndex = ushort.MaxValue;
         private ulong _leaseEpoch;
 
+        // Cost telemetry (docs/cost-telemetry.md). The counters live here rather than in a dictionary keyed by
+        // container id because they are touched once per authoritative entity per tick, and a field add is free
+        // where a string hash is not. ContainerCostMeter owns them: it is the only thing that reads or clears them.
+        internal long CostSimTicks;
+        internal long CostReplicationBytes;
+        internal long CostGatewayBytes;
+        internal bool CostTracked;
+
         /// <summary>State string of the control-plane lease as last applied ("" when there is none). See <see cref="Nebula.LeaseState"/>.</summary>
         public string LeaseState { get; internal set; } = "";
 

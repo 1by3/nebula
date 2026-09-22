@@ -30,6 +30,13 @@ namespace Nebula
         public string AssignmentPolicy = "auto";
         public float CostRebalanceThreshold = 0.3f;
         public CostWeights CostWeights = CostWeights.Default;
+
+        /// <summary>The default of <see cref="CostLinkBudgetMbps"/> in bytes per second: 100 Mbit/s.</summary>
+        public const double DefaultCostLinkBytesPerSec = 100.0 * 1000.0 * 1000.0 / 8.0;
+
+        /// <summary><see cref="CostLinkBudgetMbps"/> in bytes per second; the default when it is 0 or less.</summary>
+        public double CostLinkBytesPerSec => CostLinkBudgetMbps > 0f ? CostLinkBudgetMbps * 1000.0 * 1000.0 / 8.0 : DefaultCostLinkBytesPerSec;
+        public float CostLinkBudgetMbps = 100f;
         public bool AutoScale = true;
         public int MinWorkers = 1;
         public float ScaleOutUtilization = 0.7f;

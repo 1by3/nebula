@@ -1,0 +1,20 @@
+---
+title: "CostComponent"
+description: "The three things a container can be expensive in."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/ContainerCost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/ContainerCost.cs)</div>
+
+```csharp
+public enum CostComponent
+```
+
+The three things a container can be expensive in. Interest management limits the second and the third but not the first, so "this container is hot" is not one number: a boss arena full of NPCs and a plaza full of players want opposite fixes, and the operator has to be able to tell them apart (docs/cost-telemetry.md).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="simulation"></span>`Simulation` |  | Simulating the container's own entities: the `NetworkTick` callbacks the worker ran for them. |
+| <span id="replication"></span>`Replication` |  | Replicating them: world state, netvars and sync state leaving the worker for gateways. |
+| <span id="gateway"></span>`Gateway` |  | The per-client relay: owner state, which a gateway forwards to exactly one client each. |

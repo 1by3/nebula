@@ -410,6 +410,13 @@ namespace Nebula
         /// client has just re-entered. Workers send 0.
         /// </summary>
         public ushort ViewSeq;
+        /// <summary>
+        /// What the game says this entity costs to simulate, as a multiplier on its category weight
+        /// (<see cref="NetworkIdentity.EffectiveCostWeight"/>, protocol 18). It travels with the entity so the
+        /// worker it lands on reports the same cost for it; sent as an f16, and 0 on the wire reads as "no
+        /// opinion" so an older sender does not silently make everything free.
+        /// </summary>
+        public float CostWeight;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -444,6 +451,7 @@ namespace Nebula
                 RelevanceRadius = id.RelevanceRadius,
                 InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
                 InterestGroup = id.InterestGroup,
+                CostWeight = id.EffectiveCostWeight,
             };
         }
 
@@ -475,6 +483,7 @@ namespace Nebula
             w.WriteByte((byte)InterestFlags);
             w.WriteByte(InterestGroup);
             w.WriteUShort(ViewSeq);
+            w.WriteHalf(CostWeight);
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -500,6 +509,7 @@ namespace Nebula
                 InterestFlags = (EntityInterestFlags)r.ReadByte(),
                 InterestGroup = r.ReadByte(),
                 ViewSeq = r.ReadUShort(),
+                CostWeight = r.ReadHalf(),
             };
         }
     }

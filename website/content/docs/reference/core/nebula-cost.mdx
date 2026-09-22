@@ -1,0 +1,66 @@
+---
+title: "NebulaCost"
+description: "Where a game says what one entity costs to simulate, beyond the category it falls into."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaCost.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaCost.cs)</div>
+
+```csharp
+public static class NebulaCost
+```
+
+Where a game says what one entity costs to simulate, beyond the category it falls into.
+
+[`CostWeights`](/docs/reference/orchestrator/cost-weights) is per category: a player, a bot, a server-driven entity, anything else. That is enough to balance a shooter and not enough for a world with ambient chickens and raid bosses in it, which are both "server-driven" and are not the same machine. The weight here is a **multiplier** on the category weight, so 1 (the default everywhere) leaves the balance exactly as it was.
+
+Precedence, highest first (docs/cost-telemetry.md, D3):
+
+1. a weight carried in from another worker with the entity's handover state, or one set explicitly with [`NetworkIdentity.SetCostWeight`](/docs/reference/core/network-identity#setcostweight): the mesh never overrules what was decided about this individual entity, so a boss keeps its weight when it crosses a seam;
+2. [`EntityWeight`](#entityweight), this callback, when one is installed and it returns a weight of 0 or more;
+3. [`NetworkIdentity.CostWeight`](/docs/reference/core/network-identity#costweight), the value on the prefab or the scene object.
+
+The weight is evaluated when an entity is spawned and when [`NetworkIdentity.SetCostWeight`](/docs/reference/core/network-identity#setcostweight) is called - never per tick - so the callback may be as expensive as a prefab lookup and no more.
+
+## Fields
+
+### MaxWeight [#maxweight]
+
+```csharp
+public const float MaxWeight = 1024f;
+```
+
+The largest weight an entity may carry. A weight is clamped to \[0, this\]; NaN reads as 1.
+
+### EntityWeight [#entityweight]
+
+```csharp
+public static Func<NetworkIdentity, float> EntityWeight;
+```
+
+Optional: asked for the multiplier of every entity whose weight is being computed, in place of the value authored on it. Return a negative number to decline and let the authored [`NetworkIdentity.CostWeight`](/docs/reference/core/network-identity#costweight) stand. Installed once at start-up (`NebulaCost.EntityWeight = id => id.GetComponent<Boss>() != null ? 8f : -1f;`); it runs on the worker's main thread, inside the spawn, and its exceptions are logged and treated as declining.
+
+## Methods
+
+### Reset [#reset]
+
+```csharp
+public static void Reset();
+```
+
+Forget the callback. Tests call this in teardown; a game has no reason to.
+
+### Evaluate [#evaluate]
+
+```csharp
+public static float Evaluate(NetworkIdentity identity);
+```
+
+The weight `identity` should carry from now on: the callback's answer when it gives one, else the authored value, clamped to \[0, [`MaxWeight`](#maxweight)\].
+
+### Clamp [#clamp]
+
+```csharp
+public static float Clamp(float weight);
+```
+
+A weight as the mesh will carry it: NaN reads as 1, and the range is \[0, [`MaxWeight`](#maxweight)\].

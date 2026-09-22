@@ -54,6 +54,14 @@ public byte InterestGroup;
 
 A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.
 
+### CostWeight [#costweight]
+
+```csharp
+public float CostWeight = 1f;
+```
+
+What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.
+
 ### SyncKeyframeInterval [#synckeyframeinterval]
 
 ```csharp
@@ -71,6 +79,14 @@ public const int PoseHistoryTicks = 64;
 Ticks of pose history kept per entity (about a second at 60 Hz).
 
 ## Properties
+
+### EffectiveCostWeight [#effectivecostweight]
+
+```csharp
+public float EffectiveCostWeight { get; } = 1f;
+```
+
+The multiplier this entity actually carries right now (see [`NebulaCost`](/docs/reference/core/nebula-cost) for how it is chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only changes when the game calls [`SetCostWeight`](#setcostweight): never per tick. Multiply it by the entity's category weight in [`CostWeights`](/docs/reference/orchestrator/cost-weights) to get what the mesh thinks it costs.
 
 ### IsSceneEntity [#issceneentity]
 
@@ -308,6 +324,14 @@ public event Action<Container, Container> ContainerChanged;
 ```
 
 ## Methods
+
+### SetCostWeight [#setcostweight]
+
+```csharp
+public void SetCostWeight(float weight);
+```
+
+Say what this entity costs from now on, overruling both [`CostWeight`](#costweight) and [`NebulaCost.EntityWeight`](/docs/reference/core/nebula-cost#entityweight). The value is clamped to \[0, [`NebulaCost.MaxWeight`](/docs/reference/core/nebula-cost#maxweight)\] and travels with the entity: the worker it hands over to reports the same cost for it.
 
 ### TryGetPoseAt [#trygetposeat]
 

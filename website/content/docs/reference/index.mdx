@@ -20,6 +20,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
+| [NebulaCost](/docs/reference/core/nebula-cost) | Static class. Where a game says what one entity costs to simulate, beyond the category it falls into. |
 | [NebulaDiagnostics](/docs/reference/core/nebula-diagnostics) | Static class. Process-wide counters for rule violations Nebula rejects at the call site, so tests and the worker's profile log line can see how often game code hits them. |
 | [NebulaGameMode](/docs/reference/core/nebula-game-mode) | Abstract class. Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. |
 | [NebulaLog](/docs/reference/core/nebula-log) | Static class. Thin logging wrapper so every Nebula line is greppable by prefix in headless logs. |
@@ -100,6 +101,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [AuthorityCallRouter](/docs/reference/worker/authority-call-router) | Class. The rules every worker applies to an incoming AuthorityRpc call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code. |
 | [AuthorityCallTarget](/docs/reference/worker/authority-call-target) | Struct. What the receiving worker knows about a call's target when the call arrives. |
 | [AuthorityCallTracker](/docs/reference/worker/authority-call-tracker) | Class. The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about. |
+| [ContainerCostMeter](/docs/reference/worker/container-cost-meter) | Class. What each container this worker leases is actually costing it, measured rather than guessed: the NetworkTick time spent on its entities, the replication bytes they put on the wire, and the owner state a gateway has to relay for them. |
 | [EntityRequestResult](/docs/reference/worker/entity-request-result) | Struct. Outcome of one EntityRequests.Request call. |
 | [EntityRequestStatus](/docs/reference/worker/entity-request-status) | Enum. Where a EntityRequests call ended up. |
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
@@ -149,8 +151,10 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
 | [CloudWorkerHost](/docs/reference/orchestrator/cloud-worker-host) | Class. An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa... |
 | [CloudWorkerHostSettings](/docs/reference/orchestrator/cloud-worker-host-settings) | Class. Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. |
+| [ContainerCost](/docs/reference/orchestrator/container-cost) | Struct. What one container cost the worker that leases it, split into the three components of CostComponent. |
 | [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
 | [CostBalancedAssignmentPolicy](/docs/reference/orchestrator/cost-balanced-assignment-policy) | Class. Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ... |
+| [CostComponent](/docs/reference/orchestrator/cost-component) | Enum. The three things a container can be expensive in. |
 | [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
 | [HetznerWorkerHost](/docs/reference/orchestrator/hetzner-worker-host) | Class. One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` |
 | [IAssignmentPolicy](/docs/reference/orchestrator/i-assignment-policy) | Interface. Decides which worker simulates which container. |

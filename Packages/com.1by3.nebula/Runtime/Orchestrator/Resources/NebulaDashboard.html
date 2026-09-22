@@ -238,6 +238,14 @@
       </table>
     </section>
     <section class="card wide">
+      <h2>Container cost</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">What each container costs the worker that holds it, measured. <b>Sim</b> is the <span class="mono">NetworkTick</span> time its own entities take; <b>Out</b> is what replicating them costs; <b>Relay</b> is owner state, which a gateway forwards to one client each. <b>Dominant</b> is whichever of the three is closest to its budget, and it is what a hot container needs fixing in: simulation wants a split or cheaper entities, replication wants tighter interest, relay wants more gateways.</div>
+      <table>
+        <thead><tr><th>Container</th><th>Scope</th><th>Worker</th><th>Cost</th><th>Sim</th><th>Share</th><th>Out</th><th>Relay</th><th>Ghosts</th><th>Dominant</th></tr></thead>
+        <tbody id="cost"></tbody>
+      </table>
+    </section>
+    <section class="card wide">
       <h2>Gateways</h2>
       <table>
         <thead><tr><th>Gateway</th><th>Address</th><th>Heartbeat</th><th>Clients</th><th>Joining</th><th>Out</th><th>Interest</th><th>Cache</th><th>Regions</th><th>Links</th><th>Eval</th><th>CPU</th><th>Lag</th><th>State</th><th></th></tr></thead>
@@ -435,6 +443,23 @@
             ? `<button class="small" data-act="unpin" data-id="${esc(c.id)}" title="Let it follow its carrier again">Unpin</button>`
             : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
+
+    // Per-container cost (docs/cost-telemetry.md): the rows the scaler names an unsplittable container from.
+    const costRows = (s.cost && s.cost.containers) || [];
+    const blockedBy = (s.scale && s.scale.blockedBy) || '';
+    $('cost').innerHTML = costRows.length ? costRows.map(c => `
+      <tr${c.id === blockedBy ? ' class="warnText"' : ''}>
+        <td class="mono">${esc(c.id)}</td>
+        <td class="mono">${c.scope ? esc(c.scope) : '<span class="muted">public</span>'}</td>
+        <td class="mono">${esc(c.worker || '')}</td>
+        <td title="Cost-weighted entities inside it (category weight x the entity's own NebulaCost weight)">${(c.cost || 0).toFixed(1)}</td>
+        <td title="Measured NetworkTick time for this container's entities">${(c.tickMs || 0).toFixed(2)} ms</td>
+        <td title="Its share of the simulation time this worker could attribute to containers at all">${((c.tickShare || 0) * 100).toFixed(0)}%</td>
+        <td>${fmtRate(c.bytesOut || 0)}</td>
+        <td>${fmtRate(c.gatewayBytes || 0)}</td>
+        <td>${c.ghosts || 0}</td>
+        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of that component's budget">${esc(c.dominant || '')}</td></tr>`).join('')
+      : '<tr><td colspan="10" class="muted">no worker has reported yet</td></tr>';
 
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {
       const state = g.draining ? 'draining' : g.drainRequested ? 'drain requested' : g.ready ? 'ready' : 'starting';

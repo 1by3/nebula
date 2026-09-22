@@ -193,6 +193,13 @@ namespace Nebula
         private WorkerTelemetry _telemetry;
         /// <summary>What this worker reports to the dashboard's World map; null when telemetry is off (see <see cref="WorkerTelemetry.Create"/>).</summary>
         public WorkerTelemetry Telemetry => _telemetry;
+        private readonly ContainerCostMeter _costMeter = new ContainerCostMeter();
+        /// <summary>
+        /// What each container this worker leases costs it, measured per tick (see <see cref="ContainerCostMeter"/>).
+        /// Always on: it is two stopwatch reads and a field add per authoritative entity per tick, and the rows it
+        /// produces are what the scaler and the dashboard explain a hot container with (docs/cost-telemetry.md).
+        /// </summary>
+        public ContainerCostMeter CostMeter => _costMeter;
         public IEnumerable<NetworkIdentity> Entities => _entities.Values;
         public IReadOnlyList<NetworkIdentity> Authoritative => _authoritative;
 
@@ -785,6 +792,7 @@ namespace Nebula
             CurrentTick = tick;
             NetworkTime.Tick = tick;
             TickCount++;
+            _costMeter.CountTick();
             float dt = NetworkTime.TickInterval;
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
@@ -823,11 +831,15 @@ namespace Nebula
                     if (d > depth) { deeper = true; continue; }
                     if (d < depth) continue;
                     var behaviours = e.Behaviours;
+                    // Two stopwatch reads per entity per tick, so what a container costs is measured rather than
+                    // guessed from what is standing in it (docs/cost-telemetry.md, D5).
+                    long simStart = Stopwatch.GetTimestamp();
                     for (int b = 0; b < behaviours.Length; b++)
                     {
                         try { behaviours[b].NetworkTick(tick, dt); }
                         catch (Exception ex) { NebulaLog.Error($"NetworkTick on {e} threw: {ex}"); }
                     }
+                    _costMeter.AddSimulation(e.Container, Stopwatch.GetTimestamp() - simStart);
                     if (e.Carried != null) carrierTicked = true;
                 }
                 if (!deeper) break;
@@ -982,6 +994,7 @@ namespace Nebula
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
             identity.IsServerDriven = serverDriven && ownerClientId == 0;
             identity.OwnerWorkerIndex = WorkerIndex;
+            identity.RecomputeCostWeight(); // once, here: never per tick (see NebulaCost)
             identity.HasAuthority = true;
             identity.SetContainer(container ?? ContainerRegistry.Find(identity.transform.position));
             _entities[identity.NetId] = identity;
@@ -1587,6 +1600,9 @@ namespace Nebula
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
+            // The cost weight travels with the entity, so a boss costs the same on the worker it hands over to
+            // (docs/cost-telemetry.md, D4). 0 on the wire means the sender had nothing to say; keep what we have.
+            if (msg.CostWeight > 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {
@@ -1671,6 +1687,7 @@ namespace Nebula
                     Reliable = delivery == Delivery.ReliableOrdered,
                     Chunks = _scratch.ToArray(),
                 }.Write(_writer, id);
+                _costMeter.AddReplication(e.Container, _writer.Length); // once per destination: this is what it costs
                 Send(to, delivery);
             }
         }
@@ -1730,7 +1747,7 @@ namespace Nebula
                         if (slot < 0) { _writer.Reset(); slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, WorkerIndex); }
                         e.ReplicationState.Write(_writer);
                         count++;
-                        CountEntry(mask);
+                        CountEntry(e, mask);
                         if (_writer.Length + EntityStateEntry.WireSize > StateBatchBytes)
                         {
                             WorldStateMsg.End(_writer, slot, count);
@@ -1757,6 +1774,7 @@ namespace Nebula
                     e.WriteVars(_scratch);
                     _writer.Reset();
                     new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.EntityVars);
+                    _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
                     SendToMask(mask, Delivery.ReliableOrdered);
                 }
                 if (e.HasSyncState)
@@ -1789,6 +1807,9 @@ namespace Nebula
                         Container = e.ContainerRef,
                         State = _scratch.ToArray(),
                     }.Write(_writer);
+                    // Owner state has exactly one destination client, so it is the gateway's relay cost rather
+                    // than replication: it grows with players in the container, not with entities in it.
+                    _costMeter.AddGateway(e.Container, _writer.Length);
                     Send(session, Delivery.Sequenced);
                 }
             }

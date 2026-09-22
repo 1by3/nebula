@@ -181,6 +181,14 @@ Clients waiting to be placed: welcomed by a live gateway with nowhere to spawn y
 
 ## Methods
 
+### CostOf [#costof]
+
+```csharp
+public ContainerCost CostOf(string containerId);
+```
+
+The cost row of one container, or all zeroes when no worker has reported it lately.
+
 ### Initialize [#initialize]
 
 ```csharp

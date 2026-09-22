@@ -491,17 +491,33 @@ namespace Nebula
         private Peer SessionGatewayOf(ulong clientId) =>
             clientId != 0 && _sessions.TryGet(clientId, out var session) ? GatewayByKey(session.Gateway) : null;
 
-        /// <summary>Count one state entry against every gateway in the mask for the "entries sent vs total" statistic.</summary>
-        private void CountEntry(ulong mask)
+        /// <summary>
+        /// Count one state entry against every gateway in the mask for the "entries sent vs total" statistic, and
+        /// charge what that entry costs on the wire to the container <paramref name="e"/> is in
+        /// (<see cref="ContainerCostMeter"/>). An entry is a fixed <see cref="EntityStateEntry.WireSize"/> and goes
+        /// to every gateway in the mask, so the per-container replication cost is exact, not apportioned.
+        /// </summary>
+        private void CountEntry(NetworkIdentity e, ulong mask)
         {
             InterestEntriesSent++;
+            int subscribers = 0;
             for (int bit = 0; bit < RegionPublisher.MaxGateways && mask != 0; bit++)
             {
                 if ((mask & (1UL << bit)) == 0) continue;
                 var peer = _gatewayBits[bit];
-                if (peer != null) peer.EntriesSent++;
+                if (peer != null) { peer.EntriesSent++; subscribers++; }
             }
-            for (int i = 0; i < _unmaskedGateways.Count; i++) _unmaskedGateways[i].EntriesSent++;
+            for (int i = 0; i < _unmaskedGateways.Count; i++) { _unmaskedGateways[i].EntriesSent++; subscribers++; }
+            if (subscribers > 0) _costMeter.AddReplication(e.Container, (long)EntityStateEntry.WireSize * subscribers);
+        }
+
+        /// <summary>How many gateway links a mask actually reaches right now (the unmasked ones always count).</summary>
+        private int SubscriberCount(ulong mask)
+        {
+            int subscribers = _unmaskedGateways.Count;
+            for (int bit = 0; bit < RegionPublisher.MaxGateways && mask != 0; bit++)
+                if ((mask & (1UL << bit)) != 0 && _gatewayBits[bit] != null) subscribers++;
+            return subscribers;
         }
 
         private Peer GatewayByKey(string key)

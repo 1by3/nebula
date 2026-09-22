@@ -143,6 +143,14 @@ public ushort ViewSeq;
 
 Gateway -\> client: which view of this net id the spawn belongs to. It increases every time the gateway lets the entity into this client's set, so a despawn from an older view cannot kill a replica the client has just re-entered. Workers send 0.
 
+### CostWeight [#costweight]
+
+```csharp
+public float CostWeight;
+```
+
+What the game says this entity costs to simulate, as a multiplier on its category weight ([`NetworkIdentity.EffectiveCostWeight`](/docs/reference/core/network-identity#effectivecostweight), protocol 18). It travels with the entity so the worker it lands on reports the same cost for it; sent as an f16, and 0 on the wire reads as "no opinion" so an older sender does not silently make everything free.
+
 ## Methods
 
 ### From [#from]

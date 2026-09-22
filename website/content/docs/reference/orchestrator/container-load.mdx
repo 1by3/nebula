@@ -59,6 +59,22 @@ public double ReceivedAt;
 
 When the report arrived, on the telemetry clock.
 
+### EntityCostSum [#entitycostsum]
+
+```csharp
+public float EntityCostSum;
+```
+
+What the worker's own tally of the entities inside came to, each one's category weight times its [`NebulaCost`](/docs/reference/core/nebula-cost) multiplier (docs/cost-telemetry.md). Valid only when [`HasEntityCost`](#hasentitycost); [`CostWeights.Base`](/docs/reference/orchestrator/cost-weights#base) is not in it.
+
+### HasEntityCost [#hasentitycost]
+
+```csharp
+public bool HasEntityCost;
+```
+
+The report carried an entity cost sum, so [`CostWeights.Of`](/docs/reference/orchestrator/cost-weights#of) uses it instead of counting heads.
+
 ## Properties
 
 ### Authoritative [#authoritative]
