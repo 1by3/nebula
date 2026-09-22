@@ -61,6 +61,17 @@ blocked: cell_3_0_1 carries 0.81 of a tick on its own and cannot be split
 
 `scale.blockedComponent` is `simulation`, `replication` or `gateway`, and each points at a different fix: split the cell or make its entities cheaper, tighten [interest management](/docs/guides/interest-management), or run more gateways.
 
+The reason also says **why the planner may not split it**, when there is a constraint in the way:
+
+```
+blocked: c0 carries 0.95 of a tick on its own and cannot be split
+  (mostly simulation: 15.80 ms/tick, 0.95 of the tick budget)
+  - cohesion 7 spans c0, c1, so cutting between them would split it; the item needs 0.95 of a tick
+  and is kept whole; add a hint or split the cell
+```
+
+`scale.blockedCause` is `cohesion-group`, `affinity-group`, `held`, `dedicated` or `no-boundary`, and `scale.blockedReason` is the sentence. `no-boundary` is the one worth reading twice: it means the hot area is a single container, and Nebula never subdivides one. Bake the area as more cells, register [runtime containers](/docs/guides/runtime-containers) inside it, or accept the load.
+
 `MinWorkers` may be 0; see [Scale to zero](#scale-to-zero).
 
 The dashboard's Workers card shows the decision line ("holding: peak 0.74 for 12/30 s", "blocked: ...", "steady: ...") and lets you edit the min/max band, which `POST /api/scale/limits` with `{"min": n, "max": n}` also does.
@@ -184,6 +195,19 @@ If more containers ask to be `Dedicated` than the mesh has workers to spare (it 
 Two more hints come from the workers rather than from the container rows, and the **Cohesion** card of the dashboard shows both. A [cohesion group](/docs/guides/cohesion) is a set of entities that must be simulated by one worker: the planner deals the containers its members occupy as one item, exactly like an `AffinityGroup`, and a handover of any member takes the others with it. A **hold** is a worker asking for one container not to be rebalanced for a bounded number of seconds, for a fight or a cutscene that should not be interrupted.
 
 Neither can be honoured unconditionally, and neither fails quietly. A group whose containers need more than one worker's tick budget is dealt whole anyway and reported above the table; a hold never leaves a container unowned, never lasts more than two minutes, and dies with the worker that asked for it.
+
+### Assignment plan
+
+The **Assignment plan** card explains the last re-deal: one row per container that changed hands, with the worker it came from, the worker it went to, and a sentence saying which authored boundary the cut fell on, what the busiest worker was carrying before and after, and which cohesion or affinity group kept containers together.
+
+```
+c4  w1 -> w2   re-deal along the boundary between c3 and c4: c4 joins the run w2 takes
+               (2 item(s), 10 of a 15 target); busiest worker 0.81 -> 0.44 of a tick
+```
+
+Above the table, in yellow, is what the planner **could not** relieve: a container that is carrying its worker on its own and may not be moved away from it, with the reason. Nebula never splits a container and never breaks a group or a hold to relieve a worker, so this is the whole of the answer — it is your cue to author a boundary, not a sign that something failed. The same rows are in `assignment.moves` and `assignment.saturated` of `/api/state`, and the orchestrator's log lines carry the reason in brackets after `assign c -> w`.
+
+The card hides itself when nothing has moved and nothing is saturated.
 
 ## Handle a failed worker
 

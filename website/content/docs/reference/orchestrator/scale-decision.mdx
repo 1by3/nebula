@@ -67,6 +67,22 @@ public float BlockedSaturation;
 
 How much of its component's budget [`BlockedBy`](#blockedby) is using (1 = all of it), or 0.
 
+### BlockedCause [#blockedcause]
+
+```csharp
+public SaturationCause BlockedCause;
+```
+
+Why the planner may not split [`BlockedBy`](#blockedby) away from its worker, when it said ([`SaturationReport`](/docs/reference/orchestrator/saturation-report), `docs/cohesion-rebalancing.md`): a cohesion or affinity group spans it, a hold has not expired, it asked for a worker of its own, or the game authored no boundary inside it. [`SaturationCause.None`](/docs/reference/orchestrator/saturation-cause#none) when nothing is blocked or the policy does not explain itself.
+
+### BlockedReason [#blockedreason]
+
+```csharp
+public string BlockedReason;
+```
+
+That cause as a sentence, or "". It is already part of [`Reason`](#reason).
+
 ### RetireWorkerId [#retireworkerid]
 
 ```csharp

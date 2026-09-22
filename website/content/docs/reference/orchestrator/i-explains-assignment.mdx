@@ -1,0 +1,30 @@
+---
+title: "IExplainsAssignment"
+description: "A policy that can say why it moved what it moved."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs)</div>
+
+```csharp
+public interface IExplainsAssignment
+```
+
+A policy that can say why it moved what it moved. Unity's Mono has no default interface methods and a game's own [`IAssignmentPolicy`](/docs/reference/orchestrator/i-assignment-policy) must keep compiling, so explaining is a second interface the built-in [`CostBalancedAssignmentPolicy`](/docs/reference/orchestrator/cost-balanced-assignment-policy) implements rather than a member of the policy interface. The orchestrator logs and publishes the moves when the policy in force offers them.
+
+## Properties
+
+### Moves [#moves]
+
+```csharp
+IReadOnlyList<AssignmentMove> Moves { get; }
+```
+
+The moves of the last [`IAssignmentPolicy.Compute`](/docs/reference/orchestrator/i-assignment-policy#compute), in the order they were produced.
+
+### Saturated [#saturated]
+
+```csharp
+IReadOnlyList<SaturationReport> Saturated { get; }
+```
+
+What the last [`IAssignmentPolicy.Compute`](/docs/reference/orchestrator/i-assignment-policy#compute) could not relieve, hottest first. Empty when the mesh is balanced, when nothing is hot enough to be worth reporting, or when no utilization was measured.

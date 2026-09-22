@@ -84,3 +84,11 @@ public int Unassigned;
 ```
 
 Containers the policy left unassigned (a policy that ignores runtime containers, say).
+
+### Moves [#moves]
+
+```csharp
+public readonly List<AssignmentMove> Moves = new List<AssignmentMove>();
+```
+
+What the policy did in the dry run and why, when it explains itself ([`IExplainsAssignment`](/docs/reference/orchestrator/i-explains-assignment)); empty for a policy that does not. This is what makes a predicted layout readable on the dashboard rather than a bare list of container ids.

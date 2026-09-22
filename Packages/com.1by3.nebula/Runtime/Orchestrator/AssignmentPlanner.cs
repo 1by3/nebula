@@ -28,6 +28,12 @@ namespace Nebula
         public float HeaviestUtilization;
         /// <summary>Containers the policy left unassigned (a policy that ignores runtime containers, say).</summary>
         public int Unassigned;
+        /// <summary>
+        /// What the policy did in the dry run and why, when it explains itself (<see cref="IExplainsAssignment"/>);
+        /// empty for a policy that does not. This is what makes a predicted layout readable on the dashboard rather
+        /// than a bare list of container ids.
+        /// </summary>
+        public readonly List<AssignmentMove> Moves = new List<AssignmentMove>();
     }
 
     /// <summary>
@@ -73,12 +79,20 @@ namespace Nebula
                 Occupancy = input.Occupancy,
                 Utilization = input.Utilization,
                 Hints = input.Hints,
+                Cost = input.Cost,
+                // The constraints travel into the dry run too, or the prediction would be a layout the real deal
+                // cannot produce: a dry run free to split a cohesion group would promise the scaler a relief that
+                // never arrives, and the mesh would grow for nothing (docs/cohesion-rebalancing.md, D4). Holds are
+                // carried for completeness; a dry run has no leases, so nothing in it is held anyway.
+                Cohesion = input.Cohesion,
+                Holds = input.Holds,
                 KeepOrder = input.KeepOrder,
             };
 
             var placed = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var change in policy.Compute(dry))
                 if (plan.Containers.ContainsKey(change.Value)) placed[change.Key] = change.Value;
+            if (policy is IExplainsAssignment explains && explains.Moves != null) plan.Moves.AddRange(explains.Moves);
 
             Account(plan, placed, input, input.Baked);
             Account(plan, placed, input, input.Runtime);

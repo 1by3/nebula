@@ -236,6 +236,32 @@ Game callbacks at the moments the mesh brings a container or a scope to life, or
 - New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
 - `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
 
+#### Cohesion-aware rebalancing along game-defined boundaries (NEB-235)
+
+The planner already cut along the boundaries the game authored and already refused to split a cohesion group or move
+a held container. It now explains what it did, and says why when it could not. Design record:
+`docs/cohesion-rebalancing.md`; user pages:
+[Cohesion → Rebalancing a hot area](https://nebula.1by3.co/docs/guides/cohesion#rebalancing-a-hot-area) and
+[Orchestrator → Assignment plan](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#assignment-plan).
+
+- **New public API** (`Runtime/Orchestrator/AssignmentReport.cs`): `AssignmentMove` (container, from, to, reason),
+  `SaturationReport` (container, scope key, the whole item, worker, utilization, cause, reason), `SaturationCause`
+  (`NoBoundary`, `CohesionGroup`, `AffinityGroup`, `Held`, `Dedicated`) and `IExplainsAssignment`, the second
+  interface a policy implements to offer both. `IAssignmentPolicy` is unchanged, so a policy a game wrote itself
+  keeps compiling and simply explains nothing.
+- `CostBalancedAssignmentPolicy` implements `IExplainsAssignment`: `Moves` carries one explained move per change,
+  naming the boundary the cut fell on, the before/after peak and the group that kept containers together;
+  `Saturated` names what the pass could not relieve. New knob `SaturationUtilization` (0.7).
+- `ScaleDecision.BlockedCause` and `BlockedReason` append the constraint to the blocked reason, beside the unchanged
+  `BlockedComponent` / `BlockedSaturation`. `AssignmentInput.HoldSeconds(containerId)`.
+- `NebulaOrchestrator.LastMoves` and `Saturated`; `/api/state` gains an `assignment` block (`policy`, `rebalances`,
+  `moves`, `saturated`) and `scale.blockedCause` / `scale.blockedReason`; the dashboard gains an **Assignment plan**
+  card, and `assign c -> w` log lines carry the reason in brackets.
+- **Fixed:** `AssignmentPlanner.Predict` did not carry `AssignmentInput.Cohesion` into its dry run, so a prediction
+  could split a cohesion group the real deal may not and promise the scaler a relief that never arrives. It now
+  carries `Cohesion`, `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
+- Conformance scenario 13 (`Tests/EditMode/ConformanceRebalanceTests.cs`, 10 tests, both builds).
+
 #### Persistence durability window (NEB-224)
 
 Docs and a conformance test state and check the bound on how much a worker crash can lose between checkpoints.

@@ -1,0 +1,23 @@
+---
+title: "SaturationCause"
+description: "Why the planner could not take load off the busiest worker (SaturationReport)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs)</div>
+
+```csharp
+public enum SaturationCause
+```
+
+Why the planner could not take load off the busiest worker ([`SaturationReport`](/docs/reference/orchestrator/saturation-report)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | Nothing is saturated. |
+| <span id="noboundary"></span>`NoBoundary` | `1` | One container carries the load and the game authored no boundary inside it. Nebula never subdivides a container: the fix is a finer bake, a runtime container, or a `seam`/`x2` hint next door. |
+| <span id="cohesiongroup"></span>`CohesionGroup` | `2` | An entity cohesion group spans the containers, so cutting between them would split the group. |
+| <span id="affinitygroup"></span>`AffinityGroup` | `3` | A [`ContainerHint.AffinityGroup`](/docs/reference/containers/container-hint#affinitygroup) binds the containers, so they are dealt as one. |
+| <span id="held"></span>`Held` | `4` | Every container that could have moved is under a hold that has not expired. |
+| <span id="dedicated"></span>`Dedicated` | `5` | The container asked for a worker of its own, and it already has one. |
