@@ -103,7 +103,9 @@ public class CloudCommandTests
         Directory.CreateDirectory(Path.Combine(root, "ProjectSettings"));
         File.WriteAllText(Path.Combine(root, "ProjectSettings", "ProjectVersion.txt"), "m_EditorVersion: 6000.0.1f1\n");
         Directory.CreateDirectory(Path.Combine(root, "Packages", "com.1by3.nebula", "Runtime", "Protocol"));
-        File.WriteAllText(Path.Combine(root, "Packages", "com.1by3.nebula", "Runtime", "Protocol", "Messages.cs"), "public struct HelloMsg { public const ushort ProtocolVersion = 12; }\n");
+        File.WriteAllText(Path.Combine(root, "Packages", "com.1by3.nebula", "Runtime", "Protocol", "Messages.cs"), "public struct HelloMsg { public const ushort ProtocolVersion = 12; public const ushort MinProtocolVersion = 11; }\n");
+        Directory.CreateDirectory(Path.Combine(root, "Assets", "Resources"));
+        File.WriteAllText(Path.Combine(root, "Assets", "Resources", "NebulaConfig.asset"), "%YAML 1.1\nMonoBehaviour:\n  m_Name: NebulaConfig\n  GameContentVersion: 7\n  MinGameContentVersion: 5\n  GatewayFingerprint: \n");
         File.WriteAllText(Path.Combine(root, "Packages", "manifest.json"), "{ \"dependencies\": {} }");
         Directory.CreateDirectory(Path.Combine(root, "Builds", "Linux64"));
         File.WriteAllText(Path.Combine(root, "Builds", "Linux64", "nebula-services.json"), "{\"containers\":[{\"id\":1}],\"settings\":{\"npcs\":\"0\"}}");
@@ -224,6 +226,10 @@ public class CloudCommandTests
         Assert.That(release["artifactId"]!.ToString(), Is.EqualTo("art_1"));
         Assert.That(release["label"]!.ToString(), Is.EqualTo("v2"));
         Assert.That((int)release["protocolVersion"]!, Is.EqualTo(12));
+        Assert.That((int)release["minProtocolVersion"]!, Is.EqualTo(11), "the window from Messages.cs");
+        Assert.That((long)release["gameContentVersion"]!, Is.EqualTo(7), "from NebulaConfig.asset");
+        Assert.That((long)release["minGameContentVersion"]!, Is.EqualTo(5));
+        Assert.That(r.All, Does.Contain("protocol 12 (admits 11..12), content 7 (admits 5..7)"));
         Assert.That(release["nebulaVersion"]!.ToString(), Is.EqualTo(Platform.CliVersion));
         Assert.That(release["manifest"]!["containers"]!.AsArray().Count, Is.EqualTo(1));
 
@@ -417,6 +423,7 @@ public class CloudCommandTests
     deployment production (dep_1)  state=running health=healthy region=nyc3 workers=small 1..4 gateways=standard 1..3
     release    #1 rel_1 v1  nebula 0.1.0 protocol 12
     gateway    203.0.113.10:7000   (client: Nebula -nebula-role client -nebula-gateway 203.0.113.10:7000)
+    encryption  offered (plaintext clients still admitted); gateway fingerprint 0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f   (client: -nebula-encrypt true -nebula-gateway-fingerprint 0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f)
     web        https://203-0-113-10.example.test/
     dashboard  https://cloud.example.test/d/dep_1/mesh
     orchestrator running  address 10.10.0.5 public 203.0.113.9  version 0.1.0-alpha.22  heartbeat 1.3

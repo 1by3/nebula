@@ -56,10 +56,10 @@ The command runs these steps and prints each one:
 
 1. **Build.** Runs `Nebula.Editor.NebulaBuild.BuildLinuxServerBatch` in batchmode, publishes the .NET services, and packs `Builds/nebula-linux.tar.gz`. `--skip-build` reuses the existing tarball.
 2. **Upload.** Computes the tarball's SHA-256, registers it as an artifact, and uploads it with a progress line. An artifact with the same content is not uploaded again.
-3. **Release.** Creates a release from the artifact, the service manifest (`Builds/Linux64/nebula-services.json`), the CLI version, the wire protocol version from the package source, and the git commit, branch, and dirty flag. `--label v12` names it.
+3. **Release.** Creates a release from the artifact, the service manifest (`Builds/Linux64/nebula-services.json`), the CLI version, the wire protocol window from the package source (`HelloMsg.ProtocolVersion` and `MinProtocolVersion`), the game content version from `Assets/Resources/NebulaConfig.asset` (`GameContentVersion` and `MinGameContentVersion`), and the git commit, branch, and dirty flag. `--label v12` names it.
 4. **Rollout.** Starts the rollout and prints its steps and events until it finishes. The deployment's machines are created on the first rollout, which takes a few minutes; a later rollout restarts the orchestrator on the new build and recreates the workers.
 
-When the rollout succeeds, the CLI prints the gateway address for clients and the Cloud Dashboard URL. `--open-ui` opens the dashboard.
+When the rollout succeeds, the CLI prints the gateway address for clients, an `encryption` line with the gateway certificate fingerprint to pin (see [Encrypt client connections](/docs/deploy/encryption)), and the Cloud Dashboard URL. `--open-ui` opens the dashboard.
 
 `--min N --max N` change the deployment's worker range before the rollout. `--release <id>` rolls out an existing release without building.
 </Step>
@@ -78,7 +78,7 @@ Use the gateway address that `nebula deploy` or `nebula status --cloud` prints. 
 Run `nebula deploy` again. It builds, uploads what changed, creates a new release, and rolls it out. Players are disconnected while the orchestrator restarts.
 
 <Callout type="warn">
-A rollout is refused when the release changes the wire protocol version because it disconnects every connected client and requires clients to use the new protocol. Pass `--allow-protocol-change` to roll it out anyway.
+A gateway admits clients at its own wire protocol and one older (see [Replace gateways and workers](/docs/deploy/upgrades)), so a release one protocol version ahead rolls out without disconnecting anyone. A rollout is refused when it moves the protocol by more than one version, moves it backwards, or the release's `MinProtocolVersion` excludes the clients of the current release; pass `--allow-protocol-change` to roll it out anyway and disconnect them. A content version bump that would refuse current clients is printed as a warning at the start of the rollout and does not block it.
 </Callout>
 </Step>
 </Steps>
@@ -93,7 +93,7 @@ Press Ctrl-C to stop following. The operation keeps running; the CLI prints its 
 
 | Command | What it does |
 | --- | --- |
-| `nebula status --cloud` | Health, release, gateway address, orchestrator, load balancer, mesh totals, and one row per gateway (clients, packets and bytes per second, CPU, loop lag, draining) and per worker (tick time, utilization, entities, players). `--json` prints the raw status document. |
+| `nebula status --cloud` | Health, release (with its protocol and content windows), gateway address, whether encrypted client links are offered or required and the gateway certificate fingerprint to pin, orchestrator, load balancer, mesh totals, and one row per gateway (clients, packets and bytes per second, CPU, loop lag, draining) and per worker (tick time, utilization, entities, players). `--json` prints the raw status document. |
 | `nebula logs --cloud <role>` | Recent log lines of `orchestrator`, `gateway`, `worker`, or `all`. A name such as `w2` or `gw1` selects one instance; `--instance` does the same. `--since 10m` limits the time range and `--follow` streams new lines. |
 | `nebula scale --min N --max N` | Change the worker range live. `--gateways-min` and `--gateways-max` bound the gateway fleet. Nothing restarts. |
 | `nebula rollback` | Roll out the release that ran before the current one. `--release <id>` chooses another release. |

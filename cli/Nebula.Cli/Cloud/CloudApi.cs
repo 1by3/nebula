@@ -260,7 +260,11 @@ public sealed class CloudApi
     public sealed record ArtifactUpload(string Method, string Url, Dictionary<string, string>? Headers, string? ExpiresAt);
     public sealed record ArtifactCreated(Artifact Artifact, ArtifactUpload? Upload);
     public sealed record GitInfo(string? Commit, string? Branch, bool Dirty);
-    public sealed record Release(string Id, string ProjectId, int Number, string? Label, string ArtifactId, string? Sha256, string? NebulaVersion, int? ProtocolVersion, GitInfo? Git, string? Notes, System.Text.Json.JsonElement? CreatedBy, string? CreatedAt);
+    public sealed record Release(string Id, string ProjectId, int Number, string? Label, string ArtifactId, string? Sha256, string? NebulaVersion, int? ProtocolVersion, GitInfo? Git, string? Notes, System.Text.Json.JsonElement? CreatedBy, string? CreatedAt,
+        int? MinProtocolVersion = null, long? GameContentVersion = null, long? MinGameContentVersion = null);
+
+    /// <summary>The protocol window and the game content version a build declares (HelloMsg.ProtocolVersion/MinProtocolVersion, NebulaConfig.GameContentVersion/MinGameContentVersion).</summary>
+    public sealed record ReleaseVersions(int? ProtocolVersion, int? MinProtocolVersion, long? GameContentVersion, long? MinGameContentVersion);
 
     public ArtifactCreated CreateArtifact(string project, string sha256, long sizeBytes, string fileName, string? md5 = null) =>
         Send<ArtifactCreated>(HttpMethod.Post, $"/projects/{project}/artifacts", new { kind = "linux-server", sha256, md5, sizeBytes, fileName }, "artifact-" + sha256);
@@ -271,9 +275,13 @@ public sealed class CloudApi
 
     public Artifact GetArtifact(string project, string artifact) => Send<Artifact>(HttpMethod.Get, $"/projects/{project}/artifacts/{artifact}");
 
-    public Release CreateRelease(string project, string artifactId, JsonNode manifest, string? label, string? notes, string nebulaVersion, int? protocolVersion, GitInfo? git) =>
+    public Release CreateRelease(string project, string artifactId, JsonNode manifest, string? label, string? notes, string nebulaVersion, ReleaseVersions versions, GitInfo? git) =>
         Send<Release>(HttpMethod.Post, $"/projects/{project}/releases",
-            new { artifactId, manifest, label, notes, nebulaVersion, protocolVersion, git }, "release-" + artifactId);
+            new
+            {
+                artifactId, manifest, label, notes, nebulaVersion, protocolVersion = versions.ProtocolVersion, minProtocolVersion = versions.MinProtocolVersion,
+                gameContentVersion = versions.GameContentVersion, minGameContentVersion = versions.MinGameContentVersion, git,
+            }, "release-" + artifactId);
 
     public Release GetRelease(string release) => Send<Release>(HttpMethod.Get, $"/releases/{Uri.EscapeDataString(release)}");
     public List<Release> Releases(string project, int limit = 20) => As<List<Release>>(Send(HttpMethod.Get, $"/projects/{project}/releases?limit={limit}")["releases"], "releases");
@@ -335,7 +343,11 @@ public sealed class CloudApi
         string Id, string ProjectId, string? OrganizationId, string Name, string? Region, string State,
         string? WorkerSize, string? GatewaySize, int? MinWorkers, int? MaxWorkers, int? MinGateways, int? MaxGateways,
         JsonElement? Settings, string? CurrentReleaseId, string? PreviousReleaseId, string? GatewayAddress, string? WebUrl,
-        string? DashboardUrl, string? CreatedAt, string? UpdatedAt, string? LastRolloutAt, bool SpendLimited);
+        string? DashboardUrl, string? CreatedAt, string? UpdatedAt, string? LastRolloutAt, bool SpendLimited,
+        bool? RequireEncryption = null, EncryptionInfo? Encryption = null);
+
+    /// <summary>What the deployment's gateways do with a native client's link: whether an encrypted link is accepted, whether a plaintext one is refused, and the SPKI fingerprint to pin.</summary>
+    public sealed record EncryptionInfo(bool? Accepted, bool? Required, string? Fingerprint);
 
     public sealed record NewDeployment(string Name, string Region, string WorkerSize, string GatewaySize, int MinWorkers, int MaxWorkers, int MinGateways, int MaxGateways, Dictionary<string, string>? Settings);
 
