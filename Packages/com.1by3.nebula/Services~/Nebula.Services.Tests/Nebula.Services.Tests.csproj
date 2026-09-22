@@ -18,6 +18,8 @@
     <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
          exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
     <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
+    <!-- The cross-worker call contract (docs/cross-worker-calls.md) is pure C# too, so its conformance tests run here as well. -->
+    <Compile Include="../../Tests/EditMode/ConformanceCallContractTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

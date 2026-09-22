@@ -74,6 +74,14 @@ namespace Nebula
         public int GhostsHeld { get; private set; }
         public int AuthoritativeCount => _authoritative.Count;
         public int EntityCount => _entities.Count;
+        /// <summary>AuthorityRpc calls from other workers this worker has applied since it started (see the cross-worker call contract).</summary>
+        public long AuthorityCallsApplied => _callRouter?.Applied ?? 0;
+        /// <summary>AuthorityRpc calls this worker has forwarded to the entity's new owner since it started.</summary>
+        public long AuthorityCallsForwarded => _callRouter?.Forwarded ?? 0;
+        /// <summary>AuthorityRpc calls this worker has rejected (stale epoch, unknown entity, hop limit, duplicate, unreachable) since it started.</summary>
+        public long AuthorityCallsRejected => _callRouter?.Rejected ?? 0;
+        /// <summary>AuthorityRpc calls this worker sent with a reply requested and is still waiting on.</summary>
+        public int AuthorityCallsPending => _callTracker?.PendingCount ?? 0;
         /// <summary>Authoritative entities owned by human clients / by bot clients / by nobody (server-driven), as of the last heartbeat.</summary>
         public int PlayerCount { get; private set; }
         public int BotCount { get; private set; }
@@ -103,6 +111,13 @@ namespace Nebula
         private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
         /// <summary>Entities we handed off recently: netId -> new owner. Inputs that still arrive here are forwarded.</summary>
         private readonly Dictionary<ulong, string> _handedOff = new Dictionary<ulong, string>();
+        /// <summary>
+        /// The cross-worker call contract (docs/cross-worker-calls.md): the rules that apply, forward or reject an
+        /// incoming AuthorityRpc and the ledger of call ids applied here, and the calls this worker sent with a
+        /// reply requested. Created in <see cref="Initialize"/>, once the worker index and incarnation are known.
+        /// </summary>
+        private AuthorityCallRouter _callRouter;
+        private AuthorityCallTracker _callTracker;
         private readonly List<NetworkIdentity> _scratchEntities = new List<NetworkIdentity>();
         private readonly List<string> _scratchStrings = new List<string>();
 
@@ -306,6 +321,8 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
+            _callRouter = new AuthorityCallRouter(config.AuthorityCallMaxHops);
+            _callTracker = new AuthorityCallTracker(WorkerIndex, AuthorityCallId.InitialSequence(Incarnation));
             InitializeInterest();
 
             _gameMode = FindFirstObjectByType<NebulaGameMode>();
@@ -527,6 +544,8 @@ namespace Nebula
             // Checkpoints and restores run here, off the tick, bounded per frame.
             Persistence?.Update();
             _entityRequests?.Update();
+            _callRouter?.Ledger.Expire(CurrentTick);
+            _callTracker?.Expire(CurrentTick);
         }
 
         // ---------------------------------------------------------------------------------------- scene entities
@@ -1946,27 +1965,86 @@ namespace Nebula
             }
         }
 
-        private void OnAuthorityRpc(Peer from, EntityRpcMsg msg)
+        /// <summary>
+        /// An AuthorityRpc from another worker, decided by the call contract (<see cref="AuthorityCallRouter"/>):
+        /// applied here once when this worker has authority, forwarded (hop + 1) to the worker this one believes has
+        /// it now, or rejected with a reason that is logged and, when the sender asked, sent back to it.
+        /// </summary>
+        private void OnAuthorityRpc(Peer from, AuthorityCallMsg msg)
         {
             var e = Find(msg.NetId);
-            if (e == null) return;
-            if (e.HasAuthority)
+            Peer next = null;
+            AuthorityCallTarget target;
+            if (e == null) target = AuthorityCallTarget.Unknown;
+            else if (e.HasAuthority) target = AuthorityCallTarget.Authoritative(e.Epoch);
+            else
             {
-                InvokeRpc(e, msg);
+                next = ForwardPeerFor(e, from);
+                target = AuthorityCallTarget.Ghost(e.Epoch, next != null);
             }
-            else if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer) && peer != from)
+            var decision = _callRouter.Decide(msg.CallId, msg.Epoch, msg.Hops, target, CurrentTick);
+            switch (decision.Action)
             {
-                _writer.Reset();
-                msg.Write(_writer, MsgId.AuthorityRpc);
-                Send(peer, Delivery.ReliableOrdered);
+                case AuthorityCallAction.Apply:
+                    InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+                    if (msg.WantsReply) ReplyToCall(msg.CallId, AuthorityCallOutcome.Accepted, e.Epoch, msg.Hops);
+                    break;
+                case AuthorityCallAction.Forward:
+                    msg.Hops++;
+                    _writer.Reset();
+                    msg.Write(_writer);
+                    Send(next, Delivery.ReliableOrdered);
+                    break;
+                default:
+                    NebulaLog.Warn($"AuthorityRpc {msg.CallId:x} for #{msg.NetId} from {from.Id} rejected: {decision.Outcome} (call epoch {msg.Epoch}, entity {(e != null ? e.ToString() : "unknown here")}, {msg.Hops} hops)");
+                    if (msg.WantsReply) ReplyToCall(msg.CallId, decision.Outcome, e != null ? e.Epoch : 0, msg.Hops);
+                    break;
             }
         }
 
-        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg)
+        /// <summary>
+        /// Where a call for the ghost <paramref name="e"/> goes next: the worker we handed it to if we were its
+        /// last authority, else the worker our ghost names as owner. Never back to <paramref name="from"/>, and
+        /// only over a link that has said hello. Null when there is no such worker.
+        /// </summary>
+        private Peer ForwardPeerFor(NetworkIdentity e, Peer from)
         {
-            if (msg.BehaviourIndex >= e.Behaviours.Length) return;
-            _reader.Set(new ArraySegment<byte>(msg.Args));
-            RpcRegistry.Invoke(e.Behaviours[msg.BehaviourIndex], msg.MethodHash, _reader);
+            Peer next = null;
+            if (_handedOff.TryGetValue(e.NetId, out var to)) _workerPeersById.TryGetValue(to, out next);
+            if (next == null) _workerPeersByIndex.TryGetValue(e.OwnerWorkerIndex, out next);
+            if (next == null || next == from || !next.HelloReceived) return null;
+            return next;
+        }
+
+        /// <summary>Tell the worker that minted <paramref name="callId"/> what became of its call; settled in-process when that worker is this one.</summary>
+        private void ReplyToCall(ulong callId, AuthorityCallOutcome outcome, uint epoch, byte hops)
+        {
+            var reply = new AuthorityCallReplyMsg { CallId = callId, Outcome = outcome, Epoch = epoch, Hops = hops };
+            ushort origin = AuthorityCallId.WorkerIndexOf(callId);
+            if (origin == WorkerIndex)
+            {
+                _callTracker.Complete(callId, reply.ToResult());
+                return;
+            }
+            if (!_workerPeersByIndex.TryGetValue(origin, out var peer) || !peer.HelloReceived) return; // the sender times out
+            _writer.Reset();
+            reply.Write(_writer);
+            Send(peer, Delivery.ReliableOrdered);
+        }
+
+        private void OnAuthorityRpcReply(Peer from, AuthorityCallReplyMsg msg)
+        {
+            if (!_callTracker.Complete(msg.CallId, msg.ToResult()))
+                NebulaLog.Info($"late AuthorityRpc reply {msg.CallId:x} ({msg.Outcome}) from {from.Id}; the call had already settled");
+        }
+
+        private void InvokeRpc(NetworkIdentity e, EntityRpcMsg msg) => InvokeRpc(e, msg.BehaviourIndex, msg.MethodHash, msg.Args);
+
+        private void InvokeRpc(NetworkIdentity e, byte behaviourIndex, uint methodHash, byte[] args)
+        {
+            if (behaviourIndex >= e.Behaviours.Length) return;
+            _reader.Set(new ArraySegment<byte>(args));
+            RpcRegistry.Invoke(e.Behaviours[behaviourIndex], methodHash, _reader);
         }
 
         // ---------------------------------------------------------------------------------------- IRpcSink
@@ -1994,18 +2072,49 @@ namespace Nebula
 
         void IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args)
         {
-            Peer target = null;
-            if (_handedOff.TryGetValue(identity.NetId, out var to)) _workerPeersById.TryGetValue(to, out target);
-            if (target == null) _workerPeersByIndex.TryGetValue(identity.OwnerWorkerIndex, out target);
-            if (target == null || !target.HelloReceived)
+            SendAuthorityCall(identity, behaviourIndex, methodHash, args, null, 0f);
+        }
+
+        ulong IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            return SendAuthorityCall(identity, behaviourIndex, methodHash, args, onDone, timeoutSeconds);
+        }
+
+        /// <summary>
+        /// Mint a call id and send the call to the worker this one believes has authority. With
+        /// <paramref name="onDone"/> the call asks for a reply and is tracked until one arrives or
+        /// <paramref name="timeoutSeconds"/> passes; without it the outcome is only logged where it is decided.
+        /// </summary>
+        private ulong SendAuthorityCall(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            var target = ForwardPeerFor(identity, null);
+            if (target == null)
             {
-                NebulaLog.Warn($"AuthorityRpc on {identity}: owner worker {identity.OwnerWorkerIndex} not connected");
-                return;
+                NebulaLog.Warn($"AuthorityRpc on {identity} rejected: {AuthorityCallOutcome.RejectedUnreachable} (owner worker {identity.OwnerWorkerIndex} not connected)");
+                onDone?.Invoke(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, identity.Epoch, 0));
+                return 0;
             }
-            var msg = new EntityRpcMsg { NetId = identity.NetId, Epoch = identity.Epoch, BehaviourIndex = behaviourIndex, MethodHash = methodHash, ClientId = 0, Args = ToArray(args) };
+            ulong callId = _callTracker.Mint();
+            var msg = new AuthorityCallMsg
+            {
+                CallId = callId,
+                Hops = 0,
+                Flags = onDone != null ? AuthorityCallFlags.WantsReply : AuthorityCallFlags.None,
+                NetId = identity.NetId,
+                Epoch = identity.Epoch,
+                BehaviourIndex = behaviourIndex,
+                MethodHash = methodHash,
+                Args = ToArray(args),
+            };
+            if (onDone != null)
+            {
+                uint ticks = (uint)Math.Max(1, Math.Ceiling(timeoutSeconds * NetworkTime.TickRate));
+                _callTracker.Track(callId, CurrentTick + ticks, onDone);
+            }
             _writer.Reset();
-            msg.Write(_writer, MsgId.AuthorityRpc);
+            msg.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
+            return callId;
         }
 
         private static byte[] ToArray(ArraySegment<byte> seg)
@@ -2178,7 +2287,8 @@ namespace Nebula
                 case MsgId.GhostSyncState: OnGhostSyncState(peer, EntitySyncMsg.Read(r)); break;
                 case MsgId.GhostDespawn: OnGhostDespawn(peer, EntityDespawnMsg.Read(r)); break;
                 case MsgId.AuthorityTransfer: OnAuthorityTransfer(peer, AuthorityTransferMsg.Read(r)); break;
-                case MsgId.AuthorityRpc: OnAuthorityRpc(peer, EntityRpcMsg.Read(r)); break;
+                case MsgId.AuthorityRpc: if (peer.Role == PeerRole.Worker) OnAuthorityRpc(peer, AuthorityCallMsg.Read(r)); break;
+                case MsgId.AuthorityRpcReply: if (peer.Role == PeerRole.Worker) OnAuthorityRpcReply(peer, AuthorityCallReplyMsg.Read(r)); break;
                 case MsgId.WorkerMessage: if (peer.Role == PeerRole.Worker) OnWorkerMessage(peer, r); break;
                 case MsgId.Ping:
                 {

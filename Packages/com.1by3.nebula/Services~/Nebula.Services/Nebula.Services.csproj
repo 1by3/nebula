@@ -19,6 +19,8 @@
     <Compile Include="../../Runtime/Serialization/**/*.cs" />
     <Compile Include="../../Runtime/Core/CommandLine.cs;../../Runtime/Core/NetworkTime.cs;../../Runtime/Core/SyncState.cs;../../Runtime/Core/DatabaseUrl.cs" />
     <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs;../../Runtime/Containers/EntityLocation.cs" />
+    <!-- The cross-worker call contract is pure C#: the same rules decide a call on a Unity worker and in the tests here. -->
+    <Compile Include="../../Runtime/Worker/AuthorityCallContract.cs" />
     <Compile Include="../../Runtime/Persistence/IPersistenceStore.cs;../../Runtime/Persistence/LocalPersistenceStore.cs;../../Runtime/Persistence/PersistedRecordJson.cs;../../Runtime/Persistence/PersistenceHost.cs;../../Runtime/Persistence/RemotePersistenceStore.cs" />
     <Compile Include="../../ThirdParty/LiteNetLib/**/*.cs" />
     <Compile Include="../../World/WorldGrid.cs" />

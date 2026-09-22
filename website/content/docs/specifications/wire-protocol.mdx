@@ -156,9 +156,10 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 43 | `GhostDespawn` | `W-W` | Reliable ordered | [`EntityDespawnBody`](#entity-lifecycle-and-variables) |
 | 44 | `AuthorityTransfer` | `W-W` | Reliable ordered | [`AuthorityTransfer`](#authority-transfer) |
 | 45 | `ForwardInput` | `W-W` | Sequenced | [`ClientInputBody`](#prediction-messages) |
-| 46 | `AuthorityRpc` | `W-W` | Reliable ordered | [`EntityRpcBody`](#remote-procedure-calls) |
+| 46 | `AuthorityRpc` | `W-W` | Reliable ordered | [`AuthorityCall`](#authority-calls) |
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
+| 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 
 IDs not listed in this table are reserved. A version 18 sender MUST NOT use them.
 
@@ -267,12 +268,43 @@ EntityRpcBody :=
   u8 behavior_index,
   u32 method_hash,
   u64 client_id,
+  f32 radius,
   bytes args
 ```
 
-`EntityRpc`, `ServerRpc`, and `AuthorityRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
+`EntityRpc` and `ServerRpc` share this body. `method_hash` is 32-bit FNV-1a over the RPC method name's UTF-16 code units: start at `2166136261`, then for each code unit XOR its value and multiply by `16777619` with `u32` overflow. Overloads are not supported.
 
-Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. The gateway overwrites `ServerRpc.client_id` with the sending connection's session ID and only forwards a call for an entity that connection owns. A worker accepts a `ServerRpc` for a session only from the gateway that currently holds that session.
+Arguments are concatenated in declaration order using `NetworkSerialization`; there is no argument count or type tag. `EntityRpc.client_id = 0` broadcasts to all clients, while a nonzero value selects one client. `radius` applies to an `EntityRpc` broadcast: a nonzero value delivers it only to clients whose pawn is within that many meters of the entity. It is written as `0` on a targeted `EntityRpc` and on `ServerRpc`. The gateway overwrites `ServerRpc.client_id` with the sending connection's session ID and only forwards a call for an entity that connection owns. A worker accepts a `ServerRpc` for a session only from the gateway that currently holds that session.
+
+### Authority calls
+
+```text
+AuthorityCall :=
+  u64 call_id,
+  u8 hops,
+  u8 flags,
+  u64 net_id,
+  u32 entity_epoch,
+  u8 behavior_index,
+  u32 method_hash,
+  bytes args
+
+AuthorityCallReply :=
+  u64 call_id,
+  u8 outcome,
+  u32 entity_epoch,
+  u8 hops
+```
+
+`AuthorityRpc` carries an `AuthorityCall`: an RPC from a worker that holds a ghost of the entity to the worker it believes has authority. `method_hash` and `args` are encoded as in `EntityRpcBody`.
+
+`call_id` is minted by the sending worker: its worker index in the top 16 bits and a per-sender sequence in the low 48. A worker that forwards the call MUST keep `call_id` and `flags`, and MUST increment `hops`. `flags` bit 0 (`WantsReply`) asks the deciding worker for an `AuthorityCallReply`; bits 1–7 are reserved and MUST be written as zero. `entity_epoch` is the epoch of the sender's copy when it made the call.
+
+The receiving worker decides the call in this order: reject `RejectedUnknownEntity` (3) when it holds no copy of `net_id`; reject `RejectedStaleEpoch` (2) when `entity_epoch` is greater than its copy's epoch or more than `AuthorityCallMaxHops` (default 3) below it; apply the call once when it has authority, or reject `RejectedDuplicate` (5) when it has already applied this `call_id`; reject `RejectedHopLimit` (4) when `hops` has reached `AuthorityCallMaxHops`; forward to the worker it believes has authority, or reject `RejectedUnreachable` (6) when it has no connection to one. An applied call reports `Accepted` (1).
+
+A worker remembers applied call IDs for at most 4096 calls and 600 ticks. Beyond either bound a repeated ID is applied again.
+
+`AuthorityRpcReply` is sent only when `WantsReply` was set, to the worker whose index the `call_id` carries, with the deciding worker's `entity_epoch` for the entity (`0` when it held none) and the `hops` the call had when decided. `outcome` `7` (`TimedOut`) is a sender-side value and MUST NOT appear on the wire.
 
 ### Batched transform state
 

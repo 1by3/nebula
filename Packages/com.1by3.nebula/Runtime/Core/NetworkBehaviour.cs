@@ -223,6 +223,43 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// The reply-requesting form of the AuthorityRpc path. Same checks as <see cref="SendRpc"/>; a call that is
+        /// refused before it leaves this process still settles <paramref name="onDone"/>, so a caller always hears
+        /// exactly once.
+        /// </summary>
+        private ulong SendAuthorityRpcWithReply(string methodName, object[] args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            if (onDone == null) throw new ArgumentNullException(nameof(onDone));
+            var m = RpcRegistry.Require(GetType(), methodName);
+            if (m.Kind != RpcKind.Authority)
+                throw new InvalidOperationException($"{GetType().Name}.{methodName} is a {m.Kind} RPC, sent as {RpcKind.Authority}");
+            if (!IsSpawned || !IsServer)
+            {
+                NebulaLog.Warn(!IsSpawned ? $"RPC {methodName} on unspawned {GetType().Name} ignored" : $"AuthorityRpc {methodName} can only be sent from a worker");
+                onDone(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
+                return 0;
+            }
+            RpcWriter.Reset();
+            RpcRegistry.WriteArgs(RpcWriter, m, args);
+            var payload = RpcWriter.ToSegment();
+            if (HasAuthority)
+            {
+                // We are the authority: run it right here, once. No call id is minted for a call that never
+                // reaches the wire.
+                RpcRegistry.Invoke(this, m.Hash, new NetworkReader(payload));
+                onDone(new AuthorityCallResult(0, AuthorityCallOutcome.Accepted, Identity.Epoch, 0));
+                return 0;
+            }
+            var sink = NebulaRuntime.RpcSink;
+            if (sink == null)
+            {
+                onDone(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
+                return 0;
+            }
+            return sink.SendAuthorityRpc(Identity, BehaviourIndex, m.Hash, payload, onDone, timeoutSeconds);
+        }
+
         protected void ClientRpc(Action method) => SendRpc(RpcKind.Client, method.Method.Name, Array.Empty<object>());
         protected void ClientRpc<T1>(Action<T1> method, T1 a1) => SendRpc(RpcKind.Client, method.Method.Name, new object[] { a1 });
         protected void ClientRpc<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2) => SendRpc(RpcKind.Client, method.Method.Name, new object[] { a1, a2 });
@@ -245,5 +282,31 @@ namespace Nebula
         protected void AuthorityRpc<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2) => SendRpc(RpcKind.Authority, method.Method.Name, new object[] { a1, a2 });
         protected void AuthorityRpc<T1, T2, T3>(Action<T1, T2, T3> method, T1 a1, T2 a2, T3 a3) => SendRpc(RpcKind.Authority, method.Method.Name, new object[] { a1, a2, a3 });
         protected void AuthorityRpc<T1, T2, T3, T4>(Action<T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4) => SendRpc(RpcKind.Authority, method.Method.Name, new object[] { a1, a2, a3, a4 });
+
+        /// <summary>The default wait for an <c>AuthorityRpcWithReply</c> outcome before it settles as <see cref="AuthorityCallOutcome.TimedOut"/>.</summary>
+        public const float DefaultAuthorityCallTimeoutSeconds = 5f;
+
+        /// <summary>
+        /// As <see cref="AuthorityRpc(Action)"/>, and also tells you what became of the call. <paramref name="onDone"/>
+        /// runs exactly once, on the worker's main thread: with <see cref="AuthorityCallOutcome.Accepted"/> once the
+        /// worker with authority has run the method, with the reason when a worker on the path rejected it, or with
+        /// <see cref="AuthorityCallOutcome.TimedOut"/> when no answer arrived within <paramref name="timeoutSeconds"/>.
+        /// Returns the call id, or 0 when the call was applied locally or refused before it was sent. The delivery
+        /// contract is described in the RPC guide.
+        /// </summary>
+        protected ulong AuthorityRpcWithReply(Action method, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds) =>
+            SendAuthorityRpcWithReply(method.Method.Name, Array.Empty<object>(), onDone, timeoutSeconds);
+        /// <inheritdoc cref="AuthorityRpcWithReply(Action, Action{AuthorityCallResult}, float)"/>
+        protected ulong AuthorityRpcWithReply<T1>(Action<T1> method, T1 a1, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds) =>
+            SendAuthorityRpcWithReply(method.Method.Name, new object[] { a1 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="AuthorityRpcWithReply(Action, Action{AuthorityCallResult}, float)"/>
+        protected ulong AuthorityRpcWithReply<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds) =>
+            SendAuthorityRpcWithReply(method.Method.Name, new object[] { a1, a2 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="AuthorityRpcWithReply(Action, Action{AuthorityCallResult}, float)"/>
+        protected ulong AuthorityRpcWithReply<T1, T2, T3>(Action<T1, T2, T3> method, T1 a1, T2 a2, T3 a3, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds) =>
+            SendAuthorityRpcWithReply(method.Method.Name, new object[] { a1, a2, a3 }, onDone, timeoutSeconds);
+        /// <inheritdoc cref="AuthorityRpcWithReply(Action, Action{AuthorityCallResult}, float)"/>
+        protected ulong AuthorityRpcWithReply<T1, T2, T3, T4>(Action<T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds) =>
+            SendAuthorityRpcWithReply(method.Method.Name, new object[] { a1, a2, a3, a4 }, onDone, timeoutSeconds);
     }
 }
