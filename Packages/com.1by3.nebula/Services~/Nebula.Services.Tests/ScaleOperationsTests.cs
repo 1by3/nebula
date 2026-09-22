@@ -175,111 +175,71 @@ public class ScaleOperationsTests
     // ------------------------------------------------------------------------------- S9: rolling upgrade
 
     /// <summary>
-    /// <b>There is no compatibility window.</b> <c>NebulaGateway.DispatchClient</c> compares the peer's
-    /// <c>HelloMsg.Version</c> to <see cref="HelloMsg.ProtocolVersion"/> for exact equality and disconnects on any
-    /// difference — no minimum version, no negotiation, nothing that reads N-1. <c>HelloMsg.Write</c> does not even
-    /// serialise the instance's <c>Version</c> field: it always writes the constant, so a peer of this build
-    /// <i>cannot</i> announce an older protocol. A rolling upgrade across protocol versions is therefore not
-    /// possible today, and what this scenario tests instead — as the issue's guidance says to — is that a mismatch
-    /// is refused cleanly: the link is closed, no session is created and nothing on the gateway is left half-built.
+    /// <b>The compatibility window, at its edges.</b> A gateway admits a client anywhere in
+    /// <see cref="HelloMsg.MinProtocolVersion"/>..<see cref="HelloMsg.ProtocolVersion"/> (N-1 and N) and refuses
+    /// anything outside it with <see cref="JoinRejectReason.ProtocolUnsupported"/> and its own range, so the
+    /// client can tell "update required" from "this server has not been upgraded yet"
+    /// (<c>docs/compatibility-policy.md</c>). The scenario walks all four edges: the minimum, the current
+    /// version, one below the minimum and one above the current.
     /// <para>
-    /// The other half of a rolling upgrade <i>is</i> possible and is tested here too: replacing a gateway process
-    /// while clients are connected, at the same protocol version, without anybody losing a session.
+    /// Today <c>MinProtocolVersion == ProtocolVersion == 18</c>, because 18 is the floor the policy starts from:
+    /// the two admitted cases are the same version and "one below the minimum" is 17. The test is written
+    /// against the constants, so bumping the protocol to 19 (min 18) turns the first row into a genuine N-1
+    /// admission with nothing to edit here. The recorded-stream half of that guarantee is the conformance test
+    /// <c>ConformanceProtocolCompatibilityTests</c>.
+    /// </para>
+    /// <para>
+    /// The other half of a rolling upgrade — replacing processes under connected clients — is
+    /// <c>RollingUpgradeTests</c> (S9a and S9b); this scenario keeps the version half and checks that a refused
+    /// peer disturbs nobody.
     /// </para>
     /// </summary>
     [Test]
     [Category("Soak")]
-    public void AProtocolMismatchIsRefusedCleanlyAndTheSameVersionRollsForward()
+    public void TheCompatibilityWindowAdmitsItsEdgesAndRefusesWhatIsOutsideItWithAReason()
     {
-        var report = new ScaleReport("rolling-upgrade", "case", "version", "admitted", "welcomed", "disconnected", "note");
+        var report = new ScaleReport("rolling-upgrade", "case", "version", "admitted", "welcomed", "refused", "code", "note");
         using var world = new ScaleWorld(1);
-        using var fleet = new Fleet(gateways: 2, workers: 1, world: f => f.Assign("c0", f.Workers[0].WorkerId));
+        using var fleet = new Fleet(gateways: 1, workers: 1, world: f => f.Assign("c0", f.Workers[0].WorkerId));
         fleet.Worker.SpawnIntoRequestedContainer = true;
 
-        // A client of this build: the current version, admitted.
-        var current = fleet.Connect(0, "current");
-        Assert.That(fleet.Run(() => current.Join == JoinState.Joined), Is.True);
-        report.Row("same version", HelloMsg.ProtocolVersion, 1, 1, 0, "admitted");
-
-        // A client of the previous build. Its Hello has to be written by hand, because this build's writer cannot
-        // produce one: that is the finding, not a shortcut.
-        foreach (ushort version in new ushort[] { (ushort)(HelloMsg.ProtocolVersion - 1), (ushort)(HelloMsg.ProtocolVersion + 1) })
+        // Inside the window: the oldest version this gateway admits, and the one it speaks itself.
+        foreach (ushort version in new[] { HelloMsg.MinProtocolVersion, HelloMsg.ProtocolVersion })
         {
-            using var old = new RawClient(fleet.Ports[0], version, "old-build");
-            bool closed = fleet.Run(() => old.Poll(), seconds: 15);
-            report.Row(version < HelloMsg.ProtocolVersion ? "one behind" : "one ahead", version, 0, old.Welcomed ? 1 : 0, closed ? 1 : 0,
-                "disconnected without a reason message");
-            Assert.That(closed, Is.True, $"protocol {version} was not disconnected");
-            Assert.That(old.Welcomed, Is.False, $"protocol {version} was welcomed");
+            var client = fleet.Connect(0, "build-" + version);
+            client.AnnounceVersion = version;
+            bool joined = fleet.Run(() => client.Join == JoinState.Joined, seconds: 30);
+            report.Row(version == HelloMsg.MinProtocolVersion ? "window minimum" : "current version", version,
+                joined ? 1 : 0, client.Welcome != null ? 1 : 0, client.Rejected != null ? 1 : 0,
+                client.Rejected?.Code ?? JoinRejectReason.None, "admitted and welcomed");
+            Assert.That(joined, Is.True, $"protocol {version} is inside the window and was not admitted");
+            Assert.That(client.Rejected, Is.Null);
+            Assert.That(client.Welcome!.Value.NegotiatedVersion, Is.EqualTo(version),
+                "the gateway records the negotiated version on the session and tells the client which it was");
         }
-        Assert.That(current.Disconnected, Is.False, "refusing a mismatched peer must not disturb the peers of this version");
-        Assert.That(fleet.Worker.Claims, Has.Count.EqualTo(1), "a refused peer never reaches a worker");
 
-        // The half of a rolling upgrade that does work: a gateway process is replaced under a connected fleet.
-        var welcome = current.Welcome!.Value;
-        fleet.KillGateway(0, hard: false);
-        Assert.That(fleet.Run(() => current.Disconnected, seconds: 20), Is.True);
-        int replacement = fleet.StartGateway();
-        var moved = fleet.Connect(replacement, "current", welcome.Token, welcome.SessionToken);
-        Assert.That(fleet.Run(() => moved.Join == JoinState.Joined, seconds: 30), Is.True, "the client did not land on the new gateway");
-        Assert.That(moved.Welcome!.Value.ClientId, Is.EqualTo(welcome.ClientId), "and it kept its session across the replacement");
-        report.Row("gateway replaced", HelloMsg.ProtocolVersion, 1, 1, 0, "session kept across the replacement");
-        report.Note("no compatibility window exists: HelloMsg.Write always writes the ProtocolVersion constant and the " +
-                    "gateway requires exact equality, so a rolling upgrade may replace processes at one protocol version " +
-                    "but may not span two. See docs/scale-suite.md D8.");
+        // Outside it, in both directions: refused with a reason the client can act on, not a silent disconnect.
+        foreach (ushort version in new[] { (ushort)(HelloMsg.MinProtocolVersion - 1), (ushort)(HelloMsg.ProtocolVersion + 1) })
+        {
+            var client = fleet.Connect(0, "build-" + version);
+            client.AnnounceVersion = version;
+            bool refused = fleet.Run(() => client.Rejected != null, seconds: 20);
+            report.Row(version < HelloMsg.MinProtocolVersion ? "below the window" : "above the window", version,
+                0, client.Welcome != null ? 1 : 0, refused ? 1 : 0, client.Rejected?.Code ?? JoinRejectReason.None,
+                version < HelloMsg.MinProtocolVersion ? "the player must update" : "the server must be upgraded");
+            Assert.That(refused, Is.True, $"protocol {version} was not refused with a message");
+            Assert.That(client.Rejected!.Value.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
+            Assert.That(client.Rejected!.Value.Retry, Is.False, "retrying the same build would get the same answer");
+            Assert.That(client.Rejected!.Value.SupportedMinVersion, Is.EqualTo(HelloMsg.MinProtocolVersion));
+            Assert.That(client.Rejected!.Value.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
+            Assert.That(client.Welcome, Is.Null);
+        }
+
+        Assert.That(fleet.Clients[1].Disconnected, Is.False, "refusing a peer outside the window must not disturb the peers inside it");
+        Assert.That(fleet.Worker.Claims, Has.Count.EqualTo(2), "a refused peer never reaches a worker");
+        report.Note($"The window is {ProtocolCompatibility.WindowText()} (MinProtocolVersion..ProtocolVersion). " +
+                    "Gateway-to-worker and worker-to-worker links are an exact match instead. Drain-and-replace " +
+                    "is S9a and S9b in RollingUpgradeTests. See docs/compatibility-policy.md.");
         report.Write();
     }
-}
-
-/// <summary>
-/// A client that says whatever protocol version it is told to. <see cref="HelloMsg"/> cannot: its writer hard-codes
-/// <see cref="HelloMsg.ProtocolVersion"/>, so the bytes are laid out by hand here, in the order
-/// <c>HelloMsg.Write</c> lays them out. It reads nothing but the fact of being welcomed or closed.
-/// </summary>
-internal sealed class RawClient : IDisposable
-{
-    private readonly LiteNetTransport _transport = new("raw-client");
-    private readonly int _peer;
-    private readonly ushort _version;
-    private readonly string _name;
-    private bool _sent;
-
-    public bool Welcomed, Closed;
-
-    public RawClient(int port, ushort version, string name)
-    {
-        _version = version;
-        _name = name;
-        _peer = _transport.Connect("127.0.0.1", port);
-    }
-
-    /// <summary>Pump once; true once the gateway has closed the link.</summary>
-    public bool Poll()
-    {
-        _transport.Poll(e =>
-        {
-            if (e.Type == TransportEvent.Kind.Connected && !_sent)
-            {
-                _sent = true;
-                var w = new NetworkWriter();
-                w.WriteByte((byte)MsgId.Hello);
-                w.WriteUShort(_version);
-                w.WriteByte((byte)PeerRole.Client);
-                w.WriteString(_name);
-                w.WriteUInt(0);            // index
-                w.WriteByte(0);            // flags
-                w.WriteString("");         // token
-                w.WriteString("");         // session
-                w.WriteUInt(0);            // incarnation
-                w.WriteString("");         // scope key
-                _transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
-            }
-            else if (e.Type == TransportEvent.Kind.Disconnected) Closed = true;
-            else if (e.Type == TransportEvent.Kind.Data && e.Data.Count > 0 && e.Data.Array![e.Data.Offset] == (byte)MsgId.Welcome) Welcomed = true;
-        });
-        _transport.Flush();
-        return Closed;
-    }
-
-    public void Dispose() => _transport.Dispose();
 }

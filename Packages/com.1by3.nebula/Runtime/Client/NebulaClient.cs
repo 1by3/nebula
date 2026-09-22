@@ -75,6 +75,26 @@ namespace Nebula
         /// 1 = the whole of the dominant cost component's budget. 0 when the gateway did not say.
         /// </summary>
         public float JoinRejectSaturation { get; private set; }
+        /// <summary>
+        /// The protocol versions the gateway that refused the last join accepts, as a <c>Min</c>..<c>Max</c> pair;
+        /// (0, 0) when it did not say. With <see cref="Nebula.JoinRejectReason.ProtocolUnsupported"/> this is what
+        /// tells the player whether to update the game (this build's <see cref="HelloMsg.ProtocolVersion"/> is
+        /// below <c>Min</c>) or to wait for the server to be upgraded (it is above <c>Max</c>). See
+        /// <c>docs/compatibility-policy.md</c>.
+        /// </summary>
+        public (ushort Min, ushort Max) ServerProtocolWindow { get; private set; }
+        /// <summary>
+        /// The game content version the gateway that refused the last join runs
+        /// (<see cref="NebulaConfig.GameContentVersion"/>), for
+        /// <see cref="Nebula.JoinRejectReason.ContentVersionMismatch"/>; 0 when it did not say.
+        /// </summary>
+        public uint ServerContentVersion { get; private set; }
+        /// <summary>
+        /// The protocol this session speaks, as the gateway settled it (<see cref="WelcomeMsg.NegotiatedVersion"/>).
+        /// It is this build's <see cref="HelloMsg.ProtocolVersion"/> unless the gateway is newer and admitted this
+        /// client on the older half of its window. 0 before the first welcome.
+        /// </summary>
+        public ushort NegotiatedProtocolVersion { get; private set; }
         public int RttMs { get; private set; } = -1;
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
@@ -659,7 +679,7 @@ namespace Nebula
                     _writer.Reset();
                     string token = !string.IsNullOrEmpty(AuthToken) ? AuthToken : _storedToken;
                     _presentedStoredToken = string.IsNullOrEmpty(AuthToken) && token.Length > 0;
-                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "", ScopeKey = ScopeKey ?? "" }.Write(_writer);
+                    new HelloMsg { Role = PeerRole.Client, Id = PlayerName, Index = 0, Flags = CommandLine.Has("nebula-bot") ? HelloFlags.Bot : HelloFlags.None, Token = token, Session = SessionToken ?? "", ScopeKey = ScopeKey ?? "", GameContentVersion = Config != null ? Config.GameContentVersion : 0u }.Write(_writer);
                     _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
                     break;
                 case TransportEvent.Kind.Disconnected:
@@ -719,6 +739,8 @@ namespace Nebula
                     if (!string.IsNullOrEmpty(w.Token)) RememberIssuedToken(w.Token);
                     if (!string.IsNullOrEmpty(w.SessionToken)) SessionToken = w.SessionToken;
                     SessionReclaimed = w.Reclaimed;
+                    // A gateway that does not write the field speaks exactly the protocol this build sent it.
+                    NegotiatedProtocolVersion = w.NegotiatedVersion != 0 ? w.NegotiatedVersion : HelloMsg.ProtocolVersion;
                     NoteServerTick(w.ServerTick);
                     SetState(State.InGame);
                     NebulaLog.Info($"welcome: clientId={ClientId} identity={(Identity.Length > 12 ? Identity.Substring(0, 12) : Identity)} serverTick={w.ServerTick}" + (w.Reclaimed ? " (session reclaimed)" : ""));
@@ -729,7 +751,19 @@ namespace Nebula
                     var rejected = JoinRejectedMsg.Read(r);
                     JoinRejectReason = rejected.Code;
                     JoinRejectSaturation = rejected.Saturation;
-                    if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
+                    ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
+                    ServerContentVersion = rejected.ServerContentVersion;
+                    if (rejected.Code == JoinRejectReason.ProtocolUnsupported || rejected.Code == JoinRejectReason.ContentVersionMismatch)
+                    {
+                        // Neither the credentials nor this gateway: the two builds do not match. Every gateway of
+                        // the mesh would say the same thing, so retrying changes nothing until one side is
+                        // upgraded. The game shows "update required" or "this server has not been updated yet"
+                        // from ServerProtocolWindow and ServerContentVersion.
+                        LastError = "cannot join: " + rejected.Reason;
+                        WantsConnection = false;
+                        NebulaLog.Warn(LastError);
+                    }
+                    else if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
                     {
                         // Not about this client's credentials and not about this gateway: reconnecting on a timer
                         // would hammer a destination that is already full. The game decides what happens next -

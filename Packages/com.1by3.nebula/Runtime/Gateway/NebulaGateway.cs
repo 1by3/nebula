@@ -104,6 +104,15 @@ namespace Nebula
             /// owner (docs/scope-activation.md §5).
             /// </summary>
             public string ScopeKey = "";
+            /// <summary>
+            /// The protocol version negotiated with this client in its Hello, inside the gateway's window
+            /// (<see cref="HelloMsg.MinProtocolVersion"/>..<see cref="HelloMsg.ProtocolVersion"/>). Everything the
+            /// gateway encodes for this client is encoded at this version: a field added in a newer protocol is
+            /// written only when this number is at least the version that introduced it
+            /// (docs/compatibility-policy.md). It stays with the session when the client reconnects, because the
+            /// reconnecting client sends its Hello again.
+            /// </summary>
+            public ushort ProtocolVersion = HelloMsg.ProtocolVersion;
             public string CoordinationClaim = "";
             public Action RetryCoordination;
             public bool CoordinationInFlight;
@@ -1160,9 +1169,12 @@ namespace Nebula
             if (id == MsgId.Hello)
             {
                 var hello = HelloMsg.Read(r);
-                if (hello.Version != HelloMsg.ProtocolVersion)
+                // Infrastructure peers are upgraded together and match exactly; a client gets the window
+                // (docs/compatibility-policy.md), checked below once there is a connection to refuse politely.
+                if (hello.Role != PeerRole.Client && hello.Version != HelloMsg.ProtocolVersion)
                 {
-                    NebulaLog.Warn($"client protocol {hello.Version} != {HelloMsg.ProtocolVersion}; disconnecting");
+                    NebulaLog.Warn($"{hello.Role} '{hello.Id}' refused: protocol {hello.Version} != {HelloMsg.ProtocolVersion} " +
+                                   "(gateway, worker and orchestrator processes of one mesh must run the same build); disconnecting");
                     _transport.Disconnect(peerId);
                     return;
                 }
@@ -1191,6 +1203,25 @@ namespace Nebula
                 }
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
+                // ---- NEB-228 compatibility window (docs/compatibility-policy.md). Refuse with a code the game
+                // can turn into "update required" or "this server is older than your build", and record the
+                // negotiated protocol on the session: everything sent to this client is encoded at that version.
+                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version))
+                {
+                    Reject(c, hello.Version < HelloMsg.MinProtocolVersion
+                        ? $"this game server speaks protocol {ProtocolCompatibility.WindowText()}; your client speaks {hello.Version} and needs updating"
+                        : $"this game server speaks protocol {ProtocolCompatibility.WindowText()} and has not been updated to your client's {hello.Version}",
+                        false, JoinRejectReason.ProtocolUnsupported);
+                    return;
+                }
+                c.ProtocolVersion = hello.Version;
+                if (!ProtocolCompatibility.ContentVersionAccepted(hello.GameContentVersion, Config.GameContentVersion, Config.MinGameContentVersion))
+                {
+                    Reject(c, $"this game server runs content version {Config.GameContentVersion}; your client has {hello.GameContentVersion}",
+                        false, JoinRejectReason.ContentVersionMismatch);
+                    return;
+                }
+                // ---- end NEB-228 block
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
                 c.ScopeKey = hello.ScopeKey ?? "";
                 if (Draining) { Reject(c, "gateway is draining", true); return; }
@@ -1311,7 +1342,14 @@ namespace Nebula
         {
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
             _writer.Reset();
-            new JoinRejectedMsg { Reason = reason, Retry = retry, Code = code, Saturation = saturation }.Write(_writer);
+            new JoinRejectedMsg
+            {
+                Reason = reason, Retry = retry, Code = code, Saturation = saturation,
+                // Every refusal carries the window and the content version, so a client that was refused for
+                // another reason still learns whether an update is waiting for it.
+                SupportedMinVersion = HelloMsg.MinProtocolVersion, SupportedMaxVersion = HelloMsg.ProtocolVersion,
+                ServerContentVersion = Config.GameContentVersion,
+            }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             c.DisconnectAt = Time.unscaledTime + 0.5f;
         }
@@ -1471,7 +1509,7 @@ namespace Nebula
                 ExpiresAt = JsonWebToken.UnixNow() + SessionTokenLifetimeSeconds,
             });
             _writer.Reset();
-            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed }.Write(_writer);
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
             Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             // A session taken over through identity coordination rather than a token never went through
             // TryReclaim, so the pawn it already owns has to be found here. With interest management the pawn is

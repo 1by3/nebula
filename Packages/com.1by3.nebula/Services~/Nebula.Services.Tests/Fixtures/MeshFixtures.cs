@@ -743,6 +743,25 @@ public sealed class FakeClient : IDisposable
     public JoinHoldReason JoinReason;
     public int DrainWithin = -1;
     public bool Disconnected;
+    /// <summary>
+    /// The protocol version this client announces in its <c>Hello</c>; 0 means this build's
+    /// <see cref="HelloMsg.ProtocolVersion"/>. A compatibility test sets it to play a client of another build
+    /// (<c>docs/compatibility-policy.md</c>).
+    /// </summary>
+    public ushort AnnounceVersion;
+    /// <summary>The game content version this client announces (<see cref="HelloMsg.GameContentVersion"/>).</summary>
+    public uint ContentVersion;
+    /// <summary>
+    /// When set, every frame this client sends and receives is appended here, outbound first-class, so a test can
+    /// record a real handshake and snapshot stream to a fixture file (<c>ProtocolRecorder</c>).
+    /// </summary>
+    public List<(bool Outbound, byte[] Bytes)>? Record;
+    /// <summary>
+    /// When set, these exact bytes are sent, in order, in place of a <c>Hello</c> this build would write: a
+    /// recorded client stream replayed against a gateway of this version. Everything the gateway answers is
+    /// parsed by this client's ordinary reader, so a reply this build cannot parse fails the test.
+    /// </summary>
+    public IReadOnlyList<byte[]>? Replay;
     /// <summary>Every spawn ever received, in order (a re-entry appears twice; that is what the churn tests read).</summary>
     public readonly List<ulong> Spawned = new();
     public readonly List<ulong> Despawned = new();
@@ -786,6 +805,7 @@ public sealed class FakeClient : IDisposable
     {
         var w = new NetworkWriter();
         new ClientInputMsg { Frames = new List<ClientInputMsg.Frame> { new() { Tick = 1, Payload = new byte[] { 1 } } } }.Write(w, MsgId.ClientInput);
+        Record?.Add((true, w.ToSegment().ToArray()));
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
     }
 
@@ -802,6 +822,7 @@ public sealed class FakeClient : IDisposable
     {
         var w = new NetworkWriter();
         new ClientFocusHintMsg { X = x, Y = y, Z = z, Generation = generation }.Write(w);
+        Record?.Add((true, w.ToSegment().ToArray()));
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
         Transport.Flush();
     }
@@ -827,16 +848,26 @@ public sealed class FakeClient : IDisposable
     {
         Transport.Poll(e =>
         {
-            if (e.Type == TransportEvent.Kind.Connected)
+            if (e.Type == TransportEvent.Kind.Connected && Replay != null)
+            {
+                foreach (var frame in Replay) Transport.Send(e.PeerId, Delivery.ReliableOrdered, new ArraySegment<byte>(frame));
+            }
+            else if (e.Type == TransportEvent.Kind.Connected)
             {
                 var w = new NetworkWriter();
-                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope }.Write(w);
+                new HelloMsg
+                {
+                    Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope,
+                    Version = AnnounceVersion, GameContentVersion = ContentVersion,
+                }.Write(w);
+                Record?.Add((true, w.ToSegment().ToArray()));
                 Transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
             }
             else if (e.Type == TransportEvent.Kind.Disconnected) Disconnected = true;
             else if (e.Type == TransportEvent.Kind.Data)
             {
                 BytesIn += e.Data.Count;
+                Record?.Add((false, e.Data.ToArray()));
                 // A malformed message must fail the test loudly rather than silently cost the client a batch.
                 try { Dispatch(new NetworkReader(e.Data)); }
                 catch (Exception ex) { LastError = ex.ToString(); }
