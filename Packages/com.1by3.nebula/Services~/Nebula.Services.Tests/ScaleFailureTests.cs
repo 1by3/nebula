@@ -288,27 +288,41 @@ public class ScaleFailureTests
             "both gateways re-registered after the restart");
     }
 
+    /// <summary>
+    /// The other half of S6, and the gap NEB-227 closed (docs/scale-suite.md D7b): a control plane that comes
+    /// back <b>empty</b>. Until NEB-227 a gateway put itself back and a worker did not, so the mesh converged on
+    /// no workers and no leases; now both roles notice their row has gone and a worker re-claims the containers
+    /// it is still simulating. The richer measurement — how long the mesh is without leases, and whether the
+    /// clients get their world back — is <c>ScaleAvailabilityTests</c>.
+    /// </summary>
     [Test]
-    public void ARestartThatCameBackEmptyReclaimsItsGatewaysButNotItsWorkers()
+    public void ARestartThatCameBackEmptyReclaimsItsGatewaysAndItsWorkers()
     {
-        var report = new ScaleReport("control-plane-cold-restart", "workersKnown", "gatewaysKnown", "leases", "clientsDisconnected");
+        var report = new ScaleReport("control-plane-cold-restart",
+            "workersKnown", "gatewaysKnown", "leases", "leasesBefore", "clientsDisconnected", "reregistrations", "reclaimedContainers");
 
         using var fleet = Build(gateways: 1, workers: 2, clients: 8, out var clients);
-        fleet.RestartControlPlane(null); // storage lost everything, or was reset
-        fleet.RunFor(3.0);
+        int leasesBefore = fleet.Plane.Leases.Count;
+        var ownersBefore = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => l.WorkerId);
 
-        report.Row(fleet.Plane.Workers.Count, fleet.Plane.Gateways.Count, fleet.Plane.Leases.Count,
-            clients.Count(c => c.Disconnected));
-        report.Note("a gateway re-registers itself when the control plane forgets it (NebulaGateway.OnControlPlaneChanged); " +
-                    "a worker does not — NebulaWorker registers once and never again — so a control plane that comes back " +
-                    "with nothing has no workers and no leases until every worker process is restarted. Durable " +
-                    "control-plane state is NEB-227; this row is what happens without it.");
+        fleet.RestartControlPlane(null); // storage lost everything, or was reset
+        bool converged = fleet.Run(() => fleet.Plane.Workers.Count == 2 && fleet.Plane.Leases.Count == leasesBefore, seconds: 20);
+        fleet.RunFor(2.0);
+
+        var ownersAfter = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => l.WorkerId);
+        report.Row(fleet.Plane.Workers.Count, fleet.Plane.Gateways.Count, fleet.Plane.Leases.Count, leasesBefore,
+            clients.Count(c => c.Disconnected), fleet.Workers.Sum(w => w.Reregistrations), fleet.Workers.Sum(w => w.ReclaimedContainers));
+        report.Note("both roles put themselves back: a gateway from NebulaGateway.OnControlPlaneChanged, a worker from " +
+                    "WorkerRegistration (NEB-227), which also re-claims the containers the worker is still simulating — " +
+                    "the only copy of that fact in the mesh. The epochs start again at 1 because this is a new document.");
         report.Write();
 
+        Assert.That(converged, Is.True, "the mesh did not put its workers and leases back after an empty control plane");
         Assert.That(fleet.Plane.Gateways.Count, Is.EqualTo(1), "the gateway put itself back on the control plane");
-        Assert.That(fleet.Plane.Workers, Is.Empty,
-            "a worker now re-registers after a cold control-plane restart — update docs/scale-suite.md D7b and this test");
-        Assert.That(fleet.Plane.Leases, Is.Empty, "no worker means no leases");
+        Assert.That(fleet.Plane.Workers.Select(w => w.WorkerId).OrderBy(id => id),
+            Is.EqualTo(fleet.Workers.Select(w => w.WorkerId).OrderBy(id => id)).AsCollection,
+            "every live worker registered again");
+        Assert.That(ownersAfter, Is.EqualTo(ownersBefore), "every container is owned again by the worker that still simulates it");
         Assert.That(clients.All(c => !c.Disconnected), Is.True, "and still nobody was disconnected");
     }
 

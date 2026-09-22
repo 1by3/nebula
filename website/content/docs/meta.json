@@ -54,6 +54,7 @@
     "deploy/cloud",
     "deploy/hetzner",
     "deploy/upgrades",
+    "deploy/availability",
     "---Specifications---",
     "specifications/wire-protocol",
     "specifications/control-plane",

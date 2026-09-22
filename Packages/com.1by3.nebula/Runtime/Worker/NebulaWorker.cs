@@ -193,7 +193,12 @@ namespace Nebula
         private int _lastGcCount;
 
         private ulong _nextSequence;
-        private bool _registered;
+        /// <summary>
+        /// The control-plane row for this worker, and the rule that puts it back when the control plane comes
+        /// back without it (<see cref="WorkerRegistration"/>, docs/control-plane-availability.md D1).
+        /// </summary>
+        private readonly WorkerRegistration _registration = new WorkerRegistration();
+        private bool _registered => _registration.IsRegistered;
         private float _nextHeartbeat;
         private float _nextUnownedWarning;
         private NebulaGameMode _gameMode;
@@ -348,6 +353,12 @@ namespace Nebula
             _transport.Listen(Port);
             IsListening = true;
             _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
+            // The row this worker asks the control plane for, settled before anything can read the document: the
+            // port is known only now, and OnControlPlaneChanged may fire before the first Update.
+            _registration.WorkerId = WorkerId;
+            _registration.WorkerIndex = WorkerIndex;
+            _registration.Address = Config.WorkerAdvertiseAddress;
+            _registration.Port = Port;
             ControlPlane.Changed += OnControlPlaneChanged;
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
@@ -549,6 +560,7 @@ namespace Nebula
                 {
                     try { ControlPlane.UnregisterWorker(WorkerId); } catch (Exception e) { NebulaLog.Warn($"unregister failed: {e.Message}"); }
                 }
+                _registration.Forget();
             }
             _transport?.Dispose();
             _telemetry?.Dispose();
@@ -566,10 +578,8 @@ namespace Nebula
                 ReportProfile();
             }
 
-            if (!_registered && ControlPlane.IsConnected)
+            if (_registration.Register(ControlPlane))
             {
-                ControlPlane.RegisterWorker(WorkerId, WorkerIndex, Config.WorkerAdvertiseAddress, Port);
-                _registered = true;
                 _nextHeartbeat = 0f;
                 NebulaLog.Info($"registered with control plane as {WorkerId}");
                 FlushRuntimeRequests();
@@ -2281,6 +2291,21 @@ namespace Nebula
 
         private void OnControlPlaneChanged()
         {
+            // The control plane came back without this worker (a restarted orchestrator with no document, a
+            // database restored from a backup taken before this mesh, a failover to a replica that never had it).
+            // Nothing else in the mesh knows this process exists or what it simulates, so say both again — before
+            // the lease sweep below, which would otherwise read a document that has just been emptied and forget
+            // the very ownership the reclaim is derived from.
+            if (_registration.RegisterAgainIfForgotten(ControlPlane))
+            {
+                _nextHeartbeat = 0f;
+                NebulaLog.Warn($"worker {WorkerId} is no longer on the control plane; registering again");
+            }
+            if (_registered)
+            {
+                int reclaimed = _registration.ReclaimContainers(ControlPlane);
+                if (reclaimed > 0) NebulaLog.Warn($"worker {WorkerId} re-claimed {reclaimed} container(s) the control plane had no row for");
+            }
             // Runtime containers come and go with their lease rows; register them before their leases are applied.
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             // Leases -> container ownership.

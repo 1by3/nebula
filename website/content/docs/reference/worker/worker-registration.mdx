@@ -1,0 +1,103 @@
+---
+title: "WorkerRegistration"
+description: "A worker's registration row on the control plane, and what has to be said again when that row is gone."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs)</div>
+
+```csharp
+public sealed class WorkerRegistration
+```
+
+A worker's registration row on the control plane, and what has to be said again when that row is gone.
+
+A control plane that restarts *with* its storage needs none of this: every row comes back and the mesh never notices. A control plane that comes back **empty** — a fresh orchestrator with `-nebula-reset`, a database restored from a backup taken before this mesh started, a failover to a replica that never had the document — does: the rows describing which processes exist and what they simulate live only in the running processes, and a worker that registered once at startup would sit there simulating containers nobody can route to. See `docs/control-plane-availability.md` D1.
+
+[`NebulaGateway`](/docs/reference/gateway/nebula-gateway) already had half of this shape (it re-registers from `OnControlPlaneChanged` when its own row has gone); this is the same rule for a worker, plus the part a gateway does not need — re-claiming the containers, because a worker is the only process that knows it is still simulating them.
+
+## Fields
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId = "";
+```
+
+### WorkerIndex [#workerindex]
+
+```csharp
+public uint WorkerIndex;
+```
+
+### Address [#address]
+
+```csharp
+public string Address = "";
+```
+
+### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+## Properties
+
+### IsRegistered [#isregistered]
+
+```csharp
+public bool IsRegistered { get; }
+```
+
+The row has been asked for at least once since this process started.
+
+### RegistrationCount [#registrationcount]
+
+```csharp
+public int RegistrationCount { get; }
+```
+
+How many times the row has been written: 1 at startup, one more per re-registration.
+
+## Methods
+
+### Register [#register]
+
+```csharp
+public bool Register(IControlPlane controlPlane);
+```
+
+The first registration, from the worker's update loop. Does nothing once the row has been asked for: noticing that it went away is [`RegisterAgainIfForgotten`](#registeragainifforgotten)'s job, and only it can tell the difference between "not there yet" and "not there any more".
+
+### RegisterAgainIfForgotten [#registeragainifforgotten]
+
+```csharp
+public bool RegisterAgainIfForgotten(IControlPlane controlPlane);
+```
+
+Call this when the mirrored control-plane document **changed** — never on a timer. A [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) learns of its own registration only when the next document arrives, so a poll would re-register on every frame of the round trip; a change means the document that just landed is one this worker is not in. Registering twice is harmless either way (the row is keyed by id), which is what makes the rare double write on an unrelated change a non-event.
+
+Returns true when it wrote the row again, which is the caller's cue to [`ReclaimContainers`](#reclaimcontainers) and heartbeat at once.
+
+### Forget [#forget]
+
+```csharp
+public void Forget();
+```
+
+Forget the row without touching the control plane (the process is shutting down).
+
+### ReclaimContainers [#reclaimcontainers]
+
+```csharp
+public int ReclaimContainers(IControlPlane controlPlane);
+```
+
+Put back the lease rows for every container this worker is still simulating and that the control plane no longer has a row for. Only the missing ones: a row that is there is the control plane's to decide, and a worker that overwrote a lease it had lost would take a container back off whoever was given it.
+
+This is a **standing reconciliation**, run on every control-plane change, not a one-off triggered by [`RegisterAgainIfForgotten`](#registeragainifforgotten). It has to be: the moment the worker's row is missing and the moment the lease rows are missing are not the same moment. A mirror flushes writes it queued while the orchestrator was away, so a replacement can have this worker's registration back — from a queued re-registration — in the very document that first shows the leases gone, and a reclaim that only ran on the transition would have missed it and stranded the containers for good. Re-running it costs a scan over the containers this worker owns and writes nothing while their rows are there.
+
+- A baked container is claimed with [`IControlPlane.EnsureContainer`](/docs/reference/control-plane/i-control-plane#ensurecontainer) + [`IControlPlane.AssignContainer`](/docs/reference/control-plane/i-control-plane#assigncontainer), which starts its epoch again at 1. An epoch only ever has to be increasing *within* one control-plane document, and this document is a new one: every peer reads the epochs out of it, none of them remembers the old document's.
+- A runtime container is re-announced with its box ([`IControlPlane.EnsureRuntimeContainer`](/docs/reference/control-plane/i-control-plane#ensureruntimecontainer)), because nothing else in the mesh knows the box: the worker that asked for it is the only copy of that fact.
+
+Returns how many rows were written this call.

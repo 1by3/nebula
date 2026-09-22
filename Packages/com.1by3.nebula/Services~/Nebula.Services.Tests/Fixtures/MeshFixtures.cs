@@ -102,6 +102,16 @@ public sealed class FakeWorker : IDisposable
     private ulong _nextNetId;
     private uint _tick;
 
+    /// <summary>
+    /// This worker's control-plane row, kept by the <b>real</b> <see cref="WorkerRegistration"/> a Unity worker
+    /// uses (docs/control-plane-availability.md D1). The fleet drives it from <see cref="Fleet.Pump"/>, which is
+    /// this fixture's update loop; a fixture that re-registered by itself would be testing the fixture.
+    /// </summary>
+    public readonly WorkerRegistration Registration = new();
+
+    /// <summary>How many times this worker had to put its control-plane row back, and how many leases it re-claimed.</summary>
+    public int Reregistrations, ReclaimedContainers;
+
     public InterestGrid Grid = InterestGrid.Resolve(InterestSettings.Default);
     /// <summary>The interest settings this worker publishes with; must match the gateway's.</summary>
     public InterestSettings Settings = InterestSettings.Default;
@@ -1022,7 +1032,11 @@ public sealed class Fleet : IDisposable
         ushort index = (ushort)(++_workerSeq);
         var worker = new FakeWorker(_meshToken, workerId ?? "w" + index, index) { Grid = _grid, Settings = _settings };
         Workers.Add(worker);
-        Plane.RegisterWorker(worker.WorkerId, index, "127.0.0.1", (ushort)worker.Port);
+        worker.Registration.WorkerId = worker.WorkerId;
+        worker.Registration.WorkerIndex = index;
+        worker.Registration.Address = "127.0.0.1";
+        worker.Registration.Port = (ushort)worker.Port;
+        worker.Registration.Register(Plane);
         Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
         return worker;
     }
@@ -1121,7 +1135,16 @@ public sealed class Fleet : IDisposable
     /// <summary>One pass over everything: control plane, gateways, workers, clients.</summary>
     public void Pump()
     {
-        foreach (var worker in Workers) Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        foreach (var worker in Workers)
+        {
+            // What a Unity worker does from its OnControlPlaneChanged: notice its row has gone and put back both
+            // the row and the containers only it knows it is still simulating. Checking it every pump rather than
+            // only on a change is the one difference, and it costs nothing here because LocalControlPlane answers
+            // from memory; on a real mesh the document has to arrive first (docs/control-plane-availability.md D5).
+            if (worker.Registration.RegisterAgainIfForgotten(Plane)) worker.Reregistrations++;
+            worker.ReclaimedContainers += worker.Registration.ReclaimContainers(Plane);
+            Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        }
         Plane.Tick();
         foreach (var g in Gateways) if (!PausedGateways.Contains(g)) g.Tick();
         foreach (var worker in Workers) worker.Poll();

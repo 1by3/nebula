@@ -21,6 +21,44 @@ Nebula now states which versions may talk to each other, and enforces it with a 
 **Client API.** `NebulaClient` gained `ServerProtocolWindow`, `ServerContentVersion` and `NegotiatedProtocolVersion`, and does not reconnect by itself after either build mismatch.
 
 **Rolling upgrades** are a documented procedure, not a new command: drain a gateway through its control-plane row and replace it while its clients move to another one with their sessions intact; hand a worker's entities and leases to its neighbours before replacing it, so it leaves no orphaned container. Both are now tested in `RollingUpgradeTests` (scale scenarios S9a and S9b), the compatibility window at its four edges in scenario S9, and a **recorded** client stream replayed against a gateway of this build in `ConformanceProtocolCompatibilityTests`, from the checked-in fixture `Services~/Nebula.Services.Tests/Fixtures/protocol-18-handshake.json`.
+### NEB-227: control-plane and entity-store availability
+
+No wire change; the protocol stays 18. Design record: `docs/control-plane-availability.md`. User-facing page:
+[Restart and restore a mesh](https://nebula.1by3.co/docs/deploy/availability).
+
+**Fixed: a worker never noticed a control plane that came back empty.** `NebulaWorker` registered once at startup
+and never again, so an orchestrator restarted without its document — a reset, a restore from an older backup, a
+failover to a replica that never had it — left every worker simulating containers the mesh had no route to, until
+each worker process was restarted by hand. A worker now registers again when it sees a document it is not in
+(the rule `NebulaGateway` already had) and, on every control-plane change, re-claims the lease rows of the
+containers it is still simulating, because nothing else in the mesh knows it is simulating them. Measured: a
+replacement orchestrator on an empty database converges in 2.6 s with every container owned again by the worker
+that holds its entities.
+
+- **New public class `WorkerRegistration`** (`Runtime/Worker/WorkerRegistration.cs`): `Register`,
+  `RegisterAgainIfForgotten`, `ReclaimContainers`, `Forget`. Pure C#, compiled into the standalone services as
+  well, so the same decision code runs on a Unity worker and in the tests. Game code does not need to call it;
+  `NebulaWorker` owns one.
+- **New public property `ControlPlaneHost.StorageError`**: why the last save to the control-plane store failed,
+  or null. Not a mesh failure by itself — the control plane keeps running in memory and the save is retried —
+  but it is the window an operator watches across a database failover.
+
+**New: a scripted backup-and-restore drill.** `Tools/restore-drill.ps1` seeds a database with known records,
+snapshots it, backs it up, wipes it, proves the wipe emptied it, restores it and proves the restored database is
+the one that was backed up, leaving `Logs/restore-drill/<timestamp>.json` and a summary. It needs no player
+build, no Unity and no running mesh, and drills a throwaway SQLite database unless you name another. The
+verification runs through `SqlPersistenceStore` and `SqlControlPlaneStorage` rather than hand-written SQL, so a
+pass means the mesh can read what came back. Backup routes: SQLite `VACUUM INTO`, `pg_dump`/`pg_restore`, or an
+engine-independent JSON export/import through the store. New project `Services~/Nebula.RestoreDrill`.
+
+**New scale scenarios** in `Services~/Nebula.Services.Tests/ScaleAvailabilityTests.cs` (`docs/scale-suite.md`
+S6b/S6c): an orchestrator **process** restart against a real `ControlPlaneHost`, `OrchestratorHttpServer` and
+SQLite store with `RemoteControlPlane` mirrors attached (2.59 s, every lease identical, no mirror disconnected);
+the same with an empty database; and a PostgreSQL failover under Docker, which skips with a reason when no
+Docker daemon is there. New thresholds `ScaleThresholds.OrchestratorRestartSeconds` (15 s, derived from
+`RemoteControlPlane.DisconnectAfterSeconds`) and `DatabaseFailoverSeconds` (60 s, provisional). The pinned gap
+`docs/scale-suite.md` D7b is closed and its assertion turned around.
+
 
 ### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
 
@@ -308,7 +346,6 @@ Game callbacks at the moments the mesh brings a container or a scope to life, or
 - New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
 - `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
 
-<<<<<<< HEAD
 #### Cohesion-aware rebalancing along game-defined boundaries (NEB-235)
 
 The planner already cut along the boundaries the game authored and already refused to split a cohesion group or move
@@ -334,7 +371,6 @@ a held container. It now explains what it did, and says why when it could not. D
   could split a cohesion group the real deal may not and promise the scaler a relief that never arrives. It now
   carries `Cohesion`, `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
 - Conformance scenario 13 (`Tests/EditMode/ConformanceRebalanceTests.cs`, 10 tests, both builds).
-=======
 #### Explicit capacity limits and admission reporting (NEB-236)
 
 See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-target-is-full) and [Capacity and admission](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#capacity-and-admission); the design record is `docs/capacity-admission.md`.
@@ -366,7 +402,6 @@ See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-tar
 **Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant`, `atCapacity` and `capacityCause`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
 
 **Conformance:** scenario 12 of `docs/conformance-suite.md` is covered by `Services~/Nebula.Services.Tests/ConformanceCapacityAdmissionTests.cs`, with the derivation unit tested in both builds by `Tests/EditMode/CapacityAdmissionTests.cs`.
->>>>>>> d059a5c (NEB-236: explicit capacity limits and admission reporting)
 
 #### Persistence durability window (NEB-224)
 

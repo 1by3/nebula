@@ -118,6 +118,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [NebulaLifecycle](/docs/reference/worker/nebula-lifecycle) | Static class. The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
+| [WorkerRegistration](/docs/reference/worker/worker-registration) | Class. A worker's registration row on the control plane, and what has to be said again when that row is gone. |
 | [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
 

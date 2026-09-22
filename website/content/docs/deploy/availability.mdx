@@ -1,0 +1,114 @@
+---
+title: Restart and restore a mesh
+description: Restart the orchestrator without losing container assignments, survive a database failover, and rehearse a restore from backup before you need one.
+---
+
+Use this page to plan for three things that will eventually happen to a running mesh: you restart the orchestrator, your database fails over, and you restore a backup. Each one has a procedure here and a measured expectation.
+
+A **mesh** is one running game world: its clients, workers, gateway, orchestrator, and the control plane the orchestrator hosts. The **control plane** is the document that records which processes exist and which container is assigned to which worker. A **lease** is one of those assignments. The control plane and your saved entities live side by side in the orchestrator's database, which you choose with `-nebula-database` (or `NEBULA_DATABASE_URL` for the standalone services). See [Control plane](/docs/guides/control-plane) and [Persistence](/docs/guides/persistence).
+
+## What keeps running when the orchestrator stops
+
+Workers and gateways mirror the control plane over HTTP. When the orchestrator is unreachable, each mirror keeps the last assignments it received and queues its writes instead of dropping them. So while the orchestrator is down:
+
+- Clients stay connected. A gateway's client links never depended on the control plane.
+- Workers keep simulating their containers, and authority handovers between connected workers keep working.
+- Saved entities keep being checkpointed, because the persistence store is reached separately.
+
+What stops is everything the orchestrator decides: nothing declares a worker dead, starts a replacement worker, rebalances containers, or makes a new assignment.
+
+A mirror reports itself disconnected only after 15 seconds without a successful read. An orchestrator restart that finishes inside that window is invisible to the rest of the mesh.
+
+## Restart the orchestrator
+
+Restart the orchestrator process pointing at the same database, and do not reset the control plane.
+
+```bash
+nebula-orchestrator -nebula-database "postgres://<user>:<password>@<host>:5432/<database>" -nebula-reset false
+```
+
+On a deployed mesh the orchestrator runs as a systemd service, so add `-nebula-reset false` to the command line in `/etc/systemd/system/nebula-orchestrator.service` and restart it:
+
+```bash
+sudo systemctl restart nebula-orchestrator
+```
+
+`-nebula-reset` defaults to **on**, which clears registrations and leases at the first tick. That default is right for starting a mesh, because those rows describe processes that are no longer running. It is wrong for restarting one under live workers: pass `-nebula-reset false` so the replacement reads the stored document back.
+
+The replacement then restores every lease with the same worker, state, and epoch, and the mirrors pick it up on their next read.
+
+<Callout type="info">
+On a development machine, one orchestrator restart with two workers, one gateway, and four containers came back whole in **2.6 seconds**, with no mirror reporting itself disconnected. Your number depends on how long your process takes to start and how big the document is. Measure it: the scenario that produced this figure is in the [scale suite](/docs/guides/scale-suite).
+</Callout>
+
+### If the replacement comes back empty
+
+A replacement that starts with an empty document — because it reset, because it points at a new database, or because it was restored from a backup taken before this mesh started — recovers by itself. Each worker notices it is missing from the document, registers again, and re-claims the containers it is still simulating. Each gateway does the same for its own row. Container assignments end up on the workers that actually hold the entities, and the epochs start again at 1.
+
+This path costs a stall the mesh did not need, so prefer the same database and `-nebula-reset false`. It is a safety net, not a plan.
+
+## Survive a database failover
+
+The orchestrator writes the whole control-plane document to the database about a second after every change, in the background. It never blocks the simulation on that write. When the database is unreachable:
+
+- The mesh keeps running on the document the orchestrator holds in memory, and keeps serving it to workers and gateways.
+- The failed save is logged and retried on the next interval. Because each save replaces the whole document, there is nothing to replay: the first save that succeeds carries everything, including what changed while the database was gone.
+- Entity checkpoints are delayed, not dropped. The [persistence](/docs/guides/persistence) store retries on its writer thread.
+
+So a failover costs one thing: if the orchestrator process itself crashed during the outage, you would lose the control-plane changes made since the last successful save. Keep the failover shorter than you are willing to lose.
+
+To watch the window, read `ControlPlaneHost.StorageError`. It is null while saves are succeeding and holds the last error otherwise.
+
+Nebula does not run your database. Replication, failover, and backup schedules are yours to configure.
+
+## Rehearse a restore
+
+Run the restore drill before you need it, and after any schema or database change. It seeds a database with known records, snapshots it, backs it up, wipes it, proves the wipe emptied it, restores from the backup, and proves the restored database matches the original.
+
+```powershell
+pwsh Tools/restore-drill.ps1
+```
+
+The drill needs no player build, no Unity, and no running mesh. By default it creates and drills a throwaway SQLite database under `Logs/restore-drill/`, so it cannot touch your mesh's database by accident.
+
+To drill a database of your own, name it:
+
+```powershell
+pwsh Tools/restore-drill.ps1 -Database "postgres://<user>:<password>@<host>:5432/<database>" -Entities 2000
+```
+
+<Callout type="warn">
+The drill **wipes** the database you name: every saved entity, the control-plane document, the gateway session claims, and the scope claims. It restores them from the backup it just took, but never point it at a live mesh.
+</Callout>
+
+Each run writes two artifacts under `Logs/restore-drill/`: `<timestamp>.json` with every step, its duration, and the comparison, and `<timestamp>.txt` with a one-screen summary. The script prints `PASS` or `FAIL` and exits non-zero on a failure, so you can run it from a scheduled job.
+
+### How the drill backs up
+
+The drill picks one of three routes and prints which one it used:
+
+| Route | When | What it runs |
+| --- | --- | --- |
+| SQLite online backup | A `sqlite:` database | `VACUUM INTO` from the connection Nebula already has open, which is safe while the mesh is running. |
+| `pg_dump` | A `postgres:` database with `pg_dump` and `pg_restore` on `PATH` | `pg_dump --format=custom`, then `pg_restore --clean --if-exists`. |
+| Nebula export | Anything else, or `-Method nebula` | Every record and the control-plane document as one JSON file, written and read back through Nebula's own store. Portable between backends, but slower than the engine's own dump. |
+
+Use `-Method engine` to fail rather than fall back, so a scheduled drill cannot quietly start rehearsing a different mechanism from the one you use in production.
+
+### What the drill proves
+
+The comparison reads every record through the same store classes a worker and an orchestrator read through, not through separate SQL. That means a passing drill tells you the mesh can read what came back, not only that the bytes came back. A schema change your store cannot read fails the drill.
+
+The drill compares a digest of every field of every record, including the opaque state blob each entity wrote, plus a digest of the control plane's leases, workers, and settings.
+
+### What the drill does not do
+
+It does not take your backups, keep them, rotate them, or tell you when the last good one was. It rehearses a restore. Your backup schedule and retention are yours.
+
+## Checklist
+
+- Give the replacement orchestrator the same database and `-nebula-reset false`.
+- Keep the restart inside 15 seconds if you want it to be invisible to workers and gateways.
+- Decide how much control-plane change you are willing to lose in a failover, and keep your failover shorter than that.
+- Run `Tools/restore-drill.ps1` against a copy of your production database on a schedule, and after every schema change.
+- Keep the drill's artifacts. They are the evidence that the restore worked last time.
