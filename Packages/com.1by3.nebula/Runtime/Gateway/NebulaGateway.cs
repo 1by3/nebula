@@ -174,7 +174,7 @@ namespace Nebula
             public byte InterestGroup;
             /// <summary>The clients that hold a replica: the exact audience of every message about this entity.</summary>
             public readonly List<ClientConn> Observers = new List<ClientConn>();
-            /// <summary>Newest keyframe per behaviour index, assembled into LastSpawn.State for late joiners.</summary>
+            /// <summary>Newest keyframe per behavior index, assembled into LastSpawn.State for late joiners.</summary>
             public Dictionary<byte, byte[]> SyncKeyframes;
 
             public void SeedKeyframes(byte[] state)

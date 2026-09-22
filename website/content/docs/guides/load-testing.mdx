@@ -82,7 +82,7 @@ Within [`GatewayDrainReconnectSeconds`](/docs/guides/configuration) the `gateway
 - a few large zone containers across three workers, and
 - one big container on one worker.
 
-Each asserts that a stationary client's replica count and bytes stay bounded independent of world size, that the gateway's cache and worker link count stay bounded by its own clients' interest, and that a client walking a fixed distance sees no gaps, duplicates, or leaked replicas. Run it with:
+Each asserts that a stationary client's replica count and bytes stay bounded independent of world size, that the gateway's cache and worker link count stay bounded by its own clients' interest, and that a client walking a fixed distance sees no gaps, duplicates, or leaked replicas. From the Nebula repository root, run:
 
 ```bash
 dotnet test Packages/com.1by3.nebula/Services~/Nebula.Services.Tests/Nebula.Services.Tests.csproj --filter TestCategory=Soak
@@ -92,6 +92,10 @@ It writes its measurements to `docs/interest-baseline/soak-results.md` in the re
 
 `InterestProbe.Attach(client)`, attached in a game scene running as a bot or a manual test client, logs the same four properties from inside a running Unity process — see [Interest management](/docs/guides/interest-management#observability). It is useful for checking a soak scenario your game defines that the fixed test shapes above do not cover, such as your own world's actual container layout.
 
-`nebula start --bots N --bot-args "..."` starts `N` headless client processes as bots, appending `--bot-args`'s value to every bot's launch arguments so your game can select a specific bot behavior for a soak run, for example `nebula start --bots 4 --bot-args "-vw-bot-line"`. This is a different tool from `nebula-loadgen`: bots run your actual game code end to end (useful for exercising real gameplay and `InterestProbe`), while `nebula-loadgen` is a lightweight synthetic client for sizing a gateway's connection handling.
+To start four headless clients from your Unity project root, run:
 
-**Kill a gateway.** Stop a gateway process under load. Its clients' links drop, they reconnect through the load balancer, and the workers, which keep a pawn for [`SessionReclaimSeconds`](/docs/guides/configuration) after a link drops, hand the same pawns back. `pawnLosses` stays zero as long as the reconnection lands inside that window.
+```bash
+nebula start --bots 4 --bot-args "-mygame-bot-line"
+```
+
+Implement the example flag `-mygame-bot-line` in your game to select a bot behavior. `--bot-args` appends its value to every bot client's launch arguments. These bots run your actual game code and can exercise gameplay and `InterestProbe`. Use `nebula-loadgen` for lightweight synthetic clients that measure gateway connection handling.

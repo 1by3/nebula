@@ -77,7 +77,7 @@ A partitioned world's manifest is loaded: containers know their cell and lookups
 public static float RuntimeBucketSize { get; set; }
 ```
 
-Edge length, in metres, of the buckets runtime containers are hashed into. Set it before the first [`RegisterRuntime`](#registerruntime) (a chunk size or a small multiple of it is right); changing it later rehashes.
+Edge length, in meters, of the buckets runtime containers are hashed into. Set it before the first [`RegisterRuntime`](#registerruntime) (a chunk size or a small multiple of it is right); changing it later rehashes.
 
 ### RuntimeBoundsInFrame [#runtimeboundsinframe]
 
@@ -151,7 +151,7 @@ Scan the loaded scene(s) for static containers and index them by id. Containers 
 public static void Load(IList<Container> ordered, bool gridded);
 ```
 
-Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighbouring cells and [`Find`](#find) only visits the cells around the point. Dynamic and runtime containers registered earlier are forgotten: this is a boot-time operation.
+Index `ordered` as given (position = wire index). With `gridded` every container must carry its [`Container.Cell`](/docs/reference/containers/container#cell); adjacency is then only tested between containers of neighboring cells and [`Find`](#find) only visits the cells around the point. Dynamic and runtime containers registered earlier are forgotten: this is a boot-time operation.
 
 ### Overlapping [#overlapping]
 

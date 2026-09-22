@@ -111,7 +111,7 @@ namespace Nebula
         /// It is what the interest grid is snapped to (design §3).
         /// </summary>
         public float WorldCellSizeMeters;
-        /// <summary>Whether the exported world's cells are centred on their coordinate (a baked manifest) rather than starting there.</summary>
+        /// <summary>Whether the exported world's cells are centered on their coordinate (a baked manifest) rather than starting there.</summary>
         public bool WorldCellsAreCentred;
 
         private float WorldCellSize() => WorldCellSizeMeters > 0 ? WorldCellSizeMeters : 0f;

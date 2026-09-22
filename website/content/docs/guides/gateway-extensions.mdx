@@ -13,7 +13,9 @@ You do not need a gateway extension to use the default interest behavior — dis
 
 ## Create the extension project
 
-Create a plain .NET class library next to your Unity project, targeting `net10.0`, that implements `IGatewayExtension`:
+Install the .NET 10 SDK. From your Unity project root, run `nebula build` to create `Builds/Win64/Nebula.Services.dll`. Create a `GatewayExtension` folder inside the project for the extension source and project file shown below.
+
+A **gateway** accepts client connections and routes input and replicated state. Save this class as `GatewayExtension/MyGatewayExtension.cs`:
 
 ```csharp
 using Nebula;
@@ -58,7 +60,7 @@ public sealed class MyGatewayExtension : IGatewayExtension, IInterestPolicy
 
 Reference the gateway's own `Nebula.Services.dll`, not a copy of it: the gateway process already has it loaded, and a second copy would be a second, incompatible set of types.
 
-```xml title="MyGame.Gateway.csproj"
+```xml title="GatewayExtension/MyGame.Gateway.csproj"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -73,19 +75,23 @@ Reference the gateway's own `Nebula.Services.dll`, not a copy of it: the gateway
 </Project>
 ```
 
-Run `nebula build` (or `nebula build services`) once first, so `Nebula.Services.dll` exists in your project's `Builds/<platform>/` folder to reference. `<Private>false</Private>` matters: it keeps `dotnet build` from copying `Nebula.Services.dll` into your extension's own output, which would create the second copy the gateway refuses to load.
+For Linux, build services with `nebula build --linux` and change the reference path to `../Builds/Linux64/Nebula.Services.dll`. `<Private>false</Private>` matters: it keeps `dotnet build` from copying `Nebula.Services.dll` into your extension's own output, which would create the second copy the gateway refuses to load.
 
 ## Build it and put it next to the gateway
 
+From the Unity project root, compile the extension into the gateway build folder:
+
 ```bash
-dotnet build MyGame.Gateway.csproj -c Release -o Builds/Win64
+dotnet build GatewayExtension/MyGame.Gateway.csproj -c Release -o Builds/Win64
 ```
 
-Build your extension into the same folder `nebula build` publishes the gateway to (`Builds/Win64` on Windows, `Builds/Linux64` for a Linux or deployed build) — that folder is what `nebula build --linux` packs into the deploy tarball and what every VM of a fleet unpacks, so every gateway loads the same extension from the same relative path. `nebula build` warns if the file named in `GatewayExtension` is missing from the build folder.
+Build your extension into the same folder `nebula build` publishes the gateway to (`Builds/Win64` on Windows, `Builds/Linux64` for a Linux or deployed build) — that folder is what `nebula build --linux` packs into the deploy tarball and what every virtual machine in a fleet unpacks, so every gateway loads the same extension from the same relative path. `nebula build` warns if the file named in `GatewayExtension` is missing from the build folder.
 
 ## Configure the gateway to load it
 
-Set these fields on `NebulaConfig` (or override them on the command line):
+Set `NebulaConfig.GatewayExtension` to `MyGame.Gateway.dll`, then run `nebula build` to export the configuration. For deployment, compile the extension into `Builds/Linux64` before the final `nebula build --linux` packages that directory.
+
+Use these fields on `NebulaConfig` or override them on the command line:
 
 | Field | Command line | What it does |
 | --- | --- | --- |
@@ -116,25 +122,30 @@ Every call from the gateway into your extension — `Tick`, the client events, a
 
 **Do not block.** `Initialize`, `Tick`, `Shutdown`, the interest policy, and the client events all run on the gateway loop, the same loop that relays every packet the gateway handles. Do slow or blocking work — reading a file, calling another service — on your own thread, and hand the result back to the gateway loop with `context.Post(Action)`, the only member of `IGatewayExtensionContext` that is safe to call from another thread:
 
-```csharp
-// On a watcher thread, after computing a fog-of-war change:
-context.Post(() =>
-{
-    // Server-owned bits your Authorize reads. Setting tags already revokes synchronously: anything the
-    // new mask no longer allows is despawned inside this call.
-    context.SetClientTags(clientId, revealedMask);
+In this helper, `context` is the context received by `Initialize`, `clientId` identifies the affected client, `revealedMask` contains your game's visibility bits, and `fogClosed` indicates that access was removed. Add it to your extension class:
 
-    // Then say which direction the rest of your own state moved.
-    if (fogClosed)
-        context.RevalidateInterest(clientId); // tightening: take it away before the call returns
-    else
-        context.MarkInterestDirty(clientId);  // reveal: additive, at the next evaluation
-});
+```csharp
+private static void ApplyVisibility(IGatewayExtensionContext context, ulong clientId,
+    ulong revealedMask, bool fogClosed)
+{
+    context.Post(() =>
+    {
+        // Server-owned bits your Authorize reads. Setting tags already revokes synchronously: anything the
+        // new mask no longer allows is despawned inside this call.
+        context.SetClientTags(clientId, revealedMask);
+
+        // Then say which direction the rest of your own state moved.
+        if (fogClosed)
+            context.RevalidateInterest(clientId); // tightening: take it away before the call returns
+        else
+            context.MarkInterestDirty(clientId);  // reveal: additive, at the next evaluation
+    });
+}
 ```
 
 `Post` drains at the top of the gateway loop, before that tick's evaluations run, so a change is never read half-applied.
 
-**Pick the call by direction.** `MarkInterestDirty` and `MarkAllInterestDirty` are additive: they move the client up the evaluation rotation, which is still bounded per tick, so a client can wait a few ticks for its turn. That is fine for a reveal and wrong for a revocation — until its turn came up the client would keep a replica its policy already refuses and keep receiving state, variables, sync state, and RPCs for it. `RevalidateInterest(clientId)` and `RevalidateAllInterest()` re-run instance scope and `Authorize` over everything the client already holds and despawn the rest **before the call returns**, at a cost of one `Authorize` per replica held. They mark the client dirty too, so a change that both tightens and loosens gets the tightening now and the loosening at the next evaluation.
+**Pick the call by direction.** `MarkInterestDirty` and `MarkAllInterestDirty` are additive: they move the client up the evaluation rotation, which is still bounded per tick, so a client can wait a few ticks for its turn. That is fine for a reveal and wrong for a revocation — until its turn came up the client would keep a replica its policy already refuses and keep receiving state, variables, sync state, and remote procedure calls (RPCs) for it. `RevalidateInterest(clientId)` and `RevalidateAllInterest()` re-run instance scope and `Authorize` over everything the client already holds and despawn the rest **before the call returns**, at a cost of one `Authorize` per replica held. They mark the client dirty too, so a change that both tightens and loosens gets the tightening now and the loosening at the next evaluation.
 
 `SetClientTag`, `SetClientTags`, and `SetInterestPolicy` all revoke synchronously on their own — you do not need a separate `Revalidate*` call after them. `SetClientFocusMode` does not: dropping a hint only narrows the client's foci, and those entities leave through the usual exit margin.
 

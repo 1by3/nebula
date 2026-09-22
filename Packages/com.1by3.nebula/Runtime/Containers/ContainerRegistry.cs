@@ -67,7 +67,7 @@ namespace Nebula
         /// <summary>A partitioned world's manifest is loaded: containers know their cell and lookups use the grid.</summary>
         public static bool IsGridded => _grid != null;
         /// <summary>
-        /// Edge length, in metres, of the buckets runtime containers are hashed into. Set it before the first
+        /// Edge length, in meters, of the buckets runtime containers are hashed into. Set it before the first
         /// <see cref="RegisterRuntime"/> (a chunk size or a small multiple of it is right); changing it later rehashes.
         /// </summary>
         public static float RuntimeBucketSize
@@ -144,7 +144,7 @@ namespace Nebula
         /// <summary>
         /// Index <paramref name="ordered"/> as given (position = wire index). With <paramref name="gridded"/> every
         /// container must carry its <see cref="Container.Cell"/>; adjacency is then only tested between containers
-        /// of neighbouring cells and <see cref="Find"/> only visits the cells around the point. Dynamic and runtime
+        /// of neighboring cells and <see cref="Find"/> only visits the cells around the point. Dynamic and runtime
         /// containers registered earlier are forgotten: this is a boot-time operation.
         /// </summary>
         public static void Load(IList<Container> ordered, bool gridded)
@@ -884,8 +884,8 @@ namespace Nebula
 
         /// <summary>
         /// The container the entity should belong to after applying hysteresis: it must be at least
-        /// <paramref name="hysteresis"/> metres inside a different container, and more than
-        /// <paramref name="hysteresis"/> metres outside its current one, before we consider it moved.
+        /// <paramref name="hysteresis"/> meters inside a different container, and more than
+        /// <paramref name="hysteresis"/> meters outside its current one, before we consider it moved.
         /// <paramref name="exclude"/> as in <see cref="Find"/>.
         /// </summary>
         public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null)

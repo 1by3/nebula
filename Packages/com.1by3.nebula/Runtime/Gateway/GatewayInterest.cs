@@ -1016,7 +1016,7 @@ namespace Nebula
             if (left.Count > 0) SendOwnershipRemoves(client);
         }
 
-        /// <summary>A spawn carries the newest pose and the newest keyframe of every behaviour, plus a fresh view sequence.</summary>
+        /// <summary>A spawn carries the newest pose and the newest keyframe of every behavior, plus a fresh view sequence.</summary>
         private void SendSpawn(ClientConn client, EntityRecord rec)
         {
             rec.RefreshSpawnState(_scratch);

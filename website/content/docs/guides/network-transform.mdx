@@ -51,7 +51,7 @@ The inspector groups the options as the source does. Defaults are in the third c
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `PositionThreshold` | 0.001 | Metres the position must move since the last send. |
+| `PositionThreshold` | 0.001 | Meters the position must move since the last send. |
 | `RotAngleThreshold` | 0.01 | Degrees (`Quaternion.Angle`) since the last send. |
 | `ScaleThreshold` | 0.01 | Distance in scale space since the last send. |
 
@@ -213,7 +213,7 @@ Between keyframes an unreliable transform sends deltas; a lost delta shows as a 
 | `Teleport(pos, rot, scale)`, `SetState(pos?, rot?, scale?, teleport)` | Same signatures. |
 | `OnAuthorityPushTransformState(ref NetworkTransformState)` | `OnAuthorityPushTransformState(ref TransformState)`. |
 | `OnNetworkTransformStateUpdated(ref NetworkTransformState)` | `OnNetworkTransformStateUpdated(ref TransformState)`. |
-| `TickSyncChildren` | No counterpart: every behaviour's chunk already rides the same per-entity per-tick message. |
+| `TickSyncChildren` | No counterpart: every behavior's chunk already rides the same per-entity per-tick message. |
 | `SwitchTransformSpaceWhenParented` | No counterpart: an entity's parent only changes with its container, and world values are already carried in container space and resolved with the same tick's container index. |
 | `CanCommitToTransform` | `IsSyncAuthority`. |
 

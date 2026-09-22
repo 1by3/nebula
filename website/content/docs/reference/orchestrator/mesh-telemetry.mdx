@@ -11,7 +11,7 @@ public sealed class MeshTelemetry
 
 The data behind the World map page of the Nebula Dashboard (`/map`). It has two halves:
 
-- **Geometry**, built once on the orchestrator's main thread from [`ContainerRegistry`](/docs/reference/containers/container-registry) and the world definition: every static container's box in absolute world coordinates, its cell, the container that encloses it and its neighbours (`GET /api/map/geometry`).
+- **Geometry**, built once on the orchestrator's main thread from [`ContainerRegistry`](/docs/reference/containers/container-registry) and the world definition: every static container's box in absolute world coordinates, its cell, the container that encloses it and its neighbors (`GET /api/map/geometry`).
 - **Telemetry**, the latest document each worker posted ([`WorkerTelemetry`](/docs/reference/worker/worker-telemetry), `POST /api/telemetry`): entity counts per container, the pose of every carried container whose carrier it simulates, the cells it has loaded and, while somebody has the map open, its authoritative entities (`GET /api/map`).
 
 Thread-safe: workers post, and the page reads, on the dashboard's listener threads. Worker documents are kept as received and spliced into the map document unparsed (the runtime carries no JSON reader); the page does the aggregation.
@@ -242,7 +242,7 @@ Pull the `"cohesion"` array out of a worker document: `[{"group":17,"members":3,
 public static string BuildGeometryJson(NebulaConfig config);
 ```
 
-Every container of the loaded level as the map draws it: its box in absolute world coordinates ([`ToAbsolute`](#toabsolute)), its cell when it belongs to an authored partition, the smallest container enclosing it and its static neighbours, plus the world's cells and the ghost band and hysteresis the mesh runs with. A runtime-only world is partitioned even though its authored container grid is empty. Main thread.
+Every container of the loaded level as the map draws it: its box in absolute world coordinates ([`ToAbsolute`](#toabsolute)), its cell when it belongs to an authored partition, the smallest container enclosing it and its static neighbors, plus the world's cells and the ghost band and hysteresis the mesh runs with. A runtime-only world is partitioned even though its authored container grid is empty. Main thread.
 
 ### EnclosingStatic [#enclosingstatic]
 

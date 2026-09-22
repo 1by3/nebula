@@ -213,7 +213,7 @@ The gateway treats it as an input and never as authority: it is refused unless t
 public Transform ContentAnchor { get; }
 ```
 
-What this client's **content** follows: which cells or chunks are kept loaded, and where the floating origin sits. Null (the default) means the local pawn, which is what a shooter wants and what every existing project gets without changing a line.
+What this client's **content** follows: which cells or chunks are kept loaded, and where the floating origin sits. Null (the default) means the local pawn.
 
 A strategy game does not want that. Its camera flies over a front the commander has no pawn near — or has no pawn at all — and content anchored to the pawn would leave the camera looking at unloaded terrain however much the gateway is willing to send. Handing the camera's transform to [`SetContentAnchor`](#setcontentanchor) moves the window with the camera instead.
 

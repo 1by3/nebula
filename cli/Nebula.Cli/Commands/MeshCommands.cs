@@ -27,7 +27,8 @@ gateway of this mesh has stopped, to recover claims whose previous gateway canno
 
 --bots starts headless client processes with -nebula-bot; what they do is the game's code. --bot-args appends
 its value to every one of those command lines unchanged, which is how a game selects a deterministic bot
-behaviour for a soak run (`nebula start --bots 4 --bot-args ""-vw-bot-line""`).
+behavior for a soak run. The example flag must be implemented by your game
+(`nebula start --bots 4 --bot-args ""-mygame-bot-line""`).
 ";
     public override OptionSpec[] Options => new[]
     {
@@ -41,7 +42,7 @@ behaviour for a soak run (`nebula start --bots 4 --bot-args ""-vw-bot-line""`).
         new OptionSpec("reset-persistence", false, "delete every saved entity when the orchestrator starts"),
         new OptionSpec("reset-sessions", false, "clear player-session claims; stop every gateway of this mesh first"),
     };
-    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence", "nebula start --bots 3 --bot-args \"-vw-bot-line\"" };
+    public override string[] Examples => new[] { "nebula start --open-ui", "nebula start --build --workers 2", "nebula start --min 1 --max 4", "nebula start --reset-persistence", "nebula start --bots 3 --bot-args \"-mygame-bot-line\"" };
 
     public override int Run(Context ctx, ParsedArgs args)
     {

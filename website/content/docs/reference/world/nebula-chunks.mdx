@@ -1,6 +1,6 @@
 ---
 title: "NebulaChunks"
-description: "The content-streaming face of the turnkey chunked worlds in this process: one place, on every role, where a game is told which chunks exist."
+description: "Reports the runtime chunks available on each role so your game can load their content."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/NebulaChunks.cs)</div>
@@ -9,11 +9,11 @@ description: "The content-streaming face of the turnkey chunked worlds in this p
 public static class NebulaChunks
 ```
 
-The content-streaming face of the turnkey chunked worlds in this process: one place, on every role, where a game is told which chunks exist. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates the public world's grid from [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) plus a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld); a game supplies content and nothing else.
+Reports the runtime chunks available on each role so your game can load their content. [`NebulaBootstrap`](/docs/reference/bootstrap/nebula-bootstrap) activates the public world's grid when [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) and [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld) are configured.
 
-There is a grid **per scope**, not one per process (`docs/scoped-chunk-grids.md`). `Grid` is the public world's, which is what a single-world game has and all it ever needs; a game with instanced open areas activates more through [`NebulaChunkedWorld.ActivateGrid`](/docs/reference/world/nebula-chunked-world#activategrid) and reaches them with [`GridFor`](#gridfor). Each grid has its own cell size, planar flag, allocator, lease rows, persistence container ids and interest: chunk (x,y,z) of two scopes is two containers that never see each other.
+Each scope, a separately identified simulation area, has its own grid. [`Grid`](#grid) returns the public world's grid. Activate additional grids with [`NebulaChunkedWorld.ActivateGrid`](/docs/reference/world/nebula-chunked-world#activategrid) and retrieve them with [`GridFor`](#gridfor). Each grid has its own cell size, planar setting, allocator, container assignments, and persistence identifiers.
 
-Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbours lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
+Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers the gateway told it about (its interest window), and both learn about them through the same two events. A game's callback therefore never needs to know which role it is running on, nor to poll.
 
 [`Loaded`](#loaded) back-fills: subscribing after chunks already exist raises the event for each of them at once, so a handler added from `Start` on a late-loaded scene object cannot miss a chunk and no game has to write the "and now walk the existing ones" loop that every hand-rolled chunk loader begins with.
 
@@ -213,4 +213,4 @@ public static int SeedOf(Vector3Int coord);
 public static int SeedOf(Vector3Int coord, string scopeKey);
 ```
 
-The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighbouring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.
+The deterministic per-chunk seed ([`ChunkContext.Seed`](/docs/reference/world/chunk-context#seed)). A 64-bit finalizer mix of the packed id, so neighboring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never zero-sensitive: chunk (0,0,0) gets a seed like any other.

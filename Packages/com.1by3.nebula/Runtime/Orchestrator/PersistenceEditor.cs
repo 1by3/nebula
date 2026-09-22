@@ -123,7 +123,7 @@ namespace Nebula
 
         /// <summary>
         /// POST /api/persistence/duplicate: <c>{key, newKey, ...}</c>. Copies the record under a new key, optionally
-        /// with the same edits <see cref="Update"/> accepts (a second crate three metres to the left).
+        /// with the same edits <see cref="Update"/> accepts (a second crate three meters to the left).
         /// </summary>
         public OrchestratorHttpServer.Response Duplicate(string body)
         {
@@ -242,7 +242,7 @@ namespace Nebula
 
         /// <summary>
         /// Entry name -> value type for one template, mirroring <see cref="NetworkIdentity.Initialize"/>'s discovery
-        /// on the asset instead of a live entity. A null type means "known entry, no editor" (a behaviour's own
+        /// on the asset instead of a live entity. A null type means "known entry, no editor" (a behavior's own
         /// <c>#state</c> chunk, or a NetworkVariable subclass that is not <see cref="NetworkVariable{T}"/>).
         /// </summary>
         private Dictionary<string, Type> SchemaOf(GameObject template)

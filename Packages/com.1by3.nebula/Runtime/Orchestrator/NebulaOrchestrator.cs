@@ -891,7 +891,7 @@ namespace Nebula
         /// </summary>
         /// <param name="keepOrder">Deal <paramref name="containerIds"/> in the order given instead of sorting by id.
         /// A partitioned world lists its containers in Morton order, so each worker's quota is a contiguous run of
-        /// spatially neighbouring cells - a compact region it can load as a block.</param>
+        /// spatially neighboring cells - a compact region it can load as a block.</param>
         public static List<KeyValuePair<string, string>> ComputeAssignment(IList<string> containerIds, IList<WorkerInfo> liveWorkers, IList<LeaseInfo> leases, bool keepOrder = false)
         {
             var changes = new List<KeyValuePair<string, string>>();

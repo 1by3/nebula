@@ -18,7 +18,7 @@ namespace Nebula
     /// <list type="bullet">
     /// <item><b>Geometry</b>, built once on the orchestrator's main thread from <see cref="ContainerRegistry"/> and the
     /// world definition: every static container's box in absolute world coordinates, its cell, the container that
-    /// encloses it and its neighbours (<c>GET /api/map/geometry</c>).</item>
+    /// encloses it and its neighbors (<c>GET /api/map/geometry</c>).</item>
     /// <item><b>Telemetry</b>, the latest document each worker posted (<see cref="WorkerTelemetry"/>,
     /// <c>POST /api/telemetry</c>): entity counts per container, the pose of every carried container whose carrier it
     /// simulates, the cells it has loaded and, while somebody has the map open, its authoritative entities
@@ -763,7 +763,7 @@ namespace Nebula
         /// <summary>
         /// Every container of the loaded level as the map draws it: its box in absolute world coordinates
         /// (<see cref="ToAbsolute(Vector3, out double, out double, out double)"/>), its cell when it belongs to an
-        /// authored partition, the smallest container enclosing it and its static neighbours, plus the world's cells
+        /// authored partition, the smallest container enclosing it and its static neighbors, plus the world's cells
         /// and the ghost band and hysteresis the mesh runs with. A runtime-only world is partitioned even though its
         /// authored container grid is empty. Main thread.
         /// </summary>

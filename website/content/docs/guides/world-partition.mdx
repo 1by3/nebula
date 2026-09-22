@@ -84,17 +84,17 @@ Each role then streams what it needs:
 
 | Role | Cells loaded | Origin |
 | --- | --- | --- |
-| Worker | The cells of every container it leases plus `WorkerLoadRingCells` rings around them, so seam physics and ghosts have the neighbours' geometry. | Follows the centroid of the leased cells. |
+| Worker | The cells of every container it leases plus `WorkerLoadRingCells` rings around them, so seam physics and ghosts have the neighbors' geometry. | Follows the centroid of the leased cells. |
 | Client and bots | `NearCells` around the client's content anchor (the origin cell before a pawn exists). | Follows the content anchor. |
 | Gateway, orchestrator | Nothing. The manifest gives them the container maths. | Never moves. |
 
-[Interest management](/docs/guides/interest-management#one-notion-of-near) computes a client's load radius as `NearCells = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin) / cell size))`. Raising `InterestRadius` therefore widens client streaming, and `ClientLoadRadiusCells` sets the minimum radius. The content anchor is the local pawn by default; `NebulaClient.SetContentAnchor` moves it to another transform, such as a strategy camera, and both cell streaming and the runtime chunk origin follow it. See the [strategy camera recipe](/docs/guides/interest-management#scoped-container-ownership).
+[Interest management](/docs/guides/interest-management#one-notion-of-near) computes a client's load radius as `NearCells = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin + overshoot) / cell size))`, where `overshoot = InterestMaxFocusSpeed * (InterestLingerSeconds + 1 / InterestEvalHz)`. Raising `InterestRadius` therefore widens client streaming, and `ClientLoadRadiusCells` sets the minimum radius. The content anchor is the local pawn by default; `NebulaClient.SetContentAnchor` moves it to another transform, such as a strategy camera, and both cell streaming and the runtime chunk origin follow it. See the [strategy camera recipe](/docs/guides/interest-management#scoped-container-ownership).
 
 The origin shifts only when the player or worker centroid is more than `OriginShiftThresholdCells` from the origin cell. When it shifts, Nebula moves the containers and refreshes each entity's interpolation, pose, and prediction history.
 
 If your component caches a position in the current Unity coordinate frame, override `NetworkBehaviour.OnOriginShifted(delta)` and add `delta` to the cached value.
 
-The orchestrator deals containers in manifest order, so each worker's share is a contiguous run of spatially neighbouring cells: a compact region it loads as a block. The dashboard shows each container's cell.
+The orchestrator deals containers in manifest order, so each worker's share is a contiguous run of spatially neighboring cells: a compact region it loads as a block. The dashboard shows each container's cell.
 
 [Interest management](/docs/guides/interest-management) subdivides each baked cell into interest regions of `InterestCellSize` (default 64 m), snapped so region edges land on cell edges. A 256 m cell is subdivided into a 4x4 grid of regions; a gateway subscribes only the regions its clients need, not the whole cell, so a client near one edge of a large cell does not cause a worker to publish everything inside it.
 
@@ -202,7 +202,7 @@ In the **World Window**, click cell `(1, 0, 0)` to create its scene. The cell is
 
 Players in cell `(0, 0, 0)` load cell `(1, 0, 0)` when `NearCells` reaches it. Workers load it when it is within `WorkerLoadRingCells` of a cell they control.
 
-To make cells smaller than 256 m, also lower `InterestRadius` and `InterestExitMargin`, or raise `ClientLoadRadiusCells`. A cell smaller than `InterestRadius + InterestExitMargin` still works — `NearCells` widens client streaming to cover it — but a cell several times larger than that sum keeps a client's loaded area close to one cell instead of several.
+To make cells smaller than 256 m, consider lowering `InterestRadius` and `InterestExitMargin` if the resulting content load is too large. A cell smaller than `InterestRadius + InterestExitMargin` still works — `NearCells` widens client streaming to cover it — but a cell several times larger than that sum keeps a client's loaded area close to one cell instead of several.
 
 </Step>
 </Steps>
