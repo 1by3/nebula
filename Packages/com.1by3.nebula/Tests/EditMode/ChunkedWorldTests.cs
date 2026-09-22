@@ -337,6 +337,115 @@ namespace Nebula.Tests
             Assert.AreEqual(Vector3Int.zero, WorldOrigin.Cell);
         }
 
+        // ------------------------------------------------------------------ scoped grids (NEB-239)
+
+        private static RuntimeGrid ScopedGrid(string scopeKey) =>
+            new RuntimeGrid(new Vector3(Size, Height, Size), planar: true, scopeKey: scopeKey);
+
+        private static Container RegisterScoped(RuntimeGrid grid, int x, int z)
+        {
+            var coord = new Vector3Int(x, 0, z);
+            return ContainerRegistry.RegisterRuntime(grid.IdOf(coord), grid.BoundsOf(coord), new InstanceContainerInfo
+            {
+                InstanceId = grid.InstanceId,
+                ScopeKey = grid.ScopeKey,
+                PartId = ChunkKeys.PartId(coord),
+            });
+        }
+
+        [Test]
+        public void TwoScopesAtTheSameCoordinateAreTwoChunksWithTwoIdsAndOneEventEach()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+
+            var loaded = new List<(string Scope, Vector3Int Coord, ulong Id)>();
+            NebulaChunks.Loaded += (in ChunkContext c) => loaded.Add((c.ScopeKey, c.Coord, c.Id));
+
+            var a = RegisterScoped(alpha, 0, 0);
+            var b = RegisterScoped(beta, 0, 0);
+
+            Assert.AreNotSame(a, b, "one coordinate, two worlds, two containers");
+            Assert.AreNotEqual(a.RuntimeId, b.RuntimeId);
+            Assert.AreNotEqual(a.ContainerId, b.ContainerId, "and two lease keys, so two persistence records");
+            Assert.AreEqual(2, loaded.Count);
+            Assert.AreEqual(("world/alpha", Vector3Int.zero, a.RuntimeId), loaded[0]);
+            Assert.AreEqual(("world/beta", Vector3Int.zero, b.RuntimeId), loaded[1]);
+            Assert.AreNotEqual(NebulaChunks.SeedOf(a.RuntimeId), NebulaChunks.SeedOf(b.RuntimeId), "a scoped copy is a different world, not the same one twice");
+        }
+
+        [Test]
+        public void LookupsAreScopeQualifiedAndThePublicWorldIsUnchanged()
+        {
+            var pub = PlanarGrid();
+            var alpha = ScopedGrid("world/alpha");
+            NebulaChunks.Activate(pub, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            var here = Register(pub, 0, 0);
+            var there = RegisterScoped(alpha, 0, 0);
+
+            var p = new Vector3(10f, 0f, 10f);
+            Assert.AreSame(here, NebulaChunks.At(p), "the unqualified call is still the public world's");
+            Assert.AreSame(there, NebulaChunks.At(p, "world/alpha"));
+            Assert.IsNull(NebulaChunks.At(p, "world/never-activated"));
+            Assert.AreEqual(Vector3Int.zero, NebulaChunks.CoordOf(p, "world/alpha"));
+
+            Assert.AreSame(pub, NebulaChunks.GridFor(""));
+            Assert.AreSame(alpha, NebulaChunks.GridFor("world/alpha"));
+            Assert.AreEqual("", NebulaChunks.ScopeOf(here));
+            Assert.AreEqual("world/alpha", NebulaChunks.ScopeOf(there));
+            Assert.AreSame(alpha, NebulaChunks.GridOf(there));
+        }
+
+        [Test]
+        public void TheBoundsHookPlacesEachScopesChunkWithItsOwnGrid()
+        {
+            var alpha = new RuntimeGrid(new Vector3(Size, Height, Size), planar: true, scopeKey: "world/alpha");
+            var beta = new RuntimeGrid(new Vector3(32f, Height, 32f), planar: true, scopeKey: "world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Worker, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Worker, headless: true, allocator: null);
+            RegisterScoped(alpha, 1, 0);
+            RegisterScoped(beta, 1, 0);
+
+            // One hook, two grids with different cell sizes: each id is placed by the grid that named it.
+            Assert.AreEqual(alpha.BoundsOf(new Vector3Int(1, 0, 0)), NebulaChunks.BoundsOfId(alpha.IdOf(new Vector3Int(1, 0, 0)), default));
+            Assert.AreEqual(beta.BoundsOf(new Vector3Int(1, 0, 0)), NebulaChunks.BoundsOfId(beta.IdOf(new Vector3Int(1, 0, 0)), default));
+            var unknown = new Bounds(Vector3.one * 7f, Vector3.one);
+            Assert.AreEqual(unknown, NebulaChunks.BoundsOfId(ChunkKeys.RuntimeId("world/gamma", Vector3Int.zero), unknown),
+                "and an id no grid here named keeps the box the caller had");
+        }
+
+        [Test]
+        public void AChunkOfAScopeWithNoGridHereIsNotContent()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            NebulaChunks.Activate(PlanarGrid(), NebulaRoles.Client, headless: true, allocator: null);
+            var loaded = new List<Vector3Int>();
+            NebulaChunks.Loaded += (in ChunkContext c) => loaded.Add(c.Coord);
+
+            RegisterScoped(alpha, 0, 0);
+            Assert.AreEqual(0, loaded.Count, "a process that has not joined a scope builds none of its content");
+
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            Assert.AreEqual(1, loaded.Count, "and back-fills the moment it does");
+        }
+
+        [Test]
+        public void DeactivateDropsOneScopeAndLeavesTheOthers()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Deactivate("world/alpha");
+
+            Assert.IsFalse(NebulaChunks.IsActiveFor("world/alpha"));
+            Assert.IsTrue(NebulaChunks.IsActiveFor("world/beta"));
+            Assert.IsTrue(NebulaChunks.IsActive);
+        }
+
         [Test]
         public void ResetForNewSessionDropsSubscribersAndGrid()
         {

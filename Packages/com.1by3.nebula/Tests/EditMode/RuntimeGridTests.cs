@@ -42,6 +42,81 @@ namespace Nebula.Tests
             Assert.AreEqual(coord, RuntimeGrid.UnpackId(id));
         }
 
+        // ------------------------------------------------------------------ scoped id layout (NEB-239)
+
+        // Known pairs for the scoped derivation: the first eight bytes of SHA-256("<scope>/c/<x>/<y>/<z>"), which
+        // is ScopeKeys.ContainerId of the chunk's part id. Persisted, like the packing above, and just as fixed.
+        [TestCase("world/alpha", 1, 0, -2, 7764605123837071696ul)]
+        [TestCase("world/beta", 1, 0, -2, 4884411379653675628ul)]
+        [TestCase("world/alpha", 0, 0, 0, 889697383440456149ul)]
+        [TestCase("world/beta", 0, 0, 0, 17316095309333124950ul)]
+        public void ScopedChunkIdsMatchKnownPairs(string scope, int x, int y, int z, ulong id)
+        {
+            var coord = new Vector3Int(x, y, z);
+            var grid = new RuntimeGrid(Vector3.one * 64f, planar: false, scopeKey: scope);
+            Assert.AreEqual(id, grid.IdOf(coord));
+            Assert.AreEqual(ScopeKeys.ContainerId(scope, ChunkKeys.PartId(coord)), grid.ContainerIdOf(coord));
+            Assert.IsTrue(grid.TryCoordOf(id, out var back));
+            Assert.AreEqual(coord, back);
+        }
+
+        [Test]
+        public void ThePublicScopeKeepsThePinnedPackingAndScopesDoNot()
+        {
+            var coord = new Vector3Int(3, 0, -1);
+            var pub = new RuntimeGrid(Vector3.one * 64f);
+            Assert.AreEqual("", pub.ScopeKey);
+            Assert.AreEqual(0ul, pub.InstanceId);
+            Assert.AreEqual(RuntimeGrid.PackId(coord), pub.IdOf(coord), "a world with no scope must keep resolving the ids it already persisted");
+            Assert.AreEqual(ContainerRegistry.RuntimeContainerId(RuntimeGrid.PackId(coord)), pub.ContainerIdOf(coord));
+
+            var scoped = new RuntimeGrid(Vector3.one * 64f, planar: false, scopeKey: "world/alpha");
+            Assert.AreNotEqual(pub.IdOf(coord), scoped.IdOf(coord), "the same coordinate in a scope is a different container");
+            Assert.AreEqual(ScopeKeys.Hash("world/alpha"), scoped.InstanceId);
+        }
+
+        [Test]
+        public void TwoScopesNeverShareAChunkIdOrAContainerId()
+        {
+            var a = new RuntimeGrid(Vector3.one * 64f, planar: true, scopeKey: "world/alpha");
+            var b = new RuntimeGrid(Vector3.one * 64f, planar: true, scopeKey: "world/beta");
+            for (int x = -2; x <= 2; x++)
+                for (int z = -2; z <= 2; z++)
+                {
+                    var coord = new Vector3Int(x, 0, z);
+                    Assert.AreNotEqual(a.IdOf(coord), b.IdOf(coord), coord.ToString());
+                    Assert.AreNotEqual(a.ContainerIdOf(coord), b.ContainerIdOf(coord), coord.ToString());
+                }
+        }
+
+        [Test]
+        public void AScopedGridPlacesAnIdItNeverNamedOnceItAdoptsThePartIdFromTheLeaseRow()
+        {
+            var grid = new RuntimeGrid(Vector3.one * 64f, planar: true, scopeKey: "world/alpha");
+            ulong id = ChunkKeys.RuntimeId("world/alpha", new Vector3Int(4, 0, 5));
+            Assert.IsFalse(grid.TryCoordOf(id, out _), "a hash cannot be unpacked; a client has not computed this one");
+
+            Assert.IsTrue(grid.Adopt(id, ChunkKeys.PartId(new Vector3Int(4, 0, 5)), out var coord));
+            Assert.AreEqual(new Vector3Int(4, 0, 5), coord);
+            Assert.IsTrue(grid.TryCoordOf(id, out coord));
+            Assert.AreEqual(new Vector3Int(4, 0, 5), coord);
+            Assert.AreEqual(grid.BoundsOf(coord), grid.BoundsOfId(id, default));
+
+            Assert.IsFalse(grid.Adopt(id, "interior", out _), "an instance's part is not a chunk");
+            Assert.IsFalse(grid.Adopt(id, ChunkKeys.PartId(new Vector3Int(9, 0, 9)), out _), "and a part id that does not derive this id is refused");
+        }
+
+        [Test]
+        public void AScopedGridAnswersOnlyForItsOwnIdsSoBoundsNeverCrossScopes()
+        {
+            var a = new RuntimeGrid(Vector3.one * 64f, planar: true, scopeKey: "world/alpha");
+            var b = new RuntimeGrid(Vector3.one * 64f, planar: true, scopeKey: "world/beta");
+            var coord = new Vector3Int(1, 0, 1);
+            ulong other = b.IdOf(coord);
+            var fallback = new Bounds(Vector3.one * 999f, Vector3.one);
+            Assert.AreEqual(fallback, a.BoundsOfId(other, fallback), "a grid must not place another scope's chunk");
+        }
+
         [Test]
         public void PackUnpackRoundTripsAcrossTheValidRange()
         {

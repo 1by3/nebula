@@ -19,4 +19,12 @@ The shapes a [`ScopeDefinition`](/docs/reference/control-plane/scope-definition)
 public const string Parts = "parts";
 ```
 
-An explicit list of parts, each one runtime container. The only kind Nebula itself activates today.
+An explicit list of parts, each one runtime container.
+
+### Grid [#grid]
+
+```csharp
+public const string Grid = "grid";
+```
+
+A procedural chunk grid (`docs/scoped-chunk-grids.md`): the payload is a [`ChunkGridDefinition`](/docs/reference/world/chunk-grid-definition) and the parts are the anchor chunk alone, so activating a world does not enumerate its chunks. Every other chunk of the scope is leased on demand, under an id derived from the same key ([`ChunkKeys.RuntimeId`](/docs/reference/world/chunk-keys#runtimeid)).

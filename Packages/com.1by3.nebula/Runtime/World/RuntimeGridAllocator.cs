@@ -22,10 +22,13 @@ namespace Nebula.World
         private readonly NebulaWorker worker;
         private readonly RuntimeGrid grid;
         private readonly List<Vector3Int> anchors = new List<Vector3Int>();
+        private readonly List<Vector3Int> pins = new List<Vector3Int>();
         private readonly HashSet<ulong> wanted = new HashSet<ulong>();
         private readonly Dictionary<ulong, float> lastWanted = new Dictionary<ulong, float>();
         private readonly List<ulong> scratch = new List<ulong>();
         private readonly List<Vector3Int> ring = new List<Vector3Int>();
+        /// <summary>The scope blob each chunk's lease row is born with; null (and never built) for the public world.</summary>
+        private readonly Dictionary<ulong, InstanceContainerInfo> instances;
         private float next;
 
         /// <summary>Ring radius (Chebyshev distance in cells) requested around every anchor and owned entity.</summary>
@@ -39,10 +42,32 @@ namespace Nebula.World
         {
             this.worker = worker ?? throw new ArgumentNullException(nameof(worker));
             this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
+            if (!grid.IsPublic) instances = new Dictionary<ulong, InstanceContainerInfo>();
         }
 
         /// <summary>The grid this allocator works in.</summary>
         public RuntimeGrid Grid => grid;
+
+        /// <summary>The scope this allocator leases chunks in (<c>""</c> for the public world).</summary>
+        public string ScopeKey => grid.ScopeKey;
+
+        /// <summary>
+        /// What a scoped chunk's lease row is born carrying, cached per chunk. The public world's chunks carry
+        /// nothing, exactly as before scoped grids existed, so their rows are byte for byte what they always were.
+        /// </summary>
+        private InstanceContainerInfo InstanceOf(ulong id, Vector3Int coord)
+        {
+            if (instances == null) return null;
+            if (instances.TryGetValue(id, out var info)) return info;
+            info = new InstanceContainerInfo
+            {
+                InstanceId = grid.InstanceId,
+                ScopeKey = grid.ScopeKey,
+                PartId = ChunkKeys.PartId(grid.Normalize(coord)),
+            };
+            instances[id] = info;
+            return info;
+        }
 
         /// <summary>Fixed coordinates kept wanted regardless of where entities are, e.g. the origin cell(s).</summary>
         public void AddAnchor(Vector3Int coord)
@@ -53,9 +78,21 @@ namespace Nebula.World
         public void RemoveAnchor(Vector3Int coord) => anchors.Remove(grid.Normalize(coord));
         public void ClearAnchors() => anchors.Clear();
 
+        /// <summary>
+        /// Keep one chunk wanted without a ring around it: a scope's anchor chunk, which must not be retired
+        /// because it is where a client routed by key arrives, but which does not need its neighbours leased on
+        /// every worker that has ever seen the scope.
+        /// </summary>
+        public void AddPin(Vector3Int coord)
+        {
+            coord = grid.Normalize(coord);
+            if (!pins.Contains(coord)) pins.Add(coord);
+        }
+        public void RemovePin(Vector3Int coord) => pins.Remove(grid.Normalize(coord));
+
         /// <summary>The interest set as of the last <see cref="Tick"/>: every cell id currently requested.</summary>
         public IReadOnlyCollection<ulong> WantedIds => wanted;
-        public bool IsWanted(Vector3Int coord) => wanted.Contains(RuntimeGrid.PackId(coord));
+        public bool IsWanted(Vector3Int coord) => wanted.Contains(grid.IdOf(coord));
         public bool IsWanted(ulong id) => wanted.Contains(id);
 
         /// <summary>
@@ -71,19 +108,26 @@ namespace Nebula.World
 
             wanted.Clear();
             foreach (var a in anchors) AddRing(a);
+            for (int i = 0; i < pins.Count; i++) wanted.Add(grid.IdOf(pins[i]));
             foreach (var entity in worker.Authoritative)
-                if (entity != null && entity.OwnerClientId != 0) AddRing(grid.CoordOf(entity));
+                // Only this grid's own pawns: a player standing in another scope must not drag this world's
+                // chunks into being at the coordinate he happens to occupy over there.
+                if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddRing(grid.CoordOf(entity));
 
             foreach (var id in wanted)
             {
                 lastWanted[id] = unscaledTime;
+                if (!grid.TryCoordOf(id, out var coord)) continue;
                 // Touch existing foreign leases too: their owner must not retire our neighbours.
-                worker.RequestRuntimeContainer(id, grid.BoundsOf(RuntimeGrid.UnpackId(id)));
+                worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
             }
 
             scratch.Clear();
             foreach (var c in ContainerRegistry.Runtime)
             {
+                // Only this grid's chunks: another scope's allocator owns its own, and retiring a box that is not
+                // ours would empty somebody else's world.
+                if (!grid.Owns(c)) continue;
                 if (!c.IsOwnedBy(worker.WorkerId) || wanted.Contains(c.RuntimeId)) continue;
                 if (!lastWanted.TryGetValue(c.RuntimeId, out var last)) { lastWanted[c.RuntimeId] = unscaledTime; continue; }
                 if (unscaledTime - last < RetireAfterSeconds || worker.RuntimeContainerIdleSeconds(c.RuntimeId) < RetireAfterSeconds) continue;
@@ -91,11 +135,11 @@ namespace Nebula.World
                 foreach (var entity in c.Entities) if (entity != null && entity.OwnerClientId != 0) { occupied = true; break; }
                 if (!occupied) scratch.Add(c.RuntimeId);
             }
-            foreach (var id in scratch) if (worker.ReleaseRuntimeContainer(id)) lastWanted.Remove(id);
+            foreach (var id in scratch) if (worker.ReleaseRuntimeContainer(id)) { lastWanted.Remove(id); instances?.Remove(id); }
 
             scratch.Clear();
             foreach (var entry in lastWanted) if (!wanted.Contains(entry.Key) && ContainerRegistry.GetRuntime(entry.Key) == null) scratch.Add(entry.Key);
-            foreach (var id in scratch) lastWanted.Remove(id);
+            foreach (var id in scratch) { lastWanted.Remove(id); instances?.Remove(id); }
         }
 
         private void AddRing(Vector3Int center)
@@ -104,7 +148,7 @@ namespace Nebula.World
             // below the one that exists, and the list overload keeps the policy tick allocation-free.
             ring.Clear();
             grid.Neighborhood(center, Ring, ring);
-            for (int i = 0; i < ring.Count; i++) wanted.Add(RuntimeGrid.PackId(ring[i]));
+            for (int i = 0; i < ring.Count; i++) wanted.Add(grid.IdOf(ring[i]));
         }
 
         /// <summary>
@@ -119,10 +163,10 @@ namespace Nebula.World
         {
             if (onReady == null) return;
             coord = grid.Normalize(coord);
-            ulong id = RuntimeGrid.PackId(coord);
+            ulong id = grid.IdOf(coord);
             var existing = ContainerRegistry.GetRuntime(id);
             if (existing != null) { onReady(existing); return; }
-            worker.RequestRuntimeContainer(id, grid.BoundsOf(coord));
+            worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
             Action<Container> handler = null;
             handler = c =>
             {

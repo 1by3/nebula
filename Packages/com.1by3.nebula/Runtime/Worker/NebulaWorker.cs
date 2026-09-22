@@ -155,7 +155,7 @@ namespace Nebula
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
-        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool)>();
+        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint, InstanceContainerInfo Instance)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool, InstanceContainerInfo)>();
 
         /// <summary>netId -> the entities ghosted to each worker this tick, rebuilt in <see cref="UpdateGhostBand"/>; lists are pooled.</summary>
         private readonly Dictionary<string, List<NetworkIdentity>> _ghostByWorker = new Dictionary<string, List<NetworkIdentity>>();
@@ -402,7 +402,18 @@ namespace Nebula
         /// the three-argument overload survives every later approach. Use that overload to change it.
         /// </para>
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: null);
+
+        /// <summary>
+        /// Ask for a runtime container that belongs to a scope rather than to the public world: a chunk of a scoped
+        /// grid (<c>docs/scoped-chunk-grids.md</c>). <paramref name="instance"/> is what makes the lease row carry
+        /// the scope — its isolation id, its key and the part id the coordinate is — so every role that mirrors the
+        /// row registers the container in that scope and nothing in it ever ghosts, spawns or is announced across
+        /// the scope boundary. It is written only when the row is created; a row that exists keeps the scope it was
+        /// born with.
+        /// </summary>
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
+            Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: instance);
 
         /// <summary>
         /// Ask for a runtime container and tell the planner what kind of box it is in the same breath
@@ -411,7 +422,7 @@ namespace Nebula
         /// restart does not lose it. A default hint writes nothing. Idempotent like the two-argument overload; the
         /// hint is re-applied when it differs from the row, so a game may raise and lower it as the box heats up.
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true, instance: null);
 
         /// <summary>
         /// Should this approach write the hint row? Only a caller that actually named a hint may, and only when what
@@ -431,18 +442,18 @@ namespace Nebula
             return rowHasHint && rowHint != wanted;
         }
 
-        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint)
+        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance)
         {
             if (!_registered || !ControlPlane.IsConnected)
             {
-                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint); // OnWorkerStarted runs before registration; ask as soon as we can
+                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint, instance); // OnWorkerStarted runs before registration; ask as soon as we can
                 return;
             }
             string containerId = ContainerRegistry.RuntimeContainerId(id);
             var lease = ControlPlane.FindLease(containerId);
             if (lease == null)
             {
-                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId);
+                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId, instance);
                 if (writeHint && !hint.IsDefault) ControlPlane.SetContainerHint(containerId, hint);
                 return;
             }
@@ -468,7 +479,7 @@ namespace Nebula
         private void FlushRuntimeRequests()
         {
             if (_pendingRuntimeRequests.Count == 0 || !_registered || !ControlPlane.IsConnected) return;
-            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint);
+            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint, kv.Value.Instance);
             _pendingRuntimeRequests.Clear();
         }
 

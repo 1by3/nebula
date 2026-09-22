@@ -149,12 +149,44 @@ See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes#retiring-and-r
 
 **Dashboard:** `/api/state` gained a `scopes` array (`key`, `state`, `parts`, `ready`, `players`, `entities`, `idleSeconds`, `stateSeconds`, `ageSeconds`, `acked`, `containers`) and `scopeIdleRetireSeconds`; the dashboard shows a Scopes card, hidden until a mesh activates one.
 
+#### Scoped procedural chunk grids
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes#a-scope-can-be-a-whole-world) and [Build an infinite runtime world](https://nebula.1by3.co/docs/guides/infinite-runtime-world); the design record is `docs/scoped-chunk-grids.md`.
+
+**What changed and why.** The turnkey chunked world was one grid per process: `NebulaChunks.Grid`, a static `RuntimeGrid`, with a chunk's id spending all 63 usable bits of the runtime id on three signed 21-bit axes. Chunk (x, y, z) was therefore one container, one lease row and one persistence record for the whole mesh, so a game with instanced open areas, several maps or one procedural region per party could not use it. There is now one grid **per scope**, each with its own definition, allocator, leases, persistence container ids and interest.
+
+**Breaking wire format (protocol 18):**
+
+- `InstanceContainerInfo` (carried in `ContainerOwnership` entries and stored Base64-encoded on a runtime container's lease row) gained a trailing `string part_id`: which part of its scope the container is, appended after `scope_key` and read with the same tolerance — a row stored by an earlier release has none and reads as empty. For a scoped chunk the part id is its coordinate (`c/x/y/z`), which is how a client or gateway places a chunk whose hashed id it never computed.
+
+**Ids and migration:** the public world's chunk ids are unchanged (`RuntimeGrid.PackId`, still pinned by `RuntimeGridTests`), and a scoped grid's chunk id is `ScopeKeys.ContainerId(scopeKey, "c/x/y/z")` — the same derivation every other scope's containers already used. No persisted id was rewritten, no coordinate range narrowed, and rows from protocol 17 read as the public scope.
+
+**New public API:**
+
+- `ChunkGridDefinition` (`CellSize`, `Planar`, `Ring`, `RetireSeconds`, `Anchor`, `Validate`, `ToJson`/`FromJson`, `ToScopeDefinition`, `Of(scope)`, `Infer(coord, box)`) and `ChunkKeys` (`PartId`, `TryParsePartId`, `RuntimeId`, `ContainerId`) — pure C#, compiled into `Services~` as well.
+- `ScopeKind.Grid`: a scope whose payload is a `ChunkGridDefinition` and whose only part is the anchor chunk, so activating an unbounded world does not enumerate it.
+- `NebulaChunkedWorld.ActivateGrid(controlPlane, scopeKey, definition, requester, preferredWorkerId)` and `EnsureLocalGrid(scopeKey, definition)`; `NebulaChunkedWorld.ScopedAllocators`.
+- `NebulaChunks.GridFor(key)`, `AllocatorFor(key)`, `Grids`, `ActiveScopeKeys`, `IsActiveFor(key)`, `GridOf(container)`, `GridOf(id)`, `ScopeOf(container)`, `BoundsOfId(id, fallback)`, and scope-qualified overloads of `At`, `CoordOf`, `EnsureAt` and `SeedOf`. `ChunkContext` gained `ScopeKey` and `Grid`.
+- `RuntimeGrid(cellSize, planar, scopeKey)`, `RuntimeGrid.From(definition, scopeKey)`, `ScopeKey`, `InstanceId`, `IsPublic`, `IdOf(coord)`, `ContainerIdOf(coord)`, `TryCoordOf(id, out coord)`, `Adopt(id, partId, out coord)`, `Owns(container)`.
+- `RuntimeGridAllocator.ScopeKey`, `AddPin(coord)`, `RemovePin(coord)`.
+- `NebulaWorker.RequestRuntimeContainer(id, frameBounds, InstanceContainerInfo)` — ask for a runtime container that belongs to a scope.
+
+**Behaviour that changed:**
+
+- `NebulaChunks.Grid`, `.Allocator` and every unqualified lookup still mean the public world, and a game with one world sees no change.
+- A gateway collects a client's container rows in the client's own scope, and additionally in the public world only when the client is public or its scope sets `ObservePublic`. Before, the window query ran in the public world only: a scoped client was never told about its own scope's empty terrain, and was told about the public world's whether or not it observed it.
+- The worker-side chunk allocator rings only pawns of its own scope, retires only its own grid's chunks, and a worker's floating origin follows the centroid of the **public** cells it leases.
+- `ContainerRegistry.RuntimeBoundsInFrame` is consulted for every runtime container on an origin shift (with the translated box as the fallback), not only for public ones, so a scoped chunk is recomputed from its coordinate instead of drifting. `NebulaChunks` installs a hook that routes by grid.
+- `InstanceScenes.Prepare` no longer tries to create a scene outside play mode; it returns true after its resource checks. This only affects EditMode tests and tooling.
+
+**Unchanged:** entities never ghost, interact or are announced across scopes — container adjacency was already qualified by isolation id, and the conformance scenario now pins it. Interest region ids stay scope-free (design D12): a worker may hand a gateway entities of a scope that gateway has no client in, and the per-client check drops them before a client hears anything.
+
 #### Conformance suite
 
 A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools/conformance.ps1` (`-DotnetOnly` for the pure C# tier while the Editor is open). Every test is tagged `[Category("Conformance")]`; the script runs the category in `Nebula.Services.Tests` (`dotnet test`) and in `Nebula.Tests.EditMode` (Unity batchmode), and prints one PASS/FAIL summary with counts. Design and scenario ledger: `docs/conformance-suite.md`; user page: [Run the conformance suite](https://nebula.1by3.co/docs/guides/conformance-suite).
 
 - `ConformanceMesh` (`Tests/EditMode/ConformanceMesh.cs`): two or more real `NebulaWorker` components in one Editor process, each with a recording transport and peer records for the others; `Pump()` delivers every recorded message into the receiving worker's own `Dispatch`. Handovers here run the production builder, wire format and applier end to end, with no gateway, leases or tick loop.
-- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 3 (the scope lifecycle, `ConformanceScopeLifecycleTests`, `ConformanceScopeCheckpointTests` and `ConformanceScopeAdmissionTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 6 (historical state, `ConformanceStateHistoryTests`), scenario 8 (server-driven handover state, below), scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`) and scenario 10 (the persistence durability window, `ConformancePersistenceDurabilityTests`). Scenarios 4 and 7 wait for their items.
+- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 3 (the scope lifecycle, `ConformanceScopeLifecycleTests`, `ConformanceScopeCheckpointTests` and `ConformanceScopeAdmissionTests`), scenario 4 (scoped chunk grids, `ConformanceScopedGridTests` in both tiers), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 6 (historical state, `ConformanceStateHistoryTests`), scenario 8 (server-driven handover state, below), scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`) and scenario 10 (the persistence durability window, `ConformancePersistenceDurabilityTests`). Scenario 7 is covered by the cohesion item below.
 - Scenario 8, covered: a server-driven entity with `WriteHandoverState`/`ReadHandoverState` state, NetworkVariables and a `NetworkTransform` crosses workers and keeps every field, bumps its epoch by one, fires `OnLostAuthority`/`OnGainedAuthority` once each in order, and ignores a replayed transfer (`ConformanceHandoverStateTests`). The wire leg (`ConformanceHandoverWireTests`, every `AuthorityTransferMsg` field) also compiles into the service tests.
 - Tagged into the suite: `ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks` and `PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord`.
 

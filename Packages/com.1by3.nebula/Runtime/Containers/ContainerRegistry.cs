@@ -572,9 +572,13 @@ namespace Nebula
             for (int i = 0; i < RuntimeList.Count; i++)
             {
                 var c = RuntimeList[i];
-                c.transform.position = c.InstanceId == 0 && RuntimeBoundsInFrame != null
-                    ? RuntimeBoundsInFrame(c.RuntimeId, c.WorldBounds).center
-                    : c.transform.position + delta;
+                // Ask the hook with the translated box as the fallback: a chunk of any grid, public or scoped, is
+                // recomputed from its coordinate so it never drifts; anything the hook does not place (an
+                // instance's interior, a game's own runtime box) simply moves with everything else.
+                var shifted = new Bounds(c.transform.position + delta, c.WorldBounds.size);
+                c.transform.position = RuntimeBoundsInFrame != null
+                    ? RuntimeBoundsInFrame(c.RuntimeId, shifted).center
+                    : shifted.center;
                 RuntimeList[i].RefreshCache();
             }
             RehashRuntime();

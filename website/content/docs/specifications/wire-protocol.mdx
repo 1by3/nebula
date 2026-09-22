@@ -400,7 +400,7 @@ Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-align
 ```text
 InstanceContainerInfo := u64 instance_id, string content_resource,
   bool observe_public, vector3 observation_center, vector3 observation_size,
-  string scope_key
+  string scope_key, string part_id
 InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
   u16 source_worker, u64 lease_epoch, bool success
 ```
@@ -408,6 +408,8 @@ InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
 Preparation asks the destination worker and owning client to load content before crossing. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
 
 `scope_key` is the opaque instance key the game chose (`TemplateId/key`); `instance_id` is its 64-bit hash. A receiver MUST NOT parse `scope_key`; it is compared with ordinal string equality only. The [entity location contract](/docs/specifications/entity-location) defines how it names an entity's scope. A sender MUST write it on the wire; only the Base64 copy stored on a control-plane lease row written by an earlier release may end before it, in which case it reads as empty.
+
+`part_id` says which part of its scope this container is: the `ScopePart.PartId` the scope was activated with. For a chunk of a [scoped chunk grid](/docs/guides/scopes#a-scope-can-be-a-whole-world) it is the chunk's coordinate, written as `c/x/y/z`, which is what lets a receiver place a container whose id is a hash of the scope key rather than a packed coordinate. A receiver MUST treat any other value as opaque. It is written after `scope_key` and read with the same tolerance: a message or stored row that ends before it reads as empty, which is what every row written before protocol 18 does.
 
 ### Reliable message batch
 

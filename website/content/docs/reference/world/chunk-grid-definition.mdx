@@ -1,0 +1,119 @@
+---
+title: "ChunkGridDefinition"
+description: "What one procedural chunk grid is: the cell arithmetic every role must agree on, plus the one chunk that is brought into being with the scope so a client always has somewhere to arrive."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/ChunkGridDefinition.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkGridDefinition.cs)</div>
+
+```csharp
+[Serializable]
+public sealed class ChunkGridDefinition
+```
+
+What one procedural chunk grid is: the cell arithmetic every role must agree on, plus the one chunk that is brought into being with the scope so a client always has somewhere to arrive. It is the [`ScopeDefinition.Payload`](/docs/reference/control-plane/scope-definition#payload) of a [`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid) scope, which is why it is pure C# and carries no Unity asset reference: a matchmaker, the orchestrator and a test activate a grid without a `WorldDefinition` asset, and every role rebuilds the same grid from the scope row alone. Design of record: `docs/scoped-chunk-grids.md`.
+
+## Fields
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize = new Vector3(64f, 512f, 64f);
+```
+
+Size of one chunk in metres, per axis. On a [`Planar`](#planar) grid Y is the column's height.
+
+### Planar [#planar]
+
+```csharp
+public bool Planar = true;
+```
+
+Chunks are columns: one layer at y = 0, centred on absolute y = 0 (see `RuntimeGrid.Planar`).
+
+### Ring [#ring]
+
+```csharp
+public int Ring;
+```
+
+Chebyshev ring the worker keeps leased around every pawn; 0 takes the role's own interest-derived ring.
+
+### RetireSeconds [#retireseconds]
+
+```csharp
+public float RetireSeconds;
+```
+
+Seconds an unwanted, unoccupied chunk stays leased; 0 or less takes `NebulaConfig.ChunkRetireSeconds`.
+
+### Anchor [#anchor]
+
+```csharp
+public Vector3Int Anchor;
+```
+
+The chunk activation creates: the scope's guaranteed spawn area, and the anchor the allocator keeps.
+
+## Methods
+
+### Validate [#validate]
+
+```csharp
+public string Validate();
+```
+
+The reason this grid cannot be activated, or null when it is well formed.
+
+### NormalizedAnchor [#normalizedanchor]
+
+```csharp
+public Vector3Int NormalizedAnchor();
+```
+
+The anchor with the vertical component a [`Planar`](#planar) grid does not have dropped.
+
+### AbsoluteBoundsOf [#absoluteboundsof]
+
+```csharp
+public Bounds AbsoluteBoundsOf(Vector3Int coord);
+```
+
+Box of a chunk in **absolute** world coordinates — the frame lease rows and scope parts use.
+
+### ToJson [#tojson]
+
+```csharp
+public string ToJson();
+```
+
+### FromJson [#fromjson]
+
+```csharp
+public static ChunkGridDefinition FromJson(string json);
+```
+
+Read a definition written by [`ToJson`](#tojson). Null when the payload is empty or not a grid payload.
+
+### ToScopeDefinition [#toscopedefinition]
+
+```csharp
+public ScopeDefinition ToScopeDefinition();
+```
+
+The scope definition that activates this grid under `scopeKey`.
+
+### Infer [#infer]
+
+```csharp
+public static ChunkGridDefinition Infer(Vector3Int coord, Bounds absoluteBox);
+```
+
+The grid a single chunk is a cell of, from its coordinate and its box in absolute world coordinates. A role without a control plane — a client — never sees the scope row, only the container rows the gateway sent it, and those are enough: the box's size *is* the cell size, and a column grid is the one whose boxes are centred on y = 0 whatever the coordinate ([`AbsoluteBoundsOf`](#absoluteboundsof)), which no volumetric cell ever is. Null when the box is degenerate.
+
+### Of [#of]
+
+```csharp
+public static ChunkGridDefinition Of(ScopeInfo scope);
+```
+
+The grid a scope row describes, or null when the row is not a grid scope.

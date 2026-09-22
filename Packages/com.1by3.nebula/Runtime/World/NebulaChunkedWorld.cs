@@ -44,8 +44,14 @@ namespace Nebula
         public int Ring { get; private set; }
 
         private readonly HashSet<Vector3Int> _owned = new HashSet<Vector3Int>();
+        /// <summary>One allocator per scoped grid this worker has joined; the public world's is <see cref="Allocator"/>.</summary>
+        private readonly Dictionary<string, RuntimeGridAllocator> _scopedAllocators = new Dictionary<string, RuntimeGridAllocator>(System.StringComparer.Ordinal);
         private bool _leasesDirty;
         private int _originRing = 1;
+        private NebulaRoles _roles;
+
+        /// <summary>The scoped grids' allocators on a worker, by scope key. Empty on every other role.</summary>
+        public IReadOnlyDictionary<string, RuntimeGridAllocator> ScopedAllocators => _scopedAllocators;
 
         internal void Initialize(NebulaConfig config, NebulaRoles roles, NebulaWorker worker, NebulaClient client)
         {
@@ -62,9 +68,6 @@ namespace Nebula
             }
 
             Grid = new RuntimeGrid(definition.CellSize, config.ChunkPlanar);
-            // Every role resolves a chunk id to the same box, in its own origin frame; without this the registry
-            // would keep whatever box the lease row happened to be created with and drift on an origin shift.
-            Grid.UseAsRuntimeBounds();
             // The runtime spatial hash wants buckets a small multiple of a chunk; deriving it here is one less
             // number for a game to guess, and a wrong guess only shows up as slow neighbour queries.
             ContainerRegistry.RuntimeBucketSize = Mathf.Max(Grid.CellSize.x, Grid.CellSize.z) * 4f;
@@ -88,8 +91,93 @@ namespace Nebula
                 _leasesDirty = true;
             }
 
+            _roles = roles;
             NebulaChunks.Activate(Grid, roles, IsHeadless(roles), Allocator);
+            ContainerRegistry.RuntimeRegistered += OnRuntimeRegistered;
             NebulaLog.Info($"chunked world: cell {Grid.CellSize}{(Grid.Planar ? " (planar)" : "")}, near {nearCells} cell(s), allocator ring {Ring}, retire after {config.ChunkRetireSeconds}s");
+        }
+
+        // ---------------------------------------------------------------------------------- scoped grids
+
+        /// <summary>
+        /// Bring a second (third, hundredth) chunk grid into being, namespaced by <paramref name="scopeKey"/>:
+        /// an instanced open area, a second map, a per-party copy of a procedural region. One control-plane write
+        /// (<see cref="IControlPlane.ActivateScope"/>) with <see cref="ScopeKind.Grid"/>; the definition travels in
+        /// the scope row's payload, so every role builds the same grid from the row alone and none of them has to
+        /// be told separately. Idempotent by key, exactly like every other activation: two callers naming the same
+        /// key with the same definition get one world (<c>docs/scope-activation.md</c> §3).
+        /// <para>
+        /// Only the scope's <see cref="ChunkGridDefinition.Anchor"/> chunk is created — a grid is unbounded, so
+        /// activation must not enumerate it. Every other chunk is leased on demand by the allocator of whichever
+        /// worker a pawn of that scope is simulated on.
+        /// </para>
+        /// </summary>
+        public static void ActivateGrid(IControlPlane controlPlane, string scopeKey, ChunkGridDefinition definition,
+            string requester = "", string preferredWorkerId = "")
+        {
+            if (controlPlane == null || definition == null) return;
+            if (string.IsNullOrEmpty(scopeKey))
+            {
+                NebulaLog.Warn("chunked world: a scoped grid needs a scope key (the public world's grid comes from NebulaConfig)");
+                return;
+            }
+            controlPlane.ActivateScope(new ScopeActivationRequest
+            {
+                ScopeKey = scopeKey,
+                Definition = definition.ToScopeDefinition(),
+                Requester = string.IsNullOrEmpty(requester) ? "chunked-world" : requester,
+                PreferredWorkerId = preferredWorkerId ?? "",
+            });
+        }
+
+        /// <summary>
+        /// Make sure this process has a local grid for a scope whose row the control plane shows, and — on a worker
+        /// — an allocator for it. Called for a scope the first time one of its containers turns up here, which is
+        /// the one rule that works on every role: a worker gets the anchor dealt to it or an entity transferred
+        /// into it, a client is told about a chunk of the scope it joined, a gateway mirrors the lease. A process
+        /// that never touches a scope never pays for it.
+        /// </summary>
+        public RuntimeGrid EnsureLocalGrid(string scopeKey, ChunkGridDefinition definition)
+        {
+            var existing = NebulaChunks.GridFor(scopeKey);
+            if (existing != null || definition == null || string.IsNullOrEmpty(scopeKey)) return existing;
+            var grid = RuntimeGrid.From(definition, scopeKey);
+            RuntimeGridAllocator allocator = null;
+            if (Worker != null)
+            {
+                allocator = new RuntimeGridAllocator(Worker, grid)
+                {
+                    Ring = definition.Ring > 0 ? definition.Ring : Ring,
+                    RetireAfterSeconds = definition.RetireSeconds > 0f ? definition.RetireSeconds : Mathf.Max(0f, Config.ChunkRetireSeconds),
+                };
+                // The anchor is the scope's guaranteed spawn area and the container routing a client by key finds.
+                // It is pinned rather than anchored: a ring around it on every worker that has ever seen the scope
+                // would lease the same chunks everywhere, and a pin is exactly the one box that must not go.
+                allocator.AddPin(definition.NormalizedAnchor());
+            }
+            NebulaChunks.Activate(grid, _roles, IsHeadless(_roles), allocator);
+            if (allocator != null) _scopedAllocators[scopeKey] = allocator;
+            NebulaLog.Info($"chunked world: grid for scope '{scopeKey}' active (cell {grid.CellSize}{(grid.Planar ? ", planar" : "")})");
+            return grid;
+        }
+
+        /// <summary>
+        /// A container of a scope turned up here: that scope's grid is this process's business now. The definition
+        /// comes from the scope row when this role has a control plane (a worker, a gateway, the orchestrator) and
+        /// is otherwise <see cref="ChunkGridDefinition.Infer"/>red from the chunk itself — a client has no control
+        /// plane, only the container rows the gateway sent it, and a chunk's box and coordinate say exactly what
+        /// grid it is a cell of.
+        /// </summary>
+        private void OnRuntimeRegistered(Container container)
+        {
+            if (container == null || container.InstanceId == 0) return;
+            string scopeKey = container.Instance?.ScopeKey;
+            if (string.IsNullOrEmpty(scopeKey) || NebulaChunks.IsActiveFor(scopeKey)) return;
+            if (!ChunkKeys.TryParsePartId(container.Instance?.PartId, out var coord)) return; // an instance's part, not a chunk
+            var plane = Worker != null ? Worker.ControlPlane : null;
+            var definition = ChunkGridDefinition.Of(plane != null ? plane.FindScope(scopeKey) : null)
+                ?? ChunkGridDefinition.Infer(coord, ContainerRegistry.ToAbsolute(container.WorldBounds));
+            if (definition != null) EnsureLocalGrid(scopeKey, definition);
         }
 
         /// <summary>Whether this process draws anything: workers and services never do, and a batchmode client (a bot) does not either.</summary>
@@ -99,6 +187,7 @@ namespace Nebula
         private void OnDestroy()
         {
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
+            ContainerRegistry.RuntimeRegistered -= OnRuntimeRegistered;
         }
 
         private void OnLeasesChanged() => _leasesDirty = true;
@@ -106,6 +195,10 @@ namespace Nebula
         private void Update()
         {
             if (Grid == null) return;
+            // Every scoped grid's allocator runs on the same clock as the public one: each keeps the ring around
+            // the pawns of its own scope and retires only its own chunks.
+            if (_scopedAllocators.Count > 0)
+                foreach (var allocator in _scopedAllocators.Values) allocator.Tick(Time.unscaledTime);
             if (Allocator != null)
             {
                 Allocator.Tick(Time.unscaledTime);
@@ -140,7 +233,9 @@ namespace Nebula
             for (int i = 0; i < runtime.Count; i++)
             {
                 var c = runtime[i];
-                if (c != null && c.IsOwnedBy(Worker.WorkerId)) _owned.Add(RuntimeGrid.UnpackId(c.RuntimeId));
+                // The public world's cells only: a scoped grid has its own frame from NEB-241 on, and until then
+                // the origin must not be dragged to a chunk of somebody else's world.
+                if (c != null && c.IsOwnedBy(Worker.WorkerId) && Grid.Owns(c) && Grid.TryCoordOf(c.RuntimeId, out var cell)) _owned.Add(cell);
             }
             if (_owned.Count == 0) return;
             Grid.KeepOriginNear(NebulaWorldStreaming.Centroid(_owned), _originRing);
