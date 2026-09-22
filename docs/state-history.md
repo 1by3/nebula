@@ -96,12 +96,13 @@ mirrored into `Services~/Nebula.Services/NebulaConfig.cs` and travels in the exp
 every other field. The value is clamped to `MaxWindowTicks` (1024). It replaces the old `NetworkIdentity.PoseHistoryTicks`
 constant of 64, which no longer exists.
 
-**Memory.** One entry is 4 uints/bools plus a `Vector3`, a `Quaternion`, a `Vector3` and a `Container` reference:
-about 64 bytes, plus the serialized `[SyncHistory]` values and one `int` offset per marked variable. With the
-default window and no marked variables that is ~2 KB per entity per worker that holds a copy — an entity ghosted on
-three neighbours costs the ring four times. A worker holding 2 000 copies pays about 4 MB. One marked `float`
-variable adds 4 bytes plus 8 bytes of offsets per entry, so ~400 bytes per entity at the default window. Marking a
-`string` variable is the expensive case and the reason marking is opt-in (**D8**).
+**Memory.** One entry is two `uint`s and two `bool`s, a `Vector3`, a `Quaternion`, a `Vector3` and three references
+(the container, the field buffer, the offsets): about 80 bytes. With the default window and no marked variables that
+is ~2.5 KB per entity **per worker that holds a copy** — an entity ghosted on three neighbours costs the ring four
+times. A worker holding 2 000 copies pays roughly 5 MB. A marked variable adds a per-slot field buffer (at least 32
+bytes, grown to whatever the values serialize to) and one `int` offset per marked variable, so one marked `float`
+roughly doubles an entry. Marking a `string` variable is the expensive case and the reason marking is opt-in
+(**D8**).
 
 **Allocation.** The ring and the per-slot field buffers are allocated on the entity's first recorded tick and reused;
 recording after that copies into them and allocates nothing (pinned by `RecordingDoesNotAllocateOnceTheRingIsWarm`).
