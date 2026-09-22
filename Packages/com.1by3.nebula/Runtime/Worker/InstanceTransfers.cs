@@ -69,11 +69,16 @@ namespace Nebula
                 references[i] = ContainerRef.Runtime(id);
                 var bounds = ContainerRegistry.ToAbsolute(new Bounds(origin + part.Bounds.center, part.Bounds.size));
                 var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
-                var info = new InstanceContainerInfo { InstanceId = scope, ContentResource = part.ContentResource,
+                var info = new InstanceContainerInfo { InstanceId = scope, ContentResource = part.ContentResource, ScopeKey = prefix,
                     ObservePublic = template.ObservePublic, ObservationCenter = view.center, ObservationSize = view.size };
                 var existing = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
                 if (existing != null && (existing.Instance?.InstanceId != scope || existing.Bounds != bounds || existing.Instance.ContentResource != part.ContentResource))
                     throw new InvalidOperationException("Instance key already names different content or bounds");
+                // The stored scope key is the contract's key for this scope (EntityLocation.ScopeKey). A row written
+                // before the key was recorded has none and stands; a row with a different key under the same hash is
+                // a collision and is refused rather than silently merged.
+                if (existing != null && !string.IsNullOrEmpty(existing.Instance.ScopeKey) && !string.Equals(existing.Instance.ScopeKey, prefix, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Instance key collides with an existing scope key: " + existing.Instance.ScopeKey);
                 if (existing == null) ControlPlane.EnsureRuntimeContainer(ContainerRegistry.RuntimeContainerId(id), bounds, WorkerId, info);
             }
             return references;

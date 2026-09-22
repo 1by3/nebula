@@ -56,6 +56,12 @@ namespace Nebula
         public ulong RuntimeId { get; internal set; }
         /// <summary>Private simulation scope, or zero for the public world. Carried containers follow their carrier.</summary>
         public ulong InstanceId => IsDynamic && Carrier != null ? Carrier.InstanceId : Instance?.InstanceId ?? 0;
+        /// <summary>
+        /// The opaque scope key of the scope this container belongs to (<see cref="EntityLocation.ScopeKey"/>):
+        /// <see cref="EntityLocation.PublicScope"/> (empty) for the public world, the instance key for an instance
+        /// container. Carried containers follow their carrier. Never null.
+        /// </summary>
+        public string ScopeKey => IsDynamic && Carrier != null ? Carrier.ScopeKey : Instance?.ScopeKey ?? EntityLocation.PublicScope;
         public InstanceContainerInfo Instance { get; internal set; }
         /// <summary>Dynamic containers: the entity carrying this container. Null for static ones.</summary>
         public NetworkIdentity Carrier { get; internal set; }

@@ -120,6 +120,7 @@ namespace Nebula
                 PrefabId = identity.PrefabId,
                 PrefabName = PrefabNameOf(identity),
                 SceneId = identity.SceneId,
+                ScopeKey = identity.ScopeKey,
                 Epoch = identity.Epoch,
                 ServerDriven = identity.IsServerDriven,
                 Owned = identity.OwnerClientId != 0,

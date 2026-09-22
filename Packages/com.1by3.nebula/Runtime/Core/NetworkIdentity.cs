@@ -61,6 +61,19 @@ namespace Nebula
         public Container Container { get; internal set; }
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
+        /// <summary>
+        /// The opaque scope key of the entity's simulation scope (<see cref="Container.ScopeKey"/> of the current
+        /// container): <see cref="EntityLocation.PublicScope"/> (empty) in the public world or in no container, the
+        /// instance key inside an instance. Never null.
+        /// </summary>
+        public string ScopeKey => Container != null ? Container.ScopeKey : EntityLocation.PublicScope;
+        /// <summary>
+        /// Where the entity durably is right now (<see cref="EntityLocation"/>): its scope key, its container's id
+        /// and its pose in that container's local space (<see cref="LocalPosition"/>, <see cref="LocalRotation"/>).
+        /// The same value on every process that holds the entity, and the value <see cref="PersistedEntityRecord.Location"/>
+        /// saves for a persistent entity in a static or runtime container; it does not change on a handover.
+        /// </summary>
+        public EntityLocation Location => EntityLocation.Of(Container, LocalPosition, LocalRotation);
         /// <summary>Use this scene for raycasts and overlap tests to exclude entities in other instances.</summary>
         public PhysicsScene PhysicsScene => gameObject.scene.GetPhysicsScene();
         /// <summary>Wire index of the current container (<see cref="ContainerRef.DynamicIndex"/> inside a dynamic one, <see cref="ushort.MaxValue"/> in none). Prefer <see cref="ContainerRef"/>.</summary>

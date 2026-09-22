@@ -50,6 +50,7 @@
     "---Specifications---",
     "specifications/wire-protocol",
     "specifications/control-plane",
+    "specifications/entity-location",
     "cli",
     "reference"
   ]

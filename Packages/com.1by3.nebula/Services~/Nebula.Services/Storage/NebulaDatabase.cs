@@ -130,9 +130,15 @@ namespace Nebula
                     state {Blob},
                     version BIGINT NOT NULL,
                     saved_at BIGINT NOT NULL,
-                    saved_by TEXT NOT NULL)");
+                    saved_by TEXT NOT NULL,
+                    scope_key TEXT NOT NULL DEFAULT '')");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_container ON nebula_entity (container_id)");
                 Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_carrier ON nebula_entity (carrier_key)");
+                // The scope key (EntityLocation.ScopeKey) was added after the table existed in deployed databases.
+                // SQLite has no ADD COLUMN IF NOT EXISTS, so the failure of a repeated add is the "already there" signal
+                // on both engines; a row from before the column reads as the public world.
+                try { Execute(c, "ALTER TABLE nebula_entity ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''"); }
+                catch (DbException) { }
                 _schemaReady = true;
             }
         }
