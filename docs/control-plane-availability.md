@@ -199,10 +199,11 @@ classes a worker and an orchestrator read through, the same column list, the sam
 drill written in SQL proves the bytes came back. This one proves the **mesh** can read what came back, so a
 schema migration the store cannot read is a failed drill and not a green one.
 
-The comparison is a SHA-256 digest per record over every field including the opaque state blob, plus a digest of
-the control plane's durable parts (leases by container, workers, settings). Two fields are deliberately outside
-the digests: `PersistedEntityRecord.SavedAt`, which a restore-by-import legitimately changes, and the document's
-`now`, which is refreshed on every read and would make every snapshot differ while saying nothing.
+The comparison is a SHA-256 digest per record over every field including the opaque state blob, version, and
+save time. It also hashes the complete control-plane document and the gateway session and scope claims. Only
+the document's `now` is excluded because it is refreshed on every read. The portable import preserves entity
+versions and save times and replaces all durable tables in one offline SQL transaction; verification reads
+the entities and document through the runtime stores and checks the claim tables as well.
 
 **D7b. Three backup routes, and the artifact says which one ran.**
 
@@ -210,7 +211,7 @@ the digests: `PersistedEntityRecord.SavedAt`, which a restore-by-import legitima
 |---|---|---|
 | `sqlite-vacuum` | SQLite | `VACUUM INTO` from the connection Nebula already opens: SQLite's own online backup, with the write-ahead log folded in, while the mesh keeps running. A file copy is not safe with WAL on, and a `sqlite3` CLI is not something a studio should have to install. The restore clears the connection pools, deletes the `-wal`/`-shm` sidecars and copies the file into place. |
 | `pg_dump` | PostgreSQL, when `pg_dump` and `pg_restore` are on `PATH` | `pg_dump --format=custom` / `pg_restore --clean --if-exists`. |
-| `nebula` | Any backend; the fallback when the PostgreSQL client tools are missing, and `-Method nebula` on demand | Every record and the document as one JSON file, written and read back through the store. Slower than the engine's dump and not a production backup — but the only route that is portable between SQLite and PostgreSQL. |
+| `nebula` | Any backend; the fallback when the PostgreSQL client tools are missing, and `-Method nebula` on demand | Saved entities, the document, gateway session claims, and scope claims in one JSON file. Import replaces the offline database in one transaction and preserves versions and save times. Slower than the engine's dump and portable between SQLite and PostgreSQL. |
 
 A drill that silently fell back to a different mechanism than the one production uses would be reassuring about
 the wrong thing, so the route is chosen once, printed, and written into the artifact.

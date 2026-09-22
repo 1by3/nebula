@@ -66,7 +66,7 @@ public static class Program
               backup   --db <url> --out <file>          (sqlite only: an online VACUUM INTO copy)
               restore  --db <url> --in <file>           (sqlite only: the copy back into place)
               export   --db <url> --out <file.json>     (engine-independent: every record plus the document)
-              import   --db <url> --in <file.json>      (the inverse, through the store)
+              import   --db <url> --in <file.json>      (atomically replace the offline database)
 
             <url> is a Nebula database URL: sqlite:<path> or postgres://user:pass@host:port/db
             """);
@@ -157,6 +157,9 @@ public static class Program
         for (int i = 0; i < 2; i++) plane.RegisterWorker("w" + (i + 1), (uint)(i + 1), "127.0.0.1", (ushort)(7101 + i));
         plane.SetSetting("nebula.restore-drill.seed", seed.ToString(CultureInfo.InvariantCulture));
         new SqlControlPlaneStorage(db).Save(plane.ToJson());
+        var claims = new SqlControlPlaneStorage(db);
+        ((IGatewaySessionStore)claims).SaveSession("restore-drill", "drill-session-" + seed);
+        ((IScopeStore)claims).ClaimScope("restore-drill", "drill-scope-" + seed);
 
         Console.WriteLine($"seeded {entities} record(s) in {containers} container(s) and a {containers}-lease control plane into {db.Display}");
         return 0;
@@ -182,6 +185,7 @@ public static class Program
         var digests = records!.Select(r => new { key = r.Key, digest = Digest(r) }).OrderBy(r => r.key, StringComparer.Ordinal).ToList();
         string document = new SqlControlPlaneStorage(db).Load() ?? "";
         var plane = document.Length > 0 ? ControlPlaneJson.Parse(document) : null;
+        var claims = ReadClaims(db);
 
         var snapshot = new
         {
@@ -190,6 +194,9 @@ public static class Program
             takenAt = DateTime.UtcNow.ToString("O"),
             records = digests.Count,
             recordsDigest = Sha(string.Join("\n", digests.Select(d => d.key + " " + d.digest))),
+            sessions = claims.sessions.Count,
+            scopes = claims.scopes.Count,
+            claimsDigest = Sha(JsonSerializer.Serialize(claims)),
             controlPlane = new
             {
                 present = plane != null,
@@ -198,11 +205,7 @@ public static class Program
                 settings = plane?.Settings.Count ?? 0,
                 // The clock is refreshed on every read, so it is deliberately not part of the digest: it would
                 // make every snapshot differ and say nothing about whether the restore worked.
-                digest = plane == null ? "" : Sha(string.Join("\n",
-                    plane.Leases.OrderBy(l => l.ContainerId, StringComparer.Ordinal)
-                         .Select(l => $"{l.ContainerId}|{l.WorkerId}|{l.State}|{l.Epoch}")
-                         .Concat(plane.Workers.OrderBy(w => w.WorkerId, StringComparer.Ordinal).Select(w => $"w:{w.WorkerId}|{w.WorkerIndex}|{w.Address}:{w.Port}"))
-                         .Concat(plane.Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"s:{kv.Key}={kv.Value}")))),
+                digest = DocumentDigest(document),
             },
             entries = digests,
         };
@@ -216,13 +219,40 @@ public static class Program
         F(r.LocalPosition.x), F(r.LocalPosition.y), F(r.LocalPosition.z),
         F(r.LocalRotation.x), F(r.LocalRotation.y), F(r.LocalRotation.z), F(r.LocalRotation.w),
         F(r.Velocity.x), F(r.Velocity.y), F(r.Velocity.z),
-        r.Epoch, r.ServerDriven, r.Owned, r.Name, r.Version, r.SavedBy,
+        r.Epoch, r.ServerDriven, r.Owned, r.Name, r.Version, ControlPlaneJson.ToUnixMs(r.SavedAt), r.SavedBy,
         Convert.ToHexString(r.State ?? Array.Empty<byte>())));
 
     private static string F(float v) => v.ToString("R", CultureInfo.InvariantCulture);
 
     private static string Sha(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static string DocumentDigest(string document)
+    {
+        if (document.Length == 0) return "";
+        var node = System.Text.Json.Nodes.JsonNode.Parse(document)!.AsObject();
+        node.Remove("now");
+        return Sha(node.ToJsonString());
+    }
+
+    private sealed record Session(string identity, string state);
+    private sealed record Scope(string key, string definition, long createdAt);
+    private sealed record Claims(List<Session> sessions, List<Scope> scopes);
+
+    private static Claims ReadClaims(NebulaDatabase db)
+    {
+        var sessions = new List<Session>();
+        var scopes = new List<Scope>();
+        using var c = db.Open();
+        using (var cmd = NebulaDatabase.Command(c, "SELECT identity, state FROM nebula_gateway_session ORDER BY identity"))
+        using (var reader = cmd.ExecuteReader())
+            while (reader.Read()) sessions.Add(new Session(reader.GetString(0), reader.GetString(1)));
+        using (var cmd = NebulaDatabase.Command(c, "SELECT scope_key, definition, created_at FROM nebula_scope ORDER BY scope_key"))
+        using (var reader = cmd.ExecuteReader())
+            while (reader.Read()) scopes.Add(new Scope(reader.GetString(0), reader.GetString(1), reader.GetInt64(2)));
+        return new Claims(sessions.OrderBy(s => s.identity, StringComparer.Ordinal).ToList(),
+            scopes.OrderBy(s => s.key, StringComparer.Ordinal).ToList());
+    }
 
     // ------------------------------------------------------------------------------------------------- wipe
 
@@ -265,7 +295,8 @@ public static class Program
             .OrderBy(k => k, StringComparer.Ordinal).ToList();
         string planeBefore = before.GetProperty("controlPlane").GetProperty("digest").GetString() ?? "";
         string planeAfter = after.GetProperty("controlPlane").GetProperty("digest").GetString() ?? "";
-        bool ok = missing.Count == 0 && extra.Count == 0 && changed.Count == 0 && planeBefore == planeAfter;
+        bool claimsMatch = before.GetProperty("claimsDigest").GetString() == after.GetProperty("claimsDigest").GetString();
+        bool ok = missing.Count == 0 && extra.Count == 0 && changed.Count == 0 && planeBefore == planeAfter && claimsMatch;
 
         var result = new
         {
@@ -276,6 +307,7 @@ public static class Program
             extra = extra.Count,
             changed = changed.Count,
             controlPlaneMatches = planeBefore == planeAfter,
+            claimsMatch,
             firstMissing = missing.Take(5),
             firstExtra = extra.Take(5),
             firstChanged = changed.Take(5),
@@ -285,7 +317,7 @@ public static class Program
         Console.WriteLine(json);
         if (ok) return 0;
         return Fail($"the restored store does not match the backup: {missing.Count} missing, {extra.Count} extra, " +
-                    $"{changed.Count} changed, control plane {(planeBefore == planeAfter ? "matches" : "differs")}");
+                    $"{changed.Count} changed, control plane {(planeBefore == planeAfter ? "matches" : "differs")}, claims {(claimsMatch ? "match" : "differ")}");
     }
 
     private static Dictionary<string, string> Entries(JsonElement snapshot) =>
@@ -350,13 +382,14 @@ public static class Program
         var dump = new
         {
             document = new SqlControlPlaneStorage(db).Load() ?? "",
+            claims = ReadClaims(db),
             records = records!.Select(r => new
             {
                 r.Key, r.PrefabId, r.PrefabName, r.SceneId, r.ScopeKey, r.ContainerId, r.CarrierKey,
                 px = r.LocalPosition.x, py = r.LocalPosition.y, pz = r.LocalPosition.z,
                 rx = r.LocalRotation.x, ry = r.LocalRotation.y, rz = r.LocalRotation.z, rw = r.LocalRotation.w,
                 vx = r.Velocity.x, vy = r.Velocity.y, vz = r.Velocity.z,
-                r.Epoch, r.ServerDriven, r.Owned, r.Name, r.SavedBy,
+                r.Epoch, r.ServerDriven, r.Owned, r.Name, r.Version, r.SavedAt, r.SavedBy,
                 state = Convert.ToBase64String(r.State ?? Array.Empty<byte>()),
             }).OrderBy(r => r.Key, StringComparer.Ordinal).ToList(),
         };
@@ -369,13 +402,13 @@ public static class Program
     {
         string input = Required(o, "in");
         var dump = JsonDocument.Parse(File.ReadAllText(input)).RootElement;
-        using var db = OpenDatabase(o);
-        using var store = new SqlPersistenceStore(db);
-        store.Connect();
-        int n = 0;
+        var claims = JsonSerializer.Deserialize<Claims>(dump.GetProperty("claims").GetRawText())
+            ?? throw new InvalidDataException("The backup has no durable claims.");
+        string document = dump.GetProperty("document").GetString() ?? "";
+        var records = new List<PersistedEntityRecord>();
         foreach (var r in dump.GetProperty("records").EnumerateArray())
         {
-            store.Save(new PersistedEntityRecord
+            records.Add(new PersistedEntityRecord
             {
                 Key = r.GetProperty("Key").GetString() ?? "",
                 PrefabId = (ushort)r.GetProperty("PrefabId").GetUInt32(),
@@ -391,17 +424,55 @@ public static class Program
                 ServerDriven = r.GetProperty("ServerDriven").GetBoolean(),
                 Owned = r.GetProperty("Owned").GetBoolean(),
                 Name = r.GetProperty("Name").GetString() ?? "",
+                Version = r.GetProperty("Version").GetUInt64(),
+                SavedAt = r.GetProperty("SavedAt").GetDateTime(),
                 SavedBy = r.GetProperty("SavedBy").GetString() ?? "",
                 State = Convert.FromBase64String(r.GetProperty("state").GetString() ?? ""),
             });
-            n++;
         }
-        bool written = false;
-        store.WhenWritten(() => written = true);
-        Pump(store, () => written);
-        string document = dump.GetProperty("document").GetString() ?? "";
-        if (document.Length > 0) new SqlControlPlaneStorage(db).Save(document);
-        Console.WriteLine($"import: {n} record(s) from {input} -> {db.Display}");
+        // Ordinary saves advance the revision and clock. Restore the complete offline snapshot in one transaction;
+        // verification still reads it through the runtime stores, including their decoders and schema.
+        using var db = OpenDatabase(o);
+        using (var c = db.Open())
+        using (var transaction = c.BeginTransaction())
+        {
+            void Execute(string sql, params (string name, object value)[] args)
+            {
+                using var cmd = NebulaDatabase.Command(c, sql, args);
+                cmd.Transaction = transaction;
+                cmd.ExecuteNonQuery();
+            }
+            Execute("DELETE FROM nebula_entity");
+            Execute("DELETE FROM nebula_control_plane");
+            Execute("DELETE FROM nebula_gateway_session");
+            Execute("DELETE FROM nebula_scope");
+            foreach (var r in records)
+                Execute(@"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
+                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned,
+                    name, state, version, saved_at, saved_by, scope_key)
+                    VALUES (@key, @prefab, @prefabName, @scene, @container, @carrier,
+                    @px, @py, @pz, @rx, @ry, @rz, @rw, @vx, @vy, @vz, @epoch, @serverDriven, @owned,
+                    @name, @state, @version, @at, @by, @scope)",
+                    ("@key", r.Key), ("@prefab", (int)r.PrefabId), ("@prefabName", r.PrefabName), ("@scene", (long)r.SceneId),
+                    ("@container", r.ContainerId), ("@carrier", r.CarrierKey),
+                    ("@px", (double)r.LocalPosition.x), ("@py", (double)r.LocalPosition.y), ("@pz", (double)r.LocalPosition.z),
+                    ("@rx", (double)r.LocalRotation.x), ("@ry", (double)r.LocalRotation.y), ("@rz", (double)r.LocalRotation.z), ("@rw", (double)r.LocalRotation.w),
+                    ("@vx", (double)r.Velocity.x), ("@vy", (double)r.Velocity.y), ("@vz", (double)r.Velocity.z),
+                    ("@epoch", (long)r.Epoch), ("@serverDriven", r.ServerDriven), ("@owned", r.Owned),
+                    ("@name", r.Name), ("@state", r.State), ("@version", checked((long)r.Version)),
+                    ("@at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@by", r.SavedBy), ("@scope", r.ScopeKey));
+            if (document.Length > 0)
+                Execute("INSERT INTO nebula_control_plane (id, json, updated_at) VALUES (1, @json, @at)",
+                    ("@json", document), ("@at", ControlPlaneJson.ToUnixMs(DateTime.UtcNow)));
+            foreach (var session in claims.sessions)
+                Execute("INSERT INTO nebula_gateway_session (identity, state) VALUES (@id, @state)",
+                    ("@id", session.identity), ("@state", session.state));
+            foreach (var scope in claims.scopes)
+                Execute("INSERT INTO nebula_scope (scope_key, definition, created_at) VALUES (@key, @definition, @at)",
+                    ("@key", scope.key), ("@definition", scope.definition), ("@at", scope.createdAt));
+            transaction.Commit();
+        }
+        Console.WriteLine($"import: {records.Count} record(s) from {input} -> {db.Display}");
         return 0;
     }
 

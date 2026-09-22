@@ -414,9 +414,8 @@ namespace Nebula
         /// <summary>
         /// Seconds since a gateway's last heartbeat before its claims become evictable (D7a / NEB-229). A test
         /// that wants to drive a hard-kill reclaim without waiting real time sets this alongside the fake
-        /// <see cref="Clock"/>; production leaves it at the default, which matches
-        /// <c>NebulaConfig.WorkerTimeoutSeconds</c>'s own default (5 s) — the same cutoff a worker row uses to be
-        /// considered alive.
+        /// <see cref="Clock"/>. The orchestrator sets this to <c>NebulaConfig.WorkerTimeoutSeconds</c>
+        /// for both local and hosted control planes.
         /// </summary>
         internal double GatewayStaleAfterSeconds = GatewaySessionDirectory.DefaultGatewayStaleAfterSeconds;
         internal GatewaySessionDirectory SessionDirectory => _sessionDirectory ?? (_sessionDirectory = new GatewaySessionDirectory(

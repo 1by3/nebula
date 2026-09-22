@@ -118,6 +118,30 @@ namespace Nebula
         /// <summary>Containers claimed whose lease row has not come back yet: one write each, not one per change.</summary>
         private readonly HashSet<string> _claimed = new HashSet<string>();
 
+        // A remote write is only acknowledged when its lease appears in the mirror. Keep the existing
+        // runtime objects until then: pruning them would evacuate their occupants and unload their scenes.
+        // Only claims from a new document are protected; ordinary same-document retirement still prunes.
+        internal void SyncRuntime(IControlPlane controlPlane)
+        {
+            if (_claimed.Count == 0)
+            {
+                ContainerRegistry.SyncRuntime(controlPlane.Leases);
+                return;
+            }
+            var leases = new List<LeaseInfo>(controlPlane.Leases);
+            foreach (var c in ContainerRegistry.Runtime)
+            {
+                if (c == null || !_claimed.Contains(c.ContainerId) || controlPlane.FindLease(c.ContainerId) != null) continue;
+                var bounds = ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId);
+                leases.Add(new LeaseInfo
+                {
+                    ContainerId = c.ContainerId, HasBounds = true,
+                    BoundsCenter = bounds.center, BoundsSize = bounds.size, Instance = c.Instance,
+                });
+            }
+            ContainerRegistry.SyncRuntime(leases);
+        }
+
         private int Reclaim(IControlPlane controlPlane, IReadOnlyList<Container> containers)
         {
             int written = 0;

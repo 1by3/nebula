@@ -760,12 +760,10 @@ namespace Nebula
                     JoinRejectSaturation = rejected.Saturation;
                     ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
                     ServerContentVersion = rejected.ServerContentVersion;
-                    if (rejected.Code == JoinRejectReason.ProtocolUnsupported || rejected.Code == JoinRejectReason.ContentVersionMismatch)
+                    if (rejected.Code == JoinRejectReason.ProtocolUnsupported || rejected.Code == JoinRejectReason.ContentVersionMismatch || rejected.Code == JoinRejectReason.EncryptionRequired)
                     {
-                        // Neither the credentials nor this gateway: the two builds do not match. Every gateway of
-                        // the mesh would say the same thing, so retrying changes nothing until one side is
-                        // upgraded. The game shows "update required" or "this server has not been updated yet"
-                        // from ServerProtocolWindow and ServerContentVersion.
+                        // Build or encryption settings must change before retrying. Keep the saved identity:
+                        // the gateway refused the connection before checking those credentials.
                         LastError = "cannot join: " + rejected.Reason;
                         WantsConnection = false;
                         NebulaLog.Warn(LastError);

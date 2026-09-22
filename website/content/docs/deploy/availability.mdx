@@ -91,15 +91,15 @@ The drill picks one of three routes and prints which one it used:
 | --- | --- | --- |
 | SQLite online backup | A `sqlite:` database | `VACUUM INTO` from the connection Nebula already has open, which is safe while the mesh is running. |
 | `pg_dump` | A `postgres:` database with `pg_dump` and `pg_restore` on `PATH` | `pg_dump --format=custom`, then `pg_restore --clean --if-exists`. |
-| Nebula export | Anything else, or `-Method nebula` | Every record and the control-plane document as one JSON file, written and read back through Nebula's own store. Portable between backends, but slower than the engine's own dump. |
+| Nebula export | Anything else, or `-Method nebula` | Saved entities, the control-plane document, gateway session claims, and scope claims in one JSON file. Import replaces the offline database in one transaction and preserves entity versions and save times. Portable between backends, but slower than the engine's own dump. |
 
 Use `-Method engine` to fail rather than fall back, so a scheduled drill cannot quietly start rehearsing a different mechanism from the one you use in production.
 
 ### What the drill proves
 
-The comparison reads every record through the same store classes a worker and an orchestrator read through, not through separate SQL. That means a passing drill tells you the mesh can read what came back, not only that the bytes came back. A schema change your store cannot read fails the drill.
+The comparison reads saved entities and the control-plane document through the same store classes a worker and an orchestrator use. It also snapshots the gateway session and scope claim tables. A schema change that prevents the runtime stores from reading the restored entities or document fails the drill.
 
-The drill compares a digest of every field of every record, including the opaque state blob each entity wrote, plus a digest of the control plane's leases, workers, and settings.
+The drill compares a digest of every field of every saved entity, including its state blob, version, and save time. It also compares the complete control-plane document except its refreshed clock, plus the gateway session claims and scope claims. A missing or changed claim fails the drill.
 
 ### What the drill does not do
 

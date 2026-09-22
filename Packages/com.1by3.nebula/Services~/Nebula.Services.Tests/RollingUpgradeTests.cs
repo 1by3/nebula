@@ -124,6 +124,22 @@ public class RollingUpgradeTests
         var held = new HashSet<ulong>(client.Replicas);
         report.Row("before the drain", leaving.Entities.Count, held.Count, "one worker owns everything");
 
+        void AssertTrafficThrough(FakeWorker authority)
+        {
+            authority.Inputs.Clear();
+            int statesBefore = client.StatesReceived;
+            fleet.OnPump = () => { client.SendInput(); authority.PublishStates(); };
+            try
+            {
+                Assert.That(fleet.Run(() => authority.Inputs.Any(input => input.ClientId == client.Welcome!.Value.ClientId)
+                    && client.StatesReceived > statesBefore && held.All(client.Replicas.Contains), seconds: 20), Is.True,
+                    "the client must exchange fresh input and state with the new authoritative worker");
+                Assert.That(client.Disconnected, Is.False);
+                Assert.That(client.Despawned, Does.Not.Contain(pawn));
+            }
+            finally { fleet.OnPump = null; }
+        }
+
         // 1. Drain: every entity this worker owns moves to the one taking over, and the lease follows. This is
         //    the order that matters - authority first, then the lease - because a lease moved under a live
         //    entity would leave the gateway asking a worker that no longer speaks for it.
@@ -131,23 +147,29 @@ public class RollingUpgradeTests
         fleet.Plane.AssignContainer("c0", staying.WorkerId);
         Assert.That(fleet.Run(() => staying.Entities.Count == 3, seconds: 20), Is.True, "the entities did not reach the worker taking over");
         Assert.That(leaving.Entities, Is.Empty, "the drained worker still owns something");
+        AssertTrafficThrough(staying);
         report.Row("drained", staying.Entities.Count, client.Replicas.Count, "authority and lease moved to the second worker");
 
         // 2. The drained process leaves. It owns nothing, so nothing is orphaned - that is what draining bought.
         var orphaned = fleet.KillWorker(leaving);
         Assert.That(orphaned, Is.Empty, "a drained worker must leave no orphaned container behind");
+        AssertTrafficThrough(staying);
 
         // 3. A replacement joins, and the world can be dealt back to it.
         var replacement = fleet.StartWorker();
+        foreach (ulong netId in new List<ulong>(staying.Entities.Keys)) staying.HandOver(netId, replacement);
         fleet.Assign("c0", replacement.WorkerId);
         Assert.That(fleet.Run(() => fleet.Plane.Leases.Any(l => l.ContainerId == "c0" && l.WorkerId == replacement.WorkerId), seconds: 15), Is.True,
             "the replacement never got the container");
+        AssertTrafficThrough(replacement);
+        Assert.That(staying.Entities, Is.Empty);
+        Assert.That(replacement.Entities.Keys, Is.EquivalentTo(held));
 
         Assert.That(client.Disconnected, Is.False, "no client may be disconnected by a worker being replaced");
         Assert.That(client.Despawned, Does.Not.Contain(pawn), "the client must never be told its own pawn is gone");
         foreach (ulong netId in held)
             Assert.That(client.Replicas, Does.Contain(netId), $"replica #{netId} was lost across the drain and replacement");
-        report.Row("replaced", staying.Entities.Count, client.Replicas.Count, "no entity lost, no client disconnected");
+        report.Row("replaced", replacement.Entities.Count, client.Replicas.Count, "no entity lost, no client disconnected");
         report.Note("A rolling upgrade of the worker tier is: hand a worker's entities and leases to its " +
                     "neighbours, let it exit, start the new build, deal containers back. Gateway-to-worker and " +
                     "worker-to-worker links require the exact same protocol, so the whole tier moves in one pass " +

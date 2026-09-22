@@ -56,15 +56,16 @@ namespace Nebula
     /// share the gateway's socket and live inside the deployment's private network, on plaintext (D1).</para>
     ///
     /// <para>Wire format, all little-endian: a handshake frame is <c>[tag][body]</c> and a data frame is
-    /// <c>[0xE3][seq:u32]</c> followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as
+    /// <c>[delivery tag][seq:u32]</c> followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as
     /// associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every <see cref="MsgId"/>, so a
     /// gateway with encryption turned off simply ignores the frame.</para>
     /// </summary>
     public sealed class EncryptedTransport : ITransport, ISecureTransport
     {
-        private const byte TagClientHello = 0xE0, TagServerHello = 0xE1, TagFinished = 0xE2, TagData = 0xE3;
-        private const byte WireVersion = 1;
+        private const byte TagClientHello = 0xE0, TagServerHello = 0xE1, TagFinished = 0xE2, TagData = 0xE3, TagReliableData = 0xE4;
+        private const byte WireVersion = 2;
         private const int HeaderSize = 5;
+        internal const int PacketOverhead = HeaderSize + ChaCha20Poly1305Managed.TagSize;
         private const string HandshakeLabel = "nebula-transport-v1";
         /// <summary>Beyond this many packets on one link the 32-bit sequence would wrap and reuse a nonce, so the link is dropped instead.</summary>
         private const uint MaxSequence = uint.MaxValue - 16;
@@ -130,17 +131,18 @@ namespace Nebula
                 _inner.Send(peerId, delivery, payload);     // a plaintext peer: a worker, or a gateway with encryption off
                 return;
             }
-            if (link.SendSequence >= MaxSequence)
+            int domain = delivery == Delivery.Sequenced ? 0 : 1;
+            if (link.SendSequence[domain] >= MaxSequence)
             {
                 Fail(peerId, link, "the link reached its packet limit and must be re-established");
                 return;
             }
-            uint sequence = link.SendSequence++;
+            uint sequence = link.SendSequence[domain]++;
             int total = HeaderSize + payload.Count + ChaCha20Poly1305Managed.TagSize;
             if (_sendScratch.Length < total) _sendScratch = new byte[Math.Max(total, _sendScratch.Length * 2)];
-            _sendScratch[0] = TagData;
+            _sendScratch[0] = domain == 0 ? TagData : TagReliableData;
             WriteUInt(_sendScratch, 1, sequence);
-            ChaCha20Poly1305Managed.Seal(link.SendKey, Nonce(link.SendSalt, sequence), payload, _sendScratch, HeaderSize, _sendScratch, HeaderSize);
+            ChaCha20Poly1305Managed.Seal(link.SendKey, Nonce(link.SendSalt, sequence, domain), payload, _sendScratch, HeaderSize, _sendScratch, HeaderSize);
             _inner.Send(peerId, delivery, new ArraySegment<byte>(_sendScratch, 0, total));
         }
 
@@ -214,17 +216,19 @@ namespace Nebula
             }
 
             if (tag == TagFinished) { CheckFinished(ev.PeerId, link, data); return; }
-            if (tag != TagData || data.Count < HeaderSize + ChaCha20Poly1305Managed.TagSize) { _dropped++; return; }
+            if ((tag != TagData && tag != TagReliableData) || data.Count < HeaderSize + ChaCha20Poly1305Managed.TagSize) { _dropped++; return; }
 
+            int domain = tag == TagData ? 0 : 1;
+            var replay = link.Replay[domain];
             uint sequence = ReadUInt(data.Array, data.Offset + 1);
-            if (!link.Accept(sequence)) { _dropped++; return; }               // replayed, or too far behind the window
+            if (!replay.Accept(sequence)) { _dropped++; return; }               // replayed, or too far behind the window
             int sealedLength = data.Count - HeaderSize;
             if (_receiveScratch.Length < sealedLength) _receiveScratch = new byte[Math.Max(sealedLength, _receiveScratch.Length * 2)];
             Buffer.BlockCopy(data.Array, data.Offset, _header, 0, HeaderSize);
-            int length = ChaCha20Poly1305Managed.Open(link.ReceiveKey, Nonce(link.ReceiveSalt, sequence),
+            int length = ChaCha20Poly1305Managed.Open(link.ReceiveKey, Nonce(link.ReceiveSalt, sequence, domain),
                 new ArraySegment<byte>(data.Array, data.Offset + HeaderSize, sealedLength), _header, HeaderSize, _receiveScratch, 0);
             if (length < 0) { _dropped++; return; }                           // forged or corrupted: never reaches the game
-            link.Seen(sequence);
+            replay.Seen(sequence);
             _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Data, ev.PeerId, new ArraySegment<byte>(_receiveScratch, 0, length)));
         }
 
@@ -367,10 +371,11 @@ namespace Nebula
 
         // ---- helpers ---------------------------------------------------------------------------------------
 
-        private static byte[] Nonce(byte[] salt, uint sequence)
+        private static byte[] Nonce(byte[] salt, uint sequence, int domain)
         {
             var nonce = new byte[ChaCha20Poly1305Managed.NonceSize];
             Buffer.BlockCopy(salt, 0, nonce, 0, 4);
+            nonce[4] = (byte)domain;
             WriteUInt(nonce, 8, sequence);
             return nonce;
         }
@@ -420,8 +425,12 @@ namespace Nebula
             public byte[] PrivateKey, Random, Transcript, SendKey, ReceiveKey, SendSalt, ReceiveSalt, FinishedKey;
             public string PeerFingerprint;
             public double StartedAt;
-            public uint SendSequence;
+            public readonly uint[] SendSequence = new uint[2];
+            public readonly ReplayWindow[] Replay = { new ReplayWindow(), new ReplayWindow() };
+        }
 
+        private sealed class ReplayWindow
+        {
             // Replay window: the highest sequence accepted and a bitmap of the 64 below it, because the
             // unreliable channel legitimately reorders and a repeat must never decrypt twice.
             private uint _highest;

@@ -80,6 +80,16 @@ if ($Database -eq "") { $Database = "sqlite:" + (Join-Path $work "drill.db") }
 $scheme = ($Database -split ":")[0]
 if ($scheme -notin @("sqlite", "postgres", "postgresql")) { throw "restore-drill only drills sqlite: and postgres: databases (got '$Database')" }
 $isSqlite = $scheme -eq "sqlite"
+$databaseDisplay = if ($isSqlite) { $Database } else { "$scheme`:<credentials redacted>" }
+function Protect-DatabaseText {
+    param([string]$Text)
+    $safe = $Text.Replace($Database, $databaseDisplay)
+    if (-not $isSqlite) {
+        $safe = $safe -replace '(?i)(postgres(?:ql)?://)[^\s/@]+@', '$1<credentials redacted>@'
+        $safe = $safe -replace '(?i)(password\s*=\s*)[^;&\s]+', '$1<redacted>'
+    }
+    return $safe
+}
 
 # Which backup route this run will take, and why. Recorded in the artifact: a drill that silently fell back to a
 # different mechanism than the one production uses would be reassuring about the wrong thing.
@@ -99,7 +109,7 @@ $route = switch ($Method) {
     }
 }
 
-Write-Host "[restore-drill] database : $Database"
+Write-Host "[restore-drill] database : $databaseDisplay"
 Write-Host "[restore-drill] route    : $route"
 Write-Host "[restore-drill] artifacts: $work"
 
@@ -114,7 +124,7 @@ function Invoke-Step {
     param([string]$Name, [scriptblock]$Body)
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $failure = $null
-    try { & $Body } catch { $failure = $_.Exception.Message }
+    try { & $Body } catch { $failure = Protect-DatabaseText $_.Exception.Message }
     $clock.Stop()
     $steps.Add([ordered]@{ step = $Name; seconds = [math]::Round($clock.Elapsed.TotalSeconds, 3); ok = ($null -eq $failure); error = $failure })
     $status = if ($failure) { "FAILED: $failure" } else { "ok" }
@@ -125,8 +135,8 @@ function Invoke-Step {
 function Invoke-Drill {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
     $output = & dotnet run --project $project -c Debug --no-build -- @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ($output -join "`n") }
-    $output | ForEach-Object { Write-Verbose $_ }
+    if ($LASTEXITCODE -ne 0) { throw (Protect-DatabaseText ($output -join "`n")) }
+    $output | ForEach-Object { Write-Verbose (Protect-DatabaseText $_) }
     return $output
 }
 
@@ -147,8 +157,8 @@ try {
             "sqlite-vacuum" { Invoke-Drill backup --db $Database --out $backup | Out-Null }
             "nebula" { Invoke-Drill export --db $Database --out $backup | Out-Null }
             "pg_dump" {
-                & pg_dump --format=custom --no-owner --dbname $Database --file $backup
-                if ($LASTEXITCODE -ne 0) { throw "pg_dump exited $LASTEXITCODE" }
+                $pgOutput = & pg_dump --format=custom --no-owner --dbname $Database --file $backup 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "pg_dump exited ${LASTEXITCODE}: $(Protect-DatabaseText ($pgOutput -join "`n"))" }
             }
         }
         if (-not (Test-Path -LiteralPath $backup)) { throw "the backup step produced no file at $backup" }
@@ -160,8 +170,11 @@ try {
     # rest of the run mean anything.
     Invoke-Step "snapshot (wiped)" {
         Invoke-Drill snapshot --db $Database --out $wiped | Out-Null
-        $emptied = (Get-Content -Raw $wiped | ConvertFrom-Json).records
-        if ($emptied -ne 0) { throw "the wipe left $emptied record(s) behind, so the restore would not have been proved" }
+        $emptySnapshot = Get-Content -Raw $wiped | ConvertFrom-Json
+        if ($emptySnapshot.records -ne 0 -or $emptySnapshot.sessions -ne 0 -or $emptySnapshot.scopes -ne 0 -or
+            $emptySnapshot.controlPlane.workers -ne 0 -or $emptySnapshot.controlPlane.leases -ne 0 -or $emptySnapshot.controlPlane.settings -ne 0) {
+            throw "the wipe left durable records behind, so the restore would not have been proved"
+        }
     }
 
     Invoke-Step "restore" {
@@ -169,8 +182,8 @@ try {
             "sqlite-vacuum" { Invoke-Drill restore --db $Database --in $backup | Out-Null }
             "nebula" { Invoke-Drill import --db $Database --in $backup | Out-Null }
             "pg_dump" {
-                & pg_restore --clean --if-exists --no-owner --dbname $Database $backup
-                if ($LASTEXITCODE -ne 0) { throw "pg_restore exited $LASTEXITCODE" }
+                $pgOutput = & pg_restore --clean --if-exists --no-owner --dbname $Database $backup 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "pg_restore exited ${LASTEXITCODE}: $(Protect-DatabaseText ($pgOutput -join "`n"))" }
             }
         }
     }
@@ -180,7 +193,7 @@ try {
     $passed = $true
 }
 catch {
-    $reason = $_.Exception.Message
+    $reason = Protect-DatabaseText $_.Exception.Message
 }
 
 $snapshot = if (Test-Path -LiteralPath $before) { Get-Content -Raw $before | ConvertFrom-Json } else { $null }
@@ -190,7 +203,7 @@ $total = ($steps | ForEach-Object { $_.seconds } | Measure-Object -Sum).Sum
 $artifact = [ordered]@{
     drill = "nebula-restore-drill"
     takenAt = (Get-Date).ToUniversalTime().ToString("o")
-    database = $Database
+    database = $databaseDisplay
     backend = $snapshot.backend
     route = $route
     entitiesSeeded = $Entities
@@ -209,7 +222,7 @@ $artifact | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 $artifactPath
 
 $summary = @(
     "nebula restore drill $stamp",
-    "database        : $Database ($($snapshot.backend))",
+    "database        : $databaseDisplay ($($snapshot.backend))",
     "route           : $route",
     "records         : $($snapshot.records) seeded, $($result.recordsAfter) restored",
     "control plane   : $($snapshot.controlPlane.leases) lease(s), digest $(if ($result.controlPlaneMatches) { 'matches' } else { 'DIFFERS' })",

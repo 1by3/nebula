@@ -206,6 +206,74 @@ public class TransportEncryptionTests
 
     // ---------------------------------------------------------------------------------------- forgery and overhead
 
+    [Test]
+    public void ReliablePacketSurvivesMoreThanAReplayWindowOfSequencedTraffic()
+    {
+        var link = new LoopLink();
+        using var pair = EncryptedPair.Over(link);
+        pair.PumpUntilReady();
+        link.HoldNextClientFrame = true;
+        pair.SendFromClient("reliable");
+        for (int i = 0; i < 100; i++) pair.SendFromClient("state", Delivery.Sequenced);
+        var delivered = new List<string>();
+        pair.Pump(delivered);
+        link.ReleaseHeldClientFrame();
+        pair.Pump(delivered);
+        Assert.That(delivered, Has.Count.EqualTo(101));
+        Assert.That(delivered[^1], Is.EqualTo("reliable"));
+        Assert.That(pair.Gateway.DroppedPackets, Is.Zero);
+    }
+
+    [Test]
+    public void DeliveryDomainsHaveDifferentNoncesAndAuthenticatedTags()
+    {
+        var link = new LoopLink();
+        using var pair = EncryptedPair.Over(link);
+        pair.PumpUntilReady();
+        var frames = new List<byte[]>();
+        link.Corrupt = frame => { frames.Add((byte[])frame.Clone()); return frame; };
+        pair.SendFromClient("same payload", Delivery.Sequenced);
+        pair.SendFromClient("same payload", Delivery.ReliableOrdered);
+        var delivered = new List<string>();
+        pair.Pump(delivered);
+        Assert.That(delivered, Has.Count.EqualTo(2));
+        Assert.That(frames[0][1..5], Is.EqualTo(frames[1][1..5]), "both domains start at sequence zero");
+        Assert.That(frames[0][5..^16], Is.Not.EqualTo(frames[1][5..^16]), "the same key/sequence must use different nonces");
+
+        link.Corrupt = frame => { frame[0] = frame[0] == 0xE3 ? (byte)0xE4 : (byte)0xE3; return frame; };
+        pair.SendFromClient("forged domain", Delivery.Sequenced);
+        pair.Pump(delivered);
+        Assert.That(delivered, Has.Count.EqualTo(2));
+        Assert.That(pair.Gateway.DroppedPackets, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void EncryptedGatewayWorldStateBatchesFitMinimumMtu()
+    {
+        var link = new LoopLink();
+        using var pair = EncryptedPair.Over(link);
+        pair.PumpUntilReady();
+        var gateway = new NebulaGateway();
+        const System.Reflection.BindingFlags hidden = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(NebulaGateway).GetField("_transport", hidden)!.SetValue(gateway, pair.Gateway);
+        var clientType = typeof(NebulaGateway).GetNestedType("ClientConn", System.Reflection.BindingFlags.NonPublic)!;
+        var client = Activator.CreateInstance(clientType)!;
+        clientType.GetField("PeerId")!.SetValue(client, LoopLink.ServerPeer);
+        var append = typeof(NebulaGateway).GetMethod("AppendWorldState", hidden)!;
+        var flush = typeof(NebulaGateway).GetMethod("FlushWorldState", hidden)!;
+        var entry = new EntityStateEntry
+        {
+            NetId = 1, Container = ContainerRef.Dynamic(2),
+            Fields = TransformFields.Position | TransformFields.Rotation | TransformFields.Quaternion | TransformFields.Scale | TransformFields.Velocity,
+        };
+        var writer = new NetworkWriter();
+        entry.Write(writer);
+        Assert.That(writer.Length, Is.EqualTo(EntityStateEntry.WireSize));
+        for (int i = 0; i < 14; i++) append.Invoke(gateway, new object[] { client, 1u, (ushort)1, entry });
+        flush.Invoke(gateway, new[] { client });
+        Assert.That(link.LargestDataFrame, Is.LessThanOrEqualTo(504), "508-byte initial MTU minus four-byte LiteNetLib channel header");
+    }
+
     /// <summary>5. A packet altered in flight is dropped by the AEAD, and a replayed one is only ever delivered once.</summary>
     [Test]
     public void TamperedAndReplayedPacketsAreDropped()
@@ -424,12 +492,12 @@ public class TransportEncryptionTests
         }
 
         /// <summary>Send a message and report how many plaintext bytes it was, so a test can price the frame.</summary>
-        public int SendFromClient(string text)
+        public int SendFromClient(string text, Delivery delivery = Delivery.ReliableOrdered)
         {
             var w = new NetworkWriter();
             w.WriteString(text);
             var payload = w.ToSegment();
-            Client.Send(_clientPeer, Delivery.ReliableOrdered, payload);
+            Client.Send(_clientPeer, delivery, payload);
             return payload.Count;
         }
 
@@ -461,6 +529,9 @@ public class TransportEncryptionTests
         public Func<byte[], byte[]>? Corrupt;
         public bool Duplicate;
         public long HandshakeBytes, HandshakeFrames, LastFrameSize;
+        public long LargestDataFrame;
+        public bool HoldNextClientFrame;
+        private byte[]? _heldClientFrame;
         private bool _handshakeDone;
 
         private readonly Queue<byte[]> _toServer = new(), _toClient = new();
@@ -483,12 +554,25 @@ public class TransportEncryptionTests
             if (_handshakeDone)
             {
                 LastFrameSize = frame.Length;
+                LargestDataFrame = Math.Max(LargestDataFrame, frame.Length);
                 if (toServer && Corrupt != null) frame = Corrupt(frame);
             }
             else { HandshakeBytes += frame.Length; HandshakeFrames++; }
+            if (_handshakeDone && toServer && HoldNextClientFrame)
+            {
+                HoldNextClientFrame = false;
+                _heldClientFrame = frame;
+                return;
+            }
             var queue = toServer ? _toServer : _toClient;
             queue.Enqueue(frame);
             if (Duplicate && toServer) queue.Enqueue((byte[])frame.Clone());
+        }
+
+        public void ReleaseHeldClientFrame()
+        {
+            _toServer.Enqueue(_heldClientFrame!);
+            _heldClientFrame = null;
         }
 
         private void Drain(bool onServer, Action<TransportEvent> handler)

@@ -126,11 +126,14 @@ The deviation is deliberate and recorded here rather than left to be noticed.
 frames a client sent and a gateway answered, as hex, recorded from the mesh fixtures by the explicit test
 `RecordTheHandshakeFixture`. The replay pushes the client frames byte for byte at a gateway built from today's
 source and asserts it is welcomed, negotiated at the recorded version and sent a world it can parse; it then
-re-reads the recorded gateway frames with today's readers, which is where a removed or reordered field shows up.
-Because the window is one version wide today, this is an N recording; when the protocol is bumped to 19 the same
-file becomes the N-1 recording and the same test becomes the N-1 test, with nothing to edit. That is the point of
-checking the bytes in rather than generating them: after the bump, the file is the only surviving copy of what
-the older build actually said.
+decodes both recorded replies and newly generated replies with an independent, frozen protocol-18 reader.
+The reader checks the public-container handshake, pawn ownership, spawn framing, and transform values. It
+accepts optional trailing fields and unknown message IDs as the protocol-18 client does. Truncated fields and
+malformed nested snapshots have negative tests. Game-defined payloads and private-instance messages are outside
+this recording's coverage.
+Because the window is one version wide today, this proves N compatibility only. At protocol 19 the protocol-18
+recording and reader can exercise N-1. Later versions need their own recorded bytes and frozen reader; updating
+both production readers and writers must not silently update the compatibility oracle.
 
 ## D7. Measured on this machine
 
@@ -154,9 +157,8 @@ drained and replaced with no entity lost, no orphaned container and no client di
 Not verified:
 
 - **A genuine N-1 client.** There is no build that speaks 17 and can be run against this one, and 17 is outside
-  the window by design. The N-1 path is exercised by a client that *announces* the window's minimum and by the
-  recorded stream; the first real N-1 test happens at the 19 bump, which is what the fixture and the test are
-  shaped for.
+  the window by design. The recorded stream and frozen reader exercise protocol 18 against 18 today. They
+  prepare future N-1 coverage but do not establish current support for protocol 17 or every game payload.
 - **Processes.** The drain-and-replace tests replace objects in one process, not operating-system processes on
   separate machines behind a load balancer. The gateway half was measured this way; a fleet with a real load
   balancer in front of it has never been run here. See `docs/scale-suite.md` D9a.

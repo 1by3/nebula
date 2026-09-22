@@ -13,7 +13,7 @@ Client-to-gateway encryption, wrapped around a UDP transport so nothing above it
 
 A client wrapper ([`ForClient`](#forclient)) runs the handshake as soon as the link comes up and holds the `Connected` event back until it finishes, so the first thing above it ever sends is already encrypted. A gateway wrapper ([`ForGateway`](#forgateway)) answers a handshake on any inbound link that opens with one and leaves every other link exactly as it was: that is what keeps worker and gateway peers, which share the gateway's socket and live inside the deployment's private network, on plaintext (D1).
 
-Wire format, all little-endian: a handshake frame is `[tag][body]` and a data frame is `[0xE3][seq:u32]` followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id), so a gateway with encryption turned off simply ignores the frame.
+Wire format, all little-endian: a handshake frame is `[tag][body]` and a data frame is `[delivery tag][seq:u32]` followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id), so a gateway with encryption turned off simply ignores the frame.
 
 ## Properties
 

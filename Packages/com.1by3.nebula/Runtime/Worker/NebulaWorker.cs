@@ -2307,7 +2307,7 @@ namespace Nebula
                 if (reclaimed > 0) NebulaLog.Warn($"worker {WorkerId} re-claimed {reclaimed} container(s) the control plane had no row for");
             }
             // Runtime containers come and go with their lease rows; register them before their leases are applied.
-            ContainerRegistry.SyncRuntime(ControlPlane.Leases);
+            _registration.SyncRuntime(ControlPlane);
             // Leases -> container ownership.
             _seenLeases.Clear();
             foreach (var lease in ControlPlane.Leases)

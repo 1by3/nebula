@@ -113,6 +113,7 @@ public class ScaleAvailabilityTests
         {
             if (Registration.RegisterAgainIfForgotten(Plane)) Reregistrations++;
             Reclaimed += Registration.ReclaimContainers(Plane);
+            Registration.SyncRuntime(Plane);
             foreach (var lease in Plane.Leases)
             {
                 string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
@@ -405,24 +406,34 @@ public class ScaleAvailabilityTests
 
                 // ---- the failover: the primary goes away and comes back with the same data
                 var clock = Stopwatch.StartNew();
-                Assert.That(Docker($"restart {name}", out _, 180), Is.True, "the PostgreSQL container could not be restarted");
-                double restart = clock.Elapsed.TotalSeconds;
+                var stop = Task.Run(() => Docker($"stop --time 0 {name}", out _, 30));
+                Assert.That(Run(() => stop.IsCompleted, host.Tick, 35), Is.True, "stopping PostgreSQL timed out");
+                Assert.That(stop.Result, Is.True, "the PostgreSQL container could not be stopped");
+                string marker = Guid.NewGuid().ToString("N");
+                host.SetSetting("failover.probe", marker);
+                Assert.That(Run(() => host.StorageError != null, host.Tick, 30), Is.True,
+                    "the stopped database must cause a failed save before recovery is measured");
+                var start = Task.Run(() => Docker($"start {name}", out _, 30));
 
                 // The mesh keeps running while the store is gone: the host must not throw out of Tick, and it
                 // must still answer with everything it held.
                 int writeErrors = 0;
-                var stall = Stopwatch.StartNew();
                 bool backUp = Run(() =>
                 {
                     if (host.StorageError != null) writeErrors++;
-                    try { return Stored(storage)?.Leases.Count == world.Cells.Count; }
+                    try { return Stored(storage)?.Settings.TryGetValue("failover.probe", out var saved) == true && saved == marker; }
                     catch (Exception) { return false; }
-                }, () => { host.SetSetting("failover.probe", stall.Elapsed.Ticks.ToString()); host.Tick(); },
-                    ScaleThresholds.DatabaseFailoverSeconds);
-                double stallSeconds = stall.Elapsed.TotalSeconds;
+                }, host.Tick, Math.Max(0, ScaleThresholds.DatabaseFailoverSeconds - clock.Elapsed.TotalSeconds));
+                double stallSeconds = clock.Elapsed.TotalSeconds;
+                Assert.That(start.Wait(TimeSpan.FromSeconds(35)) && start.Result, Is.True, "the PostgreSQL container could not be started");
+                double restart = clock.Elapsed.TotalSeconds;
+                Assert.That(backUp, Is.True, $"the control-plane store was still unreachable after {ScaleThresholds.DatabaseFailoverSeconds:0} s");
+                Assert.That(stallSeconds, Is.LessThan(ScaleThresholds.DatabaseFailoverSeconds), "the failed write did not recover within the failover budget");
 
                 var after = Leases(host);
-                bool matches = Stored(storage)!.Leases.Count == before.Count;
+                var restored = Stored(storage)!;
+                var storedLeases = restored.Leases.ToDictionary(l => l.ContainerId, l => (l.WorkerId, l.State, l.Epoch));
+                bool matches = storedLeases.Count == before.Count && before.All(kv => storedLeases.TryGetValue(kv.Key, out var row) && row == kv.Value);
                 report.Row(before.Count, after.Count, host.Workers.Count, restart, stallSeconds, writeErrors, matches);
                 report.Note($"the PostgreSQL primary was restarted in {restart:0.00} s; the control-plane store was " +
                             $"writable again {stallSeconds:0.00} s later. The orchestrator kept every row it held in " +
@@ -430,7 +441,6 @@ public class ScaleAvailabilityTests
                             "succeeded: a whole-document replace has nothing to replay.");
                 report.Write();
 
-                Assert.That(backUp, Is.True, $"the control-plane store was still unreachable after {ScaleThresholds.DatabaseFailoverSeconds:0} s");
                 Assert.That(after, Is.EqualTo(before), "the orchestrator lost rows across a failover it was supposed to ride out");
                 Assert.That(host.Workers.Count, Is.EqualTo(1), "and it still knows its worker");
                 Assert.That(matches, Is.True, "the document in the database does not match what the orchestrator holds");

@@ -17,7 +17,8 @@ namespace Nebula.ServiceTests;
 /// gateway built from today's source. Protocol 18 is both ends of the window today
 /// (<see cref="HelloMsg.MinProtocolVersion"/> == <see cref="HelloMsg.ProtocolVersion"/>), so the recording is an
 /// N recording; when the protocol is bumped to 19 the same file becomes the N-1 recording and the same test
-/// becomes the N-1 test, with nothing to change but the constants.
+/// can exercise N-1 with the frozen protocol-18 response decoder. Today this proves only N compatibility;
+/// supporting a later protocol also requires a recording and frozen decoder for that protocol.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -179,13 +180,13 @@ public class ConformanceProtocolCompatibilityTests
     /// <b>The conformance scenario.</b> A recorded client stream is pushed, byte for byte, at a gateway built
     /// from today's source: it is welcomed, the gateway records the version it announced and echoes it back as
     /// the negotiated version, and the client goes on to join and receive its pawn. Then the recorded gateway
-    /// stream is parsed with today's readers, which is the other half of the additive rule — a field removed from
-    /// a message, or reordered, would throw or come back wrong here.
+    /// stream and the newly generated replies are parsed by an independent, frozen protocol-18 decoder.
+    /// This covers public-container handshake, spawn and transform framing, not every game message or payload.
     /// </summary>
     [Test]
     public void ARecordedClientStreamIsAdmittedAndAnsweredByAGatewayOfThisBuild()
     {
-        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(HelloMsg.MinProtocolVersion));
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(18));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.True,
             $"the checked-in recording is protocol {fixture.ProtocolVersion}, outside this build's window " +
             $"{ProtocolCompatibility.WindowText()}; record a fresh one with RecordTheHandshakeFixture");
@@ -196,6 +197,7 @@ public class ConformanceProtocolCompatibilityTests
 
         var replayed = fleet.Connect(0, "recorded");
         replayed.Replay = fixture.ClientFrames();
+        replayed.Record = new List<(bool, byte[])>();
         Assert.That(fleet.Run(() => replayed.Welcome != null, seconds: 20), Is.True, "the recorded handshake was not welcomed");
         Assert.That(replayed.Rejected, Is.Null);
         Assert.That(replayed.Welcome!.Value.NegotiatedVersion, Is.EqualTo(fixture.ProtocolVersion),
@@ -203,23 +205,71 @@ public class ConformanceProtocolCompatibilityTests
         Assert.That(fleet.Run(() => replayed.Join == JoinState.Joined, seconds: 20), Is.True, "the recorded client did not reach the world");
         Assert.That(fleet.Run(() => replayed.Replicas.Count > 0, seconds: 20), Is.True, "it was sent no entities");
         Assert.That(replayed.LastError, Is.Empty, "this build sent the recorded client something it could not parse: " + replayed.LastError);
+        fleet.Worker.Move(1000, new Vector3(1.25f, 2.5f, 3.75f));
+        fleet.OnPump = () => fleet.Worker.PublishStates();
+        Assert.That(fleet.Run(() => replayed.StatesReceived > 0, seconds: 10), Is.True);
 
-        // The recorded gateway stream, read by this build. A removed or reordered field shows up here.
-        int welcomes = 0, frames = 0;
-        foreach (var frame in fixture.GatewayFrames())
+        void AssertHandshake(Protocol18GatewayDecoder decoded)
         {
-            frames++;
-            var r = new NetworkReader(new ArraySegment<byte>(frame));
-            while (r.Remaining > 0)
-            {
-                var id = (MsgId)r.ReadByte();
-                if (id == MsgId.Welcome) { welcomes++; WelcomeMsg.Read(r); }
-                else if (id == MsgId.Batch) { int n = r.ReadUShort(); for (int i = 0; i < n; i++) r.ReadSegment(r.ReadUShort()); }
-                else break; // the rest of the stream is content this scenario does not re-decode
-            }
+            Assert.That(decoded.Welcomes, Is.EqualTo(1));
+            Assert.That(decoded.Joined, Is.True);
+            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(18));
+            Assert.That(decoded.Containers, Does.Contain("c0"));
+            Assert.That(decoded.Spawns, Contains.Key(1000ul));
+            Assert.That(decoded.Spawns[1000], Is.EqualTo((decoded.ClientId, decoded.Identity)),
+                "the frozen reader must recover the pawn's owner and identity, not merely consume its bytes");
         }
-        Assert.That(frames, Is.GreaterThan(0), "the recording has no gateway frames");
-        Assert.That(welcomes, Is.EqualTo(1), "the recorded gateway stream no longer parses as one welcome");
+
+        var recorded = new Protocol18GatewayDecoder();
+        foreach (var frame in fixture.GatewayFrames()) recorded.Read(frame);
+        AssertHandshake(recorded);
+
+        var current = new Protocol18GatewayDecoder();
+        foreach (var (outbound, bytes) in replayed.Record)
+            if (!outbound) current.Read(bytes);
+        AssertHandshake(current);
+        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-18 layout");
+        Assert.That(current.Positions[1000], Is.EqualTo((1.25f, 2.5f, 3.75f)),
+            "the frozen reader must recover distinct position axes from the new gateway's snapshot");
+    }
+
+    [Test]
+    public void FrozenProtocol18DecoderRejectsTruncatedWelcomeAndMalformedBatchedSnapshots()
+    {
+        var welcome = ProtocolFixture.Load(ProtocolFixture.PathFor(18)).GatewayFrames().Single(f => f[0] == 2);
+        Assert.Throws<EndOfStreamException>(() => new Protocol18GatewayDecoder().Read(welcome[..^1]));
+
+        // Independent protocol-18 bytes: one position snapshot for entity 1000 inside a reliable batch.
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((byte)18); writer.Write((ushort)1); writer.Write((ushort)37);
+        writer.Write((byte)14); writer.Write(1u); writer.Write((ushort)1); writer.Write((ushort)1);
+        writer.Write(1000ul); writer.Write(1u); writer.Write((ushort)0); writer.Write((ushort)7);
+        writer.Write(1f); writer.Write(2f); writer.Write(3f);
+        var valid = stream.ToArray();
+        var decoded = new Protocol18GatewayDecoder();
+        decoded.Read(valid);
+        Assert.That(decoded.StateEntities, Does.Contain(1000ul));
+        Assert.That(decoded.Positions[1000], Is.EqualTo((1f, 2f, 3f)));
+
+        // Change the inner entry count while retaining a well-formed outer batch envelope.
+        var corrupt = (byte[])valid.Clone();
+        corrupt[12] = 2;
+        Assert.Throws<EndOfStreamException>(() => new Protocol18GatewayDecoder().Read(corrupt));
+        Assert.Throws<EndOfStreamException>(() => new Protocol18GatewayDecoder().Read(valid[..^1]));
+    }
+
+    [Test]
+    public void FrozenProtocol18DecoderIgnoresSafeAdditiveFieldsAndMessageIds()
+    {
+        var welcome = ProtocolFixture.Load(ProtocolFixture.PathFor(18)).GatewayFrames().Single(f => f[0] == 2);
+        var decoded = new Protocol18GatewayDecoder();
+        decoded.Read(welcome.Concat(new byte[] { 42, 0, 0, 0 }).ToArray());
+        Assert.That(decoded.Welcomes, Is.EqualTo(1));
+        Assert.That(decoded.NegotiatedVersion, Is.EqualTo(18));
+        decoded.Read(new byte[] { 250, 1, 2, 3 });
+        decoded.Read(new byte[] { 18, 1, 0, 4, 0, 250, 1, 2, 3 });
+        Assert.That(decoded.UninspectedMessageIds, Does.Contain((byte)250));
     }
 
     /// <summary>

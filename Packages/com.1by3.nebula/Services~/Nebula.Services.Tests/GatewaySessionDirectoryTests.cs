@@ -235,6 +235,44 @@ public class GatewaySessionDirectoryTests
         Assert.That(directory.Handle(second).Status, Is.EqualTo("pending"));
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void GatewayEvictionUsesTheConfiguredMeshTimeout(bool hosted)
+    {
+        CommandLine.Override(new Dictionary<string, string>());
+        using var host = hosted ? new ControlPlaneHost(null, null, restore: false) : null;
+        using var plane = hosted ? host!.Plane : new LocalControlPlane();
+        var now = DateTime.UtcNow;
+        plane.Clock = () => now;
+        plane.Connect();
+        var orchestrator = new NebulaOrchestrator();
+        try
+        {
+            orchestrator.Initialize(new NebulaConfig
+            {
+                WorkerHeartbeatSeconds = 10, WorkerTimeoutSeconds = 30,
+                WorkerCount = 0, OrchestratorSpawnsGateway = false, DashboardPort = 0,
+            }, hosted ? host! : plane);
+            plane.RegisterGateway("old", "localhost", 7000, 1);
+            var first = Claim("old#1", "first");
+            plane.SessionDirectory.Handle(first);
+            var next = Claim("new#1", "next", 2);
+
+            now = now.AddSeconds(6);
+            Assert.That(plane.SessionDirectory.Handle(next).Status, Is.EqualTo("pending"),
+                "a healthy gateway between its configured heartbeats must not be evicted after the default five seconds");
+            now = now.AddSeconds(4);
+            plane.HeartbeatGateway("old", new GatewayStats());
+            now = now.AddSeconds(29);
+            Assert.That(plane.SessionDirectory.Handle(next).Status, Is.EqualTo("pending"));
+            now = now.AddSeconds(2);
+            var granted = plane.SessionDirectory.Handle(next);
+            Assert.That(granted.Status, Is.EqualTo("granted"));
+            Assert.That(granted.Session.SessionId, Is.EqualTo(first.SessionId));
+        }
+        finally { orchestrator.Dispose(); }
+    }
+
     [Test]
     public void EnvelopePreservesEveryBitOfSessionAndContainerIds()
     {

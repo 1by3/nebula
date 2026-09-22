@@ -229,6 +229,9 @@ namespace Nebula
         {
             Config = config;
             ControlPlane = controlPlane;
+            // Session takeover uses the same liveness budget as the mesh's configured heartbeats.
+            var localPlane = controlPlane as LocalControlPlane ?? (controlPlane as ControlPlaneHost)?.Plane;
+            if (localPlane != null) localPlane.GatewayStaleAfterSeconds = config.WorkerTimeoutSeconds;
             // WorkerCount is the count to start with; the autoscaling floor only applies when autoscaling is running.
             bool scaling = config.AutoScale && !config.UseLocalControlPlane;
             DesiredWorkers = Mathf.Clamp(config.WorkerCount, scaling ? MinWorkers : 0, MaxWorkers);

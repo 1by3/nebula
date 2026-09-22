@@ -1073,7 +1073,8 @@ namespace Nebula
             }
             entry.Write(c.Pending);
             c.PendingCount++;
-            if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes) FlushWorldState(c);
+            // Reserve the envelope even for plaintext peers so every batch fits the minimum UDP MTU.
+            if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes - EncryptedTransport.PacketOverhead) FlushWorldState(c);
         }
 
         private void FlushWorldState(ClientConn c)

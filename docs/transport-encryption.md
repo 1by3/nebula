@@ -93,7 +93,7 @@ The key exchange is a transport-level frame, not a protocol message. Nothing in 
 changed except one new `JoinRejectReason`; the protocol version stays **18**. `Hello` and everything after it is
 simply carried encrypted, which is also why the change does not collide with NEB-228's work on `HelloMsg`.
 
-Frames are tagged with a first byte of `0xE0`–`0xE3`, above every `MsgId` (the highest is 49), so a gateway with
+Frames are tagged with a first byte of `0xE0`–`0xE4`, above every `MsgId` (the highest is 49), so a gateway with
 encryption off ignores a key exchange rather than mis-parsing it, and the client times out with a message that
 says exactly that.
 
@@ -101,18 +101,24 @@ says exactly that.
 ClientHello  0xE0 | ver | X25519 client public (32) | client random (32)
 ServerHello  0xE1 | ver | X25519 server public (32) | server random (32) | u16 cert DER | u16 signature
 Finished     0xE2 | HMAC-SHA256(finished key, "client finished" || SHA-256(transcript))
-Data         0xE3 | seq u32 LE | ChaCha20-Poly1305(payload), AAD = the 5 header bytes
+Sequenced    0xE3 | seq u32 LE | ChaCha20-Poly1305(payload), AAD = the 5 header bytes
+Reliable     0xE4 | seq u32 LE | ChaCha20-Poly1305(payload), AAD = the 5 header bytes
 ```
 
 Keys come from `HKDF-SHA256(salt = client random || server random, ikm = X25519 shared secret,
 info = "nebula-transport-v1")` split into a client→server key, a server→client key, a 4-byte nonce salt per
-direction and the finished key. The nonce is `salt (4) || 0 (4) || seq (4)`, so a key and nonce pair is never
-reused: the sequence is per direction and per link, and a link that reaches `2^32 - 16` packets is dropped
+direction and the finished key. The nonce is `salt (4) || delivery domain (1) || 0 (3) || seq (4)`, with domain
+0 for sequenced and 1 for reliable traffic. The sequence is per direction, delivery domain, and link, so a key
+and nonce pair is never reused. A domain that reaches `2^32 - 16` packets drops the link
 rather than wrapped.
 
-**D4a. Replay.** The sequenced (unreliable) channel legitimately reorders, so the receiver keeps the highest
-sequence seen and a 64-bit window below it. A repeat inside the window, or anything below it, is dropped before
-the AEAD runs. A forged or altered packet fails the tag and is dropped without reaching the game.
+**D4a. Replay.** Each delivery domain has its own highest sequence and 64-bit replay window. A reliable packet
+waiting for retransmission cannot fall out of its window while sequenced snapshots arrive. Reliable packets
+arrive in order within their own channel. A repeat inside a window, or anything below it, is dropped before
+the AEAD runs. The delivery tag is authenticated with the header and selects a distinct nonce domain, so changing
+it cannot move a packet between replay windows. The handshake wire version is 2; peers with a different
+encryption wire version refuse the handshake. Gateway state batches reserve the 21-byte encryption envelope
+within the minimum UDP packet budget.
 
 **D4b. One round trip.** The client sends `ClientHello` when the LiteNetLib link comes up and holds the
 `Connected` event back from the layers above until it has the `ServerHello`; it then sends `Finished` and its
