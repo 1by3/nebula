@@ -1,8 +1,8 @@
 # Conformance suite — design
 
-Status: phase 1 (harness, runner, scenario 8) landed with NEB-238. Scenarios for the other items of the project
-"Scoped worlds and interaction contracts" are added by the issue that lands each item; the table in §4 is the
-ledger. User-facing page: `website/content/docs/guides/conformance-suite.mdx`. Runner: `Tools/conformance.ps1`.
+Status: every item of the project "Scoped worlds and interaction contracts" has landed and every scenario in §4 is
+covered (rows 1–14). The multi-process tier D is partly built by the scale and failure suite (NEB-237, `docs/scale-suite.md`);
+scenarios that still name tier D for their end-to-end half say so in their row. The table in §4 is the ledger. User-facing page: `website/content/docs/guides/conformance-suite.mdx`. Runner: `Tools/conformance.ps1`.
 
 ## 0. Purpose
 

@@ -4,7 +4,7 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### Breaking: protocol 17 → 18, the contracts milestone
+### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
 
 Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.
 
