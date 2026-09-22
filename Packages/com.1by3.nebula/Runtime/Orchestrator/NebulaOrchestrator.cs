@@ -1563,6 +1563,7 @@ namespace Nebula
                 w.Prop("relaunchInSeconds", m != null && m.RelaunchAt >= 0f ? Math.Max(0f, m.RelaunchAt - now) : -1f);
                 w.Prop("drainRemainingSeconds", retiring ? Math.Max(0f, _retiring[id] - now) : -1f);
                 w.Prop("tickMs", row != null ? row.TickMs : 0f);
+                w.Prop("oldestDirtySeconds", row != null ? row.OldestDirtySeconds : 0f);
                 w.Prop("utilization", Loads.Utilization(id));
                 w.Prop("tickCount", row != null ? row.TickCount : 0UL);
                 w.Prop("entities", row != null ? row.EntityCount : 0U);

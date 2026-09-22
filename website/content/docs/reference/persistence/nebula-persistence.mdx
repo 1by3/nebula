@@ -91,6 +91,14 @@ public int RestoredCount { get; }
 
 Entities this service has brought back since the process started.
 
+### OldestDirtyAgeSeconds [#oldestdirtyageseconds]
+
+```csharp
+public float OldestDirtyAgeSeconds { get; }
+```
+
+How long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, in seconds; 0 when nothing is dirty. A live reading of how much of the documented durability window (docs/persistence-durability.md) is in use on this worker right now; reported per worker on the heartbeat ([`WorkerInfo.OldestDirtySeconds`](/docs/reference/control-plane/worker-info#oldestdirtyseconds)) for the orchestrator dashboard.
+
 ## Events
 
 ### EntityRestored [#entityrestored]

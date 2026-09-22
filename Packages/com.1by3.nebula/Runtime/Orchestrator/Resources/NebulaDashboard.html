@@ -402,6 +402,7 @@
             <div class="metric"><div class="v">${w.serverDriven}</div><div class="l">server-driven</div></div>
             <div class="metric"><div class="v">${w.authoritative}<span class="muted" style="font-size:12px;font-weight:400"> +${w.ghosts}</span></div><div class="l">entities +ghosts</div></div>
             <div class="metric"><div class="v">${w.alive ? w.tickMs.toFixed(2) : '—'}</div><div class="l">tick ms</div></div>
+            <div class="metric" title="How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint. Bounded by docs/persistence-durability.md's durability window; 0 means nothing unsaved."><div class="v">${w.alive ? Number(w.oldestDirtySeconds || 0).toFixed(1) + 's' : '—'}</div><div class="l">oldest dirty</div></div>
             ${interestMetrics(w)}
           </div>
           ${(w.interest && w.interest.warning) ? `<div class="meta" style="margin-bottom:8px;color:#e0a33e" title="Interest management bounds who hears about entities, not who simulates them">⚠ ${esc(w.interest.warning)}</div>` : ''}

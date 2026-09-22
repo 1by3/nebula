@@ -63,8 +63,19 @@ namespace Nebula
         internal Vector3 LastSavedPosition;
         internal Quaternion LastSavedRotation = Quaternion.identity;
 
+        /// <summary>
+        /// <see cref="Time.unscaledTime"/> when this entity first became dirty since its last checkpoint. 0 while
+        /// not dirty. Feeds <see cref="NebulaPersistence.OldestDirtyAgeSeconds"/>, the telemetry proxy for how much
+        /// of the documented durability window (docs/persistence-durability.md) is in use right now.
+        /// </summary>
+        internal float DirtySince;
+
         /// <summary>Ask for a checkpoint soon (coalesced with every other change since the last save).</summary>
-        public void MarkDirty() => IsDirty = true;
+        public void MarkDirty()
+        {
+            if (!IsDirty) DirtySince = Time.unscaledTime;
+            IsDirty = true;
+        }
 
         /// <summary>
         /// The key this entity saves under, generating one the first time it is needed: <c>scene:&lt;sceneId&gt;</c>

@@ -96,6 +96,19 @@ A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools
 
 No runtime behaviour changed.
 
+### Added
+
+#### Persistence durability window (NEB-224)
+
+Docs and a conformance test state and check the bound on how much a worker crash can lose between checkpoints.
+Design record: `docs/persistence-durability.md`; user page: [Persistence → Durability window](https://nebula.1by3.co/docs/guides/persistence#durability-window).
+
+- The bound is `PersistenceCheckpointSeconds + MinSaveIntervalSeconds + ceil(N_dirty / MaxSavesPerFrame) frames + store write latency`, derived from `NebulaPersistence.IsDue`/`PumpCheckpoints`; with the defaults and a lightly loaded worker it is about 5.6 s.
+- `ConformancePersistenceDurabilityTests` (`[Category("Conformance")]`, scenario 10 in `docs/conformance-suite.md` §4) kills a worker with 200 simultaneously dirty entities and asserts loss stays within the bound, and that the min-save throttle and per-frame budget terms are each real rather than vacuous.
+- `NebulaPersistence.Now` is a new internal clock seam (`Func<float>`, defaults to `Time.unscaledTime`) so the checkpoint scheduler's timers can be driven deterministically in tests; no behaviour change at the default.
+- `NebulaPersistence.OldestDirtyAgeSeconds`: how long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, 0 when nothing is dirty.
+- New additive heartbeat field `WorkerStats.OldestDirtySeconds` / `WorkerInfo.OldestDirtySeconds`, wired through `ControlPlaneJson`, `LocalControlPlane` and `RemoteControlPlane`; an older worker or orchestrator simply does not read it, so this is not a protocol version bump. The orchestrator's `/api/status` reports it as `workers[].oldestDirtySeconds`, and `NebulaDashboard.html` shows it per worker next to tick time.
+
 ## [0.1.0-alpha.29] - 2026-09-21
 
 ### Breaking: protocol 16 → 17, interest management

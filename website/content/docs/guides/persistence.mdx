@@ -146,6 +146,42 @@ Call `worker.Persistence.SaveNow(identity)` at a moment the game knows is worth 
 
 Two limits keep the pass cheap: at most one save per entity every 0.5 s (`NebulaPersistence.MinSaveIntervalSeconds`), and at most 64 saves per frame (`NebulaPersistence.MaxSavesPerFrame`). Neither the checkpoint nor an unreachable store can stall the simulation. If the store is down, the mesh keeps running and the saves are retried later.
 
+### Durability window
+
+Because entities are checkpointed periodically rather than on every change, a worker that crashes can lose whatever
+changed since an entity's last checkpoint. The worst-case size of that loss — the number to design around — is:
+
+```
+loss window  ≤  PersistenceCheckpointSeconds
+              + 0.5 s (NebulaPersistence.MinSaveIntervalSeconds, fixed)
+              + ceil(N_dirty / 64) × frame period (NebulaPersistence.MaxSavesPerFrame, fixed)
+              + store write latency
+```
+
+- **`PersistenceCheckpointSeconds`** is the term to tune: `IsDue` guarantees an unconditional save at least this
+  often, whatever the dirty flag says. Lowering it lowers the bound by the same amount.
+- **The minimum save interval** (0.5 s, not configurable) is the throttle that keeps one entity from saving more
+  than twice a second: a change can land the instant after a checkpoint and then wait out nearly the whole interval
+  before it is even eligible to save again.
+- **The per-frame save budget** (64 saves per frame, not configurable) spreads out a burst of simultaneously dirty
+  entities across frames; `N_dirty` is how many other tracked entities become due in the same window, not the
+  worker's total entity count.
+- **Store write latency** is 0 for an in-memory store, up to `LocalPersistenceStore.WriteIntervalSeconds` (default
+  1 s) for a `local` store with a file, and `RemotePersistenceStore.FlushIntervalSeconds` (0.25 s) plus a network
+  round trip and the orchestrator's own commit for a `remote` (mesh) store — the worker's own unflushed batch is
+  what a worker crash can still lose after the save left `NebulaPersistence`.
+
+With the defaults and a lightly loaded worker, the bound is about 5.6 seconds. A wave of 40 NPCs taking damage in
+the same tick against a mesh's `remote` store adds roughly another 0.27 s (one frame of budget plus the flush
+interval and a commit), for about 5.8 seconds total.
+
+This is a bound on loss *per change*, not a promise that nothing is ever lost — see
+[current limitations](#current-limitations). Use `SaveNow` for a moment that must not wait for the periodic
+checkpoint at all (a completed objective, a player logging out). The full derivation, with each term tied to its
+line of code, is in [`docs/persistence-durability.md`](https://github.com/1by3/nebula/blob/main/docs/persistence-durability.md)
+in the repository; a conformance test (`ConformancePersistenceDurabilityTests`) keeps the bound honest by killing a
+worker mid-checkpoint with 200 dirty entities and asserting the loss stays within it.
+
 ### The epoch rule
 
 Every record carries the entity's authority **epoch**: the number that increases when authority or a container assignment changes. The store keeps a save only when its epoch is at least the stored epoch. A worker that lost authority and does not know it yet cannot overwrite the new owner's state with older data.

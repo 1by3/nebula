@@ -101,6 +101,7 @@ namespace Nebula
             w.BotCount = stats.BotCount;
             w.ServerDrivenCount = stats.ServerDrivenCount;
             w.HasGlobalEntities = stats.HasGlobalEntities;
+            w.OldestDirtySeconds = stats.OldestDirtySeconds;
             Touch();
         }
 

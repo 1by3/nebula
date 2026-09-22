@@ -165,7 +165,8 @@ namespace Nebula
         public void HeartbeatWorker(string workerId, string status, in WorkerStats s) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatWorker).Arg("workerId", workerId).Arg("status", status)
                 .Arg("tickCount", s.TickCount).Arg("tickMs", s.TickMs).Arg("entityCount", s.EntityCount).Arg("authoritativeCount", s.AuthoritativeCount)
-                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities).End());
+                .Arg("ghostCount", s.GhostCount).Arg("playerCount", s.PlayerCount).Arg("botCount", s.BotCount).Arg("serverDrivenCount", s.ServerDrivenCount).Arg("hasGlobalEntities", s.HasGlobalEntities)
+                .Arg("oldestDirtySeconds", s.OldestDirtySeconds).End());
 
         public void UnregisterWorker(string workerId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterWorker).Arg("workerId", workerId).End());
         public void RegisterGateway(string gatewayId, string address, ushort port, uint incarnation = 0) =>

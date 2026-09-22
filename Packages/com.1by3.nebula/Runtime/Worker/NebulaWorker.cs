@@ -706,6 +706,7 @@ namespace Nebula
                 BotCount = (uint)bots,
                 ServerDrivenCount = (uint)serverDriven,
                 HasGlobalEntities = HasGlobalEntities,
+                OldestDirtySeconds = Persistence?.OldestDirtyAgeSeconds ?? 0f,
             };
         }
 

@@ -63,6 +63,7 @@ namespace Nebula
                 w.Prop("botCount", x.BotCount);
                 w.Prop("serverDrivenCount", x.ServerDrivenCount);
                 w.Prop("hasGlobalEntities", x.HasGlobalEntities);
+                w.Key("oldestDirtySeconds"); Num(w, x.OldestDirtySeconds);
                 w.EndObject();
             }
             w.EndArray();
@@ -148,6 +149,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                     });
                 }
             }
@@ -352,6 +354,7 @@ namespace Nebula
                         BotCount = (uint)Num(o, "botCount"),
                         ServerDrivenCount = (uint)Num(o, "serverDrivenCount"),
                         HasGlobalEntities = Bool(o, "hasGlobalEntities"),
+                        OldestDirtySeconds = (float)Num(o, "oldestDirtySeconds"),
                     };
                     cp.HeartbeatWorker(Str(o, "workerId"), Str(o, "status"), stats);
                     return null;

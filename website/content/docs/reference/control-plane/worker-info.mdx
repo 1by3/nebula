@@ -108,3 +108,11 @@ public bool HasGlobalEntities;
 ```
 
 The worker holds at least one always-relevant entity (see [`WorkerStats.HasGlobalEntities`](/docs/reference/control-plane/worker-stats#hasglobalentities)).
+
+### OldestDirtySeconds [#oldestdirtyseconds]
+
+```csharp
+public float OldestDirtySeconds;
+```
+
+How long the oldest dirty persistent entity on this worker has been waiting for its next checkpoint, in seconds; 0 when persistence is off or nothing is dirty. See [`WorkerStats.OldestDirtySeconds`](/docs/reference/control-plane/worker-stats#oldestdirtyseconds) and docs/persistence-durability.md.
