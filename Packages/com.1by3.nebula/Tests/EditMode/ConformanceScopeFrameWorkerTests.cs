@@ -58,6 +58,11 @@ namespace Nebula.Tests
         {
             _mesh.Dispose();
             NebulaChunks.ResetForNewSession();
+            // A scoped container that still holds an entity refuses to be unregistered — deliberately, so a removed
+            // lease cannot move a scope's occupants into the public world — and the mesh's teardown does not always
+            // leave the entity lists empty. Destroy the boxes outright, then let the prune forget them, or a chunk
+            // of this fixture would still be in ContainerRegistry.Runtime for the next fixture's assignment tests.
+            foreach (var c in new List<Container>(ContainerRegistry.Runtime)) if (c != null) Object.DestroyImmediate(c.gameObject);
             ContainerRegistry.PruneRuntime(new HashSet<ulong>());
             ContainerRegistry.RuntimeBoundsInFrame = null;
             ContainerRegistry.Rebuild();

@@ -718,6 +718,12 @@ namespace Nebula
                 foreach (var client in _clientsById.Values) ConsiderFor(client, rec, now);
                 return;
             }
+            // The clients that already hold a replica are re-tested wherever it went. A region key is per scope
+            // (docs/scope-frames.md D7), so an entity that crossed from the public world into a scope — or between
+            // two scopes — lands in a bucket whose clients are a different set entirely, and without this nothing
+            // would tell the ones it left until their next scheduled evaluation. ConsiderOne is idempotent, so a
+            // client in both lists is simply tested twice.
+            for (int i = rec.Observers.Count - 1; i >= 0; i--) ConsiderFor(rec.Observers[i], rec, now);
             if (!_regionClients.TryGetValue(rec.Region, out var list)) return;
             for (int i = list.Count - 1; i >= 0; i--) ConsiderFor(list[i], rec, now);
         }
