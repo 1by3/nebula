@@ -30,6 +30,8 @@ namespace Nebula
         internal Func<DateTime> Clock = () => DateTime.UtcNow;
 
         public DateTime Now => Clock();
+        public string DocumentId { get; private set; } = NewDocumentId();
+        private static string NewDocumentId() => Guid.NewGuid().ToString("N");
         public event Action Changed;
         public IReadOnlyList<WorkerInfo> Workers => _workers;
         public IReadOnlyList<LeaseInfo> Leases => _leases;
@@ -61,7 +63,7 @@ namespace Nebula
         }
 
         /// <summary>The whole state as one document (see <see cref="ControlPlaneJson"/>).</summary>
-        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings, _scopes);
+        public string ToJson() => ControlPlaneJson.Write(Version, Now, _workers, _leases, _gateways, _settings, _scopes, DocumentId);
 
         /// <summary>Replace the whole state with <paramref name="snapshot"/> (a stored document coming back at startup).</summary>
         public void Import(ControlPlaneJson.Snapshot snapshot)
@@ -79,6 +81,9 @@ namespace Nebula
                 ImportScopes(snapshot.Scopes);
                 foreach (var kv in snapshot.Settings) _settings[kv.Key] = kv.Value;
                 if (snapshot.Version > Version) Version = snapshot.Version;
+                // A stored document keeps its identity across the restart; one written before identities existed
+                // gets a new one, which costs every worker one reconciliation pass that writes nothing.
+                if (!string.IsNullOrEmpty(snapshot.DocumentId)) DocumentId = snapshot.DocumentId;
             }
             Touch();
         }
@@ -288,6 +293,7 @@ namespace Nebula
 
         public void ResetControlPlane()
         {
+            DocumentId = NewDocumentId();
             _workers.Clear();
             _leases.Clear();
             _gateways.Clear();

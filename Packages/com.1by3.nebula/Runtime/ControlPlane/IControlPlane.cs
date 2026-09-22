@@ -249,6 +249,14 @@ namespace Nebula
         bool IsConnected { get; }
         /// <summary>Best estimate of the control plane's clock (for heartbeat age checks).</summary>
         DateTime Now { get; }
+        /// <summary>
+        /// Identity of the document this plane holds. It changes only when the document is started again from
+        /// nothing (a fresh orchestrator, <c>-nebula-reset</c>, a restore of storage that never held this mesh) and
+        /// survives a restart that kept its storage. A row missing from the <i>same</i> document was removed on
+        /// purpose; a row missing from a <i>new</i> document was lost, and is what <see cref="WorkerRegistration"/>
+        /// puts back. Empty until a mirror has received its first document.
+        /// </summary>
+        string DocumentId { get; }
         event Action Changed;
 
         IReadOnlyList<WorkerInfo> Workers { get; }

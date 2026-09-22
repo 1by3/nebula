@@ -39,6 +39,10 @@ that holds its entities.
   `RegisterAgainIfForgotten`, `ReclaimContainers`, `Forget`. Pure C#, compiled into the standalone services as
   well, so the same decision code runs on a Unity worker and in the tests. Game code does not need to call it;
   `NebulaWorker` owns one.
+- **New `IControlPlane.DocumentId`** (and a `document` field in the control-plane JSON document): the identity of the
+  document, new when the orchestrator starts one from nothing and kept across a restart that restored it. The
+  worker's reclaim is gated on it: a lease missing from a document the worker already reconciled with was removed on
+  purpose (a retiring scope) and is left alone; a lease missing from a new document was lost and is put back.
 - **New public property `ControlPlaneHost.StorageError`**: why the last save to the control-plane store failed,
   or null. Not a mesh failure by itself — the control plane keeps running in memory and the save is retried —
   but it is the window an operator watches across a database failover.

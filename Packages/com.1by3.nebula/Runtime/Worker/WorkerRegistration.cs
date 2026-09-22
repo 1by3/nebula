@@ -48,6 +48,8 @@ namespace Nebula
             controlPlane.RegisterWorker(WorkerId, WorkerIndex, Address, Port);
             IsRegistered = true;
             RegistrationCount++;
+            // The document this worker registered into is the one its leases will be dealt in; nothing to reclaim there.
+            _reconciledDocument = controlPlane.DocumentId ?? "";
             return true;
         }
 
@@ -77,13 +79,15 @@ namespace Nebula
         /// no longer has a row for. Only the missing ones: a row that is there is the control plane's to decide,
         /// and a worker that overwrote a lease it had lost would take a container back off whoever was given it.
         /// <para>
-        /// This is a <b>standing reconciliation</b>, run on every control-plane change, not a one-off triggered by
-        /// <see cref="RegisterAgainIfForgotten"/>. It has to be: the moment the worker's row is missing and the
-        /// moment the lease rows are missing are not the same moment. A mirror flushes writes it queued while the
-        /// orchestrator was away, so a replacement can have this worker's registration back — from a queued
-        /// re-registration — in the very document that first shows the leases gone, and a reclaim that only ran on
-        /// the transition would have missed it and stranded the containers for good. Re-running it costs a scan
-        /// over the containers this worker owns and writes nothing while their rows are there.
+        /// Call it on every control-plane change; it decides for itself when a missing row means <i>lost</i>. The
+        /// signal is <see cref="IControlPlane.DocumentId"/>, not the worker's own row: a mirror flushes writes it
+        /// queued while the orchestrator was away, so a replacement can have this worker's registration back —
+        /// from a queued write — in the very document that first shows the leases gone, and a reclaim hung off
+        /// "my row went missing" strands the containers for good. A document this worker has not reconciled with
+        /// yet is reconciled once, whatever else it contains. A row missing from a document it <i>has</i> reconciled
+        /// with was removed on purpose — a retiring scope, a runtime container the orchestrator dropped — and is
+        /// left alone, because a worker that put it back would be fighting the orchestrator's own lifecycle
+        /// (<c>docs/control-plane-availability.md</c> D1b).
         /// </para>
         /// <list type="bullet">
         /// <item>A baked container is claimed with <see cref="IControlPlane.EnsureContainer"/> +
@@ -99,10 +103,17 @@ namespace Nebula
         public int ReclaimContainers(IControlPlane controlPlane)
         {
             if (!IsRegistered || controlPlane == null || !controlPlane.IsConnected) return 0;
+            string document = controlPlane.DocumentId ?? "";
             // A claim is answered by its row appearing; until then it is outstanding and must not be written again.
             if (_claimed.Count > 0) _claimed.RemoveWhere(id => controlPlane.FindLease(id) != null);
+            if (document == _reconciledDocument) return 0;
+            _reconciledDocument = document;
+            _claimed.Clear(); // claims against the old document were answered by it or died with it
             return Reclaim(controlPlane, ContainerRegistry.All) + Reclaim(controlPlane, ContainerRegistry.Runtime);
         }
+
+        /// <summary>The document this worker last reconciled its containers against (<see cref="IControlPlane.DocumentId"/>).</summary>
+        private string _reconciledDocument = "";
 
         /// <summary>Containers claimed whose lease row has not come back yet: one write each, not one per change.</summary>
         private readonly HashSet<string> _claimed = new HashSet<string>();

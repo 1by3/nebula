@@ -51,15 +51,22 @@ entities. So the reclaim is not a nicety on top of the re-registration — witho
 a mesh of workers that own nothing and a planner that deals the containers out again, to workers that do not have
 the entities.
 
-**D1b. The reclaim is a standing reconciliation, not a one-off.** The obvious shape — "when you notice your row
-is gone, also put your leases back" — is wrong, and building the process-level scenario is what showed it. A
-`RemoteControlPlane` queues its writes while the orchestrator is away and flushes them when it returns, so a
-replacement orchestrator can have this worker's registration back *from a queued write* in the very first
-document that shows the leases gone. The transition never happens on a document this worker can see, and a
-reclaim hung off it stranded the containers permanently. `ReclaimContainers` therefore runs on **every**
-control-plane change and writes only what is missing. It de-duplicates itself: a container it has asked for goes
-into a pending set and is not asked for again until its row appears, so a slow round trip costs one write per
-container, not one per change (measured: exactly 4 writes for 4 containers).
+**D1b. The reclaim is keyed on the document's identity, not on a missing row.** Two shapes were tried and both
+were wrong. "When you notice your own row is gone, also put your leases back" misses: a `RemoteControlPlane`
+queues its writes while the orchestrator is away and flushes them when it returns, so a replacement orchestrator
+can have this worker's registration back *from a queued write* in the very first document that shows the leases
+gone, and the transition never happens on a document this worker can see. "Put back any lease of a container you
+own that has no row" on every change over-corrects: the orchestrator removes lease rows on purpose — a scope
+retiring drops its part's row, a runtime container the carrier left is dropped — and a worker that put them back
+would fight the orchestrator's own lifecycle. Merging this issue with the scoped-worlds branch showed it: the
+conformance scenario for a retiring scope (`ConformanceScopeAdmissionTests`) failed deterministically because the
+worker resurrected the retired part's lease every pump. So the control plane now carries a **document identity**
+(`IControlPlane.DocumentId`, the `document` field of the JSON document): assigned when a document is started from
+nothing, kept across a restart that restored it from storage, new after `-nebula-reset` or a restore that never
+held this mesh. `ReclaimContainers` runs on every change, but writes only the first time it sees a document it
+has not reconciled with, and only the rows that are missing from it. A row missing from a document it has already
+reconciled with is the orchestrator's decision. The claim set is still de-duplicated (one write per container until
+its row appears; measured: exactly 4 writes for 4 containers) and is cleared when the document changes.
 
 **D1c. Epochs start again at 1, and that is correct.** A reclaimed baked container is written with
 `EnsureContainer` + `AssignContainer`, which gives it epoch 1 in the new document. An epoch only ever has to
@@ -116,8 +123,8 @@ last successful save**. It does not cost rows, it does not cost clients, and it 
 `ControlPlaneHost.StorageError` is now public so an operator (and the failover scenario) can watch that window
 rather than guess at it.
 
-`ScaleThresholds.DatabaseFailoverSeconds` is **60 s, provisional and deliberately loose**: what it bounds is a
-container restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion
+`ScaleThresholds.DatabaseFailoverSeconds` is **60 s, provisional and deliberately loose**: the measured local
+container restart stalled the store for 0.069 s (D6), and a managed PostgreSQL failover is usually much slower. The assertion
 that matters beside it is not the number — it is that nothing was lost and nothing threw out of `Tick`.
 
 **D4a. Saved entities are a different store with the same answer.** `SqlPersistenceStore` runs its jobs on one
@@ -169,11 +176,12 @@ test that is skipped on most machines should not add a package every build has t
 `[Category("Docker")]` **and** `[Category("Scale")]`, so an ordinary `dotnet test` run never reaches it, and it
 calls `Assert.Ignore` with the reason when `docker version` fails or the image cannot be pulled.
 
-**On this machine it was skipped.** `docker version` reports a client but no server (`failed to connect to the
-docker API at npipe:////./pipe/dockerDesktopLinuxEngine`): Docker Desktop is installed and not running. The
-scenario's skip path is what ran, and it printed its reason. **The PostgreSQL leg has therefore not been
-executed here**, and `DatabaseFailoverSeconds` has no measurement behind it yet — it is provisional in the
-strongest sense, a budget rather than an observation.
+**Measured on this machine** (Docker Desktop 29.6.2, `postgres:16-alpine`, one run, 7 s wall clock including the
+container start): the primary was restarted while the orchestrator held 4 leases and 1 worker; the container was
+back in **0.549 s**, the store was unwritable for **0.069 s**, three saves failed and were retried, and the document
+after the first successful save was identical to the one before. Artifact: `Logs/scale/synthetic-postgres-failover.csv`.
+Without a daemon the scenario takes its `Assert.Ignore` path and prints the reason. `DatabaseFailoverSeconds` stays
+provisional: this is a local container restart, not a managed failover.
 
 ## D7. The restore drill
 
@@ -219,7 +227,7 @@ A Windows development machine, one run each. Absolute values are machine-depende
 | `orchestrator-restart` (S6b) | `Logs/scale/synthetic-orchestrator-restart.csv` | 4 leases, 2 workers, 1 gateway; the orchestrator process down and whole again on the same SQLite database in **2.59 s**; every lease back with the same owner, state and epoch; **0** mirrors reported themselves disconnected; 0 re-registrations needed; 1 write queued across the restart |
 | `orchestrator-cold-restart` (S6b, empty database) | `Logs/scale/synthetic-orchestrator-cold-restart.csv` | replacement came back with 0 leases; converged in **2.61 s** to 2 workers and 4 leases, **owners identical**; 4 re-registrations, **4** containers re-claimed (one write each) |
 | `control-plane-cold-restart` (D7b, in-process) | `Logs/scale/synthetic-control-plane-cold-restart.csv` | 2 workers and 1 gateway back, 4/4 leases re-claimed, **0** clients disconnected |
-| `postgres-failover` (S6c) | — | **skipped: no Docker daemon on this machine** (D6) |
+| `postgres-failover` (S6c) | `Logs/scale/synthetic-postgres-failover.csv` | `postgres:16-alpine` restarted under Docker Desktop: container back in **0.549 s**, store stall **0.069 s**, 3 write errors retried, 4/4 leases, document identical — **PASS** (D6) |
 | restore drill, SQLite, `sqlite-vacuum` | `Logs/restore-drill/20260922-142825.json` | 250 records + 8 leases; seed 1.02 s, backup 0.63 s, wipe 0.67 s, restore 0.60 s, compare 0.63 s, **5.69 s total**; 0 missing, 0 extra, 0 changed, control-plane digest matches — **PASS** |
 | restore drill, SQLite, `nebula` route | `Logs/restore-drill/20260922-142836.json` | 50 records + 8 leases, **5.43 s total** — **PASS** |
 | restore drill, negative control | — | comparing the *before* snapshot against the *wiped* one reports 50 missing, control plane differs, and exits **1** |
@@ -243,10 +251,8 @@ The whole `[Category("Scale")]` suite, including the two new scenarios, is green
 
 **Not verified.**
 
-- **The PostgreSQL failover scenario has never executed.** Docker Desktop is installed on this machine but its
-  daemon is not running, so the scenario took its `Assert.Ignore` path. Everything about it — the container
-  arguments, the wait for the first connection, the stall measurement, the assertions — is written against
-  `NebulaDatabase`'s PostgreSQL path and the `docker` CLI, and has not been run against a live PostgreSQL.
+- **The PostgreSQL failover scenario ran once**, after Docker Desktop was started (D6). It is one local container
+  restart, not a managed failover with a replica promotion, so the bound it measured is a floor, not a budget.
 - **The drill has not been run against PostgreSQL**, for the same reason, so the `pg_dump` route is untried. The
   `nebula` route *has* run and is the fallback that route falls back to.
 - **No real worker process re-registered.** The re-registration and the reclaim run in the services build of

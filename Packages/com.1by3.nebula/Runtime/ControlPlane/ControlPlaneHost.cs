@@ -79,6 +79,7 @@ namespace Nebula
 
         public bool IsConnected => _plane.IsConnected;
         public DateTime Now => _plane.Now;
+        public string DocumentId => _plane.DocumentId;
         public event Action Changed { add => _plane.Changed += value; remove => _plane.Changed -= value; }
         public IReadOnlyList<WorkerInfo> Workers => _plane.Workers;
         public IReadOnlyList<LeaseInfo> Leases => _plane.Leases;

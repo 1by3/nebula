@@ -69,7 +69,7 @@ planner scenarios (about 12 ms together) stay in it.
 | Restore per container | **≤ 2 s** | **Provisional, measured.** The synthetic restore is an in-process re-spawn (measured 0.31 s per container, of which 0.3 s is the fixture's own settle after a focus hint), so this budget has headroom for a scene load it has never seen. A real Unity number needs the tier-D run. |
 | Control-plane stall | **≤ 5 s** | **Provisional, measured** (0.003 s in process). What is *not* provisional is the assertion beside it: no client is disconnected and no session changes, because a gateway's client links do not depend on the control plane. |
 | Orchestrator restart | **≤ 15 s** | **Derived**: `RemoteControlPlane.DisconnectAfterSeconds` (the 10 s long poll plus 5 s) is the window inside which a restart is not merely survived but *invisible* — no mirror changes state and every write is queued, not dropped. Past it the restart is an outage a mirror can see. Measured 2.59 s on the same database, 2.61 s on an empty one. See `docs/control-plane-availability.md` D3. |
-| Database failover | **≤ 60 s** | **Provisional**, and with no measurement behind it yet: what it bounds is a container restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion that matters beside it is that nothing was lost and nothing threw out of `ControlPlaneHost.Tick`. |
+| Database failover | **≤ 60 s** | **Provisional, measured** (a `postgres:16-alpine` container restarted under Docker Desktop: store stall 0.069 s, container back in 0.549 s, 3 write errors seen and retried, document identical). What it bounds is a container restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion that matters beside it is that nothing was lost and nothing threw out of `ControlPlaneHost.Tick`. |
 | Per-client bandwidth | **< 512 kB/s** | **Provisional.** It is a property of this fixture's world (how many entities sit inside one interest window), not a production budget. It exists to catch an interest regression that starts sending a client the world; measured 6.4 kB/s. |
 | Worker tick (tier D) | **≤ 16.7 ms** | **Derived**: one tick period at the default 60 Hz tick rate, the same budget `ContainerCost` weighs a container's simulation share against. |
 | Baseline slack | **6×** | **Provisional.** Absolute times depend on the machine; the baseline is compared as a shape (same containers, monotonic, each step inside the per-container budget and within 6× the recorded step). |
@@ -137,7 +137,7 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | control-plane-cold-restart | gateway re-registered; **2 workers back, 4/4 leases re-claimed**, 0 clients disconnected — D7b is closed |
 | orchestrator-restart | the orchestrator process down and whole again on the same SQLite database in **2.59 s**; 4/4 leases identical; **0** mirrors reported themselves disconnected |
 | orchestrator-cold-restart | a replacement on an *empty* database converged in **2.61 s**; 2 workers re-registered and re-claimed **4** containers, owners identical |
-| postgres-failover | **skipped**: `docker version` finds no daemon on this machine |
+| postgres-failover | a real `postgres:16-alpine` primary restarted under Docker Desktop 29.6.2: container back in **0.549 s**, store stall **0.069 s**, 3 write errors seen and retried, 4/4 leases, 1 worker, document identical |
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
 | autoscale-rebalance | 2 moves explained; under a hold, 0 moves; saturated `c0` reported as `no-boundary`, `Simulation`, 0.948 of the tick budget |
 | rolling-upgrade | protocol 17 and 19 both disconnected; 18 admitted; session kept across a gateway replacement |
@@ -177,15 +177,14 @@ transition stranded the containers (D1b of that record). `ARestartThatCameBackEm
 is the turned-around assertion; `ScaleAvailabilityTests.AnOrchestratorThatCameBackEmptyIsPutRightByTheWorkersThatAreStillSimulating`
 is the same thing at the process level.
 
-**D7c. Database failover itself is not exercised on this machine.** *Addressed by NEB-227, and still a gap in the
-numbers.* The gap was that the synthetic layer restarted a `LocalControlPlane` in place, which swaps no storage
+**D7c. Database failover itself is not exercised.** *Closed by NEB-227.* The gap was that the synthetic layer restarted a `LocalControlPlane` in place, which swaps no storage
 and loses no connection mid-write. `ScaleAvailabilityTests` now restarts the orchestrator **process** against a
 real `SqlControlPlaneStorage` over SQLite (S6b, measured), and `APostgresFailoverStallsTheControlPlaneStoreAndLosesNothing`
-restarts a real PostgreSQL primary in Docker and measures the stall (S6c). The second one has **never run**: this
-machine has a Docker client and no daemon, so the scenario takes its `Assert.Ignore` path with that reason.
-Status: **covered for the orchestrator process and SQLite; written but unmeasured for PostgreSQL.** Anyone with a
-Docker daemon closes the rest of this by running `dotnet test --filter "TestCategory=Docker"` and writing the
-number into `ScaleThresholds.DatabaseFailoverSeconds` and the table above.
+restarts a real PostgreSQL primary in Docker and measures the stall (S6c). The second one was run on this machine
+once Docker Desktop was started (`dotnet test --filter "TestCategory=Docker"`, 7 s): the store was unreachable for
+0.069 s, the container was back in 0.549 s, three saves failed and were retried, and the document came back identical.
+Status: **covered.** The scenario still skips with a reason on a machine without a Docker daemon, and the 60 s bound
+stays provisional because a managed failover is slower than a local container restart.
 
 ## D8. The compatibility window
 
