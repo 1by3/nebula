@@ -96,6 +96,11 @@ namespace Nebula
         GhostDespawn = 43,
         AuthorityTransfer = 44,
         ForwardInput = 45,
+        /// <summary>
+        /// Worker -> worker: an <c>AuthorityRpc</c> for an entity the sender holds only a ghost of
+        /// (<see cref="AuthorityCallMsg"/>). Carries a call id, a hop count and the epoch the sender observed, so
+        /// the receiver can apply it once, forward it after a handover, or reject it with a reason.
+        /// </summary>
         AuthorityRpc = 46,
         GhostSyncState = 47,
         /// <summary>
@@ -103,6 +108,11 @@ namespace Nebula
         /// <see cref="NebulaWorker.RegisterMessageHandler"/>; sent with <see cref="NebulaWorker.SendToWorker"/>.
         /// </summary>
         WorkerMessage = 48,
+        /// <summary>
+        /// Worker -> worker: the outcome of an <see cref="AuthorityRpc"/> that asked for one
+        /// (<see cref="AuthorityCallReplyMsg"/>), sent to the worker that minted the call id.
+        /// </summary>
+        AuthorityRpcReply = 49,
     }
 
     public enum PeerRole : byte
@@ -143,7 +153,7 @@ namespace Nebula
 
     public struct HelloMsg
     {
-        public const ushort ProtocolVersion = 17;
+        public const ushort ProtocolVersion = 18;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -606,6 +616,98 @@ namespace Nebula
             Radius = r.ReadFloat(),
             Args = r.ReadBytes(),
         };
+    }
+
+    /// <summary>Flags on an <see cref="AuthorityCallMsg"/>.</summary>
+    [Flags]
+    public enum AuthorityCallFlags : byte
+    {
+        None = 0,
+        /// <summary>The sender wants an <see cref="AuthorityCallReplyMsg"/> with the outcome.</summary>
+        WantsReply = 1,
+    }
+
+    /// <summary>
+    /// An <c>AuthorityRpc</c> on the worker-to-worker link (<see cref="MsgId.AuthorityRpc"/>). Beside the fields an
+    /// <see cref="EntityRpcMsg"/> carries, it names the call (<see cref="CallId"/>, minted by the sender: see
+    /// <see cref="AuthorityCallId"/>), counts the forwards it has taken (<see cref="Hops"/>) and says whether the
+    /// sender wants to hear the outcome. The contract is in <c>docs/cross-worker-calls.md</c>.
+    /// </summary>
+    public struct AuthorityCallMsg
+    {
+        /// <summary>The sender's id for this call; forwarding keeps it.</summary>
+        public ulong CallId;
+        /// <summary>How many workers have forwarded this call so far. 0 as sent.</summary>
+        public byte Hops;
+        public AuthorityCallFlags Flags;
+        public ulong NetId;
+        /// <summary>The entity's epoch on the sender's copy when the call was made.</summary>
+        public uint Epoch;
+        public byte BehaviourIndex;
+        public uint MethodHash;
+        public byte[] Args;
+
+        public bool WantsReply => (Flags & AuthorityCallFlags.WantsReply) != 0;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.AuthorityRpc);
+            w.WriteULong(CallId);
+            w.WriteByte(Hops);
+            w.WriteByte((byte)Flags);
+            w.WriteULong(NetId);
+            w.WriteUInt(Epoch);
+            w.WriteByte(BehaviourIndex);
+            w.WriteUInt(MethodHash);
+            w.WriteBytes(Args);
+        }
+
+        public static AuthorityCallMsg Read(NetworkReader r) => new AuthorityCallMsg
+        {
+            CallId = r.ReadULong(),
+            Hops = r.ReadByte(),
+            Flags = (AuthorityCallFlags)r.ReadByte(),
+            NetId = r.ReadULong(),
+            Epoch = r.ReadUInt(),
+            BehaviourIndex = r.ReadByte(),
+            MethodHash = r.ReadUInt(),
+            Args = r.ReadBytes(),
+        };
+    }
+
+    /// <summary>
+    /// The outcome of an <see cref="AuthorityCallMsg"/> that set <see cref="AuthorityCallFlags.WantsReply"/>
+    /// (<see cref="MsgId.AuthorityRpcReply"/>), sent by the worker that decided it to the worker whose index the
+    /// call id carries.
+    /// </summary>
+    public struct AuthorityCallReplyMsg
+    {
+        public ulong CallId;
+        public AuthorityCallOutcome Outcome;
+        /// <summary>The entity's epoch on the deciding worker, or 0 when it did not hold the entity.</summary>
+        public uint Epoch;
+        /// <summary>The call's hop count when it was decided.</summary>
+        public byte Hops;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.AuthorityRpcReply);
+            w.WriteULong(CallId);
+            w.WriteByte((byte)Outcome);
+            w.WriteUInt(Epoch);
+            w.WriteByte(Hops);
+        }
+
+        public static AuthorityCallReplyMsg Read(NetworkReader r) => new AuthorityCallReplyMsg
+        {
+            CallId = r.ReadULong(),
+            Outcome = (AuthorityCallOutcome)r.ReadByte(),
+            Epoch = r.ReadUInt(),
+            Hops = r.ReadByte(),
+        };
+
+        /// <summary>The result a sender's callback receives for this reply.</summary>
+        public AuthorityCallResult ToResult() => new AuthorityCallResult(CallId, Outcome, Epoch, Hops);
     }
 
     /// <summary>Selected axes and encoding of a root transform update.</summary>

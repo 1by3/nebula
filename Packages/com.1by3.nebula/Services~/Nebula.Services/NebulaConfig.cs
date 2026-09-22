@@ -58,6 +58,7 @@ namespace Nebula
         public float GhostBandMargin = 4f;
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;
+        public int AuthorityCallMaxHops = 3;
         public string PersistenceMode = "auto";
         public string PersistenceLocalFile = "";
         public float PersistenceCheckpointSeconds = 5f;

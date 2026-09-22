@@ -2,6 +2,46 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking: protocol 17 → 18, cross-worker call contract
+
+Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`. See [RPCs and worker messages](https://nebula.1by3.co/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call) and the [wire protocol specification](https://nebula.1by3.co/docs/specifications/wire-protocol#authority-calls); the design record is `docs/cross-worker-calls.md`.
+
+**What changed and why.** An `AuthorityRpc` sent to a ghost's owner was a bare RPC on the worker link: applied if the receiver had authority, forwarded once if it had just handed the entity off, otherwise dropped in silence. Nothing identified a call, so nothing could tell a repeat from a first arrival; the epoch on the message was never read; a forward could loop; the sender never learned the outcome. There is now a stated and tested contract: every call carries a sender-minted id, the epoch the sender saw and a hop count; the receiving worker applies it once, forwards it after a handover (bounded), or rejects it with a reason; and a caller may ask for that outcome.
+
+**Breaking wire format (protocol 18):**
+
+- `AuthorityRpc` (46) now carries `AuthorityCallMsg` (`u64 call_id, u8 hops, u8 flags, u64 net_id, u32 entity_epoch, u8 behavior_index, u32 method_hash, bytes args`) instead of `EntityRpcBody`. `EntityRpc` (13) and `ServerRpc` (21) are unchanged.
+- New message `AuthorityRpcReply` (49): `u64 call_id, u8 outcome, u32 entity_epoch, u8 hops`, sent to the worker that minted the call id when the call asked for a reply.
+- A worker now ignores an `AuthorityRpc` from a peer that is not a worker.
+
+**Behaviour that changed:**
+
+- A cross-worker `AuthorityRpc` is applied **at most once** per call id: each worker keeps the ids it has applied for 4096 calls or 600 ticks (10 s), and rejects a repeat as `RejectedDuplicate`.
+- A call whose epoch is ahead of the receiver's copy, or more than `AuthorityCallMaxHops` handovers behind it, is rejected as `RejectedStaleEpoch` instead of being applied (design D3: the window is the hop bound, because a call that legitimately chased its target through forwarding is never further behind than that).
+- Forwarding after a handover is bounded to `AuthorityCallMaxHops` forwards (default 3) and ends in `RejectedHopLimit`; before, it was once, then silence. A worker holding a ghost now also forwards to the owner its ghost names, not only to a worker it handed the entity to itself, and never back to the peer the call came from.
+- Every rejection is logged as a warning on the worker that decided it, with the reason, the call id, the epochs and the hop count.
+
+**New `NebulaConfig` field:** `AuthorityCallMaxHops` (3), with the `-nebula-authority-call-hops` command-line override, mirrored into the services config.
+
+**New public API:**
+
+- `NetworkBehaviour.AuthorityRpcWithReply(method, args…, onDone, timeoutSeconds = 5)` (0–4 arguments) — as `AuthorityRpc`, and reports the outcome to `onDone` exactly once, on the worker's main thread: `Accepted`, `RejectedStaleEpoch`, `RejectedUnknownEntity`, `RejectedHopLimit`, `RejectedDuplicate`, `RejectedUnreachable` or `TimedOut`. Returns the call id (0 when applied locally or refused before sending). `NetworkBehaviour.DefaultAuthorityCallTimeoutSeconds`.
+- `AuthorityCallOutcome`, `AuthorityCallResult` (`CallId`, `Outcome`, `TargetEpoch`, `Hops`, `Succeeded`).
+- `AuthorityCallId`, `AuthorityCallLedger`, `AuthorityCallRouter`, `AuthorityCallTracker`, `AuthorityCallTarget`, `AuthorityCallDecision`, `AuthorityCallAction` (`Runtime/Worker/AuthorityCallContract.cs`) — the pure C# rules the worker runs, compiled into `Services~` too and covered by `ConformanceCallContractTests` (`[Category("Conformance")]`).
+- `AuthorityCallMsg`, `AuthorityCallReplyMsg`, `AuthorityCallFlags`, `MsgId.AuthorityRpcReply`.
+- `IRpcSink.SendAuthorityRpc(identity, behaviourIndex, methodHash, args, onDone, timeoutSeconds)` — the reply-requesting overload. A custom `IRpcSink` must implement it.
+- `NebulaWorker.AuthorityCallsApplied`, `AuthorityCallsForwarded`, `AuthorityCallsRejected`, `AuthorityCallsPending`.
+
+**Unchanged:** the fire-and-forget `AuthorityRpc` overloads keep their signatures and are governed by the same rules. Worker messages (`SendToWorker`) remain fire-and-forget: one delivery on the chosen channel, no call id, no forwarding, no reply; the guide now says so.
+
+**Migration notes:**
+
+- Rebuild and restart every worker, gateway, orchestrator, and client build together.
+- A handler that relied on a cross-worker call arriving after several handovers should expect `RejectedHopLimit` past three; raise `AuthorityCallMaxHops` if your world hands entities over that often, or use `AuthorityRpcWithReply` and retry from the caller.
+- A custom `IRpcSink` implementation must add the new `SendAuthorityRpc` overload.
+
 ## [0.1.0-alpha.29] - 2026-09-21
 
 ### Breaking: protocol 16 → 17, interest management

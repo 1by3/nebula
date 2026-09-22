@@ -1238,5 +1238,12 @@ namespace Nebula
         {
             NebulaLog.Warn("AuthorityRpc sent from a client; ignored");
         }
+
+        ulong IRpcSink.SendAuthorityRpc(NetworkIdentity identity, byte behaviourIndex, uint methodHash, ArraySegment<byte> args, Action<AuthorityCallResult> onDone, float timeoutSeconds)
+        {
+            NebulaLog.Warn("AuthorityRpc sent from a client; ignored");
+            onDone?.Invoke(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
+            return 0;
+        }
     }
 }

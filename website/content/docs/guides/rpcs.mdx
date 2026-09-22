@@ -160,11 +160,63 @@ private void RpcApplyDamage(float amount, ulong attackerNetworkId)
 }
 ```
 
-When the calling worker controls the target, Nebula serializes the arguments and calls the method locally. When the local copy is a ghost, Nebula sends the call over the worker-to-worker link. If the entity moves again before the call arrives, the receiving worker can forward it to the latest owner.
+When the calling worker controls the target, Nebula serializes the arguments and calls the method locally. When the local copy is a ghost, Nebula sends the call over the worker-to-worker link to the worker it believes has authority.
 
-Include every value the receiver needs in the arguments. It may not have a copy of the calling entity. Check `HasAuthority` again in the handler because the target can move during message delivery.
+Include every value the receiver needs in the arguments. It may not have a copy of the calling entity.
 
 `AuthorityRpc` delivers a claim; it does not decide whether the claim is valid. Validate game-specific results on the receiving worker when necessary.
+
+### What Nebula promises for a cross-worker call
+
+A call that leaves its worker follows these rules. The design record is `docs/cross-worker-calls.md` in the repository.
+
+- **Delivery.** The call travels reliably and in order on one worker link, the same channel handover uses. Nebula does not order calls that arrive over different links: two workers calling the same entity, or a forwarded call and a direct one, can run in either order. Put a tick or your own sequence number in the arguments when order matters.
+- **Identity.** Every call carries an ID that the sender mints. A worker keeps the IDs it has applied for 4096 calls or 600 ticks (10 seconds), whichever runs out first, and rejects a repeat as a duplicate. Within those bounds a call runs at most once.
+- **Handover in flight.** If the target changes worker after the call is sent, the worker that receives it forwards it to the new owner. Forwarding stops after `AuthorityCallMaxHops` forwards (default 3, set in `NebulaConfig` or with `-nebula-authority-call-hops`), and the call is rejected.
+- **Epoch fencing.** The call carries the epoch of the caller's copy. The receiving worker rejects a call whose epoch is ahead of its own copy or more than `AuthorityCallMaxHops` handovers behind it. A call that reached its target through legitimate forwarding is never further behind than that.
+- **Outcome.** A rejected call is logged with its reason on the worker that rejected it. To learn the outcome on the calling worker, use `AuthorityRpcWithReply`.
+
+Nebula does not retry a call, does not guarantee delivery through a worker or link failure, and does not run several calls atomically. `Accepted` means the method ran; whether the handler accepted the claim is between your handler and your game.
+
+### Learn what happened to a call
+
+Use `AuthorityRpcWithReply` when the caller must know whether the call was applied. It takes the same method and arguments as `AuthorityRpc`, plus a callback and an optional timeout in seconds (default 5). The callback runs exactly once on the calling worker's main thread.
+
+```csharp
+internal void ClaimPickup(ulong playerNetId)
+{
+    AuthorityRpcWithReply(RpcClaimPickup, playerNetId, result =>
+    {
+        if (result.Succeeded) return;
+        // The claim did not run: the target moved too many times, was despawned,
+        // this copy was stale, or nobody answered in time.
+        NebulaLog.Info($"pickup claim failed: {result.Outcome}");
+    });
+}
+
+[AuthorityRpc]
+private void RpcClaimPickup(ulong playerNetId)
+{
+    if (!HasAuthority || Claimed.Value) return;
+    Claimed.Value = true;
+}
+```
+
+`AuthorityCallResult.Outcome` is one of:
+
+| Outcome | Meaning |
+| --- | --- |
+| `Accepted` | The worker with authority ran the method once. |
+| `RejectedStaleEpoch` | The caller's copy was too far behind, or ahead of, the entity. `TargetEpoch` holds the entity's epoch. |
+| `RejectedUnknownEntity` | No worker on the path holds the entity. |
+| `RejectedHopLimit` | The target changed worker more than `AuthorityCallMaxHops` times while the call was chasing it. |
+| `RejectedDuplicate` | A call with the same ID was already applied. |
+| `RejectedUnreachable` | The caller, or a worker forwarding the call, has no connection to the entity's owner. |
+| `TimedOut` | No reply arrived before the timeout. The call may or may not have run. |
+
+The result also carries the call ID, the deciding worker's epoch for the entity, and how many times the call was forwarded. A call the local worker applies itself reports `Accepted` with call ID 0 and never crosses the network.
+
+The fire-and-forget `AuthorityRpc` overloads follow the same rules; they only skip the reply.
 
 ## Send a worker message
 
@@ -204,7 +256,7 @@ bool sent = worker.SendToWorker(targetWorkerIndex, AreaQuery, writer =>
 
 `SendToWorker` returns `false` when the target is not connected. It calls the handler directly when the target is the current worker. Messages use `ReliableOrdered` delivery unless you pass `Delivery.Sequenced`.
 
-Nebula does not forward worker messages. Include an authority check in a handler that acts on an entity, and design for the entity to move before the message arrives.
+A worker message is fire-and-forget. Nebula sends it once, on the channel you chose, to the worker you named. It carries no call ID, is not checked against an epoch, is not forwarded when an entity moves, and produces no reply. A message on a live reliable link arrives exactly once and in order with other reliable messages on that link; if the link drops, the message is lost and the sender is not told. Include an authority check in a handler that acts on an entity, and design for the entity to move before the message arrives. When a message must follow an entity, use `AuthorityRpc`; when you need an answer, use `WorkerQuery` below.
 
 Use `ContainerRegistry.Along(a, b, margin, result)` to find the containers crossed by a line segment. You can then send a query to the workers that own those containers. Use `ConnectedWorkerIndices` to inspect connected peers.
 
