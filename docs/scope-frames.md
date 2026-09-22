@@ -129,15 +129,17 @@ client sees.
 
 ## 4. State history across a shift
 
-**D8 Recorded poses are shifted, not tagged, and entries recorded under a container are not touched at all.**
-`StateHistory` (NEB-222) records a world pose plus the container the entity was in. `StateHistory.Shift(delta)`
-moves only the entries whose `Container` is null; every other entry is rebuilt from its container, and the
-container moved with the frame, so its pose already means the same place. Because `ShiftFrameAll` is now
-scope-addressed, an entity only ever gets its **own** frame's delta. `StateAt(tick)` therefore keeps answering
-with a pose that means the same place in the world before and after a shift, which is what it promises —
-asserted in the tier-B conformance test.
+**D8 Recorded poses are shifted, not tagged — and now *every* entry is, not only the uncontained ones.**
+`StateHistory` (NEB-222) records a world pose plus the container the entity was in, and `TryGetStateAt` returns the
+stored pose verbatim: it never rebuilds one from its container. `StateHistory.Shift(delta)` nevertheless moved only
+the entries whose `Container` was null, on the reasoning (stated in NEB-222's D4 and in the comment) that a
+contained entry "is rebuilt from the container". Nothing rebuilds it, so a contained entry's pose was left in the
+previous frame and `StateAt` answered with it — a bug that predates this item and is just as wrong in the public
+world; the tier-B conformance test found it. `Shift` now moves every valid entry, which is simply what a frame
+shift means: the whole frame translated by `delta`, so every world pose recorded in it translated too. Because
+`ShiftFrameAll` is now scope-addressed, an entity only ever gets its **own** frame's delta.
 
-The alternative (tag every entry with the frame's shift count and convert on read) was rejected: it would put a
+The alternative (tag every entry with its frame's shift count and convert on read) was rejected: it would put a
 branch and a multiply on the lag-compensation read path, which is the hot one, to save a walk over a 32-entry ring
 that happens once per origin shift — an event that happens a few times a minute at most.
 
