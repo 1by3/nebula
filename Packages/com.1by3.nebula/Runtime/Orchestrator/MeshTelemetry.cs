@@ -529,7 +529,9 @@ namespace Nebula
 
         /// <summary>
         /// Pull the <c>"cohesion"</c> array out of a worker document:
-        /// <c>[{"group":17,"members":3,"containers":["a","b"]},...]</c>. Rows without a group are ignored.
+        /// <c>[{"group":17,"members":3,"in":["a","b"]},...]</c>. The containers are under <c>"in"</c> rather than
+        /// <c>"containers"</c> so that <see cref="ParseContainers"/>, which scans for the first <c>"containers"</c>
+        /// key in the document, cannot land in this block. Rows without a group are ignored.
         /// </summary>
         public static void ParseCohesion(string json, List<CohesionSpan> result)
         {
@@ -565,7 +567,7 @@ namespace Nebula
                             int end = EndOfString(json, at);
                             if (end < 0) return;
                             string value = json.Substring(at + 1, end - at - 1);
-                            if (key == "containers" && value.Length > 0 && !span.Containers.Contains(value)) span.Containers.Add(value);
+                            if (key == "in" && value.Length > 0 && !span.Containers.Contains(value)) span.Containers.Add(value);
                             at = end + 1;
                         }
                     }

@@ -207,8 +207,9 @@ namespace Nebula
 
         /// <summary>
         /// The cohesion block: the containers this worker is holding, with the seconds each hold still has to run,
-        /// and one row per cohesion group it owns members of (<c>docs/cohesion-hints.md</c>, D7/D8). Both are
-        /// always written, so a document that carries neither says so with two empty arrays.
+        /// and one row per cohesion group it owns members of, whose <c>"in"</c> array names the containers its
+        /// members sit in (<c>docs/cohesion-hints.md</c>, D7/D8). Both blocks are always written, so a document that
+        /// carries neither says so with two empty arrays.
         /// </summary>
         private void WriteCohesion(JsonWriter w)
         {
@@ -231,7 +232,9 @@ namespace Nebula
                 w.BeginObject();
                 w.Prop("group", (long)span.Group);
                 w.Prop("members", span.Members);
-                w.Key("containers");
+                // "in", not "containers": MeshTelemetry.ParseContainers finds the document's container counts by
+                // scanning for the first "containers" key, so no block before it may carry one.
+                w.Key("in");
                 w.BeginArray();
                 if (span.Containers != null) for (int j = 0; j < span.Containers.Count; j++) w.Value(span.Containers[j]);
                 w.EndArray();

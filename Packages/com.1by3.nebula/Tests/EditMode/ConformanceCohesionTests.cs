@@ -339,8 +339,8 @@ namespace Nebula.Tests
         {
             double now = 0.0;
             var telemetry = new MeshTelemetry(() => now);
-            telemetry.Accept(Document("w1", "", "{\"group\":7,\"members\":2,\"containers\":[\"c0\",\"c1\"]}"), out _);
-            telemetry.Accept(Document("w2", "", "{\"group\":7,\"members\":1,\"containers\":[\"c1\",\"c3\"]},{\"group\":9,\"members\":4,\"containers\":[]}"), out _);
+            telemetry.Accept(Document("w1", "", "{\"group\":7,\"members\":2,\"in\":[\"c0\",\"c1\"]}"), out _);
+            telemetry.Accept(Document("w2", "", "{\"group\":7,\"members\":1,\"in\":[\"c1\",\"c3\"]},{\"group\":9,\"members\":4,\"in\":[]}"), out _);
 
             var groups = new List<CohesionGroupInfo>();
             telemetry.CopyCohesion(groups);
@@ -356,10 +356,25 @@ namespace Nebula.Tests
 
             // A worker that stops reporting takes its half of the group with it when its rows expire.
             now += MeshTelemetry.ExpireSeconds + 1.0;
-            telemetry.Accept(Document("w1", "", "{\"group\":7,\"members\":2,\"containers\":[\"c0\",\"c1\"]}"), out _);
+            telemetry.Accept(Document("w1", "", "{\"group\":7,\"members\":2,\"in\":[\"c0\",\"c1\"]}"), out _);
             telemetry.CopyCohesion(groups);
             Assert.AreEqual(1, groups.Count);
             CollectionAssert.AreEquivalent(new[] { "c0", "c1" }, groups[0].Containers);
+        }
+
+        [Test]
+        public void ACohesionRowNeverSwallowsTheContainerCountsThatFollowIt()
+        {
+            var telemetry = new MeshTelemetry(() => 0.0);
+            telemetry.Accept(Document("w1", "{\"id\":\"c0\",\"seconds\":5.0}", "{\"group\":7,\"members\":2,\"in\":[\"c0\",\"c1\"]}"), out _);
+
+            var occupancy = new Dictionary<string, ContainerLoad>();
+            telemetry.CopyOccupancy(occupancy);
+
+            // The container counts are found by scanning for the first "containers" key in the document, so the
+            // cohesion rows name their containers under "in" and the scan still lands on the counts.
+            Assert.AreEqual(1, occupancy.Count);
+            Assert.AreEqual(1, occupancy["c0"].Players);
         }
 
         [Test]

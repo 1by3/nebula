@@ -192,7 +192,7 @@ Pull the `"holds"` array out of a worker document: `[{"id":"arena","seconds":4.2
 public static void ParseCohesion(string json, List<CohesionSpan> result);
 ```
 
-Pull the `"cohesion"` array out of a worker document: `[{"group":17,"members":3,"containers":["a","b"]},...]`. Rows without a group are ignored.
+Pull the `"cohesion"` array out of a worker document: `[{"group":17,"members":3,"in":["a","b"]},...]`. The containers are under `"in"` rather than `"containers"` so that [`ParseContainers`](#parsecontainers), which scans for the first `"containers"` key in the document, cannot land in this block. Rows without a group are ignored.
 
 ### BuildGeometryJson [#buildgeometryjson]
 

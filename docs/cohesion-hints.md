@@ -76,7 +76,8 @@ from somewhere else. This is the whole of NEB-234's hook.
 
 **D7. The planner deals a group's containers as one item.** Workers report, in their telemetry document, one row
 per cohesion group they own members of: the group id, how many members, and which of their containers those
-members are in. The orchestrator unions the rows of every live worker into `CohesionGroupInfo` and hands them to
+members are in (under `"in"`, not `"containers"`: the occupancy reader finds the per-container counts by scanning
+for the document's first `"containers"` key, so no block written before it may carry one). The orchestrator unions the rows of every live worker into `CohesionGroupInfo` and hands them to
 the policy as `AssignmentInput.Cohesion`. `CostBalancedAssignmentPolicy` folds the containers of every binding —
 affinity groups from the hints and cohesion groups from the telemetry — into one item with a union-find, so a
 container named by both ends up in one item with everything either of them names. From there the existing
