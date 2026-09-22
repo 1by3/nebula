@@ -399,9 +399,25 @@ Once the game supplies a `RuntimeWorld` and one content callback, Nebula handles
 
 Your game still owns terrain generation, asset streaming, placement rules, permissions, and player-facing gameplay.
 
+## More than one world
+
+Everything above builds the **public** world: the one a client that names no scope joins. A mesh can run several chunked worlds at once, each with its own cell size, chunks, leases and saved entities, by activating a [simulation scope](/docs/guides/scopes#a-scope-can-be-a-whole-world) whose definition is a grid:
+
+```csharp
+NebulaChunkedWorld.ActivateGrid(controlPlane, "world/arena#run-4812", new ChunkGridDefinition
+{
+    CellSize = new Vector3(64, 256, 64),
+    Planar   = true,
+    Anchor   = Vector3Int.zero,
+});
+```
+
+Chunk `(3, 0, -7)` of that world is a different container from chunk `(3, 0, -7)` of the public world: a different lease, a different persistence record, a different seed, and no visibility between them. Your content callback serves both — `ChunkContext.ScopeKey` says which world a chunk belongs to — and `NebulaChunks.GridFor(key)`, `At(position, key)` and `EnsureAt(position, key, cb)` are the scope-qualified forms of the calls used above.
+
 ## Current boundaries
 
-- **Runtime-grid IDs have a fixed coordinate range.** Keep coordinates within `RuntimeGrid.MinCoordinate` and `RuntimeGrid.MaxCoordinate`. Changing the packing later would break persisted chunk IDs.
+- **Runtime-grid IDs have a fixed coordinate range.** Keep coordinates within `RuntimeGrid.MinCoordinate` and `RuntimeGrid.MaxCoordinate`, in every world. Changing the packing later would break persisted chunk IDs.
+- **Every world shares one floating origin and one physics scene per worker.** A scoped world whose content sits very far from the public world's origin in absolute coordinates loses float precision accordingly. Per-scope origin frames are not available yet.
 - **Procedural content is not network state.** Every role that needs terrain or colliders must generate or load it from the stable chunk ID inside a `ChunkContent` handler. Network interactive objects must be registered prefabs spawned by a worker.
 - **Persistence is opt-in per entity and field.** The block exists and keeps its pose because it has `PersistentEntity`. Add `[Persist]` to any `NetworkVariable` whose value must also survive. Ordinary fields and transient entities are not restored.
 - **One Unity worker has one floating-origin frame.** The cost policy tends to give a worker spatially neighboring chunks. A game that expects one worker to simulate many extremely distant active regions should measure the cost of repeated origin shifts.

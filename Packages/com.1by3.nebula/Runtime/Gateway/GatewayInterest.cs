@@ -1504,14 +1504,23 @@ namespace Nebula
             if (entering != null) for (int i = 0; i < entering.Count; i++) AddOf(entering[i]);
 
             ulong pawnNetId = 0;
+            // Which scope's rows this client may hold. A scoped grid (NEB-239) is a whole world of containers at
+            // coordinates another scope also uses, so a window must be queried in the client's own scope and only
+            // in the public world as well when its scope looks out at it. Both directions fail closed: a public
+            // client is never told about a scope's chunks, and a scoped client is never told about the public
+            // world's unless its scope observes it.
+            ulong scopeInstance = 0;
+            bool observePublic = true;
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
             {
                 var root = RootOf(pawn);
                 pawnNetId = client.PawnNetId;
+                var scope = ScopeContainer(pawn.Container);
+                scopeInstance = scope != null ? scope.InstanceId : 0;
+                observePublic = scopeInstance == 0 || (scope.Instance != null && scope.Instance.ObservePublic);
                 // The pawn's own window first: whatever a camera is doing, the player's body must be able to
                 // stand on the ground, and this is the one focus that exists before any evaluation has run.
                 AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
-                var scope = ScopeContainer(pawn.Container);
                 if (scope != null) Add(scope.ContainerId);
             }
             var foci = client.Interest?.Foci;
@@ -1543,7 +1552,18 @@ namespace Nebula
                 // A box focus is already clamped to InterestMaxRadius per axis by InterestQuery (design D61), so
                 // this query can never walk an unbounded range of cells.
                 var size = new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window)));
-                ContainerRegistry.Overlapping(new Bounds(new Vector3((float)x, (float)y, (float)z), size), _containerScratch);
+                var box = new Bounds(new Vector3((float)x, (float)y, (float)z), size);
+                if (scopeInstance != 0)
+                {
+                    ContainerRegistry.Overlapping(box, _containerScratch, scopeInstance);
+                    for (int i = 0; i < _containerScratch.Count; i++)
+                    {
+                        if (budget <= 0) { truncated = true; return; }
+                        if (Add(_containerScratch[i].ContainerId)) budget--;
+                    }
+                    if (!observePublic) return;
+                }
+                ContainerRegistry.Overlapping(box, _containerScratch);
                 for (int i = 0; i < _containerScratch.Count; i++)
                 {
                     if (budget <= 0) { truncated = true; return; }

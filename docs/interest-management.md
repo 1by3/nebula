@@ -307,6 +307,15 @@ hand-rolled copy). Baked worlds get the same interest/streaming behaviour throug
 `nebula-virtualworld` deletes `ChunkAllocator`, `ChunkLoader`, `Chunks` and keeps one content callback.
 Its chunk ids change (`x<<32|z` → pinned `RuntimeGrid` packing): reset its persistence once.
 
+Since NEB-239 there is one grid **per scope**, not one per process (`docs/scoped-chunk-grids.md`). `NebulaChunks.Grid`
+and every unqualified call still mean the public world; `GridFor(key)` and the scope-qualified overloads reach the
+others, and `ChunkContext.ScopeKey` says which world a chunk belongs to. Two consequences for this document: a
+client's container rows are collected in its own scope and only additionally in the public world when its scope
+observes it (§4's window query is scope-qualified, failing closed both ways), and region ids stay scope-free, so a
+worker may hand a gateway entities of a scope that gateway has no client in — the per-client instance check drops
+them before a client hears anything. That cost is D12 of `docs/scoped-chunk-grids.md` and is revisited by per-scope
+origin frames (NEB-241).
+
 ## 11. Honest limits
 
 | World shape | Client culling | Gateway scoping | Simulation scaling |

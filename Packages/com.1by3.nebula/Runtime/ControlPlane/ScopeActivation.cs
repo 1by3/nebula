@@ -103,8 +103,16 @@ namespace Nebula
     /// <summary>The shapes a <see cref="ScopeDefinition"/> can take. A reader that does not know a kind must not activate it.</summary>
     public static class ScopeKind
     {
-        /// <summary>An explicit list of parts, each one runtime container. The only kind Nebula itself activates today.</summary>
+        /// <summary>An explicit list of parts, each one runtime container.</summary>
         public const string Parts = "parts";
+
+        /// <summary>
+        /// A procedural chunk grid (<c>docs/scoped-chunk-grids.md</c>): the payload is a
+        /// <see cref="ChunkGridDefinition"/> and the parts are the anchor chunk alone, so activating a world does
+        /// not enumerate its chunks. Every other chunk of the scope is leased on demand, under an id derived from
+        /// the same key (<see cref="ChunkKeys.RuntimeId"/>).
+        /// </summary>
+        public const string Grid = "grid";
     }
 
     /// <summary>One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates.</summary>
@@ -147,7 +155,16 @@ namespace Nebula
         public string Validate()
         {
             if (string.IsNullOrEmpty(Kind)) return "a scope definition needs a kind";
-            if (Kind != ScopeKind.Parts) return $"unknown scope definition kind '{Kind}'";
+            if (Kind != ScopeKind.Parts && Kind != ScopeKind.Grid) return $"unknown scope definition kind '{Kind}'";
+            if (Kind == ScopeKind.Grid)
+            {
+                // The payload is opaque to the control plane everywhere else, but a grid scope whose payload does
+                // not parse would leave every role without the cell size it needs to place the anchor's neighbours.
+                var grid = ChunkGridDefinition.FromJson(Payload);
+                if (grid == null) return "a grid scope needs a ChunkGridDefinition payload";
+                string bad = grid.Validate();
+                if (bad != null) return bad;
+            }
             if (Parts == null || Parts.Count == 0) return "a scope definition needs at least one part";
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var part in Parts)
@@ -495,6 +512,7 @@ namespace Nebula
                     InstanceId = scope.InstanceId,
                     ContentResource = part.ContentResource ?? "",
                     ScopeKey = key,
+                    PartId = part.PartId ?? "",
                     ObservePublic = definition.ObservePublic,
                     ObservationCenter = definition.ObservationCenter,
                     ObservationSize = definition.ObservationSize,

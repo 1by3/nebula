@@ -78,6 +78,61 @@ if (controlPlane.IsScopeReady(key))
 
 A worker asking for a scope it intends to simulate itself can skip the wait by setting `PreferredWorkerId`, which creates the rows already assigned to it. That is what `NebulaWorker.PrepareInstance` does; for every other caller the rows are created unowned and the orchestrator assigns them on its next rebalance.
 
+## A scope can be a whole world
+
+A scope does not have to be a room you listed the parts of. It can be an entire procedural [chunked world](/docs/guides/infinite-runtime-world) — a second map, an instanced open area, one copy of a region per party — with its own cell size, its own chunks, its own leases and its own saved entities:
+
+```csharp
+NebulaChunkedWorld.ActivateGrid(controlPlane, "world/arena#run-4812", new ChunkGridDefinition
+{
+    CellSize = new Vector3(64, 512, 64),
+    Planar   = true,
+    Ring     = 2,                  // chunks leased around each pawn; 0 uses the mesh's own setting
+    Anchor   = Vector3Int.zero,    // the chunk that always exists: the world's spawn area
+});
+```
+
+Activation creates exactly **one** container, the anchor chunk. A grid has no edge, so listing its chunks is not possible; every other chunk is leased on demand around the players who are actually in that world, and retired when nobody is.
+
+Everything else about the scope works as above: the same key gives the same world, a unique key gives a private copy, and a client that names the key at join is spawned into that world's anchor chunk.
+
+### Reaching a scoped world in your game
+
+`NebulaChunks` is keyed by scope. Everything you already call keeps meaning the public world:
+
+| Public world | A scope |
+| --- | --- |
+| `NebulaChunks.Grid` | `NebulaChunks.GridFor(key)` |
+| `NebulaChunks.At(position)` | `NebulaChunks.At(position, key)` |
+| `NebulaChunks.CoordOf(position)` | `NebulaChunks.CoordOf(position, key)` |
+| `NebulaChunks.EnsureAt(position, cb)` | `NebulaChunks.EnsureAt(position, key, cb)` |
+| `NebulaChunks.Allocator` | `NebulaChunks.AllocatorFor(key)` |
+
+Content callbacks are shared. One `Loaded` handler builds chunks for every world your process has joined, and `ChunkContext.ScopeKey` says which one a chunk belongs to:
+
+```csharp
+NebulaChunks.Loaded += (in ChunkContext chunk) =>
+{
+    // chunk.Seed differs per scope, so two worlds at the same coordinate generate differently
+    BuildTerrain(chunk.Root, chunk.Coord, chunk.Seed, biome: BiomeFor(chunk.ScopeKey));
+};
+```
+
+A process only pays for the worlds it is actually in: a grid appears the first time a container of that scope turns up in the process, and never before.
+
+### What two worlds never share
+
+Chunk `(3, 0, -7)` of two scopes is two containers standing on the same coordinates, and nothing passes between them:
+
+- two lease rows, so two workers can own them independently;
+- two container IDs, so two persistence records — what one world saves never appears in the other;
+- no adjacency, so an entity in one never ghosts into, interacts with, or is handed over to the other;
+- no interest: a client in one world is never told that the other's chunks exist, and never receives its entities.
+
+Their chunk seeds differ too, so the same coordinate generates different content in each world unless your game deliberately keys off the coordinate alone.
+
+<Callout>Entities do not cross a scope boundary by proximity, however close two worlds are in metres. Moving a player from one world to another is the same prepared transfer as entering any other scope.</Callout>
+
 ## Send a player into a scope
 
 ### At join
@@ -195,7 +250,8 @@ This drops the scope row, releases the claim on the key and removes the lease ro
 
 ## Limits
 
-- A scope definition lists its parts up front. Worlds whose chunks are decided at runtime are not covered yet.
+- A `ScopeKind.Parts` definition lists its parts up front. A world whose chunks are decided at runtime is a `ScopeKind.Grid` scope instead, which lists only its anchor.
+- Every scope shares one floating origin and one physics scene per worker, so a scope whose content sits very far from the public world's origin in absolute coordinates loses float precision the same way a distant instance does. Per-scope origin frames are not available yet.
 - `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
 - A retire loses whatever in the scope was not persistent. That is why the default rule refuses to retire a part that holds any; a game that is happy to discard its transient contents has to say so through `ScopeLifecycle.ShouldRetire`.
 - Each lifecycle step gives the workers 30 seconds to report in. Past that the orchestrator finishes the step anyway, with a warning, so a worker that died cannot leave a scope nobody can enter.

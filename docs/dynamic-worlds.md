@@ -156,3 +156,19 @@ game supplies chunk content through `NebulaChunks.Loaded`/`Unloading` (or a `Chu
 else. See `docs/interest-management.md` §10 and §15 for the decisions, and `nebula-virtualworld`'s README for the
 worked shape. Games with their own chunk model are unaffected: `ChunkedWorld` defaults to false and every
 primitive underneath (`RuntimeGrid`, `RuntimeGridAllocator`, `RegisterRuntime`) still works on its own.
+
+## More than one grid per mesh (2026-09-22)
+
+The turnkey chunked world was one grid per process: `NebulaChunks.Grid`, a static `RuntimeGrid`, with a chunk's id
+spending all 63 usable bits of the runtime id on three signed 21-bit axes. A game with instanced open areas,
+several maps or one procedural region per party could not use it, because chunk (x, y, z) was one container
+whoever asked for it.
+
+`NebulaChunks` is now a registry keyed by **scope key**: one grid, one allocator, one set of lease rows and one set
+of persistence records per scope, with `Grid`, `Allocator` and every unqualified lookup still meaning the public
+world. A scoped grid is activated as a `ScopeKind.Grid` scope (`docs/scope-activation.md`) whose payload is a
+`ChunkGridDefinition` and whose only part is the anchor chunk, so activating a world does not enumerate it. Ids
+stay as they were in the public scope and are derived from the key and the coordinate in every other, so nothing
+persisted was rewritten and nobody's coordinate range narrowed.
+
+Decisions, the id-layout choice and the seams left for per-scope origin frames: `docs/scoped-chunk-grids.md`.

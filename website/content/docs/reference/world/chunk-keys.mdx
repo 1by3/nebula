@@ -1,0 +1,73 @@
+---
+title: "ChunkKeys"
+description: "How a chunk coordinate becomes the ids a scope's containers are named by."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/World/ChunkGridDefinition.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkGridDefinition.cs)</div>
+
+```csharp
+public static class ChunkKeys
+```
+
+How a chunk coordinate becomes the ids a scope's containers are named by. Two derivations, one per scope kind, and the choice is the whole of `docs/scoped-chunk-grids.md` D2:
+
+- the **public** scope keeps the pinned three-axis 21-bit packing (`RuntimeGrid.PackId` / [`InterestGrid.PackRegion`](/docs/reference/interest/interest-grid#packregion)), so every id persisted before scoped grids existed still resolves to the cell it always did;
+- a **scoped** grid derives its ids exactly as every other scope does ([`ScopeKeys.ContainerId`](/docs/reference/control-plane/scope-keys#containerid) of the key and the chunk's part id), so chunk (x,y,z) of two scopes is two container ids, two lease rows and two persistence records without a bit of the runtime id being spent on a scope field.
+
+Pure C#, so the gateway, the orchestrator and a test name a scope's chunks without Unity.
+
+## Fields
+
+### MinCoordinate [#mincoordinate]
+
+```csharp
+public const int MinCoordinate = -(1 << 20);
+```
+
+Coordinates outside this range cannot be packed into a public runtime id.
+
+### MaxCoordinate [#maxcoordinate]
+
+```csharp
+public const int MaxCoordinate = (1 << 20) - 1;
+```
+
+## Methods
+
+### IsValidCoordinate [#isvalidcoordinate]
+
+```csharp
+public static bool IsValidCoordinate(Vector3Int c);
+```
+
+### PartId [#partid]
+
+```csharp
+public static string PartId(Vector3Int coord);
+```
+
+The scope part id of a chunk: `c/x/y/z`. It is hashed with the scope key into the container id and carried on the lease row ([`InstanceContainerInfo.PartId`](/docs/reference/protocol/instance-container-info#partid)), which is how a role that never computed the id — a client, a gateway — recovers the coordinate from a row it was handed.
+
+### TryParsePartId [#tryparsepartid]
+
+```csharp
+public static bool TryParsePartId(string partId, out Vector3Int coord);
+```
+
+Inverse of [`PartId`](#partid). False for any other part id (an instance's "interior").
+
+### RuntimeId [#runtimeid]
+
+```csharp
+public static ulong RuntimeId(string scopeKey, Vector3Int coord);
+```
+
+The 64-bit runtime container id of chunk `coord` in `scopeKey`. An empty key is the public world and gets the pinned packing; any other key gets the scope's hash.
+
+### ContainerId [#containerid]
+
+```csharp
+public static string ContainerId(string scopeKey, Vector3Int coord);
+```
+
+The control-plane container id of a chunk: [`RuntimeId`](#runtimeid) in the `rt_` form.

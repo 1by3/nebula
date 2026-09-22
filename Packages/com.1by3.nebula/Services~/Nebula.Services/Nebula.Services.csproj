@@ -24,6 +24,9 @@
     <Compile Include="../../Runtime/Persistence/IPersistenceStore.cs;../../Runtime/Persistence/LocalPersistenceStore.cs;../../Runtime/Persistence/PersistedRecordJson.cs;../../Runtime/Persistence/PersistenceHost.cs;../../Runtime/Persistence/RemotePersistenceStore.cs" />
     <Compile Include="../../ThirdParty/LiteNetLib/**/*.cs" />
     <Compile Include="../../World/WorldGrid.cs" />
+    <!-- A chunk grid's definition and its id derivation are pure C#: the gateway, the orchestrator and a
+         matchmaker name a scope's chunks without Unity (docs/scoped-chunk-grids.md). -->
+    <Compile Include="../../Runtime/World/ChunkGridDefinition.cs" />
     <EmbeddedResource Include="../../Runtime/Orchestrator/Resources/*.html" LogicalName="%(Filename)%(Extension)" />
     <InternalsVisibleTo Include="Nebula.Services.Tests" />
     <InternalsVisibleTo Include="Nebula.Persistence.Benchmarks" />

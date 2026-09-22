@@ -55,6 +55,14 @@ public RuntimeGrid Grid { get; }
 
 The grid this allocator works in.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The scope this allocator leases chunks in (`""` for the public world).
+
 ### WantedIds [#wantedids]
 
 ```csharp
@@ -83,6 +91,20 @@ public void RemoveAnchor(Vector3Int coord);
 
 ```csharp
 public void ClearAnchors();
+```
+
+### AddPin [#addpin]
+
+```csharp
+public void AddPin(Vector3Int coord);
+```
+
+Keep one chunk wanted without a ring around it: a scope's anchor chunk, which must not be retired because it is where a client routed by key arrives, but which does not need its neighbours leased on every worker that has ever seen the scope.
+
+### RemovePin [#removepin]
+
+```csharp
+public void RemovePin(Vector3Int coord);
 ```
 
 ### IsWanted [#iswanted]
