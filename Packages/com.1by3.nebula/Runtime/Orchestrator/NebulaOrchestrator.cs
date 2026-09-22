@@ -135,6 +135,10 @@ namespace Nebula
         public int DesiredWorkers { get; private set; }
         public int Rebalances { get; private set; }
         public IReadOnlyList<string> LastAssignmentLog => _log;
+        /// <summary>The last pass's moves and why the planner made them (<c>docs/cohesion-rebalancing.md</c>).</summary>
+        public IReadOnlyList<AssignmentMove> LastMoves => _moves;
+        /// <summary>What the planner reported it could not relieve, and why (<see cref="SaturationReport"/>).</summary>
+        public IReadOnlyList<SaturationReport> Saturated => _saturated;
         public IReadOnlyList<OrchestratorEvent> Events => _events;
         public string DashboardUrl => _http != null ? _http.Url : "";
         /// <summary>The World map's data: static container geometry and the latest telemetry each worker posted (see <see cref="WorkerTelemetry"/>).</summary>
@@ -180,6 +184,14 @@ namespace Nebula
 
         private readonly List<ManagedWorker> _managed = new List<ManagedWorker>();
         private readonly List<string> _log = new List<string>();
+        /// <summary>
+        /// The last pass's moves with the sentence that explains each one, when the policy in force explains itself
+        /// (<see cref="IExplainsAssignment"/>). Kept until the next pass that moves something, so the dashboard's
+        /// assignment card still says why the mesh looks the way it does (<c>docs/cohesion-rebalancing.md</c>).
+        /// </summary>
+        private readonly List<AssignmentMove> _moves = new List<AssignmentMove>();
+        /// <summary>What the planner could not relieve last pass, hottest first (<see cref="SaturationReport"/>).</summary>
+        private readonly List<SaturationReport> _saturated = new List<SaturationReport>();
         private readonly List<OrchestratorEvent> _events = new List<OrchestratorEvent>();
         /// <summary>Workers we have seen alive during this orchestrator's lifetime. Rows left behind by a previous run are never "declared dead", only reset.</summary>
         private readonly HashSet<string> _seenAlive = new HashSet<string>();
@@ -1210,13 +1222,30 @@ namespace Nebula
                 _hintNote = note;
                 if (note != "") Log("warn", "hints: " + note);
             }
+            // What the planner could not relieve, and why it may not split it (docs/cohesion-rebalancing.md). Kept
+            // for the dashboard whether or not anything moved: saturation is exactly the case where nothing does.
+            _saturated.Clear();
+            if (policy is IExplainsAssignment reporter && reporter.Saturated != null) _saturated.AddRange(reporter.Saturated);
             if (changes.Count == 0) return;
             Rebalances++;
             _log.Clear();
+            // The explanation the policy attached to each move, by container, so the log line and the dashboard say
+            // which boundary the cut fell on and what constrained it.
+            _moves.Clear();
+            var why = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (policy is IExplainsAssignment explains && explains.Moves != null)
+            {
+                // A move whose container was held is dropped above, so only the moves actually applied are shown.
+                var applied = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var kv in changes) applied.Add(kv.Key);
+                foreach (var move in explains.Moves) if (applied.Contains(move.ContainerId)) _moves.Add(move);
+                for (int i = 0; i < _moves.Count; i++) why[_moves[i].ContainerId] = _moves[i].Reason ?? "";
+            }
             foreach (var kv in changes)
             {
                 ControlPlane.AssignContainer(kv.Key, kv.Value);
-                var line = $"assign {kv.Key} -> {kv.Value}";
+                string reason = why.TryGetValue(kv.Key, out string r) ? r : "";
+                var line = $"assign {kv.Key} -> {kv.Value}" + (reason == "" ? "" : " (" + reason + ")");
                 _log.Add(line);
                 Log("info", line);
             }
@@ -1633,6 +1662,51 @@ namespace Nebula
             w.EndObject();
         }
 
+        /// <summary>
+        /// The assignment block of the state document (<c>docs/cohesion-rebalancing.md</c>): the last pass's moves
+        /// with the sentence that explains each one, and what the planner could not relieve with the constraint that
+        /// stops it. Both are empty for a policy that does not explain itself.
+        /// </summary>
+        private void WriteAssignmentState(JsonWriter w)
+        {
+            w.Key("assignment");
+            w.BeginObject();
+            w.Prop("policy", PolicyName);
+            w.Prop("rebalances", Rebalances);
+            w.Key("moves");
+            w.BeginArray();
+            for (int i = 0; i < _moves.Count; i++)
+            {
+                w.BeginObject();
+                w.Prop("container", _moves[i].ContainerId ?? "");
+                w.Prop("from", _moves[i].From ?? "");
+                w.Prop("to", _moves[i].To ?? "");
+                w.Prop("reason", _moves[i].Reason ?? "");
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("saturated");
+            w.BeginArray();
+            for (int i = 0; i < _saturated.Count; i++)
+            {
+                var row = _saturated[i];
+                w.BeginObject();
+                w.Prop("container", row.ContainerId ?? "");
+                w.Prop("scope", row.ScopeKey ?? "");
+                w.Prop("worker", row.WorkerId ?? "");
+                w.Prop("utilization", Math.Round(row.Utilization, 3));
+                w.Prop("cause", SaturationReport.NameOf(row.Cause));
+                w.Prop("reason", row.Reason ?? "");
+                w.Key("containers");
+                w.BeginArray();
+                if (row.Containers != null) for (int c = 0; c < row.Containers.Length; c++) w.Value(row.Containers[c]);
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+            w.EndObject();
+        }
+
         /// <summary>Everything the dashboard shows, as one JSON document.</summary>
         public string BuildStateJson()
         {
@@ -1680,6 +1754,9 @@ namespace Nebula
             // What the blocking container is mostly expensive in, so the dashboard can say which fix to reach for.
             w.Prop("blockedComponent", string.IsNullOrEmpty(_scale.BlockedBy) ? "" : ContainerCost.NameOf(_scale.BlockedComponent));
             w.Prop("blockedSaturation", _scale.BlockedSaturation);
+            // Why the planner may not split the blocking container away (docs/cohesion-rebalancing.md).
+            w.Prop("blockedCause", SaturationReport.NameOf(_scale.BlockedCause));
+            w.Prop("blockedReason", _scale.BlockedReason ?? "");
             w.Prop("reason", _scale.Reason ?? "");
             w.Prop("outUtilization", Config.ScaleOutUtilization);
             w.Prop("inUtilization", Config.ScaleInUtilization);
@@ -1691,6 +1768,7 @@ namespace Nebula
             w.EndObject();
 
             WriteCohesionState(w);
+            WriteAssignmentState(w);
 
             // Workers: the union of control-plane rows and processes we manage (a freshly launched worker has no row yet).
             var ids = new List<string>();

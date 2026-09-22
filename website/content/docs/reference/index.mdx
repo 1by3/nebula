@@ -153,6 +153,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | Type | Summary |
 | --- | --- |
 | [AssignmentInput](/docs/reference/orchestrator/assignment-input) | Class. Everything an assignment policy may look at. |
+| [AssignmentMove](/docs/reference/orchestrator/assignment-move) | Struct. One container the planner decided to hand to another worker, with the sentence that explains why (docs/cohesion-rebalancing.md). |
 | [AssignmentPlan](/docs/reference/orchestrator/assignment-plan) | Class. What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them. |
 | [AssignmentPlanner](/docs/reference/orchestrator/assignment-planner) | Static class. Runs an IAssignmentPolicy as a dry run against a hypothetical worker count. |
 | [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
@@ -167,6 +168,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
 | [HetznerWorkerHost](/docs/reference/orchestrator/hetzner-worker-host) | Class. One Hetzner Cloud VM per worker, created through the Hetzner Cloud API `(https://docs.hetzner.cloud).` |
 | [IAssignmentPolicy](/docs/reference/orchestrator/i-assignment-policy) | Interface. Decides which worker simulates which container. |
+| [IExplainsAssignment](/docs/reference/orchestrator/i-explains-assignment) | Interface. A policy that can say why it moved what it moved. |
 | [IWorkerHandle](/docs/reference/orchestrator/i-worker-handle) | Interface. One launched worker as seen by its host. |
 | [IWorkerHost](/docs/reference/orchestrator/i-worker-host) | Interface. Where worker instances live. |
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
@@ -177,6 +179,8 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
 | [PersistenceEditor](/docs/reference/orchestrator/persistence-editor) | Class. Reads and rewrites persisted records for the dashboard's Persistence tab (/persistence). |
 | [ProcessWorkerHost](/docs/reference/orchestrator/process-worker-host) | Class. Runs each worker as a child Unity process using the configured worker executable. |
+| [SaturationCause](/docs/reference/orchestrator/saturation-cause) | Enum. Why the planner could not take load off the busiest worker (SaturationReport). |
+| [SaturationReport](/docs/reference/orchestrator/saturation-report) | Struct. The planner's answer to "why is this still hot?". |
 | [ScaleAction](/docs/reference/orchestrator/scale-action) | Enum. What the scaler decided this pass. |
 | [ScaleDecision](/docs/reference/orchestrator/scale-decision) | Struct. The scaler's answer, and everything the dashboard needs to explain it. |
 | [ScaleSettings](/docs/reference/orchestrator/scale-settings) | Struct. The two lines and the two clocks the scaler works to; a copy of the matching NebulaConfig fields. |

@@ -111,6 +111,14 @@ public bool IsHeld(string containerId);
 
 Whether a container is under a live hold, so moving it now is deferred.
 
+### HoldSeconds [#holdseconds]
+
+```csharp
+public float HoldSeconds(string containerId);
+```
+
+How many seconds a container's hold still has to run, or 0 when it is not held.
+
 ### DropHeldChanges [#dropheldchanges]
 
 ```csharp

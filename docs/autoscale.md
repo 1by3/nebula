@@ -251,6 +251,30 @@ be split" said nothing about *why*. Per-entity cost hints and per-container cost
 This closes the first follow-up below in part: occupancy reports still carry no positions, so seam
 grace is still unenforced, but they no longer carry only counts.
 
+## Addendum (2026-09-22): explained moves and saturation (NEB-235)
+
+Design of record: `docs/cohesion-rebalancing.md`. Three things changed around the planner; the cut
+itself, `MinGain`, `MinGainFloor` and `Threshold` are untouched.
+
+- **Every move is explained.** The cost policy emits an `AssignmentMove` (container, from, to,
+  reason) beside every change, offered through the second interface `IExplainsAssignment` so a
+  game's own `IAssignmentPolicy` keeps compiling. The reason names the boundary the cut fell on, the
+  before/after peak, and the group that kept containers together. The orchestrator logs it in
+  brackets after `assign c -> w`, publishes it under `assignment.moves` and shows it on the
+  dashboard's **Assignment plan** card.
+- **Saturation is typed and reported.** When the busiest worker is at or above
+  `CostBalancedAssignmentPolicy.SaturationUtilization` (0.7), nothing moved off it, and its heaviest
+  item is itself that hot, the pass emits a `SaturationReport`: the container, its scope key, the
+  item, the utilization and a `SaturationCause` — `CohesionGroup`, `AffinityGroup`, `Held`,
+  `Dedicated` or `NoBoundary`. The scaler appends its sentence to the blocked reason and records
+  `ScaleDecision.BlockedCause` / `BlockedReason` beside the unchanged `BlockedComponent`. This
+  closes the last follow-up below for cohesion and affinity groups: an oversize group is no longer
+  silent.
+- **Dry runs carry the constraints.** `AssignmentPlanner.Predict` built its hypothetical input from a
+  subset of fields that left out `Cohesion`, so a dry run could split a group the real deal may not,
+  predict a relief that never arrives, and grow the mesh for nothing. It now carries `Cohesion`,
+  `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
+
 ## Follow-ups
 
 - **Seam grace is configured, not enforced.** `SeamGraceMeters` needs a per-container distance
@@ -279,5 +303,6 @@ grace is still unenforced, but they no longer carry only counts.
   through `WorkerTimeoutSeconds` (5 s) and the orchestrator relaunches the worker, repeatedly, until
   the load is spread over more workers. Either the load needs to yield or a starting worker needs a
   longer grace.
-- **Dedicated is per worker, not per size**, and an `AffinityGroup` larger than one worker's budget
-  is still dealt to one worker and simply runs hot, with no warning. Mixed host sizes are unmodelled.
+- **Dedicated is per worker, not per size.** An `AffinityGroup` larger than one worker's budget is
+  still dealt to one worker and simply runs hot - it is now reported (`SaturationReport`, the
+  addendum above) rather than silent, but nothing makes it smaller. Mixed host sizes are unmodelled.

@@ -246,6 +246,15 @@
         <tbody id="cohesion"></tbody>
       </table>
     </section>
+    <section class="card wide" id="assignmentCard" style="display:none">
+      <h2>Assignment plan</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">Why each container changed hands on the last re-deal: which authored boundary the cut fell on, what the busiest worker was carrying before and after, and which cohesion or affinity group kept containers together. Nebula never splits a container; it re-deals the ones the game authored.</div>
+      <div class="warn" id="saturatedNote" style="display:none; font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>Container</th><th>From</th><th>To</th><th>Why</th></tr></thead>
+        <tbody id="moves"></tbody>
+      </table>
+    </section>
     <section class="card wide" id="scopesCard" hidden>
       <h2>Scopes</h2>
       <div class="muted" id="scopesHint" style="font-size:12px; margin-bottom:8px"></div>
@@ -462,6 +471,20 @@
     cohWarn.innerHTML = oversize.map(u => esc(u.reason)).join('<br>');
     cohWarn.style.display = oversize.length ? '' : 'none';
     $('cohesionCard').style.display = (cohRows.length || oversize.length) ? '' : 'none';
+
+    // Assignment plan (docs/cohesion-rebalancing.md): the explained moves, and what could not be relieved.
+    const asg = s.assignment || { moves: [], saturated: [] };
+    const moves = asg.moves || [], saturated = asg.saturated || [];
+    $('moves').innerHTML = moves.length ? moves.map(m => `
+      <tr><td class="mono">${esc(m.container)}</td>
+          <td class="mono">${m.from ? esc(m.from) : '<span class="muted">unowned</span>'}</td>
+          <td class="mono">${esc(m.to)}</td>
+          <td>${m.reason ? esc(m.reason) : '<span class="muted">the policy gave no reason</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">nothing has moved yet</td></tr>';
+    const satNote = $('saturatedNote');
+    satNote.innerHTML = saturated.map(u => `${esc(u.container)} (${(u.utilization || 0).toFixed(2)} of a tick${u.scope ? ', scope ' + esc(u.scope) : ''}): ${esc(u.reason)}`).join('<br>');
+    satNote.style.display = saturated.length ? '' : 'none';
+    $('assignmentCard').style.display = (moves.length || saturated.length) ? '' : 'none';
 
     $('containers').innerHTML = s.containers.map(c => `
       <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>

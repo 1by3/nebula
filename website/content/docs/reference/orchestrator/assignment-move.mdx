@@ -1,0 +1,54 @@
+---
+title: "AssignmentMove"
+description: "One container the planner decided to hand to another worker, with the sentence that explains why (docs/cohesion-rebalancing.md)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentReport.cs)</div>
+
+```csharp
+public struct AssignmentMove
+```
+
+One container the planner decided to hand to another worker, with the sentence that explains why (`docs/cohesion-rebalancing.md`). The moves of one pass are the change list the orchestrator applies, annotated: which authored boundary the cut fell on, what the two workers were carrying, and which cohesion or affinity group forced the cut to be where it is.
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId;
+```
+
+The container that changes hands.
+
+### From [#from]
+
+```csharp
+public string From;
+```
+
+The worker that holds it now, or "" when nobody does (an orphan being placed).
+
+### To [#to]
+
+```csharp
+public string To;
+```
+
+The worker it is being given to.
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+Why, in one sentence a human can act on. Never empty for a move a built-in policy produced; a policy a game wrote itself may leave it empty, and the dashboard then shows the bare move.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

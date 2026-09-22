@@ -113,6 +113,22 @@ public int Rebalances { get; }
 public IReadOnlyList<string> LastAssignmentLog { get; }
 ```
 
+### LastMoves [#lastmoves]
+
+```csharp
+public IReadOnlyList<AssignmentMove> LastMoves { get; }
+```
+
+The last pass's moves and why the planner made them (`docs/cohesion-rebalancing.md`).
+
+### Saturated [#saturated]
+
+```csharp
+public IReadOnlyList<SaturationReport> Saturated { get; }
+```
+
+What the planner reported it could not relieve, and why ([`SaturationReport`](/docs/reference/orchestrator/saturation-report)).
+
 ### Events [#events]
 
 ```csharp

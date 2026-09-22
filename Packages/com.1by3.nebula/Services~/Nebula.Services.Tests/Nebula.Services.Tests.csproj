@@ -29,6 +29,7 @@
     <Compile Include="../../Tests/EditMode/ConformanceScopeLifecycleTests.cs" />
     <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
+    <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

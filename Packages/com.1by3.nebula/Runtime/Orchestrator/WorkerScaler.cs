@@ -60,6 +60,15 @@ namespace Nebula
         public CostComponent BlockedComponent;
         /// <summary>How much of its component's budget <see cref="BlockedBy"/> is using (1 = all of it), or 0.</summary>
         public float BlockedSaturation;
+        /// <summary>
+        /// Why the planner may not split <see cref="BlockedBy"/> away from its worker, when it said
+        /// (<see cref="SaturationReport"/>, <c>docs/cohesion-rebalancing.md</c>): a cohesion or affinity group spans
+        /// it, a hold has not expired, it asked for a worker of its own, or the game authored no boundary inside it.
+        /// <see cref="SaturationCause.None"/> when nothing is blocked or the policy does not explain itself.
+        /// </summary>
+        public SaturationCause BlockedCause;
+        /// <summary>That cause as a sentence, or "". It is already part of <see cref="Reason"/>.</summary>
+        public string BlockedReason;
         /// <summary>The worker that should retire when <see cref="Action"/> is <see cref="ScaleAction.Shrink"/>.</summary>
         public string RetireWorkerId;
         /// <summary>One line for the dashboard and the event log.</summary>
@@ -153,7 +162,7 @@ namespace Nebula
         /// <param name="inFlight">A launch or a retirement is still happening; hold everything until it settles.</param>
         public ScaleDecision Evaluate(double now, IReadOnlyDictionary<string, float> utilization, AssignmentInput input, IAssignmentPolicy policy, int desiredWorkers, in ScaleSettings settings, bool inFlight)
         {
-            var d = new ScaleDecision { Action = ScaleAction.None, BlockedBy = "", RetireWorkerId = "", Reason = "idle", HoldSeconds = settings.HoldSeconds };
+            var d = new ScaleDecision { Action = ScaleAction.None, BlockedBy = "", BlockedReason = "", RetireWorkerId = "", Reason = "idle", HoldSeconds = settings.HoldSeconds };
             int total = utilization != null ? utilization.Count : 0;
             if (total == 0 || policy == null || input == null)
             {
@@ -227,8 +236,12 @@ namespace Nebula
                 if (here.Peak - more.Peak < settings.MinGain)
                 {
                     d.BlockedBy = more.HeaviestContainer;
+                    // Why it may not be split, from the planner itself: a group spanning it, a hold, a reservation,
+                    // or no authored boundary at all (docs/cohesion-rebalancing.md, D6). The planner reports against
+                    // the real mesh, not a dry run, so the real input is dealt once to ask it.
+                    string cannot = DescribeSaturation(input, policy, d.BlockedBy, ref d);
                     d.Reason = d.BlockedBy.Length > 0
-                        ? $"blocked: {d.BlockedBy} carries {more.HeaviestUtilization:0.00} of a tick on its own and cannot be split{DescribeComponent(input, d.BlockedBy, ref d)}; add a hint or split the cell"
+                        ? $"blocked: {d.BlockedBy} carries {more.HeaviestUtilization:0.00} of a tick on its own and cannot be split{DescribeComponent(input, d.BlockedBy, ref d)}{cannot}; add a hint or split the cell"
                         : $"blocked: another worker would not lower the peak ({here.Peak:0.00} -> {more.Peak:0.00})";
                     return d;
                 }
@@ -307,6 +320,32 @@ namespace Nebula
                 default:
                     return $" (mostly simulation: {row.TickShareMs:0.00} ms/tick, {row.DominantSaturation:0.00} of the tick budget)";
             }
+        }
+
+        /// <summary>
+        /// Ask the planner why it may not take the blocking container off its worker and record the answer on the
+        /// decision (<see cref="SaturationReport"/>). Only a policy that explains itself
+        /// (<see cref="IExplainsAssignment"/>) has an answer; anything else leaves the sentence exactly as it was.
+        /// The policy's reports are about the last deal it computed, so the real input is dealt once here - it is a
+        /// pure function, and this runs only on the pass that is already blocked.
+        /// </summary>
+        private static string DescribeSaturation(AssignmentInput input, IAssignmentPolicy policy, string containerId, ref ScaleDecision d)
+        {
+            if (string.IsNullOrEmpty(containerId) || !(policy is IExplainsAssignment explains)) return "";
+            policy.Compute(input);
+            var rows = explains.Saturated;
+            if (rows == null || rows.Count == 0) return "";
+            for (int i = 0; i < rows.Count; i++)
+            {
+                bool names = rows[i].ContainerId == containerId;
+                if (!names && rows[i].Containers != null)
+                    for (int c = 0; c < rows[i].Containers.Length && !names; c++) names = rows[i].Containers[c] == containerId;
+                if (!names) continue;
+                d.BlockedCause = rows[i].Cause;
+                d.BlockedReason = rows[i].Reason ?? "";
+                return d.BlockedReason == "" ? "" : " - " + d.BlockedReason;
+            }
+            return "";
         }
 
         private static string Bytes(long n)

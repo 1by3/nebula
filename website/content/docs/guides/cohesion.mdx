@@ -50,6 +50,21 @@ Nebula never splits a group quietly. There are two ways it can fail, and both ar
 - A worker hands over a member while another member is owned by a *different* worker. The worker cannot move what it does not own, so it logs a warning naming the group and counts it in `NebulaDiagnostics.SplitCohesionGroups`. The handover still happens — refusing it would strand the entity on a worker that no longer leases its container — and the next planning pass puts the group's containers back on one worker.
 - The group's containers together cost more than one worker's tick budget. The planner deals them to one worker anyway and adds a row to the dashboard's **Cohesion** card and to the orchestrator log: which group, which containers, what it costs. Make the group smaller, or give the mesh bigger workers.
 
+## Rebalancing a hot area
+
+A group and a hold are constraints on the planner, not obstacles to it. When one area of the world runs hot, the planner re-deals the containers the game authored there to more workers, cutting between two of them along the boundaries your [hints](/docs/guides/orchestrator-and-dashboard#balancing-hints) describe — `seam=` says a cut beside a container is expensive, `x2` says it is heavier than its occupancy suggests, `group=` says two containers are dealt as one. Cohesion groups join that list from the other side: the planner treats the containers a group spans as one item and cuts somewhere else.
+
+A city authored as six districts with an `x2` hint therefore spreads across workers district by district, and a docked fleet in two of those districts moves as a unit or not at all. The district where the fight is happening stays where it is for as long as its worker holds it.
+
+What Nebula will **not** do is subdivide one container, or copy the area and split the players between the copies. If one container is carrying a whole worker on its own, there is no cut to make, and the planner says so instead of shuffling containers pointlessly:
+
+```
+no boundary hint: plaza carries 0.92 of a tick on its own and the game authored no boundary inside it
+(bake it as more cells, register runtime containers, or hint a seam); Nebula never subdivides a container
+```
+
+That report — with the cause `cohesion-group`, `affinity-group`, `held`, `dedicated` or `no-boundary` — appears on the dashboard's **Assignment plan** card, in `assignment.saturated` of `/api/state`, and in the autoscaler's blocked reason, so a mesh that has stopped growing always says which constraint stopped it. Every move the planner *does* make is listed on the same card with the boundary it cut along and the load numbers behind it.
+
 ## Holds
 
 A hold is a worker saying "do not rebalance this container for the next few seconds".
@@ -92,6 +107,6 @@ The **Cohesion** card of the [orchestrator dashboard](/docs/guides/orchestrator-
 <Cards>
   <Card title="Distributed physics" href="/docs/concepts/distributed-physics" description="Why a joint across containers is not symmetric, and how a group exempts one." />
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="Ghosts, the ghost band, and authority transfer." />
-  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Container hints, the assignment policy, and what the dashboard shows." />
+  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Container hints, the assignment policy, the Assignment plan card, and what the dashboard shows." />
   <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carry entities in a moving container so they move as one by construction." />
 </Cards>
