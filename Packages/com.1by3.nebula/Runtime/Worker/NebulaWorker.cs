@@ -64,6 +64,12 @@ namespace Nebula
         public int HandoversOut { get; private set; }
         public int HandoversIn { get; private set; }
         public int LocalHandovers { get; private set; }
+        /// <summary>
+        /// AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost
+        /// copy of the target (see <see cref="NebulaDiagnostics.RejectedAuthorityRpcSends"/>). Reported as
+        /// <c>rpcRejected</c> on the profile log line.
+        /// </summary>
+        public int RejectedAuthorityRpcSends => NebulaDiagnostics.RejectedAuthorityRpcSends;
         public int GhostsSent { get; private set; }
         public int GhostsHeld { get; private set; }
         public int AuthoritativeCount => _authoritative.Count;
@@ -744,7 +750,7 @@ namespace Nebula
             int gc = GC.CollectionCount(0);
             int gcs = gc - _lastGcCount;
             _lastGcCount = gc;
-            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} | {NebulaProfiler.ReportAndReset(_profileTicks)}");
+            NebulaLog.Info($"profile {_profileTicks} ticks/{ProfileIntervalSeconds:0}s {_profileFrames} frames avg {avg:0.0}ms max {_profileMaxMs:0.0}ms dup {_profileDuplicateTicks} skip {_profileSkippedTicks} gc {gcs} auth {_authoritative.Count} ghosts {_entities.Count - _authoritative.Count} rpcRejected {NebulaDiagnostics.RejectedAuthorityRpcSends} | {NebulaProfiler.ReportAndReset(_profileTicks)}");
             _profileTicks = 0;
             _profileFrames = 0;
             _profileMaxMs = 0f;
@@ -966,6 +972,7 @@ namespace Nebula
             identity.InvokeSpawn();
             foreach (var b in identity.Behaviours) b.OnGainedAuthority();
             identity.ClearDirty();
+            PhysicsIslands.CheckOnAuthority(identity);
             if (identity.Carried != null) SyncCarriedLeases();
 
             // Index it before announcing: which gateways hear about a spawn is decided from where it landed.
@@ -1459,6 +1466,7 @@ namespace Nebula
                 _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway);
             }
             e.SetAuthority(true);
+            PhysicsIslands.CheckOnAuthority(e);
             // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
             // including for motionless entities that will never emit another pose update.
             if (msg.GhostWorkers != null)

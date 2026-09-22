@@ -10,6 +10,7 @@
     "---Concepts---",
     "concepts/architecture",
     "concepts/containers-and-handover",
+    "concepts/distributed-physics",
     "concepts/roles-and-wire-protocol",
     "concepts/comparison",
     "---Networked entities---",

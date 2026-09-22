@@ -2,6 +2,20 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- [Distributed physics](https://nebula.1by3.co/docs/concepts/distributed-physics) concepts page: what a physics interaction is on one worker, across a seam through a kinematic ghost one tick behind, and why a joint or `ArticulationBody` between entities in different containers is unsupported.
+- `PhysicsIslands`: the runtime rule for whether two networked bodies share one authority (`SameIsland`, `ContainerOf`, `FindCrossIslandJoints`) with an `IsCohesive` hook reserved for cohesion hints (NEB-223). Until those exist every cross-container joint is reported.
+- **Nebula > Validate Project** warns about every `Joint` or child `ArticulationBody` in the open scenes and the network prefabs whose bodies belong to entities in different containers, naming both containers with the joint as the log context (`NebulaValidator.CheckPhysicsIslands`).
+- A worker logs one warning per entity when it spawns or gains authority over an entity with such a joint (`PhysicsIslands.CheckOnAuthority`; set `PhysicsIslands.WarnOnAuthority` to false to turn it off). Entities without a joint cost one component lookup per spawn.
+- `NebulaDiagnostics.RejectedAuthorityRpcSends` and `NebulaWorker.RejectedAuthorityRpcSends` count `AuthorityRpc` sends discarded because the caller held neither an authoritative nor a ghost copy; the worker's `profile` log line reports it as `rpcRejected`.
+
+### Changed
+
+- The warning for an `AuthorityRpc` sent from a copy that is neither authoritative nor a ghost now states the rule and the reason, and is checked before the RPC sink so it also fires in a process without one. Routing is unchanged.
+
 ## [0.1.0-alpha.29] - 2026-09-21
 
 ### Breaking: protocol 16 → 17, interest management

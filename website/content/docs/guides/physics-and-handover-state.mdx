@@ -24,6 +24,8 @@ Add [`NetworkRigidbody`](/docs/reference/core/network-rigidbody) to a physics en
 
 When a worker gains authority, `NetworkRigidbody` restores the body’s kinematic or dynamic state, linear and angular velocity, and sleeping state. When the worker loses authority, the component makes the body kinematic.
 
+A `NetworkRigidbody` interacts exactly with bodies on its own worker and one-sidedly with ghosts. A joint between two entities in different containers is not supported. See [Distributed physics](/docs/concepts/distributed-physics) for the model and the checks that report such joints.
+
 Both linear and angular velocity travel in the handover snapshot, even if `NetworkTransform.SyncVelocity` is off. Angular velocity is not sent to clients or ghosts each tick. The next worker also receives the body’s kinematic and sleeping state.
 
 Call `SetVelocity(Vector3 linear, Vector3 angular = default)` on the authoritative worker to launch a newly spawned rigidbody. The method updates `Identity.Motion.Velocity` and the dynamic `Rigidbody`:
@@ -286,5 +288,6 @@ If the owning client must drive your component, derive from `NetworkSyncBehaviou
   <Card title="NetworkTransform" href="/docs/guides/network-transform" description="Opt into root or child transform replication." />
   <Card title="NetworkAnimator" href="/docs/guides/network-animator" description="The built-in sync-channel component for animators." />
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="When and how an authority transfer happens." />
+  <Card title="Distributed physics" href="/docs/concepts/distributed-physics" description="What cross-worker physics does and does not do." />
   <Card title="Serialization" href="/docs/guides/serialization" description="NetworkWriter and NetworkReader." />
 </Cards>
