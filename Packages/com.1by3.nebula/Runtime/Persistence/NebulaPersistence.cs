@@ -272,6 +272,8 @@ namespace Nebula
         /// restore path) and on an entity this worker already owns, which is what a rejoining player's pawn wants:
         /// the game spawns the pawn, asks for the record with <see cref="Load"/> and applies it when the answer
         /// arrives. Pass <paramref name="applyPose"/> false to keep the entity where it is and take only its state.
+        /// A spawned entity also keeps its current pose when this process has not registered the record's container
+        /// or carrier, such as an unloaded chunk, because the saved position is relative to that container.
         /// </summary>
         public void Apply(PersistedEntityRecord record, NetworkIdentity identity, bool applyPose = true)
         {
@@ -296,9 +298,18 @@ namespace Nebula
                 for (int i = 0; i < vars.Length; i++) if (vars[i].Persist) vars[i].Dirty = true;
                 identity.MarkVarsDirty();
             }
-            if (applyPose && (pe == null || pe.PersistPose))
+            bool poseApplies = applyPose && (pe == null || pe.PersistPose);
+            var container = poseApplies ? ResolveContainer(record) : null;
+            string savedIn = !string.IsNullOrEmpty(record.CarrierKey) ? record.CarrierKey : record.ContainerId;
+            if (poseApplies && container == null && identity.IsSpawned && !string.IsNullOrEmpty(savedIn))
             {
-                var container = ResolveContainer(record);
+                // Its position is relative to a box this process does not have: applying it would leave a live
+                // entity in no container at a meaningless spot. It stays where it is.
+                NebulaLog.Warn($"persistence: {record.Key} was saved in {savedIn}, which is not here; keeping {identity} where it is");
+                poseApplies = false;
+            }
+            if (poseApplies)
+            {
                 identity.SetContainer(container);
                 identity.SetLocalPose(container, record.LocalPosition, record.LocalRotation);
                 if (pe != null)

@@ -189,7 +189,7 @@ Checkpoint `identity` now, whatever its timer says. Use it at a moment the game 
 public void Apply(PersistedEntityRecord record, NetworkIdentity identity, bool applyPose = true);
 ```
 
-Put a record's state back onto `identity`. Works both before the entity is spawned (the restore path) and on an entity this worker already owns, which is what a rejoining player's pawn wants: the game spawns the pawn, asks for the record with [`Load`](#load) and applies it when the answer arrives. Pass `applyPose` false to keep the entity where it is and take only its state.
+Put a record's state back onto `identity`. Works both before the entity is spawned (the restore path) and on an entity this worker already owns, which is what a rejoining player's pawn wants: the game spawns the pawn, asks for the record with [`Load`](#load) and applies it when the answer arrives. Pass `applyPose` false to keep the entity where it is and take only its state. A spawned entity also keeps its current pose when this process has not registered the record's container or carrier, such as an unloaded chunk, because the saved position is relative to that container.
 
 ### Restore [#restore]
 

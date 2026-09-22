@@ -293,6 +293,56 @@ namespace Nebula.Tests
             Assert.IsFalse(retiredEntity.IsSpawned);
         }
 
+        [Test]
+        public void ClientOwnershipSnapshotKeepsTheLocalPawnWhenItsRuntimeContainerLeaves()
+        {
+            // The pawn's authority has moved it on, but this client's copy still sits in the box that left the
+            // window. The gateway keeps the pawn in its owner's set wherever it is and will never resend it, so a
+            // local despawn here would leave the client pawn-less for good.
+            ulong keptId = IdOf(0, 0);
+            ulong leftId = IdOf(3, 0);
+            ContainerRegistry.RegisterRuntime(keptId, ChunkBounds(0, 0));
+            var left = ContainerRegistry.RegisterRuntime(leftId, ChunkBounds(3, 0));
+
+            var clientObject = new GameObject("client");
+            _objects.Add(clientObject);
+            var client = clientObject.AddComponent<NebulaClient>();
+            var pawn = MakeClientEntity(1, left);
+            pawn.IsLocalPlayer = true;
+            var prop = MakeClientEntity(2, left);
+            var entities = (IDictionary)typeof(NebulaClient).GetField("_entities", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client);
+            entities.Add(pawn.NetId, pawn);
+            entities.Add(prop.NetId, prop);
+            typeof(NebulaClient).GetProperty(nameof(NebulaClient.LocalPlayer)).SetValue(client, pawn);
+
+            var writer = new NetworkWriter();
+            ContainerOwnershipMsg.Write(writer, new List<ContainerOwnershipEntry>
+            {
+                new ContainerOwnershipEntry
+                {
+                    ContainerIndex = ContainerRef.RuntimeIndex,
+                    ContainerId = ContainerRegistry.RuntimeContainerId(keptId),
+                    WorkerIndex = 1,
+                    WorkerId = "w1",
+                    Epoch = 1,
+                    State = LeaseState.Active,
+                    HasBounds = true,
+                    BoundsCenter = ChunkBounds(0, 0).center,
+                    BoundsSize = ChunkBounds(0, 0).size,
+                },
+            });
+            var reader = new NetworkReader(writer.ToSegment());
+            Assert.AreEqual((byte)MsgId.ContainerOwnership, reader.ReadByte());
+            client.ApplyContainerOwnership(ContainerOwnershipMsg.Read(reader));
+
+            Assert.IsNull(ContainerRegistry.GetRuntime(leftId));
+            Assert.AreSame(pawn, client.LocalPlayer, "the local pawn survives its box leaving the window");
+            Assert.IsTrue(pawn.IsSpawned);
+            Assert.AreSame(pawn, client.Entities.Single());
+            Assert.IsFalse(prop.IsSpawned, "other occupants of the box still go with it");
+            Assert.AreNotSame(left, pawn.Container);
+        }
+
         private NetworkIdentity MakeClientEntity(ulong netId, Container container)
         {
             var go = new GameObject("client entity " + netId);

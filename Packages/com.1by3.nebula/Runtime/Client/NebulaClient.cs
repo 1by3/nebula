@@ -895,9 +895,13 @@ namespace Nebula
 
             // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement
             // guarantees that these entities were despawned by their authority; the snapshot is the durable proof.
+            // The local pawn is the exception: the gateway keeps it in this client's set wherever it is, so a box
+            // leaving the window only means our copy has not heard about its move yet. Despawning it here would
+            // leave the client pawn-less, because the gateway believes the client still has it and never resends it.
             _retiredRuntimeEntities.Clear();
             foreach (var pair in _entities)
             {
+                if (pair.Value == LocalPlayer) continue;
                 var container = pair.Value != null ? pair.Value.Container : null;
                 if (container != null && container.IsRuntime && !_runtimeKeep.Contains(container.RuntimeId))
                     _retiredRuntimeEntities.Add(pair.Key);

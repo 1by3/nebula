@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-alpha.30] - 2026-09-22
+
 ### NEB-228: deployment and protocol compatibility policy
 
 Nebula now states which versions may talk to each other, and enforces it with a refusal a client can act on instead of a silent disconnect. Design record: `docs/compatibility-policy.md`. Version table: `docs/protocol-versions.md`. User-facing page: [Upgrade a running mesh](https://nebula.1by3.co/docs/deploy/upgrades).
@@ -513,6 +515,12 @@ simulation, replication and gateway relay. Design record: `docs/cost-telemetry.m
 - The worker's per-tick pose recording now records only entities it has authority over; a ghost records itself when the owner's stream is applied, tagged with the owner's tick instead of the receiving worker's. Before, every copy was recorded with the receiver's tick, so a ghost's history was silently off by a tick and an interpolating ghost recorded a smoothing artefact rather than the pose the owner reported.
 - A worker sends an entity's `GhostVars` update ahead of that entity's state entry for the same tick, so a `[SyncHistory]` variable is snapshotted with the values the tick's stream carries. Nothing else depends on the order of those two messages.
 - `NetworkIdentity.TryGetPoseAt(tick, out position, out rotation)` keeps its signature and behaviour (false plus the current pose) and is now a wrapper over `StateAt`. The constant `NetworkIdentity.PoseHistoryTicks` (64) is **removed**: the window is `NebulaConfig.StateHistoryTicks` (default 32) and the constant behind it is `StateHistory.DefaultWindowTicks`.
+
+### Fixed
+
+- **A client could lose its own pawn for good in a chunked world.** When an ownership update dropped the runtime container that the client's copy of its pawn was still filed under, `NebulaClient` despawned the pawn locally along with the container's other occupants. The gateway keeps a pawn in its owner's interest set wherever it is, so it never sent the pawn again: the client stayed connected with no pawn until a cross-worker handover respawned it. The local pawn is now kept and moves into the neighbouring container until its next state update places it.
+- `NebulaPersistence.Apply` on a spawned entity whose record names a container or carrier that is not registered in this process (such as an unloaded chunk) no longer moves the entity out of every container to the record's container-relative position. The entity keeps its current pose, its persisted state is still applied, and the worker logs a warning. The restore path, which runs before the entity is spawned, is unchanged. This was what moved a returning player's pawn out of its spawn chunk and set up the pawn loss above.
+- Workers no longer log `0 entity object(s) were destroyed without a despawn` on every tick. A scratch list shared between two steps of the tick was not cleared, so the check for destroyed entities ran (and logged) every tick with nothing to purge.
 
 ## [0.1.0-alpha.29] - 2026-09-21
 

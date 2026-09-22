@@ -11,7 +11,7 @@ nebula deploy [--target hetzner|cloud] [--workers N] [--min N] [--max N] [--npcs
 
 Two targets, chosen with --target or deploy.target in nebula.json.
 
---target cloud deploys to Nebula Cloud (log in first with `nebula cloud login`). The first run picks or creates the organization, project and deployment (interactively, or from --org, --cloud-project, --deployment; --yes takes the defaults) and records them in the cloud section of nebula.json. Every run then builds the Linux dedicated server, uploads Builds/nebula-linux.tar.gz as a content-addressed artifact, creates an immutable release from it with the service manifest, the Nebula and protocol versions and the git commit, and rolls the release out, printing the operation's steps until it finishes. Ctrl-C leaves the rollout running; the next `nebula deploy` reattaches to it. --release rolls out an existing release without building. --min/--max change the deployment's worker band first. A rollout is refused when the wire protocol version changed, because connected players would be disconnected; --allow-protocol-change accepts that.
+--target cloud deploys to Nebula Cloud (log in first with `nebula cloud login`). The first run picks or creates the organization, project and deployment (interactively, or from --org, --cloud-project, --deployment; --yes takes the defaults) and records them in the cloud section of nebula.json. Every run then builds the Linux dedicated server, uploads Builds/nebula-linux.tar.gz as a content-addressed artifact, creates an immutable release from it with the service manifest, the Nebula and protocol versions and the git commit, and rolls the release out, printing the operation's steps until it finishes. Ctrl-C leaves the rollout running; the next `nebula deploy` reattaches to it. --release rolls out an existing release without building. --min/--max change the deployment's worker band first. The release records the protocol window its gateways admit (HelloMsg.ProtocolVersion and MinProtocolVersion) and the game content version from Assets/Resources/NebulaConfig.asset. A gateway admits clients at its own protocol and one older, so a rollout that moves the protocol one version forward keeps every connected player. A rollout is refused when it moves the protocol more than one version, moves it backwards, or the release's MinProtocolVersion excludes the clients of the current release; --allow-protocol-change accepts disconnecting them. A content version bump that would refuse the current release's clients is reported as a warning at the start of the rollout.
 
 --target hetzner deploys to your own Hetzner Cloud project (`nebula config hetzner` first):
 
@@ -35,7 +35,7 @@ A deploy target must be configured (`nebula cloud login` or `nebula config hetzn
 | `--max <N>` | Autoscaling ceiling; autoscaling grows into the band from --min (default: --workers). |
 | `--release <rel_id>` | Cloud: roll out this existing release instead of building a new one. |
 | `--label <text>` | Cloud: a label for the new release, e.g. v12. |
-| `--allow-protocol-change` | Cloud: roll out even when the wire protocol version changed (players are disconnected). |
+| `--allow-protocol-change` | Cloud: roll out even when the protocol change would refuse the current release's players (they are disconnected). |
 | `--region <id>` | Cloud: region of a deployment created by this run. |
 | `--worker-size <size>` | Cloud: worker machine size (small, medium, large). |
 | `--org <slug>` | Cloud: organization slug (default from nebula.json). |

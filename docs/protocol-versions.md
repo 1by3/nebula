@@ -33,7 +33,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.25 | 14 | |
 | v0.1.0-alpha.26 – alpha.28 | 16 | 15 was never released under a tag |
 | v0.1.0-alpha.29 | 17 | interest management |
-| unreleased (this branch) | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
+| v0.1.0-alpha.30 | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built

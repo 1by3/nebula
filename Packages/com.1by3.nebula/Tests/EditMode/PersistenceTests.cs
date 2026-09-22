@@ -309,6 +309,36 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ARecordFromAContainerThatIsNotHereRestoresStateButKeepsALiveEntityWhereItIs()
+        {
+            // A returning player's pawn: spawned first, then given its record. The chunk it was saved in is not
+            // loaded, and its local position means nothing without that chunk.
+            var store = new LocalPersistenceStore();
+            store.Connect();
+            var persistence = new NebulaPersistence(NewObject("worker").AddComponent<NebulaWorker>(), ScriptableObject.CreateInstance<NebulaConfig>(), store);
+            var source = MakeChest("saved", true);
+            source.GetComponent<Chest>().Coins.Value = 41;
+            var record = Record("player:someone", 1, ContainerRegistry.RuntimeContainerId(987654321UL));
+            record.State = PersistentStateCodec.Write(source);
+
+            var pawn = MakeChest("pawn", true);
+            pawn.IsSpawned = true;
+            pawn.transform.position = new Vector3(10f, 0f, 20f);
+            persistence.Apply(record, pawn);
+
+            Assert.AreEqual(41, pawn.GetComponent<Chest>().Coins.Value, "the state still comes back");
+            Assert.AreEqual(new Vector3(10f, 0f, 20f), pawn.transform.position, "the pose does not");
+            Assert.IsNull(pawn.Container);
+
+            // Not yet spawned (the restore path) the record's pose is still applied as before.
+            var restored = MakeChest("restored", true);
+            persistence.Apply(record, restored);
+            Assert.AreEqual(new Vector3(1, 2, 3), restored.transform.position);
+            persistence.Shutdown();
+            store.Dispose();
+        }
+
+        [Test]
         public void ASingleEntryCanBeReadOutOfABlobWithoutAnEntity()
         {
             var a = MakeChest("a", true);

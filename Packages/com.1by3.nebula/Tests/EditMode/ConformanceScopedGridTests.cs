@@ -56,15 +56,26 @@ namespace Nebula.Tests
             return container;
         }
 
+        /// <summary>
+        /// Points <paramref name="worker"/> at <paramref name="plane"/> and marks it registered into the plane's
+        /// current document, as <see cref="WorkerRegistration.Register"/> would, without writing a worker row.
+        /// </summary>
+        private static void AttachRegistered(NebulaWorker worker, LocalControlPlane plane)
+        {
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            typeof(NebulaWorker).GetField("<ControlPlane>k__BackingField", flags).SetValue(worker, plane);
+            var registration = (WorkerRegistration)typeof(NebulaWorker).GetField("_registration", flags).GetValue(worker);
+            typeof(WorkerRegistration).GetField("<IsRegistered>k__BackingField", flags).SetValue(registration, true);
+            typeof(WorkerRegistration).GetField("_reconciledDocument", flags).SetValue(registration, plane.DocumentId ?? "");
+        }
+
         private LocalControlPlane PlaneForWorkers()
         {
             var plane = new LocalControlPlane();
             plane.Connect();
-            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
             foreach (var worker in _mesh.Workers)
             {
-                typeof(NebulaWorker).GetField("<ControlPlane>k__BackingField", flags).SetValue(worker.Instance, plane);
-                typeof(NebulaWorker).GetField("_registered", flags).SetValue(worker.Instance, true);
+                AttachRegistered(worker.Instance, plane);
                 plane.RegisterWorker(worker.Id, worker.Index, "127.0.0.1", (ushort)(7000 + worker.Index));
                 plane.HeartbeatWorker(worker.Id, WorkerStatus.Ready, default);
             }
@@ -137,9 +148,7 @@ namespace Nebula.Tests
             using var plane = new LocalControlPlane();
             plane.Connect();
             var worker = _mesh[0].Instance;
-            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            typeof(NebulaWorker).GetField("<ControlPlane>k__BackingField", flags).SetValue(worker, plane);
-            typeof(NebulaWorker).GetField("_registered", flags).SetValue(worker, true);
+            AttachRegistered(worker, plane);
             plane.RegisterWorker(_mesh[0].Id, _mesh[0].Index, "127.0.0.1", 7000);
             plane.HeartbeatWorker(_mesh[0].Id, WorkerStatus.Ready, default);
             var request = new ScopeActivationRequest
@@ -177,9 +186,7 @@ namespace Nebula.Tests
             plane.Clock = () => clock;
             plane.Connect();
             var worker = _mesh[0].Instance;
-            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            typeof(NebulaWorker).GetField("<ControlPlane>k__BackingField", flags).SetValue(worker, plane);
-            typeof(NebulaWorker).GetField("_registered", flags).SetValue(worker, true);
+            AttachRegistered(worker, plane);
             plane.ActivateScope(new ScopeActivationRequest
             {
                 ScopeKey = Alpha,

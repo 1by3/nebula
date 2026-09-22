@@ -909,6 +909,7 @@ namespace Nebula
             // object was destroyed behind our back (game code, a scene unload) is dropped here rather than allowed to
             // throw: an exception at this point would skip the publish below and blind every client.
             ProfRecordPose.Begin();
+            _scratchEntities.Clear(); // step 3 below reuses it for the authoritative snapshot
             foreach (var e in _entities.Values)
             {
                 if (e == null) { _scratchEntities.Add(e); continue; }
