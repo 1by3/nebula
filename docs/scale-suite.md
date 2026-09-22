@@ -231,11 +231,14 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 The synthetic layer was run in full and is green: **12 scenarios, 0 failed, 1 m 19 s**. Its numbers are in D6.
 
-The tier-D runner was verified in `-DryRun` and `-Synthetic` modes only. **No real mesh was run**: this checkout
-has no player build (`Builds/Win64/Nebula.exe` does not exist) and producing one means driving the Unity Editor
-for a full player build, which is minutes of work that proves nothing about the runner's logic that a dry run
-does not. The dry run correctly reports the missing build and tells the operator to use `-Build` or
-`-Synthetic`. The parts of the runner that have therefore **not** executed are the mesh lifecycle, the load
+The tier-D runner was verified in three ways: `-DryRun` (reports the missing player build, prints the plan and
+the port state, exits 0), `-Synthetic` (runs the other layer and reports its wall clock, exits 0), and a real run
+without a build (`-Scenario sustained`), which refuses with the reason and exits **2**.
+
+**No real mesh was run.** This checkout has no player build (`Builds/Win64/Nebula.exe` does not exist), and
+producing one means driving the Unity Editor through a full player build — minutes of work that proves nothing
+about the runner's logic the dry run does not. The parts of the runner that have therefore **not** executed are
+the mesh lifecycle, the load
 client launch, the API sampling, the profile scraping and the threshold assertions; they are written against the
 API field names and log format recorded in D9 and read out of the code, not guessed.
 
