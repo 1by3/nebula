@@ -153,7 +153,20 @@ namespace Nebula
 
     public struct HelloMsg
     {
+        /// <summary>The protocol this build speaks and writes: <b>N</b> in the compatibility window.</summary>
         public const ushort ProtocolVersion = 18;
+        /// <summary>
+        /// The oldest protocol a gateway of this build accepts from a <b>client</b>: <b>N-1</b>, or N while the
+        /// policy has no older version to admit yet. Gateway-to-worker and worker-to-worker links ignore it and
+        /// require <see cref="ProtocolVersion"/> exactly. See <c>docs/compatibility-policy.md</c>.
+        /// <para>
+        /// To bump the protocol: raise <see cref="ProtocolVersion"/> to the new number and set this to the
+        /// previous one, so the gateway keeps admitting clients of the build that is being replaced. Never widen
+        /// it past one version, and never make a change inside the window that is not additive (a new message,
+        /// or a trailing optional field gated on the negotiated version).
+        /// </para>
+        /// </summary>
+        public const ushort MinProtocolVersion = 18;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -184,12 +197,27 @@ namespace Nebula
         /// is the one that called <see cref="IControlPlane.ActivateScope"/>.
         /// </summary>
         public string ScopeKey;
+        /// <summary>
+        /// The protocol this peer speaks. 0 on a message that was built rather than read, which
+        /// <see cref="Write"/> sends as <see cref="ProtocolVersion"/>; set it to announce an older one (what the
+        /// compatibility tests do to play a client of the previous build).
+        /// </summary>
         public ushort Version;
+        /// <summary>
+        /// Client only: the version of the game's own content and rules this build carries, declared by the game
+        /// (<see cref="NebulaConfig.GameContentVersion"/>, <c>-nebula-content-version</c>). Nebula does not
+        /// interpret it: the gateway compares it with its own configured window and refuses a client outside it
+        /// with <see cref="JoinRejectReason.ContentVersionMismatch"/>. 0 means the game does not version its
+        /// content, and every gateway that does not either will accept it.
+        /// </summary>
+        public uint GameContentVersion;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.Hello);
-            w.WriteUShort(ProtocolVersion);
+            // A peer announces its own version when it has one. Until this field was written, every build sent
+            // the constant, which is why a gateway could never admit anything but its exact own protocol.
+            w.WriteUShort(Version != 0 ? Version : ProtocolVersion);
             w.WriteByte((byte)Role);
             w.WriteString(Id);
             w.WriteUInt(Index);
@@ -198,6 +226,7 @@ namespace Nebula
             w.WriteString(Session ?? "");
             w.WriteUInt(Incarnation);
             w.WriteString(ScopeKey ?? "");
+            w.WriteUInt(GameContentVersion);
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -213,6 +242,9 @@ namespace Nebula
             m.Incarnation = r.ReadUInt();
             // Appended after the rest of v18 was settled: a Hello that ends here is the public world.
             m.ScopeKey = r.Remaining > 0 ? r.ReadString() ?? "" : "";
+            // Appended for the compatibility policy: a Hello that ends here is a client that does not version
+            // its game content, which a gateway that does not either accepts (docs/compatibility-policy.md).
+            m.GameContentVersion = r.Remaining > 0 ? r.ReadUInt() : 0;
             return m;
         }
     }
@@ -242,6 +274,13 @@ namespace Nebula
         public string SessionToken;
         /// <summary>True when the session was reclaimed from a token: the pawn, when the worker still holds it, is the same one.</summary>
         public bool Reclaimed;
+        /// <summary>
+        /// The protocol the gateway settled on for this session: the version the client announced in its
+        /// <see cref="HelloMsg"/>, which is somewhere in the gateway's window. The gateway encodes everything it
+        /// sends this client at that version; the client may use it to tell which optional fields to expect.
+        /// 0 from a gateway that does not write it (assume <see cref="HelloMsg.ProtocolVersion"/>).
+        /// </summary>
+        public ushort NegotiatedVersion;
 
         public void Write(NetworkWriter w)
         {
@@ -253,13 +292,21 @@ namespace Nebula
             w.WriteString(Token ?? "");
             w.WriteString(SessionToken ?? "");
             w.WriteByte(Reclaimed ? (byte)1 : (byte)0);
+            w.WriteUShort(NegotiatedVersion);
         }
 
-        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg
+        public static WelcomeMsg Read(NetworkReader r)
         {
-            ClientId = r.ReadULong(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "",
-            SessionToken = r.ReadString() ?? "", Reclaimed = r.ReadByte() != 0,
-        };
+            var m = new WelcomeMsg
+            {
+                ClientId = r.ReadULong(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "",
+                SessionToken = r.ReadString() ?? "", Reclaimed = r.ReadByte() != 0,
+            };
+            // Appended for the compatibility policy: a welcome that ends here came from a gateway that only ever
+            // spoke one protocol, so the negotiated version is the one the client sent.
+            m.NegotiatedVersion = r.Remaining > 0 ? r.ReadUShort() : (ushort)0;
+            return m;
+        }
     }
 
     /// <summary>
@@ -300,6 +347,19 @@ namespace Nebula
         /// dominant component's budget (<see cref="CapacityInfo.Saturation"/>). Sent as an f16; 0 when unknown.
         /// </summary>
         public float Saturation;
+        /// <summary>
+        /// The oldest and newest protocol this gateway accepts (<see cref="HelloMsg.MinProtocolVersion"/> and
+        /// <see cref="HelloMsg.ProtocolVersion"/>), on every refusal. With
+        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> it is what lets a client say "update required"
+        /// (its version is below <see cref="SupportedMinVersion"/>) rather than "this server is older than this
+        /// build" (its version is above <see cref="SupportedMaxVersion"/>). 0 from a gateway that does not write them.
+        /// </summary>
+        public ushort SupportedMinVersion, SupportedMaxVersion;
+        /// <summary>
+        /// The game content version this gateway runs (<see cref="HelloMsg.GameContentVersion"/>), with
+        /// <see cref="JoinRejectReason.ContentVersionMismatch"/>, so the client can say which build to fetch.
+        /// </summary>
+        public uint ServerContentVersion;
 
         public void Write(NetworkWriter w)
         {
@@ -308,6 +368,9 @@ namespace Nebula
             w.WriteByte(Retry ? (byte)1 : (byte)0);
             w.WriteByte((byte)Code);
             w.WriteHalf(Saturation);
+            w.WriteUShort(SupportedMinVersion);
+            w.WriteUShort(SupportedMaxVersion);
+            w.WriteUInt(ServerContentVersion);
         }
 
         public static JoinRejectedMsg Read(NetworkReader r)
@@ -317,6 +380,10 @@ namespace Nebula
             // already carried; there is nothing typed to read and nothing is assumed.
             if (r.Remaining > 0) m.Code = (JoinRejectReason)r.ReadByte();
             if (r.Remaining > 0) m.Saturation = r.ReadHalf();
+            // Appended for the compatibility policy (docs/compatibility-policy.md).
+            if (r.Remaining > 0) m.SupportedMinVersion = r.ReadUShort();
+            if (r.Remaining > 0) m.SupportedMaxVersion = r.ReadUShort();
+            if (r.Remaining > 0) m.ServerContentVersion = r.ReadUInt();
             return m;
         }
     }
@@ -393,6 +460,20 @@ namespace Nebula
         AtCapacity = 1,
         /// <summary>The admission hook refused this particular arrival for its own reasons, with the target below capacity (<see cref="NebulaAdmission.AlwaysConsult"/>).</summary>
         Denied = 2,
+        /// <summary>
+        /// The client's protocol is outside the gateway's compatibility window
+        /// (<see cref="JoinRejectedMsg.SupportedMinVersion"/>..<see cref="JoinRejectedMsg.SupportedMaxVersion"/>).
+        /// Below the minimum means the player must update; above the maximum means this server has not been
+        /// upgraded yet. Retrying with the same build is pointless either way.
+        /// </summary>
+        ProtocolUnsupported = 3,
+        /// <summary>
+        /// The protocol matched, but the client's game content version
+        /// (<see cref="HelloMsg.GameContentVersion"/>) is not one this gateway runs
+        /// (<see cref="JoinRejectedMsg.ServerContentVersion"/>). Nebula only compares the numbers; what they
+        /// mean, and how a player gets the right one, is the game's business.
+        /// </summary>
+        ContentVersionMismatch = 4,
     }
 
     /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>

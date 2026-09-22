@@ -19,6 +19,18 @@ Carries the hello protocol message.
 public const ushort ProtocolVersion = 18;
 ```
 
+The protocol this build speaks and writes: **N** in the compatibility window.
+
+### MinProtocolVersion [#minprotocolversion]
+
+```csharp
+public const ushort MinProtocolVersion = 18;
+```
+
+The oldest protocol a gateway of this build accepts from a **client**: **N-1**, or N while the policy has no older version to admit yet. Gateway-to-worker and worker-to-worker links ignore it and require [`ProtocolVersion`](#protocolversion) exactly. See `docs/compatibility-policy.md`.
+
+To bump the protocol: raise [`ProtocolVersion`](#protocolversion) to the new number and set this to the previous one, so the gateway keeps admitting clients of the build that is being replaced. Never widen it past one version, and never make a change inside the window that is not additive (a new message, or a trailing optional field gated on the negotiated version).
+
 ### Role [#role]
 
 ```csharp
@@ -80,6 +92,16 @@ Client only: the simulation scope to be placed in, as an opaque key ([`EntityLoc
 ```csharp
 public ushort Version;
 ```
+
+The protocol this peer speaks. 0 on a message that was built rather than read, which [`Write`](#write) sends as [`ProtocolVersion`](#protocolversion); set it to announce an older one (what the compatibility tests do to play a client of the previous build).
+
+### GameContentVersion [#gamecontentversion]
+
+```csharp
+public uint GameContentVersion;
+```
+
+Client only: the version of the game's own content and rules this build carries, declared by the game ([`NebulaConfig.GameContentVersion`](/docs/reference/core/nebula-config#gamecontentversion), `-nebula-content-version`). Nebula does not interpret it: the gateway compares it with its own configured window and refuses a client outside it with [`JoinRejectReason.ContentVersionMismatch`](/docs/reference/protocol/join-reject-reason#contentversionmismatch). 0 means the game does not version its content, and every gateway that does not either will accept it.
 
 ## Methods
 

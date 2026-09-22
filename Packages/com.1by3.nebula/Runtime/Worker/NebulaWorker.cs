@@ -2386,6 +2386,16 @@ namespace Nebula
             if (id == MsgId.Hello)
             {
                 var hello = HelloMsg.Read(r);
+                // Gateway-to-worker and worker-to-worker links are an exact match, not a window: these processes
+                // are upgraded together, and a half-upgraded mesh is a deployment mistake to report, not to
+                // absorb (docs/compatibility-policy.md D2).
+                if (hello.Version != HelloMsg.ProtocolVersion)
+                {
+                    NebulaLog.Warn($"{hello.Role} '{hello.Id}' refused: protocol {hello.Version} != this worker's {HelloMsg.ProtocolVersion}; " +
+                                   "every gateway and worker of a mesh must run the same build");
+                    _transport.Disconnect(peer.PeerId);
+                    return;
+                }
                 if (hello.Role != PeerRole.Gateway && hello.Role != PeerRole.Worker)
                 {
                     NebulaLog.Warn($"peer '{hello.Id}' with role {hello.Role} refused: workers only talk to gateways and workers");

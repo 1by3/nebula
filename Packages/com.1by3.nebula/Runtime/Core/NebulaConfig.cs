@@ -73,6 +73,10 @@ namespace Nebula
         public bool SingleSessionPerPlayer = true;
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
+        [Tooltip("The version of your game's own content and rules this build carries. A client announces it when it joins; a gateway refuses a client whose number is outside MinGameContentVersion..GameContentVersion with a distinct reason. 0 = your game does not version its content and the gateway does not check. Nebula only compares the numbers. -nebula-content-version overrides.")]
+        public uint GameContentVersion = 0;
+        [Tooltip("The oldest game content version a gateway admits, when GameContentVersion is set. 0 = exact match: only clients carrying GameContentVersion may join. -nebula-min-content-version overrides.")]
+        public uint MinGameContentVersion = 0;
 
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]

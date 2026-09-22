@@ -65,6 +65,14 @@ public bool Reclaimed;
 
 True when the session was reclaimed from a token: the pawn, when the worker still holds it, is the same one.
 
+### NegotiatedVersion [#negotiatedversion]
+
+```csharp
+public ushort NegotiatedVersion;
+```
+
+The protocol the gateway settled on for this session: the version the client announced in its [`HelloMsg`](/docs/reference/protocol/hello-msg), which is somewhere in the gateway's window. The gateway encodes everything it sends this client at that version; the client may use it to tell which optional fields to expect. 0 from a gateway that does not write it (assume [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion)).
+
 ## Methods
 
 ### Write [#write]

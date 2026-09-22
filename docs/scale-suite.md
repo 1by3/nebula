@@ -52,7 +52,9 @@ planner scenarios (about 12 ms together) stay in it.
 | S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (D7c) |
 | S7 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
 | S8 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
-| S9 | Rolling upgrade | synthetic | a version mismatch is refused cleanly; a gateway process is replaced under connected clients with no session lost | covered, with the finding that **there is no compatibility window** (D8) |
+| S9 | Rolling upgrade: the compatibility window at its edges | synthetic | the window's minimum and current version are admitted and negotiated; one below and one above are refused with `ProtocolUnsupported` and the gateway's range; a refused peer disturbs nobody | covered — `ScaleOperationsTests.TheCompatibilityWindowAdmitsItsEdgesAndRefusesWhatIsOutsideItWithAReason` (D8) |
+| S9a | Gateway drain and replace | synthetic | a drained gateway's client moves to another one keeping its session id, identity and pawn; the replacement takes new clients; nobody else is disturbed | covered — `RollingUpgradeTests.AGatewayIsDrainedAndReplacedUnderConnectedClientsWithNoSessionLost` |
+| S9b | Worker drain and replace | synthetic | a drained worker leaves no orphaned container; no replica is lost, no pawn despawned, no client disconnected | covered — `RollingUpgradeTests.AWorkerIsDrainedAndReplacedWithNoEntityLostAndNoClientDisconnected` |
 
 ### Where the numbers come from
 
@@ -168,23 +170,34 @@ through the same snapshot/import path the orchestrator uses at startup, which is
 failover: no storage is swapped, no connection is lost mid-write, no write is replayed. That needs NEB-227's
 work and a real database. Status: **partially covered**.
 
-## D8. There is no compatibility window
+## D8. The compatibility window
 
-`NebulaGateway.DispatchClient` compares the peer's `HelloMsg.Version` to the `HelloMsg.ProtocolVersion` constant
-for **exact equality** and disconnects on any difference. There is no minimum version, no negotiation and nothing
-that reads N-1. `HelloMsg.Write` does not even serialise the instance's `Version` field — it always writes the
-constant — so a peer built from this source *cannot* announce an older protocol. The test therefore lays the
-`Hello` bytes out by hand; that is the finding, not a shortcut.
+**Closed by NEB-228.** When this suite was written there was no window at all: `NebulaGateway.DispatchClient`
+compared the peer's `HelloMsg.Version` to the `HelloMsg.ProtocolVersion` constant for exact equality and closed
+the link without a word, and `HelloMsg.Write` did not even serialise the instance's `Version` field, so a peer
+built from this source could not announce anything else. The scenario had to lay the `Hello` bytes out by hand.
 
-Consequently a rolling upgrade **across protocol versions is not possible today**, and the scenario tests what
-the issue's guidance says to test instead: that a mismatch in either direction is refused cleanly (the link is
-closed, nothing is welcomed, no worker is ever asked to spawn a pawn, and peers of the current version are
-undisturbed). The half of a rolling upgrade that *does* work — replacing a gateway process under connected
-clients at one protocol version, with every session kept — is asserted in the same test.
+Today the policy is stated and enforced (`docs/compatibility-policy.md`):
 
-A real compatibility window would need a minimum-supported-version field on the gateway, a `Hello` that writes
-the sender's own version, and per-version encoders. It is out of scope here; this document is where the case
-for it is now written down.
+- **Client to gateway** accepts the closed range `HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion` —
+  N-1 and N. Both are 18 in this release, because 18 is the floor the policy starts from; the first genuine N-1
+  admission happens at the 19 bump.
+- **Gateway to worker and worker to worker** stay an exact match, and both sides now log the two versions rather
+  than dropping the link silently.
+- Anything outside the window is refused with a message: `JoinRejectReason.ProtocolUnsupported` and the
+  gateway's range, so a client can tell "update the game" from "this server has not been upgraded yet". The
+  game's own content version has its own field and its own code.
+- The gateway records the negotiated version on the session and encodes for that client at that version, and
+  `HelloMsg.Write` writes the sender's own version.
+
+S9 is now the window at its four edges, written against the constants so bumping the protocol turns its first
+row into a real N-1 admission with nothing to edit. The recorded-stream half — a real byte stream replayed
+against a gateway of this build — is the conformance test `ConformanceProtocolCompatibilityTests`. Replacing
+processes under connected clients is S9a and S9b (`RollingUpgradeTests`), which is what a rolling upgrade is
+actually made of.
+
+What is still not proven here: a genuine older build (none exists to run), and processes rather than objects —
+these scenarios replace in-process gateways and workers, not machines behind a load balancer (see D9a).
 
 ## D9. The real-worker runner
 
@@ -232,7 +245,9 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 ## D11. What was verified, and what was not
 
-The synthetic layer was run in full and is green: **14 scenarios, 0 failed, 1 m 30 s**. Its numbers are in D6.
+The synthetic layer was run in full and is green. The NEB-237 run was **12 scenarios, 0 failed, 1 m 19 s**; its numbers are in D6.
+NEB-229 (gateway-kill scenarios) and NEB-228 (S9a and S9b) each added two scenarios; the merged suite is re-measured in D11a
+below.
 
 The tier-D runner was verified in three ways: `-DryRun` (reports the missing player build, prints the plan and
 the port state, exits 0), `-Synthetic` (runs the other layer and reports its wall clock, exits 0), and a real run

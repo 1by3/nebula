@@ -71,6 +71,7 @@ namespace Nebula
         public static string Get(string key, string fallback = null) => Args.TryGetValue(key, out var v) ? v : fallback;
 
         public static int GetInt(string key, int fallback) => Args.TryGetValue(key, out var v) && int.TryParse(v, out var i) ? i : fallback;
+        public static uint GetUInt(string key, uint fallback) => Args.TryGetValue(key, out var v) && uint.TryParse(v, out var i) ? i : fallback;
 
         public static float GetFloat(string key, float fallback) => Args.TryGetValue(key, out var v) && float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : fallback;
 

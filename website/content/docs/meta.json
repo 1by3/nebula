@@ -53,6 +53,7 @@
     "---Deploying---",
     "deploy/cloud",
     "deploy/hetzner",
+    "deploy/upgrades",
     "---Specifications---",
     "specifications/wire-protocol",
     "specifications/control-plane",

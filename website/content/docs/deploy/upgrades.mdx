@@ -1,0 +1,111 @@
+---
+title: Upgrade a running mesh
+description: Which client, gateway, and worker versions can talk to each other, and how to replace gateway and worker processes without disconnecting players.
+---
+
+Use this page to ship a new build to a mesh that has players on it. It covers which versions are allowed to talk to each other, how to replace gateways and workers one at a time, and what a client that cannot join sees.
+
+A **mesh** is the group of clients, workers, gateway, orchestrator, and control-plane service running one game world. A **gateway** accepts client connections. A **worker** is a headless Unity process that simulates entities in its assigned containers.
+
+## Which versions can talk
+
+Nebula peers announce a **wire protocol version** when they connect. Two rules govern it.
+
+| Link | Rule |
+| --- | --- |
+| Client to gateway | The gateway accepts its own protocol version and, once there is one, the version before it. |
+| Gateway to worker, worker to worker | The versions must match exactly. |
+
+A client that is one release behind can therefore keep playing while you replace your servers. Your gateways, workers, and orchestrator cannot: upgrade them together, in one pass.
+
+Both ends of the window are protocol `18` in this release, so today only a client built against protocol 18 can join. The window widens at the next protocol change, when gateways at the new version will also admit clients at 18. `docs/protocol-versions.md` in the repository maps package versions to protocol versions.
+
+<Callout type="warn">
+A change inside the window must be additive, and a release that has to remove or reorder a field closes the window again for that release. Read the release notes for the protocol line before assuming older clients keep working.
+</Callout>
+
+### Version your game's content separately
+
+Your scenes, items, and rules change on their own schedule. A client can speak the right protocol and still be unplayable because its item table is a week old.
+
+To have Nebula check that for you, set `GameContentVersion` on your `NebulaConfig` asset to a number you increase whenever a client build stops being compatible with your servers. The client sends it when it connects, and the gateway refuses a client whose number is not one it runs.
+
+- `GameContentVersion` is `0` by default, which turns the check off.
+- By default the gateway requires an exact match.
+- To accept a range, set `MinGameContentVersion` to the oldest content version you still support.
+
+To override either without rebuilding, pass `-nebula-content-version <n>` or `-nebula-min-content-version <n>` on a service process's command line.
+
+Nebula only compares the numbers. It does not migrate content, order your releases, or tell a player where to get the new build — your client code does that from the refusal.
+
+## Roll out a new build
+
+Upgrade the server tier in one pass, then let clients catch up inside the window.
+
+1. Build and stage the new version of every service process.
+2. Replace the gateways, one at a time, with the drain procedure below.
+3. Replace the workers, one at a time, with the drain procedure below.
+4. Ship the client build. Clients on the previous protocol version keep playing until they update, as long as the window is open for that release.
+
+Do not leave a mesh half-upgraded across a protocol change. A worker on the old protocol will be refused by the new gateways and log the two version numbers.
+
+## Drain and replace a gateway
+
+Draining tells a gateway to stop taking new clients and to ask the ones it has to reconnect. Their sessions survive: a client reconnects with its session token, through any gateway of the mesh, and keeps its session, its identity, and its pawn.
+
+1. Mark the gateway as draining in the control plane. The orchestrator's dashboard and the control-plane API both set this flag; the gateway picks it up on its next heartbeat.
+2. The gateway sends every connected client a `GatewayDraining` message carrying a deadline, set by `GatewayDrainReconnectSeconds` on your config (10 seconds by default). It refuses new joins with a retry flag, so a load balancer hands the next attempt to another gateway.
+3. Wait for its client count to reach zero, or for the deadline to pass.
+4. Stop the process and start the new build in its place.
+5. Repeat for the next gateway.
+
+Nebula does not provide the load balancer that spreads clients over several gateways. Without one, a client reconnects to the address it was given, so keep at least one other gateway reachable at that address while you drain.
+
+To cancel a drain, clear the flag. The gateway starts accepting clients again.
+
+## Drain and replace a worker
+
+Draining a worker means moving what it owns before it exits, so nothing has to be recovered afterward.
+
+1. Reassign the worker's containers to the workers taking over. The orchestrator does this through the control plane, and the worker transfers authority for the entities in them.
+2. Wait until it owns no containers. A drained worker leaves no orphaned container behind, which is the difference between this and a worker that crashes: nothing is restored, because nothing was lost.
+3. Stop the process and start the new build.
+4. The replacement registers with the control plane, and the orchestrator assigns containers to it.
+
+`WorkerDrainTimeoutSeconds` on your config is how long a retiring worker gets to hand its entities over before the orchestrator kills it anyway. Raise it if your containers hold more state than that allows.
+
+Clients are not disconnected by any of this. They keep the entities they were watching, including their own pawn.
+
+## What a client sees when it cannot join
+
+When a gateway refuses a join, the client receives a reason string fit to show the player and a typed code. Read them from `NebulaClient`:
+
+- `JoinRejectReason` is the typed code. `ProtocolUnsupported` means the protocol versions do not overlap; `ContentVersionMismatch` means the game content versions do not.
+- `ServerProtocolWindow` is the `Min` and `Max` protocol versions that gateway accepts.
+- `ServerContentVersion` is the game content version it runs.
+- `LastError` is the reason string.
+
+Use the window to tell the two cases apart, because the player has to do something different in each:
+
+```csharp
+client.JoinRefused += rejected =>
+{
+    if (rejected.Code == JoinRejectReason.ProtocolUnsupported)
+    {
+        bool clientIsOlder = HelloMsg.ProtocolVersion < rejected.SupportedMinVersion;
+        ShowMessage(clientIsOlder
+            ? "This game needs updating before you can play."
+            : "This server has not been updated yet. Try again later.");
+    }
+    else if (rejected.Code == JoinRejectReason.ContentVersionMismatch)
+    {
+        ShowMessage($"This server is running content version {rejected.ServerContentVersion}. Update the game.");
+    }
+};
+```
+
+`ShowMessage` is your own user interface. `JoinRefused` is raised on the main thread with the full refusal; `JoinRejected` carries only the reason string.
+
+The client does not reconnect by itself after either refusal: every gateway of the mesh would answer the same way until one of the two builds changes. A refusal because a gateway is draining is different — the client retries that one on its own.
+
+Every refusal carries the protocol window and the server's content version, whatever the reason, so a client refused for an unrelated reason can still tell the player an update is waiting.
