@@ -515,6 +515,8 @@ public static ulong InstanceKey(string key);
 
 Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.
 
+The derivation itself is [`ScopeKeys.Hash`](/docs/reference/control-plane/scope-keys#hash), so a gateway, an orchestrator or a matchmaking service can name the same scope without a worker and without Unity.
+
 ### PrepareInstance [#prepareinstance]
 
 ```csharp

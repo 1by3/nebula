@@ -743,12 +743,13 @@ public sealed class FakeClient : IDisposable
 
     private readonly Dictionary<ulong, ushort> _viewSeq = new();
     private readonly HashSet<string> _inMessage = new();
-    private readonly string _token, _session, _name;
+    private readonly string _token, _session, _name, _scope;
     private readonly int _peer;
 
-    public FakeClient(int port, string name, string token = "", string session = "")
+    /// <param name="scope">The simulation scope to join into (<see cref="HelloMsg.ScopeKey"/>); empty is the public world.</param>
+    public FakeClient(int port, string name, string token = "", string session = "", string scope = "")
     {
-        _name = name; _token = token; _session = session;
+        _name = name; _token = token; _session = session; _scope = scope;
         _peer = Transport.Connect("127.0.0.1", port);
     }
 
@@ -800,7 +801,7 @@ public sealed class FakeClient : IDisposable
             if (e.Type == TransportEvent.Kind.Connected)
             {
                 var w = new NetworkWriter();
-                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session }.Write(w);
+                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope }.Write(w);
                 Transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
             }
             else if (e.Type == TransportEvent.Kind.Disconnected) Disconnected = true;
@@ -967,9 +968,9 @@ public sealed class Fleet : IDisposable
         if (!ContainerIds.Contains(containerId)) ContainerIds.Add(containerId);
     }
 
-    public FakeClient Connect(int gateway, string name, string token = "", string session = "")
+    public FakeClient Connect(int gateway, string name, string token = "", string session = "", string scope = "")
     {
-        var c = new FakeClient(Ports[gateway], name, token, session);
+        var c = new FakeClient(Ports[gateway], name, token, session, scope);
         Clients.Add(c);
         return c;
     }

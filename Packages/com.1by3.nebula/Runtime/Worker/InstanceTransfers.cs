@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
-using System.Text;
 using UnityEngine;
 
 namespace Nebula
@@ -32,17 +30,9 @@ namespace Nebula
         private readonly List<uint> _expiredInstanceRequests = new List<uint>();
 
         /// <summary>Stable identifier for an instance or one of its containers. Include a run ID in the key for temporary instances.</summary>
-        public static ulong InstanceKey(string key)
-        {
-            if (string.IsNullOrEmpty(key)) throw new ArgumentException("An instance key is required", nameof(key));
-            using (var hash = SHA256.Create())
-            {
-                var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(key));
-                ulong id = 0;
-                for (int i = 0; i < 8; i++) id = (id << 8) | bytes[i];
-                return id == 0 ? 1UL : id;
-            }
-        }
+        /// <remarks>The derivation itself is <see cref="ScopeKeys.Hash"/>, so a gateway, an orchestrator or a
+        /// matchmaking service can name the same scope without a worker and without Unity.</remarks>
+        public static ulong InstanceKey(string key) => ScopeKeys.Hash(key);
 
         /// <summary>Create or find stable instance container leases. Resolve the returned references after the control-plane update. This does not automatically persist entity state.</summary>
         /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
@@ -62,15 +52,25 @@ namespace Nebula
                 if (part == null || string.IsNullOrEmpty(part.Id) || !ids.Add(part.Id) || part.Bounds.size.x <= 0 || part.Bounds.size.y <= 0 || part.Bounds.size.z <= 0)
                     throw new ArgumentException("Instance parts need unique IDs and positive bounds");
             }
+            // An instance is a scope: the template and the origin become a ScopeDefinition, and preparing it is the
+            // same ActivateScope a matchmaking service or a travel menu would call from outside the mesh
+            // (docs/scope-activation.md D2). PreferredWorkerId keeps the old behaviour that the worker that asked
+            // owns the new containers from the first change anyone sees.
+            var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
+            var definition = new ScopeDefinition
+            {
+                Kind = ScopeKind.Parts,
+                ObservePublic = template.ObservePublic,
+                ObservationCenter = view.center,
+                ObservationSize = view.size,
+            };
             for (int i = 0; i < template.Parts.Length; i++)
             {
                 var part = template.Parts[i];
                 ulong id = InstanceKey(prefix + "/" + part.Id);
                 references[i] = ContainerRef.Runtime(id);
                 var bounds = ContainerRegistry.ToAbsolute(new Bounds(origin + part.Bounds.center, part.Bounds.size));
-                var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
-                var info = new InstanceContainerInfo { InstanceId = scope, ContentResource = part.ContentResource, ScopeKey = prefix,
-                    ObservePublic = template.ObservePublic, ObservationCenter = view.center, ObservationSize = view.size };
+                definition.Parts.Add(new ScopePart { PartId = part.Id, Center = bounds.center, Size = bounds.size, ContentResource = part.ContentResource ?? "" });
                 var existing = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
                 if (existing != null && (existing.Instance?.InstanceId != scope || existing.Bounds != bounds || existing.Instance.ContentResource != part.ContentResource))
                     throw new InvalidOperationException("Instance key already names different content or bounds");
@@ -79,8 +79,9 @@ namespace Nebula
                 // a collision and is refused rather than silently merged.
                 if (existing != null && !string.IsNullOrEmpty(existing.Instance.ScopeKey) && !string.Equals(existing.Instance.ScopeKey, prefix, StringComparison.Ordinal))
                     throw new InvalidOperationException("Instance key collides with an existing scope key: " + existing.Instance.ScopeKey);
-                if (existing == null) ControlPlane.EnsureRuntimeContainer(ContainerRegistry.RuntimeContainerId(id), bounds, WorkerId, info);
             }
+            ControlPlane.ActivateScope(new ScopeActivationRequest
+            { ScopeKey = prefix, Definition = definition, PreferredWorkerId = WorkerId, Requester = WorkerId });
             return references;
         }
 

@@ -35,6 +35,7 @@
     "guides/runtime-containers",
     "guides/infinite-runtime-world",
     "guides/instancing",
+    "guides/scopes",
     "---Running a mesh---",
     "guides/configuration",
     "guides/gateway-extensions",

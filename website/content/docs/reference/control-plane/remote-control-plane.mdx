@@ -116,6 +116,12 @@ public int PendingWrites { get; }
 
 Writes waiting to be sent.
 
+### Scopes [#scopes]
+
+```csharp
+public IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
 ## Events
 
 ### Changed [#changed]
@@ -256,4 +262,16 @@ public void RemoveContainer(string containerId);
 
 ```csharp
 public void ResetControlPlane();
+```
+
+### ActivateScope [#activatescope]
+
+```csharp
+public void ActivateScope(ScopeActivationRequest request);
+```
+
+### RemoveScope [#removescope]
+
+```csharp
+public void RemoveScope(string scopeKey);
 ```

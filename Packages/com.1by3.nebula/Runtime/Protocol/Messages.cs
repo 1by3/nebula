@@ -176,6 +176,14 @@ namespace Nebula
         /// same id twice can tell a restart from a reconnect. Clients send 0.
         /// </summary>
         public uint Incarnation;
+        /// <summary>
+        /// Client only: the simulation scope to be placed in, as an opaque key (<see cref="EntityLocation.ScopeKey"/>).
+        /// Empty is the public world, which is what every client sent before this field existed. The gateway spawns
+        /// the player only into containers of that scope, and holds the join while the scope is not ready
+        /// (<c>docs/scope-activation.md</c> §5). It does not activate the scope: whoever sent the player to the key
+        /// is the one that called <see cref="IControlPlane.ActivateScope"/>.
+        /// </summary>
+        public string ScopeKey;
         public ushort Version;
 
         public void Write(NetworkWriter w)
@@ -189,6 +197,7 @@ namespace Nebula
             w.WriteString(Token ?? "");
             w.WriteString(Session ?? "");
             w.WriteUInt(Incarnation);
+            w.WriteString(ScopeKey ?? "");
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -202,6 +211,8 @@ namespace Nebula
             m.Token = r.ReadString() ?? "";
             m.Session = r.ReadString() ?? "";
             m.Incarnation = r.ReadUInt();
+            // Appended after the rest of v18 was settled: a Hello that ends here is the public world.
+            m.ScopeKey = r.Remaining > 0 ? r.ReadString() ?? "" : "";
             return m;
         }
     }

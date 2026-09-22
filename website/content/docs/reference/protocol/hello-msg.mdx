@@ -67,6 +67,14 @@ public uint Incarnation;
 
 Gateway and worker peers: a number that changes every time the process starts, so a peer that sees the same id twice can tell a restart from a reconnect. Clients send 0.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey;
+```
+
+Client only: the simulation scope to be placed in, as an opaque key ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty is the public world, which is what every client sent before this field existed. The gateway spawns the player only into containers of that scope, and holds the join while the scope is not ready (`docs/scope-activation.md` §5). It does not activate the scope: whoever sent the player to the key is the one that called [`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope).
+
 ### Version [#version]
 
 ```csharp

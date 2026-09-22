@@ -1,0 +1,47 @@
+---
+title: "ScopePart"
+description: "One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/ScopeActivation.cs)</div>
+
+```csharp
+[Serializable]
+public sealed class ScopePart
+```
+
+One runtime container of a scope: a stable part id and an axis-aligned box in absolute world coordinates.
+
+## Fields
+
+### PartId [#partid]
+
+```csharp
+public string PartId = "";
+```
+
+Non-empty and unique within the definition. It is hashed with the scope key into the container id, so changing it renames the place.
+
+### Center [#center]
+
+```csharp
+public Vector3 Center;
+```
+
+Box centre, in the same absolute frame as [`LeaseInfo.Bounds`](/docs/reference/control-plane/lease-info#bounds) (see `docs/scope-activation.md` D4).
+
+### Size [#size]
+
+```csharp
+public Vector3 Size;
+```
+
+Box size; every component must be positive.
+
+### ContentResource [#contentresource]
+
+```csharp
+public string ContentResource = "";
+```
+
+Resources path of this part's static geometry, or empty. Loaded by the worker that owns the lease, through the game's existing instance-content path.

@@ -47,7 +47,7 @@ Each scenario checks one guarantee. A scenario marked **available** has a test i
 | # | Guarantee | Status |
 | --- | --- | --- |
 | 1 | The same [entity location](/docs/specifications/entity-location) (scope key, container ID, container-local pose) resolves to the same container in every process that holds the container, and still does after a handover, a restart, and a round trip through the persistence store. | Available |
-| 2 | Activating a scope is idempotent when two requesters ask at the same time, and a private key produces a distinct scope. | Not yet available |
+| 2 | Activating a scope is idempotent when two requesters ask at the same time, and a private key produces a distinct scope. See [Simulation scopes](/docs/guides/scopes). | Available |
 | 3 | An idle scope retires, restores with the same persisted entities, and refuses admission until the restore completes. | Not yet available |
 | 4 | Two scopes whose chunks share coordinates get distinct leases and distinct records, and neither sees the other's ghosts or replicated entities. | Not yet available |
 | 5 | A cross-worker call is applied at most once when its target changes worker between send and apply, and a call carrying an outdated epoch is rejected with a reason. See [the cross-worker call contract](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call). | Available |

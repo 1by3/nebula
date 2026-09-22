@@ -224,6 +224,11 @@ namespace Nebula
         IReadOnlyList<LeaseInfo> Leases { get; }
         IReadOnlyList<GatewayInfo> Gateways { get; }
         /// <summary>
+        /// The shared simulation scopes that have been activated (<see cref="ActivateScope"/>), one row per key,
+        /// mirrored to every role. The public world has no row. Design of record: <c>docs/scope-activation.md</c>.
+        /// </summary>
+        IReadOnlyList<ScopeInfo> Scopes { get; }
+        /// <summary>
         /// Mesh-wide live settings: string key/values Nebula attaches no meaning to. The orchestrator seeds them
         /// (<c>-nebula-settings k=v,k=v</c>), the dashboard edits them, and game code on a worker may write them.
         /// They are the game's low-volume coordination channel across workers (e.g. a spawn budget every worker
@@ -254,6 +259,26 @@ namespace Nebula
 
         /// <summary>Set (or create) one mesh-wide setting. Every subscriber sees it through <see cref="Changed"/>.</summary>
         void SetSetting(string key, string value);
+
+        /// <summary>
+        /// Ask the mesh for a shared simulation scope by key, creating its containers from
+        /// <see cref="ScopeActivationRequest.Definition"/> the first time. Idempotent: the first caller creates the
+        /// rows, every later caller with the same definition changes nothing, and a caller with a *different*
+        /// definition under the same key is refused so two worlds never share one scope. A game-supplied unique key
+        /// is how a private copy is asked for; there is no separate call.
+        /// <para>
+        /// Like every other control-plane write this is fire and forget: the answer is the
+        /// <see cref="Scopes"/> row, which appears on this process (and on every other) once the orchestrator has
+        /// applied it. Poll it with <see cref="ControlPlaneExtensions.FindScope"/> and ask whether it can be
+        /// entered with <see cref="ControlPlaneExtensions.IsScopeReady"/>.
+        /// </para>
+        /// </summary>
+        void ActivateScope(ScopeActivationRequest request);
+        /// <summary>
+        /// Drop a scope's row, its durable claim and the lease rows of its containers. The mechanism only: when a
+        /// scope should go is the game's or NEB-240's decision, and entities still in it are not moved.
+        /// </summary>
+        void RemoveScope(string scopeKey);
 
         void EnsureContainer(string containerId);
         /// <summary>
@@ -309,6 +334,36 @@ namespace Nebula
             foreach (var l in cp.Leases) if (l.ContainerId == containerId) return l;
             return null;
         }
+
+        /// <summary>The scope row for <paramref name="scopeKey"/>, or null when the key has not been activated here yet.</summary>
+        public static ScopeInfo FindScope(this IControlPlane cp, string scopeKey)
+        {
+            if (string.IsNullOrEmpty(scopeKey) || cp.Scopes == null) return null;
+            foreach (var s in cp.Scopes) if (string.Equals(s.ScopeKey, scopeKey, StringComparison.Ordinal)) return s;
+            return null;
+        }
+
+        /// <summary>
+        /// Whether the scope can be entered: every container of it has a lease row in an owning state
+        /// (<see cref="LeaseState.IsOwning"/>) held by a worker that is still heartbeating. It does <b>not</b> say
+        /// that the worker has loaded the scope's content — that stays with the per-crossing handshake
+        /// (<see cref="NebulaWorker.PrepareTransfer"/>). See <c>docs/scope-activation.md</c> §4.
+        /// </summary>
+        public static bool IsScopeReady(this IControlPlane cp, ScopeInfo scope, float workerTimeoutSeconds = 15f)
+        {
+            if (scope == null || scope.ContainerIds == null || scope.ContainerIds.Count == 0) return false;
+            foreach (var containerId in scope.ContainerIds)
+            {
+                var lease = cp.FindLease(containerId);
+                if (lease == null || !LeaseState.IsOwning(lease.State) || string.IsNullOrEmpty(lease.WorkerId)) return false;
+                if (!cp.IsWorkerAlive(cp.FindWorker(lease.WorkerId), workerTimeoutSeconds)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Shorthand for <see cref="IsScopeReady(IControlPlane, ScopeInfo, float)"/> by key.</summary>
+        public static bool IsScopeReady(this IControlPlane cp, string scopeKey, float workerTimeoutSeconds = 15f) =>
+            cp.IsScopeReady(cp.FindScope(scopeKey), workerTimeoutSeconds);
 
         public static string GetSetting(this IControlPlane cp, string key, string fallback = null)
         {

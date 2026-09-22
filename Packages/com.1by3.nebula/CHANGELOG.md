@@ -85,12 +85,42 @@ Changed:
 
 - The warning for an `AuthorityRpc` sent from a copy that is neither authoritative nor a ghost now states the rule and the reason, and is checked before the RPC sink so it also fires in a process without one. Routing is unchanged.
 
+#### Keyed simulation scopes activated on demand
+
+See [Simulation scopes](https://nebula.1by3.co/docs/guides/scopes) and `docs/scope-activation.md`.
+
+**What changed and why.** The only way to bring a private world into being was `NebulaWorker.PrepareInstance`, which needs an authored `InstanceBoundary` and a worker that is already running to ask. Matchmaking services, travel menus and login flows all decide where a player goes *before* the player is anywhere. `IControlPlane.ActivateScope(key, definition)` is that call: ask the mesh for a shared simulation scope by key, from any process that holds a control plane, and get the same containers for the same key however many requesters ask and whichever orchestrator run they ask in.
+
+**Breaking wire format (protocol 18, appended after the rest of 18 was settled; the version is unchanged):**
+
+- `HelloMsg` gained a trailing `string scope_key`. A `Hello` that ends before it reads as the public world, so a client built against an earlier snapshot of protocol 18 still joins. It is ignored on a gateway or worker `Hello`.
+
+**Control-plane document and storage:**
+
+- The control-plane document gained a `"scopes"` array, written only when at least one scope has been activated. A document without it parses to an empty list, so a stored document from an earlier release reads as before.
+- New control-plane ops `ActivateScope` and `RemoveScope` on `POST /api/control-plane`, which is the whole HTTP surface for activation — there is no new endpoint.
+- New table `nebula_scope (scope_key TEXT PRIMARY KEY, definition TEXT NOT NULL, created_at BIGINT NOT NULL)` in the orchestrator's SQLite/PostgreSQL database, created by `EnsureSchema`. A file-backed control plane keeps the same claims under `<control-plane>.scopes/`. This primary key is the uniqueness constraint that makes activation idempotent across concurrent requesters and across orchestrator runs; a memory-only control plane has no such constraint and is idempotent only while it lives.
+
+**New public API:**
+
+- `IControlPlane.Scopes`, `IControlPlane.ActivateScope(ScopeActivationRequest)`, `IControlPlane.RemoveScope(string)`; extension methods `FindScope(key)` and `IsScopeReady(key or ScopeInfo, workerTimeoutSeconds = 15)`.
+- `ScopeInfo`, `ScopeActivationRequest`, `ScopeDefinition`, `ScopePart`, `ScopeKind`, `ScopeState`, `ScopeJson`, `IScopeStore` and `ScopeKeys` (`Runtime/ControlPlane/ScopeActivation.cs`, pure C#, compiled into `Services~` too). `ScopeKeys.Hash(key)` is the derivation `NebulaWorker.InstanceKey` has always used — `InstanceKey` now calls it — and `ScopeKeys.ContainerId(key, partId)` is the runtime container id that follows from it.
+- `NebulaClient.ScopeKey` (seeded from `-nebula-scope`) and `HelloMsg.ScopeKey`.
+
+**Behaviour that changed:**
+
+- `NebulaWorker.PrepareInstance` now builds a `ScopeDefinition` and calls `ActivateScope` with itself as the preferred worker. Its signature, its return value, its collision exceptions and the guarantee that the asking worker owns the new containers from the first change are unchanged; an instance created by a boundary now also has a scope row.
+- A gateway spawns a player only into a container whose `Container.ScopeKey` equals the client's `HelloMsg.ScopeKey`. A client that named a scope with no live owner is held in `JoinState.Starting` and placed with no reconnect once the scope is ready; it is never placed in another scope as a fallback, and a client that named nothing is never placed inside an instance.
+- A second activation of a key with a *different* definition is refused and logged; the stored scope stands and nothing changes, so the caller keeps its current scope and may retry.
+
+**What activation does not do:** it does not decide who may enter, does not load content (that stays with `InstanceScenes` and the `PrepareTransfer` handshake), and does not retire anything. `RemoveScope` removes a scope's row, claim and lease rows without draining it; idle retirement and restore are a later item.
+
 #### Conformance suite
 
 A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools/conformance.ps1` (`-DotnetOnly` for the pure C# tier while the Editor is open). Every test is tagged `[Category("Conformance")]`; the script runs the category in `Nebula.Services.Tests` (`dotnet test`) and in `Nebula.Tests.EditMode` (Unity batchmode), and prints one PASS/FAIL summary with counts. Design and scenario ledger: `docs/conformance-suite.md`; user page: [Run the conformance suite](https://nebula.1by3.co/docs/guides/conformance-suite).
 
 - `ConformanceMesh` (`Tests/EditMode/ConformanceMesh.cs`): two or more real `NebulaWorker` components in one Editor process, each with a recording transport and peer records for the others; `Pump()` delivers every recorded message into the receiving worker's own `Dispatch`. Handovers here run the production builder, wire format and applier end to end, with no gateway, leases or tick loop.
-- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 8 (server-driven handover state, below) and scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`). Scenarios 2, 3, 4, 6 and 7 wait for their items in the Scopes, Interaction and Persistence-hooks milestones and are listed as pending.
+- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 2 (scope activation, `ConformanceScopeActivationTests` and `ConformanceScopeRoutingTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 8 (server-driven handover state, below) and scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`). Scenarios 3, 4, 6 and 7 wait for their items in the Scopes, Interaction and Persistence-hooks milestones and are listed as pending.
 - Scenario 8, covered: a server-driven entity with `WriteHandoverState`/`ReadHandoverState` state, NetworkVariables and a `NetworkTransform` crosses workers and keeps every field, bumps its epoch by one, fires `OnLostAuthority`/`OnGainedAuthority` once each in order, and ignores a replayed transfer (`ConformanceHandoverStateTests`). The wire leg (`ConformanceHandoverWireTests`, every `AuthorityTransferMsg` field) also compiles into the service tests.
 - Tagged into the suite: `ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks` and `PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord`.
 

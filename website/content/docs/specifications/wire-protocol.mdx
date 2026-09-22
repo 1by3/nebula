@@ -171,7 +171,7 @@ The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Rep
 
 ```text
 Hello           := u16 protocol_version, u8 role, string id, u32 index, u8 flags,
-                   string token, string session, u32 incarnation
+                   string token, string session, u32 incarnation, string scope_key
 Welcome         := u64 client_id, u8 tick_rate, u32 server_tick, string identity,
                    string token, string session_token, bool reclaimed
 JoinStatus      := u8 state, u16 estimated_seconds
@@ -183,6 +183,8 @@ Pong            := f64 client_time, u32 server_tick
 ```
 
 For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity, `session` is the `session_token` from the last `Welcome` or empty on a first connection, and `incarnation` is zero.
+
+`scope_key` is the [simulation scope](/docs/guides/scopes) the client asks to be placed in: the opaque key the game chose, or empty for the public world. The gateway spawns the player only into a container whose scope key is ordinally equal to it, and holds the join in `JoinStatus.state` `1` while no such container has a live owner; it never falls back to another scope. The gateway does not activate the scope, so the key must already have been activated through the control plane. `scope_key` was appended to `Hello` after the rest of protocol 18 was settled: a `Hello` that ends before it reads as the public world, and the protocol version is unchanged. It is ignored on a gateway or worker `Hello`.
 
 For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. Both send a nonzero `incarnation`, a random number drawn when the process started, so a peer that sees the same ID twice can tell a restart from a reconnect. When the mesh has a mesh token, `token` on a gateway or worker `Hello` is the credential `unix_seconds.base64url(HMAC-SHA256(key, role|id|incarnation|unix_seconds))`, where `key = SHA-256("nebula-peer-auth:" + mesh_token)` and `role` is the decimal `PeerRole` value. A receiver rejects a credential whose timestamp differs from its clock by more than 300 seconds or whose MAC does not match. Without a mesh token, `token` is empty and every peer is accepted.
 

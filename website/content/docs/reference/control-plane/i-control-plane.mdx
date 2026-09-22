@@ -45,6 +45,14 @@ IReadOnlyList<LeaseInfo> Leases { get; }
 IReadOnlyList<GatewayInfo> Gateways { get; }
 ```
 
+### Scopes [#scopes]
+
+```csharp
+IReadOnlyList<ScopeInfo> Scopes { get; }
+```
+
+The shared simulation scopes that have been activated ([`ActivateScope`](#activatescope)), one row per key, mirrored to every role. The public world has no row. Design of record: `docs/scope-activation.md`.
+
 ### Settings [#settings]
 
 ```csharp
@@ -140,6 +148,24 @@ void SetSetting(string key, string value);
 ```
 
 Set (or create) one mesh-wide setting. Every subscriber sees it through [`Changed`](#changed).
+
+### ActivateScope [#activatescope]
+
+```csharp
+void ActivateScope(ScopeActivationRequest request);
+```
+
+Ask the mesh for a shared simulation scope by key, creating its containers from [`ScopeActivationRequest.Definition`](/docs/reference/control-plane/scope-activation-request#definition) the first time. Idempotent: the first caller creates the rows, every later caller with the same definition changes nothing, and a caller with a \*different\* definition under the same key is refused so two worlds never share one scope. A game-supplied unique key is how a private copy is asked for; there is no separate call.
+
+Like every other control-plane write this is fire and forget: the answer is the [`Scopes`](#scopes) row, which appears on this process (and on every other) once the orchestrator has applied it. Poll it with [`ControlPlaneExtensions.FindScope`](/docs/reference/control-plane/control-plane-extensions#findscope) and ask whether it can be entered with [`ControlPlaneExtensions.IsScopeReady`](/docs/reference/control-plane/control-plane-extensions#isscopeready).
+
+### RemoveScope [#removescope]
+
+```csharp
+void RemoveScope(string scopeKey);
+```
+
+Drop a scope's row, its durable claim and the lease rows of its containers. The mechanism only: when a scope should go is the game's or NEB-240's decision, and entities still in it are not moved.
 
 ### EnsureContainer [#ensurecontainer]
 
