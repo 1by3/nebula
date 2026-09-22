@@ -39,6 +39,7 @@ namespace Nebula
             LocalWorkerId = "";
             LocalWorkerIndex = 0;
             RpcSink = null;
+            StateHistory.ResetWindow();
         }
     }
 }

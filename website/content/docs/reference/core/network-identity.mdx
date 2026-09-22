@@ -62,14 +62,6 @@ public const uint SyncKeyframeInterval = 30;
 
 Every this many ticks a dirty sync behaviour writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
-### PoseHistoryTicks [#posehistoryticks]
-
-```csharp
-public const int PoseHistoryTicks = 64;
-```
-
-Ticks of pose history kept per entity (about a second at 60 Hz).
-
 ## Properties
 
 ### IsSceneEntity [#issceneentity]
@@ -263,6 +255,30 @@ public PersistentEntity Persistent { get; }
 
 The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached by [`Initialize`](#initialize); everything about persistence hangs off it (see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence)).
 
+### History [#history]
+
+```csharp
+public StateHistory History { get; }
+```
+
+The recorded ticks of this entity on this process, or null when nothing has been recorded (recording is off, this is a client, or the entity is too young). See [`StateAt`](#stateat).
+
+### OldestAvailableTick [#oldestavailabletick]
+
+```csharp
+public uint OldestAvailableTick { get; }
+```
+
+The oldest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
+
+### NewestAvailableTick [#newestavailabletick]
+
+```csharp
+public uint NewestAvailableTick { get; }
+```
+
+The newest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
+
 ### HasSyncState [#hassyncstate]
 
 ```csharp
@@ -309,13 +325,29 @@ public event Action<Container, Container> ContainerChanged;
 
 ## Methods
 
+### StateAt [#stateat]
+
+```csharp
+public HistoricalState StateAt(uint tick);
+```
+
+What this entity looked like at server tick `tick`: its world pose, velocity, container, epoch and the [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute) variables. Answered on the worker that has authority and on any worker holding a ghost of it; a ghost's newest tick is one behind the owner's (the tick the owner's stream was built on). Outside the recorded window the result's [`HistoricalState.Available`](/docs/reference/core/historical-state#available) is false and nothing is extrapolated.
+
+### TryGetStateAt [#trygetstateat]
+
+```csharp
+public bool TryGetStateAt(uint tick, out HistoricalState state);
+```
+
+As [`StateAt`](#stateat), in the try-pattern.
+
 ### TryGetPoseAt [#trygetposeat]
 
 ```csharp
 public bool TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation);
 ```
 
-The pose recorded for `tick`, or the nearest later one within a few ticks (a ghost that arrived recently has a short history). False when nothing usable was recorded.
+The pose recorded for `tick`, or the nearest one within [`StateHistory.GapToleranceTicks`](/docs/reference/core/state-history#gaptoleranceticks). False (with the entity's current pose) when nothing usable was recorded. A thin wrapper over [`StateAt`](#stateat).
 
 ### WriteVars [#writevars]
 

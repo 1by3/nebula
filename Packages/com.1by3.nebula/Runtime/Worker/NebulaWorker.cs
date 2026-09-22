@@ -321,6 +321,7 @@ namespace Nebula
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
+            StateHistory.WindowTicks = Mathf.Clamp(config.StateHistoryTicks, 0, StateHistory.MaxWindowTicks);
             _callRouter = new AuthorityCallRouter(config.AuthorityCallMaxHops);
             _callTracker = new AuthorityCallTracker(WorkerIndex, AuthorityCallId.InitialSequence(Incarnation));
             InitializeInterest();
@@ -842,14 +843,16 @@ namespace Nebula
             ProfSimulate.End();
             InstanceScenes.Simulate(dt);
 
-            // Remember where everything ended up this tick (ghosts included) for lag-compensated hit tests. An
-            // identity whose object was destroyed behind our back (game code, a scene unload) is dropped here rather
-            // than allowed to throw: an exception at this point would skip the publish below and blind every client.
+            // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
+            // validation (docs/state-history.md). Ghosts record themselves when the owner's stream is applied, with
+            // the owner's tick, so a ghost entry is never tagged with a tick this worker invented. An identity whose
+            // object was destroyed behind our back (game code, a scene unload) is dropped here rather than allowed to
+            // throw: an exception at this point would skip the publish below and blind every client.
             ProfRecordPose.Begin();
             foreach (var e in _entities.Values)
             {
                 if (e == null) { _scratchEntities.Add(e); continue; }
-                e.RecordPose(tick);
+                if (e.HasAuthority) e.RecordAuthoritativeState(tick);
             }
             if (_scratchEntities.Count > 0) PurgeDestroyed();
             ProfRecordPose.End();
@@ -1109,6 +1112,21 @@ namespace Nebula
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;
 
+        /// <summary>
+        /// What the entity <paramref name="netId"/> looked like at server tick <paramref name="tick"/>, from this
+        /// worker's own recorded history (<see cref="NetworkIdentity.StateAt"/>). Answers for anything this worker
+        /// holds, authoritative or ghosted; false when it holds no copy or the tick is outside the recorded window
+        /// (<see cref="NebulaConfig.StateHistoryTicks"/>). Nothing is extrapolated. See
+        /// <c>docs/state-history.md</c>.
+        /// </summary>
+        public bool TryGetStateAt(ulong netId, uint tick, out HistoricalState state)
+        {
+            var e = Find(netId);
+            if (e != null) return e.TryGetStateAt(tick, out state);
+            state = default;
+            return false;
+        }
+
         public NetworkIdentity FindPlayer(ulong clientId) => _players.TryGetValue(clientId, out var e) ? e : null;
 
         // ---------------------------------------------------------------------------------------- ghost band
@@ -1198,6 +1216,19 @@ namespace Nebula
                 {
                     var e = targets[i];
                     if (e == null || !e.HasAuthority) continue;
+                    // Variables before the state entry of the same tick: applying the entry is what makes the
+                    // receiving worker record the tick in its state history (docs/state-history.md), and a
+                    // [SyncHistory] variable should be snapshotted with the value this tick's stream carries, not
+                    // with the previous one. On a reliable link that ordering holds; the unreliable batch travels on
+                    // another channel and can still cross, which is why the bound is stated as one tick.
+                    if (e.VarsDirty)
+                    {
+                        _scratch.Reset();
+                        e.WriteVars(_scratch);
+                        _writer.Reset();
+                        new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
+                        Send(peer, Delivery.ReliableOrdered);
+                    }
                     if (e.HasReplicationState)
                     {
                         var entry = e.ReplicationState;
@@ -1221,14 +1252,6 @@ namespace Nebula
                                 slot = -1; count = 0;
                             }
                         }
-                    }
-                    if (e.VarsDirty)
-                    {
-                        _scratch.Reset();
-                        e.WriteVars(_scratch);
-                        _writer.Reset();
-                        new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
-                        Send(peer, Delivery.ReliableOrdered);
                     }
                     if (e.HasSyncState)
                     {

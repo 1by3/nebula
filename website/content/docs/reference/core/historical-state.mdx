@@ -1,0 +1,94 @@
+---
+title: "HistoricalState"
+description: "What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs)</div>
+
+```csharp
+public readonly struct HistoricalState
+```
+
+What an entity looked like at one recorded server tick: the answer of [`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat). Check [`Available`](#available) first; every other member is meaningless when it is false. [`Tick`](#tick) is the tick the entry was actually recorded for, which is the asked-for tick unless it fell in a gap (see [`StateHistory.GapToleranceTicks`](/docs/reference/core/state-history#gaptoleranceticks)).
+
+## Properties
+
+### Available [#available]
+
+```csharp
+public bool Available { get; }
+```
+
+True when an entry was found; false means "unavailable", never an extrapolation.
+
+### Tick [#tick]
+
+```csharp
+public uint Tick { get; }
+```
+
+The server tick this entry belongs to.
+
+### Position [#position]
+
+```csharp
+public Vector3 Position { get; }
+```
+
+World position at [`Tick`](#tick).
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation { get; }
+```
+
+World rotation at [`Tick`](#tick).
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity { get; }
+```
+
+World-space linear velocity as the authority reported it at [`Tick`](#tick).
+
+### Container [#container]
+
+```csharp
+public Container Container { get; }
+```
+
+The container the entity was in at [`Tick`](#tick) (null: outside every container).
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch { get; }
+```
+
+The entity's authority epoch at [`Tick`](#tick).
+
+### FromAuthority [#fromauthority]
+
+```csharp
+public bool FromAuthority { get; }
+```
+
+True when this worker recorded the entry as the authority (after that tick's simulation), false when it recorded it as a ghost holder from the owner's stream. A ghost entry is one tick behind the owner in availability, never in the tick it is tagged with; see `docs/state-history.md` §4.
+
+## Methods
+
+### TryGetValue [#trygetvalue]
+
+```csharp
+public bool TryGetValue<T>(NetworkVariable<T> variable, out T value);
+```
+
+The value `variable` held at [`Tick`](#tick). False when the variable does not carry [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute), belongs to another entity, or nothing was snapshotted for this entry.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
