@@ -259,15 +259,15 @@
       <h2>Scopes</h2>
       <div class="muted" id="scopesHint" style="font-size:12px; margin-bottom:8px"></div>
       <table>
-        <thead><tr><th>Scope</th><th>State</th><th>Parts</th><th>Players</th><th>Entities</th><th>Idle</th><th>Age</th><th>Requester</th></tr></thead>
+        <thead><tr><th>Scope</th><th>State</th><th>Parts</th><th>Players</th><th>Entities</th><th>Idle</th><th>Age</th><th>Capacity</th><th>Requester</th></tr></thead>
         <tbody id="scopes"></tbody>
       </table>
     </section>
     <section class="card wide">
       <h2>Container cost</h2>
-      <div class="muted" style="font-size:12px; margin-bottom:8px">What each container costs the worker that holds it, measured. <b>Sim</b> is the <span class="mono">NetworkTick</span> time its own entities take; <b>Out</b> is what replicating them costs; <b>Relay</b> is owner state, which a gateway forwards to one client each. <b>Dominant</b> is whichever of the three is closest to its budget, and it is what a hot container needs fixing in: simulation wants a split or cheaper entities, replication wants tighter interest, relay wants more gateways.</div>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">What each container costs the worker that holds it, measured. <b>Sim</b> is the <span class="mono">NetworkTick</span> time its own entities take; <b>Out</b> is what replicating them costs; <b>Relay</b> is owner state, which a gateway forwards to one client each. <b>Dominant</b> is whichever of the three is closest to its budget, and it is what a hot container needs fixing in: simulation wants a split or cheaper entities, replication wants tighter interest, relay wants more gateways. <b>Full</b> means the dominant component reached the capacity threshold: joins and transfers into that container go to the game's admission hook, which refuses them by default.</div>
       <table>
-        <thead><tr><th>Container</th><th>Scope</th><th>Worker</th><th>Cost</th><th>Sim</th><th>Share</th><th>Out</th><th>Relay</th><th>Ghosts</th><th>Dominant</th></tr></thead>
+        <thead><tr><th>Container</th><th>Scope</th><th>Worker</th><th>Cost</th><th>Sim</th><th>Share</th><th>Out</th><th>Relay</th><th>Ghosts</th><th>Dominant</th><th>Full</th></tr></thead>
         <tbody id="cost"></tbody>
       </table>
     </section>
@@ -505,6 +505,8 @@
     // Per-container cost (docs/cost-telemetry.md): the rows the scaler names an unsplittable container from.
     const costRows = (s.cost && s.cost.containers) || [];
     const blockedBy = (s.scale && s.scale.blockedBy) || '';
+    // How full a container may get before the mesh calls it at capacity (docs/capacity-admission.md); 0 = off.
+    const capThreshold = s.capacitySaturation || 0;
     $('cost').innerHTML = costRows.length ? costRows.map(c => `
       <tr${c.id === blockedBy ? ' class="warnText"' : ''}>
         <td class="mono">${esc(c.id)}</td>
@@ -516,8 +518,10 @@
         <td>${fmtRate(c.bytesOut || 0)}</td>
         <td>${fmtRate(c.gatewayBytes || 0)}</td>
         <td>${c.ghosts || 0}</td>
-        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of that component's budget">${esc(c.dominant || '')}</td></tr>`).join('')
-      : '<tr><td colspan="10" class="muted">no worker has reported yet</td></tr>';
+        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of that component's budget">${esc(c.dominant || '')}</td>
+        <td title="${((c.saturation || 0) * 100).toFixed(0)}% of the ${esc(c.dominant || '')} budget${capThreshold > 0 ? `; at capacity from ${(capThreshold * 100).toFixed(0)}%` : '; the capacity signal is off'}">${
+          c.atCapacity ? '<span class="warnText">at capacity</span>' : capThreshold > 0 ? `${((c.saturation || 0) * 100).toFixed(0)}%` : '<span class="muted">off</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="11" class="muted">no worker has reported yet</td></tr>';
 
     // Scopes: keyed worlds the mesh has been asked for. Hidden until something activates one, so a mesh that
     // never uses them looks exactly as it did.
@@ -528,6 +532,9 @@
       $('scopesHint').innerHTML = retire > 0
         ? `A scope with nobody in it retires after <b>${fmtSecs(retire)}</b> idle: its persistent entities are checkpointed, its containers released, and it comes back when it is activated again.`
         : 'Idle retirement is off (<span class="mono">ScopeIdleRetireSeconds = 0</span>): a scope keeps its containers until something removes it.';
+      $('scopesHint').innerHTML += capThreshold > 0
+        ? ` A scope counts as <b>at capacity</b> once the worst of its parts reaches <b>${(capThreshold * 100).toFixed(0)}%</b> of a cost budget; joins and transfers into it then go to the admission hook.`
+        : ' The capacity signal is off (<span class="mono">CapacitySaturation = 0</span>): every join is admitted.';
       $('scopes').innerHTML = scopes.map(sc => `
         <tr><td class="mono">${esc(sc.key)}</td>
             <td>${esc(sc.state)}${sc.state === 'active' && !sc.ready ? ' <span class="muted">(no owner)</span>' : ''}</td>
@@ -536,7 +543,11 @@
             <td>${sc.entities}</td>
             <td>${sc.state === 'active' ? fmtSecs(sc.idleSeconds) : '<span class="muted">—</span>'}</td>
             <td>${fmtSecs(sc.ageSeconds)}</td>
-            <td class="mono">${sc.requester ? esc(sc.requester) : '<span class="muted">—</span>'}</td></tr>`).join('');
+            <td title="${sc.capacityKnown ? `the worst of its parts: ${esc(sc.dominant || '')} at ${((sc.saturation || 0) * 100).toFixed(0)}% of its budget` : 'no worker has reported cost for any part of this scope yet'}">${
+              !sc.capacityKnown ? '<span class="muted">unknown</span>'
+                : sc.atCapacity ? '<span class="warnText">at capacity</span>'
+                : `${((sc.saturation || 0) * 100).toFixed(0)}%`}</td>
+            <td class="mono">${sc.requester ? esc(sc.requester) : '<span class="muted">\u2014</span>'}</td></tr>`).join('');
     }
 
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {

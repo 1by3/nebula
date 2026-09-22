@@ -90,6 +90,14 @@ namespace Nebula
                 // The hint travels beside the lease in its compact string form, so a row costs a handful of bytes
                 // when nothing was hinted and stays readable in the stored document when something was.
                 if (l.HasHint) w.Prop("hint", l.Hint.ToString());
+                // The capacity reading (docs/capacity-admission.md), written only once the orchestrator has one, so
+                // a row costs nothing on a mesh with no cost telemetry and an older reader is unaffected.
+                if (l.HasCapacity)
+                {
+                    w.Key("saturation"); Num(w, l.Saturation);
+                    w.Prop("dominant", ContainerCost.NameOf(l.Dominant));
+                    w.Prop("atCapacity", l.AtCapacity);
+                }
                 w.EndObject();
             }
             w.EndArray();
@@ -186,6 +194,14 @@ namespace Nebula
                     }
                     string hint = Str(o, "hint");
                     if (!string.IsNullOrEmpty(hint)) { l.HasHint = true; l.Hint = ContainerHint.Parse(hint); }
+                    string dominant = Str(o, "dominant");
+                    if (!string.IsNullOrEmpty(dominant))
+                    {
+                        l.HasCapacity = true;
+                        l.Saturation = (float)Num(o, "saturation");
+                        l.Dominant = ContainerCost.ComponentOf(dominant);
+                        l.AtCapacity = Bool(o, "atCapacity");
+                    }
                     s.Leases.Add(l);
                 }
             }
@@ -296,7 +312,7 @@ namespace Nebula
             EnsureContainer = "EnsureContainer", EnsureRuntimeContainer = "EnsureRuntimeContainer", TouchContainer = "TouchContainer",
             AssignContainer = "AssignContainer", PinContainer = "PinContainer", SetLeaseState = "SetLeaseState",
             ReleaseContainer = "ReleaseContainer", RemoveContainer = "RemoveContainer", ResetControlPlane = "ResetControlPlane",
-            SetContainerHint = "SetContainerHint",
+            SetContainerHint = "SetContainerHint", SetContainerCapacity = "SetContainerCapacity",
             ActivateScope = "ActivateScope", RemoveScope = "RemoveScope",
             SetScopeState = "SetScopeState", AckScopePart = "AckScopePart";
 
@@ -391,6 +407,7 @@ namespace Nebula
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case SetLeaseState: cp.SetLeaseState(Str(o, "containerId"), Str(o, "state")); return null;
                 case SetContainerHint: cp.SetContainerHint(Str(o, "containerId"), ContainerHint.Parse(Str(o, "hint"))); return null;
+                case SetContainerCapacity: cp.SetContainerCapacity(Str(o, "containerId"), (float)Num(o, "saturation"), ContainerCost.ComponentOf(Str(o, "dominant")), Bool(o, "atCapacity")); return null;
                 case ReleaseContainer: cp.ReleaseContainer(Str(o, "containerId")); return null;
                 case RemoveContainer: cp.RemoveContainer(Str(o, "containerId")); return null;
                 case ActivateScope:

@@ -142,6 +142,20 @@ The same rows are at `GET /api/cost`:
 
 and under `cost` in `GET /api/state`. `scope` is the entity's simulation scope - empty in the public world, the instance key inside an instance - so the rows can be grouped per scope as well as per container.
 
+## Capacity and admission
+
+The same rows say how close a container is to what one worker can carry. A container is **at capacity** when its dominant component reaches `CapacitySaturation` of that component's budget:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `CapacitySaturation` | `0.9` | how full a container may get before the mesh calls it at capacity. `0` turns the signal off and admits everything. `-nebula-capacity-saturation` overrides. |
+
+The orchestrator derives the reading once per pass and publishes it on the container's lease row, so every gateway answers from the control-plane document it already mirrors. A scope is reported as full as its worst part, because a scope is one interaction domain and cannot be split past its authored boundaries.
+
+The **Container cost** table gains a **Full** column and the **Scopes** card a **Capacity** column; `GET /api/cost` and `GET /api/state` carry `atCapacity` per row, `capacitySaturation` for the mesh, and `saturation` / `dominant` / `atCapacity` per scope.
+
+What happens to an arrival into a full target is the game's decision, not the dashboard's: see [When a target is full](/docs/guides/scopes#when-a-target-is-full). By default it is refused with a typed reason; nothing is ever silently split or copied to make room.
+
 ## Entity cost weights
 
 `CostWeights` says what a player, a bot, a server-driven entity and anything else cost. That is per *category*, and in a world with ambient critters and raid bosses in it both are "server-driven". `NetworkIdentity.CostWeight` (on the prefab, default `1`) is a **multiplier** on the category weight: a boss at `8` costs eight server-driven entities, a critter at `0.25` costs a quarter of one. At `1` everywhere nothing changes.

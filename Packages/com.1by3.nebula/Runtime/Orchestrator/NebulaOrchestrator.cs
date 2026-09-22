@@ -104,6 +104,15 @@ namespace Nebula
         /// <summary>The cost row of one container, or all zeroes when no worker has reported it lately.</summary>
         public ContainerCost CostOf(string containerId) => containerId != null && _containerCost.TryGetValue(containerId, out var row) ? row : default;
         private readonly List<ContainerCost> _costRows = new List<ContainerCost>();
+        /// <summary>
+        /// What the mesh last published about how full each container is (docs/capacity-admission.md). Kept so a
+        /// reading is only written to the control plane when it actually moved: the document is mirrored to every
+        /// role and a per-pass rewrite of every lease would be a broadcast per pass.
+        /// </summary>
+        private readonly Dictionary<string, CapacityInfo> _capacity = new Dictionary<string, CapacityInfo>(StringComparer.Ordinal);
+        /// <summary>How full a container is, as this orchestrator last derived it. Unknown when no worker has reported it lately.</summary>
+        public CapacityInfo CapacityOf(string containerId) =>
+            containerId != null && _capacity.TryGetValue(containerId, out var info) ? info : new CapacityInfo { ContainerId = containerId ?? "" };
         /// <summary>Per-worker interest summary for the state document, refreshed from telemetry on every build.</summary>
         private readonly Dictionary<string, MeshTelemetry.WorkerInterest> _interestByWorker = new Dictionary<string, MeshTelemetry.WorkerInterest>(StringComparer.Ordinal);
         /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
@@ -242,6 +251,7 @@ namespace Nebula
             // The two yardsticks a container's cost components are weighed against (docs/cost-telemetry.md).
             Telemetry.TickPeriodMs = WorkerLoadTracker.TickPeriodMs;
             Telemetry.LinkBytesPerSec = config.CostLinkBytesPerSec;
+            Telemetry.CapacitySaturation = config.CapacitySaturation;
             Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(config));
             ContainerRegistry.RuntimeRegistered += OnRuntimeContainersChanged;
             ContainerRegistry.RuntimeUnregistering += OnRuntimeContainersChanged;
@@ -379,6 +389,7 @@ namespace Nebula
             WakeForDemand();
             ReconcileDesiredCount();
             Rebalance();
+            PublishCapacity();
             SweepScopes();
             FinishRetirements();
             RelaunchIfNeeded();
@@ -1303,6 +1314,43 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Derive the capacity signal from the cost rows and publish what changed onto the lease rows, so every
+        /// gateway can answer "is this target at capacity" from the document it already mirrors, with no RPC
+        /// (docs/capacity-admission.md). Only rows whose reading moved are written, and the write never stamps the
+        /// lease's <c>UpdatedAt</c>: that is the idle clock the scope lifecycle retires on.
+        /// </summary>
+        private void PublishCapacity()
+        {
+            float threshold = Config.CapacitySaturation;
+            Telemetry.CapacitySaturation = threshold;
+            // Rebalance refreshes the cost rows too, but it can return early with nothing to plan, and a capacity
+            // signal must not be derived from a stale reading of what the workers are carrying.
+            Telemetry.CopyContainerCost(_containerCost);
+            NebulaCapacity.Derive(_containerCost, threshold, _capacity);
+            var leases = ControlPlane.Leases;
+            for (int i = 0; i < leases.Count; i++)
+            {
+                var lease = leases[i];
+                string id = lease.ContainerId;
+                if (string.IsNullOrEmpty(id)) continue;
+                // Nothing reported for this container lately: the last published reading stands rather than being
+                // cleared, so a worker that missed one telemetry post cannot open a full station.
+                if (!_capacity.TryGetValue(id, out var info) || !info.Known) continue;
+                bool moved = !lease.HasCapacity || lease.AtCapacity != info.AtCapacity || lease.Dominant != info.Dominant ||
+                             Math.Abs(lease.Saturation - info.Saturation) >= CapacityPublishStep;
+                if (!moved) continue;
+                if (lease.HasCapacity && lease.AtCapacity != info.AtCapacity)
+                    Log("info", info.AtCapacity
+                        ? $"container {id} is at capacity ({info.DominantName} at {info.Saturation * 100f:0} % of its budget); joins and transfers into it go to the admission hook"
+                        : $"container {id} is below capacity again ({info.DominantName} at {info.Saturation * 100f:0} %)");
+                ControlPlane.SetContainerCapacity(id, info.Saturation, info.Dominant, info.AtCapacity);
+            }
+        }
+
+        /// <summary>How far a saturation reading has to move before it is worth another control-plane document.</summary>
+        private const float CapacityPublishStep = 0.02f;
+
         /// <summary>Ask the retire policy about one active scope (<see cref="ScopeLifecycle.ShouldRetire"/>).</summary>
         private void JudgeScope(ScopeInfo scope)
         {
@@ -1883,12 +1931,13 @@ namespace Nebula
             w.BeginObject();
             w.Prop("tickPeriodMs", WorkerLoadTracker.TickPeriodMs);
             w.Prop("linkBytesPerSec", Config.CostLinkBytesPerSec);
+            w.Prop("capacitySaturation", Config.CapacitySaturation);
             w.Key("containers");
             w.BeginArray();
             _costRows.Clear();
             foreach (var kv in _containerCost) _costRows.Add(kv.Value);
             _costRows.Sort((a, b) => b.TickShareMs != a.TickShareMs ? b.TickShareMs.CompareTo(a.TickShareMs) : string.CompareOrdinal(a.ContainerId, b.ContainerId));
-            for (int i = 0; i < _costRows.Count; i++) ContainerCost.Write(w, _costRows[i]);
+            for (int i = 0; i < _costRows.Count; i++) ContainerCost.Write(w, _costRows[i], Config.CapacitySaturation);
             w.EndArray();
             w.EndObject();
 
@@ -1933,6 +1982,13 @@ namespace Nebula
                 w.Prop("stateSeconds", Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds));
                 w.Prop("ageSeconds", Math.Max(0.0, (ControlPlane.Now - scope.CreatedAt).TotalSeconds));
                 w.Prop("acked", scope.Acks != null ? scope.Acks.Count : 0);
+                // How full the scope is, as the whole mesh sees it: the worst of its parts, because a scope is one
+                // interaction domain and cannot be split past its authored boundaries (docs/capacity-admission.md).
+                var scopeCapacity = NebulaCapacity.OfScope(ControlPlane, scope.ScopeKey);
+                w.Prop("capacityKnown", scopeCapacity.Known);
+                w.Prop("saturation", Math.Round(scopeCapacity.Saturation, 4));
+                w.Prop("dominant", scopeCapacity.Known ? scopeCapacity.DominantName : "");
+                w.Prop("atCapacity", scopeCapacity.AtCapacity);
                 w.Key("containers");
                 w.BeginArray();
                 foreach (var id in scope.ContainerIds) w.Value(id ?? "");
@@ -1941,6 +1997,7 @@ namespace Nebula
             }
             w.EndArray();
             w.Prop("scopeIdleRetireSeconds", Config.ScopeIdleRetireSeconds);
+            w.Prop("capacitySaturation", Config.CapacitySaturation);
 
             w.Key("gateways");
             w.BeginArray();

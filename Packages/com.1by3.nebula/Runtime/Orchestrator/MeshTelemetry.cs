@@ -94,6 +94,13 @@ namespace Nebula
         /// </summary>
         public double LinkBytesPerSec = NebulaConfig.DefaultCostLinkBytesPerSec;
 
+        /// <summary>
+        /// How saturated a container has to be before it counts as at capacity
+        /// (<see cref="NebulaConfig.CapacitySaturation"/>, docs/capacity-admission.md). Only reported here; the
+        /// orchestrator is what publishes the flag to the mesh. 0 leaves every row below capacity.
+        /// </summary>
+        public float CapacitySaturation;
+
         /// <summary>Somebody read the map within <see cref="DetailWindowSeconds"/>, so workers should include their entities.</summary>
         public bool DetailWanted
         {
@@ -233,9 +240,10 @@ namespace Nebula
             w.BeginObject();
             w.Prop("tickPeriodMs", TickPeriodMs);
             w.Prop("linkBytesPerSec", LinkBytesPerSec);
+            w.Prop("capacitySaturation", CapacitySaturation);
             w.Key("containers");
             w.BeginArray();
-            for (int i = 0; i < rows.Count; i++) ContainerCost.Write(w, rows[i]);
+            for (int i = 0; i < rows.Count; i++) ContainerCost.Write(w, rows[i], CapacitySaturation);
             w.EndArray();
             w.EndObject();
             return sb.ToString();

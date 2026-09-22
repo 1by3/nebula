@@ -290,15 +290,35 @@ namespace Nebula
         /// and retrying with the same ones is pointless.
         /// </summary>
         public bool Retry;
+        /// <summary>
+        /// The refusal in typed form (<see cref="JoinRejectReason"/>), appended after the rest of v18 was settled.
+        /// <see cref="JoinRejectReason.None"/> from a gateway that does not write it.
+        /// </summary>
+        public JoinRejectReason Code;
+        /// <summary>
+        /// How saturated the target was, for <see cref="JoinRejectReason.AtCapacity"/>: 1 = the whole of the
+        /// dominant component's budget (<see cref="CapacityInfo.Saturation"/>). Sent as an f16; 0 when unknown.
+        /// </summary>
+        public float Saturation;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.JoinRejected);
             w.WriteString(Reason ?? "");
             w.WriteByte(Retry ? (byte)1 : (byte)0);
+            w.WriteByte((byte)Code);
+            w.WriteHalf(Saturation);
         }
 
-        public static JoinRejectedMsg Read(NetworkReader r) => new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
+        public static JoinRejectedMsg Read(NetworkReader r)
+        {
+            var m = new JoinRejectedMsg { Reason = r.ReadString() ?? "", Retry = r.ReadByte() != 0 };
+            // A message that ends here came from a gateway that only ever refused a join for reasons the string
+            // already carried; there is nothing typed to read and nothing is assumed.
+            if (r.Remaining > 0) m.Code = (JoinRejectReason)r.ReadByte();
+            if (r.Remaining > 0) m.Saturation = r.ReadHalf();
+            return m;
+        }
     }
 
     /// <summary>
@@ -351,6 +371,28 @@ namespace Nebula
         ScopeRestoring = 3,
         /// <summary>The scope is retiring: it is checkpointing and emptying itself and admits nobody.</summary>
         ScopeRetiring = 4,
+        /// <summary>
+        /// Every container the client could be placed in is at capacity and the game's admission hook asked for the
+        /// client to wait rather than be refused (<see cref="NebulaAdmission"/>, <c>docs/capacity-admission.md</c>).
+        /// This is the "docking queue" answer: the gateway keeps retrying and places the client as soon as room
+        /// appears, with no reconnect.
+        /// </summary>
+        AtCapacity = 5,
+    }
+
+    /// <summary>
+    /// Why a join was refused, in typed form. A reason string is for the player; this is for the game's client
+    /// code, which has to tell "your token is bad" (pointless to retry) from "that station is full" (try a queue,
+    /// another instance, or later). See <c>docs/capacity-admission.md</c>.
+    /// </summary>
+    public enum JoinRejectReason : byte
+    {
+        /// <summary>No typed reason: read <see cref="JoinRejectedMsg.Reason"/> and <see cref="JoinRejectedMsg.Retry"/>. What a gateway from before the field existed sends.</summary>
+        None = 0,
+        /// <summary>The target the client asked for is at capacity and the admission hook refused it (<see cref="JoinRejectedMsg.Saturation"/> says how full).</summary>
+        AtCapacity = 1,
+        /// <summary>The admission hook refused this particular arrival for its own reasons, with the target below capacity (<see cref="NebulaAdmission.AlwaysConsult"/>).</summary>
+        Denied = 2,
     }
 
     /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>

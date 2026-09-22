@@ -237,6 +237,60 @@ The context carries the scope row, its idle age in seconds, the players and enti
 
 The orchestrator's dashboard lists every scope with its state, occupancy, idle age and age, so you can see what a policy is doing.
 
+## When a target is full
+
+A scope is one interaction domain. Its parts are authored, and past them it cannot be split: a station with six hundred people arriving in five minutes is still one station. Rather than quietly making a second copy or letting the tick collapse, Nebula reports that the target is at capacity and lets your game decide what to do about it.
+
+The signal comes from the [cost telemetry](/docs/guides/orchestrator-and-dashboard#container-cost) the workers already report. A container is **at capacity** when its dominant cost component — simulation, replication or gateway relay — reaches `CapacitySaturation` of its own budget (default `0.9`, `-nebula-capacity-saturation`; `0` turns the whole signal off). A scope is as full as its **worst** part.
+
+By default, a join or a [prepared transfer](/docs/guides/instancing) into a target at capacity is refused:
+
+```csharp
+client.JoinRefused += rejected =>
+{
+    if (rejected.Code == JoinRejectReason.AtCapacity)
+        ShowQueueScreen($"That station is full ({rejected.Saturation:P0}).");
+    else
+        ShowError(rejected.Reason);
+};
+```
+
+`JoinRejectReason.AtCapacity` is not a credentials problem and not a gateway problem, so the client does **not** reconnect on a timer: it is your game's turn to act — put the player in a queue, offer another instance, or try again later.
+
+### Decide who gets in anyway
+
+`NebulaAdmission.Decide` is asked about every arrival into a target that is at capacity. It is the place to say that a party member of somebody inside, or a staff account, gets in regardless:
+
+```csharp
+NebulaAdmission.Decide = (in AdmissionRequest request) =>
+{
+    if (MyRoster.IsStaff(request.Identity)) return AdmissionDecision.Admit();
+    if (MyParties.HasMemberInside(request.Identity, request.ScopeKey)) return AdmissionDecision.Admit();
+    return AdmissionDecision.Reject($"{request.ScopeKey} is full ({request.Capacity.DominantName} at {request.Capacity.Saturation:P0}).");
+};
+```
+
+The request carries the kind (a join or a transfer), the scope key and container, the capacity reading, and who is arriving: client ID, identity, name, bot flag and the [tags](/docs/guides/interest-management) your game set on the client. A policy that throws is logged and read as a refusal. Set `NebulaAdmission.AlwaysConsult = true` to be asked about every arrival, not only the ones into a full target.
+
+### Hold instead of refusing
+
+Return `AdmissionDecision.Hold()` and the client is kept welcomed rather than disconnected, exactly as it is while a scope restores. It is told `JoinHoldReason.AtCapacity`, and the gateway places it — with no reconnect — as soon as room appears:
+
+```csharp
+NebulaAdmission.Decide = (in AdmissionRequest request) => AdmissionDecision.Hold();
+
+// on the client
+client.JoinStateChanged += (state, seconds) =>
+{
+    if (state == JoinState.Starting && client.JoinHoldReason == JoinHoldReason.AtCapacity)
+        ShowWaitScreen($"Docking queue: position {MyQueue.PositionOf(client.ClientId)}");
+};
+```
+
+Nebula does not keep the queue and promises no order: it holds the client and admits it when the target has room. The queue, its position and its rules are yours.
+
+A prepared transfer has no join to hold, so `NebulaWorker.PrepareTransfer` reads a hold as a refusal. It returns a finished `InstanceTransfer` with `Error` set and `RejectReason` / `Saturation` typed the same way, and nothing was sent to the destination.
+
 ## Remove a scope
 
 ```csharp
@@ -257,6 +311,7 @@ This drops the scope row, releases the claim on the key and removes the lease ro
 - A `ScopeKind.Parts` definition lists its parts up front. A world whose chunks are decided at runtime is a `ScopeKind.Grid` scope instead, which lists only its anchor.
 - Every scope shares one floating origin and one physics scene per worker, so a scope whose content sits very far from the public world's origin in absolute coordinates loses float precision the same way a distant instance does. Per-scope origin frames are not available yet.
 - `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
+- Capacity is measured per container from what a worker reports, so it lags real load by one telemetry interval (about a second), and a container no worker has reported is never at capacity.
 - A retire loses whatever in the scope was not persistent. That is why the default rule refuses to retire a part that holds any; a game that is happy to discard its transient contents has to say so through `ScopeLifecycle.ShouldRetire`.
 - Each lifecycle step gives the workers 30 seconds to report in. Past that the orchestrator finishes the step anyway, with a warning, so a worker that died cannot leave a scope nobody can enter.
 - A control plane kept in memory only (no file, no database) cannot make activation idempotent across orchestrator restarts, because it keeps nothing to be idempotent about.

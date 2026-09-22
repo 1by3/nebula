@@ -13,6 +13,8 @@
     <!-- Per-container cost telemetry (docs/cost-telemetry.md) is parsed and weighed in pure C#, so the standalone
          orchestrator runs the same round-trip tests the package does. -->
     <Compile Include="../../Tests/EditMode/ContainerCostTests.cs" />
+    <!-- Capacity and admission (docs/capacity-admission.md) are derived from those rows and decided in pure C#. -->
+    <Compile Include="../../Tests/EditMode/CapacityAdmissionTests.cs" />
     <!-- Interest management is pure C#, so the standalone gateway runs the same tests the package does. -->
     <Compile Include="../../Tests/EditMode/InterestGridTests.cs;../../Tests/EditMode/InterestIndexTests.cs;../../Tests/EditMode/CarriedTransitionTests.cs;../../Tests/EditMode/HandoverScopeTests.cs;../../Tests/EditMode/InterestSubscriptionTests.cs;../../Tests/EditMode/RegionPublisherTests.cs;../../Tests/EditMode/InterestSettingsTests.cs;../../Tests/EditMode/InterestPolicyTests.cs;../../Tests/EditMode/ClientInterestTests.cs;../../Tests/EditMode/InterestWireTests.cs" />
     <!-- The location contract (docs/location-contract.md) is pure C# too: the same conformance tests run against the

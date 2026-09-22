@@ -202,6 +202,8 @@ namespace Nebula
         public void PinContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.PinContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void SetLeaseState(string containerId, string state) => Enqueue(_op.Op(ControlPlaneJson.SetLeaseState).Arg("containerId", containerId).Arg("state", state).End());
         public void SetContainerHint(string containerId, in ContainerHint hint) => Enqueue(_op.Op(ControlPlaneJson.SetContainerHint).Arg("containerId", containerId).Arg("hint", hint.ToString()).End());
+        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity) =>
+            Enqueue(_op.Op(ControlPlaneJson.SetContainerCapacity).Arg("containerId", containerId).Arg("saturation", saturation).Arg("dominant", ContainerCost.NameOf(dominant)).Arg("atCapacity", atCapacity).End());
         public void ReleaseContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.ReleaseContainer).Arg("containerId", containerId).End());
         public void RemoveContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.RemoveContainer).Arg("containerId", containerId).End());
         public void ResetControlPlane() => Enqueue(_op.Op(ControlPlaneJson.ResetControlPlane).End());
