@@ -116,10 +116,10 @@ development machine. They are what the CSVs held; treat absolute values as machi
 
 | Scenario | Result |
 |---|---|
-| sustained-load | 120 clients, 221 replicas each on average (142–268), 5.4 kB/s each (max 6.4), gateway loop lag 14.4 ms, 0 orphan updates, 0 duplicate views |
+| sustained-load | 120 clients, 238 replicas each on average (138–284), 5.5 kB/s each (max 6.4), gateway loop lag 13.3 ms, 0 orphan updates, 0 duplicate views |
 | burst-load | 150 clients admitted in 3.6 s, 0 refused, 150 distinct sessions, 150 pawns |
-| many-scopes | 4 scopes × 20 clients + 20 public; 8.4 kB/s per scoped client, 5.8 kB/s per public client, **0 cross-scope leaks** |
-| worker-kill | 1 container orphaned; the gateways dropped its entities in 0.03 s; whole again in 1.07 s; 0 duplicate spawns; 40 clients, 40 pawns |
+| many-scopes | 4 scopes × 20 clients + 20 public; 8.5 kB/s per scoped client, 5.7 kB/s per public client, **0 cross-scope leaks** |
+| worker-kill | 1 container orphaned; the gateways dropped its entities in 0.03 s; whole again in 1.08 s; 0 duplicate spawns; 40 clients, 40 pawns; 34 orphan updates (see below) |
 | gateway-stop (abrupt) | 12/12 sessions reclaimed on the surviving gateway in 0.05 s, same session ids |
 | gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7 |
 | control-plane-restart | 4 leases back in 0.003 s, 0 disconnected, 0 session changes |
@@ -127,6 +127,12 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
 | autoscale-rebalance | 2 moves explained; under a hold, 0 moves; saturated `c0` reported as `no-boundary`, `Simulation`, 0.948 of the tick budget |
 | rolling-upgrade | protocol 17 and 19 both disconnected; 18 admitted; session kept across a gateway replacement |
+
+**Orphan updates.** A sustained run must have none — a client sent state for an entity it does not hold is an
+interest bug. A *worker kill* legitimately produces some (34 here): world state the dead worker had already put
+on the wire arrives after the gateway forgot its entities. The sustained scenario therefore asserts zero and the
+worker-kill scenario records the number instead of asserting on it; a real client drops such an update (the fake
+one counts it, which is the whole point of the counter).
 
 ## D7. Gaps this suite measures rather than hides
 
