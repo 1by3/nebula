@@ -1,0 +1,64 @@
+---
+title: "AuthorityCallDecision"
+description: "The decision for one incoming call: the action and, for a rejection, the reason."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public readonly struct AuthorityCallDecision
+```
+
+The decision for one incoming call: the action and, for a rejection, the reason.
+
+## Constructors
+
+### AuthorityCallDecision [#authoritycalldecision]
+
+```csharp
+public AuthorityCallDecision(AuthorityCallAction action, AuthorityCallOutcome outcome);
+```
+
+## Fields
+
+### ApplyIt [#applyit]
+
+```csharp
+public static readonly AuthorityCallDecision ApplyIt = new AuthorityCallDecision(AuthorityCallAction.Apply, AuthorityCallOutcome.Accepted);
+```
+
+### ForwardIt [#forwardit]
+
+```csharp
+public static readonly AuthorityCallDecision ForwardIt = new AuthorityCallDecision(AuthorityCallAction.Forward, AuthorityCallOutcome.Pending);
+```
+
+## Properties
+
+### Action [#action]
+
+```csharp
+public AuthorityCallAction Action { get; }
+```
+
+### Outcome [#outcome]
+
+```csharp
+public AuthorityCallOutcome Outcome { get; }
+```
+
+[`AuthorityCallOutcome.Accepted`](/docs/reference/worker/authority-call-outcome#accepted) for an apply, [`AuthorityCallOutcome.Pending`](/docs/reference/worker/authority-call-outcome#pending) for a forward, the reason for a rejection.
+
+## Methods
+
+### Reject [#reject]
+
+```csharp
+public static AuthorityCallDecision Reject(AuthorityCallOutcome why);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

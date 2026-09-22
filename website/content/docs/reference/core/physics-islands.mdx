@@ -1,0 +1,73 @@
+---
+title: "PhysicsIslands"
+description: "Decides whether two networked bodies are simulated by one authority (the same island) and finds the joints that are not."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/PhysicsIslands.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/PhysicsIslands.cs)</div>
+
+```csharp
+public static class PhysicsIslands
+```
+
+Decides whether two networked bodies are simulated by one authority (the same *island*) and finds the joints that are not. Nebula simulates a dynamic body only on the worker that has authority over its entity; every other worker holds a kinematic ghost one tick behind. A `Joint` or `ArticulationBody` between entities in different containers can therefore have each of its two bodies simulated by a different worker, and PhysX on each side solves the constraint against a kinematic copy. Nebula does not make that symmetric. `Nebula > Validate Project` and the worker use this class to warn about such constraints; see Distributed physics.
+
+## Fields
+
+### IsCohesive [#iscohesive]
+
+```csharp
+public static Func<NetworkIdentity, NetworkIdentity, bool> IsCohesive;
+```
+
+Extension point for cohesion hints (NEB-223, not yet available): return true when the game guarantees that the two entities always share an authoritative worker, and their joints are no longer reported. Null (the default) treats every pair of entities in different containers as separate islands.
+
+### WarnOnAuthority [#warnonauthority]
+
+```csharp
+public static bool WarnOnAuthority = true;
+```
+
+Whether the worker warns about a cross-container joint when it spawns or gains authority over an entity. One warning per entity through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn); the check costs one component lookup per spawn and nothing per tick.
+
+## Methods
+
+### SameIsland [#sameisland]
+
+```csharp
+public static bool SameIsland(Container a, Container b);
+public static bool SameIsland(NetworkIdentity a, NetworkIdentity b, Func<NetworkIdentity, Container> resolve = null);
+```
+
+Two containers are one island when they are the same container. Two nulls (no containers at all) are one island as well; a null against a container is not.
+
+### ContainerOf [#containerof]
+
+```csharp
+public static Container ContainerOf(NetworkIdentity identity);
+```
+
+The container an entity belongs to: [`NetworkIdentity.Container`](/docs/reference/core/network-identity#container) once it is spawned, otherwise the nearest [`Container`](/docs/reference/containers/container) above it in the hierarchy (a carrier's own box is skipped; a carrier sits in the container around it, not in the one it carries). Null when neither is known.
+
+### HasConstraints [#hasconstraints]
+
+```csharp
+public static bool HasConstraints(GameObject root);
+```
+
+Cheap gate: whether the entity's hierarchy holds any `Joint` or `ArticulationBody`.
+
+### FindCrossIslandJoints [#findcrossislandjoints]
+
+```csharp
+public static int FindCrossIslandJoints(NetworkIdentity root, List<CrossIslandJoint> results, Func<NetworkIdentity, Container> resolve = null);
+```
+
+Appends every constraint under `root` whose two bodies are in different islands. A constraint is attributed to the nearest [`NetworkIdentity`](/docs/reference/core/network-identity) above it, so a constraint on a nested entity's hierarchy is reported from that entity, not from its carrier. A joint connected to the world (no connected body) or to a body without a NetworkIdentity is never reported: nothing else simulates that body. Returns the number of constraints added.
+
+### CheckOnAuthority [#checkonauthority]
+
+```csharp
+public static void CheckOnAuthority(NetworkIdentity identity);
+```
+
+Worker side: called when an entity is spawned or handed in. Logs one warning for the entity, naming each cross-container constraint, the first time it finds one; later authority changes of the same entity are silent. Entities without a joint or articulation cost one component lookup.

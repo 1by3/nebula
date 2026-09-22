@@ -15,10 +15,12 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
+| [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
+| [NebulaDiagnostics](/docs/reference/core/nebula-diagnostics) | Static class. Process-wide counters for rule violations Nebula rejects at the call site, so tests and the worker's profile log line can see how often game code hits them. |
 | [NebulaGameMode](/docs/reference/core/nebula-game-mode) | Abstract class. Server-side game hooks, the equivalent of subclassing Mirror's NetworkManager. |
 | [NebulaLog](/docs/reference/core/nebula-log) | Static class. Thin logging wrapper so every Nebula line is greppable by prefix in headless logs. |
 | [NebulaRuntime](/docs/reference/core/nebula-runtime) | Static class. Process-wide role context. |
@@ -33,6 +35,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NetworkTransform](/docs/reference/core/network-transform) | Class. Replicates selected position, rotation, and scale axes from the authoritative worker to clients and ghost workers. |
 | [NetworkVariable\<T\>](/docs/reference/core/network-variable) | Class. A field replicated from the authoritative worker to clients and ghost workers. |
 | [NetworkVariableBase](/docs/reference/core/network-variable-base) | Abstract class. Defines the serialization and change tracking used by every NetworkVariable\<T\>. |
+| [PhysicsIslands](/docs/reference/core/physics-islands) | Static class. Decides whether two networked bodies are simulated by one authority (the same island) and finds the joints that are not. |
 | [PlayerInfo](/docs/reference/core/player-info) | Struct. Who is joining, as the gateway told the worker (NebulaGameMode.OnSpawnPlayer). |
 | [PredictedBehaviour\<TInput\>](/docs/reference/core/predicted-behaviour) | Abstract class. A server-authoritative, client-predicted behaviour (the player controller, typically). |
 | [PredictedBehaviourBase](/docs/reference/core/predicted-behaviour-base) | Abstract class. Non-generic surface Nebula's worker and client drive; game code derives from PredictedBehaviour\<TInput\>. |
@@ -52,9 +55,11 @@ Define container volumes and look up their current worker assignments.
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
+| [EntityLocation](/docs/reference/containers/entity-location) | Struct. Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. |
 | [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their world pose. |
 | [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
 | [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
+| [LocationContainerKind](/docs/reference/containers/location-container-kind) | Enum. Which kind of container an EntityLocation.ContainerId names. |
 | [NebulaContainerHelpers](/docs/reference/containers/nebula-container-helpers) | Static class. Geometry helpers for placing things inside a Container. |
 
 ## World partition
@@ -86,6 +91,15 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 
 | Type | Summary |
 | --- | --- |
+| [AuthorityCallAction](/docs/reference/worker/authority-call-action) | Enum. What a worker does with an incoming call. |
+| [AuthorityCallDecision](/docs/reference/worker/authority-call-decision) | Struct. The decision for one incoming call: the action and, for a rejection, the reason. |
+| [AuthorityCallId](/docs/reference/worker/authority-call-id) | Static class. The identity of one cross-worker call: the sending worker's index in the top 16 bits and a per-sender sequence in the low 48, the same shape as an entity NetId. |
+| [AuthorityCallLedger](/docs/reference/worker/authority-call-ledger) | Class. The call ids a worker has applied, so a call that arrives twice runs once (design D5). |
+| [AuthorityCallOutcome](/docs/reference/worker/authority-call-outcome) | Enum. Where an AuthorityRpc call ended up. |
+| [AuthorityCallResult](/docs/reference/worker/authority-call-result) | Struct. The outcome of one AuthorityRpcWithReply call, handed to its callback exactly once. |
+| [AuthorityCallRouter](/docs/reference/worker/authority-call-router) | Class. The rules every worker applies to an incoming AuthorityRpc call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code. |
+| [AuthorityCallTarget](/docs/reference/worker/authority-call-target) | Struct. What the receiving worker knows about a call's target when the call arrives. |
+| [AuthorityCallTracker](/docs/reference/worker/authority-call-tracker) | Class. The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about. |
 | [EntityRequestResult](/docs/reference/worker/entity-request-result) | Struct. Outcome of one EntityRequests.Request call. |
 | [EntityRequestStatus](/docs/reference/worker/entity-request-status) | Enum. Where a EntityRequests call ended up. |
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
@@ -224,6 +238,9 @@ Inspect messages exchanged by clients, the gateway, and workers.
 
 | Type | Summary |
 | --- | --- |
+| [AuthorityCallFlags](/docs/reference/protocol/authority-call-flags) | Enum. Flags on an AuthorityCallMsg. |
+| [AuthorityCallMsg](/docs/reference/protocol/authority-call-msg) | Struct. An AuthorityRpc on the worker-to-worker link (MsgId.AuthorityRpc). |
+| [AuthorityCallReplyMsg](/docs/reference/protocol/authority-call-reply-msg) | Struct. The outcome of an AuthorityCallMsg that set AuthorityCallFlags.WantsReply (MsgId.AuthorityRpcReply), sent by the worker that decided it to the worker whose index the call id carries. |
 | [AuthorityTransferMsg](/docs/reference/protocol/authority-transfer-msg) | Struct. The authority event. |
 | [ClientFocusHintMsg](/docs/reference/protocol/client-focus-hint-msg) | Struct. Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). |
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |

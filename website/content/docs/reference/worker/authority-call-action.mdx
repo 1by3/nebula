@@ -1,0 +1,20 @@
+---
+title: "AuthorityCallAction"
+description: "What a worker does with an incoming call."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public enum AuthorityCallAction : byte
+```
+
+What a worker does with an incoming call.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="apply"></span>`Apply` |  | Run the method here, once. |
+| <span id="forward"></span>`Forward` |  | Send the call on, with its hop count raised by one, to the worker this one believes has authority. |
+| <span id="reject"></span>`Reject` |  | Drop the call; [`AuthorityCallDecision.Outcome`](/docs/reference/worker/authority-call-decision#outcome) says why, and the sender is told when it asked. |

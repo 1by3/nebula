@@ -234,9 +234,18 @@ namespace Nebula
             var m = RpcRegistry.Require(GetType(), methodName);
             if (m.Kind != RpcKind.Authority)
                 throw new InvalidOperationException($"{GetType().Name}.{methodName} is a {m.Kind} RPC, sent as {RpcKind.Authority}");
-            if (!IsSpawned || !IsServer)
+            if (!IsSpawned)
             {
-                NebulaLog.Warn(!IsSpawned ? $"RPC {methodName} on unspawned {GetType().Name} ignored" : $"AuthorityRpc {methodName} can only be sent from a worker");
+                NebulaDiagnostics.RejectedAuthorityRpcSends++;
+                NebulaLog.Warn($"RPC {methodName} on unspawned {GetType().Name} ignored");
+                onDone(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
+                return 0;
+            }
+            // The same rule as the fire-and-forget path: only a worker that simulates or ghosts the target may call.
+            if (!HasAuthority && !IsGhost)
+            {
+                NebulaDiagnostics.RejectedAuthorityRpcSends++;
+                NebulaLog.Warn($"AuthorityRpc {methodName} on {GetType().Name} {NetId}: this process holds neither an authoritative nor a ghost copy of the entity, so it cannot address the entity's worker; discarded. Send AuthorityRpc from a worker that simulates or ghosts the target (https://nebula.1by3.co/docs/concepts/distributed-physics)");
                 onDone(new AuthorityCallResult(0, AuthorityCallOutcome.RejectedUnreachable, 0, 0));
                 return 0;
             }

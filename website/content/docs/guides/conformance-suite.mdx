@@ -46,15 +46,15 @@ Each scenario checks one guarantee. A scenario marked **available** has a test i
 
 | # | Guarantee | Status |
 | --- | --- | --- |
-| 1 | The same location (world, scope, chunk) resolves to the same container on the gateway, a worker, the orchestrator, and a client, and still does after a handover, a restart, and a round trip through the persistence store. | Not yet available (in progress) |
+| 1 | The same [entity location](/docs/specifications/entity-location) (scope key, container ID, container-local pose) resolves to the same container in every process that holds the container, and still does after a handover, a restart, and a round trip through the persistence store. | Available |
 | 2 | Activating a scope is idempotent when two requesters ask at the same time, and a private key produces a distinct scope. | Not yet available |
 | 3 | An idle scope retires, restores with the same persisted entities, and refuses admission until the restore completes. | Not yet available |
 | 4 | Two scopes whose chunks share coordinates get distinct leases and distinct records, and neither sees the other's ghosts or replicated entities. | Not yet available |
-| 5 | A cross-worker call is applied at most once when its target changes worker between send and apply, and a call carrying an outdated epoch is rejected with a reason. | Not yet available (in progress) |
+| 5 | A cross-worker call is applied at most once when its target changes worker between send and apply, and a call carrying an outdated epoch is rejected with a reason. See [the cross-worker call contract](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call). | Available |
 | 6 | `StateAt(tick)` returns a pose that matches the recorded history on the authoritative worker and on a ghost, within a documented bound. | Not yet available |
 | 7 | Entities in one cohesion group change worker together, the planner never assigns them to different workers, and a group too large for one worker is reported. | Not yet available |
 | 8 | A server-driven entity that carries custom handover state keeps every field when it changes worker: position, rotation, velocity, `NetworkVariable` values, the bytes written by `WriteHandoverState`, the server-driven flag, and an epoch increased by exactly one. `OnLostAuthority` runs once on the old worker and `OnGainedAuthority` runs once on the new one, after the handover state is applied. A duplicate of the transfer message is ignored. | Available |
-| 9 | Nebula reports a physics joint that connects entities in different containers when those entities are not in a cohesion group. | Not yet available (in progress) |
+| 9 | Nebula reports a physics joint that connects entities in different containers when those entities are not in a cohesion group. Cohesion groups are not yet available, so every such joint is reported. See [Distributed physics](/docs/concepts/distributed-physics). | Available |
 
 Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `ConformanceHandoverWireTests` (both tiers), plus two older tests that check the handover-state format and a persistent entity's key crossing a handover. See [Physics and handover state](/docs/guides/physics-and-handover-state) for how to write handover state in your own behaviors.
 

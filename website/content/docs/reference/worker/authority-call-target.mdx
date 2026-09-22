@@ -1,0 +1,82 @@
+---
+title: "AuthorityCallTarget"
+description: "What the receiving worker knows about a call's target when the call arrives."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public readonly struct AuthorityCallTarget
+```
+
+What the receiving worker knows about a call's target when the call arrives.
+
+## Constructors
+
+### AuthorityCallTarget [#authoritycalltarget]
+
+```csharp
+public AuthorityCallTarget(bool known, bool hasAuthority, uint epoch, bool canForward);
+```
+
+## Fields
+
+### Unknown [#unknown]
+
+```csharp
+public static readonly AuthorityCallTarget Unknown = new AuthorityCallTarget(false, false, 0, false);
+```
+
+The entity is not here at all.
+
+## Properties
+
+### Known [#known]
+
+```csharp
+public bool Known { get; }
+```
+
+This worker holds a copy of the entity (authoritative or ghost).
+
+### HasAuthority [#hasauthority]
+
+```csharp
+public bool HasAuthority { get; }
+```
+
+This worker has authority over it.
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch { get; }
+```
+
+The entity's epoch on this worker; meaningless when not [`Known`](#known).
+
+### CanForward [#canforward]
+
+```csharp
+public bool CanForward { get; }
+```
+
+This worker has a connected peer to send the call on to, other than the one it came from.
+
+## Methods
+
+### Authoritative [#authoritative]
+
+```csharp
+public static AuthorityCallTarget Authoritative(uint epoch);
+```
+
+This worker has authority over the entity at `epoch`.
+
+### Ghost [#ghost]
+
+```csharp
+public static AuthorityCallTarget Ghost(uint epoch, bool canForward);
+```
+
+This worker holds a ghost at `epoch` and can (or cannot) forward to its owner.

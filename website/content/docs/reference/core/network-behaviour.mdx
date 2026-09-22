@@ -12,6 +12,16 @@ public abstract class NetworkBehaviour : MonoBehaviour
 
 Base class for replicated gameplay components. Use [`IsServer`](#isserver), [`IsClient`](#isclient), and [`IsOwner`](#isowner) to inspect the current role. Use [`HasAuthority`](#hasauthority) to check whether this worker controls the entity, and [`IsGhost`](#isghost) to check whether it holds a non-authoritative copy. Override the lifecycle methods to respond to spawn, despawn, and authority changes.
 
+## Fields
+
+### DefaultAuthorityCallTimeoutSeconds [#defaultauthoritycalltimeoutseconds]
+
+```csharp
+public const float DefaultAuthorityCallTimeoutSeconds = 5f;
+```
+
+The default wait for an `AuthorityRpcWithReply` outcome before it settles as [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout).
+
 ## Properties
 
 ### Identity [#identity]
@@ -275,3 +285,15 @@ protected void AuthorityRpc<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2);
 protected void AuthorityRpc<T1, T2, T3>(Action<T1, T2, T3> method, T1 a1, T2 a2, T3 a3);
 protected void AuthorityRpc<T1, T2, T3, T4>(Action<T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4);
 ```
+
+### AuthorityRpcWithReply [#authorityrpcwithreply]
+
+```csharp
+protected ulong AuthorityRpcWithReply(Action method, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds);
+protected ulong AuthorityRpcWithReply<T1>(Action<T1> method, T1 a1, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds);
+protected ulong AuthorityRpcWithReply<T1, T2>(Action<T1, T2> method, T1 a1, T2 a2, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds);
+protected ulong AuthorityRpcWithReply<T1, T2, T3>(Action<T1, T2, T3> method, T1 a1, T2 a2, T3 a3, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds);
+protected ulong AuthorityRpcWithReply<T1, T2, T3, T4>(Action<T1, T2, T3, T4> method, T1 a1, T2 a2, T3 a3, T4 a4, Action<AuthorityCallResult> onDone, float timeoutSeconds = DefaultAuthorityCallTimeoutSeconds);
+```
+
+As [`AuthorityRpc`](#authorityrpc), and also tells you what became of the call. `onDone` runs exactly once, on the worker's main thread: with [`AuthorityCallOutcome.Accepted`](/docs/reference/worker/authority-call-outcome#accepted) once the worker with authority has run the method, with the reason when a worker on the path rejected it, or with [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout) when no answer arrived within `timeoutSeconds`. Returns the call id, or 0 when the call was applied locally or refused before it was sent. The delivery contract is described in the RPC guide.

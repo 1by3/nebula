@@ -135,6 +135,14 @@ public int HandoversIn { get; }
 public int LocalHandovers { get; }
 ```
 
+### RejectedAuthorityRpcSends [#rejectedauthorityrpcsends]
+
+```csharp
+public int RejectedAuthorityRpcSends { get; }
+```
+
+AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost copy of the target (see [`NebulaDiagnostics.RejectedAuthorityRpcSends`](/docs/reference/core/nebula-diagnostics#rejectedauthorityrpcsends)). Reported as `rpcRejected` on the profile log line.
+
 ### GhostsSent [#ghostssent]
 
 ```csharp
@@ -158,6 +166,38 @@ public int AuthoritativeCount { get; }
 ```csharp
 public int EntityCount { get; }
 ```
+
+### AuthorityCallsApplied [#authoritycallsapplied]
+
+```csharp
+public long AuthorityCallsApplied { get; }
+```
+
+AuthorityRpc calls from other workers this worker has applied since it started (see the cross-worker call contract).
+
+### AuthorityCallsForwarded [#authoritycallsforwarded]
+
+```csharp
+public long AuthorityCallsForwarded { get; }
+```
+
+AuthorityRpc calls this worker has forwarded to the entity's new owner since it started.
+
+### AuthorityCallsRejected [#authoritycallsrejected]
+
+```csharp
+public long AuthorityCallsRejected { get; }
+```
+
+AuthorityRpc calls this worker has rejected (stale epoch, unknown entity, hop limit, duplicate, unreachable) since it started.
+
+### AuthorityCallsPending [#authoritycallspending]
+
+```csharp
+public int AuthorityCallsPending { get; }
+```
+
+AuthorityRpc calls this worker sent with a reply requested and is still waiting on.
 
 ### PlayerCount [#playercount]
 

@@ -1,0 +1,20 @@
+---
+title: "AuthorityCallFlags"
+description: "Flags on an AuthorityCallMsg."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+[Flags]
+public enum AuthorityCallFlags : byte
+```
+
+Flags on an [`AuthorityCallMsg`](/docs/reference/protocol/authority-call-msg).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="wantsreply"></span>`WantsReply` | `1` | The sender wants an [`AuthorityCallReplyMsg`](/docs/reference/protocol/authority-call-reply-msg) with the outcome. |

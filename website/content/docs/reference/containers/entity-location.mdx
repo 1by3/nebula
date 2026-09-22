@@ -1,0 +1,171 @@
+---
+title: "EntityLocation"
+description: "Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/EntityLocation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/EntityLocation.cs)</div>
+
+```csharp
+public readonly struct EntityLocation : IEquatable<EntityLocation>
+```
+
+Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. A [`NetworkIdentity`](/docs/reference/core/network-identity) reports its current location as [`NetworkIdentity.Location`](/docs/reference/core/network-identity#location) and a [`PersistedEntityRecord`](/docs/reference/persistence/persisted-entity-record) its saved one as [`PersistedEntityRecord.Location`](/docs/reference/persistence/persisted-entity-record#location); both are this type, and two processes given the same value resolve the same container ([`Resolve`](#resolve)).
+
+The scope key is the string the game chose for the entity's simulation scope: [`PublicScope`](#publicscope) (empty) for the public world, or the instance key (`TemplateId/key`, as passed to [`NebulaWorker.PrepareInstance`](/docs/reference/worker/nebula-worker#prepareinstance)) for a private instance. Nebula never parses or interprets it; it only compares it with ordinal string equality. The container id is the container's string id ([`Container.ContainerId`](/docs/reference/containers/container#containerid)), whose form tells the kind ([`ContainerKind`](#containerkind)). Equality is exact: ordinal on the strings and per component on the pose, never approximate.
+
+The value does not carry the authority epoch, the owning worker or the wire index of the container, which are the parts of an entity's placement that change on a handover, a lease change or a rebuild. The design of record is `docs/location-contract.md`.
+
+## Constructors
+
+### EntityLocation [#entitylocation]
+
+```csharp
+public EntityLocation(string scopeKey, string containerId, Vector3 localPosition, Quaternion localRotation);
+```
+
+Build a location from its three parts. Null strings read as empty.
+
+## Fields
+
+### PublicScope [#publicscope]
+
+```csharp
+public const string PublicScope = "";
+```
+
+The scope key of the public world: the empty string.
+
+### LocalPosition [#localposition]
+
+```csharp
+public readonly Vector3 LocalPosition;
+```
+
+Position in the container's local space (world space when [`ContainerId`](#containerid) is empty).
+
+### LocalRotation [#localrotation]
+
+```csharp
+public readonly Quaternion LocalRotation;
+```
+
+Rotation in the container's local space (world space when [`ContainerId`](#containerid) is empty).
+
+### None [#none]
+
+```csharp
+public static readonly EntityLocation None = new EntityLocation(PublicScope, "", default, Quaternion.identity);
+```
+
+A location in no container, at the world origin, in the public world.
+
+## Properties
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+Opaque key of the entity's simulation scope. [`PublicScope`](#publicscope) for the public world. Never null.
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId { get; }
+```
+
+String id of the container the pose is expressed in ([`Container.ContainerId`](/docs/reference/containers/container#containerid)), or "" when there is none. Never null.
+
+### IsPublic [#ispublic]
+
+```csharp
+public bool IsPublic { get; }
+```
+
+The location is in the public world (its scope key is empty).
+
+### HasContainer [#hascontainer]
+
+```csharp
+public bool HasContainer { get; }
+```
+
+The location names a container (its container id is not empty).
+
+### ContainerKind [#containerkind]
+
+```csharp
+public LocationContainerKind ContainerKind { get; }
+```
+
+The kind of container [`ContainerId`](#containerid) names, from the id's form: empty is [`LocationContainerKind.None`](/docs/reference/containers/location-container-kind#none), `rt_` followed by a decimal 64-bit number is [`LocationContainerKind.Runtime`](/docs/reference/containers/location-container-kind#runtime), an id containing `#` is [`LocationContainerKind.Dynamic`](/docs/reference/containers/location-container-kind#dynamic), anything else is [`LocationContainerKind.Static`](/docs/reference/containers/location-container-kind#static).
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static EntityLocation Of(Container container, Vector3 localPosition, Quaternion localRotation);
+```
+
+The location of a pose inside `container`: the container's scope key ([`Container.ScopeKey`](/docs/reference/containers/container#scopekey)) and id, and the pose as given. A null container is "no container".
+
+### Resolve [#resolve]
+
+```csharp
+public Container Resolve();
+```
+
+The container this location names in this process, or null when there is none here. The lookup is by [`ContainerId`](#containerid) in [`ContainerRegistry`](/docs/reference/containers/container-registry), which every role (worker, client, gateway, orchestrator) fills from the same scene, manifest and lease rows; a container found under the id but belonging to another scope ([`Container.ScopeKey`](/docs/reference/containers/container#scopekey) differs from [`ScopeKey`](#scopekey)) is not returned. Null also when the container has not arrived yet: a dynamic container arrives with its carrier, a runtime container with its lease.
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter writer);
+```
+
+Serialize as `string scope_key, string container_id, vector3 local_position, quaternion local_rotation` (the primitive encodings of the wire protocol). The bytes are the same on every process and every release within a protocol major.
+
+### Read [#read]
+
+```csharp
+public static EntityLocation Read(NetworkReader reader);
+```
+
+Read a location written by [`Write`](#write).
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(EntityLocation other);
+public override bool Equals(object obj);
+```
+
+Exact equality: ordinal on both strings, per component on the pose.
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### operator == [#operator]
+
+```csharp
+public static bool operator ==(EntityLocation a, EntityLocation b);
+```
+
+### operator != [#operator]
+
+```csharp
+public static bool operator !=(EntityLocation a, EntityLocation b);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+`scope:container@(x, y, z)/(x, y, z, w)`, with `public` for the public world and `none` for no container. Invariant culture, round-trip float format.

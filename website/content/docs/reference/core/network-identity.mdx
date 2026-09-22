@@ -138,6 +138,22 @@ public ulong InstanceId { get; }
 
 The entity's simulation scope. Zero is the public world.
 
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The opaque scope key of the entity's simulation scope ([`Container.ScopeKey`](/docs/reference/containers/container#scopekey) of the current container): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) in the public world or in no container, the instance key inside an instance. Never null.
+
+### Location [#location]
+
+```csharp
+public EntityLocation Location { get; }
+```
+
+Where the entity durably is right now ([`EntityLocation`](/docs/reference/containers/entity-location)): its scope key, its container's id and its pose in that container's local space ([`LocalPosition`](#localposition), [`LocalRotation`](#localrotation)). The same value on every process that holds the entity, and the value [`PersistedEntityRecord.Location`](/docs/reference/persistence/persisted-entity-record#location) saves for a persistent entity in a static or runtime container; it does not change on a handover.
+
 ### PhysicsScene [#physicsscene]
 
 ```csharp

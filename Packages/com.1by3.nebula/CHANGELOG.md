@@ -4,9 +4,13 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### Breaking: protocol 17 → 18, cross-worker call contract
+### Breaking: protocol 17 → 18, the contracts milestone
 
-Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`. See [RPCs and worker messages](https://nebula.1by3.co/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call) and the [wire protocol specification](https://nebula.1by3.co/docs/specifications/wire-protocol#authority-calls); the design record is `docs/cross-worker-calls.md`.
+Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.
+
+#### Cross-worker call contract
+
+See [RPCs and worker messages](https://nebula.1by3.co/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call) and the [wire protocol specification](https://nebula.1by3.co/docs/specifications/wire-protocol#authority-calls); the design record is `docs/cross-worker-calls.md`.
 
 **What changed and why.** An `AuthorityRpc` sent to a ghost's owner was a bare RPC on the worker link: applied if the receiver had authority, forwarded once if it had just handed the entity off, otherwise dropped in silence. Nothing identified a call, so nothing could tell a repeat from a first arrival; the epoch on the message was never read; a forward could loop; the sender never learned the outcome. There is now a stated and tested contract: every call carries a sender-minted id, the epoch the sender saw and a hop count; the receiving worker applies it once, forwards it after a handover (bounded), or rejects it with a reason; and a caller may ask for that outcome.
 
@@ -42,9 +46,9 @@ Every Nebula process must be rebuilt and restarted together. A gateway disconnec
 - A handler that relied on a cross-worker call arriving after several handovers should expect `RejectedHopLimit` past three; raise `AuthorityCallMaxHops` if your world hands entities over that often, or use `AuthorityRpcWithReply` and retry from the caller.
 - A custom `IRpcSink` implementation must add the new `SendAuthorityRpc` overload.
 
-### Breaking: protocol 17 → 18, the entity location contract
+#### Entity location contract
 
-Every Nebula process must be rebuilt and restarted together; a gateway disconnects a client whose protocol version is not exactly `18`. See the [entity location contract](https://nebula.1by3.co/docs/specifications/entity-location) and `docs/location-contract.md`.
+See the [entity location contract](https://nebula.1by3.co/docs/specifications/entity-location) and `docs/location-contract.md`.
 
 **What changed and why.** There was no single, protocol-visible way to say where an entity durably is that did not depend on which worker held it: the wire named a container by a dense index or a carrier's net id, the instance an entity was in was known only as a 64-bit hash, and a persisted record carried no scope at all. `EntityLocation` is now that one answer: an opaque scope key, the container's string id and the container-local pose, the same value on the worker, gateway, orchestrator and client and in the store, unchanged by handover, worker restart, mesh restart and a store round trip. Nebula never parses the scope key.
 
@@ -67,7 +71,9 @@ Every Nebula process must be rebuilt and restarted together; a gateway disconnec
 - Persisted records and lease rows from earlier releases are read as the public world (`ScopeKey == ""`). Nothing has to be reset; retire and re-prepare an instance if its entities should report their scope key.
 - A dynamic container's id (`label#netId`) is reported honestly as living for one mesh run; persistence continues to name a carried entity's place by `CarrierKey`, not by that id.
 
-### Added
+#### Distributed physics model and diagnostics
+
+Concepts page and developer-time checks (`docs` design: the [Distributed physics](https://nebula.1by3.co/docs/concepts/distributed-physics) page). Added:
 
 - [Distributed physics](https://nebula.1by3.co/docs/concepts/distributed-physics) concepts page: what a physics interaction is on one worker, across a seam through a kinematic ghost one tick behind, and why a joint or `ArticulationBody` between entities in different containers is unsupported.
 - `PhysicsIslands`: the runtime rule for whether two networked bodies share one authority (`SameIsland`, `ContainerOf`, `FindCrossIslandJoints`) with an `IsCohesive` hook reserved for cohesion hints (NEB-223). Until those exist every cross-container joint is reported.
@@ -75,15 +81,16 @@ Every Nebula process must be rebuilt and restarted together; a gateway disconnec
 - A worker logs one warning per entity when it spawns or gains authority over an entity with such a joint (`PhysicsIslands.CheckOnAuthority`; set `PhysicsIslands.WarnOnAuthority` to false to turn it off). Entities without a joint cost one component lookup per spawn.
 - `NebulaDiagnostics.RejectedAuthorityRpcSends` and `NebulaWorker.RejectedAuthorityRpcSends` count `AuthorityRpc` sends discarded because the caller held neither an authoritative nor a ghost copy; the worker's `profile` log line reports it as `rpcRejected`.
 
-### Changed
+Changed:
 
 - The warning for an `AuthorityRpc` sent from a copy that is neither authoritative nor a ghost now states the rule and the reason, and is checked before the RPC sink so it also fires in a process without one. Routing is unchanged.
 
-### Conformance suite (NEB-238, phase 1)
+#### Conformance suite
 
 A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools/conformance.ps1` (`-DotnetOnly` for the pure C# tier while the Editor is open). Every test is tagged `[Category("Conformance")]`; the script runs the category in `Nebula.Services.Tests` (`dotnet test`) and in `Nebula.Tests.EditMode` (Unity batchmode), and prints one PASS/FAIL summary with counts. Design and scenario ledger: `docs/conformance-suite.md`; user page: [Run the conformance suite](https://nebula.1by3.co/docs/guides/conformance-suite).
 
 - `ConformanceMesh` (`Tests/EditMode/ConformanceMesh.cs`): two or more real `NebulaWorker` components in one Editor process, each with a recording transport and peer records for the others; `Pump()` delivers every recorded message into the receiving worker's own `Dispatch`. Handovers here run the production builder, wire format and applier end to end, with no gateway, leases or tick loop.
+- Covered in this release: scenario 1 (the location contract, `ConformanceLocationTests`), scenario 5 (the cross-worker call contract, `ConformanceCallContractTests`), scenario 8 (server-driven handover state, below) and scenario 9 (the cross-container joint diagnostic, `ConformancePhysicsDiagnosticTests`). Scenarios 2, 3, 4, 6 and 7 wait for their items in the Scopes, Interaction and Persistence-hooks milestones and are listed as pending.
 - Scenario 8, covered: a server-driven entity with `WriteHandoverState`/`ReadHandoverState` state, NetworkVariables and a `NetworkTransform` crosses workers and keeps every field, bumps its epoch by one, fires `OnLostAuthority`/`OnGainedAuthority` once each in order, and ignores a replayed transfer (`ConformanceHandoverStateTests`). The wire leg (`ConformanceHandoverWireTests`, every `AuthorityTransferMsg` field) also compiles into the service tests.
 - Tagged into the suite: `ControlPlaneAndRpcTests.HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks` and `PersistenceTests.TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord`.
 

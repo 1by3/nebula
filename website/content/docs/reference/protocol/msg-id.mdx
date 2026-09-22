@@ -50,6 +50,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | <span id="ghostdespawn"></span>`GhostDespawn` | `43` |  |
 | <span id="authoritytransfer"></span>`AuthorityTransfer` | `44` |  |
 | <span id="forwardinput"></span>`ForwardInput` | `45` |  |
-| <span id="authorityrpc"></span>`AuthorityRpc` | `46` |  |
+| <span id="authorityrpc"></span>`AuthorityRpc` | `46` | Worker -\> worker: an `AuthorityRpc` for an entity the sender holds only a ghost of ([`AuthorityCallMsg`](/docs/reference/protocol/authority-call-msg)). Carries a call id, a hop count and the epoch the sender observed, so the receiver can apply it once, forward it after a handover, or reject it with a reason. |
 | <span id="ghostsyncstate"></span>`GhostSyncState` | `47` |  |
 | <span id="workermessage"></span>`WorkerMessage` | `48` | Game-defined message between two workers: `[kind:ushort][payload]`. Registered per kind with [`NebulaWorker.RegisterMessageHandler`](/docs/reference/worker/nebula-worker#registermessagehandler); sent with [`NebulaWorker.SendToWorker`](/docs/reference/worker/nebula-worker#sendtoworker). |
+| <span id="authorityrpcreply"></span>`AuthorityRpcReply` | `49` | Worker -\> worker: the outcome of an `AuthorityRpc` that asked for one ([`AuthorityCallReplyMsg`](/docs/reference/protocol/authority-call-reply-msg)), sent to the worker that minted the call id. |

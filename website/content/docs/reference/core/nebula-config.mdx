@@ -428,6 +428,14 @@ public float GhostLingerSeconds = 2f;
 
 Ghosts stay resident this long after leaving the band.
 
+### AuthorityCallMaxHops [#authoritycallmaxhops]
+
+```csharp
+public int AuthorityCallMaxHops = 3;
+```
+
+How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.
+
 ### PersistenceMode [#persistencemode]
 
 ```csharp

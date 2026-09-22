@@ -1,0 +1,56 @@
+---
+title: "AuthorityCallId"
+description: "The identity of one cross-worker call: the sending worker's index in the top 16 bits and a per-sender sequence in the low 48, the same shape as an entity NetId."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public static class AuthorityCallId
+```
+
+The identity of one cross-worker call: the sending worker's index in the top 16 bits and a per-sender sequence in the low 48, the same shape as an entity `NetId`. Forwarding keeps the id, so every worker on the path and the reply agree on which call they mean.
+
+## Fields
+
+### SequenceBits [#sequencebits]
+
+```csharp
+public const int SequenceBits = 48;
+```
+
+Bits of the sequence part; the worker index sits above it.
+
+## Methods
+
+### Make [#make]
+
+```csharp
+public static ulong Make(ushort workerIndex, ulong sequence);
+```
+
+Compose a call id from the sender's worker index and its sequence number.
+
+### WorkerIndexOf [#workerindexof]
+
+```csharp
+public static ushort WorkerIndexOf(ulong callId);
+```
+
+The worker that minted `callId`: where a reply goes.
+
+### SequenceOf [#sequenceof]
+
+```csharp
+public static ulong SequenceOf(ulong callId);
+```
+
+The sequence part of `callId`.
+
+### InitialSequence [#initialsequence]
+
+```csharp
+public static ulong InitialSequence(uint incarnation);
+```
+
+Where a sender's sequence starts for one run of its process: the low 16 bits of its incarnation, shifted above 32 bits of room. A worker that restarts with the same index therefore mints ids a previous run never used, and a receiver's ledger cannot mistake its first calls for duplicates of the old run's.

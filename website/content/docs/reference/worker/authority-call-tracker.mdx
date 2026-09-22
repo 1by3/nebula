@@ -1,0 +1,101 @@
+---
+title: "AuthorityCallTracker"
+description: "The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/AuthorityCallContract.cs)</div>
+
+```csharp
+public sealed class AuthorityCallTracker
+```
+
+The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about. Each settles exactly once, with the reply that arrives or with [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout) when [`Expire`](#expire) passes its deadline.
+
+## Constructors
+
+### AuthorityCallTracker [#authoritycalltracker]
+
+```csharp
+public AuthorityCallTracker(ushort workerIndex, ulong initialSequence = 0);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `workerIndex` | This worker's index, the top bits of every id minted here. |
+| `initialSequence` | Where the sequence starts; see [`AuthorityCallId.InitialSequence`](/docs/reference/worker/authority-call-id#initialsequence). |
+
+## Properties
+
+### WorkerIndex [#workerindex]
+
+```csharp
+public ushort WorkerIndex { get; }
+```
+
+The index of the worker minting ids here.
+
+### PendingCount [#pendingcount]
+
+```csharp
+public int PendingCount { get; }
+```
+
+Calls awaiting a reply.
+
+### LateReplies [#latereplies]
+
+```csharp
+public long LateReplies { get; }
+```
+
+Replies that arrived for a call no longer pending (settled, timed out, or never tracked).
+
+## Methods
+
+### Mint [#mint]
+
+```csharp
+public ulong Mint();
+```
+
+A fresh call id for a call this worker is about to send.
+
+### Track [#track]
+
+```csharp
+public void Track(ulong callId, uint deadlineTick, Action<AuthorityCallResult> onDone);
+```
+
+Wait for the reply to `callId`; `onDone` runs once, at the reply or at `deadlineTick`.
+
+### Complete [#complete]
+
+```csharp
+public bool Complete(ulong callId, in AuthorityCallResult result);
+```
+
+Settle `callId` with `result`. False when it was not pending (the reply is counted in [`LateReplies`](#latereplies)).
+
+### IsPending [#ispending]
+
+```csharp
+public bool IsPending(ulong callId);
+```
+
+Whether `callId` still awaits a reply.
+
+### Expire [#expire]
+
+```csharp
+public void Expire(uint tick);
+```
+
+Settle every call whose deadline is at or before `tick` as [`AuthorityCallOutcome.TimedOut`](/docs/reference/worker/authority-call-outcome#timedout). Call once a tick.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Drop every pending call without running its callback.

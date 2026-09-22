@@ -1,0 +1,21 @@
+---
+title: "LocationContainerKind"
+description: "Which kind of container an EntityLocation.ContainerId names."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/EntityLocation.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/EntityLocation.cs)</div>
+
+```csharp
+public enum LocationContainerKind : byte
+```
+
+Which kind of container an [`EntityLocation.ContainerId`](/docs/reference/containers/entity-location#containerid) names. Nebula reads the kind from the form of the id alone (see [`EntityLocation.ContainerKind`](/docs/reference/containers/entity-location#containerkind)), so any process can classify a location without holding the container.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` |  | The id is empty: the entity is in no container and its pose is in world space. |
+| <span id="static"></span>`Static` |  | A container authored into a scene or baked into the world manifest, named by its authored [`Container.ContainerId`](/docs/reference/containers/container#containerid). |
+| <span id="runtime"></span>`Runtime` |  | A container the game registered while the mesh runs ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)), named `rt_<id>`. |
+| <span id="dynamic"></span>`Dynamic` |  | A container carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)), named `label#netId`. |
