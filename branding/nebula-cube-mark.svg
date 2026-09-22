@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc" color="#000">
+  <title id="title">Nebula cube mark</title>
+  <desc id="desc">A monochrome isometric cube with inset top and right face details.</desc>
+  <defs>
+    <mask id="face-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path
+        d="M512 214 746 350 512 486 278 350Z"
+        fill="none"
+        stroke="#000"
+        stroke-width="48"
+        stroke-linejoin="miter"
+      />
+      <path
+        d="M574 546 770 433 770 659 574 772Z"
+        fill="none"
+        stroke="#000"
+        stroke-width="48"
+        stroke-linejoin="miter"
+      />
+    </mask>
+  </defs>
+  <path
+    d="M512 112 850 307 850 717 512 912 174 717 174 307Z"
+    fill="currentColor"
+    mask="url(#face-cutouts)"
+  />
+</svg>

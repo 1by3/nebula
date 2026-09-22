@@ -1,6 +1,7 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { BookOpen, TerminalSquare, Braces, Cloud, Newspaper } from 'lucide-react';
 import { GithubInfo } from '@/components/github-info';
+import { cn } from './cn';
 import { appName, repo } from './shared';
 
 export function baseOptions(): BaseLayoutProps {
@@ -8,7 +9,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: (
         <span className="inline-flex items-center gap-2 font-semibold">
-          <NebulaMark className="size-5" />
+          <NebulaLogo className="size-7" />
           {appName}
         </span>
       ),
@@ -25,14 +26,6 @@ export function baseOptions(): BaseLayoutProps {
   };
 }
 
-/** Four containers, one of them lit: the mesh in one glyph. */
-export function NebulaMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <rect x="2" y="2" width="9" height="9" rx="2" className="fill-fd-primary" />
-      <rect x="13" y="2" width="9" height="9" rx="2" className="fill-fd-primary/40" />
-      <rect x="2" y="13" width="9" height="9" rx="2" className="fill-fd-primary/40" />
-      <rect x="13" y="13" width="9" height="9" rx="2" className="fill-fd-primary/70" />
-    </svg>
-  );
+export function NebulaLogo({ className }: { className?: string }) {
+  return <span className={cn('nebula-logo', className)} aria-hidden="true" />;
 }

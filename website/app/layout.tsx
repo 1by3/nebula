@@ -15,6 +15,9 @@ export const metadata: Metadata = {
   },
   description:
     'Nebula is a Unity networking package that distributes one game world across multiple dedicated servers and transfers entities between them at runtime.',
+  icons: {
+    icon: [{ url: '/nebula_logo.svg', type: 'image/svg+xml' }],
+  },
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {

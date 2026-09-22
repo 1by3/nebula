@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    href: '/blog/2026-09-21-interest-management',
+    title: 'Interest management keeps large worlds local',
+    description:
+      'Nebula now sends each player, gateway, and worker only the entity traffic it needs, with policies for cameras, spectators, fog of war, and carried entities.',
+    date: 'September 21, 2026',
+    dateTime: '2026-09-21',
+  },
+  {
     href: '/blog/2026-09-18-progress-update',
     title: 'Nebula progress update: September 18, 2026',
     description:

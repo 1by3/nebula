@@ -24,6 +24,62 @@ html > body[data-scroll-locked] {
   --removed-body-scroll-bar-size: 0px !important;
 }
 
+.nebula-logo {
+  display: inline-block;
+  flex: none;
+  background-image: linear-gradient(
+    110deg,
+    hsl(258, 82%, 58%) 0%,
+    hsl(258, 82%, 58%) 38%,
+    hsl(210, 100%, 72%) 46%,
+    hsl(0, 0%, 100%) 50%,
+    hsl(292, 92%, 72%) 54%,
+    hsl(258, 82%, 58%) 62%,
+    hsl(258, 82%, 58%) 100%
+  );
+  background-position: 100% 50%;
+  background-size: 280% 100%;
+  filter: drop-shadow(0 0 0.3rem color-mix(in oklab, var(--color-fd-primary) 35%, transparent));
+  mask: url('/nebula_logo.svg') center / contain no-repeat;
+  -webkit-mask: url('/nebula_logo.svg') center / contain no-repeat;
+  animation: nebula-logo-shimmer 7s ease-in-out infinite;
+}
+
+@keyframes nebula-logo-shimmer {
+  0%,
+  70% {
+    background-position: 100% 50%;
+  }
+
+  90%,
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes nebula-logo-shimmer-hover {
+  from {
+    background-position: 100% 50%;
+  }
+
+  to {
+    background-position: 0% 50%;
+  }
+}
+
+a:hover .nebula-logo,
+a:focus-visible .nebula-logo {
+  animation: nebula-logo-shimmer-hover 800ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nebula-logo,
+  a:hover .nebula-logo,
+  a:focus-visible .nebula-logo {
+    animation: none;
+  }
+}
+
 /* Landing page helpers */
 .nebula-grid {
   background-image:
