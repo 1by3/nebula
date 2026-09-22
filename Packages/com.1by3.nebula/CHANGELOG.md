@@ -4,6 +4,45 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### NEB-227: control-plane and entity-store availability
+
+No wire change; the protocol stays 18. Design record: `docs/control-plane-availability.md`. User-facing page:
+[Restart and restore a mesh](https://nebula.1by3.co/docs/deploy/availability).
+
+**Fixed: a worker never noticed a control plane that came back empty.** `NebulaWorker` registered once at startup
+and never again, so an orchestrator restarted without its document — a reset, a restore from an older backup, a
+failover to a replica that never had it — left every worker simulating containers the mesh had no route to, until
+each worker process was restarted by hand. A worker now registers again when it sees a document it is not in
+(the rule `NebulaGateway` already had) and, on every control-plane change, re-claims the lease rows of the
+containers it is still simulating, because nothing else in the mesh knows it is simulating them. Measured: a
+replacement orchestrator on an empty database converges in 2.6 s with every container owned again by the worker
+that holds its entities.
+
+- **New public class `WorkerRegistration`** (`Runtime/Worker/WorkerRegistration.cs`): `Register`,
+  `RegisterAgainIfForgotten`, `ReclaimContainers`, `Forget`. Pure C#, compiled into the standalone services as
+  well, so the same decision code runs on a Unity worker and in the tests. Game code does not need to call it;
+  `NebulaWorker` owns one.
+- **New public property `ControlPlaneHost.StorageError`**: why the last save to the control-plane store failed,
+  or null. Not a mesh failure by itself — the control plane keeps running in memory and the save is retried —
+  but it is the window an operator watches across a database failover.
+
+**New: a scripted backup-and-restore drill.** `Tools/restore-drill.ps1` seeds a database with known records,
+snapshots it, backs it up, wipes it, proves the wipe emptied it, restores it and proves the restored database is
+the one that was backed up, leaving `Logs/restore-drill/<timestamp>.json` and a summary. It needs no player
+build, no Unity and no running mesh, and drills a throwaway SQLite database unless you name another. The
+verification runs through `SqlPersistenceStore` and `SqlControlPlaneStorage` rather than hand-written SQL, so a
+pass means the mesh can read what came back. Backup routes: SQLite `VACUUM INTO`, `pg_dump`/`pg_restore`, or an
+engine-independent JSON export/import through the store. New project `Services~/Nebula.RestoreDrill`.
+
+**New scale scenarios** in `Services~/Nebula.Services.Tests/ScaleAvailabilityTests.cs` (`docs/scale-suite.md`
+S6b/S6c): an orchestrator **process** restart against a real `ControlPlaneHost`, `OrchestratorHttpServer` and
+SQLite store with `RemoteControlPlane` mirrors attached (2.59 s, every lease identical, no mirror disconnected);
+the same with an empty database; and a PostgreSQL failover under Docker, which skips with a reason when no
+Docker daemon is there. New thresholds `ScaleThresholds.OrchestratorRestartSeconds` (15 s, derived from
+`RemoteControlPlane.DisconnectAfterSeconds`) and `DatabaseFailoverSeconds` (60 s, provisional). The pinned gap
+`docs/scale-suite.md` D7b is closed and its assertion turned around.
+
+
 ### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
 
 Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.

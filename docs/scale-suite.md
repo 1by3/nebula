@@ -1,7 +1,8 @@
 # Scale and failure suite (NEB-237)
 
-Status: landed with NEB-237. User-facing page: `website/content/docs/guides/scale-suite.mdx`. Synthetic layer:
-`Services~/Nebula.Services.Tests/Scale*Tests.cs` (`[Category("Scale")]`). Real-worker layer:
+Status: landed with NEB-237; the availability scenarios added by NEB-227
+(`docs/control-plane-availability.md`). User-facing page: `website/content/docs/guides/scale-suite.mdx`.
+Synthetic layer: `Services~/Nebula.Services.Tests/Scale*Tests.cs` (`[Category("Scale")]`). Real-worker layer:
 `Tools/scale-suite.ps1`. Artifacts: `Logs/scale/`. Baseline: `docs/baselines/mesh-restart.csv`.
 Related: `docs/conformance-suite.md` §2 (this is tier D, now partly built), `docs/persistence-durability.md`
 (the worker-kill bound), `docs/cohesion-rebalancing.md` and `docs/cohesion-hints.md` (holds, saturation),
@@ -47,7 +48,9 @@ planner scenarios (about 12 ms together) stay in it.
 | S3 | Many scopes: 4 keyed scopes of 20 clients plus 20 public clients | synthetic | zero cross-scope leaks; per-scope bandwidth recorded | covered — `ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything` |
 | S4 | Worker kill: a worker dies with clients watching its container | synthetic | restore ≤ 2 s per container; zero duplicate entities; nobody disconnected; loss ≤ the NEB-224 bound | covered — `ScaleFailureTests.AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities`; the loss bound itself is conformance scenario 10 |
 | S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: **not recovered** | covered, and the hard-kill half is a pinned gap (D7a) |
-| S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (D7c) |
+| S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered — `ScaleFailureTests.AControlPlaneRestartKeepsEveryLeaseAndDisconnectsNobody` (the control plane as an object, with real clients on real gateways) |
+| S6b | **Orchestrator process restart** with live workers: the host, its HTTP listener and its database go down and a replacement takes the same port and database | synthetic | every lease back with the same owner, state and epoch; recovery ≤ 15 s; no mirror reports itself disconnected | covered — `ScaleAvailabilityTests.AnOrchestratorRestartOnTheSameDatabaseKeepsEveryLeaseAndIsMeasured`, and the empty-database variant beside it (D7b) |
+| S6c | **PostgreSQL failover** under a running orchestrator | synthetic, Docker | the store is writable again ≤ 60 s; no row lost; nothing throws out of `Tick` | written — `ScaleAvailabilityTests.APostgresFailoverStallsTheControlPlaneStoreAndLosesNothing`, **not run here**: no Docker daemon (D7c) |
 | S7 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
 | S8 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
 | S9 | Rolling upgrade | synthetic | a version mismatch is refused cleanly; a gateway process is replaced under connected clients with no session lost | covered, with the finding that **there is no compatibility window** (D8) |
@@ -60,6 +63,8 @@ planner scenarios (about 12 ms together) stay in it.
 | Gateway reclaim | **≤ 10 s** | **Derived**: `GatewaySessionAdmission` gives a coordinated welcome a `CoordinationDeadline` of 10 s. Past it the join is refused, so anything slower is not a reclaim at all. The measured abrupt-stop reclaim is 0.05 s. |
 | Restore per container | **≤ 2 s** | **Provisional, measured.** The synthetic restore is an in-process re-spawn (measured 0.31 s per container, of which 0.3 s is the fixture's own settle after a focus hint), so this budget has headroom for a scene load it has never seen. A real Unity number needs the tier-D run. |
 | Control-plane stall | **≤ 5 s** | **Provisional, measured** (0.003 s in process). What is *not* provisional is the assertion beside it: no client is disconnected and no session changes, because a gateway's client links do not depend on the control plane. |
+| Orchestrator restart | **≤ 15 s** | **Derived**: `RemoteControlPlane.DisconnectAfterSeconds` (the 10 s long poll plus 5 s) is the window inside which a restart is not merely survived but *invisible* — no mirror changes state and every write is queued, not dropped. Past it the restart is an outage a mirror can see. Measured 2.59 s on the same database, 2.61 s on an empty one. See `docs/control-plane-availability.md` D3. |
+| Database failover | **≤ 60 s** | **Provisional**, and with no measurement behind it yet: what it bounds is a container restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion that matters beside it is that nothing was lost and nothing threw out of `ControlPlaneHost.Tick`. |
 | Per-client bandwidth | **< 512 kB/s** | **Provisional.** It is a property of this fixture's world (how many entities sit inside one interest window), not a production budget. It exists to catch an interest regression that starts sending a client the world; measured 6.4 kB/s. |
 | Worker tick (tier D) | **≤ 16.7 ms** | **Derived**: one tick period at the default 60 Hz tick rate, the same budget `ContainerCost` weighs a container's simulation share against. |
 | Baseline slack | **6×** | **Provisional.** Absolute times depend on the machine; the baseline is compared as a shape (same containers, monotonic, each step inside the per-container budget and within 6× the recorded step). |
@@ -123,7 +128,10 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | gateway-stop (abrupt) | 12/12 sessions reclaimed on the surviving gateway in 0.05 s, same session ids |
 | gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7a |
 | control-plane-restart | 4 leases back in 0.003 s, 0 disconnected, 0 session changes |
-| control-plane-cold-restart | gateway re-registered; **0 workers, 0 leases** — see D7b |
+| control-plane-cold-restart | gateway re-registered; **2 workers back, 4/4 leases re-claimed**, 0 clients disconnected — D7b is closed |
+| orchestrator-restart | the orchestrator process down and whole again on the same SQLite database in **2.59 s**; 4/4 leases identical; **0** mirrors reported themselves disconnected |
+| orchestrator-cold-restart | a replacement on an *empty* database converged in **2.61 s**; 2 workers re-registered and re-claimed **4** containers, owners identical |
+| postgres-failover | **skipped**: `docker version` finds no daemon on this machine |
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
 | autoscale-rebalance | 2 moves explained; under a hold, 0 moves; saturated `c0` reported as `no-boundary`, `Simulation`, 0.948 of the tick budget |
 | rolling-upgrade | protocol 17 and 19 both disconnected; 18 admitted; session kept across a gateway replacement |
@@ -152,18 +160,27 @@ by a gateway that is still ticking — which this one is not.
 `AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims` asserts this **negative** and says
 in its failure message that closing the gap means updating this document and turning the assertion around.
 
-**D7b. A control plane that comes back empty loses its workers.** `NebulaGateway.OnControlPlaneChanged`
-re-registers the gateway when it notices its row has gone. `NebulaWorker` has no such path: it registers once
-(`if (!_registered && ControlPlane.IsConnected)`) and never again. So a control plane restarted *with* its
-storage keeps every lease, every session and every client (measured: 4/4 leases, 0.003 s, nobody disconnected),
-while one restarted *without* it has no workers and no leases until every worker process is restarted. Durable
-control-plane state and failover are NEB-227. `ARestartThatCameBackEmptyReclaimsItsGatewaysButNotItsWorkers`
-pins both halves.
+**D7b. A control plane that comes back empty loses its workers.** *Closed by NEB-227
+(`docs/control-plane-availability.md` D1).* `NebulaWorker` used to register once
+(`if (!_registered && ControlPlane.IsConnected)`) and never again, so a control plane restarted *without* its
+storage had no workers and no leases until every worker process was restarted by hand.
+`Runtime/Worker/WorkerRegistration.cs` now gives a worker the rule `NebulaGateway` already had, plus the part
+only a worker can supply: re-claiming the containers it is still simulating, because nothing else in the mesh
+knows it is simulating them. The reclaim is a standing reconciliation run on every control-plane change, not a
+one-off hung off the re-registration — the two moments are not the same one, and a reclaim tied to the
+transition stranded the containers (D1b of that record). `ARestartThatCameBackEmptyReclaimsItsGatewaysAndItsWorkers`
+is the turned-around assertion; `ScaleAvailabilityTests.AnOrchestratorThatCameBackEmptyIsPutRightByTheWorkersThatAreStillSimulating`
+is the same thing at the process level.
 
-**D7c. Database failover itself is not exercised.** The synthetic layer restarts a `LocalControlPlane` in place
-through the same snapshot/import path the orchestrator uses at startup, which is the right shape but not a real
-failover: no storage is swapped, no connection is lost mid-write, no write is replayed. That needs NEB-227's
-work and a real database. Status: **partially covered**.
+**D7c. Database failover itself is not exercised on this machine.** *Addressed by NEB-227, and still a gap in the
+numbers.* The gap was that the synthetic layer restarted a `LocalControlPlane` in place, which swaps no storage
+and loses no connection mid-write. `ScaleAvailabilityTests` now restarts the orchestrator **process** against a
+real `SqlControlPlaneStorage` over SQLite (S6b, measured), and `APostgresFailoverStallsTheControlPlaneStoreAndLosesNothing`
+restarts a real PostgreSQL primary in Docker and measures the stall (S6c). The second one has **never run**: this
+machine has a Docker client and no daemon, so the scenario takes its `Assert.Ignore` path with that reason.
+Status: **covered for the orchestrator process and SQLite; written but unmeasured for PostgreSQL.** Anyone with a
+Docker daemon closes the rest of this by running `dotnet test --filter "TestCategory=Docker"` and writing the
+number into `ScaleThresholds.DatabaseFailoverSeconds` and the table above.
 
 ## D8. There is no compatibility window
 
@@ -218,8 +235,9 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 1. Decide the layer by D1: if the guarantee is something a gateway or the control plane decides, it is
    synthetic; if it is what a worker costs, it is tier D.
-2. Synthetic: a `[Test]` in `Scale{Load,Failure,Operations}Tests.cs`, `[Category("Soak")]` too if it runs a mesh
-   for seconds. Open a `ScaleReport` with its columns, `Row(...)` every measurement, `Note(...)` the conclusion,
+2. Synthetic: a `[Test]` in `Scale{Load,Failure,Operations,Availability}Tests.cs`, `[Category("Soak")]` too if it
+   runs a mesh for seconds, and `[Category("Docker")]` too if it needs a container (it must then `Assert.Ignore`
+   with a reason when Docker is not there). Open a `ScaleReport` with its columns, `Row(...)` every measurement, `Note(...)` the conclusion,
    `Write()` before the assertions so a failing run still leaves its CSV.
 3. Put the threshold in `ScaleThresholds` **and** in the table above, with its derivation or the word
    provisional.

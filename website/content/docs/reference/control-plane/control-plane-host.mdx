@@ -76,6 +76,14 @@ The state machine itself, for tests.
 public string StorageBackend { get; }
 ```
 
+### StorageError [#storageerror]
+
+```csharp
+public string StorageError { get; }
+```
+
+Why the last save to storage failed, or null when the last one succeeded. Not a mesh failure by itself: the control plane keeps running on its in-memory state and the save is retried on the next interval (a whole-document replace has nothing to replay), so this is what an operator watches across a database failover. See `docs/control-plane-availability.md` D4.
+
 ### HasToken [#hastoken]
 
 ```csharp
