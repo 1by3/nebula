@@ -55,6 +55,7 @@ Each scenario checks one guarantee. A scenario marked **available** has a test i
 | 7 | Entities in one cohesion group change worker together, the planner never assigns them to different workers, and a group too large for one worker is reported. | Not yet available |
 | 8 | A server-driven entity that carries custom handover state keeps every field when it changes worker: position, rotation, velocity, `NetworkVariable` values, the bytes written by `WriteHandoverState`, the server-driven flag, and an epoch increased by exactly one. `OnLostAuthority` runs once on the old worker and `OnGainedAuthority` runs once on the new one, after the handover state is applied. A duplicate of the transfer message is ignored. | Available |
 | 9 | Nebula reports a physics joint that connects entities in different containers when those entities are not in a cohesion group. Cohesion groups are not yet available, so every such joint is reported. See [Distributed physics](/docs/concepts/distributed-physics). | Available |
+| 10 | Loss after a worker is killed with several entities dirty never exceeds the documented [durability window](/docs/guides/persistence#durability-window). | Available |
 
 Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `ConformanceHandoverWireTests` (both tiers), plus two older tests that check the handover-state format and a persistent entity's key crossing a handover. See [Physics and handover state](/docs/guides/physics-and-handover-state) for how to write handover state in your own behaviors.
 

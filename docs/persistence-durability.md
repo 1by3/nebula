@@ -1,0 +1,158 @@
+# Persistence durability window (NEB-224)
+
+Status: landed with NEB-224. User-facing page: `website/content/docs/guides/persistence.mdx` §"Durability
+window". Failure test: `Tests/EditMode/ConformancePersistenceDurabilityTests.cs` (conformance scenario 10, see
+`docs/conformance-suite.md` §4). Telemetry: `WorkerStats.OldestDirtySeconds` / `WorkerInfo.OldestDirtySeconds` on
+the existing worker heartbeat, surfaced on the orchestrator dashboard.
+
+## 0. Purpose
+
+Persistence checkpoints periodically rather than writing every change (`docs/architecture.md`'s "not a WAL"
+stance, restated in this issue's non-goals). That means a worker that dies between two checkpoints loses whatever
+changed since the last one. Games that build savable state on top of Nebula need a number to design around: how
+much can be lost, in the worst case, given the knobs they set. This document derives that number from the
+scheduler in `Runtime/Persistence/NebulaPersistence.cs`, not from intuition, and a conformance test
+(scenario 10) keeps it honest against the actual code.
+
+## D1. What "the durability window" means
+
+The window is the worst-case elapsed time between **a change landing on an authoritative entity** (a `[Persist]`
+`NetworkVariable` write, a call to `MarkPersistDirty()`/`PersistentEntity.MarkDirty()`, or a pose move past the
+threshold) and **that change being durably committed** to the persistence backend, where "durably committed" means
+the record would still be there if the *worker process* ended at that instant. A worker crash after the window has
+elapsed loses nothing from that change; a crash inside the window can lose it.
+
+This is a bound on **loss per change**, not a promise that nothing is ever lost — see the non-goals: no
+write-ahead log, no transactional multi-entity saves. Two changes to two different entities in the same instant can
+each be lost independently, and a change is only as durable as the single record it lives in (§D3 notes what
+"durable" costs on each backend).
+
+## D2. The bound, in terms of the code
+
+`NebulaPersistence.Update()` (called once per worker frame, never from the tick loop) runs `PumpCheckpoints`, whose
+`IsDue` decides which tracked entity gets a `SaveNow` this frame:
+
+```csharp
+private bool IsDue(PersistentEntity pe, NetworkIdentity identity, float now)
+{
+    float since = now - pe.LastSavedAt;
+    if (!pe.HasBeenSaved && pe.LastSavedAt == 0f) return true;
+    if (since >= CheckpointSecondsFor(pe)) return true;      // unconditional periodic save
+    if (since < MinSaveIntervalSeconds) return false;         // throttle: never saves twice inside this window
+    if (pe.IsDirty || PersistentStateCodec.HasDirtyVars(identity)) return true;  // dirty-triggered save
+    ...
+}
+```
+
+and `PumpCheckpoints` spends at most `MaxSavesPerFrame` saves per call, walking `_tracked` round-robin across
+frames when there are more due entities than the budget allows.
+
+Four terms, each tied to a knob:
+
+| Term | Knob | Why it's in the bound |
+| --- | --- | --- |
+| **Checkpoint interval** | `NebulaConfig.PersistenceCheckpointSeconds` (`PersistentEntity.CheckpointSeconds` overrides it per entity), default 5 s | `IsDue`'s `since >= CheckpointSecondsFor(pe)` branch guarantees an **unconditional** save at least this often, regardless of the dirty flag. This is what bounds the case where a change lands just after a periodic save reset the entity's `LastSavedAt` and, for whatever reason, the dirty-triggered path does not fire sooner. |
+| **Minimum save interval** | `NebulaPersistence.MinSaveIntervalSeconds`, `0.5f`, not configurable | `IsDue`'s `since < MinSaveIntervalSeconds → false` branch means a dirty change **cannot** trigger a save until this long has passed since the entity's last checkpoint, however urgently `MarkDirty()` was called. Worst case: the change lands the instant after a save, so the entity waits out almost the whole interval before it is even eligible again. |
+| **Per-frame save budget** | `NebulaPersistence.MaxSavesPerFrame`, `64`, not configurable | Once due, an entity still has to be reached by the round-robin cursor. With `N` entities becoming due in the same window, the last of them waits `ceil(N / MaxSavesPerFrame)` frames. A worker's frame period is nominally `NetworkTime.TickInterval` (~16.7 ms at the default 60 Hz tick rate) when it is keeping up; a worker that is behind (visible as high `TickMs` / utilization on the dashboard) has a longer real frame period and this term grows with it. |
+| **Store write latency** | backend-dependent — see §D3 | `_store.Save(record)` is fire-and-forget from the scheduler's point of view (`IPersistenceStore`'s own doc comment). The record still has to become durable in whatever the store is backed by. |
+
+**The bound to design around:**
+
+```
+loss window  ≤  PersistenceCheckpointSeconds
+              + MinSaveIntervalSeconds
+              + ceil(N_dirty / MaxSavesPerFrame) × framePeriod
+              + storeWriteLatency
+```
+
+Summing the checkpoint interval and the minimum save interval is deliberately conservative rather than tight (the
+periodic path and the throttled dirty path are usually alternatives, not both incurred back-to-back), because a
+number games design around should not depend on getting the interaction between the two exactly right. With the
+defaults (`PersistenceCheckpointSeconds = 5`, `MinSaveIntervalSeconds = 0.5`) and a lightly loaded worker
+(`N_dirty` small relative to 64, `framePeriod ≈ 16.7 ms`, an in-memory store), the bound is **about 5.6 seconds**.
+Raising `PersistenceCheckpointSeconds` raises the bound by the same amount; it is the dominant term by design,
+since it is the only one meant to be tuned per game.
+
+`N_dirty` is the number of *other* tracked entities that also become due in the same window — not the total
+entity count on the worker, most of which are not dirty at any given moment. A container full of NPCs whose AI
+writes a `[Persist]` variable every tick is the case that makes this term matter; a mostly-static world keeps it
+near zero.
+
+## D3. The store-write-latency term, per backend
+
+| Backend | Term | Why |
+| --- | --- | --- |
+| `LocalPersistenceStore`, no file (`memory` mode) | **0** | `Save` writes straight into the in-process dictionary; there is nothing further to lose once `SaveNow` returns, because the whole store dies with the process anyway (there is nothing to be durable *against*). This is the backend the failure test (§D5) uses, so its measured loss isolates the scheduler terms above. |
+| `LocalPersistenceStore` with a file (`local` mode) | up to `LocalPersistenceStore.WriteIntervalSeconds` (default 1 s), or `WriteBarrierIntervalSeconds` (default 0.1 s) when a caller is waiting on `WhenWritten` | Records land in memory immediately but the backing file is rewritten on a debounce, so a process crash (this mode runs worker and store in one process) can still lose a change that only made it to memory. |
+| `RemotePersistenceStore` (a worker in a mesh, talking to the orchestrator) | `RemotePersistenceStore.FlushIntervalSeconds` (0.25 s) the worker gathers a batch, plus the HTTP round trip and the orchestrator's own commit | The **worker's own queue** is where an unflushed save is lost if the *worker* is what crashes — once a batch is POSTed and the orchestrator's `PersistenceHost` accepts it, the record is the orchestrator's problem, not the worker's. The orchestrator's write itself (`SqlPersistenceStore` for SQLite/Postgres, described in `website/content/docs/guides/persistence.mdx`) is a single writer thread applying saves in order, typically sub-millisecond for SQLite and a network round trip for Postgres; it does not depend on the worker staying alive. |
+
+A killed **orchestrator** (not a worker) is a different failure with its own bound (its database's own durability
+guarantees, e.g. SQLite's `fsync` behaviour); this issue is scoped to a worker crash, per NEB-224's "kills a worker
+with N dirty entities".
+
+## D4. Worked example
+
+Default config, a worker simulating 300 NPCs where 40 of them write a `[Persist]` variable in the same tick
+(a wave of enemies all taking damage at once), talking to the orchestrator over `remote`:
+
+```
+5 s (PersistenceCheckpointSeconds)
++ 0.5 s (MinSaveIntervalSeconds)
++ ceil(40 / 64) × 16.7 ms = 1 frame ≈ 16.7 ms
++ 0.25 s (RemotePersistenceStore.FlushIntervalSeconds) + ~10 ms (LAN round trip + SQLite commit)
+≈ 5.78 seconds
+```
+
+Lowering `PersistenceCheckpointSeconds` is the knob that actually moves this number for a game that needs a
+tighter bound; the other three terms are small and mostly fixed by the architecture.
+
+## D5. The failure test
+
+`Tests/EditMode/ConformancePersistenceDurabilityTests.cs` (`[Category("Conformance")]`, scenario 10 in
+`docs/conformance-suite.md` §4) is tier C: a real `NebulaPersistence` checkpointing into a real
+`LocalPersistenceStore` (memory backend, so D3's term is 0 and the test isolates the scheduler terms), against a
+bare `NebulaWorker` that is never started. It:
+
+1. Tracks 200 entities (`> MaxSavesPerFrame`, so the per-frame budget has to spread saves across frames) and drains
+   their first-ever checkpoint.
+2. Marks all 200 dirty in the same instant — the scenario NEB-224 asks for.
+3. Confirms nothing is saved before `MinSaveIntervalSeconds` has elapsed (the throttle term is real, not a
+   formality), and that exactly one `MaxSavesPerFrame`'s worth is saved in the first frame after it (the per-frame
+   budget term is real).
+4. "Kills" the worker — stops calling `Update()` — after exactly the number of frames the per-frame-budget term
+   predicts, and asserts the store holds every one of the 200 changes: **loss = 0**, which is `≤` the documented
+   bound (whose checkpoint-interval and store-latency terms are not even exhausted in this scenario).
+
+`NebulaPersistence.Now` is the clock seam this test needed: the scheduler read `Time.unscaledTime` directly, so
+driving it through anything but the wall clock required injecting a `Func<float>` (defaulting to
+`Time.unscaledTime`) that the test points at its own `float` instead. This is the smallest change that makes the
+scheduler's timers deterministic; nothing about its logic changed.
+
+**For NEB-237** (the scale and failure suite): this test's fixture (a real `NebulaPersistence` + `LocalPersistenceStore`
++ the `Now` clock seam) is the reusable part. A larger-scale run wants the same setup with a bigger `entityCount`
+and CSV output of `(N_dirty, framesToKill, lost, boundSeconds)` rather than a single pass/fail; consider whether
+that belongs as a mode of `Services~/Nebula.Persistence.Benchmarks` (which already benchmarks
+`LocalPersistenceStore` write throughput under `PersistenceHost`) or as a variant of the EditMode test parameterised
+over entity counts. Either way, reuse the clock seam rather than re-deriving the scheduler's timing.
+
+## D6. Telemetry: oldest-dirty age per worker
+
+`NebulaPersistence.OldestDirtyAgeSeconds` reports how long the oldest currently-dirty tracked entity has been
+waiting for its next checkpoint (0 when nothing is dirty) — a live reading of how much of the documented window is
+in use on a given worker right now. It travels on the existing heartbeat as an additive field
+(`WorkerStats.OldestDirtySeconds` → `WorkerInfo.OldestDirtySeconds`, wired through `ControlPlaneJson`,
+`LocalControlPlane` and `RemoteControlPlane`), so an older orchestrator or worker simply does not read it — no
+protocol version bump. The orchestrator's `/api/status` exposes it as `workers[].oldestDirtySeconds`, and
+`NebulaDashboard.html` shows it per worker next to tick time.
+
+It is a proxy, not a duplicate of the bound: it does not know about a pose-move-triggered save that has no explicit
+"became dirty at" timestamp, and it resets to 0 the moment a save lands even though the record still has to become
+durable in the backend (§D3). It is enough to notice "this worker has been sitting on an unsaved change for longer
+than `PersistenceCheckpointSeconds` should allow", which is the operational question the number exists to answer.
+
+## Non-goals (restated from the issue)
+
+No write-ahead log of every change, no transactional multi-entity saves. The bound in §D2 is what a game designs
+around instead: keep `PersistenceCheckpointSeconds` low enough for the worst acceptable loss, and use `SaveNow`
+for a specific moment (a completed objective, a player logging out) that must not wait for the next periodic
+checkpoint at all.

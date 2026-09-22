@@ -38,6 +38,14 @@ namespace Nebula
         private readonly NebulaConfig _config;
         private readonly IPersistenceStore _store;
 
+        /// <summary>
+        /// Seconds on a monotonic clock, sampled once per <see cref="Update"/> pass. Defaults to
+        /// <c>UnityEngine.Time.unscaledTime</c>; a conformance test injects its own so the checkpoint scheduler
+        /// (<see cref="MinSaveIntervalSeconds"/>, <see cref="MaxSavesPerFrame"/>, the checkpoint interval) can be
+        /// driven deterministically without waiting on the wall clock. See docs/persistence-durability.md.
+        /// </summary>
+        internal Func<float> Now = () => UnityEngine.Time.unscaledTime;
+
         /// <summary>Every persistent entity alive in this process, authoritative or ghost, by key.</summary>
         private readonly Dictionary<string, NetworkIdentity> _byKey = new Dictionary<string, NetworkIdentity>();
         /// <summary>Checkpoint candidates, in spawn order; the cursor walks them across frames.</summary>
@@ -80,6 +88,29 @@ namespace Nebula
         public int SavedCount { get; private set; }
         /// <summary>Entities this service has brought back since the process started.</summary>
         public int RestoredCount { get; private set; }
+
+        /// <summary>
+        /// How long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, in seconds;
+        /// 0 when nothing is dirty. A live reading of how much of the documented durability window
+        /// (docs/persistence-durability.md) is in use on this worker right now; reported per worker on the
+        /// heartbeat (<see cref="WorkerInfo.OldestDirtySeconds"/>) for the orchestrator dashboard.
+        /// </summary>
+        public float OldestDirtyAgeSeconds
+        {
+            get
+            {
+                float now = Now();
+                float oldest = 0f;
+                for (int i = 0; i < _tracked.Count; i++)
+                {
+                    var pe = _tracked[i];
+                    if (pe == null || !pe.IsDirty || pe.DirtySince <= 0f) continue;
+                    float age = now - pe.DirtySince;
+                    if (age > oldest) oldest = age;
+                }
+                return oldest;
+            }
+        }
 
         /// <summary>An entity was brought back from the store and spawned on this worker.</summary>
         public event Action<NetworkIdentity> EntityRestored;
@@ -171,7 +202,8 @@ namespace Nebula
             SavedCount++;
             pe.HasBeenSaved = true;
             pe.IsDirty = false;
-            pe.LastSavedAt = Time.unscaledTime;
+            pe.DirtySince = 0f;
+            pe.LastSavedAt = Now();
             pe.LastSavedPosition = identity.transform.position;
             pe.LastSavedRotation = identity.transform.rotation;
             if (!_byKey.ContainsKey(record.Key)) _byKey[record.Key] = identity;
@@ -202,8 +234,9 @@ namespace Nebula
                 pe.Key = record.Key;
                 pe.HasBeenSaved = true;
                 pe.LastSavedVersion = record.Version;
-                pe.LastSavedAt = Time.unscaledTime;
+                pe.LastSavedAt = Now();
                 pe.IsDirty = false;
+                pe.DirtySince = 0f;
             }
             PersistentStateCodec.Read(record.State, identity);
             if (identity.IsSpawned && identity.HasAuthority)
@@ -338,7 +371,7 @@ namespace Nebula
         /// <summary>Called once per frame by the worker: restores what is due, then checkpoints what is dirty.</summary>
         internal void Update()
         {
-            float now = Time.unscaledTime;
+            float now = Now();
             PumpRestores(now);
             PumpWaiting(now);
             PumpCheckpoints(now);
@@ -362,7 +395,7 @@ namespace Nebula
             var container = ContainerRegistry.FindById(containerId);
             if (container == null || !container.IsOwnedBy(_worker.WorkerId)) return; // the lease moved on while we asked
             int restored = 0;
-            float now = Time.unscaledTime;
+            float now = Now();
             for (int i = 0; i < records.Count; i++)
             {
                 var record = records[i];
@@ -467,7 +500,7 @@ namespace Nebula
 
         private void OnLeasesChanged()
         {
-            float now = Time.unscaledTime;
+            float now = Now();
             DateLeases(ContainerRegistry.All, now);
             DateLeases(ContainerRegistry.Runtime, now); // runtime boxes are leased like baked ones; carried containers come back with their carrier
         }
@@ -561,7 +594,7 @@ namespace Nebula
         {
             var pe = identity != null ? identity.Persistent : null;
             if (pe == null) return;
-            pe.LastSavedAt = Time.unscaledTime;
+            pe.LastSavedAt = Now();
             pe.LastSavedPosition = identity.transform.position;
             pe.LastSavedRotation = identity.transform.rotation;
             if (!_tracked.Contains(pe)) _tracked.Add(pe);
