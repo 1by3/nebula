@@ -1,17 +1,17 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 17, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 18, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 17. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 18. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `17`. Every `Hello` carries that version.
+The current protocol version is `18`. Every `Hello` carries that version.
 
-- A gateway disconnects a client whose version is not exactly `17`. There is no feature negotiation or backward-compatible field skipping.
+- A gateway disconnects a client whose version is not exactly `18`. There is no feature negotiation or backward-compatible field skipping.
 - Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
 - A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
@@ -113,7 +113,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 17 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 18 sender MUST write them as zero.
 
 ## Message registry
 
@@ -160,7 +160,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 
-IDs not listed in this table are reserved. A version 17 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 18 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -359,12 +359,15 @@ Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-align
 
 ```text
 InstanceContainerInfo := u64 instance_id, string content_resource,
-  bool observe_public, vector3 observation_center, vector3 observation_size
+  bool observe_public, vector3 observation_center, vector3 observation_size,
+  string scope_key
 InstancePreparation := u32 request_id, u64 entity_id, ContainerRef destination,
   u16 source_worker, u64 lease_epoch, bool success
 ```
 
 Preparation asks the destination worker and owning client to load content before crossing. The gateway routes requests only for a pawn owned by the sending worker and routes replies only for the sending client's pawn. The source validates the request, destination lease, and authority before committing. Observation bounds are in absolute world coordinates.
+
+`scope_key` is the opaque instance key the game chose (`TemplateId/key`); `instance_id` is its 64-bit hash. A receiver MUST NOT parse `scope_key`; it is compared with ordinal string equality only. The [entity location contract](/docs/specifications/entity-location) defines how it names an entity's scope. A sender MUST write it on the wire; only the Base64 copy stored on a control-plane lease row written by an earlier release may end before it, in which case it reads as empty.
 
 ### Reliable message batch
 
@@ -411,7 +414,7 @@ AuthorityTransfer :=
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 17. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 18. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,

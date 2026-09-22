@@ -2,6 +2,33 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking: protocol 17 → 18, the entity location contract
+
+Every Nebula process must be rebuilt and restarted together; a gateway disconnects a client whose protocol version is not exactly `18`. See the [entity location contract](https://nebula.1by3.co/docs/specifications/entity-location) and `docs/location-contract.md`.
+
+**What changed and why.** There was no single, protocol-visible way to say where an entity durably is that did not depend on which worker held it: the wire named a container by a dense index or a carrier's net id, the instance an entity was in was known only as a 64-bit hash, and a persisted record carried no scope at all. `EntityLocation` is now that one answer: an opaque scope key, the container's string id and the container-local pose, the same value on the worker, gateway, orchestrator and client and in the store, unchanged by handover, worker restart, mesh restart and a store round trip. Nebula never parses the scope key.
+
+**Breaking wire format (protocol 18):**
+
+- `InstanceContainerInfo` (carried in `ContainerOwnership` entries and stored Base64-encoded on a runtime container's lease row) gained a trailing `string scope_key`: the instance key the game chose (`TemplateId/key`), beside the hash that was already there. A lease row stored by an earlier release has no key and reads as empty; the instance keeps working and reports an empty scope key until it is retired and prepared again.
+
+**New public API:**
+
+- `EntityLocation` (`Runtime/Containers/EntityLocation.cs`, pure C#, also in the standalone services) — the triple, with exact equality, `ToString`, `Write`/`Read`, `ContainerKind`, `IsPublic`, `HasContainer`, `Of(container, pose)` and `Resolve()`, which finds the container by id in this process's `ContainerRegistry` and refuses one in another scope. `LocationContainerKind` classifies a container id by its form (`None`, `Static`, `Runtime`, `Dynamic`).
+- `NetworkIdentity.Location` and `NetworkIdentity.ScopeKey`; `Container.ScopeKey` (following the carrier for a dynamic container); `InstanceContainerInfo.ScopeKey`.
+- `PersistedEntityRecord.ScopeKey` and `PersistedEntityRecord.Location` (get and set). `NebulaPersistence.BuildRecord` fills the scope key. The JSON body gained `"scopeKey"`, the local store file is now version 2 (version 1 files still load, as the public world), and the SQL store gained a `scope_key` column added on first open.
+- `NebulaWorker.PrepareInstance` records the scope key on the lease it ensures and refuses a key that collides with a different non-empty key under the same hash.
+
+**Conformance tests:** `Tests/EditMode/ConformanceLocationTests.cs` (`[Category("Conformance")]`) runs against the Unity registry in the package and against the service registry in `Services~/Nebula.Services.Tests`: the same triple resolves the same container in two independently populated registries, survives a handover and a store round trip, pins the wire bytes of a fixed triple, and reads older rows and records as the public world.
+
+**Migration notes:**
+
+- Rebuild and restart every worker, gateway, orchestrator and client build together.
+- Persisted records and lease rows from earlier releases are read as the public world (`ScopeKey == ""`). Nothing has to be reset; retire and re-prepare an instance if its entities should report their scope key.
+- A dynamic container's id (`label#netId`) is reported honestly as living for one mesh run; persistence continues to name a carried entity's place by `CarrierKey`, not by that id.
+
 ## [0.1.0-alpha.29] - 2026-09-21
 
 ### Breaking: protocol 16 → 17, interest management

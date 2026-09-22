@@ -39,6 +39,8 @@ When the orchestrator assigns a container to a different worker, it increments t
 
 Every entity has its own authority `Epoch`, which increases when its controlling worker changes. Entity messages include the network ID and epoch. The gateway and workers reject a message with an older epoch or an invalid sender. This prevents two workers from controlling the same entity after a temporary disagreement.
 
+The epoch and the owning worker say who simulates an entity. Where the entity is, independent of that, is its location: a scope key, the container's `ContainerId`, and the pose in the container's local space. `NetworkIdentity.Location` reports it, it does not change on a handover, and every process resolves it to the same container. The [entity location contract](/docs/specifications/entity-location) defines it.
+
 ## The worker's tick
 
 Each worker calculates its current tick from the wall clock and a fixed origin with `NetworkTime.DerivedTick`. This keeps tick numbers aligned without a coordinator. On every tick, a worker:

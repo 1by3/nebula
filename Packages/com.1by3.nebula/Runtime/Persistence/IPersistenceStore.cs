@@ -24,13 +24,37 @@ namespace Nebula
         public string PrefabName = "";
         /// <summary>Non-zero: the record belongs to a scene entity with this <see cref="NetworkIdentity.SceneId"/>.</summary>
         public uint SceneId;
-        /// <summary>Static container the entity was in (its <see cref="Container.ContainerId"/>), or "" when it was in none or inside a carrier.</summary>
+        /// <summary>
+        /// Opaque scope key of the scope the entity was in (<see cref="NetworkIdentity.ScopeKey"/> at save time):
+        /// <see cref="EntityLocation.PublicScope"/> (empty) for the public world, the instance key inside an
+        /// instance. A record written before the key was recorded reads as the public world.
+        /// </summary>
+        public string ScopeKey = "";
+        /// <summary>Static or runtime container the entity was in (its <see cref="Container.ContainerId"/>), or "" when it was in none or inside a carrier.</summary>
         public string ContainerId = "";
         /// <summary>When the entity was inside a dynamic container: the persistence key of the carrier. "" otherwise.</summary>
         public string CarrierKey = "";
         /// <summary>Pose in the container's local space (world space when there was no container).</summary>
         public Vector3 LocalPosition;
         public Quaternion LocalRotation = Quaternion.identity;
+
+        /// <summary>
+        /// The saved location as the contract's triple (<see cref="EntityLocation"/>): <see cref="ScopeKey"/>,
+        /// <see cref="ContainerId"/> and the local pose. For an entity saved inside a carrier the container id is
+        /// empty and <see cref="CarrierKey"/> names the carrier instead, because a dynamic container's id lives only
+        /// as long as its carrier's net id. Setting it writes the three fields back and leaves <see cref="CarrierKey"/> alone.
+        /// </summary>
+        public EntityLocation Location
+        {
+            get => new EntityLocation(ScopeKey, ContainerId, LocalPosition, LocalRotation);
+            set
+            {
+                ScopeKey = value.ScopeKey;
+                ContainerId = value.ContainerId;
+                LocalPosition = value.LocalPosition;
+                LocalRotation = value.LocalRotation;
+            }
+        }
         public Vector3 Velocity;
         /// <summary>Authority epoch at save time. The store rejects a save whose epoch is older than what it holds.</summary>
         public uint Epoch;

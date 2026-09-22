@@ -26,9 +26,9 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheProtocolVersionIsSeventeen()
+        public void TheProtocolVersionIsEighteen()
         {
-            Assert.AreEqual(17, HelloMsg.ProtocolVersion);
+            Assert.AreEqual(18, HelloMsg.ProtocolVersion);
         }
 
         [Test]

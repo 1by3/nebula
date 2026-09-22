@@ -61,6 +61,10 @@ An entity inside a [dynamic container](/docs/guides/dynamic-containers) is saved
 
 For this to work the carrier itself must carry a `PersistentEntity`. When it does, the pair comes back together: restoring or spawning the carrier on a worker with authority loads everything saved inside it. When it does not, Nebula logs a debug line and saves only the carried entity's pose, and the container's records are never restored automatically.
 
+### Where a record says the entity is
+
+A record stores the entity's location as three values: `ScopeKey` (the empty string for the public world, or the instance key inside an instance), `ContainerId`, and the local pose. `PersistedEntityRecord.Location` returns them as one `EntityLocation`, the same value `NetworkIdentity.Location` reports on a live entity, and it does not change across a handover or a restart. The [entity location contract](/docs/specifications/entity-location) defines the three values and what stays stable. A record saved before Nebula recorded scope keys reads as the public world.
+
 ## Opt variables and state in
 
 Mark a `NetworkVariable` field with `[Persist]`:

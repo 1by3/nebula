@@ -116,12 +116,12 @@ namespace Nebula
             Enqueue("save " + r.Key, c =>
             {
                 NebulaDatabase.Execute(c, @"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
-                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by)
+                    pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key)
                     VALUES (@key, @prefab_id, @prefab_name, @scene_id, @container_id, @carrier_key,
-                    @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by)
+                    @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by, @scope_key)
                     ON CONFLICT (entity_key) DO UPDATE SET
                     prefab_id = excluded.prefab_id, prefab_name = excluded.prefab_name, scene_id = excluded.scene_id,
-                    container_id = excluded.container_id, carrier_key = excluded.carrier_key,
+                    container_id = excluded.container_id, carrier_key = excluded.carrier_key, scope_key = excluded.scope_key,
                     pos_x = excluded.pos_x, pos_y = excluded.pos_y, pos_z = excluded.pos_z,
                     rot_x = excluded.rot_x, rot_y = excluded.rot_y, rot_z = excluded.rot_z, rot_w = excluded.rot_w,
                     vel_x = excluded.vel_x, vel_y = excluded.vel_y, vel_z = excluded.vel_z,
@@ -135,7 +135,7 @@ namespace Nebula
                     ("@vel_x", (double)r.Velocity.x), ("@vel_y", (double)r.Velocity.y), ("@vel_z", (double)r.Velocity.z),
                     ("@epoch", (long)r.Epoch), ("@server_driven", r.ServerDriven), ("@owned", r.Owned), ("@name", r.Name ?? ""),
                     ("@state", r.State != null && r.State.Length > 0 ? r.State : Array.Empty<byte>()),
-                    ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""));
+                    ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""), ("@scope_key", r.ScopeKey ?? ""));
                 _countDirty = true;
             });
         }
@@ -168,7 +168,7 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- reads
 
-        private const string Columns = "entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by";
+        private const string Columns = "entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key";
 
         public void Load(string key, Action<PersistedEntityRecord> onLoaded)
         {
@@ -235,6 +235,7 @@ namespace Nebula
                 Version = (ulong)r.GetInt64(21),
                 SavedAt = ControlPlaneJson.FromUnixMs(r.GetInt64(22)),
                 SavedBy = r.GetString(23),
+                ScopeKey = r.GetString(24),
             };
             return record;
         }
