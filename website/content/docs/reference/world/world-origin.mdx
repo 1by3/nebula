@@ -11,6 +11,8 @@ public static class WorldOrigin
 
 The floating origin: which cell currently sits at Unity's (0,0,0). Every position a process handles is expressed in this frame (a "frame position"). When the frame moves, [`Shifted`](#shifted) reports the delta to add to every frame position the streamer did not move itself (cached positions, history buffers, world-space particle systems...).
 
+This is the **public** world's frame, and is [`ScopeFrames.Public`](/docs/reference/world/scope-frames#public). A scope that asked for a frame of its own (a scoped chunk grid) keeps its origin in a [`ScopeFrame`](/docs/reference/world/scope-frame) instead, so two scopes on one worker can both sit near Unity's origin; see `docs/scope-frames.md`.
+
 ## Properties
 
 ### Cell [#cell]
