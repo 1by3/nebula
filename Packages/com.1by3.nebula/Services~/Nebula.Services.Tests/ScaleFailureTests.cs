@@ -248,7 +248,7 @@ public class ScaleFailureTests
         Assert.That(settled, Is.True, "the reclaim attempts neither completed nor were refused within 40 s");
         Assert.That(reclaimed, Is.Zero,
             "a hard gateway loss now reclaims sessions by itself — the NEB-227/229 gap this test pins has been closed; " +
-            "update docs/scale-suite.md D5 and turn this into the positive assertion");
+            "update docs/scale-suite.md D7a and turn this into the positive assertion");
         Assert.That(reason, Does.Contain("could not be disconnected"),
             "the refusal must say why, so an operator can tell this apart from a rejected player");
     }
@@ -307,7 +307,7 @@ public class ScaleFailureTests
 
         Assert.That(fleet.Plane.Gateways.Count, Is.EqualTo(1), "the gateway put itself back on the control plane");
         Assert.That(fleet.Plane.Workers, Is.Empty,
-            "a worker now re-registers after a cold control-plane restart — update docs/scale-suite.md D6 and this test");
+            "a worker now re-registers after a cold control-plane restart — update docs/scale-suite.md D7b and this test");
         Assert.That(fleet.Plane.Leases, Is.Empty, "no worker means no leases");
         Assert.That(clients.All(c => !c.Disconnected), Is.True, "and still nobody was disconnected");
     }

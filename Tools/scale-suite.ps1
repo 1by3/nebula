@@ -296,7 +296,7 @@ function Invoke-MeshRestart {
 function Invoke-GatewayKill {
     Say "gateway kill needs a second gateway process to reclaim onto, which the local CLI mesh does not start" 'Yellow'
     Say "status: NOT RUN in tier D. The synthetic layer measures it (ScaleFailureTests, Logs/scale/synthetic-gateway-*.csv)." 'Yellow'
-    Say "A real multi-gateway fleet is the gateway audit (NEB-229) and the control-plane availability work (NEB-227); see docs/scale-suite.md D5." 'Yellow'
+    Say "A real multi-gateway fleet is the gateway audit (NEB-229) and the control-plane availability work (NEB-227); see docs/scale-suite.md D9a." 'Yellow'
 }
 
 # ---------------------------------------------------------------------------------------------------- main

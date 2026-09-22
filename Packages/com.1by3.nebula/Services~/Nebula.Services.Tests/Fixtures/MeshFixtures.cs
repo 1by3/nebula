@@ -69,7 +69,7 @@ public sealed class FakeWorker : IDisposable
     /// Put a pawn in the container the gateway's <see cref="SpawnPlayerMsg"/> named, rather than in
     /// <see cref="PawnContainer"/>. A real worker always does this; the fixture does not by default because the
     /// interest tests place pawns themselves. The scale suite needs it: a client that joined a scope must have its
-    /// pawn inside that scope, or per-scope isolation cannot be measured at all (docs/scale-suite.md, D5).
+    /// pawn inside that scope, or per-scope isolation cannot be measured at all (docs/scale-suite.md, D3).
     /// </summary>
     public bool SpawnIntoRequestedContainer;
 
@@ -1036,7 +1036,7 @@ public sealed class Fleet : IDisposable
 
     /// <summary>
     /// Lose a gateway <b>without a drain</b>, in one of the two ways that actually happen, because they are
-    /// different failures and the suite measures both (docs/scale-suite.md, D6):
+    /// different failures and the suite measures both (docs/scale-suite.md, D7a):
     /// <list type="bullet">
     /// <item><b>Hard</b> (<paramref name="hard"/> true): the process is gone as far as everyone else is concerned.
     /// It stops ticking, so it stops heartbeating, stops answering its clients and never releases the session

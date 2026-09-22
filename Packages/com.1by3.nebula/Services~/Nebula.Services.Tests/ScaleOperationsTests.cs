@@ -225,7 +225,7 @@ public class ScaleOperationsTests
         report.Row("gateway replaced", HelloMsg.ProtocolVersion, 1, 1, 0, "session kept across the replacement");
         report.Note("no compatibility window exists: HelloMsg.Write always writes the ProtocolVersion constant and the " +
                     "gateway requires exact equality, so a rolling upgrade may replace processes at one protocol version " +
-                    "but may not span two. See docs/scale-suite.md D9.");
+                    "but may not span two. See docs/scale-suite.md D8.");
         report.Write();
     }
 }

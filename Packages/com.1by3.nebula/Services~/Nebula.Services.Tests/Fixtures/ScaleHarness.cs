@@ -45,7 +45,7 @@ public static class ScaleThresholds
 /// not a stopwatch reading: absolute times depend on the machine, so what is asserted is that the curve is
 /// monotonic, that it has the steps the baseline has, and that each step stays inside the per-container budget
 /// and inside a generous multiple of the baseline step. A run on a machine with no baseline writes one and says
-/// so rather than failing (docs/scale-suite.md, D7).
+/// so rather than failing (docs/scale-suite.md, D5).
 /// </summary>
 public static class ScaleBaseline
 {
@@ -92,7 +92,7 @@ public static class ScaleBaseline
 /// Where a scale run's numbers go. Every artifact says which layer produced it — <c>synthetic</c> for the
 /// in-process runs in this assembly, <c>unity</c> for a real player-build mesh driven by
 /// <c>Tools/scale-suite.ps1</c> — because the two measure different things and a CSV that does not say which it
-/// is is worse than no CSV (docs/scale-suite.md, D3).
+/// is is worse than no CSV (docs/scale-suite.md, D1a).
 /// <para>
 /// Files land under <c>Logs/scale/</c> at the repository root, next to the conformance runner's output. One file
 /// per scenario, overwritten each run; the fixture prints the path so a failing run says where to look.

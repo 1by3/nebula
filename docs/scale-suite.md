@@ -39,18 +39,18 @@ planner scenarios (about 12 ms together) stay in it.
 
 ## D2. Scenarios, status and thresholds
 
-| # | Scenario | Layer | Threshold | Status |
+| Scenario | What it does | Layer | Threshold | Status |
 |---|---|---|---|---|
-| D3 | Sustained load: 120 clients, 4 workers, 2 gateways, 480 entities of scenery | synthetic | per-client bandwidth < 512 kB/s; no orphan updates; no duplicate views | covered — `ScaleLoadTests.SustainedLoadKeepsEveryClientInsideItsReplicaAndBandwidthBounds` |
-| | the same with real workers | unity | worst worker tick ≤ 16.7 ms (one tick period at 60 Hz); load client exits 0 | runner written, **not run here** (§D11) |
-| D4 | Burst: 150 clients join at once, no ramp | synthetic | nobody refused; one session each; one pawn each | covered — `ABurstOfJoinsIsAdmittedWithoutRejectingAnyoneOrLosingASession` |
-| D5 | Many scopes: 4 keyed scopes of 20 clients plus 20 public clients | synthetic | zero cross-scope leaks; per-scope bandwidth recorded | covered — `ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything` |
-| D6 | Worker kill: a worker dies with clients watching its container | synthetic | restore ≤ 2 s per container; zero duplicate entities; nobody disconnected; loss ≤ the NEB-224 bound | covered — `ScaleFailureTests.AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities`; the loss bound itself is conformance scenario 10 |
-| D7 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: **not recovered** | covered, and the hard-kill half is a pinned gap (§D9) |
-| D8 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (§D9) |
-| D9 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
-| D10 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
-| D11 | Rolling upgrade | synthetic | a version mismatch is refused cleanly; a gateway process is replaced under connected clients with no session lost | covered, with the finding that **there is no compatibility window** (§D8) |
+| S1 | Sustained load: 120 clients, 4 workers, 2 gateways, 480 entities of scenery | synthetic | per-client bandwidth < 512 kB/s; no orphan updates; no duplicate views | covered — `ScaleLoadTests.SustainedLoadKeepsEveryClientInsideItsReplicaAndBandwidthBounds` |
+| | the same with real workers | unity | worst worker tick ≤ 16.7 ms (one tick period at 60 Hz); load client exits 0 | runner written, **not run here** (D11) |
+| S2 | Burst: 150 clients join at once, no ramp | synthetic | nobody refused; one session each; one pawn each | covered — `ABurstOfJoinsIsAdmittedWithoutRejectingAnyoneOrLosingASession` |
+| S3 | Many scopes: 4 keyed scopes of 20 clients plus 20 public clients | synthetic | zero cross-scope leaks; per-scope bandwidth recorded | covered — `ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything` |
+| S4 | Worker kill: a worker dies with clients watching its container | synthetic | restore ≤ 2 s per container; zero duplicate entities; nobody disconnected; loss ≤ the NEB-224 bound | covered — `ScaleFailureTests.AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities`; the loss bound itself is conformance scenario 10 |
+| S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: **not recovered** | covered, and the hard-kill half is a pinned gap (D7a) |
+| S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (D7c) |
+| S7 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
+| S8 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
+| S9 | Rolling upgrade | synthetic | a version mismatch is refused cleanly; a gateway process is replaced under connected clients with no session lost | covered, with the finding that **there is no compatibility window** (D8) |
 
 ### Where the numbers come from
 
@@ -74,7 +74,7 @@ The fake mesh could stand a mesh up but not take one apart. Added to `Fleet`:
 - `StartWorker(id?)` / `KillWorker(worker)` — a worker process appearing and dying. A kill drops the socket (so
   every gateway link goes) and unregisters from the control plane, which orphans every lease it held. Nothing is
   handed over and nothing is drained. Returns the orphaned container ids: what the restore has to place again.
-- `StartGateway(configure?)` / `KillGateway(index, hard)` — see D7 for what the two kinds model.
+- `StartGateway(configure?)` / `KillGateway(index, hard)` — see D7a for what the two kinds model.
 - `RestartControlPlane(snapshot)` — `ResetControlPlane()` then `Import(...)` of a document taken earlier with
   `ToJson()`. Passing `null` models a restart that came back with nothing.
 - `FakeWorker.SpawnIntoRequestedContainer` — put a pawn in the container the gateway's `SpawnPlayerMsg` named,
@@ -121,9 +121,9 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | many-scopes | 4 scopes × 20 clients + 20 public; 8.5 kB/s per scoped client, 5.7 kB/s per public client, **0 cross-scope leaks** |
 | worker-kill | 1 container orphaned; the gateways dropped its entities in 0.03 s; whole again in 1.08 s; 0 duplicate spawns; 40 clients, 40 pawns; 34 orphan updates (see below) |
 | gateway-stop (abrupt) | 12/12 sessions reclaimed on the surviving gateway in 0.05 s, same session ids |
-| gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7 |
+| gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7a |
 | control-plane-restart | 4 leases back in 0.003 s, 0 disconnected, 0 session changes |
-| control-plane-cold-restart | gateway re-registered; **0 workers, 0 leases** — see D7 |
+| control-plane-cold-restart | gateway re-registered; **0 workers, 0 leases** — see D7b |
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
 | autoscale-rebalance | 2 moves explained; under a hold, 0 moves; saturated `c0` reported as `no-boundary`, `Simulation`, 0.948 of the tick budget |
 | rolling-upgrade | protocol 17 and 19 both disconnected; 18 admitted; session kept across a gateway replacement |
