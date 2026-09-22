@@ -462,7 +462,7 @@ namespace Nebula.Tests
             cached.LocalRotation = Quaternion.Euler(0, 90, 0);
             recordType.GetField("LastSpawn").SetValue(record, cached);
             recordType.GetField("Container").SetValue(record, ContainerRef.None);
-            var world = (Vector3)type.GetMethod("WorldPosition", flags).Invoke(gateway, new object[] { ContainerRef.Dynamic(a.NetId), Vector3.forward, 0 });
+            var world = (Vector3)type.GetMethod("WorldPosition", flags).Invoke(gateway, new object[] { ContainerRef.Dynamic(a.NetId), Vector3.forward });
             Assert.Less(Vector3.Distance(new Vector3(13, 2, 3), world), 0.001f, "gateway applies carrier scale as well as rotation");
             var config = ScriptableObject.CreateInstance<NebulaConfig>();
             try

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    What a game's gateway extension looks like as a project: a plain class library that references the
+    gateway's Nebula.Services.dll and nothing else. Private=false / ReferenceOutputAssembly semantics matter in
+    a real game: the gateway process already carries Nebula.Services, so the extension must reference it, never
+    ship its own copy - two copies would be two sets of types and the gateway would refuse to load it.
+    A game that consumes Nebula as a Unity package points this reference at the published gateway's
+    Nebula.Services.dll (<Reference Include="Nebula.Services"><HintPath>Builds/Win64/Nebula.Services.dll</HintPath></Reference>)
+    instead of at these sources.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Nebula.Services/Nebula.Services.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

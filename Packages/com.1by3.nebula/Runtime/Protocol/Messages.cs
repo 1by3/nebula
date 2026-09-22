@@ -397,7 +397,7 @@ namespace Nebula
         /// <summary>
         /// Gateway -> client: which view of this net id the spawn belongs to. It increases every time the gateway
         /// lets the entity into this client's set, so a despawn from an older view cannot kill a replica the
-        /// client has just re-entered (design D4). Workers send 0.
+        /// client has just re-entered. Workers send 0.
         /// </summary>
         public ushort ViewSeq;
 
@@ -580,7 +580,7 @@ namespace Nebula
         public uint MethodHash;
         /// <summary>For ClientRpc: 0 = every client, otherwise only that client. For ServerRpc: the sending client (filled by the gateway).</summary>
         public ulong ClientId;
-        /// <summary>For a ClientRpc broadcast: deliver only to clients whose pawn is within this many metres of the entity (0 = everyone). See ClientRpcAttribute.Radius.</summary>
+        /// <summary>For a ClientRpc broadcast: deliver only to clients whose pawn is within this many meters of the entity (0 = everyone). See ClientRpcAttribute.Radius.</summary>
         public float Radius;
         public byte[] Args;
 
@@ -820,8 +820,8 @@ namespace Nebula
     /// <summary>
     /// What one <see cref="MsgId.ContainerOwnership"/> message says: either the complete set of containers a
     /// client should know about (<see cref="Full"/>) or a change to it. Interest management makes this per-client
-    /// and incremental (design §8): a client is told about the containers overlapping its own window, so the
-    /// snapshot of a large world is no longer broadcast to everybody.
+    /// and incremental: a client is told about the containers overlapping its own window, so the
+    /// client receives only the relevant part of a large world's container table.
     /// </summary>
     public struct ContainerOwnershipUpdate
     {
@@ -1036,8 +1036,8 @@ namespace Nebula
         public string SessionGateway;
         /// <summary>
         /// Gateway keys (<see cref="PlayerSessions.GatewayKey"/>) that were following this entity on the old owner
-        /// without subscribing its region — an explicit per-entity subscription, or the session it speaks for
-        /// (design §5). The new owner announces the spawn to them as well as to the gateways its own regions cover,
+        /// without subscribing its region — an explicit per-entity subscription, or the session it speaks for.
+        /// The new owner announces the spawn to these gateways as well as to the gateways its own regions cover,
         /// so a followed entity is not lost the moment it changes worker.
         /// </summary>
         public string[] InterestGateways;
@@ -1095,10 +1095,10 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Gateway -> worker: the set of regions this gateway wants entities from (design §5). The state is a set, so
+    /// Gateway -> worker: the set of regions this gateway wants entities from. The state is a set, so
     /// the message is idempotent: a delta applies only when <see cref="BaseSeq"/> is the worker's current sequence
     /// and the resulting (count, hash) matches, and the worker otherwise keeps what it has and asks for a resync.
-    /// The grid travels with it so a worker can refuse to filter with ids the gateway did not mean (design D2).
+    /// The grid travels with it so a worker can refuse to filter with ids the gateway did not mean.
     /// </summary>
     public struct InterestSubscribeMsg
     {
@@ -1256,15 +1256,22 @@ namespace Nebula
     /// </summary>
     public struct ClientFocusHintMsg
     {
-        /// <summary>The hinted point, in the client's own frame; the gateway resolves it against the pawn.</summary>
-        public Vector3 Position;
+        /// <summary>
+        /// The hinted point in <b>absolute</b> world coordinates, in double — the same space region keys,
+        /// container boxes and the gateway's own positions are in, and the only space both ends agree on. A
+        /// client sends its floating-origin frame position plus its origin (<c>NebulaClient</c> does the sum),
+        /// so a shift under the camera changes the frame position and the origin together and the point the
+        /// gateway sees does not move. Floats would lose meters out at the edge of an unbounded world, which is
+        /// exactly where a strategy camera is pointed, so this is three doubles and not a <c>Vector3</c>.
+        /// </summary>
+        public double X, Y, Z;
         /// <summary>
         /// Bumped by the client every time it clears its hint. Hints travel <see cref="Delivery.Sequenced"/> and
         /// the clear travels reliably, so a hint already in flight can arrive after the clear; without a
         /// generation it would quietly re-establish the focus the game just gave up.
         /// </summary>
         public byte Generation;
-        /// <summary>The client withdraws its hint: interest returns to the pawn. <see cref="Position"/> is unused.</summary>
+        /// <summary>The client withdraws its hint: interest returns to the pawn. The position is unused.</summary>
         public bool Clear;
 
         public void Write(NetworkWriter w)
@@ -1272,13 +1279,19 @@ namespace Nebula
             w.WriteByte((byte)MsgId.ClientFocusHint);
             w.WriteByte(Generation);
             w.WriteByte((byte)(Clear ? 1 : 0));
-            if (!Clear) w.WriteVector3(Position);
+            if (Clear) return;
+            w.WriteDouble(X);
+            w.WriteDouble(Y);
+            w.WriteDouble(Z);
         }
 
         public static ClientFocusHintMsg Read(NetworkReader r)
         {
             var msg = new ClientFocusHintMsg { Generation = r.ReadByte(), Clear = (r.ReadByte() & 1) != 0 };
-            if (!msg.Clear) msg.Position = r.ReadVector3();
+            if (msg.Clear) return msg;
+            msg.X = r.ReadDouble();
+            msg.Y = r.ReadDouble();
+            msg.Z = r.ReadDouble();
             return msg;
         }
 

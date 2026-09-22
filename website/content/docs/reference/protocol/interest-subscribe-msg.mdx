@@ -1,6 +1,6 @@
 ---
 title: "InterestSubscribeMsg"
-description: "Gateway -> worker: the set of regions this gateway wants entities from (design §5)."
+description: "Gateway -> worker: the set of regions this gateway wants entities from."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "Gateway -> worker: the set of regions this gateway wants entities 
 public struct InterestSubscribeMsg
 ```
 
-Gateway -\> worker: the set of regions this gateway wants entities from (design §5). The state is a set, so the message is idempotent: a delta applies only when [`BaseSeq`](#baseseq) is the worker's current sequence and the resulting (count, hash) matches, and the worker otherwise keeps what it has and asks for a resync. The grid travels with it so a worker can refuse to filter with ids the gateway did not mean (design D2).
+Gateway -\> worker: the set of regions this gateway wants entities from. The state is a set, so the message is idempotent: a delta applies only when [`BaseSeq`](#baseseq) is the worker's current sequence and the resulting (count, hash) matches, and the worker otherwise keeps what it has and asks for a resync. The grid travels with it so a worker can refuse to filter with ids the gateway did not mean.
 
 ## Fields
 

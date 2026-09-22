@@ -10,11 +10,12 @@ namespace Nebula
     /// <item><b>worker</b>: the cells of every container it leases plus <see cref="NebulaConfig.WorkerLoadRingCells"/>
     /// rings around them so ghosts and boundary physics have the neighboring geometry. The origin follows the center of
     /// the owned cells.</item>
-    /// <item><b>client</b> (players and bots): <see cref="NebulaConfig.ClientLoadRadiusCells"/> around the local pawn,
-    /// the origin follows the pawn. Before a pawn exists, the cells around the origin cell.</item>
+    /// <item><b>client</b> (players and bots): <see cref="NebulaConfig.ClientLoadRadiusCells"/> around its content
+    /// anchor — the local pawn by default, or whatever <c>NebulaClient.SetContentAnchor</c> was given (a strategy
+    /// camera) — and the origin follows the same anchor. Before either exists, the cells around the origin cell.</item>
     /// <item><b>gateway / orchestrator</b>: nothing. They only need the container maths, which the manifest provides.</item>
     /// </list>
-    /// The origin shifts once the pawn/centroid is more than <see cref="NebulaConfig.OriginShiftThresholdCells"/>
+    /// The origin shifts once the anchor/centroid is more than <see cref="NebulaConfig.OriginShiftThresholdCells"/>
     /// cells from the origin cell, so a shift is rare and never happens while pacing on a cell boundary.
     /// </summary>
     public sealed class NebulaWorldStreaming : MonoBehaviour, IWorldAnchor
@@ -76,10 +77,14 @@ namespace Nebula
             }
             if (Client != null)
             {
-                var pawn = Client.LocalPlayer;
-                if (pawn != null)
+                // The anchor, not the pawn: a strategy camera that has flown away from its pawn must take the
+                // origin with it, or it ends up rendering the far side of the world in single-precision metres
+                // from an origin nobody is near. NebulaClient.ActiveContentAnchor is the pawn until a game says
+                // otherwise, so this is the same behaviour for everything that has not asked for the other.
+                var anchor = Client.ActiveContentAnchor;
+                if (anchor != null)
                 {
-                    var cell = WorldOrigin.CellOf(pawn.transform.position);
+                    var cell = WorldOrigin.CellOf(anchor.position);
                     if (WorldGrid.Rings(cell, WorldOrigin.Cell) > Config.OriginShiftThresholdCells) NebulaWorld.Streamer.ShiftOrigin(cell);
                 }
             }
@@ -125,8 +130,11 @@ namespace Nebula
             // spawned an entity standing on a cell it has not loaded. ClientLoadRadiusCells stays the floor, so a
             // game asking for more cells than interest needs still gets them.
             radiusCells = Mathf.Max(0, _nearCells);
-            var pawn = Client != null ? Client.LocalPlayer : null;
-            framePosition = pawn != null ? pawn.transform.position : Vector3.zero;
+            // Whatever the client anchors content to (the pawn by default, the active camera when a game has
+            // called NebulaClient.SetContentAnchor). The streamer applies its own load/unload hysteresis around
+            // whatever this returns, so a camera gets exactly the treatment a pawn does.
+            var anchor = Client != null ? Client.ActiveContentAnchor : null;
+            framePosition = anchor != null ? anchor.position : Vector3.zero;
             return true;
         }
     }

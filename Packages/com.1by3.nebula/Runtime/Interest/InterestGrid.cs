@@ -10,7 +10,7 @@ namespace Nebula
     /// container ids are literally the same numbers.
     /// <para>
     /// Positions are doubles because a region key must not depend on the floating origin: wire poses are
-    /// container-local, and both ends add the container's absolute centre in double before asking for a key. Shift
+    /// container-local, and both ends add the container's absolute center in double before asking for a key. Shift
     /// the origin and every key stays what it was, which is what lets a gateway and a worker with different origins
     /// agree on one set of subscribed regions.
     /// </para>
@@ -27,7 +27,7 @@ namespace Nebula
         public const int MaxCoordinate = (1 << 20) - 1;
         private const ulong Mask = (1UL << 21) - 1;
 
-        /// <summary>Region edge in metres per axis. Y is unused (and meaningless) when <see cref="Planar"/>.</summary>
+        /// <summary>Region edge in meters per axis. Y is unused (and meaningless) when <see cref="Planar"/>.</summary>
         public readonly double EdgeX, EdgeY, EdgeZ;
         /// <summary>World coordinate of the region-0 lower corner per axis; see <see cref="Resolve(in InterestSettings,double,double,double,bool)"/>.</summary>
         public readonly double OffsetX, OffsetY, OffsetZ;
@@ -48,9 +48,9 @@ namespace Nebula
 
         /// <summary>
         /// Derive the grid both ends must agree on from the resolved settings and, when the game has a world
-        /// definition, its cell size (design §3): the edge is snapped to an integer division of the cell so region
+        /// definition, its cell size. The edge is snapped to an integer division of the cell so region
         /// edges coincide with cell edges, and the offset places region boundaries on those cell edges. Baked cells
-        /// are centred on <c>coord × CellSize</c> (<paramref name="cellsCentred"/>: offset −CellSize/2);
+        /// are centered on <c>coord × CellSize</c> (<paramref name="cellsCentred"/>: offset −CellSize/2);
         /// <c>RuntimeGrid</c> cells start at <c>coord × CellSize</c> (offset 0). Pass 0 for no world definition.
         /// </summary>
         public static InterestGrid Resolve(in InterestSettings settings, double worldCellX, double worldCellY, double worldCellZ, bool cellsCentred)
@@ -121,7 +121,7 @@ namespace Nebula
             else { minY = OffsetY + y * EdgeY; maxY = minY + EdgeY; }
         }
 
-        /// <summary>Centre of a region in absolute world coordinates (Y = 0 on a planar grid, where there is no centre).</summary>
+        /// <summary>Center of a region in absolute world coordinates (Y = 0 on a planar grid, where there is no center).</summary>
         public void CenterOf(ulong region, out double x, out double y, out double z)
         {
             BoundsOf(region, out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
@@ -179,7 +179,7 @@ namespace Nebula
 
         /// <summary>
         /// Whether two grids would produce the same keys. The subscribe message carries the grid so the worker can
-        /// reject a mismatch loudly (design D2) instead of filtering with ids the gateway never meant; the tolerance
+        /// reject a mismatch loudly instead of filtering with ids the gateway never meant; the tolerance
         /// absorbs the f32 round trip of that message, nothing more.
         /// </summary>
         public bool Matches(in InterestGrid other, double tolerance = 1e-3)

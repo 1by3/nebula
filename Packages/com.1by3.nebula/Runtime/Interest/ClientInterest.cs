@@ -25,7 +25,7 @@ namespace Nebula
     }
 
     /// <summary>
-    /// One client's interest set and the state machine that maintains it (design §4). Evaluation walks only the
+    /// One client's interest set and the state machine that maintains it. Evaluation walks only the
     /// regions the client's foci cover, so its cost follows what is near the client rather than the size of the
     /// world, and the set is stable: an entity enters at the relevance radius and leaves only once it has been
     /// more than <see cref="InterestSettings.ExitMargin"/> further out for
@@ -116,6 +116,40 @@ namespace Nebula
             if (!_members.Remove(netId)) return false;
             left?.Add(netId);
             return true;
+        }
+
+        /// <summary>
+        /// Re-run authorization over the set exactly as it stands and drop whatever no longer passes, appending
+        /// the losses to <paramref name="left"/>. Nothing is added: this is the <b>revocation</b>
+        /// half of an evaluation, for the moment something the security filter depends on was tightened — a new
+        /// policy, a changed team, a fog sweep — and the answer must not wait for the client's turn in the
+        /// rotation.
+        /// <para>
+        /// It costs one <see cref="IInterestSource{T}.Authorize"/> per entity the client already holds and makes
+        /// no grid query at all, so it is strictly cheaper than the evaluation it precedes. The additive half —
+        /// what the change newly <i>reveals</i> — is left to that evaluation, because revealing late is a
+        /// latency bug and revoking late is a security one.
+        /// </para>
+        /// </summary>
+        public void Revalidate(InterestIndex<T> index, List<ulong> left)
+        {
+            if (index == null || _members.Count == 0) return;
+            int leaveFrom = left?.Count ?? 0;
+            _leaveDepth.Clear();
+            _stale.Clear();
+            foreach (var pair in _members) _stale.Add(pair.Key);
+            for (int i = 0; i < _stale.Count; i++)
+            {
+                ulong id = _stale[i];
+                // Gone from the index entirely: nothing will ever announce it again, so it goes now rather than
+                // at the next evaluation, exactly as Evaluate treats it.
+                if (!index.TryGetValue(id, out var value)) { Leave(index, id, left); continue; }
+                _source.Describe(id, value, out var entity);
+                if (!_source.Authorize(Client, entity)) Leave(index, id, left);
+            }
+            _stale.Clear();
+            // Contents before their carriers, the same order a leave takes anywhere else.
+            SortByDepth(left, _leaveDepth, leaveFrom, false);
         }
 
         // ------------------------------------------------------------------------------------------- evaluation
@@ -278,14 +312,12 @@ namespace Nebula
             _leaveDepth.Add(CarrierDepth(index, id));
         }
 
-        /// <summary>How deep the entity rides: 0 for something standing in the world, 1 inside a ship, and so on.</summary>
-        private static int CarrierDepth(InterestIndex<T> index, ulong id)
-        {
-            int depth = 0;
-            ulong carrier = index.CarrierOf(id);
-            while (carrier != 0 && depth < 16) { depth++; carrier = index.CarrierOf(carrier); }
-            return depth;
-        }
+        /// <summary>
+        /// How deep the entity rides: 0 for something standing in the world, 1 inside a ship, and so on. The
+        /// index answers it with no cap of its own. A depth clamped to a constant would make two
+        /// entities at different depths compare equal and let a spawn arrive before its container.
+        /// </summary>
+        private static int CarrierDepth(InterestIndex<T> index, ulong id) => index.DepthOf(id);
 
         /// <summary>
         /// Insertion sort of the tail this evaluation appended, by carrier depth. The lists are short (what one

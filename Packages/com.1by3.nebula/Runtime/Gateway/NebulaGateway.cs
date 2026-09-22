@@ -48,7 +48,7 @@ namespace Nebula
             /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
             public float DisconnectAt;
             public ulong PawnNetId;
-            /// <summary>The interest set: exactly the entities this client has replicas of (design §4).</summary>
+            /// <summary>The interest set: exactly the entities this client has replicas of.</summary>
             public readonly HashSet<ulong> Visible = new HashSet<ulong>();
             /// <summary>The set's state machine (hysteresis, linger, authorization). Created on the first evaluation.</summary>
             public ClientInterest<EntityRecord, InterestSource> Interest;
@@ -58,16 +58,21 @@ namespace Nebula
             public readonly HashSet<ulong> Regions = new HashSet<ulong>();
             /// <summary>Scratch for the region diff, kept per client so the diff allocates nothing.</summary>
             public readonly HashSet<ulong> NextRegions = new HashSet<ulong>();
-            /// <summary>Per-netId view sequence (design D4): a late despawn of an older view cannot kill a re-entered replica.</summary>
+            /// <summary>Per-netId view sequence, so a late despawn of an older view cannot kill a re-entered replica.</summary>
             public readonly Dictionary<ulong, ushort> ViewSeq = new Dictionary<ulong, ushort>();
             /// <summary>Container rows this client has been sent, so ownership travels as a delta and not as the lease table.</summary>
             public readonly HashSet<string> KnownContainers = new HashSet<string>();
-            /// <summary>Evaluate at the next tick rather than at the scheduled time (pawn, instance, carrier, focus region or policy changed).</summary>
+            /// <summary>An interest limit this client ran into (foci, box size, container rows) has been reported; said once, not four times a second.</summary>
+            public bool InterestLimitWarned;
+            /// <summary>Evaluate at the next tick rather than waiting for this client's turn in <see cref="InterestSchedule"/> (pawn, instance, carrier, focus mode, focus region or policy changed).</summary>
             public bool InterestDirty = true;
-            public double NextInterestEval;
             /// <summary>A game-set tag a policy filters on (<see cref="NebulaGateway.SetClientTag"/>).</summary>
             public byte Team;
-            /// <summary>The client's validated focus hint, if it has sent one (<see cref="FocusHintFilter"/>).</summary>
+            /// <summary>Game-set flags a policy filters on (<see cref="NebulaGateway.SetClientTags"/>).</summary>
+            public ulong Tags;
+            /// <summary>What the server lets this client's focus hint do (<see cref="NebulaGateway.SetClientFocusMode"/>). Never set by the client.</summary>
+            public FocusMode FocusMode = FocusMode.PawnClamped;
+            /// <summary>The client's validated focus hint in absolute world coordinates, if it has sent one (<see cref="FocusHintFilter"/>).</summary>
             public bool HasHint;
             public double HintX, HintY, HintZ;
             /// <summary>The newest hint generation seen (<see cref="ClientFocusHintMsg.Generation"/>); older hints are late arrivals.</summary>
@@ -146,8 +151,13 @@ namespace Nebula
             /// cost back into the loop interest management exists to take it out of.
             /// </summary>
             public double AbsX, AbsY, AbsZ;
-            /// <summary>The region this record is bucketed in (0 when it is wide or global).</summary>
+            /// <summary>
+            /// The region this record is bucketed in (0 when it is wide or global). A cache of
+            /// <c>InterestIndex.TryGetPlacement</c>, so for a carried entity it is the <b>root carrier's</b>
+            /// region and not one derived from the entity's own prefab settings.
+            /// </summary>
             public ulong Region;
+            /// <summary>Where the index actually holds it; see <see cref="Region"/> for what "actually" means.</summary>
             public InterestPlacement Placement;
             /// <summary>From the spawn message, clamped by the gateway's <see cref="InterestSettings.MaxRadius"/>.</summary>
             public float RelevanceRadius;
@@ -247,11 +257,19 @@ namespace Nebula
         private readonly NetworkReader _reader = new NetworkReader();
         private readonly NetworkWriter _scratch = new NetworkWriter(1024);
 
+        /// <summary>
+        /// The static or runtime container a reference ultimately sits in, walking out through every dynamic
+        /// carrier. This is the simulation scope instance isolation is decided on, so the walk has no depth cap
+        /// through every carrier: a crate deep inside a ship inside a private instance must resolve to that instance and
+        /// not to whatever an exhausted walk happened to be holding. The bound is the number of records the
+        /// gateway holds — container references come off the wire, and a chain longer than that has revisited
+        /// one, which resolves to null and fails closed in <see cref="CanObserve"/>.
+        /// </summary>
         private Container ScopeContainer(ContainerRef reference)
         {
-            for (int depth = 0; reference.IsDynamic && depth < 16; depth++)
+            for (int hops = 0; reference.IsDynamic; hops++)
             {
-                if (!_entities.TryGetValue(reference.NetId, out var carrier)) return null;
+                if (hops > _entities.Count || !_entities.TryGetValue(reference.NetId, out var carrier)) return null;
                 reference = carrier.Container;
             }
             return ContainerRegistry.Resolve(reference);
@@ -270,7 +288,7 @@ namespace Nebula
             if (target != null && target.InstanceId != 0) return false;
             var view = source?.Instance;
             return view != null && view.ObservePublic && new Bounds(view.ObservationCenter, view.ObservationSize)
-                .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition, 0));
+                .Contains(WorldPosition(entity.Container, entity.LastSpawn.LocalPosition));
         }
 
         /// <summary>
@@ -467,6 +485,13 @@ namespace Nebula
             try { return (ulong)Math.Max(0L, Process.GetCurrentProcess().WorkingSet64); } catch { return 0; }
         }
 
+        /// <summary>
+        /// Exceptions thrown by a game extension running in this gateway, since the process started: policy
+        /// calls, client events, posted work. It is a total and not a rate, because the number that matters is
+        /// "is it still zero". Set by <c>GatewayExtensionHost</c>; reported as <see cref="GatewayStats.ExtensionErrors"/>.
+        /// </summary>
+        public uint ExtensionErrors;
+
         /// <summary>The numbers for one heartbeat: rates since the previous one, then the counters start over.</summary>
         private GatewayStats CollectStats()
         {
@@ -500,6 +525,7 @@ namespace Nebula
                 WorkerConnections = workers,
                 Ready = IsReady,
                 Draining = Draining,
+                ExtensionErrors = ExtensionErrors,
             };
             FillInterestStats(ref stats, interval);
             foreach (var c in _clientsById.Values) c.BytesOut = 0;
@@ -798,7 +824,9 @@ namespace Nebula
                 msg.Write(_writer, MsgId.EntitySpawn);
                 BroadcastEntity(rec, Delivery.ReliableOrdered);
             }
-            OnEntityArrived(rec);
+            // A carrier can arrive after the passengers that named it: indexing it has just reseated them all,
+            // so they are offered to the clients of its region here and not left waiting for a state entry.
+            ConsiderCarried(rec);
         }
 
         private void OnEntityDespawn(WorkerConn w, EntityDespawnMsg msg)
@@ -902,10 +930,10 @@ namespace Nebula
                 rec.LastSpawn.Epoch = entry.Epoch;
                 if (rec.Container != entry.Container && (entry.Fields & TransformFields.Location) == 0)
                 {
-                    var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
-                    var rotation = WorldRotation(rec.Container, rec.LastSpawn.LocalRotation, 0);
-                    rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world, 0);
-                    rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity, 0)) * rotation;
+                    var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition);
+                    var rotation = WorldRotation(rec.Container, rec.LastSpawn.LocalRotation);
+                    rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world);
+                    rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity)) * rotation;
                 }
                 bool changedScope = ScopeContainer(rec.Container)?.InstanceId != ScopeContainer(entry.Container)?.InstanceId;
                 bool changedCarrier = rec.Container.IsDynamic != entry.Container.IsDynamic || rec.Container.NetId != entry.Container.NetId;
@@ -915,7 +943,7 @@ namespace Nebula
                 entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
                 // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
                 // has to be rebucketed, and only when its region key actually changed.
-                if (changedCarrier) _index.SetCarrier(rec.NetId, entry.Container.IsDynamic ? entry.Container.NetId : 0);
+                if (changedCarrier) RelinkCarrier(rec);
                 // The observers that already hold this entity need the new container's lease row, or they cannot
                 // resolve the frame the pose that follows is expressed in. Entering a set is not the only way an
                 // entity comes to name a container a client has never heard of: walking into the next chunk is.
@@ -925,7 +953,9 @@ namespace Nebula
                 {
                     for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].InterestDirty = true;
                     if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var moved)) moved.InterestDirty = true;
-                    OnEntityArrived(rec);
+                    // The passengers move with it: a ship that changed scope or carrier reseated its whole
+                    // subtree, and nothing else offers those records to the clients of where it now sits.
+                    ConsiderCarried(rec);
                 }
                 _scratchEntries.Add(entry);
             }
@@ -1030,45 +1060,75 @@ namespace Nebula
 
         /// <summary>
         /// A container-local position as a world position. The gateway holds no entities, so a dynamic container's
-        /// frame is rebuilt from its carrier's newest pose (itself container-local, hence the recursion): a
+        /// frame is rebuilt from its carrier's newest pose (itself container-local, hence the walk): a
         /// DynamicContainer's frame is its carrier's root transform, which is what makes this possible here.
+        /// <para>
+        /// Every carrier in the chain is folded in, however deep. A coordinate that stopped partway
+        /// out would be in some intermediate ship's frame while being used as a world position, which is a
+        /// silently wrong region key and a silently wrong observation-window test. Container references come off
+        /// the wire rather than through the cycle-refusing index, so the bound is the number of records held.
+        /// Iterative, so a corrupt chain costs a loop rather than the stack.
+        /// </para>
         /// </summary>
-        private Vector3 WorldPosition(ContainerRef container, Vector3 local, int depth)
+        private Vector3 WorldPosition(ContainerRef container, Vector3 local)
         {
-            if (container.IsDynamic)
+            for (int hops = 0; container.IsDynamic; hops++)
             {
-                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
-                var inParent = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
-                return WorldPosition(carrier.Container, inParent, depth + 1);
+                if (hops > _entities.Count || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
+                container = carrier.Container;
             }
             var c = ContainerRegistry.Resolve(container);
             return c != null ? c.ToWorld(local) : local;
         }
 
-        private Quaternion WorldRotation(ContainerRef container, Quaternion local, int depth)
+        /// <inheritdoc cref="WorldPosition"/>
+        private Quaternion WorldRotation(ContainerRef container, Quaternion local)
         {
-            if (container.IsDynamic)
+            for (int hops = 0; container.IsDynamic; hops++)
             {
-                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
-                return WorldRotation(carrier.Container, carrier.LastSpawn.LocalRotation, depth + 1) * local;
+                if (hops > _entities.Count || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                local = carrier.LastSpawn.LocalRotation * local;
+                container = carrier.Container;
             }
             var c = ContainerRegistry.Resolve(container);
             return c != null ? c.Rotation * local : local;
         }
 
-        private Vector3 ContainerPosition(ContainerRef container, Vector3 world, int depth)
+        /// <summary>
+        /// The inverse of <see cref="WorldPosition"/>: a world position in one container's local frame. The
+        /// carriers are collected outwards and then applied inwards, which is the same order the recursion it
+        /// replaces unwound in, with the same unbounded depth and the same records-held bound.
+        /// </summary>
+        private Vector3 ContainerPosition(ContainerRef container, Vector3 world)
         {
-            if (container.IsDynamic)
+            _carrierChain.Clear();
+            var at = container;
+            while (at.IsDynamic)
             {
-                if (depth > 8 || !_entities.TryGetValue(container.NetId, out var carrier)) return world;
-                var parent = ContainerPosition(carrier.Container, world, depth + 1);
-                var relative = Quaternion.Inverse(carrier.LastSpawn.LocalRotation) * (parent - carrier.LastSpawn.LocalPosition);
-                var scale = carrier.LastSpawn.LocalScale;
-                return new Vector3(scale.x != 0 ? relative.x / scale.x : 0, scale.y != 0 ? relative.y / scale.y : 0, scale.z != 0 ? relative.z / scale.z : 0);
+                if (_carrierChain.Count > _entities.Count || !_entities.TryGetValue(at.NetId, out var carrier)) break;
+                _carrierChain.Add(carrier);
+                at = carrier.Container;
             }
-            var c = ContainerRegistry.Resolve(container);
-            return c != null ? c.ToLocal(world) : world;
+            Vector3 local = world;
+            if (!at.IsDynamic)
+            {
+                var c = ContainerRegistry.Resolve(at);
+                if (c != null) local = c.ToLocal(world);
+            }
+            for (int i = _carrierChain.Count - 1; i >= 0; i--)
+            {
+                var carrier = _carrierChain[i];
+                var relative = Quaternion.Inverse(carrier.LastSpawn.LocalRotation) * (local - carrier.LastSpawn.LocalPosition);
+                var scale = carrier.LastSpawn.LocalScale;
+                local = new Vector3(scale.x != 0 ? relative.x / scale.x : 0, scale.y != 0 ? relative.y / scale.y : 0, scale.z != 0 ? relative.z / scale.z : 0);
+            }
+            _carrierChain.Clear();
+            return local;
         }
+
+        /// <summary>Carriers between a reference and the static container it sits in; reused by <see cref="ContainerPosition"/>.</summary>
+        private readonly List<EntityRecord> _carrierChain = new List<EntityRecord>();
 
         private void OnOwnerState(WorkerConn w, NetworkReader r)
         {
@@ -1410,6 +1470,10 @@ namespace Nebula
             c.Visible.Clear();
             c.ViewSeq.Clear();
             c.InterestDirty = true;
+            _schedule.Add(c.ClientId);
+            // Before the first evaluation, so a server extension's tags and focus mode are already in place when
+            // it runs: the first thing this client is sent is decided by what that evaluation finds.
+            RaiseClientEvent(ClientJoined, c, nameof(ClientJoined));
             SendOwnershipFull(c);
             ReconcileView(c);
             if (c.PawnNetId != 0)

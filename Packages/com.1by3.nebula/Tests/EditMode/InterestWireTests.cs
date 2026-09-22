@@ -93,10 +93,14 @@ namespace Nebula.Tests
         [Test]
         public void AFocusHintRoundTrips()
         {
-            var hint = ClientFocusHintMsg.Read(Written(new ClientFocusHintMsg { Position = new Vector3(1.5f, -2.5f, 3.5f) }.Write, MsgId.ClientFocusHint));
-            Assert.AreEqual(1.5f, hint.Position.x);
-            Assert.AreEqual(-2.5f, hint.Position.y);
-            Assert.AreEqual(3.5f, hint.Position.z);
+            // Absolute world coordinates in double: a strategy camera 40 km out is a place a float cannot name
+            // to the metre, and the gateway buckets by exactly these numbers.
+            var hint = ClientFocusHintMsg.Read(Written(new ClientFocusHintMsg { X = 41234.5, Y = -2.5, Z = 3.25 }.Write, MsgId.ClientFocusHint));
+            Assert.AreEqual(41234.5, hint.X);
+            Assert.AreEqual(-2.5, hint.Y);
+            Assert.AreEqual(3.25, hint.Z);
+            Assert.AreEqual(1e-7, ClientFocusHintMsg.Read(Written(new ClientFocusHintMsg { X = 1e-7 }.Write, MsgId.ClientFocusHint)).X,
+                "the point travels as a double and is not rounded through a float on the way");
 
             var clear = ClientFocusHintMsg.Read(Written(new ClientFocusHintMsg { Generation = 7, Clear = true }.Write, MsgId.ClientFocusHint));
             Assert.IsTrue(clear.Clear);

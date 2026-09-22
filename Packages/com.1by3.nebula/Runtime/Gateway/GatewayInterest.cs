@@ -10,7 +10,7 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// Why a gateway holds a link to a worker (design §5). A link with no reason left is dropped after
+    /// Why a gateway holds a link to a worker. A link with no reason left is dropped after
     /// <see cref="InterestSettings.LinkLingerSeconds"/>; the reasons are reported in
     /// <see cref="GatewayStats.WorkerLinkReasons"/> because "why am I talking to 40 workers" is the first
     /// question anyone asks of a mesh that is not scoping.
@@ -82,6 +82,10 @@ namespace Nebula
                     AlwaysRelevant = root.AlwaysRelevant,
                     InterestGroup = value.InterestGroup,
                     CarrierNetId = value.Container.IsDynamic ? value.Container.NetId : 0,
+                    // The scope is resolved through the whole carrier chain, exactly as CanObserve resolves it:
+                    // a crate in a ship in a private instance is in that instance, and a policy that filtered on
+                    // a zero here would have been filtering on "the public world" for everything carried.
+                    InstanceId = _gateway.ScopeContainer(value.Container)?.InstanceId ?? 0,
                 };
             }
 
@@ -98,6 +102,14 @@ namespace Nebula
         private readonly Dictionary<string, WorkerLink> _links = new Dictionary<string, WorkerLink>();
         private readonly FocusHintFilter _hintFilter = new FocusHintFilter();
         private IInterestPolicy _policy = DefaultInterestPolicy.Instance;
+        /// <summary><see cref="_policy"/> when it also decides focus hints; resolved once per assignment, not per hint.</summary>
+        private IFocusHintPolicy _hintPolicy;
+        /// <summary>Whose turn it is to be evaluated: routine work spread over ticks, dirty clients first.</summary>
+        private readonly InterestSchedule _schedule = new InterestSchedule();
+        private readonly List<ulong> _dueClients = new List<ulong>();
+        /// <summary>Cached so the per-tick dirty scan does not allocate a delegate.</summary>
+        private Func<ulong, bool> _isClientDirty;
+        private double _lastInterestTickAt = -1;
 
         /// <summary>Resolved once per control-plane change: which workers a region's entities could live on.</summary>
         private readonly Dictionary<ulong, List<string>> _regionWorkers = new Dictionary<ulong, List<string>>();
@@ -116,7 +128,23 @@ namespace Nebula
         private readonly List<InterestSubscribeMsg> _subOutbox = new List<InterestSubscribeMsg>();
         private readonly List<string> _linkScratch = new List<string>();
         private readonly List<ulong> _evictScratch = new List<ulong>();
+        /// <summary>A carrier's subtree while its records' cached placement is brought in line with the index.</summary>
+        private readonly List<ulong> _placementScratch = new List<ulong>();
+        /// <summary>The same walk for the "who should hear about this now" pass; never the placement list, which may be in use.</summary>
+        private readonly List<ulong> _arrivedScratch = new List<ulong>();
+        /// <summary>Passengers of a carrier being taken out of the index, so their own placement can be read back.</summary>
+        private readonly List<ulong> _orphanScratch = new List<ulong>();
+        /// <summary>Entities already reported for a refused carrier link, so a cycle is logged once and not per tick.</summary>
+        private readonly HashSet<ulong> _carrierCycleWarned = new HashSet<ulong>();
+        /// <summary>The revocation pass has scratch of its own: it can run inside a tick, between evaluations.</summary>
+        private readonly List<ulong> _revokeLeft = new List<ulong>();
+        /// <summary>Never written to; <see cref="ApplyInterestChanges"/> wants an "entered" list and a revocation has none.</summary>
+        private readonly List<ulong> _noEntered = new List<ulong>();
+        private readonly List<ClientConn> _revalidateScratch = new List<ClientConn>();
+        private bool _revalidating;
         private readonly List<string> _containerIdScratch = new List<string>();
+        /// <summary>The same ids as a set: foci overlap, and a linear scan of a few hundred rows per focus is not free.</summary>
+        private readonly HashSet<string> _containerIdSeen = new HashSet<string>();
         private readonly List<ContainerOwnershipEntry> _upsertScratch = new List<ContainerOwnershipEntry>();
         private readonly List<string> _removeScratch = new List<string>();
         private readonly NetworkWriter _interestWriter = new NetworkWriter(1024);
@@ -137,14 +165,24 @@ namespace Nebula
 
         private double _nextSubscriptionAt;
         private long _spawnsSent, _despawnsSent;
+        private long _containerBudgetHits;
         private double _evalMsSum, _evalMsMax;
         private long _evalCount;
         private bool _subscriptionsDirty = true;
 
         /// <summary>
-        /// The game's say in what each client hears about (design §7). Defaults to
+        /// The game's say in what each client hears about. Defaults to
         /// <see cref="DefaultInterestPolicy"/>: one focus at the pawn plus the client's validated hint. Compose
-        /// several with <see cref="InterestPolicies.Combine"/>. Setting it re-evaluates every client at once.
+        /// several with <see cref="InterestPolicies.Combine"/>. If the policy also implements
+        /// <see cref="IFocusHintPolicy"/> it gets the say over focus hints too.
+        /// <para>
+        /// Install it before the gateway's first tick — a policy is a security filter, and one installed while
+        /// clients are already connected has not been asked about what they can already see. Assigning it is
+        /// the next best thing, and it fails closed: every client's current set is re-authorized against the
+        /// new policy <b>synchronously, inside this assignment</b> (<see cref="RevalidateAllInterest"/>), so
+        /// nothing the new policy refuses is relayed to anybody afterwards. What the new policy newly allows
+        /// arrives at the clients' next evaluations, which are still spread over the following ticks.
+        /// </para>
         /// </summary>
         public IInterestPolicy InterestPolicy
         {
@@ -152,9 +190,28 @@ namespace Nebula
             set
             {
                 _policy = value ?? DefaultInterestPolicy.Instance;
-                foreach (var c in _clientsById.Values) c.InterestDirty = true;
+                _hintPolicy = _policy as IFocusHintPolicy;
+                RevalidateAllInterest();
             }
         }
+
+        /// <summary>Focus hints from clients that survived validation and moved a set (<see cref="FocusHintFilter"/>).</summary>
+        public long FocusHintsAccepted => _hintFilter.Accepted;
+        /// <summary>Accepted hints that were pulled back to <see cref="InterestSettings.HintMaxDistance"/> of the pawn.</summary>
+        public long FocusHintsClamped => _hintFilter.Clamped;
+        /// <summary>
+        /// Hints dropped for being over <see cref="InterestSettings.HintMaxHz"/>. Counted per <i>attempt</i>, so
+        /// a client whose hints are all refused for some other reason still shows up here rather than nowhere.
+        /// </summary>
+        public long FocusHintsDroppedByRate => _hintFilter.DroppedRate;
+        /// <summary>Hints dropped for being NaN, infinite, or further out than any world (<see cref="FocusHintFilter.MaxMagnitude"/>).</summary>
+        public long FocusHintsDroppedMalformed => _hintFilter.DroppedMalformed;
+        /// <summary>
+        /// Hints dropped because this client may not have one: no pawn to clamp to in
+        /// <see cref="FocusMode.PawnClamped"/>, <see cref="FocusMode.Disabled"/>, or an
+        /// <see cref="IFocusHintPolicy"/> that refused it.
+        /// </summary>
+        public long FocusHintsDroppedUnauthorized => _hintFilter.DroppedUnauthorized;
 
         /// <summary>The resolved interest knobs this gateway runs on (clamped; see <see cref="InterestSettings.Validate"/>).</summary>
         public InterestSettings InterestSettingsInUse => _interest;
@@ -162,34 +219,261 @@ namespace Nebula
         public InterestGrid InterestGridInUse => _interestGrid;
         /// <summary>Entity records cached: what this gateway's clients' subscriptions bring in, not the world.</summary>
         public int CachedEntityCount => _entities.Count;
+
+        /// <summary>
+        /// Whether this gateway holds a record for one entity. The count above says how much is cached; this says
+        /// <i>what</i>, which is the only way to tell "never sent here" from "sent and filtered out per client" —
+        /// a distinction a client-side set cannot answer.
+        /// </summary>
+        public bool IsEntityCached(ulong netId) => _entities.ContainsKey(netId);
+
+        /// <summary>
+        /// Where this gateway currently has an entity bucketed: its <i>effective</i> placement, which for a
+        /// carried entity is its root carrier's and not what its own prefab asked for. For tests
+        /// and for the debug tooling; false when no record is held.
+        /// </summary>
+        public bool TryGetCachedPlacement(ulong netId, out InterestPlacement placement, out ulong region)
+        {
+            if (_entities.TryGetValue(netId, out var rec)) { placement = rec.Placement; region = rec.Region; return true; }
+            placement = InterestPlacement.Region;
+            region = 0;
+            return false;
+        }
         /// <summary>Distinct regions subscribed across every worker link.</summary>
         public int SubscribedRegionCount => _subscribedRegions.Count;
         /// <summary>Worker links currently held, for a test or an operator that wants the number without the heartbeat.</summary>
         public int WorkerLinkCount => _links.Count;
 
         /// <summary>
+        /// Most container rows one of this gateway's clients may be told about in one evaluation
+        /// (<see cref="InterestSettings.MaxContainerRows"/> at the world's cell size). Derived from the interest
+        /// settings, not configured separately.
+        /// </summary>
+        public int ContainerRowCap => _interest.MaxContainerRows(Config.ResolveWorldCellSize());
+
+        /// <summary>
+        /// Evaluations in which a client's foci asked for more container rows than <see cref="ContainerRowCap"/>
+        /// allows, so the far ones were withheld. A number that keeps climbing means a policy is handing out
+        /// more or wider foci than the mesh is sized for; it is never a correctness problem, because the rows
+        /// entities stand in are collected before the cap applies.
+        /// </summary>
+        public long ContainerBudgetHits => _containerBudgetHits;
+
+        /// <summary>
         /// A byte the game attaches to a client for its policy to filter on (team, faction, party). It is server
         /// state: the client never sends it, which is what makes a team filter a security boundary rather than a
-        /// suggestion. Changing it re-evaluates the client at once.
+        /// suggestion. Changing it revokes at once and reveals shortly after: everything the policy no longer
+        /// authorizes under the new tag is despawned inside this call (<see cref="RevalidateInterest"/>), and
+        /// what the new tag newly allows arrives at the client's next evaluation.
         /// </summary>
         public void SetClientTag(ulong clientId, byte team)
         {
             if (!_clientsById.TryGetValue(clientId, out var c) || c.Team == team) return;
             c.Team = team;
-            c.InterestDirty = true;
+            // The server has just changed what this client is allowed; its hint budget should not still be
+            // spent on the refusals it collected under the old tag.
+            _hintFilter.ResetBudget(clientId);
+            RevalidateInterest(c);
         }
 
         /// <summary>What <see cref="SetClientTag"/> last set for this client (0 by default).</summary>
         public byte GetClientTag(ulong clientId) => _clientsById.TryGetValue(clientId, out var c) ? c.Team : (byte)0;
 
         /// <summary>
-        /// Re-evaluate this client on the next tick rather than at its next scheduled evaluation. The game calls
-        /// it when something its policy depends on changed (a party, a fog-of-war reveal); the gateway calls it
-        /// when the pawn, instance, carrier or focus region changed.
+        /// Sixty-four more bits of the same thing (<see cref="InterestClient.Tags"/>): alliances a faction is in,
+        /// roles a player holds, fronts a commander is watching — anything a policy wants to test that does not
+        /// fit in <see cref="SetClientTag"/>'s single byte. Server state, like the tag, and with the same
+        /// timing: what the new tags no longer authorize is despawned inside this call, and what they newly
+        /// reveal arrives at the client's next evaluation.
+        /// </summary>
+        public void SetClientTags(ulong clientId, ulong tags)
+        {
+            if (!_clientsById.TryGetValue(clientId, out var c) || c.Tags == tags) return;
+            c.Tags = tags;
+            _hintFilter.ResetBudget(clientId);
+            RevalidateInterest(c);
+        }
+
+        /// <summary>What <see cref="SetClientTags"/> last set for this client (0 by default).</summary>
+        public ulong GetClientTags(ulong clientId) => _clientsById.TryGetValue(clientId, out var c) ? c.Tags : 0;
+
+        /// <summary>
+        /// How far this client's own focus hint may move its interest. The default is
+        /// <see cref="FocusMode.PawnClamped"/>, so a hint is worth at most
+        /// <see cref="InterestSettings.HintMaxDistance"/> of the pawn and a client with no pawn has no hint at
+        /// all; <see cref="FocusMode.Free"/> is what gives a strategy camera or a spectator the run of the world.
+        /// Only the server may set it — the client cannot ask for it, and cannot tell that it has it except by
+        /// what it is sent.
+        /// <para>
+        /// Instance isolation is unaffected in every mode: a free focus is a wider view of the world the client
+        /// is already in, never a way into another one.
+        /// </para>
+        /// Changing the mode drops the hint the gateway is holding, because a hint accepted under one mode is
+        /// not an input the next one ever validated; the client's next hint (within 1/<see
+        /// cref="InterestSettings.HintMaxHz"/> s) is judged afresh.
+        /// </summary>
+        public void SetClientFocusMode(ulong clientId, FocusMode mode)
+        {
+            if (!_clientsById.TryGetValue(clientId, out var c) || c.FocusMode == mode) return;
+            c.FocusMode = mode;
+            c.HasHint = false;
+            // A client the server has just freed cannot know it, and would otherwise have to wait out the
+            // attempt budget it spent while its hints were being refused before its camera answered.
+            _hintFilter.ResetBudget(clientId);
+            // Dropping the hint only narrows the foci, which is a distance and not a boundary: the entities it
+            // was holding leave through the usual hysteresis at the next evaluation.
+            c.InterestDirty = true;
+        }
+
+        /// <summary>What <see cref="SetClientFocusMode"/> last set for this client (<see cref="FocusMode.PawnClamped"/> by default).</summary>
+        public FocusMode GetClientFocusMode(ulong clientId) =>
+            _clientsById.TryGetValue(clientId, out var c) ? c.FocusMode : FocusMode.PawnClamped;
+
+        /// <summary>
+        /// Put this client at the front of the evaluation queue: a <b>reveal</b>, and additive work generally
+        /// (a party joined, a unit was given to the player, a fog cell was uncovered). The gateway calls it
+        /// itself when the pawn, instance, carrier, focus mode or focus region changed.
+        /// <para>
+        /// The timing is honest about what it is: dirty clients jump the routine rotation but are still
+        /// bounded per tick (<see cref="InterestSchedule.MinDirtyPerTick"/>,
+        /// <see cref="InterestSchedule.DirtyBurst"/>), so on a busy gateway a client may wait a few ticks for
+        /// its turn. That is the right trade for showing something <i>more</i>, and the wrong one for taking
+        /// something away: for a change that <b>tightens</b> what may be seen call
+        /// <see cref="RevalidateInterest"/>, which revokes before this call would even have run.
+        /// </para>
         /// </summary>
         public void MarkInterestDirty(ulong clientId)
         {
             if (_clientsById.TryGetValue(clientId, out var c)) c.InterestDirty = true;
+        }
+
+        /// <summary>
+        /// The same for every client: a world-wide reveal. The evaluations are spread over the following ticks
+        /// rather than all run on the next one — see <see cref="InterestSchedule"/> — so this is cheap to call
+        /// on a live gateway, and for the same reason it is <b>not</b> how a revocation is applied. Use
+        /// <see cref="RevalidateAllInterest"/> when a sweep can take visibility away.
+        /// </summary>
+        public void MarkAllInterestDirty()
+        {
+            foreach (var c in _clientsById.Values) c.InterestDirty = true;
+        }
+
+        /// <summary>
+        /// Re-authorize everything this client can already see, <b>now</b>, and despawn whatever
+        /// <see cref="IInterestPolicy.Authorize"/> no longer allows before any further traffic about it is
+        /// relayed. This is the immediate half of <see cref="MarkInterestDirty"/> and the call to make whenever
+        /// a change can take visibility away: a team or alliance change, a stealth roll, fog closing over a
+        /// region, an access rule revoked.
+        /// <para>
+        /// It costs one authorization per entity the client already holds — no grid query, no candidate scan —
+        /// and allocates nothing. It never <i>adds</i> anything: the client is also marked dirty, so what the
+        /// same change reveals arrives at its next evaluation, within an eval interval.
+        /// </para>
+        /// <para>
+        /// Safe to call from a policy callback: a nested call falls back to marking the client dirty rather
+        /// than re-entering the pass.
+        /// </para>
+        /// </summary>
+        public void RevalidateInterest(ulong clientId)
+        {
+            if (_clientsById.TryGetValue(clientId, out var c)) RevalidateInterest(c);
+        }
+
+        /// <summary>
+        /// <see cref="RevalidateInterest"/> for every client: a world-wide tightening (a new policy, a war
+        /// declared, a fog sweep that can close as well as open). Every unauthorized replica on this gateway is
+        /// gone by the time the call returns.
+        /// <para>
+        /// The cost is one authorization per replica the gateway is currently serving — about what one round of
+        /// evaluation costs, concentrated into this call instead of spread over an eval interval. That is
+        /// affordable for the events this is for, and it is the reason the routine rotation is still staggered:
+        /// this is not a per-tick path, and nothing calls it for ordinary movement or camera updates.
+        /// </para>
+        /// </summary>
+        public void RevalidateAllInterest()
+        {
+            // The clients are copied out first: an authorization callback is game code, and a collection
+            // modified under a foreach would turn a policy that disconnects somebody into an exception here.
+            _revalidateScratch.Clear();
+            foreach (var c in _clientsById.Values) _revalidateScratch.Add(c);
+            for (int i = 0; i < _revalidateScratch.Count; i++) RevalidateInterest(_revalidateScratch[i]);
+            _revalidateScratch.Clear();
+        }
+
+        private void RevalidateInterest(ClientConn client)
+        {
+            // Whatever else happens, the additive half is scheduled: a revocation pass adds nothing, and a
+            // caller that tightened one rule and loosened another must still see the loosening.
+            client.InterestDirty = true;
+            if (!client.Welcomed || client.Interest == null || _revalidating) return;
+            _revalidating = true;
+            try
+            {
+                // The snapshot is retaken here and not reused: the tag, the mode or the pawn is exactly what
+                // just changed, and authorizing against the stale one would answer the previous question.
+                client.Interest.Client = SnapshotClient(client);
+                _revokeLeft.Clear();
+                client.Interest.Revalidate(_index, _revokeLeft);
+                // ApplyInterestChanges keeps design §8's order: the despawns, then the container rows that
+                // nothing needs any more.
+                if (_revokeLeft.Count > 0) ApplyInterestChanges(client, _noEntered, _revokeLeft);
+                _revokeLeft.Clear();
+            }
+            finally { _revalidating = false; }
+        }
+
+        /// <summary>
+        /// A client the gateway has admitted, as the server-side surface reports it. A snapshot taken on the
+        /// gateway loop: nothing in it is a live reference.
+        /// </summary>
+        public readonly struct GatewayClientInfo
+        {
+            /// <summary>The mesh-wide session id; the same across a reconnection with a session token.</summary>
+            public readonly ulong ClientId;
+            /// <summary>The authenticated subject (<c>PlayerIdentity</c>), "" when there is none.</summary>
+            public readonly string Identity;
+            public readonly string Name;
+            /// <summary>The simulation scope the client's pawn is in; 0 is the public world (and a client with no pawn yet).</summary>
+            public readonly ulong InstanceId;
+            public readonly bool IsBot;
+            /// <summary>The session was reclaimed (a reconnection), not started fresh.</summary>
+            public readonly bool Reclaimed;
+
+            public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed)
+            {
+                ClientId = clientId; Identity = identity ?? ""; Name = name ?? "";
+                InstanceId = instanceId; IsBot = isBot; Reclaimed = reclaimed;
+            }
+        }
+
+        /// <summary>
+        /// An authenticated client has been welcomed: it has a session id and an identity, and its interest is
+        /// about to be evaluated for the first time. This is where a server extension gives it its tags and its
+        /// focus mode, because both are read by the very first evaluation.
+        /// <para>
+        /// Raised on the gateway loop, synchronously, and the gateway is mid-welcome: a handler may call the
+        /// <c>SetClient…</c>/<c>MarkInterestDirty</c> methods and read the gateway's own state, but it must not
+        /// block, and it must not throw (an exception is caught and logged, never passed to the client).
+        /// </para>
+        /// </summary>
+        public event Action<GatewayClientInfo> ClientJoined;
+
+        /// <summary>
+        /// A welcomed client is gone from this gateway: it disconnected, was rejected, or its session was taken
+        /// over somewhere else (in which case another gateway raises its own <see cref="ClientJoined"/>). Raised
+        /// on the gateway loop under the same rules as <see cref="ClientJoined"/>; by the time it runs the
+        /// client's interest state has already been let go, so its id no longer resolves.
+        /// </summary>
+        public event Action<GatewayClientInfo> ClientLeft;
+
+        private void RaiseClientEvent(Action<GatewayClientInfo> handler, ClientConn client, string what)
+        {
+            if (handler == null) return;
+            ulong instance = 0;
+            if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
+                instance = ScopeContainer(pawn.Container)?.InstanceId ?? 0;
+            try { handler(new GatewayClientInfo(client.ClientId, client.Identity, client.Name, instance, client.IsBot, client.Reclaimed)); }
+            catch (Exception e) { NebulaLog.Error($"a {what} handler threw: {e.Message}"); }
         }
 
         /// <summary>Entities in one client's set right now (-1 when there is no such client). For tests and tooling.</summary>
@@ -219,11 +503,11 @@ namespace Nebula
         /// <summary>
         /// The record's absolute world position, cached on the record and refreshed only when a pose or container
         /// actually changes. The gateway never shifts its floating origin, so its world space <i>is</i> absolute
-        /// space and a region key computed here never moves under a client (design §3).
+        /// space and a region key computed here never moves under a client.
         /// </summary>
         private void RefreshAbsolute(EntityRecord rec)
         {
-            var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition, 0);
+            var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition);
             rec.AbsX = world.x;
             rec.AbsY = world.y;
             rec.AbsZ = world.z;
@@ -232,12 +516,18 @@ namespace Nebula
         /// <summary>
         /// The entity the interest decision is made on: itself, or the outermost carrier it rides in. Carried
         /// entities inherit their root carrier's decision so a passenger cannot pop separately from its ship.
+        /// <para>
+        /// The walk goes all the way up, however deep the chain. Stopping at a constant would make
+        /// a deep passenger judged at its own position rather than its ship's, which is the pop D3 exists to
+        /// prevent. Container references arrive on the wire rather than through the cycle-refusing index, so the
+        /// bound is the number of records held — a chain longer than that has revisited one.
+        /// </para>
         /// </summary>
         private EntityRecord RootOf(EntityRecord rec)
         {
-            for (int depth = 0; depth < 8 && rec.Container.IsDynamic; depth++)
+            for (int hops = 0; hops <= _entities.Count && rec.Container.IsDynamic; hops++)
             {
-                if (!_entities.TryGetValue(rec.Container.NetId, out var carrier)) break;
+                if (!_entities.TryGetValue(rec.Container.NetId, out var carrier) || carrier == rec) break;
                 rec = carrier;
             }
             return rec;
@@ -252,42 +542,145 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- the index
 
         /// <summary>
-        /// Put a record where the scans will find it: the global list when its prefab is always relevant, the wide
-        /// list when its own radius outreaches a region scan, otherwise the region its root carrier sits in.
+        /// Put a record where the scans will find it. The three lines below are the record's <b>own</b> placement —
+        /// the global list when its prefab is always relevant, the wide list when its own radius outreaches a region
+        /// scan, otherwise its region. Where it <i>actually</i> sits is the index's answer, which is read back by
+        /// <see cref="SyncCarriedPlacement"/>: while an entity rides in something it sits exactly where its root
+        /// carrier sits, and every gateway-side decision made from the cached placement has to agree.
         /// </summary>
         private void IndexEntity(EntityRecord rec)
         {
             RefreshAbsolute(rec);
-            if (rec.AlwaysRelevant) { _index.AddGlobal(rec.NetId, rec); rec.Region = 0; rec.Placement = InterestPlacement.Global; }
-            else if (rec.RelevanceRadius > _interest.Radius) { _index.AddWide(rec.NetId, rec); rec.Region = 0; rec.Placement = InterestPlacement.Wide; }
-            else
+            if (rec.AlwaysRelevant) _index.AddGlobal(rec.NetId, rec);
+            else if (rec.RelevanceRadius > _interest.Radius) _index.AddWide(rec.NetId, rec);
+            else _index.Add(rec.NetId, RegionOf(rec), rec);
+            // The item is in the index, so the link can only be Linked, Detached, Unchanged or Cycle here.
+            LinkCarrier(rec);
+            SyncCarriedPlacement(rec);
+        }
+
+        /// <summary>
+        /// The record's carrier changed — it boarded, it was put ashore, or the ship it rides in was itself moved
+        /// into another one. Re-link it and read the whole subtree's placement back, because a link moves
+        /// everything riding in the item as well as the item itself.
+        /// </summary>
+        private void RelinkCarrier(EntityRecord rec)
+        {
+            // A record with no index entry at all: put it back rather than leave a cached row no scan can find.
+            // IndexEntity links the carrier itself, so there is nothing more to do here.
+            if (LinkCarrier(rec) == CarrierLink.UnknownItem) { IndexEntity(rec); return; }
+            SyncCarriedPlacement(rec);
+        }
+
+        /// <summary>
+        /// Point the index at this record's carrier (0 when its container is not a dynamic one), reporting a
+        /// refused link. A cycle ("this crate is inside itself") is a bug in whatever decided the parenting; the
+        /// index keeps the link it had rather than accept a subtree it could not walk, and saying so once per
+        /// entity is the only way it is ever noticed.
+        /// </summary>
+        private CarrierLink LinkCarrier(EntityRecord rec)
+        {
+            ulong carrier = rec.Container.IsDynamic ? rec.Container.NetId : 0;
+            var result = _index.SetCarrier(rec.NetId, carrier);
+            if (result == CarrierLink.Cycle)
             {
-                ulong region = RegionOf(rec);
-                _index.Add(rec.NetId, region, rec);
-                rec.Region = region;
-                rec.Placement = InterestPlacement.Region;
+                if (_carrierCycleWarned.Add(rec.NetId))
+                    NebulaLog.Error($"entity #{rec.NetId} cannot be carried by #{carrier}: that would put it inside itself. The link is refused and #{rec.NetId} keeps carrier #{_index.CarrierOf(rec.NetId)}; fix whatever parented these containers on the worker that published it.");
             }
-            _index.SetCarrier(rec.NetId, rec.Container.IsDynamic ? rec.Container.NetId : 0);
+            else _carrierCycleWarned.Remove(rec.NetId);
+            return result;
+        }
+
+        /// <summary>
+        /// Copy the index's answer onto one record. <see cref="EntityRecord.Placement"/> and
+        /// <see cref="EntityRecord.Region"/> are a cache of where the entity sits, read by the eviction sweep and
+        /// by the region → clients fan-out; taking them from the entity's own prefab flags instead would keep an
+        /// always-relevant crate cached on a gateway its ship is nowhere near, and offer it to every client.
+        /// </summary>
+        private void ReadPlacement(EntityRecord rec)
+        {
+            if (!_index.TryGetPlacement(rec.NetId, out var placement, out ulong region)) return;
+            rec.Placement = placement;
+            rec.Region = region;
+        }
+
+        /// <summary>
+        /// <see cref="ReadPlacement"/> for a record and everything riding in it, to any depth. Called after
+        /// anything that can move a root: an index placement, a carrier link, a rebucket, a carrier arriving
+        /// after its passengers. There is no cap: the whole subtree moves or none of it does.
+        /// </summary>
+        private void SyncCarriedPlacement(EntityRecord rec)
+        {
+            ReadPlacement(rec);
+            if (!_index.HasCarried(rec.NetId)) return;
+            _placementScratch.Clear();
+            int count = _index.CollectCarried(rec.NetId, _placementScratch);
+            for (int i = 0; i < count; i++)
+                if (_entities.TryGetValue(_placementScratch[i], out var passenger)) ReadPlacement(passenger);
+            _placementScratch.Clear();
+        }
+
+        /// <summary>
+        /// <see cref="OnEntityArrived"/> for a record and everything riding in it: a ship that arrives somewhere
+        /// new brings its passengers with it, and they are not offered to that region's clients by anything else
+        /// until their own next state entry turns up.
+        /// </summary>
+        private void ConsiderCarried(EntityRecord rec)
+        {
+            // The ids are taken before anything is considered: an evaluation can evict a record, and the walk
+            // must not be reading the index while that happens.
+            _arrivedScratch.Clear();
+            int count = _index.HasCarried(rec.NetId) ? _index.CollectCarried(rec.NetId, _arrivedScratch) : 0;
+            OnEntityArrived(rec);
+            for (int i = 0; i < count; i++)
+                if (_entities.TryGetValue(_arrivedScratch[i], out var passenger)) OnEntityArrived(passenger);
+            _arrivedScratch.Clear();
         }
 
         /// <summary>Recompute the key only when the pose moved it: one multiply and floor per axis, then nothing.</summary>
         private void RebucketIfMoved(EntityRecord rec)
         {
-            if (rec.Placement != InterestPlacement.Region) { RefreshAbsolute(rec); _index.SetValue(rec.NetId, rec); return; }
             RefreshAbsolute(rec);
+            // Carried, or not bucketed by region at all: the index decides where it sits, and Move would refuse.
+            // The placement is still read back, because the carrier's own move may have just reseated it.
+            if (rec.Placement != InterestPlacement.Region || _index.CarrierOf(rec.NetId) != 0)
+            {
+                _index.SetValue(rec.NetId, rec);
+                ReadPlacement(rec);
+                return;
+            }
             ulong region = RegionOf(rec);
             if (region == rec.Region) return;
-            rec.Region = region;
-            _index.Move(rec.NetId, region);
-            OnEntityArrived(rec);
+            if (!_index.Move(rec.NetId, region)) { ReadPlacement(rec); return; }
+            SyncCarriedPlacement(rec);
+            ConsiderCarried(rec);
         }
 
-        private void UnindexEntity(EntityRecord rec) => _index.Remove(rec.NetId);
+        /// <summary>
+        /// Take a record out of the index. Removing a carrier orphans its passengers, and the index puts each of
+        /// them back on its own placement: their cached rows have to follow, or a passenger that outlives its
+        /// ship would stay addressed to the region the ship took away with it.
+        /// </summary>
+        private void UnindexEntity(EntityRecord rec)
+        {
+            _orphanScratch.Clear();
+            int orphans = _index.HasCarried(rec.NetId) ? _index.CollectCarried(rec.NetId, _orphanScratch) : 0;
+            _index.Remove(rec.NetId);
+            _carrierCycleWarned.Remove(rec.NetId);
+            for (int i = 0; i < orphans; i++)
+                if (_entities.TryGetValue(_orphanScratch[i], out var passenger)) ReadPlacement(passenger);
+            _orphanScratch.Clear();
+        }
 
         /// <summary>
         /// An entity spawned into, or rebucketed into, a region: test it against the clients whose subscribe discs
         /// cover that region and nobody else. This is the whole point of the region → clients map — without it
         /// every spawn in the world would cost one test per connected client.
+        /// <para>
+        /// The placement is the effective one, so a carried always-relevant or wide passenger costs the clients
+        /// of its carrier's region and no others: its own prefab settings do not make every client a candidate
+        /// for a crate in somebody else's ship.
+        /// </para>
         /// </summary>
         private void OnEntityArrived(EntityRecord rec)
         {
@@ -320,9 +713,17 @@ namespace Nebula
 
         private void RemoveObserver(EntityRecord rec, ClientConn client) => rec.Observers.Remove(client);
 
-        /// <summary>Drop the client from every entity that had it as an observer (it disconnected, or its session moved).</summary>
+        /// <summary>
+        /// Drop the client from every entity that had it as an observer (it disconnected, or its session moved).
+        /// Every path that removes a client goes through here, so it is also where the rotation lets go of it
+        /// and where <see cref="ClientLeft"/> is raised.
+        /// </summary>
         private void ForgetClientInterest(ClientConn client)
         {
+            bool welcomed = client.Welcomed;
+            // Only if the session id really is gone: a takeover removes the old link *after* the replacement has
+            // claimed the same id, and taking that id out of the rotation would stop evaluating the new client.
+            if (!_clientsById.ContainsKey(client.ClientId)) _schedule.Remove(client.ClientId);
             if (client.Interest != null)
             {
                 foreach (ulong netId in client.Interest.Ids)
@@ -337,27 +738,38 @@ namespace Nebula
             client.KnownContainers.Clear();
             _hintFilter.Forget(client.ClientId);
             _subscriptionsDirty = true;
+            if (welcomed) RaiseClientEvent(ClientLeft, client, nameof(ClientLeft));
         }
 
         // ------------------------------------------------------------------------------------------- evaluation
 
         /// <summary>
-        /// Everything interest does once per tick: evaluate the clients whose turn it is (staggered across ticks
-        /// so a hundred clients never all evaluate on the same one), then bring the worker subscriptions in line.
+        /// Everything interest does once per tick: evaluate the clients whose turn it is, then bring the worker
+        /// subscriptions in line.
+        /// <para>
+        /// Whose turn it is comes from <see cref="InterestSchedule"/> and not from a per-client deadline. A
+        /// deadline staggers nothing: clients evaluated together are given the same next deadline and stay in
+        /// lockstep for the rest of the session, which is how a hundred-client gateway ends up doing all its
+        /// interest work on one tick in four and nothing on the other three. The schedule spreads the routine
+        /// share over the ticks of one interval and still lets a dirty client — a new pawn, another instance, a
+        /// changed focus mode, a policy that said so — be evaluated on the next tick.
+        /// </para>
         /// </summary>
         private void TickInterest()
         {
             double now = InterestNow;
-            int count = _clientsById.Count;
-            if (count > 0)
+            double dt = _lastInterestTickAt >= 0 ? now - _lastInterestTickAt : 0;
+            _lastInterestTickAt = now;
+            if (dt < 0) dt = 0;
+            if (_schedule.Count > 0)
             {
-                // A client is evaluated at InterestEvalHz. Rather than keep a timer wheel, walk a cursor over the
-                // clients each tick at the rate that gets through all of them in one eval interval.
-                foreach (var client in _clientsById.Values)
+                _isClientDirty ??= IsClientInterestDirty;
+                _schedule.Collect(dt, _interest.EvalHz, _isClientDirty, _dueClients);
+                for (int i = 0; i < _dueClients.Count; i++)
                 {
-                    if (!client.Welcomed) continue;
-                    if (!client.InterestDirty && now < client.NextInterestEval) continue;
-                    EvaluateClient(client, now);
+                    // A client can leave between the slice being taken and being walked (a policy handler, an
+                    // eviction): look it up rather than holding a reference to something already forgotten.
+                    if (_clientsById.TryGetValue(_dueClients[i], out var client) && client.Welcomed) EvaluateClient(client, now);
                 }
             }
             if (now >= _nextSubscriptionAt || _subscriptionsDirty)
@@ -368,11 +780,24 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Say once per client that it ran into one of the interest limits. Once, because every one of them is
+        /// re-tested four times a second and a log line per evaluation would bury the mesh's own messages.
+        /// </summary>
+        private void WarnOnce(ClientConn client, string what)
+        {
+            if (client.InterestLimitWarned) return;
+            client.InterestLimitWarned = true;
+            NebulaLog.Warn($"client {client.ClientId} '{client.Name}': {what}");
+        }
+
+        private bool IsClientInterestDirty(ulong clientId) =>
+            _clientsById.TryGetValue(clientId, out var client) && client.Welcomed && client.InterestDirty;
+
         private void EvaluateClient(ClientConn client, double now)
         {
             long started = Stopwatch.GetTimestamp();
             client.InterestDirty = false;
-            client.NextInterestEval = now + _interest.EvalInterval;
             client.Interest ??= new ClientInterest<EntityRecord, InterestSource>(new InterestSource(this));
             client.Interest.Settings = _interest;
             client.Interest.Grid = _interestGrid;
@@ -383,6 +808,8 @@ namespace Nebula
             client.Query.Reset(_interest);
             _policy.Collect(snapshot, client.Query);
             AddObservationWindows(client, snapshot, client.Query);
+            if (client.Query.Overflowed) WarnOnce(client, $"its policy asked for more than {_interest.MaxFoci} foci or {_interest.MaxExplicitPerClient} explicit entities; the rest are dropped.");
+            if (client.Query.BoxesClamped) WarnOnce(client, $"a box focus was wider than InterestMaxRadius ({_interest.MaxRadius} m) and was shrunk to it about its center.");
 
             client.Interest.SetFoci(client.Query.Foci);
             _alwaysScratch.Clear();
@@ -399,6 +826,10 @@ namespace Nebula
             client.Interest.Evaluate(_index, now, _entered, _leftIds);
             UpdateClientRegions(client);
             ApplyInterestChanges(client, _entered, _leftIds);
+            // What the client can *see* has been dealt with; what it must be able to *build* has not. A camera
+            // over empty terrain changes no entity at all, so the container window is brought in line here and
+            // not only when something entered or left the set (design D60).
+            SyncOwnershipWindow(client);
 
             double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
             _evalMsSum += ms;
@@ -416,13 +847,19 @@ namespace Nebula
                 Name = client.Name,
                 PawnNetId = client.PawnNetId,
                 Team = client.Team,
+                Tags = client.Tags,
+                FocusMode = client.FocusMode,
             };
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
             {
                 var root = RootOf(pawn);
                 snapshot.HasPawn = true;
                 snapshot.PawnX = root.AbsX; snapshot.PawnY = root.AbsY; snapshot.PawnZ = root.AbsZ;
+                // The scope comes from the pawn's own container chain, not from the root it resolved to: they
+                // are the same container by construction, and asking the pawn keeps this line and CanObserve's
+                // reading the same thing.
                 snapshot.InstanceId = ScopeContainer(pawn.Container)?.InstanceId ?? 0;
+                snapshot.PawnCarrierNetId = root != pawn ? root.NetId : 0;
             }
             if (client.HasHint)
             {
@@ -447,7 +884,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Authorization, in the order design §4 requires: the instance rules first (an unknown container is never
+        /// Authorization checks the instance rules first (an unknown container is never
         /// observable, a private instance is isolated), then the game's policy. A failure here removes the entity
         /// at once with no hysteresis, because this is a boundary and not a distance.
         /// </summary>
@@ -501,7 +938,7 @@ namespace Nebula
         /// <summary>
         /// Turn what the evaluation decided into what goes on the wire, in the one order a client can act on:
         /// the containers a spawn will name, then the spawns (carriers first), then the despawns, then the
-        /// containers nothing needs any more (design §8).
+        /// containers nothing needs any more.
         /// </summary>
         private void ApplyInterestChanges(ClientConn client, List<ulong> entered, List<ulong> left)
         {
@@ -564,9 +1001,14 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- focus hints
 
         /// <summary>
-        /// A client told us where it is looking. It is an input: non-finite values are dropped, the rate is
-        /// capped, and the point is clamped to <see cref="InterestSettings.HintMaxDistance"/> of the pawn. A
-        /// client cannot make the gateway stream it the world by claiming to look at it.
+        /// A client told us where it is looking, in absolute world coordinates. It is an input: malformed
+        /// values are dropped before anything reads them, the rate of attempts is capped before any game code
+        /// runs, and what the point may then do is the server's decision and
+        /// never the client's — the per-client <see cref="FocusMode"/> (<see cref="SetClientFocusMode"/>), which
+        /// an <see cref="IFocusHintPolicy"/> may narrow or widen for this one hint. By default the point is
+        /// clamped to <see cref="InterestSettings.HintMaxDistance"/> of the pawn, and a client with no pawn has
+        /// its hint refused outright rather than being handed the world it has no body in. A client cannot make
+        /// the gateway stream it the map by claiming to look at it.
         /// </summary>
         private void OnClientFocusHint(ClientConn client, in ClientFocusHintMsg msg)
         {
@@ -585,7 +1027,21 @@ namespace Nebula
                 if (client.HasHint) { client.HasHint = false; client.InterestDirty = true; }
                 return;
             }
+            // The generation advances for every hint we saw, including the ones dropped below. A dropped hint
+            // is still evidence of where the client is up to, and leaving the fence behind would let an older
+            // hint arriving after it win — the exact thing the sequence exists to prevent.
             client.HintGeneration = msg.Generation;
+
+            // Malformed first, before the snapshot and before any game code: a NaN that reached an
+            // IFocusHintPolicy would be the gateway handing an extension a value it cannot defend against
+            // (design D80).
+            if (_hintFilter.Malformed(msg.X, msg.Y, msg.Z)) return;
+            double now = InterestNow;
+            // Then the rate limit, on the *attempt* and not on the acceptance. Everything after this line is
+            // work a client could otherwise ask for as fast as it can send — the snapshot, and the game's own
+            // hint policy — and a hint that is going to be refused anyway must pay for the asking, or a
+            // pawn-less client would have an unlimited path into extension code.
+            if (_hintFilter.ThrottledAttempt(client.ClientId, now)) return;
 
             bool hasPawn = false;
             double px = 0, py = 0, pz = 0;
@@ -594,7 +1050,17 @@ namespace Nebula
                 var root = RootOf(pawn);
                 hasPawn = true; px = root.AbsX; py = root.AbsY; pz = root.AbsZ;
             }
-            if (!_hintFilter.TryAccept(client.ClientId, InterestNow, msg.Position.x, msg.Position.y, msg.Position.z,
+            var decision = new FocusHintDecision { Mode = client.FocusMode, X = msg.X, Y = msg.Y, Z = msg.Z };
+            if (_hintPolicy != null) decision = _hintPolicy.AuthorizeFocusHint(SnapshotClient(client), decision);
+            if (!_hintFilter.Authorizes(decision.Mode, hasPawn))
+            {
+                // A refusal revokes. A policy that has just said no — or a free camera whose pawn has gone —
+                // must not leave the last hint it was allowed standing for the rest of the session, and the
+                // client is sending again within 1/HintMaxHz s if it is still allowed anything.
+                if (client.HasHint) { client.HasHint = false; client.InterestDirty = true; }
+                return;
+            }
+            if (!_hintFilter.TryAccept(client.ClientId, now, decision.X, decision.Y, decision.Z, decision.Mode,
                 hasPawn, px, py, pz, out double x, out double y, out double z)) return;
             bool first = !client.HasHint;
             ulong before = first ? 0 : _interestGrid.RegionOf(client.HintX, client.HintY, client.HintZ);
@@ -608,7 +1074,7 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- subscriptions
 
         /// <summary>
-        /// Bring every worker link in line with what the clients need (design §5): resolve the needed regions to
+        /// Bring every worker link in line with what the clients need: resolve the needed regions to
         /// their owning workers, dial the workers that have a reason and let go of the ones that do not, send the
         /// subscription deltas, and evict records in regions nobody subscribes any more.
         /// </summary>
@@ -711,7 +1177,7 @@ namespace Nebula
         /// its own prediction — so sitting on this would leave the client connected and permanently pawn-less,
         /// which is exactly what it looks like in a chunked world under fast travel.
         /// <para>
-        /// The repair is design D5's mechanism turned on the pawn: subscribe it <b>by name</b> on every live
+        /// To repair this, subscribe to the pawn <b>by name</b> on every live
         /// worker (the caller links them all), so whichever worker holds it announces it and the record is
         /// rebuilt wherever it went. Only if nobody answers within <see cref="PawnRecoverySeconds"/> is the pawn
         /// really gone, and then the client starts the join over rather than staying a spectator for ever.
@@ -884,6 +1350,12 @@ namespace Nebula
         /// A region nobody subscribes any more: the gateway drops its own records there, because the worker sends
         /// nothing on unsubscribe (it would be a per-gateway per-entity "known" set on the worker, which is
         /// exactly the memory interest management must not grow).
+        /// <para>
+        /// The placement read here is the <b>effective</b> one, so a carried passenger is evicted with its root
+        /// carrier: an always-relevant crate riding in an ordinary ship is a region record in the ship's region,
+        /// and leaving it out of this sweep because of its own prefab flag is how a gateway on the other side of
+        /// the world ends up caching it for the rest of the session.
+        /// </para>
         /// </summary>
         private void EvictUnsubscribedRecords()
         {
@@ -994,32 +1466,97 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- ownership
 
         /// <summary>
-        /// The containers this client is told about (design §8): the ones overlapping its <c>NearCells</c> window,
-        /// its own instance, and the dynamic containers of entities in its set. Everything else is another part of
-        /// the world and would be the unbounded lease table v16 broadcast to everybody.
+        /// The containers this client is told about: the ones overlapping the <c>NearCells</c>
+        /// window of <b>every focus its last evaluation authorized</b> — its pawn, the focus hint the gateway
+        /// accepted, and the point and box foci its policy added — plus its own instance and the dynamic
+        /// containers of entities in its set. Everything else is another part of the world and would be the
+        /// unbounded lease table v16 broadcast to everybody.
+        /// <para>
+        /// The pawn alone was enough for a shooter, where the camera <i>is</i> the pawn. A strategy camera is a
+        /// focus somewhere else entirely, and a chunk it is looking at that happens to hold no entity is named
+        /// by no spawn: the client was given no lease row for it and so could not build the terrain under its
+        /// own camera. Every authorized focus now gets the same window, deduplicated where they overlap.
+        /// </para>
+        /// <para>
+        /// A focus that was never authorized contributes nothing, because this reads the evaluated foci and not
+        /// the raw hint: a refused hint is not among them, and a pawn-less client the server has not given
+        /// <see cref="FocusMode.Free"/> has no foci at all. Only public containers and the client's own scope
+        /// are collected, so no instance ever sees another's rows, and an id with no lease row is never sent.
+        /// </para>
+        /// <para>
+        /// The rows entities in the set stand in are collected <i>first</i> and are never budgeted; the windows
+        /// are, at <see cref="InterestSettings.MaxContainerRows"/> per client per evaluation. That order is what
+        /// makes the budget safe: exhausting it can only ever withhold empty terrain, never the row a spawn
+        /// names.
+        /// </para>
         /// </summary>
         private void CollectNeededContainers(ClientConn client, List<ulong> entering)
         {
             _containerIdScratch.Clear();
+            _containerIdSeen.Clear();
             float cell = Config.ResolveWorldCellSize();
             float reach = cell > 0 ? _interest.NearCells(cell) * cell : _interest.ExitRadius;
-            if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
-            {
-                var root = RootOf(pawn);
-                var box = new Bounds(new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ), new Vector3(2 * reach, 2 * reach, 2 * reach));
-                ContainerRegistry.Overlapping(box, _containerScratch);
-                for (int i = 0; i < _containerScratch.Count; i++) Add(_containerScratch[i].ContainerId);
-                var scope = ScopeContainer(pawn.Container);
-                if (scope != null) Add(scope.ContainerId);
-            }
+            int budget = _interest.MaxContainerRows(cell);
+            bool truncated = false;
+
             // A spawn names its container; the client must already hold the lease row for it.
             foreach (ulong netId in client.Visible) AddOf(netId);
             if (entering != null) for (int i = 0; i < entering.Count; i++) AddOf(entering[i]);
 
+            ulong pawnNetId = 0;
+            if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
+            {
+                var root = RootOf(pawn);
+                pawnNetId = client.PawnNetId;
+                // The pawn's own window first: whatever a camera is doing, the player's body must be able to
+                // stand on the ground, and this is the one focus that exists before any evaluation has run.
+                AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
+                var scope = ScopeContainer(pawn.Container);
+                if (scope != null) Add(scope.ContainerId);
+            }
+            var foci = client.Interest?.Foci;
+            if (foci != null)
+            {
+                // Points before boxes: a point window is one near-window wide and is what a camera, a hint or an
+                // owned unit is, while a box can legitimately be a district. If the budget runs out it runs out
+                // on the expensive one, and the cheap ones are already in.
+                for (int pass = 0; pass < 2; pass++)
+                    for (int i = 0; i < foci.Count; i++)
+                    {
+                        var focus = foci[i];
+                        if (focus.IsBox != (pass == 1)) continue;
+                        // The pawn's focus is the window above; a policy naming it again must not pay twice.
+                        if (!focus.IsBox && focus.SourceNetId != 0 && focus.SourceNetId == pawnNetId) continue;
+                        AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
+                    }
+            }
+            if (truncated)
+            {
+                _containerBudgetHits++;
+                WarnOnce(client, $"its foci cover more than {_interest.MaxContainerRows(cell)} container rows; the far ones are withheld. Use fewer or smaller foci, or a larger world cell size.");
+            }
+
+            // Every container overlapping one focus's window, up to what is left of the budget.
+            void AddWindow(double x, double y, double z, double halfX, double halfY, double halfZ, float window)
+            {
+                if (budget <= 0) { truncated = true; return; }
+                // A box focus is already clamped to InterestMaxRadius per axis by InterestQuery (design D61), so
+                // this query can never walk an unbounded range of cells.
+                var size = new Vector3((float)(2 * (halfX + window)), (float)(2 * (halfY + window)), (float)(2 * (halfZ + window)));
+                ContainerRegistry.Overlapping(new Bounds(new Vector3((float)x, (float)y, (float)z), size), _containerScratch);
+                for (int i = 0; i < _containerScratch.Count; i++)
+                {
+                    if (budget <= 0) { truncated = true; return; }
+                    if (Add(_containerScratch[i].ContainerId)) budget--;
+                }
+            }
             void AddOf(ulong netId)
             {
                 if (!_entities.TryGetValue(netId, out var rec)) return;
-                for (int depth = 0; depth < 8; depth++)
+                // Every container up the chain, however deep: the rows a client needs to build what it is being
+                // sent are the whole chain's or they are not enough (design D71). Bounded by the records held,
+                // which a chain can only exceed by revisiting one.
+                for (int hops = 0; hops <= _entities.Count; hops++)
                 {
                     if (rec.Container.IsDynamic)
                     {
@@ -1034,16 +1571,40 @@ namespace Nebula
                     return;
                 }
             }
-            void Add(string id)
+            bool Add(string id)
             {
-                if (!string.IsNullOrEmpty(id) && _ownershipById.ContainsKey(id) && !_containerIdScratch.Contains(id)) _containerIdScratch.Add(id);
+                if (string.IsNullOrEmpty(id) || !_ownershipById.ContainsKey(id) || !_containerIdSeen.Add(id)) return false;
+                _containerIdScratch.Add(id);
+                return true;
             }
+        }
+
+        /// <summary>
+        /// Bring a client's container rows in line with its foci even though nothing entered or left its set
+        /// Without this refresh, a strategy camera panning over empty terrain would never be told about the
+        /// chunks it is looking at: <see cref="ApplyInterestChanges"/> is the only other place rows are sent,
+        /// and it does nothing when no entity changed. Runs once per evaluation, on the evaluation's own foci,
+        /// and sends nothing at all when the window has not moved.
+        /// </summary>
+        private void SyncOwnershipWindow(ClientConn client)
+        {
+            if (!client.Welcomed) return;
+            CollectNeededContainers(client, null);
+            // The same order §8 requires everywhere else: upserts, then the removes they may have replaced.
+            FlushOwnershipUpserts(client);
+            FlushOwnershipRemoves(client);
         }
 
         /// <summary>Upserts go out before the spawns that name them, on the same reliable batch.</summary>
         private void SendOwnershipUpserts(ClientConn client, List<ulong> entering)
         {
             CollectNeededContainers(client, entering);
+            FlushOwnershipUpserts(client);
+        }
+
+        /// <summary>The rows in <see cref="_containerIdScratch"/> this client has not been sent yet.</summary>
+        private void FlushOwnershipUpserts(ClientConn client)
+        {
             _upsertScratch.Clear();
             for (int i = 0; i < _containerIdScratch.Count; i++)
             {
@@ -1091,6 +1652,12 @@ namespace Nebula
         private void SendOwnershipRemoves(ClientConn client)
         {
             CollectNeededContainers(client, null);
+            FlushOwnershipRemoves(client);
+        }
+
+        /// <summary>The rows this client holds that <see cref="_containerIdScratch"/> no longer asks for.</summary>
+        private void FlushOwnershipRemoves(ClientConn client)
+        {
             _removeScratch.Clear();
             foreach (string id in client.KnownContainers)
                 if (!_containerIdScratch.Contains(id)) _removeScratch.Add(id);
@@ -1135,7 +1702,7 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------------- stats
 
-        /// <summary>The interest half of <see cref="GatewayStats"/> (design §12), and the counters start over.</summary>
+        /// <summary>The interest half of <see cref="GatewayStats"/>; the counters then start over.</summary>
         private void FillInterestStats(ref GatewayStats stats, double interval)
         {
             long sum = 0;
@@ -1157,6 +1724,9 @@ namespace Nebula
             stats.DespawnsPerSecond = (float)(_despawnsSent / interval);
             stats.InterestEvalMsAvg = _evalCount > 0 ? (float)(_evalMsSum / _evalCount) : 0f;
             stats.InterestEvalMsMax = (float)_evalMsMax;
+            // Clients x EvalHz when the rotation is keeping up. Well below it means evaluations are being
+            // starved; well above it means something is marking clients dirty far more often than it should.
+            stats.InterestEvalsPerSecond = interval > 0 ? (float)(_evalCount / interval) : 0f;
             stats.BytesPerClientAvg = clients > 0 ? (float)(_clientBytesOut / interval / clients) : 0f;
             stats.BytesPerClientMax = clients > 0 ? (float)(_maxClientBytesOut / interval) : 0f;
             _spawnsSent = _despawnsSent = 0;

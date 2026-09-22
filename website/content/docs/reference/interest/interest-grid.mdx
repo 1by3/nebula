@@ -11,7 +11,7 @@ public readonly struct InterestGrid : IEquatable<InterestGrid>
 
 A uniform spatial hash over **absolute** world coordinates: the region arithmetic every part of interest management shares (gateway, worker, standalone services). One region is one cell of the grid; its id is the pinned three-axis 21-bit packing `RuntimeGrid.PackId` uses, so a chunked world's region ids and its container ids are literally the same numbers.
 
-Positions are doubles because a region key must not depend on the floating origin: wire poses are container-local, and both ends add the container's absolute centre in double before asking for a key. Shift the origin and every key stays what it was, which is what lets a gateway and a worker with different origins agree on one set of subscribed regions.
+Positions are doubles because a region key must not depend on the floating origin: wire poses are container-local, and both ends add the container's absolute center in double before asking for a key. Shift the origin and every key stays what it was, which is what lets a gateway and a worker with different origins agree on one set of subscribed regions.
 
 The packing is duplicated here rather than called: `RuntimeGrid` lives in the Unity-only `Nebula.World` assembly, which the standalone gateway does not compile. `InterestPackingPinTests` asserts the two agree for sample coordinates, and neither may change: ids are persisted.
 
@@ -46,7 +46,7 @@ public const int MaxCoordinate = (1 << 20) - 1;
 public readonly double EdgeX, EdgeY, EdgeZ;
 ```
 
-Region edge in metres per axis. Y is unused (and meaningless) when [`Planar`](#planar).
+Region edge in meters per axis. Y is unused (and meaningless) when [`Planar`](#planar).
 
 ### OffsetX, OffsetY, OffsetZ [#offsetx-offsety-offsetz]
 
@@ -83,7 +83,7 @@ public static InterestGrid Resolve(in InterestSettings settings, double worldCel
 public static InterestGrid Resolve(in InterestSettings settings, double worldCellSize = 0, bool cellsCentred = false);
 ```
 
-Derive the grid both ends must agree on from the resolved settings and, when the game has a world definition, its cell size (design §3): the edge is snapped to an integer division of the cell so region edges coincide with cell edges, and the offset places region boundaries on those cell edges. Baked cells are centred on `coord × CellSize` (`cellsCentred`: offset −CellSize/2); `RuntimeGrid` cells start at `coord × CellSize` (offset 0). Pass 0 for no world definition.
+Derive the grid both ends must agree on from the resolved settings and, when the game has a world definition, its cell size. The edge is snapped to an integer division of the cell so region edges coincide with cell edges, and the offset places region boundaries on those cell edges. Baked cells are centered on `coord × CellSize` (`cellsCentred`: offset −CellSize/2); `RuntimeGrid` cells start at `coord × CellSize` (offset 0). Pass 0 for no world definition.
 
 ### SnapEdge [#snapedge]
 
@@ -137,7 +137,7 @@ The region's box in absolute world coordinates. A planar grid's regions are colu
 public void CenterOf(ulong region, out double x, out double y, out double z);
 ```
 
-Centre of a region in absolute world coordinates (Y = 0 on a planar grid, where there is no centre).
+Center of a region in absolute world coordinates (Y = 0 on a planar grid, where there is no center).
 
 ### SqrDistanceToRegion [#sqrdistancetoregion]
 
@@ -169,7 +169,7 @@ Append every region overlapping an absolute box (an `ObservePublic` window, a co
 public bool Matches(in InterestGrid other, double tolerance = 1e-3);
 ```
 
-Whether two grids would produce the same keys. The subscribe message carries the grid so the worker can reject a mismatch loudly (design D2) instead of filtering with ids the gateway never meant; the tolerance absorbs the f32 round trip of that message, nothing more.
+Whether two grids would produce the same keys. The subscribe message carries the grid so the worker can reject a mismatch loudly instead of filtering with ids the gateway never meant; the tolerance absorbs the f32 round trip of that message, nothing more.
 
 ### Equals [#equals]
 

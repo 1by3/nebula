@@ -1,0 +1,98 @@
+---
+title: "InterestSchedule"
+description: "Which clients a gateway re-evaluates on this tick."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestSchedule.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestSchedule.cs)</div>
+
+```csharp
+public sealed class InterestSchedule
+```
+
+Which clients a gateway re-evaluates on this tick. Every client is evaluated at [`InterestSettings.EvalHz`](/docs/reference/interest/interest-settings#evalhz), but never all of them on the same tick: routine evaluations are spread over the ticks of one interval by a cursor walking a ring, at a budget derived from the time the tick actually took. A hundred clients on a 60 Hz loop at 4 Hz evaluation cost about seven evaluations a tick instead of a hundred every fifteenth tick, which is the difference between a flat frame time and a loop that stalls four times a second.
+
+Clients marked dirty — a new pawn, a changed instance, a focus-mode change, a policy that says so — are not routine and jump the queue: they are collected before the routine slice, on the next tick. That is bounded too ([`MinDirtyPerTick`](#mindirtypertick), [`DirtyBurst`](#dirtyburst)) so a change that dirties every client at once is spread rather than turned into the stall this class exists to prevent, and the dirty scan has a cursor of its own so a storm cannot keep serving the same few clients.
+
+Steady state allocates nothing: the ring, the slot map and the duplicate guard are reused.
+
+## Fields
+
+### MinDirtyPerTick [#mindirtypertick]
+
+```csharp
+public const int MinDirtyPerTick = 8;
+```
+
+However small the routine budget is, this many dirty clients are always taken in a tick.
+
+### DirtyBurst [#dirtyburst]
+
+```csharp
+public const int DirtyBurst = 4;
+```
+
+A tick may take this many times the routine budget in dirty clients before the rest wait.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+Clients in the rotation.
+
+### LastDirty [#lastdirty]
+
+```csharp
+public int LastDirty { get; }
+```
+
+Dirty clients the last [`Collect`](#collect) took.
+
+### LastRoutine [#lastroutine]
+
+```csharp
+public int LastRoutine { get; }
+```
+
+Routine clients the last [`Collect`](#collect) took (an already-dirty one does not count twice).
+
+## Methods
+
+### Add [#add]
+
+```csharp
+public bool Add(ulong clientId);
+```
+
+Put a client in the rotation. Idempotent: welcoming a reclaimed session twice is not two clients.
+
+### Remove [#remove]
+
+```csharp
+public bool Remove(ulong clientId);
+```
+
+Take a client out of the rotation. The last entry fills the hole, so removal is O(1).
+
+### Contains [#contains]
+
+```csharp
+public bool Contains(ulong clientId);
+```
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+### Collect [#collect]
+
+```csharp
+public void Collect(double dt, float evalHz, Func<ulong, bool> isDirty, List<ulong> due);
+```
+
+Fill `due` with the clients to evaluate on this tick: the dirty ones first, then the routine slice, with no id twice. `dt` is the seconds since the last call, which is what makes the rate independent of the loop's tick rate and honest when a tick runs long.

@@ -380,6 +380,30 @@ public ushort DashboardPort = 7080;
 
 Port of the Nebula Dashboard the orchestrator serves `(http://localhost:<port>/).` 0 disables it.
 
+### GatewayExtension [#gatewayextension]
+
+```csharp
+public string GatewayExtension = "";
+```
+
+Your own server code inside the standalone gateway: a class library that references the gateway's Nebula.Services.dll and implements Nebula.IGatewayExtension. This is where a game installs an interest policy, tags clients with their team and feeds fog-of-war changes. Give the assembly's file name (it sits next to the gateway executable, so it ships with the build and the deploy tarball) or an absolute path. Empty = no extension. -nebula-gateway-extension overrides.
+
+### GatewayExtensionType [#gatewayextensiontype]
+
+```csharp
+public string GatewayExtensionType = "";
+```
+
+Which class in that assembly to load, when it holds more than one IGatewayExtension. Empty = the only one. -nebula-gateway-extension-type overrides.
+
+### GatewayExtensionOptions [#gatewayextensionoptions]
+
+```csharp
+public string GatewayExtensionOptions = "";
+```
+
+Settings passed to the extension, as key=value;key=value. It reads them with context.Option(key); -nebula-ext-\<key\> on the gateway's command line overrides one.
+
 ### GhostBandMargin [#ghostbandmargin]
 
 ```csharp
@@ -724,7 +748,7 @@ Everything wrong with this configuration, worst last-resort first: an [`ConfigSe
 public float ResolveWorldCellSize();
 ```
 
-The world definition's cell size, or 0 when the game has no world definition. Everything that has to agree on one notion of "near" (design §8) — content streaming, the allocator ring, the container window a client is told about — derives from this and [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells).
+The world definition's cell size, or 0 when the game has no world definition. Everything that has to agree on one notion of "near": content streaming, the allocator ring, the container window a client is told about — derives from this and [`InterestSettings.NearCells`](/docs/reference/interest/interest-settings#nearcells).
 
 ### ToInterestGrid [#tointerestgrid]
 
@@ -732,4 +756,4 @@ The world definition's cell size, or 0 when the game has no world definition. Ev
 public InterestGrid ToInterestGrid();
 ```
 
-The interest grid this mesh uses: the resolved settings snapped onto the world's cells so a region never straddles a cell edge (design §3). Both ends derive it from this, which is what lets the worker reject a subscription built with a different one instead of filtering with ids that mean something else.
+The interest grid this mesh uses: the resolved settings snapped onto the world's cells so a region never straddles a cell edge. Both ends derive it from this, which is what lets the worker reject a subscription built with a different one instead of filtering with ids that mean something else.

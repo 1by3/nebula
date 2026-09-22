@@ -167,7 +167,7 @@ From the create call to a registered, container-owning worker takes about 30 s. 
 | Worker VMs, public | `tcp/22` | ssh for `nebula logs --cloud wN`. Nothing else is open inbound. |
 | Private network `10.0.0.0/16` | `udp/710N`, `tcp/7080` | Worker to worker, worker to gateway, build download. |
 
-The firewalls are `<meshName>-orchestrator` (22, the dashboard port, the gateway port over UDP and TCP, the gateway port plus one over UDP, and TCP port 80, from anywhere) and `<meshName>-worker` (22 only). When a firewall from an earlier release lacks a rule, `nebula deploy` adds it and keeps the rules you added. Traffic on the private network is not filtered by Hetzner firewalls.
+The firewalls are `<meshName>-orchestrator` (22, the dashboard port, the gateway port over UDP and TCP, the gateway port plus one over UDP, and TCP port 80, from anywhere) and `<meshName>-worker` (22 only). Each deployment adds missing required rules and keeps rules you added. Traffic on the private network is not filtered by Hetzner firewalls.
 
 ## Choose VM types
 

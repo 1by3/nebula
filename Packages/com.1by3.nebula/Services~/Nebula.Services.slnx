@@ -2,6 +2,7 @@
   <Project Path="Nebula.Services/Nebula.Services.csproj" />
   <Project Path="Nebula.Orchestrator/Nebula.Orchestrator.csproj" />
   <Project Path="Nebula.Gateway/Nebula.Gateway.csproj" />
+  <Project Path="Nebula.SampleExtension/Nebula.SampleExtension.csproj" />
   <Project Path="Nebula.Services.Tests/Nebula.Services.Tests.csproj" />
   <Project Path="Nebula.LoadGen/Nebula.LoadGen.csproj" />
   <Project Path="Nebula.Persistence.Benchmarks/Nebula.Persistence.Benchmarks.csproj" />

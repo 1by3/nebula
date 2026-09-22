@@ -29,7 +29,7 @@ Add [`NetworkIdentity`](/docs/reference/core/network-identity) to mark a GameObj
 
 `Behaviours` contains the `NetworkBehaviour` components in `GetComponentsInChildren` order. Nebula uses each component's position in this array as its network index. Use the same prefab and component order in every process.
 
-An identity synchronizes initial placement and container changes. Add `NetworkTransform` for ongoing movement and `NetworkRigidbody` for worker-simulated physics. `Identity.Velocity` remains an obsolete alias; use `Identity.Motion.Velocity` in new code.
+An identity synchronizes initial placement and container changes. Add `NetworkTransform` for ongoing movement and `NetworkRigidbody` for worker-simulated physics. Use `Identity.Motion.Velocity` for the velocity reported by the authority.
 
 `NetworkIdentity` also records a per-tick pose history on workers for lag-compensated hit tests (`TryGetPoseAt`). See [Prediction](/docs/guides/prediction#perform-a-lag-compensated-query).
 

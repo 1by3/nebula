@@ -244,8 +244,6 @@ To automate a client, implement bot input in your predicted behavior and start t
 
 With two clients connected, move one player while watching from the other. Check that movement remains visible when the player crosses a worker boundary. If only the owning client moves, verify that the player prefab has an enabled root `NetworkTransform` with position synchronization enabled. Stop moving and check that the remote player settles at the same position.
 
-When upgrading an existing project, rebuild clients, workers, and gateways together. The transform format introduced in `0.1.0-alpha.13` uses protocol version 8 and is incompatible with protocol version 7.
-
 </Step>
 <Step>
 

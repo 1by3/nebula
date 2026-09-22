@@ -65,6 +65,9 @@ namespace Nebula
 
         public static bool Has(string key) => Args.ContainsKey(key);
 
+        /// <summary>Every switch that was parsed, for a service that forwards a whole family of them (<c>-nebula-ext-*</c>) to a process it launches.</summary>
+        public static IReadOnlyCollection<string> Keys => Args.Keys;
+
         public static string Get(string key, string fallback = null) => Args.TryGetValue(key, out var v) ? v : fallback;
 
         public static int GetInt(string key, int fallback) => Args.TryGetValue(key, out var v) && int.TryParse(v, out var i) ? i : fallback;

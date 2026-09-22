@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Nebula
 {
     /// <summary>
-    /// The worker's side of interest management (design §6): which gateways hear about each region, and the
+    /// The worker's side of interest management: which gateways hear about each region, and the
     /// grouping that lets one serialization serve all of them.
     /// <para>
     /// Every region carries a <b>subscriber mask</b>, one bit per gateway link. Once a tick the publisher groups

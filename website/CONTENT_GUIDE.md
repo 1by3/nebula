@@ -80,10 +80,11 @@ Important current boundaries include:
 - UDP connections are not encrypted. WebRTC encrypts a web client's link with DTLS. The gateway identifies players by an anonymous or OpenID Connect token; gateways and workers authenticate each other only when a mesh token is set.
 - The gateway filters entities by instance visibility, then reduces state update frequency by distance. Distance alone does not omit entities within the same instance. Private occupants can receive a bounded observation-only view of the public world.
 - Bots and server-driven entities require game-supplied behavior.
-- The legacy `--npcs` option only seeds a game-defined setting named `npcs`. It does not spawn non-player characters.
 - The CLI deploys to two targets: Nebula Cloud (`--target cloud`) and the reader's own Hetzner Cloud project (`--target hetzner`). Do not describe Nebula Cloud prices, the hosting provider behind it, or its internal services; document only what the CLI does.
 
 Recheck these statements against the code before repeating them. Change this guide when the implementation changes.
+
+Do not document release history, migrations from earlier alpha builds, retired options, or how current behavior differs from a prior Nebula version. Describe the current workflow and API. Keep current compatibility requirements only when readers must act on them, such as running every mesh process with the same wire protocol. Generated API reference remains complete, including members marked `[Obsolete]`; task-oriented guides should direct readers to the current API.
 
 ## Keep examples public and self-contained
 

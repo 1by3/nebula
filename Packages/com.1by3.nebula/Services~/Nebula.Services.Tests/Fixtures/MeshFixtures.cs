@@ -54,6 +54,12 @@ public sealed class FakeWorker : IDisposable
     public readonly List<ClientInputMsg> Inputs = new();
     /// <summary>Spawns, forgets and resyncs this worker has sent, by gateway id: what the subscription tests assert on.</summary>
     public readonly Dictionary<string, int> SpawnsSent = new(), ForgetsSent = new(), ResyncsSent = new();
+    /// <summary>
+    /// Every spawn and forget as (gateway id, net id), in order. The counters above say how much was published;
+    /// these say to <b>whom</b>, which is the only way to test that a gateway on the other side of the world is
+    /// not sent a crate at all — a client-side assertion cannot tell "never sent" from "sent and filtered".
+    /// </summary>
+    public readonly List<(string Gateway, ulong NetId)> SpawnLog = new(), ForgetLog = new();
     public bool DeferSpawns;
     /// <summary>Where a pawn is put, relative to its container. A test that wants players apart overrides it.</summary>
     public Func<ulong, Vector3> PawnPlacement = _ => Vector3.zero;
@@ -72,6 +78,13 @@ public sealed class FakeWorker : IDisposable
     private readonly Dictionary<ulong, string> _sessionGateway = new();
     private readonly RegionPublisher _publisher = new();
     private readonly InterestIndex<Entity> _index = new();
+    /// <summary>The real carrier-subtree bookkeeping (design D3), so this fake publishes a ship the way a worker does.</summary>
+    private readonly CarriedTransition _carried = new();
+    /// <summary>The real handoff bookkeeping (design D85/D87), so a handover here suppresses followers the way a worker's does.</summary>
+    private readonly HandoverScope _handover = new();
+    /// <summary>A newly subscribed region's snapshot and each entry's carrier depth, for the carrier-first ordering.</summary>
+    private readonly List<Entity> _spawnOrder = new();
+    private readonly List<int> _spawnDepth = new();
     private readonly string _meshToken;
     private readonly NetworkWriter _w = new();
     /// <summary>
@@ -121,30 +134,105 @@ public sealed class FakeWorker : IDisposable
             RelevanceRadius = relevanceRadius, AlwaysRelevant = alwaysRelevant, InterestGroup = group,
         };
         _entities[netId] = e;
+        // Passengers may already name this id as their carrier: until it existed they sat on their own
+        // placement, and indexing it re-seats the whole pending subtree into this entity's (design D70). That
+        // is a publication, so it is captured before the placement and sent after this entity's own spawn -
+        // carrier before its contents, exactly as a real worker's InterestAddAndAnnounce does it.
+        bool pending = _index.HasCarried(netId);
+        if (pending) _carried.Capture(_index, netId, _publisher, WideMaskOf);
         Place(e);
         ulong mask = MaskFor(e);
         for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++) if ((mask & (1UL << bit)) != 0) SendSpawn(PeerOfBit(bit), e);
+        if (pending) PublishCarried();
         return e;
     }
 
-    /// <summary>Move an entity. Crossing a region edge is what makes a gateway hear of it, or forget it (design §6).</summary>
+    /// <summary>
+    /// Move an entity. Crossing a region edge is what makes a gateway hear of it, or forget it (design §6) — and
+    /// everything riding in it moves and is published with it (design D3). A passenger is bucketed with its
+    /// carrier, so moving one by itself changes nothing but its local position.
+    /// </summary>
     public void Move(ulong netId, Vector3 local)
     {
         if (!_entities.TryGetValue(netId, out var e)) return;
-        ulong from = e.Region;
         e.Local = local;
         if (e.Placement != InterestPlacement.Region) { _index.SetValue(netId, e); PublishOwned(e); return; }
+        if (_index.CarrierOf(netId) != 0) { _index.SetValue(netId, e); return; }
         ulong to = Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z);
-        if (to == from) { _index.SetValue(netId, e); return; }
-        e.Region = to;
+        if (to == e.Region) { _index.SetValue(netId, e); return; }
+        _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Move(netId, to);
-        ulong spawnBits = _publisher.SpawnBits(from, to);
-        ulong forgetBits = _publisher.ForgetBits(from, to);
-        for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
+        PublishCarried();
+    }
+
+    /// <summary>
+    /// Put an entity inside the dynamic container another entity carries: from now on it is bucketed with that
+    /// ship and enters and leaves a gateway's set with it.
+    /// </summary>
+    public void Board(ulong netId, ulong carrierNetId, Vector3 local = default) =>
+        Recarry(netId, ContainerRef.Dynamic(carrierNetId), carrierNetId, local);
+
+    /// <summary>Take an entity back out of the ship it was riding in: it buckets by its own position again.</summary>
+    public void Disembark(ulong netId, ContainerRef container, Vector3 local) => Recarry(netId, container, 0, local);
+
+    private void Recarry(ulong netId, ContainerRef container, ulong carrierNetId, Vector3 local)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) return;
+        _carried.Capture(_index, netId, _publisher, WideMaskOf);
+        e.Container = container;
+        e.Local = local;
+        _index.SetValue(netId, e);
+        _index.SetCarrier(netId, carrierNetId);
+        // Free again: its own position decides where it sits, and its own subtree comes along.
+        if (carrierNetId == 0 && e.Placement == InterestPlacement.Region)
+            _index.Move(netId, Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z));
+        PublishCarried();
+    }
+
+    /// <summary>
+    /// Publish what the last captured move did to the carrier and everything riding in it: spawns carrier first,
+    /// forgets contents first, so a gateway never holds an entity whose container it has not been given.
+    /// </summary>
+    private void PublishCarried()
+    {
+        _carried.Resolve(_index, _publisher, WideMaskOf, _handover);
+        // The region each of them now sits in is what Reaches() reads, so refresh it before anything is sent.
+        for (int i = 0; i < _carried.Count; i++)
+            if (_entities.TryGetValue(_carried[i].Id, out var moved)) SyncPlacement(moved);
+        for (int i = 0; i < _carried.Count; i++)
         {
-            if ((spawnBits & (1UL << bit)) != 0) SendSpawn(PeerOfBit(bit), e);
-            else if ((forgetBits & (1UL << bit)) != 0 && !IsOwnersGateway(e, PeerOfBit(bit))) SendForget(PeerOfBit(bit), e);
+            var slot = _carried[i];
+            if (slot.Before == slot.After || !_entities.TryGetValue(slot.Id, out var moved)) continue;
+            ulong spawn = slot.After & ~slot.Before & ~StickyOf(moved);
+            for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
+                if ((spawn & (1UL << bit)) != 0) SendSpawn(PeerOfBit(bit), moved);
         }
+        for (int i = _carried.Count - 1; i >= 0; i--)
+        {
+            var slot = _carried[i];
+            if (slot.Before == slot.After || !_entities.TryGetValue(slot.Id, out var moved)) continue;
+            ulong forget = slot.Before & ~slot.After & ~StickyOf(moved);
+            for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
+                if ((forget & (1UL << bit)) != 0) SendForget(PeerOfBit(bit), moved);
+        }
+        Transport.Flush();
+    }
+
+    /// <summary>Gateways that keep an entity wherever it sits: the one speaking for its owner, and any that named it.</summary>
+    private ulong StickyOf(Entity e)
+    {
+        ulong mask = 0;
+        foreach (var link in _links.Values)
+            if (IsOwnersGateway(e, link.PeerId) || link.Receiver.Entities.Contains(e.NetId)) mask |= 1UL << link.Bit;
+        return mask;
+    }
+
+    /// <summary>Read an entity's bucket back out of the index, which is the one that decides where it really is.</summary>
+    private void SyncPlacement(Entity e)
+    {
+        if (!_index.TryGetPlacement(e.NetId, out var placement, out ulong region)) return;
+        e.Placement = placement;
+        e.Region = region;
     }
 
     /// <summary>
@@ -153,11 +241,24 @@ public sealed class FakeWorker : IDisposable
     /// <see cref="EntityRedirectMsg"/>, the entity leaves this worker's index without any despawn, and the new
     /// owner announces it — but only to the gateways it actually has a link to, because a worker cannot dial a
     /// gateway. Nothing at all reaches a gateway that is linked to neither worker.
+    /// <para>
+    /// A handoff is not a destruction (design D85). The real worker takes a carrier's contents with it, so
+    /// leaving the index here says nothing about the passengers: they are still aboard and are handed over
+    /// immediately afterwards, which is how a test drives the two halves. Publishing their own placement in
+    /// between would expose an orphan that never existed. This fixture has no pinned interiors, so every
+    /// passenger follows; the real worker's <c>InterestRemove</c> still orphans the ones that do not.
+    /// </para>
+    /// <para>
+    /// The suppression itself is <b>not</b> reimplemented here: the shared <see cref="HandoverScope"/> the real
+    /// worker uses records the followers and <see cref="CarriedTransition.Resolve{T}"/> collapses their slots,
+    /// so a service test that handed a ship over would fail if that production code were removed (design D87).
+    /// </para>
     /// </summary>
     public void HandOver(ulong netId, FakeWorker target)
     {
+        using var frame = _handover.Begin();
+        if (frame.IsOutermost) _handover.Collect(_index, netId);
         if (!_entities.Remove(netId, out var e)) throw new InvalidOperationException($"{WorkerId} does not own #{netId}");
-        _index.Remove(netId);
         foreach (var link in _links.Values)
         {
             if (!IsOwnersGateway(e, link.PeerId) && !link.Receiver.Entities.Contains(netId)) continue;
@@ -166,6 +267,12 @@ public sealed class FakeWorker : IDisposable
             Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
         }
         Transport.Flush();
+        // Exactly the real worker's InterestRemove: capture the subtree, take the carrier out, publish what
+        // that did to anything riding in it — which is nothing at all for the passengers that follow it.
+        bool carried = _index.HasCarried(netId);
+        if (carried) _carried.Capture(_index, netId, _publisher, WideMaskOf);
+        _index.Remove(netId);
+        if (carried) PublishCarried();
         if (_pawns.TryGetValue(e.OwnerClientId, out ulong pawn) && pawn == netId) _pawns.Remove(e.OwnerClientId);
         target.Receive(e, this);
     }
@@ -187,9 +294,16 @@ public sealed class FakeWorker : IDisposable
         Transport.Flush();
     }
 
+    /// <summary>
+    /// Take an entity out of the world. Its own despawn is sent to everyone who could know it; what is
+    /// published on top of that is what its leaving does to anything riding in it, because removing a carrier
+    /// gives every surviving passenger its own placement back (design D70) and no other path would say so.
+    /// </summary>
     public void Despawn(ulong netId)
     {
         if (!_entities.Remove(netId, out var e)) return;
+        bool carried = _index.HasCarried(netId);
+        if (carried) _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Remove(netId);
         ulong mask = MaskFor(e);
         for (int bit = 0; bit < RegionPublisher.MaxGateways; bit++)
@@ -198,6 +312,36 @@ public sealed class FakeWorker : IDisposable
             _w.Reset();
             new EntityDespawnMsg { NetId = netId, Epoch = e.Epoch }.Write(_w, MsgId.EntityDespawn);
             Transport.Send(PeerOfBit(bit), Delivery.ReliableOrdered, _w.ToSegment());
+        }
+        // Whatever survives it has to be put down somewhere that still exists before its restored placement is
+        // published, or the spawn names a carrier that is gone and every gateway fails ScopeContainer closed
+        // (design D86). This is NebulaWorker.RemoveLocal's evacuation in the fixture's flat frame model.
+        if (carried) Evacuate(e);
+        // The removed carrier's own slot resolves to "gone" and publishes nothing, so this is only the
+        // passengers it orphaned.
+        if (carried) PublishCarried();
+    }
+
+    /// <summary>
+    /// Put every direct passenger of a departing carrier down in the container the carrier itself sat in,
+    /// keeping its absolute pose. Anything deeper keeps naming a carrier that is still there, so a surviving
+    /// subtree still resolves top to bottom.
+    /// <para>
+    /// This one <b>is</b> the fixture's own, because the fixture's frames are flat and carry no rotation while
+    /// <c>NebulaWorker.EvacuateCarried</c> reparents real transforms. It exists so the wire behaviour a gateway
+    /// sees is the worker's; the production evacuation itself is regression-tested directly by
+    /// <c>Nebula.Tests.WorkerHandoverTests</c> in the package's EditMode suite.
+    /// </para>
+    /// </summary>
+    private void Evacuate(Entity carrier)
+    {
+        foreach (var inner in _entities.Values)
+        {
+            if (!inner.Container.IsDynamic || inner.Container.NetId != carrier.NetId) continue;
+            // Frames here carry no rotation, so the carrier's own offset is the whole of the transform.
+            inner.Local = carrier.Local + inner.Local;
+            inner.Container = carrier.Container;
+            _index.SetValue(inner.NetId, inner);
         }
     }
 
@@ -362,8 +506,10 @@ public sealed class FakeWorker : IDisposable
                 // A newly subscribed region: send a spawn for everything bucketed in it. Nothing is sent for a
                 // region that was removed; the gateway drops its own cache there.
                 var added = link.Receiver.Added;
+                _spawnOrder.Clear();
                 for (int i = 0; i < added.Count; i++)
-                    foreach (var entry in _index.Region(added[i])) SendSpawn(peerId, entry.Value);
+                    foreach (var entry in _index.Region(added[i])) _spawnOrder.Add(entry.Value);
+                SendSpawnsInCarrierOrder(peerId);
                 foreach (var entry in _index.Global) SendSpawn(peerId, entry.Value);
                 foreach (var entry in _index.Wide) if (Reaches(entry.Value, link)) SendSpawn(peerId, entry.Value);
                 foreach (var e in _entities.Values) if (e.OwnerClientId != 0 && IsOwnersGateway(e, peerId)) SendSpawn(peerId, e);
@@ -441,6 +587,10 @@ public sealed class FakeWorker : IDisposable
             _index.Add(e.NetId, e.Region, e);
             e.Placement = InterestPlacement.Region;
         }
+        // An entity spawned inside a dynamic container rides in it from the start (design D3): the index buckets
+        // it with the carrier, and that - not its own resolved position - is where it is.
+        _index.SetCarrier(e.NetId, e.Container.IsDynamic ? e.Container.NetId : 0);
+        SyncPlacement(e);
     }
 
     private bool IsOwnersGateway(Entity e, int peerId) =>
@@ -453,16 +603,54 @@ public sealed class FakeWorker : IDisposable
         if (IsOwnersGateway(e, link.PeerId)) return true;
         // An entity a gateway named in InterestSubscribe.Entities is sticky for it, wherever it sits (design D5).
         if (link.Receiver.Entities.Contains(e.NetId)) return true;
-        if (e.AlwaysRelevant) return true;
-        if (e.Placement == InterestPlacement.Wide)
-        {
-            var abs = Abs(e);
-            var foci = link.Receiver.FociRegions;
-            double r2 = (double)e.RelevanceRadius * e.RelevanceRadius;
-            for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i], abs.x, abs.y, abs.z) <= r2) return true;
-            return false;
-        }
+        // Placement, not the prefab flag: a carried entity is published exactly as its root carrier is, so an
+        // always-relevant crate riding in an ordinary ship is bucketed with the ship (design D70).
+        if (e.Placement == InterestPlacement.Global) return true;
+        if (e.Placement == InterestPlacement.Wide) return ReachesWide(e, link);
         return link.Receiver.Contains(e.Region);
+    }
+
+    /// <summary>A wide entity is matched against foci directly, at the root carrier's position and radius.</summary>
+    private bool ReachesWide(Entity e, GatewayLink link)
+    {
+        var subject = _entities.TryGetValue(_index.RootOf(e.NetId), out var root) ? root : e;
+        var abs = Abs(subject);
+        var foci = link.Receiver.FociRegions;
+        double r2 = (double)subject.RelevanceRadius * subject.RelevanceRadius;
+        for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i], abs.x, abs.y, abs.z) <= r2) return true;
+        return false;
+    }
+
+    /// <summary>The gateways a wide entity currently reaches, for <see cref="CarriedTransition"/>. Spatial only.</summary>
+    private ulong WideMaskOf(ulong netId)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) return 0;
+        ulong mask = 0;
+        foreach (var link in _links.Values) if (ReachesWide(e, link)) mask |= 1UL << link.Bit;
+        return mask;
+    }
+
+    /// <summary>
+    /// Send a newly subscribed region's snapshot shallowest carrier first, to any depth — the rule
+    /// <c>NebulaWorker.SendSpawnsInCarrierOrder</c> follows (design D71). Depth comes from the index, which
+    /// refuses cyclic links, so the walk goes as deep as the deepest entity in the snapshot and no entity is
+    /// silently left out of it.
+    /// </summary>
+    private void SendSpawnsInCarrierOrder(int peerId)
+    {
+        int deepest = 0;
+        _spawnDepth.Clear();
+        for (int i = 0; i < _spawnOrder.Count; i++)
+        {
+            int d = _index.DepthOf(_spawnOrder[i].NetId);
+            _spawnDepth.Add(d);
+            if (d > deepest) deepest = d;
+        }
+        for (int depth = 0; depth <= deepest; depth++)
+            for (int i = 0; i < _spawnOrder.Count; i++)
+                if (_spawnDepth[i] == depth) SendSpawn(peerId, _spawnOrder[i]);
+        _spawnDepth.Clear();
+        _spawnOrder.Clear();
     }
 
     private ulong MaskFor(Entity e)
@@ -499,7 +687,7 @@ public sealed class FakeWorker : IDisposable
             InterestGroup = e.InterestGroup,
         }.Write(_w, MsgId.EntitySpawn);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
-        if (_links.TryGetValue(peerId, out var link)) Bump(SpawnsSent, link.GatewayId);
+        if (_links.TryGetValue(peerId, out var link)) { Bump(SpawnsSent, link.GatewayId); SpawnLog.Add((link.GatewayId, e.NetId)); }
     }
 
     private void SendForget(int peerId, Entity e)
@@ -508,7 +696,7 @@ public sealed class FakeWorker : IDisposable
         _w.Reset();
         new EntityForgetMsg { NetId = e.NetId, Epoch = e.Epoch }.Write(_w);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
-        if (_links.TryGetValue(peerId, out var link)) Bump(ForgetsSent, link.GatewayId);
+        if (_links.TryGetValue(peerId, out var link)) { Bump(ForgetsSent, link.GatewayId); ForgetLog.Add((link.GatewayId, e.NetId)); }
     }
 
     private static void Bump(Dictionary<string, int> counter, string key) => counter[key] = counter.TryGetValue(key, out int n) ? n + 1 : 1;
@@ -534,12 +722,27 @@ public sealed class FakeClient : IDisposable
     /// <summary>Entities this client was sent state, vars, sync state or an RPC for. A leak shows up here first.</summary>
     public readonly HashSet<ulong> HeardAbout = new();
     public readonly HashSet<string> Containers = new();
+    /// <summary>
+    /// Everything that arrived in the order it arrived, as <c>container+ c2</c>, <c>container- c2</c>,
+    /// <c>spawn 6600</c>, <c>despawn 6600</c>. Design §8 is an ordering rule — a row before the spawn that
+    /// names it, a row removed only after the entities in it are gone — and a set cannot be asked about order.
+    /// </summary>
+    public readonly List<string> Wire = new();
+    /// <summary>Container rows ever upserted, counting repeats (a lease change legitimately re-sends rows).</summary>
+    public int ContainerUpsertRows;
+    /// <summary>
+    /// Rows naming the same container twice inside <b>one</b> message. A lease refresh may re-send a row the
+    /// client already holds, but one collection pass listing the same container twice is a missing dedupe
+    /// between two foci that overlap.
+    /// </summary>
+    public int DuplicateContainerRows;
     public int VarsReceived, StatesReceived, SyncStatesReceived, RpcsReceived, DuplicateSpawns, OrphanUpdates;
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
 
     private readonly Dictionary<ulong, ushort> _viewSeq = new();
+    private readonly HashSet<string> _inMessage = new();
     private readonly string _token, _session, _name;
     private readonly int _peer;
 
@@ -556,14 +759,30 @@ public sealed class FakeClient : IDisposable
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
     }
 
-    /// <summary>Tell the gateway where the player is looking. It is a hint: the gateway validates and clamps it.</summary>
-    public void SendFocusHint(Vector3 position, byte generation = 0)
+    /// <summary>
+    /// Tell the gateway where the player is looking, in absolute world coordinates — what a real client sends
+    /// after adding its floating origin to its frame position. It is a hint: the gateway decides what it is
+    /// worth. <see cref="SendFocusHintInFrame"/> is the same thing said the way a shifted client would say it.
+    /// </summary>
+    public void SendFocusHint(Vector3 position, byte generation = 0) =>
+        SendFocusHint(position.x, position.y, position.z, generation);
+
+    /// <inheritdoc cref="SendFocusHint(Vector3,byte)"/>
+    public void SendFocusHint(double x, double y, double z, byte generation = 0)
     {
         var w = new NetworkWriter();
-        new ClientFocusHintMsg { Position = position, Generation = generation }.Write(w);
+        new ClientFocusHintMsg { X = x, Y = y, Z = z, Generation = generation }.Write(w);
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
         Transport.Flush();
     }
+
+    /// <summary>
+    /// A hint from a client whose floating origin sits at <paramref name="origin"/>: it holds the point as
+    /// <paramref name="framePosition"/> in its own space and sends the sum, which is why a shift does not move
+    /// what the gateway thinks it is watching.
+    /// </summary>
+    public void SendFocusHintInFrame(Vector3 framePosition, Vector3 origin, byte generation = 0) =>
+        SendFocusHint(origin.x + (double)framePosition.x, origin.y + (double)framePosition.y, origin.z + (double)framePosition.z, generation);
 
     /// <summary>Withdraw the hint, as <c>NebulaClient.ClearFocusHint</c> does: reliably, under a new generation.</summary>
     public void ClearFocusHint(byte generation)
@@ -616,14 +835,30 @@ public sealed class FakeClient : IDisposable
             {
                 var update = ContainerOwnershipMsg.Read(r);
                 if (update.Full) Containers.Clear();
-                if (update.Upserts != null) foreach (var e in update.Upserts) Containers.Add(e.ContainerId);
-                if (update.Removes != null) foreach (string removed in update.Removes) Containers.Remove(removed);
+                if (update.Upserts != null)
+                {
+                    _inMessage.Clear();
+                    foreach (var e in update.Upserts)
+                    {
+                        ContainerUpsertRows++;
+                        if (!_inMessage.Add(e.ContainerId)) DuplicateContainerRows++;
+                        Containers.Add(e.ContainerId);
+                        Wire.Add("container+ " + e.ContainerId);
+                    }
+                }
+                if (update.Removes != null)
+                    foreach (string removed in update.Removes)
+                    {
+                        Containers.Remove(removed);
+                        Wire.Add("container- " + removed);
+                    }
                 break;
             }
             case MsgId.EntitySpawn:
             {
                 var msg = EntitySpawnMsg.Read(r);
                 Spawned.Add(msg.NetId);
+                Wire.Add("spawn " + msg.NetId);
                 // A spawn with no view sequence is a relayed in-place update (an authority transfer, a container
                 // change) for an entity already in the set; only a new view of an entity we still hold would be
                 // the gateway telling us the same thing twice.
@@ -643,6 +878,7 @@ public sealed class FakeClient : IDisposable
                 if (msg.ViewSeq != 0 && _viewSeq.TryGetValue(msg.NetId, out ushort current) && msg.ViewSeq < current) break;
                 _viewSeq.Remove(msg.NetId);
                 Despawned.Add(msg.NetId);
+                Wire.Add("despawn " + msg.NetId);
                 Replicas.Remove(msg.NetId);
                 break;
             }

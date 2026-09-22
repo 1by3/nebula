@@ -343,7 +343,7 @@ public sealed class Renderer
             foreach (var m in e.Members)
             {
                 string value = m.EqualsValue != null ? "`" + m.EqualsValue.Value.ToString() + "`" : "";
-                sb.AppendLine($"| `{m.Identifier.ValueText}` | {value} | {InlineDoc(m)} |");
+                sb.AppendLine($"| <span id=\"{Anchor(m.Identifier.ValueText)}\"></span>`{m.Identifier.ValueText}` | {value} | {InlineDoc(m)} |");
             }
             sb.AppendLine();
             return;

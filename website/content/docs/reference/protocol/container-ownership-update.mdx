@@ -9,7 +9,7 @@ description: "What one MsgId.ContainerOwnership message says: either the complet
 public struct ContainerOwnershipUpdate
 ```
 
-What one [`MsgId.ContainerOwnership`](/docs/reference/protocol/msg-id#containerownership) message says: either the complete set of containers a client should know about ([`Full`](#full)) or a change to it. Interest management makes this per-client and incremental (design §8): a client is told about the containers overlapping its own window, so the snapshot of a large world is no longer broadcast to everybody.
+What one [`MsgId.ContainerOwnership`](/docs/reference/protocol/msg-id#containerownership) message says: either the complete set of containers a client should know about ([`Full`](#full)) or a change to it. Interest management makes this per-client and incremental: a client is told about the containers overlapping its own window, so the client receives only the relevant part of a large world's container table.
 
 ## Fields
 

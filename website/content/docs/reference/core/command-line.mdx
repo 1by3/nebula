@@ -11,6 +11,16 @@ public static class CommandLine
 
 Tiny "-key value" / "-flag" parser over `Environment.GetCommandLineArgs`. A web build has no command line and reads the same switches from the page's query string instead: `?nebula-name=Jesse&nebula-connect`.
 
+## Properties
+
+### Keys [#keys]
+
+```csharp
+public static IReadOnlyCollection<string> Keys { get; }
+```
+
+Every switch that was parsed, for a service that forwards a whole family of them (`-nebula-ext-*`) to a process it launches.
+
 ## Methods
 
 ### ParseQuery [#parsequery]

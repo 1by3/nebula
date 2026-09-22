@@ -1,0 +1,157 @@
+---
+title: Extend the gateway
+description: Install an interest policy, tag clients, and feed fog-of-war changes into the standalone gateway process.
+---
+
+Run your own code inside the **standalone gateway** — the `nebula-gateway` executable that `nebula start` and a deployed mesh run — to install an [interest policy](/docs/guides/interest-management#the-policy-api), give a joining client its team, or tell the gateway that a fog-of-war reveal happened. That executable is built from Nebula's own sources and holds no game code, so without an extension a game has no way to reach `gateway.InterestPolicy` or the client tag setters when the standalone gateway owns the process.
+
+A **gateway extension** is one class library, built separately from your Unity project, that the gateway is *told* to load. Nothing is scanned or discovered: you name exactly one assembly in configuration, and a gateway that cannot load it refuses to start.
+
+## When you need one
+
+You do not need a gateway extension to use the default interest behavior — distance-based visibility, `RelevanceRadius`, `AlwaysRelevant` — none of that requires game code in the gateway process. You need one only when your game supplies its own `IInterestPolicy`, reads or sets a client's team or tags, or changes a client's [focus mode](/docs/guides/interest-management#client-focus-hints-are-inputs-never-authority), **and** you run the gateway as the standalone `nebula-gateway` process (which `nebula start`, `nebula deploy`, and every hosted mesh do).
+
+## Create the extension project
+
+Create a plain .NET class library next to your Unity project, targeting `net10.0`, that implements `IGatewayExtension`:
+
+```csharp
+using Nebula;
+
+public sealed class MyGatewayExtension : IGatewayExtension, IInterestPolicy
+{
+    private IGatewayExtensionContext _context;
+
+    public void Initialize(IGatewayExtensionContext context)
+    {
+        _context = context;
+        context.ClientJoined += OnClientJoined;
+        context.ClientLeft += OnClientLeft;
+        // Before the first tick: every client this gateway evaluates from here on is judged by this policy.
+        context.SetInterestPolicy(this);
+    }
+
+    public void Tick(double now) { }
+
+    public void Shutdown() { }
+
+    private void OnClientJoined(NebulaGateway.GatewayClientInfo client)
+    {
+        byte team = TeamFor(client.Name);
+        _context.SetClientTag(client.ClientId, team);
+    }
+
+    private void OnClientLeft(NebulaGateway.GatewayClientInfo client) { }
+
+    public void Collect(in InterestClient client, InterestQuery query) =>
+        DefaultInterestPolicy.Instance.Collect(client, query);
+
+    public bool Authorize(in InterestClient client, in InterestEntity entity)
+    {
+        if (entity.OwnerClientId == client.ClientId) return true;
+        return entity.InterestGroup == 0 || entity.InterestGroup == client.Team;
+    }
+
+    private byte TeamFor(string name) => 1; // your matchmaking lookup
+}
+```
+
+Reference the gateway's own `Nebula.Services.dll`, not a copy of it: the gateway process already has it loaded, and a second copy would be a second, incompatible set of types.
+
+```xml title="MyGame.Gateway.csproj"
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Nebula.Services">
+      <HintPath>../Builds/Win64/Nebula.Services.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
+```
+
+Run `nebula build` (or `nebula build services`) once first, so `Nebula.Services.dll` exists in your project's `Builds/<platform>/` folder to reference. `<Private>false</Private>` matters: it keeps `dotnet build` from copying `Nebula.Services.dll` into your extension's own output, which would create the second copy the gateway refuses to load.
+
+## Build it and put it next to the gateway
+
+```bash
+dotnet build MyGame.Gateway.csproj -c Release -o Builds/Win64
+```
+
+Build your extension into the same folder `nebula build` publishes the gateway to (`Builds/Win64` on Windows, `Builds/Linux64` for a Linux or deployed build) — that folder is what `nebula build --linux` packs into the deploy tarball and what every VM of a fleet unpacks, so every gateway loads the same extension from the same relative path. `nebula build` warns if the file named in `GatewayExtension` is missing from the build folder.
+
+## Configure the gateway to load it
+
+Set these fields on `NebulaConfig` (or override them on the command line):
+
+| Field | Command line | What it does |
+| --- | --- | --- |
+| `GatewayExtension` | `-nebula-gateway-extension <file>` | The extension assembly: a file name resolved next to the gateway executable, or an absolute path. Empty means no extension. |
+| `GatewayExtensionType` | `-nebula-gateway-extension-type <Namespace.Class>` | Which class to load, only needed when the assembly has more than one `IGatewayExtension`. |
+| `GatewayExtensionOptions` | `-nebula-gateway-extension-options key=value;key=value` | Options your extension reads with `context.Option(key)`. A single option can also be overridden with `-nebula-ext-<key> <value>` on the gateway's own command line. |
+
+`GatewayExtension` travels in the exported `nebula-services.json`, and the orchestrator forwards all three overrides (plus every `-nebula-ext-<key>`) to the gateway it launches, so one configuration reaches every gateway of a fleet the same way.
+
+## What happens at start-up
+
+`Initialize` runs once, after the gateway initializes and before its first tick. A policy installed there applies before the gateway evaluates any client.
+
+<Callout type="warn" title="Extension loading fails closed">
+A policy can restrict what players may see. If the gateway cannot load or initialize a configured extension, it refuses to start instead of running with the default policy.
+</Callout>
+
+Loading fails when:
+
+- the named assembly is missing or cannot be found next to the gateway executable;
+- it does not reference the gateway's own `Nebula.Services.dll`, or references a different version of it;
+- it defines no class implementing `IGatewayExtension`; or
+- it defines more than one, and `GatewayExtensionType` does not name which to use.
+
+## What happens after start-up
+
+Every call from the gateway into your extension — `Tick`, the client events, and every `IInterestPolicy` method — is isolated. An exception is logged and counted in `GatewayStats.ExtensionErrors` instead of taking the gateway down, and a throwing `Authorize` **denies** the entity rather than allowing it: the only safe reading of "the filter could not answer" is "no." Watch `ExtensionErrors` in the [dashboard](/docs/guides/orchestrator-and-dashboard) or the debug overlay — anything above zero means your extension threw at least once.
+
+**Do not block.** `Initialize`, `Tick`, `Shutdown`, the interest policy, and the client events all run on the gateway loop, the same loop that relays every packet the gateway handles. Do slow or blocking work — reading a file, calling another service — on your own thread, and hand the result back to the gateway loop with `context.Post(Action)`, the only member of `IGatewayExtensionContext` that is safe to call from another thread:
+
+```csharp
+// On a watcher thread, after computing a fog-of-war change:
+context.Post(() =>
+{
+    // Server-owned bits your Authorize reads. Setting tags already revokes synchronously: anything the
+    // new mask no longer allows is despawned inside this call.
+    context.SetClientTags(clientId, revealedMask);
+
+    // Then say which direction the rest of your own state moved.
+    if (fogClosed)
+        context.RevalidateInterest(clientId); // tightening: take it away before the call returns
+    else
+        context.MarkInterestDirty(clientId);  // reveal: additive, at the next evaluation
+});
+```
+
+`Post` drains at the top of the gateway loop, before that tick's evaluations run, so a change is never read half-applied.
+
+**Pick the call by direction.** `MarkInterestDirty` and `MarkAllInterestDirty` are additive: they move the client up the evaluation rotation, which is still bounded per tick, so a client can wait a few ticks for its turn. That is fine for a reveal and wrong for a revocation — until its turn came up the client would keep a replica its policy already refuses and keep receiving state, variables, sync state, and RPCs for it. `RevalidateInterest(clientId)` and `RevalidateAllInterest()` re-run instance scope and `Authorize` over everything the client already holds and despawn the rest **before the call returns**, at a cost of one `Authorize` per replica held. They mark the client dirty too, so a change that both tightens and loosens gets the tightening now and the loosening at the next evaluation.
+
+`SetClientTag`, `SetClientTags`, and `SetInterestPolicy` all revoke synchronously on their own — you do not need a separate `Revalidate*` call after them. `SetClientFocusMode` does not: dropping a hint only narrows the client's foci, and those entities leave through the usual exit margin.
+
+The full `IGatewayExtensionContext` surface is: `GatewayId`, `Config`, `Option(key, fallback)`, `SetInterestPolicy`, the `ClientJoined` and `ClientLeft` events, `SetClientTag`/`GetClientTag`, `SetClientTags`/`GetClientTags`, `SetClientFocusMode`/`GetClientFocusMode`, `MarkInterestDirty`/`MarkAllInterestDirty`, `RevalidateInterest`/`RevalidateAllInterest`, `Post`, and `Log`/`LogWarning`/`LogError`. Everything except `Post` and the three logging methods must be called from the gateway loop.
+
+## A team and fog-of-war walkthrough
+
+`Packages/com.1by3.nebula/Services~/Nebula.SampleExtension` is a complete, working extension along these lines, and the one the package's own gateway-extension tests run against a real `nebula-gateway` process. It:
+
+1. Deals each joining client onto a team in `ClientJoined`, and sets it with `context.SetClientTag`.
+2. Installs an `IInterestPolicy` whose `Authorize` lets an entity through when it is neutral (`InterestGroup == 0`), belongs to the client's own team, or has been revealed to that team.
+3. Watches a file on a background thread standing in for a game's real fog-of-war authority, and calls `context.Post` to apply what it finds — never touching gateway state from that thread directly. The file is replaced wholesale, so it can close fog as well as open it, and the extension calls `context.RevalidateAllInterest()` rather than `MarkAllInterestDirty()`.
+4. Reads its own options (`teams`, a file path) with `context.Option`, so the same assembly can be configured differently per deployment through `GatewayExtensionOptions`.
+
+Read its source for the full options list and implementation.
+
+<Cards>
+  <Card title="Interest management" href="/docs/guides/interest-management" description="The policy API, focus hints, and what bounds a client's bandwidth." />
+  <Card title="Manage workers and containers" href="/docs/guides/orchestrator-and-dashboard" description="Build, start, and deploy the services that run a gateway extension." />
+</Cards>

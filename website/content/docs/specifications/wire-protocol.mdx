@@ -459,7 +459,7 @@ InterestSubscribe :=
 InterestResync := u32 have_seq
 EntityRedirect := u64 net_id, u16 new_worker_index
 EntityForget   := u64 net_id, u32 entity_epoch
-ClientFocusHint := u8 generation, u8 flags, [vector3 position]   ; flags bit 0 = Clear; position is absent on a clear
+ClientFocusHint := u8 generation, u8 clear, [f64 x, f64 y, f64 z]   ; x, y, z are absent when clear is nonzero
 ```
 
 A region's coordinate on each axis is `floor((position - offset) / edge)` in double precision, over absolute world
@@ -489,12 +489,17 @@ between regions it sends `EntitySpawn` to the gateways that subscribe the new re
 unsubscribed: the gateway already knows which entities that removes. A worker sends `EntityRedirect` for an
 individually subscribed entity that has moved to another worker, so the gateway links that worker instead.
 
-`ClientFocusHint` tells the gateway where a client is looking, for example a sniper scope or a strategy camera. It
-is advisory. A gateway MUST drop a hint containing a non-finite value, MUST rate-limit hints per client
-(`InterestHintMaxHz`, five per second by default), and MUST clamp the point to `InterestHintMaxDistance` from the
-client's pawn unless its interest policy accepts free foci for that client.
+`ClientFocusHint` tells the gateway where a client is looking, for example a sniper scope or a strategy camera. `x`,
+`y`, and `z` are **absolute** world coordinates in double precision, not a position in the sender's floating-origin
+frame: the client adds its current origin before sending, so an origin shift under the camera does not move the
+point the gateway thinks it is watching. `x`, `y`, and `z` are omitted entirely when `clear` is nonzero. It is
+advisory. A gateway MUST drop a hint containing a non-finite value, MUST rate-limit hints per client
+(`InterestHintMaxHz`, five per second by default), and MUST treat the point only as far as the server-owned
+`FocusMode` it has assigned that client allows: clamped to `InterestHintMaxDistance` of the client's pawn under the
+default `PawnClamped` mode, refused outright when the client has no pawn to clamp to, taken as sent under `Free`,
+or ignored under `Disabled`. A client cannot set or query its own `FocusMode`.
 
-A client withdraws its hint with a `Clear` message, sent reliably under a `generation` one higher than its hints so far; interest returns to the pawn on the next evaluation. Hints and the clear travel on different channels and can cross, so the gateway drops any message whose generation is older than the newest it has seen (wrapping `u8` comparison), and ignores a clear whose generation it already holds from a newer hint. The gateway adopts the generation of the first hint message on a connection. A clear is never rate-limited: narrowing interest is always allowed.
+A client withdraws its hint with a `clear` message, sent reliably under a `generation` one higher than its hints so far; interest returns to the pawn on the next evaluation. Hints and the clear travel on different channels and can cross, so the gateway drops any message whose generation is older than the newest it has seen (wrapping `u8` comparison), and ignores a clear whose generation it already holds from a newer hint. The gateway adopts the generation of the first hint message on a connection. A clear is never rate-limited: narrowing interest is always allowed.
 
 ### Worker-defined messages
 

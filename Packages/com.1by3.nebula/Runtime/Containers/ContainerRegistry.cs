@@ -217,8 +217,8 @@ namespace Nebula
 
         /// <summary>
         /// Every container whose box overlaps <paramref name="box"/>, appended to <paramref name="result"/>
-        /// (cleared first). This is the query interest management resolves a region to its owning workers with
-        /// (design §5), so it must never walk the whole world: a gridded world is answered from the cell grid, a
+        /// (cleared first). This is the query interest management uses to resolve a region to its owning workers,
+        /// so it must never walk the whole world: a gridded world is answered from the cell grid, a
         /// runtime world from the spatial hash, and only the dynamic list — which is small by construction — is
         /// scanned linearly. An ungridded static set is scanned linearly too, which is bounded because an
         /// ungridded world is a handful of hand-placed containers.

@@ -439,6 +439,9 @@
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {
       const state = g.draining ? 'draining' : g.drainRequested ? 'drain requested' : g.ready ? 'ready' : 'starting';
       const joining = (g.pendingJoins || 0) + (g.joiningClients || 0) + (g.reconnectingClients || 0);
+      // A gateway extension that throws is still a running gateway, so it shows up nowhere else: an exception
+      // out of the game's policy is counted and denied, which is quiet and wrong rather than loud and wrong.
+      const extErrors = g.extensionErrors || 0;
       return `
       <tr><td class="mono" title="incarnation ${esc(g.incarnation || '')}">${esc(g.id)}</td><td class="mono">${esc(g.address)}</td><td>${fmtAge(g.heartbeatAgeSeconds)}</td>
         <td>${g.activeClients || 0}</td><td${g.pendingJoins ? ' class="warnText"' : ''} title="${g.pendingJoins || 0} waiting for a worker, ${g.joiningClients || 0} authenticating, ${g.reconnectingClients || 0} reconnecting">${joining}</td>
@@ -449,7 +452,7 @@
         <td title="Why: ${esc(g.workerLinkReasons || '')}">${g.workerLinks || 0} / ${g.workerConnections || 0}</td>
         <td title="One interest evaluation: ${(g.interestEvalMsAvg || 0).toFixed(2)} ms average"${(g.interestEvalMsMax || 0) > 5 ? ' class="warnText"' : ''}>${(g.interestEvalMsMax || 0).toFixed(1)} ms</td>
         <td>${((g.cpu || 0) * 100).toFixed(0)}%</td><td${(g.loopLagMs || 0) > 8 ? ' class="warnText"' : ''}>${(g.loopLagMs || 0).toFixed(1)} ms</td>
-        <td${g.draining || g.drainRequested ? ' class="warnText"' : ''}>${state}</td>
+        <td${g.draining || g.drainRequested || extErrors ? ' class="warnText"' : ''} title="${extErrors ? extErrors + ' gateway extension error(s) since start: the game extension threw, and a policy that throws denies' : ''}">${state}${extErrors ? ` + ${extErrors} ext err` : ''}</td>
         <td>${g.drainRequested || g.draining
           ? `<button class="small" data-act="undrain" data-id="${esc(g.id)}" title="Take this gateway back into service">Undrain</button>`
           : `<button class="small" data-act="drain" data-id="${esc(g.id)}" ${s.gateways.length < 2 ? 'disabled' : ''} title="Refuse new clients and ask its clients to reconnect through another gateway">Drain</button>`}</td></tr>`;

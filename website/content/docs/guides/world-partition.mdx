@@ -85,10 +85,10 @@ Each role then streams what it needs:
 | Role | Cells loaded | Origin |
 | --- | --- | --- |
 | Worker | The cells of every container it leases plus `WorkerLoadRingCells` rings around them, so seam physics and ghosts have the neighbours' geometry. | Follows the centroid of the leased cells. |
-| Client and bots | `NearCells` around the local pawn (the origin cell before a pawn exists). | Follows the pawn. |
+| Client and bots | `NearCells` around the client's content anchor (the origin cell before a pawn exists). | Follows the content anchor. |
 | Gateway, orchestrator | Nothing. The manifest gives them the container maths. | Never moves. |
 
-A client's load radius is no longer just `ClientLoadRadiusCells`. [Interest management](/docs/guides/interest-management#one-notion-of-near) computes `NearCells = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin) / cell size))`, so raising `InterestRadius` widens client streaming too — a client always has scene content loaded at least as far as it can hear about entities. `ClientLoadRadiusCells` is a floor for loading more than interest strictly needs, not the whole answer.
+[Interest management](/docs/guides/interest-management#one-notion-of-near) computes a client's load radius as `NearCells = max(ClientLoadRadiusCells, ceil((InterestRadius + InterestExitMargin) / cell size))`. Raising `InterestRadius` therefore widens client streaming, and `ClientLoadRadiusCells` sets the minimum radius. The content anchor is the local pawn by default; `NebulaClient.SetContentAnchor` moves it to another transform, such as a strategy camera, and both cell streaming and the runtime chunk origin follow it. See the [strategy camera recipe](/docs/guides/interest-management#scoped-container-ownership).
 
 The origin shifts only when the player or worker centroid is more than `OriginShiftThresholdCells` from the origin cell. When it shifts, Nebula moves the containers and refreshes each entity's interpolation, pose, and prediction history.
 

@@ -11,7 +11,9 @@ public sealed class InterestIndex<T>
 
 Region → dense list of items, with swap-remove and O(1) rebucketing. Used by the gateway for its entity records and by the worker for its authoritative entities, so both sides answer "what is near this focus" the same way.
 
-Carried entities (design D3) are bucketed in their **root carrier's** region and move with it: a ship and everything riding in it enter and leave a client's set as one unit at any speed. Bucketing a passenger by its own resolved position would let a seat straddle a region edge and pop separately from its ship.
+Carried entities are bucketed in their **root carrier's** region and move with it: a ship and everything riding in it enter and leave a client's set as one unit at any speed. Bucketing a passenger by its own resolved position would let a seat straddle a region edge and pop separately from its ship.
+
+Placement follows the root carrier too, not only the region: an item's own [`Add`](#add)/[`AddWide`](#addwide)/[`AddGlobal`](#addglobal) call is remembered as its *own* placement and is what it reverts to when it is no longer carried, but while it rides in something it sits exactly where its root carrier sits. An always-relevant passenger of an ordinary ship is therefore a region item in the ship's region, not a global one — otherwise the subtree would not enter and leave as one unit, and every gateway in the mesh would be sent a crate because of the crate's own prefab settings.
 
 Steady state allocates nothing: bucket lists are pooled and reused, and a region is removed from the map (its list returned to the pool) only when it empties, which is also what keeps [`RegionCount`](#regioncount) meaningful for the subscriber-mask work on the worker.
 
@@ -97,6 +99,14 @@ public bool TryGetPlacement(ulong id, out InterestPlacement placement, out ulong
 
 Where the item sits, and in which region when it is bucketed in one.
 
+### TryGetOwnPlacement [#trygetownplacement]
+
+```csharp
+public bool TryGetOwnPlacement(ulong id, out InterestPlacement placement, out ulong region);
+```
+
+What the item asked for itself, ignoring anything it rides in: what [`TryGetPlacement`](#trygetplacement) would say once it is no longer carried. For diagnostics and for a caller that has to tell the two apart.
+
 ### CarrierOf [#carrierof]
 
 ```csharp
@@ -105,13 +115,51 @@ public ulong CarrierOf(ulong id);
 
 The item's direct carrier, or 0 when it is not carried.
 
+### RootOf [#rootof]
+
+```csharp
+public ulong RootOf(ulong id);
+```
+
+The outermost carrier this item rides in — the one whose placement the whole subtree takes. An item that is not carried is its own root, and so is one whose carrier is not in the index (yet): that is as far up as this index can see, and it is what the item is placed by until the carrier arrives.
+
+### DepthOf [#depthof]
+
+```csharp
+public int DepthOf(ulong id);
+```
+
+How many carriers this item rides inside: 0 for something standing in the world, 1 inside a ship, 2 inside a crate inside that ship. The chain is acyclic ([`SetCarrier`](#setcarrier) refuses anything else), so the index's own size is the only bound needed and no valid tree is ever cut short — which is what lets publication order a subtree of any depth.
+
+### HasCarried [#hascarried]
+
+```csharp
+public bool HasCarried(ulong id);
+```
+
+Whether anything is riding in this item, so a caller can skip the subtree work entirely. True for an item that is **not** in the index too: a passenger can name a carrier that has not arrived yet, and that pending subtree is exactly what has to be republished the moment the carrier does arrive.
+
+### CollectCarried [#collectcarried]
+
+```csharp
+public int CollectCarried(ulong id, List<ulong> result);
+```
+
+Append everything `id` carries, to any depth, to `result`, each carrier before what it carries. That order is the one publication needs: a spawn walks it forwards so a container always arrives before its contents, a forget backwards so contents leave before their container. Returns how many ids were appended.
+
+The **whole** subtree is collected at any width and any depth. There is no cap, because a partly walked tree is a partly rebucketed ship — some of the crates published to the gateways at the destination and the rest left addressed to the ones at the origin — and nothing downstream could tell. What makes that safe is that the links are acyclic: [`SetCarrier`](#setcarrier) refuses a link that would close a cycle, so a walk cannot revisit an item and the subtree is at most the rest of the index. That count is the only bound here, and it stops a corrupted link set rather than a large valid one.
+
+The carrier itself need not be in the index: children are remembered from the moment they name it, so this is also how the subtree waiting for a missing ship is walked — which is what a publisher needs to announce the transition the ship's arrival causes.
+
+Allocation free: the caller's list is also the walk frontier, and nothing else is touched.
+
 ### Add [#add]
 
 ```csharp
 public void Add(ulong id, ulong region, in T value);
 ```
 
-Add or update an item in a region. A carried item follows its carrier, so the region is ignored for one.
+Add or update an item in a region. This is the item's *own* placement: while it rides in something it stays wherever its root carrier is, and this is what it comes back to when it gets off.
 
 ### AddWide [#addwide]
 
@@ -135,7 +183,7 @@ Add or update an always-relevant item.
 public bool Move(ulong id, ulong region);
 ```
 
-Rebucket an item whose region key changed. Its carried subtree moves with it. Returns false for an unknown item, and for a carried one (which is bucketed with its carrier and must not move by itself).
+Rebucket an item whose region key changed. Its carried subtree moves with it. Returns false for an unknown item, for a carried one (which is bucketed with its carrier and must not move by itself), and for one whose own placement is wide or global (its reach, not a bucket, decides who hears about it).
 
 ### SetValue [#setvalue]
 
@@ -148,10 +196,12 @@ Replace the record kept for an item, leaving it where it is.
 ### SetCarrier [#setcarrier]
 
 ```csharp
-public void SetCarrier(ulong id, ulong carrier);
+public CarrierLink SetCarrier(ulong id, ulong carrier);
 ```
 
-Link a carried entity to the entity carrying it (0 detaches). The child is moved into the carrier's region at once, and follows it from then on. The carrier need not be in the index yet; the link is remembered either way, and the child is placed the next time the carrier moves.
+Link a carried item to the item carrying it (0 detaches). The child — and everything riding in the child — is placed where the root carrier sits at once, and follows it from then on. The carrier need not be in the index yet; the link is remembered either way, and the subtree is placed the moment the carrier is added or moves. Getting off puts the item back on its own placement: a wide or global item returns to its list, and a region one stays in the bucket it was put down in until the next [`Move`](#move) says otherwise.
+
+A link that would close a cycle is **refused** and reported ([`CarrierLink.Cycle`](/docs/reference/interest/carrier-link#cycle)): see the return values for what each outcome means.
 
 ### Remove [#remove]
 

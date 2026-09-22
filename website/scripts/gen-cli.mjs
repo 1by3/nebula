@@ -114,7 +114,7 @@ for (const c of doc.commands) {
 const index = [];
 index.push('---');
 index.push('title: CLI reference');
-index.push(`description: Find the syntax and options for each nebula command (version ${doc.version}).`);
+index.push('description: Find the syntax and options for each nebula command.');
 index.push('---');
 index.push('');
 index.push(

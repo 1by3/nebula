@@ -69,12 +69,17 @@ namespace Nebula
         public int DespawnsReceived { get; private set; }
 
         /// <summary>
-        /// Where the player is looking, in world space, when that is not simply where the pawn is: a free camera,
-        /// an RTS view, a spectator. Set it and the client sends the gateway a
-        /// <see cref="ClientFocusHintMsg"/> at up to <see cref="NebulaConfig.InterestHintMaxHz"/>; the gateway
-        /// treats it as an input and never as authority — it clamps it to
-        /// <see cref="NebulaConfig.InterestHintMaxDistance"/> of the pawn unless its policy says otherwise — so a
-        /// game cannot widen its own interest by lying about where it is looking.
+        /// Where the player is looking, in this client's own Unity world space, when that is not simply where the
+        /// pawn is: a free camera, an RTS view, a spectator. Set it and the client sends the gateway a
+        /// <see cref="ClientFocusHintMsg"/> at up to <see cref="NebulaConfig.InterestHintMaxHz"/>, converting the
+        /// point to absolute world coordinates on the way out (<see cref="AbsoluteFocusHint"/>), so a
+        /// floating-origin shift between two hints does not move the place the gateway thinks you are watching.
+        /// <para>
+        /// The gateway treats it as an input and never as authority: it is refused unless the server allowed
+        /// this client a focus (<c>NebulaGateway.SetClientFocusMode</c>), and by default it is clamped to
+        /// <see cref="NebulaConfig.InterestHintMaxDistance"/> of the pawn. A game cannot widen its own interest
+        /// by lying about where it is looking.
+        /// </para>
         /// </summary>
         public Vector3? FocusHint
         {
@@ -100,6 +105,68 @@ namespace Nebula
             _focusClearPending = true;
         }
 
+        /// <summary>
+        /// <see cref="FocusHint"/> in absolute world coordinates: the frame position plus this process's
+        /// floating origin, in double, exactly as a worker resolves its own entities
+        /// (<c>WorkerInterest.ToAbsolute</c>). Without a world definition the origin never moves and the two
+        /// spaces are the same. All zero when there is no hint.
+        /// </summary>
+        public void AbsoluteFocusHint(out double x, out double y, out double z)
+        {
+            if (!_hasFocusHint) { x = y = z = 0; return; }
+            ToAbsolute(_focusHint, out x, out y, out z);
+        }
+
+        /// <summary>
+        /// What this client's <b>content</b> follows: which cells or chunks are kept loaded, and where the
+        /// floating origin sits. Null (the default) means the local pawn, which is what a shooter wants and
+        /// what every existing project gets without changing a line.
+        /// <para>
+        /// A strategy game does not want that. Its camera flies over a front the commander has no pawn near —
+        /// or has no pawn at all — and content anchored to the pawn would leave the camera looking at unloaded
+        /// terrain however much the gateway is willing to send. Handing the camera's transform to
+        /// <see cref="SetContentAnchor"/> moves the window with the camera instead.
+        /// </para>
+        /// </summary>
+        public Transform ContentAnchor { get; private set; }
+
+        /// <summary>
+        /// The transform content is actually anchored to right now: <see cref="ContentAnchor"/> when one is set
+        /// and still alive, the local pawn otherwise, and null before either exists. Read by
+        /// <c>NebulaWorldStreaming</c> (baked cell scenes) and <c>NebulaChunkedWorld</c> (runtime chunks), so
+        /// one setting moves both.
+        /// </summary>
+        public Transform ActiveContentAnchor =>
+            ContentAnchor != null ? ContentAnchor : LocalPlayer != null ? LocalPlayer.transform : null;
+
+        /// <summary>
+        /// Anchor content to this transform — the active strategy camera, a selected unit, a cinematic rig —
+        /// instead of to the local pawn. Pass null to go back to the pawn. It is deliberately a transform and
+        /// not the focus hint: the hint is an optional, rate-limited, server-validated <i>request</i> about what
+        /// to be sent, while the anchor is a local decision about what to keep in memory, sampled every frame so
+        /// load/unload hysteresis and origin shifts have something continuous to measure against.
+        /// <para>
+        /// Both are usually the same place, and a game that drives a free camera normally sets
+        /// <see cref="FocusHint"/> to the camera's aim point and the anchor to the camera. Doing so is safe
+        /// across an origin shift: the hint is converted to absolute coordinates as it is sent
+        /// (<see cref="AbsoluteFocusHint"/>), so moving the origin under the camera does not move the point the
+        /// gateway thinks anyone is watching. The pawn's prediction is unaffected too — it reconciles in the
+        /// same frame everything else is in, and an origin shift moves that frame for all of them at once.
+        /// </para>
+        /// </summary>
+        public void SetContentAnchor(Transform anchor) => ContentAnchor = anchor;
+
+        /// <summary>A point in this client's frame as absolute world coordinates.</summary>
+        private static void ToAbsolute(Vector3 frame, out double x, out double y, out double z)
+        {
+            var world = World.WorldOrigin.Definition;
+            var cell = world != null ? World.WorldOrigin.Cell : Vector3Int.zero;
+            var size = world != null ? world.CellSize : Vector3.zero;
+            x = (double)cell.x * size.x + frame.x;
+            y = (double)cell.y * size.y + frame.y;
+            z = (double)cell.z * size.z + frame.z;
+        }
+
         private Vector3 _focusHint;
         private bool _hasFocusHint;
         private byte _focusHintGeneration;
@@ -107,7 +174,7 @@ namespace Nebula
         private bool _focusClearPending;
         private float _nextFocusHintAt;
         /// <summary>
-        /// The view a replica was last spawned under (design D4). A despawn names the view it ends, so a despawn
+        /// The view a replica was last spawned under. A despawn names the view it ends, so a despawn
         /// of an older view — one sent before the entity re-entered the set, still in flight — cannot kill the
         /// replica the newer spawn created.
         /// </summary>
@@ -379,7 +446,10 @@ namespace Nebula
                 float hz = Config != null && Config.InterestHintMaxHz > 0 ? Config.InterestHintMaxHz : 5f;
                 _nextFocusHintAt = Time.unscaledTime + 1f / hz;
                 _writer.Reset();
-                new ClientFocusHintMsg { Position = _focusHint, Generation = _focusHintGeneration }.Write(_writer);
+                // Absolute, not the frame position: the origin may shift between two hints, and a gateway that
+                // read the frame position would think the camera jumped a cell every time it did.
+                AbsoluteFocusHint(out double ax, out double ay, out double az);
+                new ClientFocusHintMsg { X = ax, Y = ay, Z = az, Generation = _focusHintGeneration }.Write(_writer);
                 _transport.Send(_gatewayPeer, Delivery.Sequenced, _writer.ToSegment());
             }
 

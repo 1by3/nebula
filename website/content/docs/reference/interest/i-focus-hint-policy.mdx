@@ -1,0 +1,24 @@
+---
+title: "IFocusHintPolicy"
+description: "The optional second half of IInterestPolicy: the game's say over one client's focus hint, asked on the gateway loop as the hint arrives and before anything is done with it."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public interface IFocusHintPolicy
+```
+
+The optional second half of [`IInterestPolicy`](/docs/reference/interest/i-interest-policy): the game's say over one client's focus hint, asked on the gateway loop as the hint arrives and before anything is done with it. Implement it on the same object as the policy (the gateway looks for it there) when the per-client `NebulaGateway.SetClientFocusMode` setting is not enough — when whether a commander camera is allowed depends on where it is pointed, for instance.
+
+It must not block or allocate: a client can send hints as fast as it likes, and only the gateway's rate limit stands in front of this.
+
+## Methods
+
+### AuthorizeFocusHint [#authorizefocushint]
+
+```csharp
+FocusHintDecision AuthorizeFocusHint(in InterestClient client, in FocusHintDecision request);
+```
+
+Decide what to do with one hint. `request` carries the raw point the client sent and the mode the server has set for this client; returning it unchanged keeps that decision. Return [`FocusHintDecision.Reject`](/docs/reference/interest/focus-hint-decision#reject) to ignore the hint.

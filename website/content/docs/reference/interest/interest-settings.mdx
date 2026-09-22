@@ -27,7 +27,7 @@ Metres a client hears about an entity at, unless the entity's prefab overrides i
 public float ExitMargin;
 ```
 
-Extra metres an entity must travel past [`Radius`](#radius) before it leaves the set (hysteresis).
+Extra meters an entity must travel past [`Radius`](#radius) before it leaves the set (hysteresis).
 
 ### LingerSeconds [#lingerseconds]
 
@@ -43,7 +43,7 @@ Seconds an entity must stay outside `Radius + ExitMargin` before it is despawned
 public float CellSize;
 ```
 
-Region edge in metres, before the alignment snap of design §3.
+Region edge in meters, before it is aligned with the world grid.
 
 ### Planar [#planar]
 
@@ -67,7 +67,7 @@ How often a client's interest set is re-evaluated, in hertz.
 public float SubscribeMargin;
 ```
 
-Extra metres of regions subscribed beyond the exit radius, so a moving client is never late.
+Extra meters of regions subscribed beyond the exit radius, so a moving client is never late.
 
 ### RegionLingerSeconds [#regionlingerseconds]
 
@@ -139,7 +139,7 @@ Most explicit per-entity subscriptions one client's policy may ask for.
 public float MaxFocusSpeed;
 ```
 
-The fastest a focus is expected to move, in metres per second. Only used to validate [`SubscribeMargin`](#subscribemargin).
+The fastest a focus is expected to move, in meters per second. Only used to validate [`SubscribeMargin`](#subscribemargin).
 
 ### NearRadius [#nearradius]
 
@@ -175,7 +175,7 @@ public int FarDivisor;
 public int ClientLoadRadiusCells;
 ```
 
-Cells of content a client keeps loaded; raised to cover the interest radius (design §8).
+Cells of content a client keeps loaded; raised to cover the interest radius.
 
 ### PartitionWarnEntities [#partitionwarnentities]
 
@@ -201,7 +201,7 @@ Milliseconds of per-gateway filtering per tick above which the worker warns the 
 public static InterestSettings Default { get; }
 ```
 
-The shipped defaults (design §9). A game that sets nothing gets these.
+The shipped defaults. A game that sets nothing gets these.
 
 ### ExitRadius [#exitradius]
 
@@ -235,7 +235,17 @@ Seconds between two evaluations of one client.
 public int NearCells(float cellSize);
 ```
 
-One notion of "near" (design §8): the cells of content that must exist before interest needs them. Content streaming, the runtime allocator ring and the container window a client is told about all derive from this, so a client can never be spawned an entity standing on geometry it does not have.
+The cells of content that must exist before interest needs them. Content streaming, the runtime allocator ring and the container window a client is told about all derive from this, so a client can never be spawned an entity standing on geometry it does not have.
+
+### MaxContainerRows [#maxcontainerrows]
+
+```csharp
+public int MaxContainerRows(float cellSize);
+```
+
+Most container rows one client may be told about in one evaluation: the ceiling on the `NearCells` windows the gateway opens around a client's foci. Derived rather than configured, because every part of it is already a setting: a window is `2 × NearCells + 1` cells on a side, a planar world stacks nothing above it, and a client may hold [`MaxFoci`](#maxfoci) foci. It is a safety net and not a budget to aim at — the rows entities in the set stand in are collected before it applies, so reaching it can only ever withhold empty terrain a camera is looking at.
+
+Clamped to \[64, 4096\] so a tiny world still gets a usable window and an enormous `InterestRadius` cannot turn one evaluation into a lease-table broadcast.
 
 ### Validate [#validate]
 
@@ -243,4 +253,4 @@ One notion of "near" (design §8): the cells of content that must exist before i
 public InterestSettings Validate(List<ConfigIssue> issues, float worldCellSize = 0f, float ghostBandMargin = 0f);
 ```
 
-Check the relationships design §9 requires and return the values that will actually be used. Anything that can be repaired is repaired and reported as a [`ConfigSeverity.Warning`](/docs/reference/interest/config-severity#warning); only a non-positive size is an [`ConfigSeverity.Error`](/docs/reference/interest/config-severity#error), because no clamp of it would be what the game asked for. `worldCellSize` is the world definition's cell size (0 = none) and `ghostBandMargin` the meshing band, both of which constrain the region size.
+Check the setting relationships and return the values that will actually be used. Anything that can be repaired is repaired and reported as a [`ConfigSeverity.Warning`](/docs/reference/interest/config-severity#warning); only a non-positive size is an [`ConfigSeverity.Error`](/docs/reference/interest/config-severity#error), because no clamp of it would be what the game asked for. `worldCellSize` is the world definition's cell size (0 = none) and `ghostBandMargin` the meshing band, both of which constrain the region size.

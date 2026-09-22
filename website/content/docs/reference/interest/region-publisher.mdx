@@ -1,6 +1,6 @@
 ---
 title: "RegionPublisher"
-description: "The worker's side of interest management (design §6): which gateways hear about each region, and the grouping that lets one serialization serve all of them."
+description: "The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RegionPublisher.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RegionPublisher.cs)</div>
@@ -9,7 +9,7 @@ description: "The worker's side of interest management (design §6): which gatew
 public sealed class RegionPublisher
 ```
 
-The worker's side of interest management (design §6): which gateways hear about each region, and the grouping that lets one serialization serve all of them.
+The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them.
 
 Every region carries a **subscriber mask**, one bit per gateway link. Once a tick the publisher groups the regions that share a mask, so a batch is written once and sent to each gateway in the mask: with G gateways the work is O(entities + batches × subscribers) instead of O(entities × gateways). Nothing here remembers what a gateway already knows — a worker's memory must not grow with the number of gateways — so the only per-gateway state is the region set itself.
 

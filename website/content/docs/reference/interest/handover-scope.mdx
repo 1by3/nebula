@@ -1,0 +1,106 @@
+---
+title: "HandoverScope"
+description: "The bookkeeping one whole-subtree authority handoff needs: how deep the recursive transfer currently is, and which entities are leaving with the carrier being handed over right now."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/HandoverScope.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/HandoverScope.cs)</div>
+
+```csharp
+public sealed class HandoverScope
+```
+
+The bookkeeping one whole-subtree authority handoff needs: how deep the recursive transfer currently is, and which entities are leaving with the carrier being handed over right now.
+
+A handoff moves a ship and everything riding in it as one unit — the carrier first, then its contents, on the same ordered stream — so taking the carrier out of the interest index in between is not an orphaning and must publish nothing for the passengers that are coming along (design D85). The set is populated by the outermost transfer and read by [`CarriedTransition.Resolve<T>`](/docs/reference/interest/carried-transition#resolve), which collapses a follower's transition to "nothing changed" so no gateway is sent a passenger that is about to be redirected anyway.
+
+Scopes are entered with [`Begin`](#begin) in a `using`, so a throwing persistence store, handover callback or nested transfer cannot leave a nonzero depth and a stale follower set behind: the next top-level handoff would then skip its own collection and republish its passengers as orphans that never existed (design D87). Empty and free outside a handover, which is every steady-state call.
+
+One instance per worker, reused; the only state is the set and a scratch list.
+
+## Properties
+
+### Depth [#depth]
+
+```csharp
+public int Depth { get; }
+```
+
+How many transfers are in flight; 0 outside a handover.
+
+### FollowerCount [#followercount]
+
+```csharp
+public int FollowerCount { get; }
+```
+
+How many entities are recorded as leaving with the carrier being handed over.
+
+## Methods
+
+### Follows [#follows]
+
+```csharp
+public bool Follows(ulong netId);
+```
+
+Whether this entity is moving to another worker with the carrier it rides in, so the transition the index just went through is internal to a handoff and nothing about it may be published.
+
+### Add [#add]
+
+```csharp
+public bool Add(ulong netId);
+```
+
+Record one entity as leaving with the carrier. False when it was already recorded.
+
+### Collect [#collect]
+
+```csharp
+public int Collect<T>(InterestIndex<T> index, ulong carrier);
+```
+
+Record everything riding in `carrier` in the index, to any depth, as leaving with it. This is the index-driven collection, for a host whose whole idea of "what is inside what" is the carrier links; a host that also knows about interiors pinned to a worker of their own walks its own tree instead and calls [`Add`](#add), because a pinned interior stays behind and is really orphaned. Returns how many ids were newly recorded.
+
+### Begin [#begin]
+
+```csharp
+public Frame Begin();
+```
+
+Enter a transfer. The returned frame must be disposed — in a `using` or a `finally` — on every path out of the transfer, including an exceptional one; disposing the outermost frame clears the follower set.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget everything (a worker being torn down, or a host restarting its bookkeeping).
+
+## Nested types
+
+### Frame [#frame]
+
+```csharp
+public readonly struct Frame : IDisposable
+```
+
+One transfer's hold on the scope. A struct, so a handoff of a deep ship allocates nothing.
+
+#### Properties
+
+##### IsOutermost [#isoutermost]
+
+```csharp
+public bool IsOutermost { get; }
+```
+
+True for the transfer that opened the handoff: the one that owns the follower set.
+
+#### Methods
+
+##### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

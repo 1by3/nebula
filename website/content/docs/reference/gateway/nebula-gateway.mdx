@@ -25,6 +25,14 @@ public const long SessionTokenLifetimeSeconds = 24 * 3600;
 
 How long a session token stays valid. The worker's reclaim grace ([`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds)) is what decides whether the pawn is still there.
 
+### ExtensionErrors [#extensionerrors]
+
+```csharp
+public uint ExtensionErrors;
+```
+
+Exceptions thrown by a game extension running in this gateway, since the process started: policy calls, client events, posted work. It is a total and not a rate, because the number that matters is "is it still zero". Set by `GatewayExtensionHost`; reported as [`GatewayStats.ExtensionErrors`](/docs/reference/control-plane/gateway-stats#extensionerrors).
+
 ## Properties
 
 ### Config [#config]
@@ -143,7 +151,49 @@ Issues and checks the session tokens clients reconnect with.
 public IInterestPolicy InterestPolicy { get; set; }
 ```
 
-The game's say in what each client hears about (design §7). Defaults to [`DefaultInterestPolicy`](/docs/reference/interest/default-interest-policy): one focus at the pawn plus the client's validated hint. Compose several with [`InterestPolicies.Combine`](/docs/reference/interest/interest-policies#combine). Setting it re-evaluates every client at once.
+The game's say in what each client hears about. Defaults to [`DefaultInterestPolicy`](/docs/reference/interest/default-interest-policy): one focus at the pawn plus the client's validated hint. Compose several with [`InterestPolicies.Combine`](/docs/reference/interest/interest-policies#combine). If the policy also implements [`IFocusHintPolicy`](/docs/reference/interest/i-focus-hint-policy) it gets the say over focus hints too.
+
+Install it before the gateway's first tick — a policy is a security filter, and one installed while clients are already connected has not been asked about what they can already see. Assigning it is the next best thing, and it fails closed: every client's current set is re-authorized against the new policy **synchronously, inside this assignment** ([`RevalidateAllInterest`](#revalidateallinterest)), so nothing the new policy refuses is relayed to anybody afterwards. What the new policy newly allows arrives at the clients' next evaluations, which are still spread over the following ticks.
+
+### FocusHintsAccepted [#focushintsaccepted]
+
+```csharp
+public long FocusHintsAccepted { get; }
+```
+
+Focus hints from clients that survived validation and moved a set ([`FocusHintFilter`](/docs/reference/interest/focus-hint-filter)).
+
+### FocusHintsClamped [#focushintsclamped]
+
+```csharp
+public long FocusHintsClamped { get; }
+```
+
+Accepted hints that were pulled back to [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) of the pawn.
+
+### FocusHintsDroppedByRate [#focushintsdroppedbyrate]
+
+```csharp
+public long FocusHintsDroppedByRate { get; }
+```
+
+Hints dropped for being over [`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz). Counted per *attempt*, so a client whose hints are all refused for some other reason still shows up here rather than nowhere.
+
+### FocusHintsDroppedMalformed [#focushintsdroppedmalformed]
+
+```csharp
+public long FocusHintsDroppedMalformed { get; }
+```
+
+Hints dropped for being NaN, infinite, or further out than any world ([`FocusHintFilter.MaxMagnitude`](/docs/reference/interest/focus-hint-filter#maxmagnitude)).
+
+### FocusHintsDroppedUnauthorized [#focushintsdroppedunauthorized]
+
+```csharp
+public long FocusHintsDroppedUnauthorized { get; }
+```
+
+Hints dropped because this client may not have one: no pawn to clamp to in [`FocusMode.PawnClamped`](/docs/reference/interest/focus-mode#pawnclamped), [`FocusMode.Disabled`](/docs/reference/interest/focus-mode#disabled), or an [`IFocusHintPolicy`](/docs/reference/interest/i-focus-hint-policy) that refused it.
 
 ### InterestSettingsInUse [#interestsettingsinuse]
 
@@ -185,6 +235,42 @@ public int WorkerLinkCount { get; }
 
 Worker links currently held, for a test or an operator that wants the number without the heartbeat.
 
+### ContainerRowCap [#containerrowcap]
+
+```csharp
+public int ContainerRowCap { get; }
+```
+
+Most container rows one of this gateway's clients may be told about in one evaluation ([`InterestSettings.MaxContainerRows`](/docs/reference/interest/interest-settings#maxcontainerrows) at the world's cell size). Derived from the interest settings, not configured separately.
+
+### ContainerBudgetHits [#containerbudgethits]
+
+```csharp
+public long ContainerBudgetHits { get; }
+```
+
+Evaluations in which a client's foci asked for more container rows than [`ContainerRowCap`](#containerrowcap) allows, so the far ones were withheld. A number that keeps climbing means a policy is handing out more or wider foci than the mesh is sized for; it is never a correctness problem, because the rows entities stand in are collected before the cap applies.
+
+## Events
+
+### ClientJoined [#clientjoined]
+
+```csharp
+public event Action<GatewayClientInfo> ClientJoined;
+```
+
+An authenticated client has been welcomed: it has a session id and an identity, and its interest is about to be evaluated for the first time. This is where a server extension gives it its tags and its focus mode, because both are read by the very first evaluation.
+
+Raised on the gateway loop, synchronously, and the gateway is mid-welcome: a handler may call the `SetClient…`/`MarkInterestDirty` methods and read the gateway's own state, but it must not block, and it must not throw (an exception is caught and logged, never passed to the client).
+
+### ClientLeft [#clientleft]
+
+```csharp
+public event Action<GatewayClientInfo> ClientLeft;
+```
+
+A welcomed client is gone from this gateway: it disconnected, was rejected, or its session was taken over somewhere else (in which case another gateway raises its own [`ClientJoined`](#clientjoined)). Raised on the gateway loop under the same rules as [`ClientJoined`](#clientjoined); by the time it runs the client's interest state has already been let go, so its id no longer resolves.
+
 ## Methods
 
 ### Initialize [#initialize]
@@ -214,13 +300,29 @@ public void StopDraining();
 
 Cancel a drain (the fleet changed its mind): new clients are accepted again.
 
+### IsEntityCached [#isentitycached]
+
+```csharp
+public bool IsEntityCached(ulong netId);
+```
+
+Whether this gateway holds a record for one entity. The count above says how much is cached; this says *what*, which is the only way to tell "never sent here" from "sent and filtered out per client" — a distinction a client-side set cannot answer.
+
+### TryGetCachedPlacement [#trygetcachedplacement]
+
+```csharp
+public bool TryGetCachedPlacement(ulong netId, out InterestPlacement placement, out ulong region);
+```
+
+Where this gateway currently has an entity bucketed: its *effective* placement, which for a carried entity is its root carrier's and not what its own prefab asked for. For tests and for the debug tooling; false when no record is held.
+
 ### SetClientTag [#setclienttag]
 
 ```csharp
 public void SetClientTag(ulong clientId, byte team);
 ```
 
-A byte the game attaches to a client for its policy to filter on (team, faction, party). It is server state: the client never sends it, which is what makes a team filter a security boundary rather than a suggestion. Changing it re-evaluates the client at once.
+A byte the game attaches to a client for its policy to filter on (team, faction, party). It is server state: the client never sends it, which is what makes a team filter a security boundary rather than a suggestion. Changing it revokes at once and reveals shortly after: everything the policy no longer authorizes under the new tag is despawned inside this call ([`RevalidateInterest`](#revalidateinterest)), and what the new tag newly allows arrives at the client's next evaluation.
 
 ### GetClientTag [#getclienttag]
 
@@ -230,13 +332,81 @@ public byte GetClientTag(ulong clientId);
 
 What [`SetClientTag`](#setclienttag) last set for this client (0 by default).
 
+### SetClientTags [#setclienttags]
+
+```csharp
+public void SetClientTags(ulong clientId, ulong tags);
+```
+
+Sixty-four more bits of the same thing ([`InterestClient.Tags`](/docs/reference/interest/interest-client#tags)): alliances a faction is in, roles a player holds, fronts a commander is watching — anything a policy wants to test that does not fit in [`SetClientTag`](#setclienttag)'s single byte. Server state, like the tag, and with the same timing: what the new tags no longer authorize is despawned inside this call, and what they newly reveal arrives at the client's next evaluation.
+
+### GetClientTags [#getclienttags]
+
+```csharp
+public ulong GetClientTags(ulong clientId);
+```
+
+What [`SetClientTags`](#setclienttags) last set for this client (0 by default).
+
+### SetClientFocusMode [#setclientfocusmode]
+
+```csharp
+public void SetClientFocusMode(ulong clientId, FocusMode mode);
+```
+
+How far this client's own focus hint may move its interest. The default is [`FocusMode.PawnClamped`](/docs/reference/interest/focus-mode#pawnclamped), so a hint is worth at most [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) of the pawn and a client with no pawn has no hint at all; [`FocusMode.Free`](/docs/reference/interest/focus-mode#free) is what gives a strategy camera or a spectator the run of the world. Only the server may set it — the client cannot ask for it, and cannot tell that it has it except by what it is sent.
+
+Instance isolation is unaffected in every mode: a free focus is a wider view of the world the client is already in, never a way into another one.
+
+Changing the mode drops the hint the gateway is holding, because a hint accepted under one mode is not an input the next one ever validated; the client's next hint (within 1/[`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz) s) is judged afresh.
+
+### GetClientFocusMode [#getclientfocusmode]
+
+```csharp
+public FocusMode GetClientFocusMode(ulong clientId);
+```
+
+What [`SetClientFocusMode`](#setclientfocusmode) last set for this client ([`FocusMode.PawnClamped`](/docs/reference/interest/focus-mode#pawnclamped) by default).
+
 ### MarkInterestDirty [#markinterestdirty]
 
 ```csharp
 public void MarkInterestDirty(ulong clientId);
 ```
 
-Re-evaluate this client on the next tick rather than at its next scheduled evaluation. The game calls it when something its policy depends on changed (a party, a fog-of-war reveal); the gateway calls it when the pawn, instance, carrier or focus region changed.
+Put this client at the front of the evaluation queue: a **reveal**, and additive work generally (a party joined, a unit was given to the player, a fog cell was uncovered). The gateway calls it itself when the pawn, instance, carrier, focus mode or focus region changed.
+
+The timing is honest about what it is: dirty clients jump the routine rotation but are still bounded per tick ([`InterestSchedule.MinDirtyPerTick`](/docs/reference/interest/interest-schedule#mindirtypertick), [`InterestSchedule.DirtyBurst`](/docs/reference/interest/interest-schedule#dirtyburst)), so on a busy gateway a client may wait a few ticks for its turn. That is the right trade for showing something *more*, and the wrong one for taking something away: for a change that **tightens** what may be seen call [`RevalidateInterest`](#revalidateinterest), which revokes before this call would even have run.
+
+### MarkAllInterestDirty [#markallinterestdirty]
+
+```csharp
+public void MarkAllInterestDirty();
+```
+
+The same for every client: a world-wide reveal. The evaluations are spread over the following ticks rather than all run on the next one — see [`InterestSchedule`](/docs/reference/interest/interest-schedule) — so this is cheap to call on a live gateway, and for the same reason it is **not** how a revocation is applied. Use [`RevalidateAllInterest`](#revalidateallinterest) when a sweep can take visibility away.
+
+### RevalidateInterest [#revalidateinterest]
+
+```csharp
+public void RevalidateInterest(ulong clientId);
+```
+
+Re-authorize everything this client can already see, **now**, and despawn whatever [`IInterestPolicy.Authorize`](/docs/reference/interest/i-interest-policy#authorize) no longer allows before any further traffic about it is relayed. This is the immediate half of [`MarkInterestDirty`](#markinterestdirty) and the call to make whenever a change can take visibility away: a team or alliance change, a stealth roll, fog closing over a region, an access rule revoked.
+
+It costs one authorization per entity the client already holds — no grid query, no candidate scan — and allocates nothing. It never *adds* anything: the client is also marked dirty, so what the same change reveals arrives at its next evaluation, within an eval interval.
+
+Safe to call from a policy callback: a nested call falls back to marking the client dirty rather than re-entering the pass.
+
+### RevalidateAllInterest [#revalidateallinterest]
+
+```csharp
+public void RevalidateAllInterest();
+```
+
+[`RevalidateInterest`](#revalidateinterest) for every client: a world-wide tightening (a new policy, a war declared, a fog sweep that can close as well as open). Every unauthorized replica on this gateway is gone by the time the call returns.
+
+The cost is one authorization per replica the gateway is currently serving — about what one round of evaluation costs, concentrated into this call instead of spread over an eval interval. That is affordable for the events this is for, and it is the reason the routine rotation is still staggered: this is not a per-tick path, and nothing calls it for ordinary movement or camera updates.
 
 ### InterestSetSize [#interestsetsize]
 
@@ -245,3 +415,67 @@ public int InterestSetSize(ulong clientId);
 ```
 
 Entities in one client's set right now (-1 when there is no such client). For tests and tooling.
+
+## Nested types
+
+### GatewayClientInfo [#gatewayclientinfo]
+
+```csharp
+public readonly struct GatewayClientInfo
+```
+
+A client the gateway has admitted, as the server-side surface reports it. A snapshot taken on the gateway loop: nothing in it is a live reference.
+
+#### Constructors
+
+##### GatewayClientInfo [#gatewayclientinfo]
+
+```csharp
+public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed);
+```
+
+#### Fields
+
+##### ClientId [#clientid]
+
+```csharp
+public readonly ulong ClientId;
+```
+
+The mesh-wide session id; the same across a reconnection with a session token.
+
+##### Identity [#identity]
+
+```csharp
+public readonly string Identity;
+```
+
+The authenticated subject (`PlayerIdentity`), "" when there is none.
+
+##### Name [#name]
+
+```csharp
+public readonly string Name;
+```
+
+##### InstanceId [#instanceid]
+
+```csharp
+public readonly ulong InstanceId;
+```
+
+The simulation scope the client's pawn is in; 0 is the public world (and a client with no pawn yet).
+
+##### IsBot [#isbot]
+
+```csharp
+public readonly bool IsBot;
+```
+
+##### Reclaimed [#reclaimed]
+
+```csharp
+public readonly bool Reclaimed;
+```
+
+The session was reclaimed (a reconnection), not started fresh.

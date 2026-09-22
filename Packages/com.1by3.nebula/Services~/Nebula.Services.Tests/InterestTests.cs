@@ -202,7 +202,7 @@ public class InterestTests
     // ------------------------------------------------------------------------------------------- policy
 
     /// <summary>A policy with the three things a game actually asks of one: extra foci, a team filter and a free camera.</summary>
-    private sealed class TestPolicy : IInterestPolicy
+    private class TestPolicy : IInterestPolicy
     {
         public Vector3? ExtraFocus;
         public byte? DenyGroupForTeam;
@@ -253,6 +253,44 @@ public class InterestTests
         Assert.That(fleet.Gateways[0].GetClientTag(client.Welcome.Value.ClientId), Is.EqualTo((byte)1));
     }
 
+    /// <summary>A policy that hands out free foci by client id, which is how a server authorizes a spectator or an RTS camera.</summary>
+    private sealed class HintPolicy : TestPolicy, IFocusHintPolicy
+    {
+        public readonly HashSet<ulong> Free = new();
+        public bool RejectEverything;
+        public double? SnapX;
+
+        public FocusHintDecision AuthorizeFocusHint(in InterestClient client, in FocusHintDecision request)
+        {
+            if (RejectEverything) return FocusHintDecision.Reject();
+            var decision = request;
+            if (Free.Contains(client.ClientId)) decision.Mode = FocusMode.Free;
+            if (SnapX != null) decision.X = SnapX.Value;
+            return decision;
+        }
+    }
+
+    [Test]
+    public void AFocusHintMeansTheSamePlaceAfterTheClientsOriginShifts()
+    {
+        using var fleet = OneWorker();
+        var client = Join(fleet, "ann");
+        // ~148 m from the pawn at world x = 32: only a hint can hold it in the set.
+        fleet.Worker.Spawn(5220, new Vector3(20, 0, 0), new ContainerRef(2));
+
+        // The client is rendering with its origin at the world's zero and looks 58 m ahead of the pawn.
+        for (int i = 0; i < 12; i++) { client.SendFocusHintInFrame(new Vector3(90, 0, 0), Vector3.zero); fleet.RunFor(0.25); }
+        Assert.That(client.Replicas, Does.Contain(5220ul), "the hint brought it in");
+
+        // Its floating origin shifts a whole 1 km cell: the same place is now frame x = -910 to the client. A
+        // gateway reading the frame position would take the camera 1 km backwards and lose the entity; reading
+        // the absolute point the client sends, nothing moves at all.
+        var origin = new Vector3(1000, 0, 0);
+        for (int i = 0; i < 12; i++) { client.SendFocusHintInFrame(new Vector3(-910, 0, 0), origin); fleet.RunFor(0.25); }
+        Assert.That(client.Replicas, Does.Contain(5220ul), "a floating-origin shift does not move the hinted point");
+        Assert.That(client.Despawned, Does.Not.Contain(5220ul));
+    }
+
     [Test]
     public void AFocusHintIsClampedToTheHintDistanceFromThePawn()
     {
@@ -295,6 +333,82 @@ public class InterestTests
         // A new hint under the new generation is a real input again.
         for (int i = 0; i < 20; i++) { client.SendFocusHint(new Vector3(90, 0, 0), generation: 1); fleet.RunFor(0.25); }
         Assert.That(client.Replicas, Does.Contain(5210ul), "and a fresh hint is honoured");
+    }
+
+    [Test]
+    public void AServerAuthorizedFreeCameraSeesWhereItIsPointedAndAnOrdinaryClientDoesNot()
+    {
+        using var fleet = OneWorker();
+        var policy = new HintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var commander = Join(fleet, "com");
+        fleet.Worker.Spawn(5400, new Vector3(0, 0, 0), new ContainerRef(5)); // world x ~ 352, far past the clamp
+        ulong id = commander.Welcome!.Value.ClientId;
+
+        // Default: PawnClamped. However hard the client asks, the hint is worth 60 m of pawn.
+        for (int i = 0; i < 12; i++) { commander.SendFocusHint(new Vector3(352, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(commander.Replicas, Does.Not.Contain(5400ul), "a hint is clamped to the pawn by default");
+        Assert.That(fleet.Gateways[0].GetClientFocusMode(id), Is.EqualTo(FocusMode.PawnClamped));
+
+        // The server — not the client — decides this one may look anywhere: an RTS camera over its own front.
+        fleet.Gateways[0].SetClientFocusMode(id, FocusMode.Free);
+        Assert.That(fleet.Gateways[0].GetClientFocusMode(id), Is.EqualTo(FocusMode.Free));
+        for (int i = 0; i < 16; i++) { commander.SendFocusHint(new Vector3(352, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(commander.Replicas, Does.Contain(5400ul), "and a free focus really does move the set to where it points");
+
+        // Taking it away again drops the hint the gateway was holding, rather than leaving the last free point standing.
+        fleet.Gateways[0].SetClientFocusMode(id, FocusMode.PawnClamped);
+        Assert.That(fleet.Run(() => !commander.Replicas.Contains(5400ul), seconds: 8), Is.True,
+            "revoking the mode revokes what it was seeing");
+    }
+
+    [Test]
+    public void APolicyCanFreeAFocusHintAndMoveWhereItPoints()
+    {
+        using var fleet = OneWorker();
+        var policy = new HintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        fleet.Worker.Spawn(5410, new Vector3(0, 0, 0), new ContainerRef(5)); // world x ~ 352
+
+        policy.Free.Add(client.Welcome!.Value.ClientId);
+        // The client points somewhere else entirely; the policy snaps the camera to the place it is allowed to
+        // watch, which is the adjustment half of the hook.
+        policy.SnapX = 352;
+        for (int i = 0; i < 16; i++) { client.SendFocusHint(new Vector3(-9000, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(client.Replicas, Does.Contain(5410ul), "the policy's point is the one that counts, not the client's");
+
+        // Refusing takes effect on the next hint the client sends, which for a live client is within
+        // 1/InterestHintMaxHz of a second: a refusal revokes the focus rather than leaving the last allowed
+        // one standing for the rest of the session.
+        policy.RejectEverything = true;
+        fleet.OnPump = () => client.SendFocusHint(new Vector3(-9000, 0, 0));
+        Assert.That(fleet.Run(() => !client.Replicas.Contains(5410ul), seconds: 8), Is.True, "and a policy may refuse a hint outright");
+        fleet.OnPump = null;
+    }
+
+    [Test]
+    public void APawnlessClientCannotGiveItselfAViewByHinting()
+    {
+        using var fleet = OneWorker();
+        fleet.Worker.DeferSpawns = true;
+        var policy = new HintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var watcher = fleet.Connect(0, "watcher");
+        Assert.That(fleet.Run(() => watcher.Welcome != null), Is.True);
+        fleet.Worker.Spawn(5420, new Vector3(10, 0, 0));
+        fleet.Worker.Spawn(5421, new Vector3(10, 0, 0), alwaysRelevant: true);
+
+        // No pawn, so no distance to clamp to. Honouring the raw point would make "connect and hint" the
+        // cheapest map scrape there is, and the client would not even need a body to do it.
+        for (int i = 0; i < 12; i++) { watcher.SendFocusHint(new Vector3(32, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(watcher.Replicas, Does.Not.Contain(5420ul), "a pawn-less client's hint buys it nothing");
+        Assert.That(watcher.Replicas, Does.Contain(5421ul), "it still hears the always-relevant entities, and only those");
+
+        // Authorized, it works: a spectator is a decision the server made.
+        fleet.Gateways[0].SetClientFocusMode(watcher.Welcome!.Value.ClientId, FocusMode.Free);
+        for (int i = 0; i < 16; i++) { watcher.SendFocusHint(new Vector3(32, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(watcher.Replicas, Does.Contain(5420ul), "and an authorized pawn-less hint is a working spectator camera");
     }
 
     [Test]
@@ -573,5 +687,466 @@ public class InterestTests
         Assert.That(fleet.Run(() => client.Replicas.Contains(6701)), Is.True);
         fleet.RunFor(0.8);
         Assert.That(client.Replicas, Does.Not.Contain(6700ul), "a private instance is isolated no matter how close it is");
+    }
+
+    [Test]
+    public void AFreeFocusIsStillStoppedByInstanceIsolation()
+    {
+        using var fleet = OneWorker();
+        var policy = new HintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        fleet.Plane.EnsureRuntimeContainer("rt_88", new Bounds(new Vector3(352, 0, 0), new Vector3(20, 20, 20)), "w1", new InstanceContainerInfo { InstanceId = 88 });
+        fleet.RunFor(0.5);
+        fleet.Worker.Spawn(6710, Vector3.zero, ContainerRef.Runtime(88));
+
+        fleet.Gateways[0].SetClientFocusMode(client.Welcome!.Value.ClientId, FocusMode.Free);
+        for (int i = 0; i < 16; i++) { client.SendFocusHint(new Vector3(352, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(client.Replicas, Does.Not.Contain(6710ul),
+            "a free focus is a bigger view of the world you are in, never a way into somebody else's instance");
+    }
+
+    // ------------------------------------------------------------------------------------------- what a policy is told
+
+    /// <summary>Records the last snapshot a policy was given about one client and about the entities it judged.</summary>
+    private sealed class RecordingPolicy : IInterestPolicy
+    {
+        public InterestClient Client;
+        public readonly Dictionary<ulong, InterestEntity> Entities = new();
+
+        public void Collect(in InterestClient client, InterestQuery query)
+        {
+            Client = client;
+            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId);
+        }
+
+        public bool Authorize(in InterestClient client, in InterestEntity entity)
+        {
+            Entities[entity.NetId] = entity;
+            return true;
+        }
+    }
+
+    [Test]
+    public void APolicyIsToldTheClientsInstanceTagsFocusModeAndCarrier()
+    {
+        using var fleet = OneWorker();
+        var policy = new RecordingPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        ulong id = client.Welcome!.Value.ClientId;
+        fleet.Gateways[0].SetClientTag(id, 4);
+        fleet.Gateways[0].SetClientTags(id, 0xF00D);
+        fleet.Gateways[0].SetClientFocusMode(id, FocusMode.Free);
+        Assert.That(fleet.Run(() => policy.Client.FocusMode == FocusMode.Free, seconds: 5), Is.True);
+
+        Assert.That(policy.Client.ClientId, Is.EqualTo(id));
+        Assert.That(policy.Client.Identity, Is.Not.Null);
+        Assert.That(policy.Client.Name, Is.EqualTo("ann"));
+        Assert.That(policy.Client.HasPawn, Is.True);
+        Assert.That(policy.Client.PawnNetId, Is.Not.Zero);
+        Assert.That(policy.Client.PawnX, Is.EqualTo(32).Within(1), "the pawn's absolute position, not a container-local one");
+        Assert.That(policy.Client.PawnCarrierNetId, Is.Zero, "it is standing in the world, not riding anything");
+        Assert.That(policy.Client.InstanceId, Is.Zero, "the public world");
+        Assert.That(policy.Client.Team, Is.EqualTo((byte)4));
+        Assert.That(policy.Client.Tags, Is.EqualTo(0xF00Dul));
+        Assert.That(policy.Client.FreeHint, Is.True, "FreeHint is the focus mode and is no longer always false");
+    }
+
+    [Test]
+    public void APolicyIsToldAnEntitysOwnerCarrierGroupRadiusAndPosition()
+    {
+        using var fleet = OneWorker();
+        var policy = new RecordingPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        // A ship beside the pawn with a crate riding in it: what the policy is told about the crate must
+        // resolve through the ship, not be read off the crate alone.
+        fleet.Worker.Spawn(6800, new Vector3(6, 0, 0), relevanceRadius: 90f, group: 5);
+        fleet.Worker.Spawn(6801, new Vector3(1, 0, 0), ContainerRef.Dynamic(6800), group: 7);
+        Assert.That(fleet.Run(() => policy.Entities.ContainsKey(6801), seconds: 6), Is.True);
+
+        var ship = policy.Entities[6800];
+        Assert.That(ship.CarrierNetId, Is.Zero);
+        Assert.That(ship.X, Is.EqualTo(38).Within(1), "absolute, resolved through the container frame");
+        Assert.That(ship.RelevanceRadius, Is.EqualTo(90f).Within(1f));
+        Assert.That(ship.AlwaysRelevant, Is.False);
+        Assert.That(ship.InterestGroup, Is.EqualTo((byte)5));
+        Assert.That(ship.InstanceId, Is.Zero, "the public world");
+        Assert.That(ship.PrefabId, Is.Not.Null);
+
+        var crate = policy.Entities[6801];
+        Assert.That(crate.CarrierNetId, Is.EqualTo(6800ul), "the entity that is carrying it");
+        Assert.That(crate.Container.IsDynamic, Is.True);
+        Assert.That(crate.InterestGroup, Is.EqualTo((byte)7), "its own group, not its carrier's");
+        Assert.That(crate.RelevanceRadius, Is.EqualTo(90f).Within(1f), "but the carrier's reach, so the two move as one (design D39)");
+        Assert.That(crate.X, Is.EqualTo(ship.X).Within(2), "and the carrier's position, by design D3");
+        Assert.That(crate.InstanceId, Is.Zero);
+
+        ulong id = client.Welcome!.Value.ClientId;
+        var pawn = policy.Entities[fleet.Worker.Pawns[id]];
+        Assert.That(pawn.OwnerClientId, Is.EqualTo(id), "ownership is reported, so a policy can tell a player's own things apart");
+    }
+
+    [Test]
+    public void APolicyIsToldTheInstanceAnEntityIsInIncludingThroughItsCarrier()
+    {
+        // InterestEntity.InstanceId used to be left at zero, so every policy filtering on the scope was
+        // filtering on "the public world" for everything in the mesh. Put the client and the entities inside a
+        // private instance and the field has to say so — for a carried entity too, which resolves through its
+        // carrier's container and not its own.
+        using var fleet = OneWorker();
+        var policy = new RecordingPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        fleet.Plane.EnsureRuntimeContainer("rt_99", new Bounds(new Vector3(32, 0, 0), new Vector3(60, 60, 60)), "w1", new InstanceContainerInfo { InstanceId = 99 });
+        fleet.RunFor(0.5);
+        fleet.Worker.PawnContainer = ContainerRef.Runtime(99);
+        var client = Join(fleet, "ann");
+
+        fleet.Worker.Spawn(6810, new Vector3(6, 0, 0), ContainerRef.Runtime(99));
+        fleet.Worker.Spawn(6811, new Vector3(1, 0, 0), ContainerRef.Dynamic(6810));
+        Assert.That(fleet.Run(() => policy.Entities.ContainsKey(6811), seconds: 8), Is.True);
+
+        Assert.That(policy.Client.InstanceId, Is.EqualTo(99ul), "the client's own scope");
+        Assert.That(policy.Entities[6810].InstanceId, Is.EqualTo(99ul));
+        Assert.That(policy.Entities[6811].InstanceId, Is.EqualTo(99ul), "resolved through the carrier chain, not left at zero");
+    }
+
+    // ------------------------------------------------------------------------------------------- server surface
+
+    [Test]
+    public void TheGatewayAnnouncesAuthenticatedClientsJoiningAndLeaving()
+    {
+        using var fleet = OneWorker();
+        var joined = new List<NebulaGateway.GatewayClientInfo>();
+        var left = new List<NebulaGateway.GatewayClientInfo>();
+        // Installed before anybody connects, which is the point: this is where an extension gets to set a
+        // client's tags and focus mode before its first interest evaluation runs.
+        fleet.Gateways[0].ClientJoined += info => { joined.Add(info); fleet.Gateways[0].SetClientTag(info.ClientId, 9); };
+        fleet.Gateways[0].ClientLeft += left.Add;
+
+        var client = Join(fleet, "ann");
+        ulong id = client.Welcome!.Value.ClientId;
+        Assert.That(joined.Count, Is.EqualTo(1));
+        Assert.That(joined[0].ClientId, Is.EqualTo(id));
+        Assert.That(joined[0].Name, Is.EqualTo("ann"));
+        Assert.That(joined[0].Identity, Is.Not.Null.And.Not.Empty, "the authenticated subject");
+        Assert.That(fleet.Gateways[0].GetClientTag(id), Is.EqualTo((byte)9), "a handler may configure the client it is told about");
+
+        client.Disconnect();
+        Assert.That(fleet.Run(() => left.Count == 1, seconds: 10), Is.True);
+        Assert.That(left[0].ClientId, Is.EqualTo(id));
+    }
+
+    [Test]
+    public void OneTickDoesNotEvaluateEveryClientButOneIntervalDoes()
+    {
+        // The gateway-level counterpart of InterestScheduleTests: with many clients on one gateway, the
+        // evaluations really are spread over the ticks rather than run in one burst four times a second.
+        const int players = 24;
+        using var fleet = OneWorker();
+        for (int i = 0; i < players; i++) Join(fleet, "p" + i, new Vector3(i % 8, 0, 0));
+
+        var evaluated = new List<ulong>();
+        fleet.Gateways[0].InterestPolicy = new CountingPolicy(evaluated);
+        fleet.RunFor(1.0);   // installing a policy marks everybody dirty: let that pass first
+
+        var perTick = new List<int>();
+        var seen = new HashSet<ulong>();
+        evaluated.Clear();
+        // OnPump runs straight after the gateway's tick, so each bucket is exactly one tick's evaluations.
+        fleet.OnPump = () =>
+        {
+            perTick.Add(evaluated.Count);
+            foreach (ulong id in evaluated) seen.Add(id);
+            evaluated.Clear();
+        };
+        fleet.RunFor(0.4);   // comfortably over one eval interval at the default 4 Hz
+        fleet.OnPump = null;
+
+        Assert.That(perTick.Count, Is.GreaterThan(players), "the window really is many ticks long");
+        Assert.That(seen.Count, Is.EqualTo(players), "every client is evaluated within one interval");
+        Assert.That(perTick.Max(), Is.LessThan(players),
+            $"no tick evaluated the whole population (worst tick {perTick.Max()} of {players})");
+    }
+
+    // ------------------------------------------------------------------------------------- focus hint pipeline
+
+    /// <summary>
+    /// Counts every call into the game's focus-hint hook and remembers the worst point it was handed. A client
+    /// sending hints as fast as it can must not be able to move either number faster than InterestHintMaxHz.
+    /// </summary>
+    private sealed class CountingHintPolicy : IInterestPolicy, IFocusHintPolicy
+    {
+        public int Calls;
+        public bool SawMalformed;
+        public bool RejectEverything;
+
+        public void Collect(in InterestClient client, InterestQuery query)
+        {
+            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId);
+            if (client.HasHint) query.AddFocus(client.HintX, client.HintY, client.HintZ);
+        }
+
+        public bool Authorize(in InterestClient client, in InterestEntity entity) => true;
+
+        public FocusHintDecision AuthorizeFocusHint(in InterestClient client, in FocusHintDecision request)
+        {
+            Calls++;
+            if (double.IsNaN(request.X) || double.IsNaN(request.Y) || double.IsNaN(request.Z) ||
+                double.IsInfinity(request.X) || double.IsInfinity(request.Y) || double.IsInfinity(request.Z) ||
+                Math.Abs(request.X) > FocusHintFilter.MaxMagnitude) SawMalformed = true;
+            return RejectEverything ? FocusHintDecision.Reject() : request;
+        }
+    }
+
+    /// <summary>
+    /// Send hints as hard as a hostile client would — several per tick, for a stretch of wall time — and
+    /// return the seconds it took, so a test can state its bound as a rate rather than as a magic number.
+    /// </summary>
+    private static double SpamHints(Fleet fleet, FakeClient client, double seconds, Func<int, Vector3> point)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        int i = 0;
+        while (clock.Elapsed.TotalSeconds < seconds)
+        {
+            for (int k = 0; k < 8; k++) client.SendFocusHint(point(i++));
+            fleet.Pump();
+        }
+        return clock.Elapsed.TotalSeconds;
+    }
+
+    /// <summary>The most hints InterestHintMaxHz allows in this long, with a tick's worth of slack either side.</summary>
+    private static int AllowedIn(Fleet fleet, double seconds) =>
+        (int)Math.Ceiling(fleet.Gateways[0].InterestSettingsInUse.HintMaxHz * seconds) + 2;
+
+    [Test]
+    public void RefusedHintsCannotDriveTheGamesHintPolicyAtPacketRate()
+    {
+        using var fleet = OneWorker();
+        var policy = new CountingHintPolicy { RejectEverything = true };
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        policy.Calls = 0;
+
+        // Every one of these is going to be refused, so under a rate limit that only counted *accepted* hints
+        // none of them spent anything and each one bought a call into game code.
+        double elapsed = SpamHints(fleet, client, 1.0, i => new Vector3(40 + i % 5, 0, 0));
+
+        Assert.That(policy.Calls, Is.GreaterThan(0), "the policy is asked about hints at all");
+        Assert.That(policy.Calls, Is.LessThanOrEqualTo(AllowedIn(fleet, elapsed)),
+            $"a refused hint must still spend the rate budget ({policy.Calls} calls in {elapsed:0.00}s)");
+        Assert.That(fleet.Gateways[0].FocusHintsDroppedByRate, Is.GreaterThan(0), "and the drops are counted as rate drops");
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.Zero, "nothing the policy refused was accepted");
+    }
+
+    [Test]
+    public void HintsFromAClientThatMayNotHaveOneAreBoundedTooAndCountedAsUnauthorized()
+    {
+        using var fleet = OneWorker();
+        var policy = new CountingHintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        ulong id = client.Welcome!.Value.ClientId;
+        fleet.Gateways[0].SetClientFocusMode(id, FocusMode.Disabled);
+        policy.Calls = 0;
+
+        double elapsed = SpamHints(fleet, client, 1.0, i => new Vector3(40 + i % 5, 0, 0));
+
+        Assert.That(policy.Calls, Is.LessThanOrEqualTo(AllowedIn(fleet, elapsed)),
+            $"a client the server has switched off does not get an unlimited path into the policy ({policy.Calls} calls in {elapsed:0.00}s)");
+        Assert.That(fleet.Gateways[0].FocusHintsDroppedUnauthorized, Is.GreaterThan(0), "and its hints are counted as unauthorized, not as rate drops");
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.Zero);
+    }
+
+    [Test]
+    public void NonFiniteAndAbsurdHintsNeverReachTheHintPolicy()
+    {
+        using var fleet = OneWorker();
+        var policy = new CountingHintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        fleet.Gateways[0].SetClientFocusMode(client.Welcome!.Value.ClientId, FocusMode.Free);
+        policy.Calls = 0;
+
+        var poison = new[]
+        {
+            new Vector3(float.NaN, 0, 0), new Vector3(0, float.PositiveInfinity, 0), new Vector3(0, 0, float.NegativeInfinity),
+        };
+        for (int i = 0; i < poison.Length; i++) { client.SendFocusHint(poison[i]); fleet.RunFor(0.3); }
+        // A magnitude no camera produced: the grid can only pack about 6.7e7 m per axis, so this is malformed
+        // rather than merely far away, and it is refused rather than quietly clamped to somewhere else.
+        client.SendFocusHint(1e12, 0, 0);
+        fleet.RunFor(0.3);
+
+        Assert.That(policy.Calls, Is.Zero, "not one malformed point was handed to game code");
+        Assert.That(policy.SawMalformed, Is.False);
+        Assert.That(fleet.Gateways[0].FocusHintsDroppedMalformed, Is.GreaterThanOrEqualTo(4), "and each is counted as malformed");
+        Assert.That(fleet.Gateways[0].FocusHintsDroppedUnauthorized, Is.Zero, "not as an authorization failure");
+
+        // The connection is not poisoned: an ordinary hint after them still works.
+        for (int i = 0; i < 8; i++) { client.SendFocusHint(new Vector3(60, 0, 0)); fleet.RunFor(0.25); }
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.GreaterThan(0));
+        Assert.That(policy.Calls, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void AcceptedHintsAreRateLimitedAndAServerAuthorizationLetsTheCameraStartAtOnce()
+    {
+        using var fleet = OneWorker();
+        var policy = new CountingHintPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var client = Join(fleet, "ann");
+        ulong id = client.Welcome!.Value.ClientId;
+
+        double elapsed = SpamHints(fleet, client, 1.0, i => new Vector3(40 + i % 5, 0, 0));
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.LessThanOrEqualTo(AllowedIn(fleet, elapsed)),
+            "an accepted hint is still one per 1/InterestHintMaxHz seconds");
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.GreaterThan(0));
+
+        // The server frees the camera. The client has just spent its budget being throttled, and it cannot
+        // know it has been authorized, so the grant resets the budget: the very next hint is judged afresh.
+        long accepted = fleet.Gateways[0].FocusHintsAccepted;
+        fleet.Gateways[0].SetClientFocusMode(id, FocusMode.Free);
+        client.SendFocusHint(new Vector3(400, 0, 0));
+        fleet.Pump();
+        fleet.Pump();
+        Assert.That(fleet.Gateways[0].FocusHintsAccepted, Is.GreaterThan(accepted),
+            "a newly freed camera does not have to wait out the budget it spent while being refused");
+    }
+
+    // ------------------------------------------------------------------------------------- revocation timing
+
+    /// <summary>Fog of war as a policy: a group nobody (or one team) may see, flipped while clients are connected.</summary>
+    private sealed class FogPolicy : IInterestPolicy
+    {
+        public const byte Hidden = 7;
+        public bool Deny;
+        /// <summary>255 means "every client"; anything else narrows the ban to that team.</summary>
+        public byte DenyForTeam = 255;
+
+        public void Collect(in InterestClient client, InterestQuery query)
+        {
+            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId);
+        }
+
+        public bool Authorize(in InterestClient client, in InterestEntity entity) =>
+            !Deny || entity.InterestGroup != Hidden || (DenyForTeam != 255 && client.Team != DenyForTeam);
+    }
+
+    /// <summary>
+    /// Enough clients that a change touching all of them cannot be served in one tick's dirty budget: the cap
+    /// is max(InterestSchedule.MinDirtyPerTick, routine x DirtyBurst), and the routine share of a tick at 4 Hz
+    /// with this many clients is under one. So a staggered answer would leave most of them holding the entity.
+    /// </summary>
+    private const int CrowdedGateway = InterestSchedule.MinDirtyPerTick + 4;
+
+    private List<FakeClient> JoinCrowd(Fleet fleet)
+    {
+        var clients = new List<FakeClient>();
+        for (int i = 0; i < CrowdedGateway; i++) clients.Add(Join(fleet, "p" + i));
+        return clients;
+    }
+
+    private static List<int> SetSizes(Fleet fleet, List<FakeClient> clients)
+    {
+        var sizes = new List<int>();
+        foreach (var c in clients) sizes.Add(fleet.Gateways[0].InterestSetSize(c.Welcome!.Value.ClientId));
+        return sizes;
+    }
+
+    [Test]
+    public void ATagChangeRevokesInsideTheCallAndNotAtTheClientsNextTurn()
+    {
+        using var fleet = OneWorker();
+        var policy = new FogPolicy { Deny = true, DenyForTeam = 1 };
+        fleet.Gateways[0].InterestPolicy = policy;
+        var clients = JoinCrowd(fleet);
+        fleet.Worker.Spawn(7100, new Vector3(10, 0, 0), group: FogPolicy.Hidden);
+        Assert.That(fleet.Run(() => clients.TrueForAll(c => c.Replicas.Contains(7100))), Is.True, "everybody starts out holding it");
+
+        var before = SetSizes(fleet, clients);
+        var target = clients[CrowdedGateway - 1];   // the last one, so a rotation would reach it last
+        // No pump between these two lines: the guarantee is that the revocation has happened by the time the
+        // setter returns, not that it happens soon.
+        fleet.Gateways[0].SetClientTag(target.Welcome!.Value.ClientId, 1);
+        var after = SetSizes(fleet, clients);
+
+        Assert.That(after[CrowdedGateway - 1], Is.EqualTo(before[CrowdedGateway - 1] - 1),
+            "the entity its new team may not see is out of its set already");
+        for (int i = 0; i < CrowdedGateway - 1; i++)
+            Assert.That(after[i], Is.EqualTo(before[i]), "and nobody else's set was touched");
+
+        // The despawn is on the wire on the very next tick, and nothing about it is relayed afterwards.
+        fleet.OnPump = () => { fleet.Worker.PublishStates(); fleet.Worker.SendVars(7100, new byte[] { 1 }); fleet.Worker.SendRpc(7100); };
+        Assert.That(fleet.Run(() => !target.Replicas.Contains(7100)), Is.True);
+        fleet.RunFor(0.75);
+        fleet.OnPump = null;
+        Assert.That(target.OrphanUpdates, Is.Zero, "no state, netvar or RPC for the revoked entity reaches it");
+        Assert.That(clients[0].Replicas, Does.Contain(7100ul), "and the other teams still see it");
+    }
+
+    [Test]
+    public void ReplacingThePolicyOnALiveGatewayFailsClosedForEveryObserver()
+    {
+        using var fleet = OneWorker();
+        fleet.Gateways[0].InterestPolicy = new FogPolicy();
+        var clients = JoinCrowd(fleet);
+        fleet.Worker.Spawn(7200, new Vector3(10, 0, 0), group: FogPolicy.Hidden);
+        Assert.That(fleet.Run(() => clients.TrueForAll(c => c.Replicas.Contains(7200))), Is.True);
+
+        var before = SetSizes(fleet, clients);
+        fleet.Gateways[0].InterestPolicy = new FogPolicy { Deny = true };
+        var after = SetSizes(fleet, clients);
+
+        for (int i = 0; i < CrowdedGateway; i++)
+            Assert.That(after[i], Is.EqualTo(before[i] - 1),
+                $"client {i} of {CrowdedGateway} is still holding what the new policy refuses (the dirty cap is {InterestSchedule.MinDirtyPerTick})");
+
+        fleet.OnPump = () => { fleet.Worker.PublishStates(); fleet.Worker.SendVars(7200, new byte[] { 1 }); };
+        Assert.That(fleet.Run(() => clients.TrueForAll(c => !c.Replicas.Contains(7200))), Is.True, "and every client is told");
+        fleet.RunFor(0.5);
+        fleet.OnPump = null;
+        foreach (var c in clients) Assert.That(c.OrphanUpdates, Is.Zero);
+    }
+
+    [Test]
+    public void AGlobalRevocationDoesNotWaitBehindTheRoutineRotation()
+    {
+        using var fleet = OneWorker();
+        var policy = new FogPolicy();
+        fleet.Gateways[0].InterestPolicy = policy;
+        var clients = JoinCrowd(fleet);
+        fleet.Worker.Spawn(7300, new Vector3(10, 0, 0), group: FogPolicy.Hidden);
+        Assert.That(fleet.Run(() => clients.TrueForAll(c => c.Replicas.Contains(7300))), Is.True);
+
+        var before = SetSizes(fleet, clients);
+        policy.Deny = true;                              // the game's own fog state tightened
+        fleet.Gateways[0].RevalidateAllInterest();       // ...and this is how that is applied
+        var after = SetSizes(fleet, clients);
+
+        for (int i = 0; i < CrowdedGateway; i++)
+            Assert.That(after[i], Is.EqualTo(before[i] - 1), $"client {i} kept an unauthorized replica past the call");
+
+        // The reveal half is the staggered one, and it still works: lifting the fog brings it back.
+        policy.Deny = false;
+        fleet.Gateways[0].MarkAllInterestDirty();
+        Assert.That(fleet.Run(() => clients.TrueForAll(c => c.Replicas.Contains(7300)), seconds: 8), Is.True,
+            "an additive change may be spread over the following ticks, and arrives");
+    }
+
+    /// <summary>Records which clients an evaluation pass asked about; the fixture's pump closes off each tick.</summary>
+    private sealed class CountingPolicy : IInterestPolicy
+    {
+        private readonly List<ulong> _evaluated;
+        public CountingPolicy(List<ulong> evaluated) { _evaluated = evaluated; }
+
+        public void Collect(in InterestClient client, InterestQuery query)
+        {
+            _evaluated.Add(client.ClientId);
+            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId);
+        }
+
+        public bool Authorize(in InterestClient client, in InterestEntity entity) => true;
     }
 }

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Nebula
 {
     /// <summary>
-    /// The shared arithmetic of the region-subscription protocol (design §5): a set's fingerprint. The hash is a
+    /// The shared arithmetic of the region-subscription protocol: a set's fingerprint. The hash is a
     /// XOR of a strong per-region mix, so it does not depend on the order regions were added in — which is the
     /// point, since one end keeps a hash set and the other rebuilds it from deltas.
     /// </summary>
@@ -239,7 +239,7 @@ namespace Nebula
 
         /// <summary>
         /// The grid this worker made its own region ids with. When it is valid, a message built with a different
-        /// grid is rejected (design D2): filtering with ids that mean something else would silently hide entities.
+        /// grid is rejected: filtering with ids that mean something else would silently hide entities.
         /// Leave it default to adopt the sender's.
         /// </summary>
         public InterestGrid Grid { get; set; }

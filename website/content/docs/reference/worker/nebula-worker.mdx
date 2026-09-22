@@ -37,14 +37,6 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
 
-### MaxNestingDepth [#maxnestingdepth]
-
-```csharp
-public const int MaxNestingDepth = 8;
-```
-
-Deepest container nesting the ghost band walks (a shuttle in a hangar in a carrier is depth 3).
-
 ## Properties
 
 ### Config [#config]
@@ -245,7 +237,7 @@ Registered with the control plane; the mesh knows about this worker.
 public InterestGrid InterestGrid { get; }
 ```
 
-The grid this worker makes region ids with; a gateway subscribing with a different one is rejected (design D2).
+The grid this worker makes region ids with; a gateway subscribing with a different one is rejected.
 
 ### SubscribedRegions [#subscribedregions]
 
@@ -261,7 +253,7 @@ Regions at least one gateway subscribes here.
 public bool HasGlobalEntities { get; }
 ```
 
-Authoritative entities that are in every client's set, so gateways must link this worker to hear them (design §5).
+Authoritative entities that are in every client's set, so gateways must link this worker to hear them.
 
 ### InterestEntriesSent [#interestentriessent]
 
@@ -297,7 +289,7 @@ public long InterestBytesUnfiltered { get; }
 public float InterestFilterMs { get; }
 ```
 
-Smoothed milliseconds per tick spent deciding who hears about what (design §11's second warning).
+Smoothed milliseconds per tick spent deciding who hears about what.
 
 ### PartitionWarning [#partitionwarning]
 

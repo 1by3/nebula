@@ -111,7 +111,7 @@ The lease epoch is not an entity authority epoch. The wire protocol represents t
 | `ready` | Registered, connected to the control plane, not draining, and accepting clients. |
 | `draining` | The gateway is refusing new clients and asking the ones it has to reconnect elsewhere. |
 
-The stats fields are flat on the row so that a reader of an older document format still finds `pendingJoins`. A missing stats field reads as `0` or `false`.
+The stats fields are flat on the row. A missing stats field reads as `0` or `false`.
 
 ### `settings`
 

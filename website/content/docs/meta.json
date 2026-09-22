@@ -36,6 +36,7 @@
     "guides/instancing",
     "---Running a mesh---",
     "guides/configuration",
+    "guides/gateway-extensions",
     "guides/orchestrator-and-dashboard",
     "guides/control-plane",
     "guides/persistence",

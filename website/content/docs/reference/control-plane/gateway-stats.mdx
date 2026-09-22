@@ -155,6 +155,14 @@ public float InterestEvalMsAvg, InterestEvalMsMax;
 
 Time one interest evaluation takes, in milliseconds, over the interval.
 
+### InterestEvalsPerSecond [#interestevalspersecond]
+
+```csharp
+public float InterestEvalsPerSecond;
+```
+
+Client interest evaluations run per second: welcomed clients x InterestEvalHz when the rotation is keeping up.
+
 ### BytesPerClientAvg, BytesPerClientMax [#bytesperclientavg-bytesperclientmax]
 
 ```csharp
@@ -162,6 +170,14 @@ public float BytesPerClientAvg, BytesPerClientMax;
 ```
 
 Bytes sent to one client per second, averaged over the welcomed clients, and the worst of them.
+
+### ExtensionErrors [#extensionerrors]
+
+```csharp
+public uint ExtensionErrors;
+```
+
+Exceptions thrown by the game's gateway extension since this gateway started (a total, not a rate). Anything but zero means a policy call, a client event or posted work threw: the gateway carried on — a throwing `Authorize` denies rather than allows — but the game is not deciding what it thinks.
 
 ### Ready [#ready]
 

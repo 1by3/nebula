@@ -65,7 +65,7 @@ public bool AlwaysRelevant;
 public byte InterestGroup;
 ```
 
-The prefab's interest group: a game-defined bucket to filter on.
+The prefab's interest group: a game-defined bucket to filter on. Taken from the entity itself and not from its carrier, because a filter on "what kind of thing is this" is about the passenger, not about the ship it happens to be riding in.
 
 ### InstanceId [#instanceid]
 
@@ -73,10 +73,12 @@ The prefab's interest group: a game-defined bucket to filter on.
 public ulong InstanceId;
 ```
 
+The entity's simulation scope, resolved through its carrier chain the same way authorization resolves it: 0 is the public world, anything else a private instance. An entity in a container the gateway cannot resolve reads 0 here and is refused by the instance rules before any policy sees it.
+
 ### CarrierNetId [#carriernetid]
 
 ```csharp
 public ulong CarrierNetId;
 ```
 
-The entity carrying this one (0 = none); the interest decision is made on the root carrier.
+The entity immediately carrying this one (0 = none); the interest decision is made on the root carrier.

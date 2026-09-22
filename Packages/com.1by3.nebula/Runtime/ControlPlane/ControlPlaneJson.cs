@@ -229,8 +229,10 @@ namespace Nebula
             w.Prop("despawnsPerSecond", s.DespawnsPerSecond);
             w.Prop("interestEvalMsAvg", s.InterestEvalMsAvg);
             w.Prop("interestEvalMsMax", s.InterestEvalMsMax);
+            w.Prop("interestEvalsPerSecond", s.InterestEvalsPerSecond);
             w.Prop("bytesPerClientAvg", s.BytesPerClientAvg);
             w.Prop("bytesPerClientMax", s.BytesPerClientMax);
+            w.Prop("extensionErrors", (long)s.ExtensionErrors);
         }
 
         public static GatewayStats ReadGatewayStats(Dictionary<string, object> o) => new GatewayStats
@@ -261,8 +263,10 @@ namespace Nebula
             DespawnsPerSecond = (float)Num(o, "despawnsPerSecond"),
             InterestEvalMsAvg = (float)Num(o, "interestEvalMsAvg"),
             InterestEvalMsMax = (float)Num(o, "interestEvalMsMax"),
+            InterestEvalsPerSecond = (float)Num(o, "interestEvalsPerSecond"),
             BytesPerClientAvg = (float)Num(o, "bytesPerClientAvg"),
             BytesPerClientMax = (float)Num(o, "bytesPerClientMax"),
+            ExtensionErrors = (uint)Num(o, "extensionErrors"),
         };
 
         // ---------------------------------------------------------------------------------------- writes

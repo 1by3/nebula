@@ -44,7 +44,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// What interest management cost and saved since the previous document (design §12). Rates rather than
+        /// What interest management cost and saved since the previous document. Rates rather than
         /// totals: "this worker sends 40% of its entries and 1.2 MB/s instead of 4 MB/s" is the question the
         /// dashboard answers, and a counter that only grows cannot answer it.
         /// </summary>
@@ -169,7 +169,7 @@ namespace Nebula
             worker.CopyGatewayInterest(_gatewayInterest);
         }
 
-        /// <summary>The interest block of the document: totals, the per-gateway rows of design §12, and the partition warning of §11.</summary>
+        /// <summary>The interest block of the document: totals, per-gateway rows, and the partition warning.</summary>
         private void WriteInterest(JsonWriter w)
         {
             w.Key("interest");

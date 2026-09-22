@@ -38,17 +38,17 @@ namespace Nebula
     {
         /// <summary>Metres a client hears about an entity at, unless the entity's prefab overrides it.</summary>
         public float Radius;
-        /// <summary>Extra metres an entity must travel past <see cref="Radius"/> before it leaves the set (hysteresis).</summary>
+        /// <summary>Extra meters an entity must travel past <see cref="Radius"/> before it leaves the set (hysteresis).</summary>
         public float ExitMargin;
         /// <summary>Seconds an entity must stay outside <c>Radius + ExitMargin</c> before it is despawned.</summary>
         public float LingerSeconds;
-        /// <summary>Region edge in metres, before the alignment snap of design §3.</summary>
+        /// <summary>Region edge in meters, before it is aligned with the world grid.</summary>
         public float CellSize;
         /// <summary>Regions are columns: Y does not enter a region key. True for surface worlds.</summary>
         public bool Planar;
         /// <summary>How often a client's interest set is re-evaluated, in hertz.</summary>
         public float EvalHz;
-        /// <summary>Extra metres of regions subscribed beyond the exit radius, so a moving client is never late.</summary>
+        /// <summary>Extra meters of regions subscribed beyond the exit radius, so a moving client is never late.</summary>
         public float SubscribeMargin;
         /// <summary>Seconds a region stays subscribed after it stops being needed (anti-thrash along an edge).</summary>
         public float RegionLingerSeconds;
@@ -66,7 +66,7 @@ namespace Nebula
         public float HintMaxHz;
         /// <summary>Most explicit per-entity subscriptions one client's policy may ask for.</summary>
         public int MaxExplicitPerClient;
-        /// <summary>The fastest a focus is expected to move, in metres per second. Only used to validate <see cref="SubscribeMargin"/>.</summary>
+        /// <summary>The fastest a focus is expected to move, in meters per second. Only used to validate <see cref="SubscribeMargin"/>.</summary>
         public float MaxFocusSpeed;
         /// <summary>Rate tier inside the set: entities within this radius get every tick.</summary>
         public float NearRadius;
@@ -74,14 +74,14 @@ namespace Nebula
         public float FarRadius;
         public int MidDivisor;
         public int FarDivisor;
-        /// <summary>Cells of content a client keeps loaded; raised to cover the interest radius (design §8).</summary>
+        /// <summary>Cells of content a client keeps loaded; raised to cover the interest radius.</summary>
         public int ClientLoadRadiusCells;
         /// <summary>Entities in one container above which the worker warns that the world wants partitioning.</summary>
         public int PartitionWarnEntities;
         /// <summary>Milliseconds of per-gateway filtering per tick above which the worker warns the same way.</summary>
         public float PartitionWarnFilterMs;
 
-        /// <summary>The shipped defaults (design §9). A game that sets nothing gets these.</summary>
+        /// <summary>The shipped defaults. A game that sets nothing gets these.</summary>
         public static InterestSettings Default => new InterestSettings
         {
             Radius = 120f,
@@ -119,7 +119,7 @@ namespace Nebula
         public float EvalInterval => EvalHz > 0 ? 1f / EvalHz : 0.25f;
 
         /// <summary>
-        /// One notion of "near" (design §8): the cells of content that must exist before interest needs them.
+        /// The cells of content that must exist before interest needs them.
         /// Content streaming, the runtime allocator ring and the container window a client is told about all
         /// derive from this, so a client can never be spawned an entity standing on geometry it does not have.
         /// </summary>
@@ -138,7 +138,27 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Check the relationships design §9 requires and return the values that will actually be used. Anything
+        /// Most container rows one client may be told about in one evaluation: the ceiling on the
+        /// <c>NearCells</c> windows the gateway opens around a client's foci. Derived rather than configured,
+        /// because every part of it is already a setting: a window is <c>2 × NearCells + 1</c> cells on a side,
+        /// a planar world stacks nothing above it, and a client may hold <see cref="MaxFoci"/> foci. It is a
+        /// safety net and not a budget to aim at — the rows entities in the set stand in are collected before
+        /// it applies, so reaching it can only ever withhold empty terrain a camera is looking at.
+        /// <para>
+        /// Clamped to [64, 4096] so a tiny world still gets a usable window and an enormous
+        /// <c>InterestRadius</c> cannot turn one evaluation into a lease-table broadcast.
+        /// </para>
+        /// </summary>
+        public int MaxContainerRows(float cellSize)
+        {
+            long side = 2L * Math.Max(0, NearCells(cellSize)) + 1;
+            long perFocus = Planar ? side * side : side * side * side;
+            long total = perFocus * Math.Max(1, MaxFoci);
+            return (int)Math.Min(4096, Math.Max(64, total));
+        }
+
+        /// <summary>
+        /// Check the setting relationships and return the values that will actually be used. Anything
         /// that can be repaired is repaired and reported as a <see cref="ConfigSeverity.Warning"/>; only a
         /// non-positive size is an <see cref="ConfigSeverity.Error"/>, because no clamp of it would be what the
         /// game asked for. <paramref name="worldCellSize"/> is the world definition's cell size (0 = none) and

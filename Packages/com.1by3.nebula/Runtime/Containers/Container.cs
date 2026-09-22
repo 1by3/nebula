@@ -268,13 +268,22 @@ namespace Nebula
 
         public bool IsOwnedBy(string workerId) => !string.IsNullOrEmpty(workerId) && OwnerWorkerId == workerId;
 
-        /// <summary>How many carriers this container sits inside, walking up through <see cref="Enclosing"/>: 0 for a static container, 1 for a ship in a static container, 2 for a shuttle inside that ship.</summary>
+        /// <summary>
+        /// How many carriers this container sits inside, walking up through <see cref="Enclosing"/>: 0 for a
+        /// static container, 1 for a ship in a static container, 2 for a shuttle inside that ship. There is no
+        /// depth limit. This is what orders simulation and the ghost band, and two containers at
+        /// different depths reported as equal would let a passenger tick before the ship it stands in. The walk
+        /// cannot run away: every dynamic container is registered, so a chain longer than the registry has closed
+        /// a cycle. That is the only bound, and the cycle itself is reported where it is created — the interest
+        /// index refuses the link and the worker logs it once per entity.
+        /// </summary>
         public int NestingDepth
         {
             get
             {
                 int depth = 0;
-                for (var c = this; c != null && c.IsDynamic && depth < 16; c = c.Enclosing) depth++;
+                int bound = ContainerRegistry.Dynamic.Count + 1;
+                for (var c = this; c != null && c.IsDynamic && depth <= bound; c = c.Enclosing) depth++;
                 return depth;
             }
         }

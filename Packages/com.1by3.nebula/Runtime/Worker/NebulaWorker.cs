@@ -26,9 +26,9 @@ namespace Nebula
             public bool Outbound;
             /// <summary>Gateways: this link's bit in the <see cref="RegionPublisher"/> mask, or -1 when no bit was free.</summary>
             public int GatewayBit = -1;
-            /// <summary>Gateways: the region set this link subscribes here (design §5). Null until the link is registered.</summary>
+            /// <summary>Gateways: the region set this link subscribes here. Null until the link is registered.</summary>
             public RegionSubscriptionReceiver Subscription;
-            /// <summary>Gateways: state entries and bytes sent to this link since it came up, for the interest stats of design §12.</summary>
+            /// <summary>Gateways: state entries and bytes sent to this link since it came up, for interest statistics.</summary>
             public long EntriesSent;
             public long BytesSent;
         }
@@ -118,6 +118,12 @@ namespace Nebula
         private readonly Dictionary<ContainerRef, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ContainerRef, List<PendingTransfer>>();
         private readonly List<Container> _neighborScratch = new List<Container>();
         private readonly List<NetworkIdentity> _contentsScratch = new List<NetworkIdentity>();
+        /// <summary>
+        /// Snapshots of one container's contents for the recursive whole-subtree walks (a handoff, an
+        /// evacuation). One shared scratch list cannot serve those: the recursion would refill the list the
+        /// caller is still walking. Pooled, so a nested ship costs one list per level once and nothing after.
+        /// </summary>
+        private readonly Stack<List<NetworkIdentity>> _contentsPool = new Stack<List<NetworkIdentity>>();
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
@@ -778,7 +784,11 @@ namespace Nebula
             // have to be where the hull moved to this tick: otherwise the cockpit of a ship at speed sweeps through
             // the pawn a tick late and the depenetration shoves the pawn out of the ship.
             ProfSimulate.Begin();
-            for (int depth = 0; depth <= MaxNestingDepth; depth++)
+            // However deep the nesting goes (design D71): a constant here would tick the bottom of a deep ship
+            // out of order, or - worse - in the same pass as the hull it is standing on. There cannot be more
+            // distinct depths than entities, so the set we own is the bound, and the loop leaves as soon as
+            // nothing deeper is left.
+            for (int depth = 0; depth <= _authoritative.Count; depth++)
             {
                 bool deeper = false, carrierTicked = false;
                 for (int i = 0; i < _authoritative.Count; i++)
@@ -959,8 +969,8 @@ namespace Nebula
             if (identity.Carried != null) SyncCarriedLeases();
 
             // Index it before announcing: which gateways hear about a spawn is decided from where it landed.
-            InterestAdd(identity);
-            AnnounceToRelevantGateways(identity, null);
+            // If passengers were already waiting for this id, their reseating is published after the announce.
+            InterestAddAndAnnounce(identity, null);
             EntitySpawned?.Invoke(identity);
             if (ownerClientId != 0) NebulaLog.Info($"spawned player {identity} for client {ownerClientId} in {identity.Container?.ContainerId}");
             else NebulaLog.Debugf($"spawned {identity}");
@@ -1009,10 +1019,58 @@ namespace Nebula
             RemoveLocal(identity);
         }
 
+        /// <summary>A snapshot of a container's contents from the pool, safe to walk while the walk recurses.</summary>
+        private List<NetworkIdentity> BorrowContents(Container box)
+        {
+            var list = _contentsPool.Count > 0 ? _contentsPool.Pop() : new List<NetworkIdentity>(8);
+            list.Clear();
+            list.AddRange(box.Entities);
+            return list;
+        }
+
+        private void ReturnContents(List<NetworkIdentity> list)
+        {
+            list.Clear();
+            _contentsPool.Push(list);
+        }
+
+        /// <summary>
+        /// Put down everything still riding in an entity that is leaving the world, in the container the entity
+        /// itself sat in and at the pose it is standing in right now (<c>SetContainer</c> reparents with the world
+        /// position kept). A passenger survives its carrier — an always-relevant crate whose ship is destroyed is
+        /// global on its own account again — and the placement it gets back is published by
+        /// <see cref="InterestRemove"/>, so this has to happen first: a spawn that still named the carrier would
+        /// give every gateway a container reference that no longer resolves, and <c>ScopeContainer</c> fails
+        /// closed, so the gateway would cache a record no client could ever be shown (design D86).
+        /// <para>
+        /// Only the direct contents are reparented. Anything deeper names a carrier that is still there, so every
+        /// spawn in a surviving subtree names an existing container and the carrier-first order still holds.
+        /// </para>
+        /// </summary>
+        private void EvacuateCarried(NetworkIdentity identity)
+        {
+            var box = identity.Carried;
+            if (box == null || box.Entities.Count == 0) return;
+            var replacement = identity.Container;
+            var contents = BorrowContents(box);
+            try
+            {
+                for (int i = 0; i < contents.Count; i++)
+                {
+                    var inner = contents[i];
+                    if (inner == null || inner == identity) continue;
+                    try { inner.SetContainer(replacement); }
+                    catch (Exception ex) { NebulaLog.Error($"could not put {inner} down while {identity} left the world: {ex.Message}"); }
+                }
+            }
+            finally { ReturnContents(contents); }
+        }
+
         private void RemoveLocal(NetworkIdentity identity)
         {
             _entities.Remove(identity.NetId);
             _authoritative.Remove(identity);
+            EvacuateCarried(identity);
             InterestRemove(identity.NetId);
             _handedOff.Remove(identity.NetId);
             if (identity.OwnerClientId != 0 && _players.TryGetValue(identity.OwnerClientId, out var p) && p == identity) _players.Remove(identity.OwnerClientId);
@@ -1037,7 +1095,9 @@ namespace Nebula
             // Entities in static containers first, then the contents of carriers by nesting depth: whatever is
             // inside a ship is ghosted wherever the ship is ghosted, so the neighbour holds the whole subtree warm
             // before the ship can cross, and that needs the ship's targets decided first.
-            for (int depth = 0; depth <= MaxNestingDepth; depth++)
+            // Bounded by the set we own rather than by a constant (design D71): a shuttle nine deep must still
+            // be held warm by the neighbour before the carrier it is in can cross.
+            for (int depth = 0; depth <= _authoritative.Count; depth++)
             {
                 bool deeper = false;
                 for (int i = 0; i < _authoritative.Count; i++)
@@ -1179,9 +1239,6 @@ namespace Nebula
         internal static bool GhostTargetExpired(bool authoritative, bool peerKnown, float now, float lastSeen, float lingerSeconds) =>
             !authoritative || !peerKnown || now - lastSeen > lingerSeconds;
 
-        /// <summary>Deepest container nesting the ghost band walks (a shuttle in a hangar in a carrier is depth 3).</summary>
-        public const int MaxNestingDepth = 8;
-
         /// <summary>Make sure <paramref name="owner"/> holds a ghost of <paramref name="e"/> and refresh its band timestamp.</summary>
         private void Ghost(NetworkIdentity e, string owner, ref Dictionary<string, float> targets, float now)
         {
@@ -1233,7 +1290,47 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- handover
 
+        /// <summary>
+        /// Record everything that will follow <paramref name="carrier"/> to the new owner: its authoritative
+        /// contents, to any depth, unless an interior is pinned to a worker of its own — those stay here, are
+        /// really orphaned by the handoff, and get their own placement back like any other survivor. The walk
+        /// mirrors the transfer's own recursion exactly, so the set is what actually leaves.
+        /// </summary>
+        private void CollectHandoverFollowers(NetworkIdentity carrier)
+        {
+            var box = carrier.Carried;
+            if (box == null || box.Entities.Count == 0 || box.IsPinned) return;
+            for (int i = 0; i < box.Entities.Count; i++)
+            {
+                var inner = box.Entities[i];
+                if (inner == null || !inner.HasAuthority || !_handover.Add(inner.NetId)) continue;
+                CollectHandoverFollowers(inner);
+            }
+        }
+
+        /// <summary>
+        /// Hand one entity, and everything riding in it, to <paramref name="target"/>.
+        /// <para>
+        /// Taking this entity out of the interest index is not an orphaning when its passengers are coming too:
+        /// they are still aboard and follow on the same ordered stream, so the set they are in keeps
+        /// <see cref="InterestRemove"/> from publishing their own placement in between (design D85). The set is
+        /// held by a scope frame rather than by a counter the happy path decrements, because persistence, a
+        /// subscriber of <see cref="AuthorityHandedOff"/> and a nested transfer can all throw: a depth left
+        /// standing would make the <i>next</i> top-level handoff skip its own collection and republish its
+        /// passengers as orphans that never existed (design D87). The exception itself is not swallowed.
+        /// </para>
+        /// </summary>
         private void TransferAuthority(NetworkIdentity e, Peer target)
+        {
+            using (var frame = _handover.Begin())
+            {
+                if (frame.IsOutermost) CollectHandoverFollowers(e);
+                TransferAuthorityInScope(e, target);
+            }
+        }
+
+        /// <summary>One transfer's work, always inside the handover scope <see cref="TransferAuthority"/> opened.</summary>
+        private void TransferAuthorityInScope(NetworkIdentity e, Peer target)
         {
             // A persistent entity is checkpointed one last time while this worker is still its authority.
             Persistence?.OnHandoverOut(e);
@@ -1303,10 +1400,15 @@ namespace Nebula
             var carried = e.Carried;
             if (carried != null && carried.Entities.Count > 0 && !carried.IsPinned)
             {
-                _contentsScratch.Clear();
-                _contentsScratch.AddRange(carried.Entities);
-                foreach (var inner in _contentsScratch)
-                    if (inner != null && inner.HasAuthority) TransferAuthority(inner, target);
+                var contents = BorrowContents(carried);
+                // A nested transfer that throws must still give the snapshot back, or a deep ship that fails
+                // once leaks one list per level for the lifetime of the worker.
+                try
+                {
+                    for (int i = 0; i < contents.Count; i++)
+                        if (contents[i] != null && contents[i].HasAuthority) TransferAuthority(contents[i], target);
+                }
+                finally { ReturnContents(contents); }
             }
         }
 
@@ -1380,8 +1482,7 @@ namespace Nebula
             // Tell the gateways that want it that we own it now (a spawn for a known id is an update): the ones
             // subscribing the region it landed in, the ones following it by name or session here, and the ones the
             // previous owner said were following it. Not every gateway, as before v17.
-            InterestAdd(e);
-            AnnounceToRelevantGateways(e, msg.InterestGateways);
+            InterestAddAndAnnounce(e, msg.InterestGateways);
         }
 
         /// <summary>Fallback for a bare Rigidbody with no <see cref="NetworkRigidbody"/> (which does this itself, plus velocity).</summary>
@@ -1577,7 +1678,7 @@ namespace Nebula
         // ---------------------------------------------------------------------------------------- gateway traffic
 
         /// <summary>
-        /// Send this tick's state to the gateways, filtered by interest (design §6). Entities are grouped by the
+        /// Send this tick's state to the gateways, filtered by interest. Entities are grouped by the
         /// exact set of gateways that hear about them, each group's batches are written once and sent to every
         /// gateway in that set, and netvars, sync state and owner state use the same mask lookup: the work is
         /// O(entities + batches × subscribers) rather than O(entities × gateways). Nothing here allocates.

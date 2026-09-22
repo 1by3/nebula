@@ -78,7 +78,7 @@ Use the gateway address that `nebula deploy` or `nebula status --cloud` prints. 
 Run `nebula deploy` again. It builds, uploads what changed, creates a new release, and rolls it out. Players are disconnected while the orchestrator restarts.
 
 <Callout type="warn">
-A rollout is refused when the release changes the wire protocol version, because every connected client would be disconnected and old clients could no longer join. Pass `--allow-protocol-change` to roll it out anyway.
+A rollout is refused when the release changes the wire protocol version because it disconnects every connected client and requires clients to use the new protocol. Pass `--allow-protocol-change` to roll it out anyway.
 </Callout>
 </Step>
 </Steps>

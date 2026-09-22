@@ -67,4 +67,4 @@ public uint ServerDrivenCount;
 public bool HasGlobalEntities;
 ```
 
-This worker holds at least one always-relevant entity (design §5). A gateway keeps a link to such a worker even when it subscribes no region there, because a global entity belongs in every client's set and nothing else would make the gateway ask for it.
+This worker holds at least one always-relevant entity. A gateway keeps a link to such a worker even when it subscribes no region there, because a global entity belongs in every client's set and nothing else would make the gateway ask for it.

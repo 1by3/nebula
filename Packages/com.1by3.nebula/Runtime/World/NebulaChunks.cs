@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Nebula.World
 {
     /// <summary>
-    /// What a game is told about one chunk of a turnkey chunked world (design <c>docs/interest-management.md</c> §10).
+    /// What a game is told about one chunk of a turnkey chunked world.
     /// Passed by <c>in</c> reference so a content callback that runs for every chunk entering and leaving a role's
     /// window costs no allocation.
     /// </summary>

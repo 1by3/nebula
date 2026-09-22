@@ -65,7 +65,7 @@ public string SessionGateway;
 public string[] InterestGateways;
 ```
 
-Gateway keys ([`PlayerSessions.GatewayKey`](/docs/reference/protocol/player-sessions#gatewaykey)) that were following this entity on the old owner without subscribing its region — an explicit per-entity subscription, or the session it speaks for (design §5). The new owner announces the spawn to them as well as to the gateways its own regions cover, so a followed entity is not lost the moment it changes worker.
+Gateway keys ([`PlayerSessions.GatewayKey`](/docs/reference/protocol/player-sessions#gatewaykey)) that were following this entity on the old owner without subscribing its region — an explicit per-entity subscription, or the session it speaks for. The new owner announces the spawn to these gateways as well as to the gateways its own regions cover, so a followed entity is not lost the moment it changes worker.
 
 ## Methods
 

@@ -3,7 +3,7 @@ title: Interest management
 description: Bound what each client is told about the world, tune the knobs that control it, and understand where it stops scaling simulation.
 ---
 
-**Interest management** decides which entities a client hears about. It replaces distance-only update-rate throttling: before protocol 17, every client in a public instance was spawned every entity in it, and distance only slowed how often an already-spawned entity's transform was resent. Interest management now controls whether the entity is sent to that client at all.
+**Interest management** decides which entities a client hears about. It controls whether an entity is sent to a client and how often an entity already in the client's set receives transform updates.
 
 Interest management bounds who **hears about** an entity. It does not bound who **simulates** it. A [container](/docs/concepts/containers-and-handover) is still one worker's simulation budget, whatever a client is or is not told. See [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) before you rely on this feature to reach MMO scale.
 
@@ -11,9 +11,9 @@ Interest management bounds who **hears about** an entity. It does not bound who 
 
 1. **Client focus.** Each client has one or more **foci**: points (or boxes) it cares about. The default policy uses the client's pawn position. Game code can add more through a policy, or nudge the pawn's focus with a client-sent hint.
 2. **Regions.** The world is divided into **regions**, a uniform grid over absolute world coordinates (`InterestCellSize`, default 64 m). A focus covers the regions within its interest radius, plus a subscribe margin.
-3. **Gateway subscriptions.** For every region a client's foci need, the gateway subscribes that region from the workers that own overlapping containers. A gateway subscribes only what its clients actually need — it no longer receives a worker's entire authoritative set.
+3. **Gateway subscriptions.** For every region a client's foci need, the gateway subscribes that region from the workers that own overlapping containers. A gateway receives only what its clients need.
 4. **Worker filtering.** Each worker buckets its authoritative entities by region and publishes each region only to the gateways that subscribed it. A worker with 4,000 entities across 40 containers sends a gateway near one corner only the handful of regions its clients are in.
-5. **Per-client exact filtering.** From the entities a gateway now has cached, it decides per client which ones are actually in that client's interest set, using the exact radius, hysteresis, level of detail, and any policy `Authorize` check. This is the same set that gates every kind of entity traffic: spawns, despawns, transforms, variables, sync state, and RPCs.
+5. **Per-client exact filtering.** From the entities a gateway has cached, it decides per client which ones belong in that client's interest set, using the exact radius, hysteresis, level of detail, and any policy `Authorize` check. This set gates every kind of entity traffic: spawns, despawns, transforms, variables, sync state, and RPCs.
 
 Nothing about this flow depends on how the game partitions its world. A single unpartitioned container works the same way as a baked grid of cells — see [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) for what changes and what does not.
 
@@ -23,7 +23,7 @@ With no interest-specific setup, a client:
 
 - hears about every entity within 120 m of its pawn (`InterestRadius`);
 - keeps hearing about an entity until it is more than 136 m away (`InterestRadius + InterestExitMargin`) for a full second (`InterestLingerSeconds`), so entities near the boundary do not spawn and despawn repeatedly;
-- gets full-rate updates within 30 m, a quarter-rate update between 30 m and 80 m, and a twelfth-rate update beyond that (`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, `InterestFarDivisor` — level of detail inside the set, unchanged from earlier releases); and
+- gets full-rate updates within 30 m, a quarter-rate update between 30 m and 80 m, and a twelfth-rate update beyond that (`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, and `InterestFarDivisor`); and
 - with no pawn (a spectator or a client still joining) hears only about [`AlwaysRelevant`](#per-prefab-overrides) entities, until a policy gives it a focus.
 
 No game code, config change, or world partitioning is required to get a bandwidth-bounded client. Partitioning becomes necessary only when you also want to add more workers — see the limits section.
@@ -39,7 +39,7 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestLingerSeconds` | 1 s | How long an entity must stay past the exit radius before the client is told to despawn it. |
 | `InterestCellSize` | 64 m | Edge length of one interest region. With a world definition, this is snapped to an integer divisor of the world's cell size so region edges land on cell edges. Command line: `-nebula-interest-cell`. |
 | `InterestPlanar` | `true` | Regions are infinite columns: height does not affect the region key. Turn it off for a volumetric or space game. |
-| `InterestEvalHz` | 4 | How often each client's interest set is re-evaluated per second. Evaluation also happens immediately when a client's focus crosses a region edge or its pawn, instance, or carrier changes. |
+| `InterestEvalHz` | 4 | How often each client's interest set is re-evaluated per second. Routine evaluations are spread evenly across the ticks of one `InterestEvalHz` interval by a rotation (`InterestSchedule`), rather than every client landing on the same tick. A client marked dirty — its focus crosses a region edge, or its pawn, instance, carrier, focus mode, or hint changes — is evaluated on the next tick instead of waiting for its turn, through a second, separately bounded pass so a change that dirties every client at once is spread rather than stalling the loop. The realized rate is `GatewayStats.InterestEvalsPerSecond`. |
 | `InterestSubscribeMargin` | 32 m | Extra distance of regions a gateway subscribes beyond a focus, so entities are already arriving before a client's exact filter needs them. |
 | `InterestRegionLingerSeconds` | 3 s | How long a region stays subscribed after the last client needed it, to stop a player pacing a region edge from making a worker start and stop sending. |
 | `InterestLinkLingerSeconds` | 10 s | How long a gateway keeps a worker connection open after the last reason to hold it is gone. |
@@ -52,8 +52,8 @@ Every field lives on `NebulaConfig` (`Resources/NebulaConfig.asset`), with a mat
 | `InterestMaxFocusSpeed` | 12 m/s | The fastest a player is expected to travel. Used only to check that `InterestSubscribeMargin` covers the distance a focus can move between two evaluations. |
 | `PartitionWarnEntities` | 2,000 | A worker warns when one container holds more entities than this. `0` disables the warning. |
 | `PartitionWarnFilterMs` | 2 ms | A worker warns when filtering entities for its gateways takes longer than this per tick. `0` disables the warning. |
-| `InterestNearRadius` | 30 m | Unchanged level-of-detail field: full update rate within this distance. |
-| `InterestFarRadius` | 80 m | Unchanged level-of-detail field: the far distance band starts here. |
+| `InterestNearRadius` | 30 m | Full update rate within this distance. |
+| `InterestFarRadius` | 80 m | The far distance band starts here. |
 | `InterestMidDivisor` | 4 | Send every Nth tick between the near and far radius. |
 | `InterestFarDivisor` | 12 | Send every Nth tick beyond the far radius, and to a pawn-less client for anything not `AlwaysRelevant`. |
 
@@ -75,13 +75,13 @@ entities that much further out. Sizing the content window to the exit radius alo
 replica standing on a cell it has not loaded. (With no world definition — `cellSize` of 0 — the formula
 short-circuits to `ClientLoadRadiusCells`.)
 
-- [World partition](/docs/guides/world-partition)'s client cell-streaming radius is `NearCells`, not `ClientLoadRadiusCells` alone — `ClientLoadRadiusCells` is now a floor, not the whole answer.
+- [World partition](/docs/guides/world-partition)'s client cell-streaming radius is `NearCells`. `ClientLoadRadiusCells` sets its minimum value.
 - The [runtime chunk allocator](/docs/guides/runtime-containers)'s ring defaults to `NearCells + 1`, so a chunk is leased before a client's interest radius can reach it.
-- A client's [`ContainerOwnership`](#scoped-container-ownership) window is a box of `NearCells × cell size` around its pawn.
+- A client's [`ContainerOwnership`](#scoped-container-ownership) window is a box of `NearCells × cell size` around each focus its evaluation authorized (the pawn by default; every focus with a free camera or a policy).
 
 ## Level of detail inside the set
 
-`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, and `InterestFarDivisor` are unchanged from earlier releases: they throttle how often an already-visible entity's root transform is resent, not whether it is visible. Interest management decides the set; these fields decide the update rate within it. A pawn-less client uses `InterestFarDivisor` for anything that is not `AlwaysRelevant`.
+`InterestNearRadius`, `InterestFarRadius`, `InterestMidDivisor`, and `InterestFarDivisor` throttle how often an entity already in the client's interest set receives root-transform updates. They do not decide whether the entity is visible. A client without a pawn uses `InterestFarDivisor` for anything that is not `AlwaysRelevant`.
 
 ## Per-prefab overrides
 
@@ -118,29 +118,54 @@ Set it once, on every gateway of the mesh:
 gateway.InterestPolicy = new FogOfWarPolicy();
 ```
 
+<Callout type="info" title="The standalone gateway holds no game code">
+`gateway.InterestPolicy` is only reachable from whoever constructs the `NebulaGateway` object. `nebula start` and a deployed mesh run the standalone `nebula-gateway` executable, which is built from Nebula's own sources and has no game assembly to call this from. Install a policy there — and tag clients with a team, or set a focus mode — through a [gateway extension](/docs/guides/gateway-extensions) instead.
+</Callout>
+
 `InterestPolicies.Combine(a, b)` composes two policies: `Collect` calls both (their foci and explicit entities are unioned), and `Authorize` is the logical AND of both. A combined policy can only narrow what another policy allowed, never widen it.
 
-### RTS camera with multiple foci
+### What a policy is told
 
-A strategy game that needs a client to hear about both its camera view and every unit it owns adds one focus per unit, up to `InterestMaxFoci` (8 by default; extra foci are dropped):
+Both methods receive a snapshot the gateway fills once per evaluation, not a live reference:
+
+`InterestClient` — `ClientId`, `Identity`, `Name`, `PawnNetId`, `HasPawn`, `PawnX`/`PawnY`/`PawnZ` (absolute, resolved through any carrier), `PawnCarrierNetId` (the outermost thing the pawn is riding, 0 if it stands in the world), `InstanceId` (the client's simulation scope, resolved through the pawn's carrier chain), `Team` (`gateway.SetClientTag`), `Tags` (64 more server-owned bits, `gateway.SetClientTags`), `HasHint`/`HintX`/`HintY`/`HintZ` (the validated hint), and `FocusMode`.
+
+`InterestEntity` — `NetId`, `PrefabId`, `OwnerClientId`, `Container`, `X`/`Y`/`Z` (absolute, resolved through carriers), `RelevanceRadius`, `AlwaysRelevant`, `InterestGroup` (the entity's own, not its carrier's — a filter on "what kind of thing is this" is about the passenger, not the ship), `InstanceId` (resolved through the carrier chain), and `CarrierNetId` (the entity immediately carrying this one; the interest decision itself is made on the *root* carrier).
+
+### RTS and strategy cameras
+
+A focus is a camera, a selected formation, an observed front, or some other small spatial anchor — not a stand-in for every unit a player owns. `InterestMaxFoci` caps a client at 8 foci by default, so a strategy game with dozens or hundreds of owned units cannot give each one its own focus; even under the cap, doing that spends the budget describing "near every unit" instead of "near the camera," and still tells the client nothing about an off-screen unit's surroundings.
+
+Give the client one or two foci for what it is actually looking at — its camera (through [`FocusHint`](#client-focus-hints-are-inputs-never-authority) and `FocusMode.Free`) and, optionally, its current selection:
 
 ```csharp
 public sealed class RtsInterestPolicy : IInterestPolicy
 {
     public void Collect(in InterestClient client, InterestQuery query)
     {
-        if (client.HasPawn)
+        // The camera hint the gateway already validated (FocusMode.Free lets it roam the map).
+        if (client.HasHint)
+            query.AddFocus(client.HintX, client.HintY, client.HintZ);
+        else if (client.HasPawn)
             query.AddFocus(client.PawnX, client.PawnY, client.PawnZ);
 
-        foreach (var unit in OwnedUnitsOf(client.ClientId))
-            query.AddFocus(unit.X, unit.Y, unit.Z);
+        // Optional: the center of the player's current selection, so a detail panel stays populated
+        // when the camera pans away from it.
+        if (TryGetSelectionCenter(client.ClientId, out var selection))
+            query.AddFocus(selection.X, selection.Y, selection.Z);
     }
 
     public bool Authorize(in InterestClient client, in InterestEntity entity) => true;
 
-    private IEnumerable<UnitRecord> OwnedUnitsOf(ulong clientId) => /* your lookup */ null;
+    private bool TryGetSelectionCenter(ulong clientId, out (double X, double Y, double Z) center)
+    {
+        center = default;
+        return false; // your lookup
+    }
 }
 ```
+
+For the hundreds of units a player owns but is not looking at, do not try to widen interest to reach them. Send an aggregate instead: one always-relevant or group-scoped summary entity per army or region (unit counts, a front line, a strength indicator) that a minimap or army panel reads through `NetworkVariable`s or an RPC, independent of any client's foci. See [Scaling limits and when to partition](#scaling-limits-and-when-to-partition) — interest management decides who hears about an entity, not how many entities one worker can simulate, so an army too large for one client's interest set to reach efficiently is a partitioning and container-sizing question, not one this feature solves by adding foci.
 
 ### Spectator focus for a pawn-less client
 
@@ -205,7 +230,30 @@ public sealed class FogOfWarPolicy : IInterestPolicy
 }
 ```
 
-Assign a client's team with `gateway.SetClientTag(clientId, team)`, read it back with `gateway.GetClientTag(clientId)`, and read it inside `Authorize` from `InterestClient.Team`. Call `gateway.MarkInterestDirty(clientId)` after changing state that `Authorize` depends on (a detection roll, a stealth toggle) so the client is re-evaluated before its next scheduled tick.
+Assign a client's team with `gateway.SetClientTag(clientId, team)`, read it back with `gateway.GetClientTag(clientId)`, and read it inside `Authorize` from `InterestClient.Team`.
+
+### Revoke now, reveal soon
+
+After you change state that `Authorize` reads, tell the gateway — it cannot see your game's variables. Which call you make depends on the *direction* of the change:
+
+| Call | What it does | Use it when the change |
+| --- | --- | --- |
+| `gateway.RevalidateInterest(clientId)` | Re-runs instance scope and `Authorize` over every replica the client already holds, **before the call returns**, and despawns what is no longer allowed. It also marks the client dirty, so anything the same change reveals arrives at the next evaluation. | **Tightens** visibility: a detection roll that failed, a stealth cloak switched on, fog closing over a region, an access rule revoked. |
+| `gateway.RevalidateAllInterest()` | The same for every client. | A world-wide tightening: a fog sweep that can close as well as open, a war declared. |
+| `gateway.MarkInterestDirty(clientId)` | Puts the client at the front of the evaluation queue. Additive only: nothing is taken away by this call. | **Reveals** something: a unit given to the player, a party joined, a fog cell uncovered. |
+| `gateway.MarkAllInterestDirty()` | The same for every client. | A world-wide reveal. |
+
+Dirty clients jump the routine rotation but are still bounded per tick, so on a busy gateway a client can wait a few ticks for its turn. That is the right trade for showing something *more* and the wrong one for taking something away, which is why a tightening change must not use `MarkInterestDirty` alone: until the client's turn came up it would keep the replica **and** keep receiving state, variables, sync state, and RPCs for it.
+
+A revocation pass costs one `Authorize` call per replica the client currently holds — no grid query, no candidate scan, nothing allocated — so it is cheaper than the evaluation it replaces. `RevalidateAllInterest` concentrates about one round of evaluation into the call instead of spreading it over an evaluation interval. Use it for the events above, not once per tick. It is safe to call from inside a policy callback: a nested call falls back to marking the client dirty rather than re-entering the pass.
+
+Three built-in paths already revoke synchronously, so you do not have to remember them:
+
+- assigning `gateway.InterestPolicy` (it runs `RevalidateAllInterest` inside the setter, so nothing the new policy refuses is relayed afterwards);
+- `gateway.SetClientTag(clientId, team)`;
+- `gateway.SetClientTags(clientId, tags)`.
+
+`gateway.SetClientFocusMode` deliberately does **not** revoke. Dropping the client's hint only narrows its foci, and a focus is a distance rather than a boundary, so the entities it was holding leave through the usual exit margin and linger.
 
 ## Client focus hints are inputs, never authority
 
@@ -217,32 +265,107 @@ client.FocusHint = new Vector3(x, y, z);
 client.ClearFocusHint();
 ```
 
-Setting a hint sends an unreliable `ClientFocusHint` message at up to `InterestHintMaxHz`. `ClearFocusHint()` (or `FocusHint = null`) sends a reliable clear, so interest returns to the pawn; the gateway keeps the last accepted hint until it is cleared or the connection ends, and a hint that was still in flight cannot undo the clear. The gateway treats it strictly as an input, because interest is a security boundary decided server-side, not something a client can widen for itself:
+`FocusHint` is in the client's own Unity space; `NebulaClient` converts it to absolute world coordinates before sending, so a floating-origin shift under the camera does not move the point the gateway thinks it is watching, and a camera kilometers from the client's origin is still named to the meter. Setting a hint sends an unreliable `ClientFocusHint` message at up to `InterestHintMaxHz`. `ClearFocusHint()` (or `FocusHint = null`) sends a reliable clear carrying a generation counter, so interest returns to the pawn even if a hint already in flight arrives after it — the gateway drops any hint older than the newest generation it has seen and ignores a clear a newer hint has already superseded.
 
-- A hint containing a non-finite value is dropped.
-- Hints are rate-limited to `InterestHintMaxHz` (5 per second) per client; the rest are dropped.
-- A hint is clamped to `InterestHintMaxDistance` (60 m) from the client's pawn, unless your policy explicitly marks that client as accepting free foci.
+**A hint is worth exactly what the server says it is worth, never what the client claims.** Every connected client has a server-owned `FocusMode`, set with `NebulaGateway.SetClientFocusMode` (or `IGatewayExtensionContext.SetClientFocusMode` from a [gateway extension](/docs/guides/gateway-extensions)) and read back with `GetClientFocusMode`:
+
+| Mode | Default | What a hint does |
+| --- | --- | --- |
+| `FocusMode.PawnClamped` | Yes | The hint is clamped to `InterestHintMaxDistance` (60 m by default) from the client's pawn. A client with no pawn has nothing to clamp to, so its hint is refused outright — connecting and sending a hint before ever being given a pawn cannot be used to scrape the map. |
+| `FocusMode.Free` | No | The hint is taken as sent, anywhere in the world. Give this to a spectator, a replay viewer, or a strategy camera — a decision your game makes server-side, never one a client grants itself by omitting a pawn or by sending a large value. |
+| `FocusMode.Disabled` | No | Hints from this client are ignored, pawn or no pawn. |
+
+Nothing the client sends can change its own mode, and a client cannot even tell which mode it has except by what the gateway ends up sending it.
+
+### What happens to one hint, in order
+
+Every hint the gateway receives goes through these steps. The cheap, non-negotiable checks come first, so a client cannot reach your game code by sending garbage or by sending quickly:
+
+1. **Generation fence.** A hint older than the newest generation the gateway has seen is dropped, so a hint that overtook a clear cannot re-establish a focus the client gave up. A dropped hint still advances the fence — it is evidence of where the client is up to.
+2. **Clear.** A `ClearFocusHint()` is applied here and is never rate-limited: narrowing interest is never an attack, and dropping a clear would leave the client paying for a view it no longer has.
+3. **Malformed check.** A coordinate that is NaN, infinite, or larger in magnitude than `FocusHintFilter.MaxMagnitude` (1e9 m) is **rejected, not clamped**. Clamping would invent a place the client never asked about and then stream it. This runs before the client snapshot and before any game code, so a NaN never reaches an `IFocusHintPolicy`.
+4. **Attempt rate limit.** Every hint that gets this far spends the client's budget, whatever becomes of it afterwards. That is what bounds calls into your hint policy at `InterestHintMaxHz` (5 per second by default) — a client with no pawn, or one your policy refuses every time, pays for the asking. A server-side authorization change (`SetClientFocusMode`, `SetClientTag`, `SetClientTags`) resets the budget, so a freshly granted commander camera answers immediately instead of waiting out a budget it spent while being refused. Only the server can reset it.
+5. **Your hint policy.** `IFocusHintPolicy.AuthorizeFocusHint` sees the client snapshot and the server's `FocusMode`, and may reject the hint or move the point before it is accepted.
+6. **Authorization.** The resulting mode decides whether the client may have a hint at all (see the table above). A refusal also revokes: the hint the gateway was holding is dropped rather than left standing.
+7. **Accept.** In `FocusMode.PawnClamped` the point is pulled back to `InterestHintMaxDistance` of the pawn; in `FocusMode.Free` it is taken as sent.
+
+Instance isolation is checked separately, during evaluation, in every mode: a free focus is a bigger view of the instance the client is already in, never a way to see into another one.
+
+Five counters on `NebulaGateway` say what is happening to one client's hints: `FocusHintsAccepted`, `FocusHintsClamped`, `FocusHintsDroppedByRate`, `FocusHintsDroppedMalformed`, and `FocusHintsDroppedUnauthorized`. `DroppedByRate` counts *attempts*, so a client whose hints are all refused for some other reason still shows up there rather than nowhere.
+
+Implement the optional `IFocusHintPolicy` on the same object as your `IInterestPolicy` when the per-client mode is not enough on its own — for example, when whether a commander camera is allowed depends on where it is pointed:
+
+```csharp
+public interface IFocusHintPolicy
+{
+    // Decide what to do with one hint. request.Mode is the server's FocusMode for this client;
+    // return FocusHintDecision.Reject() to ignore the hint, or move/narrow the point before accepting it.
+    FocusHintDecision AuthorizeFocusHint(in InterestClient client, in FocusHintDecision request);
+}
+```
+
+A refusal also revokes: a policy that has just said no, or a free camera whose pawn is gone, drops the hint the gateway was holding rather than leaving the last accepted one in place.
 
 A hint that only moves within the same region waits for the client's next scheduled evaluation (`InterestEvalHz`); one that crosses into a new region triggers an immediate re-evaluation.
 
 ## Guarantees this preserves
 
-Interest management changes how visibility is computed, not the security properties [instancing](/docs/guides/instancing) and [dynamic containers](/docs/guides/dynamic-containers) already provide:
+Interest management preserves the security properties of [instancing](/docs/guides/instancing) and [dynamic containers](/docs/guides/dynamic-containers):
 
 - **Private-instance isolation** is checked first, before any spatial test: authorization for an unknown container is always denied, then `policy.Authorize` runs. A client never sees into an instance it has not entered.
 - **`ObservePublic` windows** keep working as an additional focus box: an instance occupant with the window enabled receives public entities inside its configured bounds, on top of its normal interest set.
 - **Unknown containers are never public.** An entity in a container a client has not been told about is never added to that client's set, whatever its distance.
 - **A client's own pawn is always in its set**, at full update rate, regardless of distance rules — an owned entity is a standing reason for the gateway to hold its worker link.
-- **Spatial and targeted RPCs still respect the set.** A broadcast RPC declared with a radius reaches only clients whose pawn is within that distance, unchanged from before. A targeted `ClientRpc` or `OwnerRpc` still reaches only the named client.
-- **A carried entity enters and leaves a client's set with its carrier.** An entity inside a moving [dynamic container](/docs/guides/dynamic-containers) is bucketed at its carrier's position, so a ship and everyone riding it appear and disappear together, at any speed, instead of a passenger flickering independently near a region edge.
+- **Spatial and targeted RPCs respect the set.** A broadcast RPC declared with a radius reaches only clients whose pawn is within that distance. A targeted `ClientRpc` or `OwnerRpc` reaches only the named client.
+- **A carried entity enters and leaves a client's set with its carrier.** See [Carried entities](#carried-entities) below.
+
+## Carried entities
+
+An entity inside a moving [dynamic container](/docs/guides/dynamic-containers) — a passenger on a ship, a crate in a lift — is bucketed for interest at its **root carrier's** position and inherits the root carrier's radius, always-relevance, and enter/exit decision, not its own. A ship and everyone riding it enter and leave every client's set together, at any speed, instead of a passenger flickering independently as it nears a region edge on its own. This also covers a carrier riding another carrier (a boat in a cargo hold): the whole nested chain is bucketed and moves as the outermost, or root, carrier's subtree.
+
+When a carrier moves between regions, or an entity boards or disembarks, the gateway is sent spawns and despawns for the whole affected subtree in one consistent order: carriers before their contents when something newly enters a client's set, and contents before their carriers when something leaves. A passenger is never delivered before the carrier that positions it, and a carrier is never removed while a client still holds one of its passengers.
+
+**A passenger sits where its carrier sits, on the worker and on the gateway.** A passenger's whole placement follows the root carrier, not only its region: an `AlwaysRelevant` crate riding in an ordinary ship is a region entity in the ship's region for as long as it is aboard. It is published to the workers' gateways and cached by those gateways exactly as the ship is, so a crate's own prefab settings never cost a gateway on the other side of the world the ingest, the cached record, and the per-client evaluation for it. A passenger's non-spatial metadata stays its own: `InterestGroup`, its owner's gateway, and any explicit per-ID subscription are never inherited from the carrier.
+
+**Getting off restores the passenger's own placement.** A wide or always-relevant passenger returns to its own list the moment it disembarks; a region one stays in the bucket it was put down in until its own next move says otherwise. Losing a carrier to a despawn does the same thing.
+
+**A carrier can arrive after its passengers, or be taken away from under them.** Both cases are published, not just recorded. A passenger whose container names a carrier that does not exist yet is placed on its own account until the carrier turns up; the moment it does, the whole waiting subtree moves into the carrier's placement, and any gateway that was holding a passenger only because of the passenger's own `AlwaysRelevant` or `RelevanceRadius` is told to forget it. When a carrier is despawned, every surviving passenger is republished on the placement it gets back: gateways that knew it only through the carrier are told to forget it, and gateways its own reach now covers are sent it. The carrier is always announced before a passenger that newly reaches a gateway, and forgets always go out contents-first.
+
+**A passenger outlives its carrier without any work from you.** When a carrier leaves the world, Nebula moves each entity directly inside it into the container the carrier itself was in, keeping the passenger's world position and rotation. You do not have to notice that a ship was destroyed and re-place what was aboard it. Anything deeper in the chain keeps naming a carrier that still exists, so every spawn a client is sent names a container the client already has. Destroy a carrier's contents yourself if your game wants them to go down with the ship.
+
+**Moving a carrier to another worker is not the same as destroying it.** A [handover](/docs/concepts/containers-and-handover) takes the carrier and everything riding in it to the new worker together, and the new worker publishes the subtree where the ship actually is. Passengers are never briefly treated as though the carrier had disappeared, so a gateway nowhere near the ship is never sent one. Contents that stay behind — an interior pinned to a worker of its own — are the exception and are treated as surviving passengers.
+
+**A carrier cycle is refused, not obeyed.** If something tries to put an entity inside itself, directly or through any chain, the link is rejected (`CarrierLink.Cycle`), the entity keeps the carrier it had, and the refusal is logged once per entity rather than once per tick. Fix the parenting that produced it: a cycle makes "the whole subtree" meaningless.
+
+**There is no subtree size or depth limit.** A carrier's whole subtree always moves, at any width and any depth — a half-walked tree would be a half-rebucketed ship, some of its contents addressed to the destination and the rest still to the origin, with nothing downstream able to tell. The same applies to everything downstream of the move: a subscription snapshot carries every entity in the chain, spawn and despawn ordering compares real depths, a passenger's world position resolves through every carrier above it, and a private instance is resolved through the whole chain. Each of those walks is bounded by the number of entities or containers that could be in a chain rather than by a fixed depth, which is safe because a carrier cycle is refused when it is created. A container that has outgrown one worker's budget is the [partition warning](#scaling-limits-and-when-to-partition), not something to express as a silently truncated spawn list.
+
+A carrier prefab is always bucketed by region, whatever `AlwaysRelevant` or `RelevanceRadius` it is given: putting a carrier in the wide or global list would leave its passengers bucketed wherever it was boarded, popping in and out of a client's set independently of the ship it rides in. A worker downgrades it to region placement and logs a warning once per prefab instead. A ship that must be seen from farther away needs a larger mesh-wide `InterestRadius`, not a per-prefab override.
 
 ## Scoped container ownership
 
-`ContainerOwnership` — the message that tells a client which containers exist and who owns them — is now a per-client delta instead of the full lease table. A client learns about a container only when it overlaps the client's `NearCells` window, its current instance, or a dynamic container carrying an entity already in its set. Removals are sent only after the entities inside have been despawned, and additions are sent before the spawns that need them, so an entity never arrives before its container.
+`ContainerOwnership` tells each client which containers exist and who owns them. A client learns about a container only when it overlaps a `NearCells` window around one of the client's authorized foci, its current instance, or a dynamic container carrying an entity already in its set. Removals are sent only after the entities inside have been despawned, and additions are sent before the spawns that need them, so an entity never arrives before its container.
+
+**The window follows every focus, not only the pawn.** A `FocusMode.Free` strategy camera, a policy-added focus, or a box focus each open their own `NearCells` window, deduplicated where they overlap, so a commander camera panning empty ground is told the empty chunks exist under it — not just the chunks named by an entity spawn. The window is recomputed once per evaluation, because panning over empty terrain changes no entity and would otherwise never refresh it.
+
+This is bounded, not unlimited: a box focus wider than `InterestMaxRadius` on any axis is clamped to it about its center (`InterestQuery.BoxesClamped`), and one evaluation collects at most `NebulaGateway.ContainerRowCap` rows in total — derived from `InterestRadius`, the world's cell size, and `InterestMaxFoci`, and reported as `NebulaGateway.ContainerBudgetHits` when a client's foci ask for more. Reaching the cap can only ever withhold empty terrain: the rows an entity already in the client's set stands in are always collected first and are never withheld by the cap.
+
+**A client focus never allocates a chunk.** Which chunks exist is a server decision made by `RuntimeGridAllocator` around the pawns a worker simulates and any anchors the game added with `NebulaChunks.EnsureAt`; nothing a client's focus does can create one. A camera panned over never-allocated ground is correctly told there is nothing there — allocating a chunk costs a lease, memory, content generation, and simulation, and none of that should be driven by a rate-limited hint a client chooses to send.
+
+**Strategy camera recipe.** Give a commander camera content and interest together:
+
+```csharp
+gateway.SetClientFocusMode(clientId, FocusMode.Free); // server decision, once
+
+// On the client, each time the camera moves:
+client.FocusHint = camera.transform.position;
+client.SetContentAnchor(camera.transform);
+```
+
+`FocusHint` (validated server-side, rate-limited) is what the gateway streams entities and container rows for; `SetContentAnchor` (a local decision, sampled every frame) is what the client keeps loaded and where its floating origin sits. Keep them pointed at the same place — `null` to `SetContentAnchor` gives the pawn its job back, and a minimap ping should move neither.
 
 ## Observability
 
-**Gateway (`NebulaGateway`):** `InterestSetSize(clientId)`, `CachedEntityCount`, `SubscribedRegionCount`, `WorkerLinkCount`, `InterestSettingsInUse`, `InterestGridInUse`. `GatewayStats` adds interest set size (average and max), cached entity count, subscribed region count, worker link count and the reason for each link (region, foci, global, explicit, a first spawn, or an owned entity), spawns and despawns per second, and interest evaluation time (average and max).
+**Gateway (`NebulaGateway`):** `InterestSetSize(clientId)`, `CachedEntityCount`, `IsEntityCached(netId)`, `TryGetCachedPlacement(netId, out placement, out region)`, `SubscribedRegionCount`, `WorkerLinkCount`, `InterestSettingsInUse`, `InterestGridInUse`, `ContainerRowCap`, `ContainerBudgetHits`, and the five focus-hint counters (`FocusHintsAccepted`, `FocusHintsClamped`, `FocusHintsDroppedByRate`, `FocusHintsDroppedMalformed`, `FocusHintsDroppedUnauthorized`). The hint counters are gateway properties rather than `GatewayStats` fields: they answer a per-gateway debugging question, and nothing aggregates them across a mesh. `GatewayStats` adds interest set size (average and max), cached entity count, subscribed region count, worker link count and the reason for each link (region, foci, global, explicit, a first spawn, or an owned entity), spawns and despawns per second, interest evaluation time (average and max), `InterestEvalsPerSecond` (the rate `InterestSchedule`'s rotation is actually running clients through), and `ExtensionErrors` when a [gateway extension](/docs/guides/gateway-extensions) is loaded.
 
 **Worker:** telemetry adds, per gateway link, the number of subscribed regions and the entries and bytes sent versus the unfiltered total — the direct measure of how much filtering interest management is doing for that link.
 
@@ -273,4 +396,5 @@ A worker warns — in its log and in the dashboard, at most once a minute — wh
   <Card title="World partition" href="/docs/guides/world-partition" description="Divide an authored level into baked cells." />
   <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Register containers while the mesh runs and balance them across workers." />
   <Card title="Load testing a gateway fleet" href="/docs/guides/load-testing" description="Run the soak scenarios that assert bounded replicas and bytes per client." />
+  <Card title="Extend the gateway" href="/docs/guides/gateway-extensions" description="Install a policy, tag clients, and feed fog of war in the standalone gateway." />
 </Cards>

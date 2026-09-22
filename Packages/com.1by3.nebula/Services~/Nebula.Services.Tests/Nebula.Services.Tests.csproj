@@ -2,12 +2,16 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><ImplicitUsings>enable</ImplicitUsings><DefineConstants>$(DefineConstants);NEBULA_SERVICE</DefineConstants></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Nebula.Services/Nebula.Services.csproj" />
+    <!-- The sample gateway extension, built and copied beside the test host so it sits next to the running
+         process exactly as it sits next to a published gateway. The tests name it by file name and never use
+         its types: what is under test is the gateway loading it from configuration. -->
+    <ProjectReference Include="../Nebula.SampleExtension/Nebula.SampleExtension.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <Compile Include="../../Tests/EditMode/OrchestratorAssignmentTests.cs;../../Tests/EditMode/ControlPlaneJsonTests.cs" />
     <!-- Interest management is pure C#, so the standalone gateway runs the same tests the package does. -->
-    <Compile Include="../../Tests/EditMode/InterestGridTests.cs;../../Tests/EditMode/InterestIndexTests.cs;../../Tests/EditMode/InterestSubscriptionTests.cs;../../Tests/EditMode/RegionPublisherTests.cs;../../Tests/EditMode/InterestSettingsTests.cs;../../Tests/EditMode/InterestPolicyTests.cs;../../Tests/EditMode/ClientInterestTests.cs;../../Tests/EditMode/InterestWireTests.cs" />
+    <Compile Include="../../Tests/EditMode/InterestGridTests.cs;../../Tests/EditMode/InterestIndexTests.cs;../../Tests/EditMode/CarriedTransitionTests.cs;../../Tests/EditMode/HandoverScopeTests.cs;../../Tests/EditMode/InterestSubscriptionTests.cs;../../Tests/EditMode/RegionPublisherTests.cs;../../Tests/EditMode/InterestSettingsTests.cs;../../Tests/EditMode/InterestPolicyTests.cs;../../Tests/EditMode/ClientInterestTests.cs;../../Tests/EditMode/InterestWireTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -119,6 +119,14 @@ namespace Nebula
         [Tooltip("Port of the Nebula Dashboard the orchestrator serves (http://localhost:<port>/). 0 disables it.")]
         public ushort DashboardPort = 7080;
 
+        [Header("Gateway extension")]
+        [Tooltip("Your own server code inside the standalone gateway: a class library that references the gateway's Nebula.Services.dll and implements Nebula.IGatewayExtension. This is where a game installs an interest policy, tags clients with their team and feeds fog-of-war changes. Give the assembly's file name (it sits next to the gateway executable, so it ships with the build and the deploy tarball) or an absolute path. Empty = no extension. -nebula-gateway-extension overrides.")]
+        public string GatewayExtension = "";
+        [Tooltip("Which class in that assembly to load, when it holds more than one IGatewayExtension. Empty = the only one. -nebula-gateway-extension-type overrides.")]
+        public string GatewayExtensionType = "";
+        [Tooltip("Settings passed to the extension, as key=value;key=value. It reads them with context.Option(key); -nebula-ext-<key> on the gateway's command line overrides one.")]
+        public string GatewayExtensionOptions = "";
+
         [Header("Meshing")]
         [Tooltip("Entities within this many metres of a neighbouring container are ghosted to its worker ahead of time.")]
         public float GhostBandMargin = 4f;

@@ -141,7 +141,7 @@ A game-defined bucket a policy can filter on ([`NetworkIdentity.InterestGroup`](
 public ushort ViewSeq;
 ```
 
-Gateway -\> client: which view of this net id the spawn belongs to. It increases every time the gateway lets the entity into this client's set, so a despawn from an older view cannot kill a replica the client has just re-entered (design D4). Workers send 0.
+Gateway -\> client: which view of this net id the spawn belongs to. It increases every time the gateway lets the entity into this client's set, so a despawn from an older view cannot kill a replica the client has just re-entered. Workers send 0.
 
 ## Methods
 

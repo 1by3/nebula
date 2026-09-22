@@ -1,6 +1,6 @@
 ---
 title: "RegionSubscription"
-description: "The shared arithmetic of the region-subscription protocol (design §5): a set's fingerprint."
+description: "The shared arithmetic of the region-subscription protocol: a set's fingerprint."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/RegionSubscription.cs)</div>
@@ -9,7 +9,7 @@ description: "The shared arithmetic of the region-subscription protocol (design 
 public static class RegionSubscription
 ```
 
-The shared arithmetic of the region-subscription protocol (design §5): a set's fingerprint. The hash is a XOR of a strong per-region mix, so it does not depend on the order regions were added in — which is the point, since one end keeps a hash set and the other rebuilds it from deltas.
+The shared arithmetic of the region-subscription protocol: a set's fingerprint. The hash is a XOR of a strong per-region mix, so it does not depend on the order regions were added in — which is the point, since one end keeps a hash set and the other rebuilds it from deltas.
 
 ## Methods
 

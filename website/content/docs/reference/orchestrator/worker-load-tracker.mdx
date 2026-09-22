@@ -57,7 +57,7 @@ Length of the window each worker keeps, in seconds.
 public int MinSamples = 3;
 ```
 
-How many heartbeats a worker must have inside the window before its utilization means anything. Below this it reads as 0 % busy simply because nothing has been reported yet, which is how a freshly launched worker used to become the cheapest one to retire ([`WorkerScaler.IsWarm`](/docs/reference/orchestrator/worker-scaler#iswarm)).
+How many heartbeats a worker must have inside the window before its utilization means anything. Below this it reads as 0 % busy simply because nothing has been reported yet, and the worker is not considered for retirement ([`WorkerScaler.IsWarm`](/docs/reference/orchestrator/worker-scaler#iswarm)).
 
 ## Properties
 

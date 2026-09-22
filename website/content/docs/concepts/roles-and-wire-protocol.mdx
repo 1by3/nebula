@@ -96,7 +96,7 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `InterestResync` | worker to gateway | The worker could not apply a delta (its base sequence or the verifying hash did not match) and needs a full snapshot. |
 | `EntityRedirect` | worker to gateway | An entity the gateway follows explicitly (by ownership or subscription) moved to another worker. |
 | `EntityForget` | worker to gateway | An entity left every region this gateway subscribes on this worker. |
-| `ClientFocusHint` | client to gateway | Where a client's camera or scope is looking, as an unreliable, rate-limited, distance-clamped input. See [Interest management](/docs/guides/interest-management#client-focus-hints-are-inputs-never-authority). |
+| `ClientFocusHint` | client to gateway | Where a client's camera or scope is looking, as an unreliable, rate-limited input treated only as far as the server-owned focus mode allows for that client — clamped to the pawn by default. See [Interest management](/docs/guides/interest-management#client-focus-hints-are-inputs-never-authority). |
 
 See [Interest management](/docs/guides/interest-management) for how these messages are used, and the [wire protocol specification](/docs/specifications/wire-protocol#interest-management) for their exact layout.
 

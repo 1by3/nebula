@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// The worker's half of interest management (design §5, §6): an index of the entities this worker owns keyed by
+    /// The worker's half of interest management: an index of the entities this worker owns keyed by
     /// region, one subscription set per gateway link, and the mask arithmetic that decides which gateways hear about
     /// each entity.
     /// <para>
@@ -38,11 +38,33 @@ namespace Nebula
         /// <summary>netId → gateways a wide entity currently reaches. Re-evaluated at <see cref="InterestSettings.EvalHz"/>, with the exit margin as hysteresis.</summary>
         private readonly Dictionary<ulong, ulong> _wideMask = new Dictionary<ulong, ulong>();
         private readonly List<ulong> _wideScratch = new List<ulong>();
+        /// <summary>
+        /// Scratch for publishing a carrier's subtree when it changes bucket. Reused, so a ship that
+        /// crosses a region edge allocates nothing and one that carries nothing costs a single list entry.
+        /// </summary>
+        private readonly CarriedTransition _carried = new CarriedTransition();
+        /// <summary>Cached delegate for <see cref="CarriedTransition"/>, so a rebucket allocates no closure.</summary>
+        private Func<ulong, ulong> _wideMaskOf;
+        /// <summary>Entities whose carried subtree has to leave <see cref="_wideMask"/> once a transition is published.</summary>
+        private readonly List<ulong> _wideStale = new List<ulong>();
+        /// <summary>Entities already reported for a refused carrier link, so a cycle is logged once and not per tick.</summary>
+        private readonly HashSet<ulong> _carrierCycleWarned = new HashSet<ulong>();
+        /// <summary>
+        /// The handoff in flight, if any: how deep the recursive transfer is and which passengers are leaving with
+        /// the carrier being handed to another worker right now. A handoff moves the whole subtree — the carrier
+        /// first, then its contents, on the same ordered stream — so taking the carrier out of the index in
+        /// between is not an orphaning and must publish nothing for them. Populated by
+        /// <see cref="CollectHandoverFollowers"/> for the duration of the outermost transfer and empty otherwise,
+        /// so no steady-state path pays for it.
+        /// </summary>
+        private readonly HandoverScope _handover = new HandoverScope();
         /// <summary>This tick's entities grouped by the exact set of gateways they go to, so one batch serves them all.</summary>
         private readonly Dictionary<ulong, List<NetworkIdentity>> _byMask = new Dictionary<ulong, List<NetworkIdentity>>();
         private readonly Stack<List<NetworkIdentity>> _maskListPool = new Stack<List<NetworkIdentity>>();
         private readonly List<ulong> _maskOrder = new List<ulong>();
         private readonly List<NetworkIdentity> _spawnOrder = new List<NetworkIdentity>();
+        /// <summary>Carrier depth per <see cref="_spawnOrder"/> entry, so ordering a snapshot costs one index walk each.</summary>
+        private readonly List<int> _spawnDepth = new List<int>();
         private readonly Dictionary<Container, int> _containerCounts = new Dictionary<Container, int>();
 
         private InterestSettings _interest = InterestSettings.Default;
@@ -61,11 +83,11 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------------- public state
 
-        /// <summary>The grid this worker makes region ids with; a gateway subscribing with a different one is rejected (design D2).</summary>
+        /// <summary>The grid this worker makes region ids with; a gateway subscribing with a different one is rejected.</summary>
         public InterestGrid InterestGrid => _interestGrid;
         /// <summary>Regions at least one gateway subscribes here.</summary>
         public int SubscribedRegions => _publisher.SubscribedRegions;
-        /// <summary>Authoritative entities that are in every client's set, so gateways must link this worker to hear them (design §5).</summary>
+        /// <summary>Authoritative entities that are in every client's set, so gateways must link this worker to hear them.</summary>
         public bool HasGlobalEntities => _index.GlobalCount > 0;
         /// <summary>State entries actually sent to gateways since start-up, and what an unfiltered worker would have sent.</summary>
         public long InterestEntriesSent { get; private set; }
@@ -73,7 +95,7 @@ namespace Nebula
         /// <summary>Bytes of world state actually sent, and what the same tick would have cost sent to every gateway.</summary>
         public long InterestBytesSent { get; private set; }
         public long InterestBytesUnfiltered { get; private set; }
-        /// <summary>Smoothed milliseconds per tick spent deciding who hears about what (design §11's second warning).</summary>
+        /// <summary>Smoothed milliseconds per tick spent deciding who hears about what.</summary>
         public float InterestFilterMs { get; private set; }
         /// <summary>Non-empty while this worker wants the world partitioned; shown on the dashboard and logged once a minute.</summary>
         public string PartitionWarning { get; private set; } = "";
@@ -116,6 +138,7 @@ namespace Nebula
         {
             _interest = Config.ToInterestSettings();
             _interestGrid = Config.ToInterestGrid();
+            _wideMaskOf = WideMaskOf;
             CacheOrigin();
             // The issues themselves are logged once by NebulaBootstrap; this line is what the worker actually runs on.
             NebulaLog.Info($"interest: radius {_interest.Radius} m (+{_interest.ExitMargin} exit), {_interestGrid}, eval {_interest.EvalHz} Hz");
@@ -201,7 +224,12 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------------- index upkeep
 
-        /// <summary>This worker gained authority over an entity: index it, and link it to its carrier (design D3).</summary>
+        /// <summary>
+        /// This worker gained authority over an entity: index it, and link it to its carrier. The
+        /// placement decided here is the entity's <b>own</b>; while it rides in something,
+        /// <see cref="InterestIndex{T}"/> publishes it exactly where its root carrier is published,
+        /// so a crate's own <c>AlwaysRelevant</c> never reaches a gateway on the other side of the world.
+        /// </summary>
         private void InterestAdd(NetworkIdentity e)
         {
             if (e == null || e.NetId == 0) return;
@@ -226,7 +254,46 @@ namespace Nebula
                 case InterestPlacement.Wide: _index.AddWide(e.NetId, e); break;
                 default: _index.Add(e.NetId, RegionOf(e), e); break;
             }
-            _index.SetCarrier(e.NetId, CarrierOf(e));
+            LinkCarrier(e, CarrierOf(e));
+        }
+
+        /// <summary>
+        /// <see cref="InterestAdd"/>, the entity's own announcement, and — when passengers were already waiting
+        /// for it — the transition its arrival caused for them. This is how an entity this worker has just
+        /// gained joins the publication, and the three steps are in this order for a reason.
+        /// <para>
+        /// A passenger can be indexed before the carrier its container names: until the carrier exists the
+        /// index has nowhere to seat it, so it sits on its own placement and is published from there. Adding
+        /// the carrier re-seats the <b>whole</b> pending subtree into the carrier's placement, and
+        /// nothing else would ever tell the gateways: an always-relevant passenger that every gateway in the
+        /// mesh holds has to be forgotten by the ones the carrier is nowhere near, or they cache it for ever.
+        /// Capturing before the placement and resolving after it turns that implicit reseating into the same
+        /// spawns and forgets a rebucket would send — and the carrier is announced in between, so a gateway
+        /// hearing about a passenger for the first time has already been given the container it names.
+        /// </para>
+        /// </summary>
+        private void InterestAddAndAnnounce(NetworkIdentity e, string[] followers)
+        {
+            if (e == null || e.NetId == 0) return;
+            bool pending = _index.HasCarried(e.NetId);
+            if (pending) _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            InterestAdd(e);
+            AnnounceToRelevantGateways(e, followers);
+            if (pending) PublishCarried();
+        }
+
+        /// <summary>
+        /// Link an entity to its carrier, reporting a refused link. A cycle ("this crate is inside itself") is a
+        /// bug in whatever decides what is inside what, and the index keeps the link it had rather than accept a
+        /// subtree it could not walk; saying so once per entity is the only way it is ever noticed.
+        /// </summary>
+        private CarrierLink LinkCarrier(NetworkIdentity e, ulong carrier)
+        {
+            var result = _index.SetCarrier(e.NetId, carrier);
+            if (result == CarrierLink.Cycle && _carrierCycleWarned.Add(e.NetId))
+                NebulaLog.Error($"entity #{e.NetId} cannot be carried by #{carrier}: that would put it inside itself. The link is refused and #{e.NetId} keeps carrier #{_index.CarrierOf(e.NetId)}; fix whatever parented these containers.");
+            else if (result != CarrierLink.Cycle) _carrierCycleWarned.Remove(e.NetId);
+            return result;
         }
 
         /// <summary>Whether this entity is itself a dynamic container other entities can ride in (a ship, a lift).</summary>
@@ -246,11 +313,36 @@ namespace Nebula
             return c != null && c.IsDynamic && c.Carrier != null ? c.Carrier.NetId : 0;
         }
 
-        /// <summary>Authority was lost or the entity is gone: it leaves the index (its despawn/forget is sent separately).</summary>
+        /// <summary>
+        /// Authority was lost or the entity is gone: it leaves the index. Its own despawn or forget is sent
+        /// separately and is not duplicated here.
+        /// <para>
+        /// What <b>is</b> published here is what its leaving does to anything riding in it. Removing a carrier
+        /// orphans its passengers and gives each of them its own placement back: a surviving
+        /// always-relevant crate is global again, a wide one is matched on its own reach again, and a region
+        /// one stays in the bucket the carrier left it in. Gateways that only heard about a passenger through
+        /// the carrier have to be told to forget it, and gateways its restored placement newly reaches have to
+        /// be sent it — neither of which any other path sends, because nothing about the passenger itself
+        /// changed. Captured before the removal, resolved after it, published contents-first on the way out.
+        /// </para>
+        /// <para>
+        /// A passenger that is <b>following</b> the carrier to another worker is not orphaned by any of that and
+        /// is skipped (<see cref="_handover"/>): the subtree is moving as one unit, and publishing the
+        /// intermediate state would send an always-relevant crate to gateways that then get neither a redirect
+        /// nor a forget and cache it for ever. Contents that really stay behind — a pinned interior — are not in
+        /// that set and are published exactly as a despawned carrier's survivors are.
+        /// </para>
+        /// </summary>
         private void InterestRemove(ulong netId)
         {
+            bool carried = _index.HasCarried(netId);
+            if (carried) _carried.Capture(_index, netId, _publisher, _wideMaskOf);
             _index.Remove(netId);
+            // The removed carrier's own slot resolves to "gone" and publishes nothing, so only the passengers
+            // it orphaned are announced or forgotten here.
+            if (carried) PublishCarried();
             _wideMask.Remove(netId);
+            _carrierCycleWarned.Remove(netId);
             // It is not ours any more, so there is nothing to announce to a gateway that has yet to link here.
             if (_awaitedByGateway.Count > 0) foreach (var ids in _awaitedByGateway.Values) ids.Remove(netId);
         }
@@ -280,7 +372,7 @@ namespace Nebula
                 for (int i = 0; i < _authoritative.Count; i++)
                 {
                     var carried = _authoritative[i];
-                    if (carried != null) _index.SetCarrier(carried.NetId, CarrierOf(carried));
+                    if (carried != null) LinkCarrier(carried, CarrierOf(carried));
                 }
             }
             for (int i = 0; i < _authoritative.Count; i++)
@@ -289,21 +381,90 @@ namespace Nebula
                 if (e == null) continue;
                 if (!_index.TryGetPlacement(e.NetId, out var placement, out ulong from))
                 {
-                    InterestAdd(e);
+                    // The index lost track of an entity we own: put it back and re-announce it, so the gateways
+                    // that should hear about it (and about anything that was waiting to ride in it) do.
+                    InterestAddAndAnnounce(e, null);
                     continue;
                 }
-                // A carrier change is rare but real (a pawn boards a ship): re-link before deciding the key.
+                // A carrier change is rare but real (a pawn boards a ship, a crate is dropped off one): re-link
+                // before deciding the key. Boarding rebuckets the entity into the carrier's region there and
+                // then, so it is a publication in its own right, not just a link.
                 ulong carrier = CarrierOf(e);
-                if (_index.CarrierOf(e.NetId) != carrier) _index.SetCarrier(e.NetId, carrier);
+                if (_index.CarrierOf(e.NetId) != carrier)
+                {
+                    SetCarrierAndPublish(e, carrier);
+                    if (!_index.TryGetPlacement(e.NetId, out placement, out from)) continue;
+                }
                 if (placement != InterestPlacement.Region || carrier != 0) continue;
                 ulong to = RegionOf(e);
                 if (to == from) continue;
-                ulong sticky = StickyMask(e);
-                RebucketBits(_publisher.MaskOf(from), _publisher.MaskOf(to), sticky, out ulong spawn, out ulong forget);
-                _index.Move(e.NetId, to);
-                if (spawn != 0) SendSpawnToMask(e, spawn);
-                if (forget != 0) SendForgetToMask(e, forget);
+                MoveAndPublish(e, to);
             }
+        }
+
+        /// <summary>
+        /// Rebucket an entity into <paramref name="to"/> and publish what that changes — for it <b>and</b> for
+        /// everything riding in it, to any depth. <see cref="InterestIndex{T}"/> moves a carrier's
+        /// subtree as one unit; without this a gateway subscribing only the destination would be sent the ship
+        /// and none of its passengers, and one subscribing only the origin would keep them for ever.
+        /// </summary>
+        private void MoveAndPublish(NetworkIdentity e, ulong to)
+        {
+            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            _index.Move(e.NetId, to);
+            PublishCarried();
+        }
+
+        /// <summary>
+        /// Link (or unlink) an entity's carrier and publish what that changes. Boarding pulls the entity, and
+        /// whatever it is itself carrying, into the carrier's publication — its region, and its always-relevance
+        /// or reach; disembarking gives the entity back its own, and leaves a region entity where
+        /// the carrier was until its own position rebuckets it, which is the caller's next step.
+        /// </summary>
+        private void SetCarrierAndPublish(NetworkIdentity e, ulong carrier)
+        {
+            _carried.Capture(_index, e.NetId, _publisher, _wideMaskOf);
+            LinkCarrier(e, carrier);
+            PublishCarried();
+        }
+
+        /// <summary>
+        /// Send the transition <see cref="_carried"/> captured: spawns forwards (a carrier before its contents, so
+        /// a gateway never receives an entity whose container it has not been given) and forgets backwards
+        /// (contents before their carrier, for the same reason in reverse). A gateway that keeps the entity for a
+        /// non-spatial reason — it owns it, or named it — is in the sticky set and is never told to forget it.
+        /// </summary>
+        private void PublishCarried()
+        {
+            // The handoff in flight, if any, collapses its passengers' slots to "nothing changed" here: that is
+            // the one place follower suppression lives, so both this and every other host of the shared interest
+            // core get it, and a test of the core notices if it goes away (design D87).
+            _carried.Resolve(_index, _publisher, _wideMaskOf, _handover);
+            for (int i = 0; i < _carried.Count; i++)
+            {
+                var slot = _carried[i];
+                if (slot.Before == slot.After || !_index.TryGetValue(slot.Id, out var moved) || moved == null) continue;
+                RebucketBits(slot.Before, slot.After, StickyMask(moved), out ulong spawn, out _);
+                if (spawn != 0) SendSpawnToMask(moved, spawn);
+            }
+            for (int i = _carried.Count - 1; i >= 0; i--)
+            {
+                var slot = _carried[i];
+                if (slot.Before == slot.After || !_index.TryGetValue(slot.Id, out var moved) || moved == null) continue;
+                RebucketBits(slot.Before, slot.After, StickyMask(moved), out _, out ulong forget);
+                if (forget != 0) SendForgetToMask(moved, forget);
+            }
+            // An entity that stopped being wide - a searchlight that boarded a ship - must not keep the mask it
+            // had: the gateways in it have just been told to forget it, and a stale entry would make the next
+            // evaluation think they still hold it and skip the spawn.
+            _wideStale.Clear();
+            for (int i = 0; i < _carried.Count; i++)
+            {
+                var slot = _carried[i];
+                if (slot.To != InterestPlacement.Wide && _wideMask.ContainsKey(slot.Id)) _wideStale.Add(slot.Id);
+            }
+            for (int i = 0; i < _wideStale.Count; i++) _wideMask.Remove(_wideStale[i]);
+            _wideStale.Clear();
         }
 
         /// <summary>Gateways an entity reaches whatever region it is in: its owner's session gateway and any explicit subscriber.</summary>
@@ -330,7 +491,7 @@ namespace Nebula
         private Peer SessionGatewayOf(ulong clientId) =>
             clientId != 0 && _sessions.TryGet(clientId, out var session) ? GatewayByKey(session.Gateway) : null;
 
-        /// <summary>Count one state entry against every gateway in the mask, for the "entries sent vs total" stat of design §12.</summary>
+        /// <summary>Count one state entry against every gateway in the mask for the "entries sent vs total" statistic.</summary>
         private void CountEntry(ulong mask)
         {
             InterestEntriesSent++;
@@ -407,7 +568,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Apply a gateway's subscription update (design §5). A message built with a different grid, a delta against
+        /// Apply a gateway's subscription update. A message built with a different grid, a delta against
         /// a sequence this worker does not hold, or a set that does not verify is refused loudly and answered with
         /// <see cref="InterestResyncMsg"/>: filtering with ids the gateway did not mean would show up as entities
         /// that never spawn rather than as an error.
@@ -432,7 +593,7 @@ namespace Nebula
         /// A subscription was committed: fold the region change into the masks and send a spawn for everything
         /// already bucketed in the regions that were added (carriers before their contents, so an entity never
         /// arrives at a gateway before the container it rides in). Nothing is sent for removed regions: the gateway
-        /// drops its own cache and despawns them from its clients (design §5).
+        /// drops its own cache and despawns them from its clients.
         /// </summary>
         private void OnSubscriptionChanged(RegionSubscriptionReceiver receiver)
         {
@@ -460,25 +621,30 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Send <see cref="_spawnOrder"/> to one gateway shallowest container first. Nesting depth is the carrier
-        /// order: a ship sits in a static container (depth 0) and its passengers in the ship's box (depth 1), so
-        /// walking depths in order puts every carrier ahead of what it carries.
+        /// Send <see cref="_spawnOrder"/> to one gateway shallowest carrier first: a ship standing in the world
+        /// is depth 0 and its passengers depth 1, so walking depths in order puts every carrier ahead of what it
+        /// carries and a gateway never receives an entity whose container it has not been given.
+        /// <para>
+        /// The depth comes from <see cref="InterestIndex{T}"/>, which refuses cyclic links, and the walk goes as
+        /// deep as the deepest entity in the list rather than to a constant: a snapshot that stopped
+        /// at a fixed depth would silently leave the bottom of a deep ship out of the gateway's subscription and
+        /// out of every client's set, with nothing downstream able to tell.
+        /// </para>
         /// </summary>
         private void SendSpawnsInCarrierOrder(ulong mask)
         {
-            for (int depth = 0; depth <= MaxNestingDepth; depth++)
+            int deepest = 0;
+            _spawnDepth.Clear();
+            for (int i = 0; i < _spawnOrder.Count; i++)
             {
-                bool deeper = false;
-                for (int i = 0; i < _spawnOrder.Count; i++)
-                {
-                    var e = _spawnOrder[i];
-                    int d = e.Container != null ? e.Container.NestingDepth : 0;
-                    if (d > depth) { deeper = true; continue; }
-                    if (d < depth) continue;
-                    SendSpawnToMask(e, mask);
-                }
-                if (!deeper) break;
+                int d = _index.DepthOf(_spawnOrder[i].NetId);
+                _spawnDepth.Add(d);
+                if (d > deepest) deepest = d;
             }
+            for (int depth = 0; depth <= deepest; depth++)
+                for (int i = 0; i < _spawnOrder.Count; i++)
+                    if (_spawnDepth[i] == depth) SendSpawnToMask(_spawnOrder[i], mask);
+            _spawnDepth.Clear();
             _spawnOrder.Clear();
         }
 
@@ -517,7 +683,7 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- wide entities
 
         /// <summary>
-        /// Match the wide list against each gateway's foci at <see cref="InterestSettings.EvalHz"/> (design §6): a
+        /// Match the wide list against each gateway's foci at <see cref="InterestSettings.EvalHz"/>. A
         /// wide entity is too large for a region scan to find, so it is tested directly instead. The exit margin is
         /// the hysteresis — a gateway that already has it keeps it until the entity is a margin further away — so a
         /// dirigible hovering on the boundary is not spawned and forgotten four times a second.
@@ -535,8 +701,9 @@ namespace Nebula
             {
                 var e = entry.Value;
                 if (e == null) continue;
-                PlacementOf(e.AlwaysRelevant, e.RelevanceRadius, _interest, out float radius);
-                ToAbsolute(e.transform.position, out double x, out double y, out double z);
+                var subject = WideSubjectOf(entry.Id, e);
+                PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
+                ToAbsolute(subject.transform.position, out double x, out double y, out double z);
                 _wideMask.TryGetValue(entry.Id, out ulong before);
                 ulong enter = _publisher.WideMask(_interestGrid, x, y, z, radius);
                 ulong stay = before == 0 ? 0 : _publisher.WideMask(_interestGrid, x, y, z, radius + _interest.ExitMargin);
@@ -550,11 +717,41 @@ namespace Nebula
             }
         }
 
+        /// <summary>
+        /// Whose position and radius a wide entity is matched by: its root carrier's, so a subtree
+        /// in the wide list is one set of gateways rather than one per passenger. <see cref="InterestAdd"/>
+        /// downgrades a carrier to a region entity, so in practice the root is the entity itself;
+        /// this is what keeps the guarantee true if it ever is not.
+        /// </summary>
+        private NetworkIdentity WideSubjectOf(ulong netId, NetworkIdentity self)
+        {
+            ulong root = _index.RootOf(netId);
+            if (root == netId) return self;
+            return _index.TryGetValue(root, out var carrier) && carrier != null ? carrier : self;
+        }
+
+        /// <summary>
+        /// The gateways that hold a wide entity right now: what the last evaluation published, or a fresh match
+        /// for one that has only just become wide (a searchlight that got off a ship). Used by
+        /// <see cref="CarriedTransition"/>, which cannot know either.
+        /// </summary>
+        private ulong WideMaskOf(ulong netId)
+        {
+            if (_wideMask.TryGetValue(netId, out ulong known)) return known;
+            if (!_index.TryGetValue(netId, out var e) || e == null) return 0;
+            var subject = WideSubjectOf(netId, e);
+            PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
+            ToAbsolute(subject.transform.position, out double x, out double y, out double z);
+            ulong mask = _publisher.WideMask(_interestGrid, x, y, z, radius);
+            _wideMask[netId] = mask;
+            return mask;
+        }
+
         // ------------------------------------------------------------------------------------------- masks per tick
 
         /// <summary>
         /// Decide once per tick which gateways hear about each authoritative entity, and group the entities that go
-        /// to exactly the same set so one serialization serves all of them (design §6). Everything downstream —
+        /// to exactly the same set so one serialization serves all of them. Everything downstream —
         /// world state, netvars, sync state, RPCs, despawns — reads <see cref="_entityMask"/> instead of iterating
         /// gateways, so the per-tick cost is O(entities + batches × subscribers) rather than O(entities × gateways).
         /// </summary>
@@ -659,7 +856,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Tell gateways to forget an entity that left every region they subscribe here (design §5). This is not a
+        /// Tell gateways to forget an entity that left every region they subscribe here. This is not a
         /// despawn: the entity is alive, it is simply no longer in anything this gateway asked for, and the gateway
         /// decides what its clients are told.
         /// </summary>
@@ -674,7 +871,7 @@ namespace Nebula
         /// <summary>
         /// An entity this worker owns moved to another worker: the gateways that were following it by name (an
         /// explicit subscription) or because they speak for its owner are told where it went, so they can link the
-        /// new owner instead of losing it (design §5).
+        /// new owner instead of losing it.
         /// </summary>
         private void SendRedirect(NetworkIdentity e, ushort newWorkerIndex, ulong mask)
         {
@@ -762,7 +959,7 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- warnings
 
         /// <summary>
-        /// Design §11: interest management bounds who <b>hears</b> about an entity, not who simulates it. One
+        /// Interest management bounds who <b>hears</b> about an entity, not who simulates it. One
         /// container is still one worker's budget, so a container that outgrows a worker, or filtering that costs
         /// more than the game can afford per tick, is a call to partition the world — not something a bigger radius
         /// or a smaller cell will fix. Logged at most once a minute and raised as a telemetry flag.

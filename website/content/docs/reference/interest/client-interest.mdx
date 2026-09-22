@@ -1,6 +1,6 @@
 ---
 title: "ClientInterest<T, TSource>"
-description: "One client's interest set and the state machine that maintains it (design §4)."
+description: "One client's interest set and the state machine that maintains it."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/ClientInterest.cs)</div>
@@ -9,7 +9,7 @@ description: "One client's interest set and the state machine that maintains it 
 public sealed class ClientInterest<T, TSource> where TSource : struct, IInterestSource<T>
 ```
 
-One client's interest set and the state machine that maintains it (design §4). Evaluation walks only the regions the client's foci cover, so its cost follows what is near the client rather than the size of the world, and the set is stable: an entity enters at the relevance radius and leaves only once it has been more than [`InterestSettings.ExitMargin`](/docs/reference/interest/interest-settings#exitmargin) further out for [`InterestSettings.LingerSeconds`](/docs/reference/interest/interest-settings#lingerseconds). That hysteresis is what stops an entity walking a boundary from spawning and despawning several times a second on every nearby client.
+One client's interest set and the state machine that maintains it. Evaluation walks only the regions the client's foci cover, so its cost follows what is near the client rather than the size of the world, and the set is stable: an entity enters at the relevance radius and leaves only once it has been more than [`InterestSettings.ExitMargin`](/docs/reference/interest/interest-settings#exitmargin) further out for [`InterestSettings.LingerSeconds`](/docs/reference/interest/interest-settings#lingerseconds). That hysteresis is what stops an entity walking a boundary from spawning and despawning several times a second on every nearby client.
 
 Enter and leave events come out in an order the client can act on: carriers before their contents on the way in (a passenger's spawn names its ship's container) and contents before carriers on the way out.
 
@@ -130,6 +130,16 @@ public bool Remove(ulong netId, List<ulong> left);
 ```
 
 Take an entity out of the set now: it was despawned, its worker died, or the gateway forgot it. Appends to `left` when the client had it.
+
+### Revalidate [#revalidate]
+
+```csharp
+public void Revalidate(InterestIndex<T> index, List<ulong> left);
+```
+
+Re-run authorization over the set exactly as it stands and drop whatever no longer passes, appending the losses to `left`. Nothing is added: this is the **revocation** half of an evaluation, for the moment something the security filter depends on was tightened — a new policy, a changed team, a fog sweep — and the answer must not wait for the client's turn in the rotation.
+
+It costs one [`IInterestSource<T>.Authorize`](/docs/reference/interest/i-interest-source#authorize) per entity the client already holds and makes no grid query at all, so it is strictly cheaper than the evaluation it precedes. The additive half — what the change newly *reveals* — is left to that evaluation, because revealing late is a latency bug and revoking late is a security one.
 
 ### Evaluate [#evaluate]
 

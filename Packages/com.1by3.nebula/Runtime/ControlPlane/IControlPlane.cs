@@ -43,7 +43,7 @@ namespace Nebula
         public uint BotCount;
         public uint ServerDrivenCount;
         /// <summary>
-        /// This worker holds at least one always-relevant entity (design §5). A gateway keeps a link to such a
+        /// This worker holds at least one always-relevant entity. A gateway keeps a link to such a
         /// worker even when it subscribes no region there, because a global entity belongs in every client's set
         /// and nothing else would make the gateway ask for it.
         /// </summary>
@@ -130,8 +130,16 @@ namespace Nebula
         public float SpawnsPerSecond, DespawnsPerSecond;
         /// <summary>Time one interest evaluation takes, in milliseconds, over the interval.</summary>
         public float InterestEvalMsAvg, InterestEvalMsMax;
+        /// <summary>Client interest evaluations run per second: welcomed clients x InterestEvalHz when the rotation is keeping up.</summary>
+        public float InterestEvalsPerSecond;
         /// <summary>Bytes sent to one client per second, averaged over the welcomed clients, and the worst of them.</summary>
         public float BytesPerClientAvg, BytesPerClientMax;
+        /// <summary>
+        /// Exceptions thrown by the game's gateway extension since this gateway started (a total, not a rate).
+        /// Anything but zero means a policy call, a client event or posted work threw: the gateway carried on —
+        /// a throwing <c>Authorize</c> denies rather than allows — but the game is not deciding what it thinks.
+        /// </summary>
+        public uint ExtensionErrors;
         /// <summary>Registered, connected to the control plane, and accepting clients.</summary>
         public bool Ready;
         /// <summary>The gateway is taking itself out of service: refusing new clients and asking the ones it has to reconnect elsewhere.</summary>

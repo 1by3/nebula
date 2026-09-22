@@ -171,7 +171,27 @@ public int DespawnsReceived { get; }
 public Vector3? FocusHint { get; set; }
 ```
 
-Where the player is looking, in world space, when that is not simply where the pawn is: a free camera, an RTS view, a spectator. Set it and the client sends the gateway a [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg) at up to [`NebulaConfig.InterestHintMaxHz`](/docs/reference/core/nebula-config#interesthintmaxhz); the gateway treats it as an input and never as authority — it clamps it to [`NebulaConfig.InterestHintMaxDistance`](/docs/reference/core/nebula-config#interesthintmaxdistance) of the pawn unless its policy says otherwise — so a game cannot widen its own interest by lying about where it is looking.
+Where the player is looking, in this client's own Unity world space, when that is not simply where the pawn is: a free camera, an RTS view, a spectator. Set it and the client sends the gateway a [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg) at up to [`NebulaConfig.InterestHintMaxHz`](/docs/reference/core/nebula-config#interesthintmaxhz), converting the point to absolute world coordinates on the way out ([`AbsoluteFocusHint`](#absolutefocushint)), so a floating-origin shift between two hints does not move the place the gateway thinks you are watching.
+
+The gateway treats it as an input and never as authority: it is refused unless the server allowed this client a focus (`NebulaGateway.SetClientFocusMode`), and by default it is clamped to [`NebulaConfig.InterestHintMaxDistance`](/docs/reference/core/nebula-config#interesthintmaxdistance) of the pawn. A game cannot widen its own interest by lying about where it is looking.
+
+### ContentAnchor [#contentanchor]
+
+```csharp
+public Transform ContentAnchor { get; }
+```
+
+What this client's **content** follows: which cells or chunks are kept loaded, and where the floating origin sits. Null (the default) means the local pawn, which is what a shooter wants and what every existing project gets without changing a line.
+
+A strategy game does not want that. Its camera flies over a front the commander has no pawn near — or has no pawn at all — and content anchored to the pawn would leave the camera looking at unloaded terrain however much the gateway is willing to send. Handing the camera's transform to [`SetContentAnchor`](#setcontentanchor) moves the window with the camera instead.
+
+### ActiveContentAnchor [#activecontentanchor]
+
+```csharp
+public Transform ActiveContentAnchor { get; }
+```
+
+The transform content is actually anchored to right now: [`ContentAnchor`](#contentanchor) when one is set and still alive, the local pawn otherwise, and null before either exists. Read by `NebulaWorldStreaming` (baked cell scenes) and `NebulaChunkedWorld` (runtime chunks), so one setting moves both.
 
 ### Entities [#entities]
 
@@ -305,6 +325,24 @@ public void ClearFocusHint();
 
 Withdraw the focus hint: interest returns to the pawn. Going quiet is not enough — the gateway keeps the last hint it accepted — so the clear is said out loud, reliably, under a new generation that makes any hint still in flight stale.
 
+### AbsoluteFocusHint [#absolutefocushint]
+
+```csharp
+public void AbsoluteFocusHint(out double x, out double y, out double z);
+```
+
+[`FocusHint`](#focushint) in absolute world coordinates: the frame position plus this process's floating origin, in double, exactly as a worker resolves its own entities (`WorkerInterest.ToAbsolute`). Without a world definition the origin never moves and the two spaces are the same. All zero when there is no hint.
+
+### SetContentAnchor [#setcontentanchor]
+
+```csharp
+public void SetContentAnchor(Transform anchor);
+```
+
+Anchor content to this transform — the active strategy camera, a selected unit, a cinematic rig — instead of to the local pawn. Pass null to go back to the pawn. It is deliberately a transform and not the focus hint: the hint is an optional, rate-limited, server-validated *request* about what to be sent, while the anchor is a local decision about what to keep in memory, sampled every frame so load/unload hysteresis and origin shifts have something continuous to measure against.
+
+Both are usually the same place, and a game that drives a free camera normally sets [`FocusHint`](#focushint) to the camera's aim point and the anchor to the camera. Doing so is safe across an origin shift: the hint is converted to absolute coordinates as it is sent ([`AbsoluteFocusHint`](#absolutefocushint)), so moving the origin under the camera does not move the point the gateway thinks anyone is watching. The pawn's prediction is unaffected too — it reconciles in the same frame everything else is in, and an origin shift moves that frame for all of them at once.
+
 ### Initialize [#initialize]
 
 ```csharp
@@ -365,7 +403,7 @@ Lists the supported state values.
 
 | Name | Value | Description |
 | --- | --- | --- |
-| `Disconnected` |  |  |
-| `Connecting` |  |  |
-| `Connected` |  |  |
-| `InGame` |  |  |
+| <span id="disconnected"></span>`Disconnected` |  |  |
+| <span id="connecting"></span>`Connecting` |  |  |
+| <span id="connected"></span>`Connected` |  |  |
+| <span id="ingame"></span>`InGame` |  |  |

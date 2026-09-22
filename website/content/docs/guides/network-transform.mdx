@@ -27,13 +27,11 @@ Use worker authority for physics, predicted characters, and moving containers. A
 
 Do not disable an axis that remote collision or distance-based delivery needs. For example, a moving physics prop needs position updates even if its mesh is hidden. Disabling position leaves the gateway with its last known position.
 
-## Update an existing project
+## Configure moving entities
 
 Add `NetworkTransform` to existing moving prefabs and scene entities. Component requirements apply when you add new components; they do not migrate every existing asset. Leave static objects opted out, and enable scale only where it changes during play.
 
-Use `Identity.Motion.Velocity` for scripted or predicted movement, or `NetworkRigidbody.SetVelocity` for physics. `Identity.Velocity` remains an obsolete forwarding property for source compatibility.
-
-Rebuild clients, workers, and gateways together. The selected-field format uses protocol version 8 and cannot communicate with version 7 executables. Existing persistence columns do not need a migration.
+Use `Identity.Motion.Velocity` for scripted or predicted movement, or `NetworkRigidbody.SetVelocity` for physics.
 
 ## Options
 
@@ -207,7 +205,7 @@ Between keyframes an unreliable transform sends deltas; a lost delta shows as a 
 | `PositionThreshold`, `RotAngleThreshold`, `ScaleThreshold` | Same names. |
 | `InLocalSpace` | Same. World values travel container-local on the wire. |
 | `Interpolate` | Same. |
-| `PositionInterpolationType` and friends (Legacy Lerp / Lerp / Smooth Dampening) | One `Interpolation` field: `Buffered` (both lerps) or `SmoothDamp`. |
+| `PositionInterpolationType` and related fields | One `Interpolation` field: `Buffered` or `SmoothDamp`. |
 | `PositionMaxInterpolationTime`, `RotationMaxInterpolationTime`, `ScaleMaxInterpolationTime` | Same names; used by `SmoothDamp` only. |
 | `SlerpPosition` | Same. |
 | `UseHalfFloatPrecision`, `UseQuaternionSynchronization`, `UseQuaternionCompression` | Same names. |

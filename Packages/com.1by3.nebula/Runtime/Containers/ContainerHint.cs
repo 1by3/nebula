@@ -94,8 +94,7 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Read the form <see cref="ToString"/> writes. Unknown parts are ignored, so a newer hint field passing
-        /// through an older build is dropped rather than rejected; "" is the default hint.
+        /// Read the form <see cref="ToString"/> writes. Unknown parts are ignored; "" is the default hint.
         /// </summary>
         public static ContainerHint Parse(string text)
         {

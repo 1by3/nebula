@@ -1,0 +1,22 @@
+---
+title: "CarrierLink"
+description: "The outcome of linking an item to a carrier."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestIndex.cs)</div>
+
+```csharp
+public enum CarrierLink : byte
+```
+
+The outcome of linking an item to a carrier.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="unchanged"></span>`Unchanged` | `0` | The item already had this carrier; nothing was changed. |
+| <span id="linked"></span>`Linked` | `1` | The item now rides in the carrier and was placed with it. |
+| <span id="detached"></span>`Detached` | `2` | The item was taken out of the carrier it was in and placed on its own again. |
+| <span id="unknownitem"></span>`UnknownItem` | `3` | No such item in the index; nothing was remembered. Link it after adding it. |
+| <span id="cycle"></span>`Cycle` | `4` | The link was refused because it would close a carrier cycle (something cannot ride in itself, directly or through any chain). Nothing was changed: the item keeps the carrier it had. Report it — a cycle is a bug in whatever decides what is inside what, and silently accepting one makes "the whole subtree" meaningless. |

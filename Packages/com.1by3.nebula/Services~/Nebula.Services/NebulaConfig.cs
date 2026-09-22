@@ -48,6 +48,13 @@ namespace Nebula
         public float DeadWorkerReplaceDelaySeconds = 8f;
         public float WorkerDrainTimeoutSeconds = 10f;
         public ushort DashboardPort = 7080;
+
+        // The game's own code inside the standalone gateway (IGatewayExtension). It travels in the exported
+        // manifest, so every gateway of a fleet loads the same extension from the same place inside its install.
+        public string GatewayExtension = "";
+        public string GatewayExtensionType = "";
+        public string GatewayExtensionOptions = "";
+
         public float GhostBandMargin = 4f;
         public float HandoverHysteresis = 0.35f;
         public float GhostLingerSeconds = 2f;

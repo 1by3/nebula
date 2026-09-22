@@ -152,9 +152,9 @@ namespace Nebula.World
 
         /// <summary>
         /// Point <see cref="ContainerRegistry.RuntimeBoundsInFrame"/> at this grid, so a game that registers runtime
-        /// containers by <see cref="PackId"/>'d coordinate no longer needs to supply the bounds hook itself. Games
+        /// containers by <see cref="PackId"/>'d coordinate can use this grid as the bounds hook. Games
         /// with their own container shape keep using the hook directly; this is purely opt-in and touches nothing
-        /// else. Call once at boot (mirrors the pattern a game previously wrote inline), and clear
+        /// else. Call once at boot, and clear
         /// (<c>ContainerRegistry.RuntimeBoundsInFrame = null</c>) on shutdown if another hook should take over.
         /// </summary>
         public void UseAsRuntimeBounds() => ContainerRegistry.RuntimeBoundsInFrame = BoundsOfId;

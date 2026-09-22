@@ -19,7 +19,7 @@ The worker's end of one gateway link's subscription: the region set it filters t
 public InterestGrid Grid { get; set; }
 ```
 
-The grid this worker made its own region ids with. When it is valid, a message built with a different grid is rejected (design D2): filtering with ids that mean something else would silently hide entities. Leave it default to adopt the sender's.
+The grid this worker made its own region ids with. When it is valid, a message built with a different grid is rejected: filtering with ids that mean something else would silently hide entities. Leave it default to adopt the sender's.
 
 ### Seq [#seq]
 

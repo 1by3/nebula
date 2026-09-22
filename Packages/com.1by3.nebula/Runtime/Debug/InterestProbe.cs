@@ -64,7 +64,7 @@ namespace Nebula
         public int Orphans { get; private set; }
         public int Beyond { get; private set; }
         /// <summary>
-        /// Replicas riding in a dynamic container whose carrier this client does not hold. Design D3 says a
+        /// Replicas riding in a dynamic container whose carrier this client does not hold. A
         /// carrier and everything it carries enter and leave a client's set as one unit, so a passenger without
         /// its ship is the observable failure of that rule: the client would render a seated player hanging in
         /// the air where the ship used to be, and the pose it receives is relative to a frame it cannot resolve.

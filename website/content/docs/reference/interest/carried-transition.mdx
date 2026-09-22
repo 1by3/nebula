@@ -1,0 +1,126 @@
+---
+title: "CarriedTransition"
+description: "The bookkeeping a rebucket of a carrier needs: where the carrier and everything riding in it sat before the index moved them, and which gateways each of them gains or loses as a result."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/CarriedTransition.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/CarriedTransition.cs)</div>
+
+```csharp
+public sealed class CarriedTransition
+```
+
+The bookkeeping a rebucket of a **carrier** needs: where the carrier and everything riding in it sat before the index moved them, and which gateways each of them gains or loses as a result.
+
+[`InterestIndex<T>`](/docs/reference/interest/interest-index) moves a carrier's whole subtree as one unit, but the subscriber-mask transition has to be published per entity: a gateway subscribing only the destination region has never heard of the passengers, and one subscribing only the origin region keeps them for ever unless it is told to forget them. Capture before the move, resolve after it, then walk the slots forwards to spawn (carriers before their contents) and backwards to forget (contents before their carriers).
+
+"Where it sat" includes *how* it was published, not only which bucket it was in: boarding turns an always-relevant crate into part of a ship and getting off turns it back, and both are transitions that have to be sent.
+
+One instance per publisher, reused: the scratch lists are the only state, so a carrier with nothing riding in it costs one list entry and no allocation.
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public int Count { get; }
+```
+
+Entities in the captured subtree, the carrier first.
+
+### this\[\] [#this]
+
+```csharp
+public Slot this[int i] => _slots[i];
+```
+
+## Methods
+
+### Capture [#capture]
+
+```csharp
+public void Capture<T>(InterestIndex<T> index, ulong root, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null);
+```
+
+Record `root` and everything it carries, carriers before their contents, **before** the index is changed, together with the gateways each of them reaches right now.
+
+A root that is not in the index yet still captures its subtree: a passenger can be indexed before the carrier its container names, and adding that carrier re-seats the whole pending subtree into the carrier's placement. That is an implicit change with the same publication consequences as a rebucket, so it is captured the same way — with no slot for the root, which has nothing to say yet.
+
+`wideMaskOf` answers "which gateways hold this wide entity", which only the caller knows: a wide entity is matched against foci at the evaluation rate and the answer is remembered, not derived from a bucket. It is not asked about anything that is not wide.
+
+### Resolve [#resolve]
+
+```csharp
+public void Resolve<T>(InterestIndex<T> index, RegionPublisher publisher, Func<ulong, ulong> wideMaskOf = null, HandoverScope handover = null);
+```
+
+Fill in each slot's "after" masks, **after** the index has been changed. An entity that left the index in between gets equal masks: it is gone, and a despawn says that better than a forget. That is also what makes this the right capture for a carrier being *removed* — the carrier's own slot publishes nothing while the passengers it orphaned publish the placement each of them got back.
+
+Both ends are read the same way, so a passenger that changed *class* — global or wide before, bucketed with its carrier after, or the other way round when it gets off — publishes exactly the gateways it gained and lost, rather than being written off as "not a region entity".
+
+`handover`, when a handoff is in flight, names the passengers that are leaving with the carrier. Their transition is collapsed to "nothing changed": the subtree is moving as one unit and publishing the intermediate state would send an always-relevant crate to gateways that then get neither a redirect nor a forget and cache it for ever (design D85). Contents that really stay behind — a pinned interior — are not in that set and are published exactly as a despawned carrier's survivors are. Null outside a handover, which is every steady-state call.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Forget the captured subtree (a host that abandons a move rather than publishing it).
+
+## Nested types
+
+### Slot [#slot]
+
+```csharp
+public struct Slot
+```
+
+One entity of the moved subtree: where it was, and the gateways that hear it before and after.
+
+#### Fields
+
+##### Id [#id]
+
+```csharp
+public ulong Id;
+```
+
+##### From [#from]
+
+```csharp
+public InterestPlacement From;
+```
+
+Placement and region bucket before the change.
+
+##### FromRegion [#fromregion]
+
+```csharp
+public ulong FromRegion;
+```
+
+##### To [#to]
+
+```csharp
+public InterestPlacement To;
+```
+
+Placement after the change; equal to `From` for an entity that only changed bucket.
+
+##### ToRegion [#toregion]
+
+```csharp
+public ulong ToRegion;
+```
+
+Region bucket after the change (meaningful when `To` is [`InterestPlacement.Region`](/docs/reference/interest/interest-placement#region)).
+
+##### Before, After [#before-after]
+
+```csharp
+public ulong Before, After;
+```
+
+Gateways that hear about the entity before and after, with no sticky set folded in: the owner's gateway and explicit subscribers differ per host, so the caller adds them with `RebucketBits`. Equal masks mean nothing has to be published for this entity.
+
+This covers reclassification as well as a bucket change: a passenger that was global and is now bucketed with its ship has every linked gateway in `Before` and only the ship's subscribers in `After`, so the gateways that were keeping it because of its own prefab settings are told to forget it.

@@ -50,7 +50,7 @@ namespace Nebula
         private readonly SortedDictionary<string, Document> _documents = new SortedDictionary<string, Document>(StringComparer.Ordinal);
         /// <summary>The latest per-container counts, by container id, from whichever worker reported each container last.</summary>
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
-        /// <summary>The latest interest summary per worker (design §12), from the same documents.</summary>
+        /// <summary>The latest interest summary per worker, from the same documents.</summary>
         private readonly Dictionary<string, WorkerInterest> _interest = new Dictionary<string, WorkerInterest>(StringComparer.Ordinal);
         private readonly List<KeyValuePair<string, ContainerLoad>> _parsed = new List<KeyValuePair<string, ContainerLoad>>();
         private readonly List<string> _expired = new List<string>();
@@ -223,8 +223,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// The interest summary of one worker's latest document (design §12): how much of what it holds it
-        /// actually sends, what that costs, and whether it is asking for the world to be partitioned (§11).
+        /// The interest summary of one worker's latest document: how much of what it holds it actually sends,
+        /// what that costs, and whether it is asking for the world to be partitioned.
         /// </summary>
         public struct WorkerInterest
         {

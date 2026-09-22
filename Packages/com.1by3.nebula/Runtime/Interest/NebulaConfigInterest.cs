@@ -64,14 +64,14 @@ namespace Nebula
 
         /// <summary>
         /// The world definition's cell size, or 0 when the game has no world definition. Everything that has to
-        /// agree on one notion of "near" (design §8) — content streaming, the allocator ring, the container
+        /// agree on one notion of "near": content streaming, the allocator ring, the container
         /// window a client is told about — derives from this and <see cref="InterestSettings.NearCells"/>.
         /// </summary>
         public float ResolveWorldCellSize() => WorldCellSize();
 
         /// <summary>
         /// The interest grid this mesh uses: the resolved settings snapped onto the world's cells so a region
-        /// never straddles a cell edge (design §3). Both ends derive it from this, which is what lets the worker
+        /// never straddles a cell edge. Both ends derive it from this, which is what lets the worker
         /// reject a subscription built with a different one instead of filtering with ids that mean something else.
         /// </summary>
         public InterestGrid ToInterestGrid()

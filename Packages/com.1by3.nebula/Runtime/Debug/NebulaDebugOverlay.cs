@@ -75,7 +75,7 @@ namespace Nebula
                 // many workers it had to talk to. A cache that tracks the world instead of the players is the
                 // failure this line exists to make obvious.
                 var gs = gw.LastStats;
-                _sb.Append($"gateway clients={gw.ClientCount} workers={gw.WorkerCount} cache={gw.CachedEntityCount} | interest set={gs.InterestSetAvg:F0}/{gs.InterestSetMax} regions={gw.SubscribedRegionCount} links={gw.WorkerLinkCount} ({gs.WorkerLinkReasons}) +{gs.SpawnsPerSecond:F1}/s -{gs.DespawnsPerSecond:F1}/s eval={gs.InterestEvalMsAvg:F2}/{gs.InterestEvalMsMax:F2}ms\n");
+                _sb.Append($"gateway clients={gw.ClientCount} workers={gw.WorkerCount} cache={gw.CachedEntityCount} | interest set={gs.InterestSetAvg:F0}/{gs.InterestSetMax} regions={gw.SubscribedRegionCount} links={gw.WorkerLinkCount} ({gs.WorkerLinkReasons}) +{gs.SpawnsPerSecond:F1}/s -{gs.DespawnsPerSecond:F1}/s eval={gs.InterestEvalMsAvg:F2}/{gs.InterestEvalMsMax:F2}ms {gs.InterestEvalsPerSecond:F0}/s\n");
             }
             var orch = boot != null ? boot.Orchestrator : null;
             if (orch != null) _sb.Append($"orchestrator desired={orch.DesiredWorkers} rebalances={orch.Rebalances} dashboard={orch.DashboardUrl}\n");

@@ -24,11 +24,34 @@ public static class ServiceBuild
                 "--artifacts-path", Path.Combine(project.TempDir, "nebula-services"), "--nologo",
             }, "service publish", project.Root);
         }
+        WarnAboutMissingGatewayExtension(buildDir);
     }
 
     public static void Require(string buildDir)
     {
         foreach (string file in new[] { Executable(buildDir, "orchestrator"), Executable(buildDir, "gateway"), Path.Combine(buildDir, ManifestName) })
             if (!File.Exists(file)) throw new CliError($"missing service artifact: {file}", "run `nebula build`, or `nebula build services` if the manifest has already been exported");
+        WarnAboutMissingGatewayExtension(buildDir);
+    }
+
+    /// <summary>
+    /// A game that configured a gateway extension has to put the assembly in the build folder itself (that folder
+    /// is what ships and what deploys). Saying so here beats a gateway that exits on start-up, which is what
+    /// happens next: a configured extension that cannot be loaded is deliberately fatal.
+    /// </summary>
+    public static void WarnAboutMissingGatewayExtension(string buildDir)
+    {
+        string configured;
+        try
+        {
+            using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(buildDir, ManifestName)));
+            if (!manifest.RootElement.TryGetProperty("Config", out var config) ||
+                !config.TryGetProperty("GatewayExtension", out var value) || value.ValueKind != System.Text.Json.JsonValueKind.String) return;
+            configured = value.GetString() ?? "";
+        }
+        catch { return; }
+        if (configured.Length == 0 || Path.IsPathRooted(configured) || File.Exists(Path.Combine(buildDir, configured))) return;
+        Ui.Warn($"NebulaConfig.GatewayExtension is '{configured}' but there is no such file in {buildDir}; " +
+                "copy the built extension assembly there (it ships with the build and the deploy tarball) or the gateway will refuse to start");
     }
 }

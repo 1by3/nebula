@@ -37,6 +37,14 @@ public bool Overflowed { get; }
 
 A policy asked for more than the caps allow; the gateway logs this once per client rather than growing the set.
 
+### BoxesClamped [#boxesclamped]
+
+```csharp
+public bool BoxesClamped { get; }
+```
+
+A box focus was wider than [`InterestSettings.MaxRadius`](/docs/reference/interest/interest-settings#maxradius) on some axis and was shrunk to it about its center. Everything downstream of a focus enumerates cells across it — the region subscription, the container window — so an unbounded box is an unbounded loop, and `MaxRadius` is already the mesh's answer to "how far may one thing reach".
+
 ### Foci [#foci]
 
 ```csharp
@@ -48,6 +56,14 @@ public IReadOnlyList<InterestFocus> Foci { get; }
 ```csharp
 public IReadOnlyList<ulong> Entities { get; }
 ```
+
+### MaxBoxHalf [#maxboxhalf]
+
+```csharp
+public double MaxBoxHalf { get; } = InterestSettings.Default.MaxRadius;
+```
+
+The widest half extent a box focus may have on one axis ([`InterestSettings.MaxRadius`](/docs/reference/interest/interest-settings#maxradius)).
 
 ## Methods
 

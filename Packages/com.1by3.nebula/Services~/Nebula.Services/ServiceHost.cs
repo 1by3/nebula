@@ -21,6 +21,7 @@ namespace Nebula
                 Console.WriteLine($"nebula-{role} -nebula-service-manifest <nebula-services.json> [-nebula-token <secret>] [-logFile <path>]");
                 Console.WriteLine("Orchestrator: -nebula-worker-exe <Unity player> -nebula-workers <count> -nebula-dashboard-port <port> [-nebula-database sqlite:<file>|postgres://...|memory] [-nebula-reset-persistence]");
                 Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port> -nebula-control-plane <orchestrator url> [-nebula-web false] [-nebula-web-port <tcp>] [-nebula-webrtc-port <udp>] [-nebula-web-root <folder>]");
+                Console.WriteLine("Gateway extension: [-nebula-gateway-extension <Game.Gateway.dll>] [-nebula-gateway-extension-type <Namespace.Class>] [-nebula-ext-<key> <value>]");
                 return 0;
             }
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -29,6 +30,7 @@ namespace Nebula
             using var term = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Cancel(); });
             NebulaOrchestrator orchestrator = null;
             NebulaGateway gateway = null;
+            GatewayExtensionHost extension = null;
             IControlPlane control = null;
             IPersistenceStore persistence = null;
             NebulaDatabase database = null;
@@ -89,6 +91,10 @@ namespace Nebula
                     // the HTTP server still answers /healthz on the gateway port (tcp) and nothing else.
                     if (web == null) web = StartHealthOnly(config);
                     if (web != null) web.Ready = () => gateway.IsReady;
+                    // The game's own code, before the first tick: a policy installed here has been asked about
+                    // every client, because none has been evaluated yet. Anything wrong with it stops the
+                    // gateway rather than running it with a security filter the game thinks is in place.
+                    extension = GatewayExtensionHost.TryLoad(gateway, config);
                 }
                 else throw new ArgumentException("Unknown service role: " + role);
                 NebulaLog.Info($"standalone {role} started; {ContainerRegistry.Count} baked containers");
@@ -104,7 +110,7 @@ namespace Nebula
                     double start = clock.Elapsed.TotalSeconds;
                     if (loops > 0 && start - lastStart > maxPeriod) maxPeriod = start - lastStart;
                     lastStart = start;
-                    control.Tick(); persistence?.Tick(); orchestrator?.Tick(); gateway?.Tick();
+                    control.Tick(); persistence?.Tick(); orchestrator?.Tick(); extension?.Tick(start); gateway?.Tick();
                     double work = clock.Elapsed.TotalSeconds - start;
                     workSum += work; if (work > maxWork) maxWork = work;
                     loops++;
@@ -123,7 +129,7 @@ namespace Nebula
             catch (Exception e) { NebulaLog.Error(e.ToString()); return 1; }
             finally
             {
-                try { web?.Dispose(); gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
+                try { web?.Dispose(); extension?.Dispose(); gateway?.Dispose(); orchestrator?.Dispose(); persistence?.Dispose(); control?.Dispose(); database?.Dispose(); }
                 finally { Console.CancelKeyPress -= cancel; Console.SetOut(originalOut); Console.SetError(originalError); log?.Dispose(); }
             }
         }
@@ -152,6 +158,9 @@ namespace Nebula
             c.OrchestratorSpawnsGateway = CommandLine.GetBool("nebula-spawn-gateway", c.OrchestratorSpawnsGateway);
             c.PersistenceMode = CommandLine.Get("nebula-persistence-mode", c.PersistenceMode);
             c.PersistenceLocalFile = CommandLine.Get("nebula-persistence-file", c.PersistenceLocalFile);
+            c.GatewayExtension = CommandLine.Get("nebula-gateway-extension", c.GatewayExtension);
+            c.GatewayExtensionType = CommandLine.Get("nebula-gateway-extension-type", c.GatewayExtensionType);
+            c.GatewayExtensionOptions = CommandLine.Get("nebula-gateway-extension-options", c.GatewayExtensionOptions);
             c.WebClients = CommandLine.GetBool("nebula-web", c.WebClients);
             c.WebPort = Port("nebula-web-port", c.WebPort, true);
             c.WebRtcPort = Port("nebula-webrtc-port", c.WebRtcPort, true);
@@ -311,9 +320,15 @@ namespace Nebula
             string logDir = LogDirectory;
             Directory.CreateDirectory(logDir);
             var args = $"{commonArgs} -nebula-service-manifest {Quote(ServiceManifest.PathOnDisk)} -logFile {Quote(Path.Combine(logDir, "gateway.log"))}";
-            // Web client switches given to the orchestrator are meant for the gateway it starts.
-            foreach (string key in new[] { "nebula-web", "nebula-web-port", "nebula-webrtc-port", "nebula-web-root", "nebula-web-tls", "nebula-web-tls-dir", "nebula-acme-directory", "nebula-acme-email", "nebula-acme-profile" })
+            // Web client and gateway-extension switches given to the orchestrator are meant for the gateway it
+            // starts: the orchestrator itself has no use for either, and a run started with
+            // `-nebula-gateway-extension …` that quietly dropped it would leave the mesh without the game's policy.
+            foreach (string key in new[] { "nebula-web", "nebula-web-port", "nebula-webrtc-port", "nebula-web-root", "nebula-web-tls", "nebula-web-tls-dir", "nebula-acme-directory", "nebula-acme-email", "nebula-acme-profile",
+                "nebula-gateway-extension", "nebula-gateway-extension-type", "nebula-gateway-extension-options" })
                 if (CommandLine.Get(key) is string value) args += $" -{key} {Quote(value)}";
+            // Per-extension options are a family, not a fixed list: -nebula-ext-<key> is the game's own switch.
+            foreach (string key in CommandLine.Keys)
+                if (key.StartsWith("nebula-ext-", StringComparison.OrdinalIgnoreCase)) args += $" -{key} {Quote(CommandLine.Get(key) ?? "")}";
             var p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory });
             log("info", $"launched gateway pid={p?.Id}");
             return p;

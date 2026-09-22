@@ -25,7 +25,7 @@ public ulong ClientId;
 public string Identity;
 ```
 
-The player's identity across sessions (`PlayerIdentity`).
+The player's identity across sessions (`PlayerIdentity`): the authenticated subject, "" for none.
 
 ### Name [#name]
 
@@ -53,13 +53,21 @@ public double PawnX, PawnY, PawnZ;
 
 Absolute position of the pawn, resolved through any carrier. Meaningless when [`HasPawn`](#haspawn) is false.
 
+### PawnCarrierNetId [#pawncarriernetid]
+
+```csharp
+public ulong PawnCarrierNetId;
+```
+
+The outermost entity the pawn is riding in (a ship, a lift), or 0 when it stands in the world.
+
 ### InstanceId [#instanceid]
 
 ```csharp
 public ulong InstanceId;
 ```
 
-The client's simulation scope; 0 is the public world.
+The client's simulation scope, resolved through the pawn's carrier chain; 0 is the public world, and so is a client with no pawn.
 
 ### Team [#team]
 
@@ -68,6 +76,14 @@ public byte Team;
 ```
 
 A byte the game sets per client (`gateway.SetClientTag`): team, faction, whatever the policy needs.
+
+### Tags [#tags]
+
+```csharp
+public ulong Tags;
+```
+
+64 free bits the game sets per client (`gateway.SetClientTags`): alliances, roles, subscriptions to a front. Server state, like [`Team`](#team); the client never sends it.
 
 ### HasHint [#hashint]
 
@@ -83,10 +99,22 @@ A hint from the client survived validation ([`FocusHintFilter`](/docs/reference/
 public double HintX, HintY, HintZ;
 ```
 
+The accepted hint in absolute world coordinates. Meaningless when [`HasHint`](#hashint) is false.
+
+### FocusMode [#focusmode]
+
+```csharp
+public FocusMode FocusMode;
+```
+
+What the server allows this client's hint to do (`gateway.SetClientFocusMode`).
+
+## Properties
+
 ### FreeHint [#freehint]
 
 ```csharp
-public bool FreeHint;
+public bool FreeHint { get; }
 ```
 
-The policy accepted free foci for this client, so the hint was not clamped to the pawn.
+Shorthand for [`FocusMode`](/docs/reference/interest/focus-mode) being `Nebula.FocusMode.Free`: the hint was not clamped to the pawn.

@@ -6,8 +6,8 @@ namespace Nebula
 {
     /// <summary>
     /// The whole server and client side of an unbounded chunked world, wired from configuration alone
-    /// (<see cref="NebulaConfig.ChunkedWorld"/> + a <see cref="NebulaConfig.RuntimeWorld"/>; design
-    /// <c>docs/interest-management.md</c> §10). <see cref="NebulaBootstrap"/> adds one of these on every role and
+    /// (<see cref="NebulaConfig.ChunkedWorld"/> plus a <see cref="NebulaConfig.RuntimeWorld"/>).
+    /// <see cref="NebulaBootstrap"/> adds one of these on every role, and
     /// the game writes no world-management code at all: chunks are containers, containers are leased, content
     /// arrives through <see cref="NebulaChunks"/>.
     /// <list type="bullet">
@@ -17,11 +17,12 @@ namespace Nebula
     /// it simulates (and around the origin, so a first player always has somewhere to appear), retiring what
     /// nobody has wanted for <see cref="NebulaConfig.ChunkRetireSeconds"/>. The origin follows the centroid of the
     /// cells this worker leases.</item>
-    /// <item><b>client</b>: the origin follows the local pawn.</item>
+    /// <item><b>client</b>: the origin follows the content anchor — the local pawn by default, or whatever
+    /// <c>NebulaClient.SetContentAnchor</c> was given (a strategy camera).</item>
     /// <item><b>gateway / orchestrator</b>: passive. They need the container arithmetic and nothing else.</item>
     /// </list>
     /// <para>
-    /// One notion of "near" (design §8): the allocator's ring is <see cref="InterestSettings.NearCells"/> + 1, so a
+    /// The allocator's ring is <see cref="InterestSettings.NearCells"/> + 1, so a
     /// chunk is always leased — and its content built — before interest can put an entity standing on it into a
     /// client's set. Raising <c>InterestRadius</c> therefore widens the chunk ring by itself; nothing to keep in step.
     /// </para>
@@ -39,7 +40,7 @@ namespace Nebula
         /// <summary>The worker's chunk allocator; null on other roles.</summary>
         public RuntimeGridAllocator Allocator { get; private set; }
 
-        /// <summary>Chebyshev ring of chunks the worker keeps leased around every pawn (design §8).</summary>
+        /// <summary>Chebyshev ring of chunks the worker keeps leased around every pawn.</summary>
         public int Ring { get; private set; }
 
         private readonly HashSet<Vector3Int> _owned = new HashSet<Vector3Int>();
@@ -111,10 +112,19 @@ namespace Nebula
                 if (_leasesDirty) { _leasesDirty = false; FollowOwnedCells(); }
                 return;
             }
-            // A client keeps the origin on its own pawn, so its own coordinates never lose float precision no
-            // matter how far it walks. Shifts are invisible: RuntimeGrid.ShiftOriginTo suspends CharacterControllers
-            // across the move and re-syncs physics.
-            if (Client != null) Grid.KeepOriginNear(Client.LocalPlayer, _originRing);
+            // A client keeps the origin on whatever it anchors content to — its own pawn by default, the active
+            // camera once a game has called NebulaClient.SetContentAnchor — so the coordinates it is actually
+            // rendering never lose float precision, however far the player or the camera travels. Shifts are
+            // invisible: RuntimeGrid.ShiftOriginTo suspends CharacterControllers across the move and re-syncs
+            // physics, and it does so for the predicted pawn whether or not the pawn is what moved the origin.
+            if (Client == null) return;
+            var pawn = Client.LocalPlayer;
+            var anchor = Client.ActiveContentAnchor;
+            if (anchor == null) return;
+            // The pawn is asked by entity, not by position: inside a runtime container its cell is the
+            // container's, which is the answer that survives a pose that has not been reconciled yet.
+            if (pawn != null && anchor == pawn.transform) Grid.KeepOriginNear(pawn, _originRing);
+            else Grid.KeepOriginNear(Grid.CoordOf(anchor.position), _originRing);
         }
 
         /// <summary>

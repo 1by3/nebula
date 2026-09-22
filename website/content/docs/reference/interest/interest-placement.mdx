@@ -15,6 +15,6 @@ Where an item sits in an [`InterestIndex<T>`](/docs/reference/interest/interest-
 
 | Name | Value | Description |
 | --- | --- | --- |
-| `Region` | `0` | In one region bucket, found by a client's region scan. |
-| `Wide` | `1` | Its relevance radius is larger than the scan, so widening every client's scan to find it would cost every client. It lives in a short list that is tested directly against each focus instead. |
-| `Global` | `2` | Always relevant: in everyone's set, never distance tested. |
+| <span id="region"></span>`Region` | `0` | In one region bucket, found by a client's region scan. |
+| <span id="wide"></span>`Wide` | `1` | Its relevance radius is larger than the scan, so widening every client's scan to find it would cost every client. It lives in a short list that is tested directly against each focus instead. |
+| <span id="global"></span>`Global` | `2` | Always relevant: in everyone's set, never distance tested. |

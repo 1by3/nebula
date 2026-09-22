@@ -13,13 +13,13 @@ Client -\> gateway: where the player is looking, as a hint for interest (a snipe
 
 ## Fields
 
-### Position [#position]
+### X, Y, Z [#x-y-z]
 
 ```csharp
-public Vector3 Position;
+public double X, Y, Z;
 ```
 
-The hinted point, in the client's own frame; the gateway resolves it against the pawn.
+The hinted point in **absolute** world coordinates, in double — the same space region keys, container boxes and the gateway's own positions are in, and the only space both ends agree on. A client sends its floating-origin frame position plus its origin (`NebulaClient` does the sum), so a shift under the camera changes the frame position and the origin together and the point the gateway sees does not move. Floats would lose meters out at the edge of an unbounded world, which is exactly where a strategy camera is pointed, so this is three doubles and not a `Vector3`.
 
 ### Generation [#generation]
 
@@ -35,7 +35,7 @@ Bumped by the client every time it clears its hint. Hints travel [`Delivery.Sequ
 public bool Clear;
 ```
 
-The client withdraws its hint: interest returns to the pawn. [`Position`](#position) is unused.
+The client withdraws its hint: interest returns to the pawn. The position is unused.
 
 ## Methods
 

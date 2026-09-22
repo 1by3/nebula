@@ -147,7 +147,7 @@ Drop the vertical component of a coordinate when this grid is [`Planar`](#planar
 public void UseAsRuntimeBounds();
 ```
 
-Point [`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/container-registry#runtimeboundsinframe) at this grid, so a game that registers runtime containers by [`PackId`](#packid)'d coordinate no longer needs to supply the bounds hook itself. Games with their own container shape keep using the hook directly; this is purely opt-in and touches nothing else. Call once at boot (mirrors the pattern a game previously wrote inline), and clear (`ContainerRegistry.RuntimeBoundsInFrame = null`) on shutdown if another hook should take over.
+Point [`ContainerRegistry.RuntimeBoundsInFrame`](/docs/reference/containers/container-registry#runtimeboundsinframe) at this grid, so a game that registers runtime containers by [`PackId`](#packid)'d coordinate can use this grid as the bounds hook. Games with their own container shape keep using the hook directly; this is purely opt-in and touches nothing else. Call once at boot, and clear (`ContainerRegistry.RuntimeBoundsInFrame = null`) on shutdown if another hook should take over.
 
 ### ShiftOriginTo [#shiftoriginto]
 

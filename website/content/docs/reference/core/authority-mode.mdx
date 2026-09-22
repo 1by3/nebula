@@ -15,5 +15,5 @@ Lists which process produces state for a synchronized component.
 
 | Name | Value | Description |
 | --- | --- | --- |
-| `Server` | `0` | The authoritative worker writes the state; every client (the owner included) follows it. |
-| `Owner` | `1` | The owning client writes the state and sends it to the worker, which applies it and re-broadcasts it to everyone else. The worker still hands the entity over between containers as usual; the owner's stream simply follows it to the new worker. Entities with no owning client fall back to server authority. |
+| <span id="server"></span>`Server` | `0` | The authoritative worker writes the state; every client (the owner included) follows it. |
+| <span id="owner"></span>`Owner` | `1` | The owning client writes the state and sends it to the worker, which applies it and re-broadcasts it to everyone else. The worker still hands the entity over between containers as usual; the owner's stream simply follows it to the new worker. Entities with no owning client fall back to server authority. |

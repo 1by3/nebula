@@ -184,7 +184,9 @@ namespace Nebula
                 .Arg("workerLinks", (long)s.WorkerLinks).Arg("workerLinkReasons", s.WorkerLinkReasons ?? "")
                 .Arg("spawnsPerSecond", s.SpawnsPerSecond).Arg("despawnsPerSecond", s.DespawnsPerSecond)
                 .Arg("interestEvalMsAvg", s.InterestEvalMsAvg).Arg("interestEvalMsMax", s.InterestEvalMsMax)
-                .Arg("bytesPerClientAvg", s.BytesPerClientAvg).Arg("bytesPerClientMax", s.BytesPerClientMax).End());
+                .Arg("interestEvalsPerSecond", s.InterestEvalsPerSecond)
+                .Arg("bytesPerClientAvg", s.BytesPerClientAvg).Arg("bytesPerClientMax", s.BytesPerClientMax)
+                .Arg("extensionErrors", (long)s.ExtensionErrors).End());
         public void UnregisterGateway(string gatewayId) => Enqueue(_op.Op(ControlPlaneJson.UnregisterGateway).Arg("gatewayId", gatewayId).End());
         public void SetGatewayDraining(string gatewayId, bool draining) => Enqueue(_op.Op(ControlPlaneJson.SetGatewayDraining).Arg("gatewayId", gatewayId).Arg("draining", draining).End());
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>

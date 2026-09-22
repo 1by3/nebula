@@ -1,0 +1,20 @@
+---
+title: "FocusMode"
+description: "How much of the world a client's own ClientFocusHintMsg may move its interest to."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Interest/InterestPolicy.cs)</div>
+
+```csharp
+public enum FocusMode : byte
+```
+
+How much of the world a client's own [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg) may move its interest to. It is **server** state — set with `NebulaGateway.SetClientFocusMode` or by an [`IFocusHintPolicy`](/docs/reference/interest/i-focus-hint-policy) — and never travels from the client, because a client that could widen its own view would be a client that can see through walls by asking politely. Instance isolation applies in every mode: a free focus is a bigger view of the world the client is already in, not a way out of it.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="pawnclamped"></span>`PawnClamped` | `0` | The default. A hint is honored only from a client that has a pawn, and is clamped to [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) of it. A pawn-less client's hint is ignored, so connecting without a body is not a way to look anywhere in the world. |
+| <span id="free"></span>`Free` | `1` | The hint is taken as sent, anywhere in the world: an RTS or commander camera, a spectator, a replay viewer. A pawn-less client may hold this mode; the server is the one that decided so. |
+| <span id="disabled"></span>`Disabled` | `2` | Hints from this client are ignored altogether, pawn or no pawn. |

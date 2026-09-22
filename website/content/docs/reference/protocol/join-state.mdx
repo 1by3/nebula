@@ -15,6 +15,6 @@ How far a client's join has got. Reported by the gateway in [`JoinStatusMsg`](/d
 
 | Name | Value | Description |
 | --- | --- | --- |
-| `None` | `0` | Not connected, or not welcomed yet. |
-| `Starting` | `1` | Welcomed, but there is nowhere to spawn yet: the mesh has no worker holding an active lease. With [`NebulaConfig.MinWorkers`](/docs/reference/core/nebula-config#minworkers) at 0 this is the normal first join after an idle period - a worker is booting and the gateway places the player as soon as it registers, with no reconnect. |
-| `Joined` | `2` | The player has a pawn on a worker. |
+| <span id="none"></span>`None` | `0` | Not connected, or not welcomed yet. |
+| <span id="starting"></span>`Starting` | `1` | Welcomed, but there is nowhere to spawn yet: the mesh has no worker holding an active lease. With [`NebulaConfig.MinWorkers`](/docs/reference/core/nebula-config#minworkers) at 0 this is the normal first join after an idle period - a worker is booting and the gateway places the player as soon as it registers, with no reconnect. |
+| <span id="joined"></span>`Joined` | `2` | The player has a pawn on a worker. |

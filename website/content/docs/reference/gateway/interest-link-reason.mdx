@@ -1,6 +1,6 @@
 ---
 title: "InterestLinkReason"
-description: "Why a gateway holds a link to a worker (design §5)."
+description: "Why a gateway holds a link to a worker."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/GatewayInterest.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/GatewayInterest.cs)</div>
@@ -10,16 +10,16 @@ description: "Why a gateway holds a link to a worker (design §5)."
 public enum InterestLinkReason : byte
 ```
 
-Why a gateway holds a link to a worker (design §5). A link with no reason left is dropped after [`InterestSettings.LinkLingerSeconds`](/docs/reference/interest/interest-settings#linklingerseconds); the reasons are reported in [`GatewayStats.WorkerLinkReasons`](/docs/reference/control-plane/gateway-stats#workerlinkreasons) because "why am I talking to 40 workers" is the first question anyone asks of a mesh that is not scoping.
+Why a gateway holds a link to a worker. A link with no reason left is dropped after [`InterestSettings.LinkLingerSeconds`](/docs/reference/interest/interest-settings#linklingerseconds); the reasons are reported in [`GatewayStats.WorkerLinkReasons`](/docs/reference/control-plane/gateway-stats#workerlinkreasons) because "why am I talking to 40 workers" is the first question anyone asks of a mesh that is not scoping.
 
 ## Members
 
 | Name | Value | Description |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `Region` | `1` | It owns a container overlapping a region some client needs. |
-| `Foci` | `2` | It owns a container within [`InterestSettings.MaxRadius`](/docs/reference/interest/interest-settings#maxradius) of a focus, so its wide entities could reach us. |
-| `Global` | `4` | Its heartbeat says it holds always-relevant entities. |
-| `Explicit` | `8` | A policy asked for an entity by id and we do not know yet who owns it. |
-| `Spawn` | `16` | A client of ours is waiting for a pawn and this worker owns somewhere to put it. |
-| `Owned` | `32` | It is authoritative for an entity one of our clients owns. |
+| <span id="none"></span>`None` | `0` |  |
+| <span id="region"></span>`Region` | `1` | It owns a container overlapping a region some client needs. |
+| <span id="foci"></span>`Foci` | `2` | It owns a container within [`InterestSettings.MaxRadius`](/docs/reference/interest/interest-settings#maxradius) of a focus, so its wide entities could reach us. |
+| <span id="global"></span>`Global` | `4` | Its heartbeat says it holds always-relevant entities. |
+| <span id="explicit"></span>`Explicit` | `8` | A policy asked for an entity by id and we do not know yet who owns it. |
+| <span id="spawn"></span>`Spawn` | `16` | A client of ours is waiting for a pawn and this worker owns somewhere to put it. |
+| <span id="owned"></span>`Owned` | `32` | It is authoritative for an entity one of our clients owns. |

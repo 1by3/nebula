@@ -12,10 +12,10 @@ public sealed class NebulaWorldStreaming : MonoBehaviour, IWorldAnchor
 Decides, per role, which cells this process keeps loaded and where the floating origin sits:
 
 - **worker**: the cells of every container it leases plus [`NebulaConfig.WorkerLoadRingCells`](/docs/reference/core/nebula-config#workerloadringcells) rings around them so ghosts and boundary physics have the neighboring geometry. The origin follows the center of the owned cells.
-- **client** (players and bots): [`NebulaConfig.ClientLoadRadiusCells`](/docs/reference/core/nebula-config#clientloadradiuscells) around the local pawn, the origin follows the pawn. Before a pawn exists, the cells around the origin cell.
+- **client** (players and bots): [`NebulaConfig.ClientLoadRadiusCells`](/docs/reference/core/nebula-config#clientloadradiuscells) around its content anchor — the local pawn by default, or whatever `NebulaClient.SetContentAnchor` was given (a strategy camera) — and the origin follows the same anchor. Before either exists, the cells around the origin cell.
 - **gateway / orchestrator**: nothing. They only need the container maths, which the manifest provides.
 
-The origin shifts once the pawn/centroid is more than [`NebulaConfig.OriginShiftThresholdCells`](/docs/reference/core/nebula-config#originshiftthresholdcells) cells from the origin cell, so a shift is rare and never happens while pacing on a cell boundary.
+The origin shifts once the anchor/centroid is more than [`NebulaConfig.OriginShiftThresholdCells`](/docs/reference/core/nebula-config#originshiftthresholdcells) cells from the origin cell, so a shift is rare and never happens while pacing on a cell boundary.
 
 ## Properties
 

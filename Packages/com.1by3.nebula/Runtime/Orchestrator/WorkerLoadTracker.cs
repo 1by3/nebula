@@ -81,8 +81,8 @@ namespace Nebula
 
         /// <summary>
         /// How many heartbeats a worker must have inside the window before its utilization means anything. Below
-        /// this it reads as 0 % busy simply because nothing has been reported yet, which is how a freshly launched
-        /// worker used to become the cheapest one to retire (<see cref="WorkerScaler.IsWarm"/>).
+        /// this it reads as 0 % busy simply because nothing has been reported yet, and the worker is not considered
+        /// for retirement (<see cref="WorkerScaler.IsWarm"/>).
         /// </summary>
         public int MinSamples = 3;
 

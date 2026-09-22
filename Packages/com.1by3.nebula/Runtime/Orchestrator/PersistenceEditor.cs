@@ -17,7 +17,7 @@ namespace Nebula
     /// The standalone orchestrator reads field schemas exported from game prefabs and scene entities at build time.
     /// Fields use the same names as <see cref="PersistentStateCodec"/> (<c>"&lt;BehaviourTypeName&gt;.&lt;FieldName&gt;"</c>).
     /// Built-in types and exported enumerations have typed controls. Custom types, unknown fields, and a behavior's
-    /// own <c>#state</c> chunk are shown and edited as hex. The legacy Unity host discovers these schemas from assets.
+    /// own <c>#state</c> chunk are shown and edited as hex.
     /// </para><para>
     /// Loads are asynchronous (the store answers from <see cref="IPersistenceStore.Tick"/>), so the editor keeps a
     /// snapshot of every record and refreshes it at most every <see cref="SnapshotMaxAgeSeconds"/> seconds while the

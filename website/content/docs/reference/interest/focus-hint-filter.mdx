@@ -9,9 +9,17 @@ description: "Validation of ClientFocusHintMsg, on the gateway, before a policy 
 public sealed class FocusHintFilter
 ```
 
-Validation of [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg), on the gateway, before a policy ever sees a hint. A hint is an input and never authority: a client that sends a point on the other side of the map, or a thousand points a second, must not be able to make the gateway stream it the world. Non-finite values are dropped, the rate is capped at [`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz), and the point is clamped to [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) from the pawn unless the policy allows free foci.
+Validation of [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-msg), on the gateway, before a policy ever sees a hint. A hint is an input and never authority: a client that sends a point on the other side of the map, or a thousand points a second, must not be able to make the gateway stream it the world. Malformed values are dropped ([`Malformed`](#malformed): NaN, infinity, or a magnitude beyond [`MaxMagnitude`](#maxmagnitude)), the rate of *attempts* is capped at [`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz) before any game code runs ([`ThrottledAttempt`](#throttledattempt)) and the rate of accepted hints with it, and what the point may then do is decided by the server's [`FocusMode`](/docs/reference/interest/focus-mode) for that client — clamped to [`InterestSettings.HintMaxDistance`](/docs/reference/interest/interest-settings#hintmaxdistance) of the pawn by default, refused outright when there is no pawn to clamp to, and taken as sent only where the server said so.
 
 ## Fields
+
+### MaxMagnitude [#maxmagnitude]
+
+```csharp
+public const double MaxMagnitude = 1e9;
+```
+
+The largest absolute coordinate a hint may name, in meters. Anything beyond it is malformed rather than merely far away: the region grid can only pack [`InterestGrid.MaxCoordinate`](/docs/reference/interest/interest-grid#maxcoordinate) cells per axis (about 6.7e7 m at the default 64 m edge), so every point out here is the same clamped region, and a value of 1e300 is a number no camera produced. Rejecting rather than clamping is deliberate: clamping would invent a place the client never asked about and then stream it.
 
 ### Settings [#settings]
 
@@ -19,23 +27,75 @@ Validation of [`ClientFocusHintMsg`](/docs/reference/protocol/client-focus-hint-
 public InterestSettings Settings = InterestSettings.Default;
 ```
 
-### DroppedNonFinite, DroppedRate, Clamped, Accepted [#droppednonfinite-droppedrate-clamped-accepted]
+### DroppedNonFinite, DroppedOutOfRange, DroppedRate, DroppedUnauthorized, Clamped, Accepted [#droppednonfinite-droppedoutofrange-droppedrate-droppedunauthorized-clamped-accepted]
 
 ```csharp
-public long DroppedNonFinite, DroppedRate, Clamped, Accepted;
+public long DroppedNonFinite, DroppedOutOfRange, DroppedRate, DroppedUnauthorized, Clamped, Accepted;
 ```
 
-Hints dropped since the last reset, by reason. Reported in the gateway's stats.
+Hints dropped since the last reset, by reason. Reported through the gateway's focus-hint counters.
+
+## Properties
+
+### DroppedMalformed [#droppedmalformed]
+
+```csharp
+public long DroppedMalformed { get; }
+```
+
+Malformed hints of either kind: NaN or infinity, plus points beyond [`MaxMagnitude`](#maxmagnitude).
 
 ## Methods
+
+### Malformed [#malformed]
+
+```csharp
+public bool Malformed(double x, double y, double z);
+```
+
+Whether a point is a number the rest of the pipeline may touch. Counted as it is rejected, so the gateway can call this before anything else — before the client snapshot and before the game's [`IFocusHintPolicy`](/docs/reference/interest/i-focus-hint-policy) — and no NaN ever reaches game code.
+
+### ThrottledAttempt [#throttledattempt]
+
+```csharp
+public bool ThrottledAttempt(ulong clientId, double now);
+```
+
+Spend this client's **attempt** budget: true when a hint arriving now is over [`InterestSettings.HintMaxHz`](/docs/reference/interest/interest-settings#hintmaxhz) and must be dropped before any further work, false when it may proceed — and in that case the attempt is recorded, whatever becomes of the hint afterwards.
+
+This is the gate that stands in front of the game's [`IFocusHintPolicy`](/docs/reference/interest/i-focus-hint-policy). [`Throttled`](#throttled) only ever knew about hints that were *accepted*, so a client with no pawn, with hints disabled, or whose every hint a policy refuses spent nothing and could call into the policy once per packet.
+
+### ResetBudget [#resetbudget]
+
+```csharp
+public void ResetBudget(ulong clientId);
+```
+
+Forget both budgets for one client, so its next hint is judged afresh. The gateway calls it when the **server** changed what the client is allowed — a new [`FocusMode`](/docs/reference/interest/focus-mode), new tags — because the client cannot know it has just been authorized, and making it wait out a budget it spent while being refused would leave a freshly granted commander camera dead for a fraction of a second. It opens nothing: the budget is reset by a server-side decision, never by anything a client sends.
+
+### Throttled [#throttled]
+
+```csharp
+public bool Throttled(ulong clientId, double now);
+```
+
+Whether a hint arriving now would be dropped because one was *accepted* too recently, without recording anything. [`ThrottledAttempt`](#throttledattempt) is the gate that protects extension code; this one paces the accepted hint itself and is what [`TryAccept`](#tryaccept) checks.
+
+### Authorizes [#authorizes]
+
+```csharp
+public bool Authorizes(FocusMode mode, bool hasPawn);
+```
+
+Whether a hint is worth anything at all in this mode. A client with no pawn has nothing to clamp to, so the default mode has no safe answer for it: the hint is refused rather than granted the whole world. A spectator gets [`FocusMode.Free`](/docs/reference/interest/focus-mode#free) from the server, which is a decision somebody made, not one the client made by omitting a body.
 
 ### TryAccept [#tryaccept]
 
 ```csharp
-public bool TryAccept(ulong clientId, double now, double x, double y, double z, bool hasPawn, double pawnX, double pawnY, double pawnZ, out double outX, out double outY, out double outZ, bool freeHint = false);
+public bool TryAccept(ulong clientId, double now, double x, double y, double z, FocusMode mode, bool hasPawn, double pawnX, double pawnY, double pawnZ, out double outX, out double outY, out double outZ);
 ```
 
-Validate one hint. Returns false when it must be ignored entirely; otherwise the (possibly clamped) point comes back in the out parameters.
+Validate one hint under the mode the server decided for this client. Returns false when it must be ignored entirely; otherwise the (possibly clamped) absolute point comes back in the out parameters.
 
 ### Forget [#forget]
 
@@ -43,7 +103,7 @@ Validate one hint. Returns false when it must be ignored entirely; otherwise the
 public void Forget(ulong clientId);
 ```
 
-Drop a disconnected client's rate-limit state.
+Drop a disconnected client's rate-limit state (both budgets).
 
 ### Clear [#clear]
 

@@ -71,8 +71,6 @@ Use bots to test the complete client path. Use server-driven entities to test wo
 
 Your game must provide bot input and server-driven behavior. Nebula does not provide an NPC implementation. See [Spawning](/docs/guides/spawning) for the server-driven API.
 
-The legacy `--npcs N` option only sets a mesh setting named `npcs`. It does not spawn anything. Use it only when your game reads that setting.
-
 ## Choosing the Editor's role
 
 `NebulaBootstrap.EditorRole` sets the roles the Editor starts when you press Play. The Editor has no command line, so this field takes the place of `-nebula-role`. It does **not** let you skip `nebula build` and `nebula start`:
