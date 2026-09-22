@@ -125,9 +125,9 @@ test in the named file; the integrator flips the row), **pending item** (the ite
 | 4 | Two scopes with overlapping chunk coordinates get distinct leases and records, with no cross-scope ghosts or interest leakage. | NEB-239 | A (fake mesh) + B (worker ghosts) | — | pending item |
 | 5 | A cross-worker call is applied at most once when the target hands over between send and apply; a stale-epoch call is rejected with a reason. | NEB-221 | A (the router, ledger and tracker are pure C#; a scripted three-worker handover) | `Tests/EditMode/ConformanceCallContractTests.cs` (19 tests: applied once across a mid-flight handover, replay rejected as a duplicate, stale epoch rejected with reason visible to the sender, hop bound, bounded ledger memory, pinned wire bytes; runs in both places) | covered |
 | 6 | `StateAt(tick)` matches recorded poses on the authority and on a ghost within the documented bound. | NEB-222 | B or C | — | pending item |
-| 7 | A cohesion group is handed over as a unit; the planner never splits it; an oversize group is reported. | NEB-223 | A (planner) + B (handover) | — | pending item |
+| 7 | A cohesion group is handed over as a unit; the planner never splits it; an oversize group is reported. | NEB-223 | A (planner, telemetry) + B (handover) | `Tests/EditMode/ConformanceCohesionTests.cs` (12 tests: the cost policy deals a group as one item, keeps it whole through a re-deal, reports an oversize group instead of splitting it, a hold defers a move and holds the whole group but never strands an orphan, and a hold reported in seconds becomes a deadline on the orchestrator clock; runs in both places); `Tests/EditMode/ConformanceCohesionHandoverTests.cs` (8 tests on two and three real workers: any member takes the group along, out and back, leaving the group stops it, a member this worker does not own is counted and logged, a ghost on its way to the same worker is not a split, and the real telemetry document round trips through `MeshTelemetry`) | covered |
 | 8 | A server-driven entity with handover state crosses workers and keeps every field: pose, velocity, NetworkVariables, handover state, `IsServerDriven`, one epoch bump; hooks fire once each in the documented order; a replayed transfer at the same epoch is ignored. | existing behaviour (NEB-238) | B, plus A for the wire | `Tests/EditMode/ConformanceHandoverStateTests.cs` (`AServerDrivenEntityCrossesWorkersWithEveryFieldIntact`, `AHandoverBackKeepsTheFieldsAndBumpsTheEpochAgain`, `AReplayedTransferAtTheSameEpochIsIgnored`); `Tests/EditMode/ConformanceHandoverWireTests.cs` (3 tests, both places) | covered |
-| 9 | A diagnostic fires for a cross-container joint without a cohesion group. | NEB-234 | C | `Tests/EditMode/ConformancePhysicsDiagnosticTests.cs` (validator fires for a cross-container `HingeJoint` and names both containers, silent for a same-container joint, worker-side warning once per entity, `AuthorityRpc` from a copy that is neither authoritative nor ghost is rejected and counted). The cohesion-group exemption test is `[Ignore]`d until NEB-223. | covered |
+| 9 | A diagnostic fires for a cross-container joint without a cohesion group. | NEB-234 | C | `Tests/EditMode/ConformancePhysicsDiagnosticTests.cs` (validator fires for a cross-container `HingeJoint` and names both containers, silent for a same-container joint, worker-side warning once per entity, `AuthorityRpc` from a copy that is neither authoritative nor ghost is rejected and counted). The cohesion-group exemption test was un-ignored by NEB-223 and passes. | covered |
 
 ### Existing tests tagged into the suite
 
@@ -140,8 +140,13 @@ Only tests that pin one of the guarantees above as they stand were tagged; nothi
 
 `SerializationTests.AuthorityTransferMessageCarriesHandoverState` was not tagged: `ConformanceHandoverWireTests`
 supersedes it for the suite (every field, both places) and the old test stays as the serialization unit test it is.
-`WorkerHandoverTests` (carrier subtree leaves as a unit) is close to scenario 7 but is about carried entities, not
-cohesion groups; NEB-223 decides whether to tag it.
+`WorkerHandoverTests` (carrier subtree leaves as a unit) is close to scenario 7 but was **not** tagged by NEB-223.
+It pins the carried-subtree mechanism, which cohesion deliberately does not reuse (`docs/cohesion-hints.md`, D4):
+a carried subtree is containment inside one box on one ordered stream, a cohesion group is co-location of peers in
+unrelated containers, and each member is an ordinary handover. Tagging it would make scenario 7 fail when the
+carrier rules change for reasons that have nothing to do with cohesion. The interaction that does matter - a group
+member that is itself a carrier still takes its passengers - is asserted in `ConformanceCohesionHandoverTests`
+through the mesh, and `WorkerHandoverTests` stays the unit test of the carrier rule it always was.
 
 ## 5. Adding a scenario
 

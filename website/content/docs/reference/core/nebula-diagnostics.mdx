@@ -20,3 +20,11 @@ public static int RejectedAuthorityRpcSends { get; }
 ```
 
 How many `AuthorityRpc` sends this process discarded because the caller held neither an authoritative nor a ghost copy of the entity (a client, an unspawned entity). Each one is also logged through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn). [`NebulaWorker.RejectedAuthorityRpcSends`](/docs/reference/worker/nebula-worker#rejectedauthorityrpcsends) reads it.
+
+### SplitCohesionGroups [#splitcohesiongroups]
+
+```csharp
+public static int SplitCohesionGroups { get; }
+```
+
+How many handovers this worker could not carry out as a unit because a member of the entity's [`NetworkIdentity.CohesionGroup`](/docs/reference/core/network-identity#cohesiongroup) was not owned here (`docs/cohesion-hints.md`, D4). Each one is also logged through [`NebulaLog.Warn`](/docs/reference/core/nebula-log#warn). A group is never split silently.

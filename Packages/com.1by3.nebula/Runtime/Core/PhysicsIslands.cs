@@ -53,9 +53,9 @@ namespace Nebula
     public static class PhysicsIslands
     {
         /// <summary>
-        /// Extension point for cohesion hints (NEB-223, not yet available): return true when the game guarantees
+        /// Extension point beyond <see cref="NetworkIdentity.CohesionGroup"/>: return true when the game guarantees
         /// that the two entities always share an authoritative worker, and their joints are no longer reported.
-        /// Null (the default) treats every pair of entities in different containers as separate islands.
+        /// Null (the default) leaves the decision to the cohesion groups and the containers.
         /// </summary>
         public static Func<NetworkIdentity, NetworkIdentity, bool> IsCohesive;
 
@@ -79,13 +79,16 @@ namespace Nebula
 
         /// <summary>
         /// Whether one authority simulates both entities: the same entity, a body that is not networked at all
-        /// (null), a pair <see cref="IsCohesive"/> vouches for, or two entities in the same container
-        /// (<paramref name="resolve"/>, default <see cref="ContainerOf"/>).
+        /// (null), two members of one <see cref="NetworkIdentity.CohesionGroup"/>, a pair <see cref="IsCohesive"/>
+        /// vouches for, or two entities in the same container (<paramref name="resolve"/>, default
+        /// <see cref="ContainerOf"/>).
         /// </summary>
         public static bool SameIsland(NetworkIdentity a, NetworkIdentity b, Func<NetworkIdentity, Container> resolve = null)
         {
             if (a == null || b == null || a == b) return true;
-            // NEB-223: cohesion hints plug in here; a cohesive pair is one island whatever their containers.
+            // A cohesion group is the game's promise that one worker simulates both (docs/cohesion-hints.md, D6):
+            // the handover moves them together, so their joint is never split across two workers.
+            if (CohesionGroups.Same(a, b)) return true;
             if (IsCohesive != null && IsCohesive(a, b)) return true;
             resolve ??= ContainerOf;
             return SameIsland(resolve(a), resolve(b));

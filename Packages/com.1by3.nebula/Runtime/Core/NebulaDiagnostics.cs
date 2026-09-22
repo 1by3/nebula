@@ -13,6 +13,17 @@ namespace Nebula
         /// </summary>
         public static int RejectedAuthorityRpcSends { get; internal set; }
 
-        internal static void ResetForNewSession() => RejectedAuthorityRpcSends = 0;
+        /// <summary>
+        /// How many handovers this worker could not carry out as a unit because a member of the entity's
+        /// <see cref="NetworkIdentity.CohesionGroup"/> was not owned here (<c>docs/cohesion-hints.md</c>, D4). Each
+        /// one is also logged through <see cref="NebulaLog.Warn"/>. A group is never split silently.
+        /// </summary>
+        public static int SplitCohesionGroups { get; internal set; }
+
+        internal static void ResetForNewSession()
+        {
+            RejectedAuthorityRpcSends = 0;
+            SplitCohesionGroups = 0;
+        }
     }
 }

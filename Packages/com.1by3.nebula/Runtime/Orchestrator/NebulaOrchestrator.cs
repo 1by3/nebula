@@ -113,6 +113,10 @@ namespace Nebula
         private string _hintNote = "";
         /// <summary>The baked hints merged with the ones set while the mesh runs, rebuilt each pass (<see cref="AssignmentInput.Hints"/>).</summary>
         private readonly Dictionary<string, ContainerHint> _containerHints = new Dictionary<string, ContainerHint>(StringComparer.Ordinal);
+        /// <summary>Containers under a live hold, with the seconds each has to run (<see cref="AssignmentInput.Holds"/>).</summary>
+        private readonly Dictionary<string, float> _holds = new Dictionary<string, float>(StringComparer.Ordinal);
+        /// <summary>The entity cohesion groups the workers report, rebuilt each pass (<see cref="AssignmentInput.Cohesion"/>).</summary>
+        private readonly List<CohesionGroupInfo> _cohesion = new List<CohesionGroupInfo>();
         /// <summary>What the scaler decided last pass; shown on the dashboard as the scaling line.</summary>
         private ScaleDecision _scale = new ScaleDecision { BlockedBy = "", RetireWorkerId = "", Reason = "idle" };
 
@@ -911,6 +915,12 @@ namespace Nebula
             _assignmentInput.Occupancy = _occupancy;
             BuildHints();
             _assignmentInput.Hints = _containerHints;
+            // The cohesion hints the workers reported: holds as seconds still to run on this orchestrator's clock,
+            // and the containers each entity cohesion group spans (docs/cohesion-hints.md).
+            Telemetry.CopyHolds(_holds);
+            Telemetry.CopyCohesion(_cohesion);
+            _assignmentInput.Holds = _holds;
+            _assignmentInput.Cohesion = _cohesion;
             _assignmentInput.KeepOrder = ContainerRegistry.IsGridded;
             return _assignmentInput;
         }
@@ -1170,7 +1180,12 @@ namespace Nebula
             TotalCost = _costPolicy.TotalCost(input);
             AutoScale(input, policy);
             var changes = policy.Compute(input);
-            // The cost policy reports what it could not honour (too few workers for the dedicated containers).
+            // A held container does not move, whichever policy computed the change (docs/cohesion-hints.md, D8).
+            // The built-in policies already leave held items alone; this is the backstop for a game's own policy.
+            int deferred = input.DropHeldChanges(changes);
+            if (deferred > 0) Log("info", $"{deferred} move(s) deferred: their containers are held");
+            // The cost policy reports what it could not honour (too few workers for the dedicated containers, a
+            // group that does not fit one worker).
             string note = ReferenceEquals(policy, _costPolicy) ? _costPolicy.Note : "";
             if (note != _hintNote)
             {
@@ -1461,6 +1476,70 @@ namespace Nebula
             w.EndObject();
         }
 
+        /// <summary>
+        /// The cohesion block of the state document (<c>docs/cohesion-hints.md</c>): the containers under a hold
+        /// with the seconds each has to run, the entity cohesion groups the workers report with the containers they
+        /// span, and the groups the planner had to keep whole although they do not fit one worker. Read from the
+        /// last pass's snapshots, so the dashboard shows what the planner actually saw.
+        /// </summary>
+        private void WriteCohesionState(JsonWriter w)
+        {
+            w.Key("cohesion");
+            w.BeginObject();
+            w.Key("holds");
+            w.BeginArray();
+            foreach (var kv in _holds)
+            {
+                w.BeginObject();
+                w.Prop("container", kv.Key);
+                w.Prop("seconds", Math.Round(kv.Value, 1));
+                w.Prop("worker", Telemetry.HolderOf(kv.Key));
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("groups");
+            w.BeginArray();
+            for (int i = 0; i < _cohesion.Count; i++)
+            {
+                var group = _cohesion[i];
+                w.BeginObject();
+                w.Prop("group", (long)group.Group);
+                w.Prop("members", group.Members);
+                w.Key("containers");
+                w.BeginArray();
+                for (int c = 0; c < group.Containers.Count; c++) w.Value(group.Containers[c]);
+                w.EndArray();
+                w.Key("workers");
+                w.BeginArray();
+                for (int c = 0; c < group.Workers.Count; c++) w.Value(group.Workers[c]);
+                w.EndArray();
+                // More than one worker right now: a handover is in flight, or the group could not be moved as a unit.
+                w.Prop("split", group.Workers.Count > 1);
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("unsplittable");
+            w.BeginArray();
+            var oversize = _costPolicy != null ? _costPolicy.Unsplittable : null;
+            if (oversize != null)
+                for (int i = 0; i < oversize.Count; i++)
+                {
+                    var row = oversize[i];
+                    w.BeginObject();
+                    w.Prop("group", row.Group ?? "");
+                    w.Prop("utilization", Math.Round(row.Utilization, 3));
+                    w.Prop("limit", row.Limit);
+                    w.Key("containers");
+                    w.BeginArray();
+                    if (row.Containers != null) for (int c = 0; c < row.Containers.Length; c++) w.Value(row.Containers[c]);
+                    w.EndArray();
+                    w.Prop("reason", row.ToString());
+                    w.EndObject();
+                }
+            w.EndArray();
+            w.EndObject();
+        }
+
         /// <summary>Everything the dashboard shows, as one JSON document.</summary>
         public string BuildStateJson()
         {
@@ -1514,6 +1593,8 @@ namespace Nebula
             w.Prop("pendingJoins", PendingJoins);
             w.Prop("scaleToZero", Config.AutoScale && !Config.UseLocalControlPlane && MinWorkers == 0);
             w.EndObject();
+
+            WriteCohesionState(w);
 
             // Workers: the union of control-plane rows and processes we manage (a freshly launched worker has no row yet).
             var ids = new List<string>();

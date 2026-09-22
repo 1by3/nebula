@@ -1,0 +1,56 @@
+---
+title: "CohesionGroupInfo"
+description: "One entity cohesion group as the orchestrator sees it: the union of what every worker reported about the members it owns (NebulaWorker.CohesionSpan, docs/cohesion-hints.md D7)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public sealed class CohesionGroupInfo
+```
+
+One entity cohesion group as the orchestrator sees it: the union of what every worker reported about the members it owns ([`NebulaWorker.CohesionSpan`](/docs/reference/worker/nebula-worker#cohesionspan), `docs/cohesion-hints.md` D7). The planner deals its containers as one item, so the group never ends up split across two workers.
+
+## Fields
+
+### Group [#group]
+
+```csharp
+public uint Group;
+```
+
+The group id the game chose (`NetworkIdentity.CohesionGroup`); never 0.
+
+### Members [#members]
+
+```csharp
+public int Members;
+```
+
+How many members the mesh holds, across every worker that reported the group.
+
+### Containers [#containers]
+
+```csharp
+public readonly List<string> Containers = new List<string>(2);
+```
+
+The containers its members are in, in report order. Members in no container name none.
+
+### Workers [#workers]
+
+```csharp
+public readonly List<string> Workers = new List<string>(1);
+```
+
+The workers that reported members. More than one means the group is split right now.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+The group as it is named in a log line, a telemetry row and on the dashboard.

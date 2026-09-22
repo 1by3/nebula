@@ -220,7 +220,8 @@ EntitySpawnBody :=
   f16 relevance_radius,
   u8 interest_flags,
   u8 interest_group,
-  u16 view_seq
+  u16 view_seq,
+  u32 cohesion_group
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
@@ -229,6 +230,8 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 `EntitySpawn` and `GhostSpawn` share `EntitySpawnBody`. A nonzero `scene_id` tells the receiver to bind its matching scene object instead of instantiating `prefab_id`. A spawn for a known `net_id` updates that entity's owner, epoch, container, variables, and sync state; it does not create a duplicate. `owner_identity` is the owning player's identity (see `Welcome`), or empty for an entity no player owns.
 
 `relevance_radius`, `interest_flags` and `interest_group` come from the entity's prefab and tell a gateway that has no prefabs how to scope the entity: `relevance_radius` is how far clients hear about it in metres (`0` means the mesh default, and the gateway clamps the value to `InterestMaxRadius`), `interest_flags` bit 0 (`AlwaysRelevant`) puts it in every client's set, and `interest_group` is a number a game's interest policy may filter on. Other flag bits are reserved.
+
+`cohesion_group` is the entity's [cohesion group](/docs/guides/cohesion), or `0` for none: the game's declaration that every entity carrying the same non-zero value is simulated by one worker and moves between workers as a unit. Nebula only carries the number; the ids are the game's own. Because the field travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, every process holding a copy of the entity knows the group.
 
 `view_seq` is assigned by the gateway, per client and per entity, and increases every time the entity enters that client's set. A client MUST ignore an `EntityDespawn` whose `view_seq` is older than the view it currently holds for that `net_id`, so a despawn delayed behind a re-entry cannot remove the replica the client has just been given. Workers write `0` in both messages; only the gateway-to-client link uses the field.
 

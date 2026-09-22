@@ -228,13 +228,27 @@ namespace Nebula.Tests
         }
 
         [Test]
-        [Ignore("Waits for NEB-223 cohesion hints")]
         public void JointBetweenEntitiesInOneAuthoredCohesionGroupIsNotReported()
         {
-            // NEB-223: author a cohesion group on two entities in different containers, run
-            // NebulaValidator.CheckPhysicsIslands, and assert no issue. Until the hints exist, only the
-            // PhysicsIslands.IsCohesive hook can vouch for a pair (see IsCohesiveHookExemptsAPairFromTheCheck).
-            Assert.Inconclusive("cohesion hints are not available yet");
+            var a = MakeContainer("a", Vector3.zero);
+            var b = MakeContainer("b", new Vector3(100f, 0f, 0f));
+            var bodyA = MakeBody("hull", a.transform);
+            var bodyB = MakeBody("trailer", b.transform);
+            bodyA.gameObject.AddComponent<HingeJoint>().connectedBody = bodyB.GetComponent<Rigidbody>();
+
+            Assert.AreEqual(1, Validate().Count, "without a group the joint crosses two containers");
+
+            // The cohesion group is the game's promise that one worker simulates both (docs/cohesion-hints.md, D6).
+            bodyA.JoinCohesionGroup(31);
+            Assert.AreEqual(1, Validate().Count, "one side alone is not a group");
+            bodyB.JoinCohesionGroup(31);
+            Assert.IsEmpty(Validate(), "two members of one cohesion group are one island whatever their containers");
+
+            bodyB.JoinCohesionGroup(32);
+            Assert.AreEqual(1, Validate().Count, "two different groups are two islands");
+            bodyA.LeaveCohesionGroup();
+            bodyB.LeaveCohesionGroup();
+            Assert.AreEqual(1, Validate().Count);
         }
 
         // ---- worker check ---------------------------------------------------------------------------------

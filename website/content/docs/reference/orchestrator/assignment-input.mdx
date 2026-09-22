@@ -77,7 +77,39 @@ public bool KeepOrder;
 
 The baked order is spatial (a partitioned world) and should be kept when dealing.
 
+### Holds [#holds]
+
+```csharp
+public IReadOnlyDictionary<string, float> Holds = new Dictionary<string, float>();
+```
+
+Containers a worker asked not to be rebalanced, by container id, with the seconds each hold still has to run on the orchestrator's clock ([`NebulaWorker.HoldContainer`](/docs/reference/worker/nebula-worker#holdcontainer), `docs/cohesion-hints.md` D8). Containers nobody holds are absent.
+
+### Cohesion [#cohesion]
+
+```csharp
+public IReadOnlyList<CohesionGroupInfo> Cohesion = Array.Empty<CohesionGroupInfo>();
+```
+
+The entity cohesion groups the mesh is holding ([`CohesionGroupInfo`](/docs/reference/orchestrator/cohesion-group-info)). Their containers are dealt as one item, exactly like an [`ContainerHint.AffinityGroup`](/docs/reference/containers/container-hint#affinitygroup), and are never split.
+
 ## Methods
+
+### IsHeld [#isheld]
+
+```csharp
+public bool IsHeld(string containerId);
+```
+
+Whether a container is under a live hold, so moving it now is deferred.
+
+### DropHeldChanges [#dropheldchanges]
+
+```csharp
+public int DropHeldChanges(List<KeyValuePair<string, string>> changes);
+```
+
+Remove the changes that would move a held container, so a hold defers a rebalance whichever policy computed it. A hold never keeps an **orphan** where it is: a container with no live owner has to be placed, and the hold is about not being moved, not about staying unowned. Returns how many were dropped.
 
 ### HintOf [#hintof]
 

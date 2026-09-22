@@ -124,6 +124,14 @@ public uint Epoch { get; }
 
 Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.
 
+### CohesionGroup [#cohesiongroup]
+
+```csharp
+public uint CohesionGroup { get; }
+```
+
+The cohesion group this entity belongs to, or 0 for none: the game's promise that every member is simulated by one worker and moves between workers as a unit ([`CohesionGroups`](/docs/reference/core/cohesion-groups), `docs/cohesion-hints.md`). Authored in the inspector or set at runtime with [`JoinCohesionGroup`](#joincohesiongroup); it travels with the entity in the spawn, ghost and handover messages, so every worker holding a copy knows it. The ids are the game's own - any non-zero number both sides of an interaction agree on.
+
 ### Container [#container]
 
 ```csharp
@@ -308,6 +316,26 @@ public event Action<Container, Container> ContainerChanged;
 ```
 
 ## Methods
+
+### JoinCohesionGroup [#joincohesiongroup]
+
+```csharp
+public void JoinCohesionGroup(uint group);
+```
+
+Put this entity in a cohesion group, leaving the one it was in. The authority's value is the one that counts: it is what a handover expands and what the worker reports to the orchestrator. Ghosts and client replicas learn the new value with the next spawn, ghost spawn or handover of the entity, so join before the interaction that needs the group rather than in the middle of it (`docs/cohesion-hints.md`, D3).
+
+| Parameter | Description |
+| --- | --- |
+| `group` | A non-zero group id. 0 is [`LeaveCohesionGroup`](#leavecohesiongroup). |
+
+### LeaveCohesionGroup [#leavecohesiongroup]
+
+```csharp
+public void LeaveCohesionGroup();
+```
+
+Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.
 
 ### TryGetPoseAt [#trygetposeat]
 

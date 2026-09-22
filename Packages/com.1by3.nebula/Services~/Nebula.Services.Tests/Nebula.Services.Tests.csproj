@@ -20,6 +20,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
     <!-- The cross-worker call contract (docs/cross-worker-calls.md) is pure C# too, so its conformance tests run here as well. -->
     <Compile Include="../../Tests/EditMode/ConformanceCallContractTests.cs" />
+    <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

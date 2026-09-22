@@ -37,6 +37,14 @@ public const int MaxCatchUpTicks = 2;
 
 Most ticks the loop is allowed to simulate in one FixedUpdate to catch up with the wall clock. Beyond this the missing tick numbers are skipped (everything runs a little slow for a moment) rather than simulated back-to-back, which would only push the next frame further behind.
 
+### MaxHoldSeconds [#maxholdseconds]
+
+```csharp
+public const float MaxHoldSeconds = 120f;
+```
+
+Longest a single [`HoldContainer`](#holdcontainer) can defer rebalancing, in seconds.
+
 ## Properties
 
 ### Config [#config]
@@ -270,6 +278,14 @@ public bool IsRegistered { get; }
 ```
 
 Registered with the control plane; the mesh knows about this worker.
+
+### HeldContainers [#heldcontainers]
+
+```csharp
+public int HeldContainers { get; }
+```
+
+How many containers this worker is holding right now (expired holds are dropped when read).
 
 ### InterestGrid [#interestgrid]
 
@@ -564,6 +580,33 @@ public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quate
 
 Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.
 
+### HoldContainer [#holdcontainer]
+
+```csharp
+public void HoldContainer(string containerId, float seconds);
+public void HoldContainer(Container container, float seconds);
+```
+
+Ask the orchestrator to leave `containerId` where it is for `seconds`. Repeating the call extends the hold to the later of the two deadlines; `seconds` at or below zero releases it. Clamped to [`MaxHoldSeconds`](#maxholdseconds): a hold is a pause, not a pin - the permanent form is [`ContainerHint.Dedicated`](/docs/reference/containers/container-hint#dedicated) or a pinned carried container.
+
+The hold reaches the orchestrator with the next telemetry document (at most [`WorkerTelemetry.IdleIntervalSeconds`](/docs/reference/worker/worker-telemetry#idleintervalseconds) later) and is forgotten if this worker stops reporting, so it never outlives the worker that asked for it.
+
+### ReleaseHold [#releasehold]
+
+```csharp
+public void ReleaseHold(string containerId);
+```
+
+Let a held container be rebalanced again before its hold expires.
+
+### HoldRemaining [#holdremaining]
+
+```csharp
+public float HoldRemaining(string containerId);
+```
+
+Seconds this worker's hold on a container still has to run, or 0 when it holds none.
+
 ### CopyGatewayInterest [#copygatewayinterest]
 
 ```csharp
@@ -581,6 +624,66 @@ public delegate void WorkerMessageHandler(string fromWorkerId, ushort fromWorker
 ```
 
 Handler for a game-defined worker message. `reader` is positioned at the payload.
+
+### ContainerHold [#containerhold]
+
+```csharp
+public readonly struct ContainerHold
+```
+
+One container this worker is asking the orchestrator not to move, and for how much longer.
+
+#### Constructors
+
+##### ContainerHold [#containerhold]
+
+```csharp
+public ContainerHold(string containerId, float secondsRemaining);
+```
+
+#### Fields
+
+##### ContainerId [#containerid]
+
+```csharp
+public readonly string ContainerId;
+```
+
+##### SecondsRemaining [#secondsremaining]
+
+```csharp
+public readonly float SecondsRemaining;
+```
+
+Seconds still to run when the hold was read. Always greater than zero.
+
+### CohesionSpan [#cohesionspan]
+
+```csharp
+public struct CohesionSpan
+```
+
+What one cohesion group costs this worker: which of its containers hold members of the group, and how many members it owns. The orchestrator unions the spans of every worker into the group the planner keeps on one worker (`docs/cohesion-hints.md`, D7).
+
+#### Fields
+
+##### Group [#group]
+
+```csharp
+public uint Group;
+```
+
+##### Members [#members]
+
+```csharp
+public int Members;
+```
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
 
 ### GatewayInterest [#gatewayinterest]
 

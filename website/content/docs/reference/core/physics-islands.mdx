@@ -19,7 +19,7 @@ Decides whether two networked bodies are simulated by one authority (the same *i
 public static Func<NetworkIdentity, NetworkIdentity, bool> IsCohesive;
 ```
 
-Extension point for cohesion hints (NEB-223, not yet available): return true when the game guarantees that the two entities always share an authoritative worker, and their joints are no longer reported. Null (the default) treats every pair of entities in different containers as separate islands.
+Extension point beyond [`NetworkIdentity.CohesionGroup`](/docs/reference/core/network-identity#cohesiongroup): return true when the game guarantees that the two entities always share an authoritative worker, and their joints are no longer reported. Null (the default) leaves the decision to the cohesion groups and the containers.
 
 ### WarnOnAuthority [#warnonauthority]
 

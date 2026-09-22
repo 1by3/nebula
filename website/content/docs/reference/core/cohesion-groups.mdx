@@ -1,0 +1,60 @@
+---
+title: "CohesionGroups"
+description: "Which entities belong to which NetworkIdentity.CohesionGroup, in this process."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/CohesionGroups.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/CohesionGroups.cs)</div>
+
+```csharp
+public static class CohesionGroups
+```
+
+Which entities belong to which [`NetworkIdentity.CohesionGroup`](/docs/reference/core/network-identity#cohesiongroup), in this process. A cohesion group is the game's promise that a set of entities must be simulated by one worker and move between workers as a unit: a ragdoll's bodies, a turret and its mount, the two sides of an interaction that is mid-flight. Nebula never guesses a group (see `docs/cohesion-hints.md`, D1); the game joins and leaves one.
+
+The table is process-wide, like [`SceneEntities`](/docs/reference/core/scene-entities), and holds every initialised identity that carries a non-zero group - authoritative copies, ghosts and client replicas alike. Callers that mean "the members I own" filter by [`NetworkIdentity.HasAuthority`](/docs/reference/core/network-identity#hasauthority); [`NebulaWorker`](/docs/reference/worker/nebula-worker) does, and a member it finds that it does not own is a group it cannot move as a unit, which it reports rather than splitting silently (D4).
+
+Group 0 is "no group" and is never stored, so a game that uses no cohesion group pays an empty table.
+
+## Properties
+
+### GroupCount [#groupcount]
+
+```csharp
+public static int GroupCount { get; }
+```
+
+How many distinct groups have a member in this process.
+
+### Groups [#groups]
+
+```csharp
+public static IEnumerable<uint> Groups { get; }
+```
+
+Every group with a member here, in no particular order.
+
+## Methods
+
+### Members [#members]
+
+```csharp
+public static IReadOnlyList<NetworkIdentity> Members(uint group);
+```
+
+The identities in `group`, in the order they joined. Empty for group 0 and for a group nothing here belongs to. The list is the live one: do not hold it across a join or a leave.
+
+### MemberCount [#membercount]
+
+```csharp
+public static int MemberCount(uint group);
+```
+
+How many identities are in `group` here (0 for "no group").
+
+### Same [#same]
+
+```csharp
+public static bool Same(NetworkIdentity a, NetworkIdentity b);
+```
+
+Whether two entities are in the same non-zero cohesion group, so one worker always simulates both. [`PhysicsIslands.SameIsland`](/docs/reference/core/physics-islands#sameisland) asks this before it reports a joint across containers.
