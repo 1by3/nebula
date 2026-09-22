@@ -215,6 +215,76 @@ namespace Nebula.Tests
             Assert.AreEqual(dock, NebulaCapacity.OfScope(plane, "station/alpha").ContainerId);
         }
 
+        // ------------------------------------------------------------------------------------ the planner's reports
+
+        [Test]
+        public void AContainerThePlannerCannotRelieveIsAtCapacityWhateverItsOwnCostRowSays()
+        {
+            var rows = new Dictionary<string, ContainerCost>
+            {
+                ["bridge"] = Row("bridge", "station/alpha", tickShareMs: 3f),
+                ["hold"] = Row("hold", "station/alpha", tickShareMs: 3f),
+            };
+            var capacity = new Dictionary<string, CapacityInfo>();
+            NebulaCapacity.Derive(rows, 0.9f, capacity);
+            Assert.IsFalse(capacity["bridge"].AtCapacity, "3 ms of a tick is not full by itself");
+
+            // The planner says it cannot take the load off this worker: a cohesion group spans the two boxes.
+            var reports = new List<SaturationReport>
+            {
+                new SaturationReport
+                {
+                    ContainerId = "bridge", ScopeKey = "station/alpha", Containers = new[] { "bridge", "hold" },
+                    WorkerId = "w1", Utilization = 0.95f, Cause = SaturationCause.CohesionGroup,
+                    Reason = "cohesion 7 spans bridge, hold",
+                },
+            };
+            NebulaCapacity.Apply(reports, 0.9f, capacity);
+
+            foreach (string id in new[] { "bridge", "hold" })
+            {
+                Assert.IsTrue(capacity[id].AtCapacity, id + " is at capacity: no rebalance is coming to relieve it");
+                Assert.AreEqual(SaturationCause.CohesionGroup, capacity[id].Cause, "and the hook is told what is stopping the planner");
+                Assert.AreEqual(0.95f, capacity[id].Saturation, 1e-3f);
+            }
+            StringAssert.Contains("cohesion-group", capacity["bridge"].ToString());
+        }
+
+        [Test]
+        public void AReportBelowTheThresholdOrWithNoCauseChangesNothing()
+        {
+            var capacity = new Dictionary<string, CapacityInfo>();
+            NebulaCapacity.Derive(new Dictionary<string, ContainerCost> { ["c0"] = Row("c0", "", tickShareMs: 1f) }, 0.9f, capacity);
+
+            NebulaCapacity.Apply(new List<SaturationReport>
+            {
+                new SaturationReport { ContainerId = "c0", Utilization = 0.5f, Cause = SaturationCause.Held },
+                new SaturationReport { ContainerId = "c0", Utilization = 0.99f, Cause = SaturationCause.None },
+            }, 0.9f, capacity);
+            Assert.IsFalse(capacity["c0"].AtCapacity, "a busy-but-not-full item, and a report with no cause, are not capacity");
+
+            // And with the signal off nothing is ever at capacity, reports or no reports.
+            var off = new Dictionary<string, CapacityInfo>();
+            NebulaCapacity.Derive(new Dictionary<string, ContainerCost> { ["c0"] = Row("c0", "", tickShareMs: 1f) }, 0f, off);
+            NebulaCapacity.Apply(new List<SaturationReport>
+            { new SaturationReport { ContainerId = "c0", Utilization = 1f, Cause = SaturationCause.NoBoundary } }, 0f, off);
+            Assert.IsFalse(off["c0"].AtCapacity);
+        }
+
+        [Test]
+        public void TheCauseTravelsOnTheLeaseRowAndThroughTheDocument()
+        {
+            var plane = new LocalControlPlane();
+            plane.Connect();
+            plane.EnsureContainer("c0");
+            plane.SetContainerCapacity("c0", 0.95f, CostComponent.Simulation, true, SaturationCause.Held);
+
+            var mirror = new LocalControlPlane();
+            mirror.Import(ControlPlaneJson.Parse(plane.ToJson()));
+            Assert.AreEqual(SaturationCause.Held, mirror.FindLease("c0").SaturationCause);
+            Assert.AreEqual(SaturationCause.Held, NebulaCapacity.Of(mirror, "c0").Cause);
+        }
+
         // ------------------------------------------------------------------------------------ the hook
 
         private static AdmissionRequest Arriving(bool atCapacity, float saturation = 0.95f) => new AdmissionRequest

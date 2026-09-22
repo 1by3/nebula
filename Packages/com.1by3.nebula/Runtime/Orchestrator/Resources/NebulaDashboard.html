@@ -545,7 +545,7 @@
             <td>${fmtSecs(sc.ageSeconds)}</td>
             <td title="${sc.capacityKnown ? `the worst of its parts: ${esc(sc.dominant || '')} at ${((sc.saturation || 0) * 100).toFixed(0)}% of its budget` : 'no worker has reported cost for any part of this scope yet'}">${
               !sc.capacityKnown ? '<span class="muted">unknown</span>'
-                : sc.atCapacity ? '<span class="warnText">at capacity</span>'
+                : sc.atCapacity ? `<span class="warnText">at capacity</span>${sc.capacityCause ? ` <span class="muted">(${esc(sc.capacityCause)})</span>` : ''}`
                 : `${((sc.saturation || 0) * 100).toFixed(0)}%`}</td>
             <td class="mono">${sc.requester ? esc(sc.requester) : '<span class="muted">\u2014</span>'}</td></tr>`).join('');
     }

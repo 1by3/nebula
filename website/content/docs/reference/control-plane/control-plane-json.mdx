@@ -69,6 +69,14 @@ public static string ApplyBatch(string body, IControlPlane target);
 
 Apply every write in `body` (`{"ops":[...]}`) to `target`, in order. Returns null, or the reason the body was rejected (nothing is applied then).
 
+### CauseOf [#causeof]
+
+```csharp
+public static SaturationCause CauseOf(string name);
+```
+
+The saturation cause a wire name ([`SaturationReport.NameOf`](/docs/reference/orchestrator/saturation-report#nameof)) stands for; anything unknown reads as none.
+
 ### ToUnixMs [#tounixms]
 
 ```csharp

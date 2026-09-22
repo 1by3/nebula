@@ -97,6 +97,7 @@ namespace Nebula
                     w.Key("saturation"); Num(w, l.Saturation);
                     w.Prop("dominant", ContainerCost.NameOf(l.Dominant));
                     w.Prop("atCapacity", l.AtCapacity);
+                    if (l.SaturationCause != SaturationCause.None) w.Prop("cause", SaturationReport.NameOf(l.SaturationCause));
                 }
                 w.EndObject();
             }
@@ -201,6 +202,7 @@ namespace Nebula
                         l.Saturation = (float)Num(o, "saturation");
                         l.Dominant = ContainerCost.ComponentOf(dominant);
                         l.AtCapacity = Bool(o, "atCapacity");
+                        l.SaturationCause = CauseOf(Str(o, "cause"));
                     }
                     s.Leases.Add(l);
                 }
@@ -407,7 +409,7 @@ namespace Nebula
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case SetLeaseState: cp.SetLeaseState(Str(o, "containerId"), Str(o, "state")); return null;
                 case SetContainerHint: cp.SetContainerHint(Str(o, "containerId"), ContainerHint.Parse(Str(o, "hint"))); return null;
-                case SetContainerCapacity: cp.SetContainerCapacity(Str(o, "containerId"), (float)Num(o, "saturation"), ContainerCost.ComponentOf(Str(o, "dominant")), Bool(o, "atCapacity")); return null;
+                case SetContainerCapacity: cp.SetContainerCapacity(Str(o, "containerId"), (float)Num(o, "saturation"), ContainerCost.ComponentOf(Str(o, "dominant")), Bool(o, "atCapacity"), CauseOf(Str(o, "cause"))); return null;
                 case ReleaseContainer: cp.ReleaseContainer(Str(o, "containerId")); return null;
                 case RemoveContainer: cp.RemoveContainer(Str(o, "containerId")); return null;
                 case ActivateScope:
@@ -430,6 +432,20 @@ namespace Nebula
         }
 
         // ---------------------------------------------------------------------------------------- helpers
+
+        /// <summary>The saturation cause a wire name (<see cref="SaturationReport.NameOf"/>) stands for; anything unknown reads as none.</summary>
+        public static SaturationCause CauseOf(string name)
+        {
+            switch (name)
+            {
+                case "no-boundary": return SaturationCause.NoBoundary;
+                case "cohesion-group": return SaturationCause.CohesionGroup;
+                case "affinity-group": return SaturationCause.AffinityGroup;
+                case "held": return SaturationCause.Held;
+                case "dedicated": return SaturationCause.Dedicated;
+                default: return SaturationCause.None;
+            }
+        }
 
         private static readonly DateTime Epoch1970 = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 

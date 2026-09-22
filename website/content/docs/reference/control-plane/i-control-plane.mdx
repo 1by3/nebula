@@ -238,7 +238,7 @@ Attach a balancing hint to a container, creating the lease row if it does not ex
 ### SetContainerCapacity [#setcontainercapacity]
 
 ```csharp
-void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity);
+void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
 ```
 
 Publish what the cost telemetry says about how full a container is, so a gateway can answer "is this target at capacity" from the document it already mirrors instead of asking the orchestrator (docs/capacity-admission.md). The orchestrator is the only writer. It does **not** stamp [`LeaseInfo.UpdatedAt`](/docs/reference/control-plane/lease-info#updatedat): that is the mesh's idle clock, and a reading published every pass would keep every scope hot for ever.

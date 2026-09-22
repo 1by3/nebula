@@ -1328,6 +1328,11 @@ namespace Nebula
             // signal must not be derived from a stale reading of what the workers are carrying.
             Telemetry.CopyContainerCost(_containerCost);
             NebulaCapacity.Derive(_containerCost, threshold, _capacity);
+            // And what the planner says it cannot relieve by moving anything (docs/cohesion-rebalancing.md): a
+            // container held by a cohesion or affinity group, under a hold, without an authored boundary or asking
+            // for a worker of its own is at capacity however cheap its own cost row looks, because no rebalance
+            // is coming to save it.
+            NebulaCapacity.Apply(_saturated, threshold, _capacity);
             var leases = ControlPlane.Leases;
             for (int i = 0; i < leases.Count; i++)
             {
@@ -1338,13 +1343,14 @@ namespace Nebula
                 // cleared, so a worker that missed one telemetry post cannot open a full station.
                 if (!_capacity.TryGetValue(id, out var info) || !info.Known) continue;
                 bool moved = !lease.HasCapacity || lease.AtCapacity != info.AtCapacity || lease.Dominant != info.Dominant ||
+                             lease.SaturationCause != info.Cause ||
                              Math.Abs(lease.Saturation - info.Saturation) >= CapacityPublishStep;
                 if (!moved) continue;
                 if (lease.HasCapacity && lease.AtCapacity != info.AtCapacity)
                     Log("info", info.AtCapacity
                         ? $"container {id} is at capacity ({info.DominantName} at {info.Saturation * 100f:0} % of its budget); joins and transfers into it go to the admission hook"
                         : $"container {id} is below capacity again ({info.DominantName} at {info.Saturation * 100f:0} %)");
-                ControlPlane.SetContainerCapacity(id, info.Saturation, info.Dominant, info.AtCapacity);
+                ControlPlane.SetContainerCapacity(id, info.Saturation, info.Dominant, info.AtCapacity, info.Cause);
             }
         }
 
@@ -1989,6 +1995,7 @@ namespace Nebula
                 w.Prop("saturation", Math.Round(scopeCapacity.Saturation, 4));
                 w.Prop("dominant", scopeCapacity.Known ? scopeCapacity.DominantName : "");
                 w.Prop("atCapacity", scopeCapacity.AtCapacity);
+                w.Prop("capacityCause", SaturationReport.NameOf(scopeCapacity.Cause));
                 w.Key("containers");
                 w.BeginArray();
                 foreach (var id in scope.ContainerIds) w.Value(id ?? "");

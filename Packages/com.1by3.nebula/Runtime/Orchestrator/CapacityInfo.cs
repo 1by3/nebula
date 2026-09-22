@@ -37,12 +37,21 @@ namespace Nebula
         /// this, not the reader: the threshold is one mesh-wide setting and the gateways must not disagree about it.
         /// </summary>
         public bool AtCapacity;
+        /// <summary>
+        /// Why the planner cannot relieve this target by moving anything (<see cref="SaturationReport.Cause"/>), or
+        /// <see cref="SaturationCause.None"/> when the reading is cost telemetry alone. A cohesion group, an
+        /// affinity group, a hold or a missing boundary is the difference between "busy, and the mesh is about to
+        /// spread it" and "busy, and nothing the mesh can do will help" - which is the one a queue is for.
+        /// </summary>
+        public SaturationCause Cause;
 
         /// <summary>The name <see cref="Dominant"/> goes by in the JSON, a log line and the dashboard.</summary>
         public string DominantName => ContainerCost.NameOf(Dominant);
 
         public override string ToString() =>
-            !Known ? "capacity unknown" : $"{(AtCapacity ? "at capacity" : "below capacity")}: {Saturation:0.##} of the {DominantName} budget";
+            !Known ? "capacity unknown"
+                : $"{(AtCapacity ? "at capacity" : "below capacity")}: {Saturation:0.##} of the {DominantName} budget" +
+                  (Cause == SaturationCause.None ? "" : $", and the planner cannot relieve it ({SaturationReport.NameOf(Cause)})");
     }
 
     /// <summary>
@@ -88,6 +97,7 @@ namespace Nebula
                 Saturation = lease.Saturation,
                 Dominant = lease.Dominant,
                 AtCapacity = lease.AtCapacity,
+                Cause = lease.SaturationCause,
             };
         }
 
@@ -117,6 +127,8 @@ namespace Nebula
             if (!b.Known) return a;
             if (!a.Known) return b;
             if (b.AtCapacity != a.AtCapacity) return b.AtCapacity ? b : a;
+            // Between two equally full parts, the one nothing can relieve is the one worth naming.
+            if (b.Saturation == a.Saturation && b.Cause != a.Cause) return a.Cause == SaturationCause.None ? b : a;
             return b.Saturation > a.Saturation ? b : a;
         }
 
@@ -139,6 +151,50 @@ namespace Nebula
         /// </summary>
         public static CapacityInfo Target(IControlPlane cp, string scopeKey, string containerId) =>
             IsPerContainer(cp, scopeKey) ? Of(cp, containerId) : OfScope(cp, scopeKey);
+
+        /// <summary>
+        /// Fold the planner's saturation reports (<see cref="SaturationReport"/>, docs/cohesion-rebalancing.md) into
+        /// the readings. A container the planner reports it cannot relieve - because a cohesion group or an affinity
+        /// group spans it, because it is held, because the game authored no boundary inside it, or because it asked
+        /// for a worker of its own - is at capacity once its item's utilization reaches the threshold, whatever its
+        /// own cost row says. This is the case the whole item exists for: moving something would fix a hot
+        /// container, and here nothing can move, so the only honest answers are "queue", "deny" or "degrade".
+        /// <para>
+        /// The report never lowers a reading: a container already at capacity by its own cost stays there, and the
+        /// report's utilization is taken only when it is the larger of the two. Every container of the item is
+        /// marked, not only the heaviest, because a client is placed into one of them and they move together.
+        /// </para>
+        /// </summary>
+        public static void Apply(IReadOnlyList<SaturationReport> reports, float threshold, Dictionary<string, CapacityInfo> result)
+        {
+            if (reports == null || result == null || threshold <= 0f) return;
+            for (int i = 0; i < reports.Count; i++)
+            {
+                var report = reports[i];
+                if (report.Cause == SaturationCause.None) continue;
+                float utilization = float.IsNaN(report.Utilization) ? 0f : Math.Max(0f, report.Utilization);
+                if (utilization < threshold) continue;
+                var containers = report.Containers;
+                int count = containers != null ? containers.Length : 0;
+                for (int c = -1; c < count; c++)
+                {
+                    string id = c < 0 ? report.ContainerId : containers[c];
+                    if (string.IsNullOrEmpty(id)) continue;
+                    result.TryGetValue(id, out var info);
+                    info.ContainerId = id;
+                    if (string.IsNullOrEmpty(info.ScopeKey)) info.ScopeKey = report.ScopeKey ?? "";
+                    if (!info.Known || utilization > info.Saturation)
+                    {
+                        info.Saturation = utilization;
+                        info.Dominant = CostComponent.Simulation;
+                    }
+                    info.Known = true;
+                    info.AtCapacity = true;
+                    info.Cause = report.Cause;
+                    result[id] = info;
+                }
+            }
+        }
 
         /// <summary>
         /// The readings for a set of cost rows, keyed by container. Used by the orchestrator to decide what to

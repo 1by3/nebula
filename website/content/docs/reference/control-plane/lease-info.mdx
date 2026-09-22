@@ -117,6 +117,14 @@ public bool AtCapacity;
 
 [`Saturation`](#saturation) reached `NebulaConfig.CapacitySaturation`. The orchestrator decides it, so every gateway of a mesh answers the same way without knowing the threshold.
 
+### SaturationCause [#saturationcause]
+
+```csharp
+public SaturationCause SaturationCause;
+```
+
+Why the planner cannot relieve it by moving anything ([`SaturationReport.Cause`](/docs/reference/orchestrator/saturation-report#cause)), or `Nebula.SaturationCause.None` when the reading is cost telemetry alone.
+
 ## Properties
 
 ### Bounds [#bounds]

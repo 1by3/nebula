@@ -241,7 +241,9 @@ The orchestrator's dashboard lists every scope with its state, occupancy, idle a
 
 A scope is one interaction domain. Its parts are authored, and past them it cannot be split: a station with six hundred people arriving in five minutes is still one station. Rather than quietly making a second copy or letting the tick collapse, Nebula reports that the target is at capacity and lets your game decide what to do about it.
 
-The signal comes from the [cost telemetry](/docs/guides/orchestrator-and-dashboard#container-cost) the workers already report. A container is **at capacity** when its dominant cost component — simulation, replication or gateway relay — reaches `CapacitySaturation` of its own budget (default `0.9`, `-nebula-capacity-saturation`; `0` turns the whole signal off). A scope is as full as its **worst** part. A [chunk-grid scope](/docs/guides/infinite-runtime-world) is the exception: it is an unbounded world whose chunks are separate places, so it is judged one chunk at a time, like the public world.
+The signal comes from the [cost telemetry](/docs/guides/orchestrator-and-dashboard#container-cost) the workers already report. A container is **at capacity** when its dominant cost component — simulation, replication or gateway relay — reaches `CapacitySaturation` of its own budget (default `0.9`, `-nebula-capacity-saturation`; `0` turns the whole signal off). A container the [planner](/docs/guides/cohesion) reports it cannot relieve by moving anything — a cohesion or affinity group spans it, it is held, or the world authored no boundary inside it — is at capacity too, whatever its own cost row says: no rebalance is coming to save it, and `request.Capacity.Cause` says which constraint it is.
+
+A scope is as full as its **worst** part. A [chunk-grid scope](/docs/guides/infinite-runtime-world) is the exception: it is an unbounded world whose chunks are separate places, so it is judged one chunk at a time, like the public world.
 
 By default, a join or a [prepared transfer](/docs/guides/instancing) into a target at capacity is refused:
 

@@ -276,6 +276,7 @@ See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-tar
 **New behaviour:**
 
 - A per-container capacity reading is derived once per orchestrator pass from the cost rows (`docs/cost-telemetry.md`): the dominant component's share of its own budget, and whether that reached `CapacitySaturation`. A parts scope is as full as its **worst** part; a grid scope is judged one chunk at a time, like the public world, because its chunks are separate places. A container no worker has reported lately is *unknown*, not full, so a mesh without cost telemetry admits exactly what it did before.
+- A container the planner reports it cannot relieve by moving anything (`SaturationReport`, NEB-235: a cohesion or affinity group spanning it, a hold, no authored boundary, a dedicated worker) is at capacity once its item's utilization reaches the threshold, whatever its own cost row says, and `CapacityInfo.Cause` carries which constraint it is all the way to the admission hook.
 - The orchestrator publishes the reading on the container's lease row, so a gateway answers without an RPC. The write deliberately does **not** stamp the lease's `UpdatedAt` (that is the idle clock the scope lifecycle retires on), and only a reading that actually moved is written.
 - A join into a target at capacity goes to `NebulaAdmission.Decide`, which refuses by default; the client is sent `JoinRejected` with `JoinRejectReason.AtCapacity`, the saturation, and `retry` clear, and `NebulaClient` does not reconnect by itself. `AdmissionDecision.Hold()` instead holds the client in `JoinState.Starting` with `JoinHoldReason.AtCapacity` and places it, with no reconnect, when room appears.
 - In the public world the gateway prefers spawn candidates that are not at capacity and only refuses when every candidate is full.
@@ -284,17 +285,17 @@ See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-tar
 
 **New `NebulaConfig` field:** `CapacitySaturation` (0.9; 0 turns the signal off and admits everything), with `-nebula-capacity-saturation`, mirrored into the services config.
 
-**Control-plane document (additive):** a lease row gained `saturation`, `dominant` and `atCapacity`, written only once the orchestrator has a reading. A row without them reads exactly as before.
+**Control-plane document (additive):** a lease row gained `saturation`, `dominant`, `atCapacity` and (when the planner named one) `cause`, written only once the orchestrator has a reading. A row without them reads exactly as before.
 
 **New public API:**
 
 - `CapacityInfo` and `NebulaCapacity` (`Runtime/Orchestrator/CapacityInfo.cs`): `Derive`, `Of`, `OfScope`, `Target`, `Worse`; `IControlPlane` extensions `CapacityOf(containerId)` and `ScopeCapacityOf(scopeKey)`; `NebulaOrchestrator.CapacityOf`.
 - `NebulaAdmission` (`Runtime/Gateway/NebulaAdmission.cs`): `Decide`, `AlwaysConsult`, `RejectWhenAtCapacity`, `Ask`, `DefaultReason`, `PolicyErrors`, `Reset`; `AdmissionPolicy`, `AdmissionRequest`, `AdmissionDecision`, `AdmissionAction`, `AdmissionKind`.
 - `IControlPlane.SetContainerCapacity(containerId, saturation, dominant, atCapacity)` — implemented by `LocalControlPlane`, `ControlPlaneHost` and `RemoteControlPlane`, and reachable over `POST /api/control-plane` as the op `SetContainerCapacity`. A custom `IControlPlane` must implement it.
-- `LeaseInfo.HasCapacity`, `Saturation`, `Dominant`, `AtCapacity`; `ContainerCost.ComponentOf`; `MeshTelemetry.CapacitySaturation`.
+- `LeaseInfo.HasCapacity`, `Saturation`, `Dominant`, `AtCapacity`, `SaturationCause`; `ContainerCost.ComponentOf`; `ControlPlaneJson.CauseOf`; `MeshTelemetry.CapacitySaturation`; `NebulaCapacity.Apply` (the planner's saturation reports folded into the readings).
 - `JoinRejectReason`, `JoinRejectedMsg.Code`/`Saturation`, `JoinHoldReason.AtCapacity`, `NebulaClient.JoinRejectReason`, `NebulaClient.JoinRejectSaturation`, `NebulaClient.JoinRefused`; `InstanceTransfer.RejectReason`, `InstanceTransfer.Saturation`.
 
-**Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant` and `atCapacity`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
+**Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant`, `atCapacity` and `capacityCause`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
 
 **Conformance:** scenario 12 of `docs/conformance-suite.md` is covered by `Services~/Nebula.Services.Tests/ConformanceCapacityAdmissionTests.cs`, with the derivation unit tested in both builds by `Tests/EditMode/CapacityAdmissionTests.cs`.
 >>>>>>> d059a5c (NEB-236: explicit capacity limits and admission reporting)

@@ -103,6 +103,11 @@ namespace Nebula
         /// every gateway of a mesh answers the same way without knowing the threshold.
         /// </summary>
         public bool AtCapacity;
+        /// <summary>
+        /// Why the planner cannot relieve it by moving anything (<see cref="SaturationReport.Cause"/>), or
+        /// <see cref="Nebula.SaturationCause.None"/> when the reading is cost telemetry alone.
+        /// </summary>
+        public SaturationCause SaturationCause;
     }
 
     /// <summary>
@@ -353,7 +358,7 @@ namespace Nebula
         /// <see cref="LeaseInfo.UpdatedAt"/>: that is the mesh's idle clock, and a reading published every pass
         /// would keep every scope hot for ever.
         /// </summary>
-        void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity);
+        void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
         void ReleaseContainer(string containerId);
         /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>
         void RemoveContainer(string containerId);

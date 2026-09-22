@@ -65,6 +65,18 @@ so a mesh with no cost telemetry — an older worker, the first second after a s
 simulated yet — behaves exactly as it did before this item existed. `CapacitySaturation = 0` turns the signal off
 the same way, everywhere, with one number.
 
+**D4b A container the planner cannot relieve is at capacity, whatever its cost row says.** The planner
+(`docs/cohesion-rebalancing.md`, NEB-235) emits a `SaturationReport` when it cannot take load off the busiest
+worker: a cohesion group or an affinity group spans the containers, they are held, the game authored no boundary
+inside the hot one, or it asked for a worker of its own. `NebulaCapacity.Apply` folds those rows in — every
+container of the item, at the item's utilization, carrying the `SaturationCause` — because that is precisely the
+case admission exists for. A container that is merely hot will be spread on the next pass and nobody needs to be
+refused; a container nothing can move is one where "queue, deny or degrade" are the only honest answers. A report
+never lowers a reading, and with the signal off it does nothing.
+
+`CapacityInfo.Cause` travels to the gateway on the lease row and reaches the game in `AdmissionRequest.Capacity`,
+so a policy can treat "held for another four seconds" differently from "this cell has no boundary in it".
+
 **D5 The threshold is one mesh-wide number the orchestrator applies.** `NebulaConfig.CapacitySaturation`
 (default **0.9**, `-nebula-capacity-saturation`, 0 = off) lives in both config copies, and the **orchestrator** is
 what compares against it. What travels to the gateways is the resolved `AtCapacity` flag, not the threshold: two
@@ -152,7 +164,8 @@ tick for everyone already inside, so the safe answer is "refuse".
 
 - `GET /api/cost` — every row gains `atCapacity`, and the document gains `capacitySaturation`.
 - `GET /api/state` — the same on the `cost` rows; each `scopes` row gains `capacityKnown`, `saturation`,
-  `dominant` and `atCapacity` (the scope-wide reading of D3); and the document gains `capacitySaturation`.
+  `dominant`, `atCapacity` (the scope-wide reading of D3) and `capacityCause`; and the document gains
+  `capacitySaturation`.
 - The dashboard's **Container cost** table gains a **Full** column, and the **Scopes** card a **Capacity** column.
   Both are read-only: admitting a player into a full station by hand from a dashboard is not an operation, it is a
   policy, and the hook is the supported way to express one.

@@ -63,6 +63,14 @@ public bool AtCapacity;
 
 [`Saturation`](#saturation) is at or above `NebulaConfig.CapacitySaturation`. The orchestrator decides this, not the reader: the threshold is one mesh-wide setting and the gateways must not disagree about it.
 
+### Cause [#cause]
+
+```csharp
+public SaturationCause Cause;
+```
+
+Why the planner cannot relieve this target by moving anything ([`SaturationReport.Cause`](/docs/reference/orchestrator/saturation-report#cause)), or [`SaturationCause.None`](/docs/reference/orchestrator/saturation-cause#none) when the reading is cost telemetry alone. A cohesion group, an affinity group, a hold or a missing boundary is the difference between "busy, and the mesh is about to spread it" and "busy, and nothing the mesh can do will help" - which is the one a queue is for.
+
 ## Properties
 
 ### DominantName [#dominantname]

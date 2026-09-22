@@ -62,3 +62,13 @@ public static CapacityInfo Target(IControlPlane cp, string scopeKey, string cont
 ```
 
 The capacity of the target a client is asking to enter: the scope when it named one that is judged as a whole, otherwise the container it would be placed in. This is the one call a gateway or a worker makes.
+
+### Apply [#apply]
+
+```csharp
+public static void Apply(IReadOnlyList<SaturationReport> reports, float threshold, Dictionary<string, CapacityInfo> result);
+```
+
+Fold the planner's saturation reports ([`SaturationReport`](/docs/reference/orchestrator/saturation-report), docs/cohesion-rebalancing.md) into the readings. A container the planner reports it cannot relieve - because a cohesion group or an affinity group spans it, because it is held, because the game authored no boundary inside it, or because it asked for a worker of its own - is at capacity once its item's utilization reaches the threshold, whatever its own cost row says. This is the case the whole item exists for: moving something would fix a hot container, and here nothing can move, so the only honest answers are "queue", "deny" or "degrade".
+
+The report never lowers a reading: a container already at capacity by its own cost stays there, and the report's utilization is taken only when it is the larger of the two. Every container of the item is marked, not only the heaviest, because a client is placed into one of them and they move together.

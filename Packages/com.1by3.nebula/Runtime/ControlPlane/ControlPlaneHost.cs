@@ -159,7 +159,7 @@ namespace Nebula
         public void PinContainer(string containerId, string workerId) => _plane.PinContainer(containerId, workerId);
         public void SetLeaseState(string containerId, string state) => _plane.SetLeaseState(containerId, state);
         public void SetContainerHint(string containerId, in ContainerHint hint) => _plane.SetContainerHint(containerId, hint);
-        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity) => _plane.SetContainerCapacity(containerId, saturation, dominant, atCapacity);
+        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None) => _plane.SetContainerCapacity(containerId, saturation, dominant, atCapacity, cause);
         public void ReleaseContainer(string containerId) => _plane.ReleaseContainer(containerId);
         public void RemoveContainer(string containerId) => _plane.RemoveContainer(containerId);
         public void ResetControlPlane() => _plane.ResetControlPlane();
