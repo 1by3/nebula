@@ -64,6 +64,17 @@ namespace Nebula
         /// <see cref="JoinStateChanged"/> handler to say something more useful than "please wait".
         /// </summary>
         public JoinHoldReason JoinHoldReason { get; private set; }
+        /// <summary>
+        /// Why the last join was refused, in typed form (<see cref="JoinRejectReason"/>). The reason string is for
+        /// the player; this is what the game's code branches on - a full station wants a queue or another instance,
+        /// a bad token wants a sign-in screen. See <c>docs/capacity-admission.md</c>.
+        /// </summary>
+        public JoinRejectReason JoinRejectReason { get; private set; }
+        /// <summary>
+        /// How full the target was when it refused the join, for <see cref="Nebula.JoinRejectReason.AtCapacity"/>:
+        /// 1 = the whole of the dominant cost component's budget. 0 when the gateway did not say.
+        /// </summary>
+        public float JoinRejectSaturation { get; private set; }
         public int RttMs { get; private set; } = -1;
         public double EstimatedServerTick => _serverTickEstimate;
         public uint PredictedTick => _predictTick;
@@ -205,6 +216,12 @@ namespace Nebula
         public event Action<State> ConnectionStateChanged;
         /// <summary>The gateway refused the join (the reason is fit to show the player); see <see cref="LastError"/>. The client stops reconnecting unless the refused token was a saved anonymous one, which it forgets and retries without.</summary>
         public event Action<string> JoinRejected;
+        /// <summary>
+        /// The same refusal, typed: the reason code and how saturated the target was
+        /// (<see cref="JoinRejectedMsg"/>). Raised after <see cref="JoinRejected"/>, on the main thread. A game that
+        /// wants to put the player in a docking queue when a station is full listens here.
+        /// </summary>
+        public event Action<JoinRejectedMsg> JoinRefused;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
         /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
@@ -710,7 +727,18 @@ namespace Nebula
                 case MsgId.JoinRejected:
                 {
                     var rejected = JoinRejectedMsg.Read(r);
-                    if (rejected.Retry)
+                    JoinRejectReason = rejected.Code;
+                    JoinRejectSaturation = rejected.Saturation;
+                    if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
+                    {
+                        // Not about this client's credentials and not about this gateway: reconnecting on a timer
+                        // would hammer a destination that is already full. The game decides what happens next -
+                        // a queue, another instance, a different scope - which is the whole point of the typed code.
+                        LastError = "join refused: " + rejected.Reason;
+                        WantsConnection = false;
+                        NebulaLog.Warn(LastError);
+                    }
+                    else if (rejected.Retry)
                     {
                         // The gateway, not this client, is the problem (draining, not ready): try again shortly; a
                         // load balancer hands the retry to another gateway.
@@ -732,6 +760,7 @@ namespace Nebula
                         NebulaLog.Warn(LastError);
                     }
                     JoinRejected?.Invoke(rejected.Reason);
+                    JoinRefused?.Invoke(rejected);
                     break;
                 }
                 case MsgId.SessionReplaced:
@@ -1227,6 +1256,8 @@ namespace Nebula
                 Join = JoinState.None;
                 JoinEstimatedSeconds = 0;
                 JoinHoldReason = JoinHoldReason.None;
+                JoinRejectReason = JoinRejectReason.None;
+                JoinRejectSaturation = 0f;
                 try { JoinStateChanged?.Invoke(Join, 0); }
                 catch (Exception e) { NebulaLog.Error($"JoinStateChanged handler threw: {e}"); }
             }

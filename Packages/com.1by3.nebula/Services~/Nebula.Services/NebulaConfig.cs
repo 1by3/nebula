@@ -37,6 +37,8 @@ namespace Nebula
         /// <summary><see cref="CostLinkBudgetMbps"/> in bytes per second; the default when it is 0 or less.</summary>
         public double CostLinkBytesPerSec => CostLinkBudgetMbps > 0f ? CostLinkBudgetMbps * 1000.0 * 1000.0 / 8.0 : DefaultCostLinkBytesPerSec;
         public float CostLinkBudgetMbps = 100f;
+        /// <summary>How full a target may get before the mesh calls it at capacity (docs/capacity-admission.md); 0 turns the signal off.</summary>
+        public float CapacitySaturation = 0.9f;
         public bool AutoScale = true;
         public int MinWorkers = 1;
         public float ScaleOutUtilization = 0.7f;

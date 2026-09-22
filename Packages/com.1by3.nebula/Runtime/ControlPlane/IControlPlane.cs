@@ -88,6 +88,26 @@ namespace Nebula
         public bool HasHint;
         /// <summary>The runtime hint, when <see cref="HasHint"/>.</summary>
         public ContainerHint Hint = ContainerHint.Default;
+        /// <summary>
+        /// The orchestrator has published a capacity reading for this container
+        /// (<see cref="IControlPlane.SetContainerCapacity"/>, docs/capacity-admission.md). False means no worker has
+        /// reported cost for it lately, and an unknown container is never at capacity.
+        /// </summary>
+        public bool HasCapacity;
+        /// <summary>The dominant cost component's share of its own budget, when <see cref="HasCapacity"/>. 1 = the whole budget.</summary>
+        public float Saturation;
+        /// <summary>Which component <see cref="Saturation"/> is about.</summary>
+        public CostComponent Dominant;
+        /// <summary>
+        /// <see cref="Saturation"/> reached <c>NebulaConfig.CapacitySaturation</c>. The orchestrator decides it, so
+        /// every gateway of a mesh answers the same way without knowing the threshold.
+        /// </summary>
+        public bool AtCapacity;
+        /// <summary>
+        /// Why the planner cannot relieve it by moving anything (<see cref="SaturationReport.Cause"/>), or
+        /// <see cref="Nebula.SaturationCause.None"/> when the reading is cost telemetry alone.
+        /// </summary>
+        public SaturationCause SaturationCause;
     }
 
     /// <summary>
@@ -331,6 +351,14 @@ namespace Nebula
         /// clears the runtime hint and lets the baked one stand again.
         /// </summary>
         void SetContainerHint(string containerId, in ContainerHint hint);
+        /// <summary>
+        /// Publish what the cost telemetry says about how full a container is, so a gateway can answer "is this
+        /// target at capacity" from the document it already mirrors instead of asking the orchestrator
+        /// (docs/capacity-admission.md). The orchestrator is the only writer. It does <b>not</b> stamp
+        /// <see cref="LeaseInfo.UpdatedAt"/>: that is the mesh's idle clock, and a reading published every pass
+        /// would keep every scope hot for ever.
+        /// </summary>
+        void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
         void ReleaseContainer(string containerId);
         /// <summary>Delete a lease row outright (a dynamic container whose carrier despawned).</summary>
         void RemoveContainer(string containerId);
@@ -382,6 +410,16 @@ namespace Nebula
             }
             return true;
         }
+
+        /// <summary>
+        /// How full a container is, as the orchestrator last published it (<see cref="NebulaCapacity.Of"/>).
+        /// </summary>
+        public static CapacityInfo CapacityOf(this IControlPlane cp, string containerId) => NebulaCapacity.Of(cp, containerId);
+
+        /// <summary>
+        /// How full a whole scope is: the worst of its parts (<see cref="NebulaCapacity.OfScope"/>).
+        /// </summary>
+        public static CapacityInfo ScopeCapacityOf(this IControlPlane cp, string scopeKey) => NebulaCapacity.OfScope(cp, scopeKey);
 
         /// <summary>Shorthand for <see cref="IsScopeReady(IControlPlane, ScopeInfo, float)"/> by key.</summary>
         public static bool IsScopeReady(this IControlPlane cp, string scopeKey, float workerTimeoutSeconds = 15f) =>

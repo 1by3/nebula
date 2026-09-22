@@ -216,6 +216,10 @@ The game can now declare that a set of entities must be simulated by one worker 
 - The orchestrator state document gains a `cohesion` object (`holds`, `groups`, `unsplittable`) and the dashboard a **Cohesion** card, shown only when there is something in it.
 - Conformance scenario 7 is covered (`ConformanceCohesionTests`, both builds; `ConformanceCohesionHandoverTests`, real workers), and the cohesion-group test of scenario 9 is no longer `[Ignore]`d.
 
+#### Capacity refusals on the join messages (protocol 18)
+
+`JoinRejected` (6) gained two trailing fields, `u8 code` (`JoinRejectReason`: `0` none, `1` at capacity, `2` denied by the admission hook) and `f16 saturation` (how full the target was, `1.0` being the whole of the dominant cost component's budget). A message that ends before them — from a gateway built before this release — reads as `None` and `0`, and nothing is assumed. `JoinStatus.reason` gained the value `5`, `JoinHoldReason.AtCapacity`, for a client the admission hook asked to hold rather than refuse. The protocol version is **not** bumped again: 18 is already unreleased and already breaking. See `docs/capacity-admission.md`.
+
 #### Per-entity cost weights (protocol 18)
 
 `EntitySpawnMsg` gained a trailing `f16 cost_weight` (last in the body, after `cohesion_group`), the entity's cost multiplier
@@ -236,6 +240,7 @@ Game callbacks at the moments the mesh brings a container or a scope to life, or
 - New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
 - `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
 
+<<<<<<< HEAD
 #### Cohesion-aware rebalancing along game-defined boundaries (NEB-235)
 
 The planner already cut along the boundaries the game authored and already refused to split a cohesion group or move
@@ -261,6 +266,39 @@ a held container. It now explains what it did, and says why when it could not. D
   could split a cohesion group the real deal may not and promise the scaler a relief that never arrives. It now
   carries `Cohesion`, `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
 - Conformance scenario 13 (`Tests/EditMode/ConformanceRebalanceTests.cs`, 10 tests, both builds).
+=======
+#### Explicit capacity limits and admission reporting (NEB-236)
+
+See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-target-is-full) and [Capacity and admission](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#capacity-and-admission); the design record is `docs/capacity-admission.md`.
+
+**What changed and why.** When an interaction domain exceeded what one worker could simulate, the mesh had no way to say so: a gateway could refuse a client for a bad token or because it was draining, and nothing else. A station that six hundred players jump to in five minutes is one authored domain that cannot be split past its parts, so the mesh now reports that it is at capacity and the game decides what to do — queue, deny or degrade. Nothing is ever silently split or copied to make room.
+
+**New behaviour:**
+
+- A per-container capacity reading is derived once per orchestrator pass from the cost rows (`docs/cost-telemetry.md`): the dominant component's share of its own budget, and whether that reached `CapacitySaturation`. A parts scope is as full as its **worst** part; a grid scope is judged one chunk at a time, like the public world, because its chunks are separate places. A container no worker has reported lately is *unknown*, not full, so a mesh without cost telemetry admits exactly what it did before.
+- A container the planner reports it cannot relieve by moving anything (`SaturationReport`, NEB-235: a cohesion or affinity group spanning it, a hold, no authored boundary, a dedicated worker) is at capacity once its item's utilization reaches the threshold, whatever its own cost row says, and `CapacityInfo.Cause` carries which constraint it is all the way to the admission hook.
+- The orchestrator publishes the reading on the container's lease row, so a gateway answers without an RPC. The write deliberately does **not** stamp the lease's `UpdatedAt` (that is the idle clock the scope lifecycle retires on), and only a reading that actually moved is written.
+- A join into a target at capacity goes to `NebulaAdmission.Decide`, which refuses by default; the client is sent `JoinRejected` with `JoinRejectReason.AtCapacity`, the saturation, and `retry` clear, and `NebulaClient` does not reconnect by itself. `AdmissionDecision.Hold()` instead holds the client in `JoinState.Starting` with `JoinHoldReason.AtCapacity` and places it, with no reconnect, when room appears.
+- In the public world the gateway prefers spawn candidates that are not at capacity and only refuses when every candidate is full.
+- `NebulaWorker.PrepareTransfer` goes through the same hook. A refused crossing returns a finished `InstanceTransfer` with `Error`, `RejectReason` and `Saturation` set, and nothing is sent to the destination worker or the client's gateway.
+- A policy that throws is counted in `NebulaAdmission.PolicyErrors`, logged, and read as a refusal.
+
+**New `NebulaConfig` field:** `CapacitySaturation` (0.9; 0 turns the signal off and admits everything), with `-nebula-capacity-saturation`, mirrored into the services config.
+
+**Control-plane document (additive):** a lease row gained `saturation`, `dominant`, `atCapacity` and (when the planner named one) `cause`, written only once the orchestrator has a reading. A row without them reads exactly as before.
+
+**New public API:**
+
+- `CapacityInfo` and `NebulaCapacity` (`Runtime/Orchestrator/CapacityInfo.cs`): `Derive`, `Of`, `OfScope`, `Target`, `Worse`; `IControlPlane` extensions `CapacityOf(containerId)` and `ScopeCapacityOf(scopeKey)`; `NebulaOrchestrator.CapacityOf`.
+- `NebulaAdmission` (`Runtime/Gateway/NebulaAdmission.cs`): `Decide`, `AlwaysConsult`, `RejectWhenAtCapacity`, `Ask`, `DefaultReason`, `PolicyErrors`, `Reset`; `AdmissionPolicy`, `AdmissionRequest`, `AdmissionDecision`, `AdmissionAction`, `AdmissionKind`.
+- `IControlPlane.SetContainerCapacity(containerId, saturation, dominant, atCapacity)` — implemented by `LocalControlPlane`, `ControlPlaneHost` and `RemoteControlPlane`, and reachable over `POST /api/control-plane` as the op `SetContainerCapacity`. A custom `IControlPlane` must implement it.
+- `LeaseInfo.HasCapacity`, `Saturation`, `Dominant`, `AtCapacity`, `SaturationCause`; `ContainerCost.ComponentOf`; `ControlPlaneJson.CauseOf`; `MeshTelemetry.CapacitySaturation`; `NebulaCapacity.Apply` (the planner's saturation reports folded into the readings).
+- `JoinRejectReason`, `JoinRejectedMsg.Code`/`Saturation`, `JoinHoldReason.AtCapacity`, `NebulaClient.JoinRejectReason`, `NebulaClient.JoinRejectSaturation`, `NebulaClient.JoinRefused`; `InstanceTransfer.RejectReason`, `InstanceTransfer.Saturation`.
+
+**Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant`, `atCapacity` and `capacityCause`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
+
+**Conformance:** scenario 12 of `docs/conformance-suite.md` is covered by `Services~/Nebula.Services.Tests/ConformanceCapacityAdmissionTests.cs`, with the derivation unit tested in both builds by `Tests/EditMode/CapacityAdmissionTests.cs`.
+>>>>>>> d059a5c (NEB-236: explicit capacity limits and admission reporting)
 
 #### Persistence durability window (NEB-224)
 

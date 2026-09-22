@@ -205,6 +205,14 @@ public ContainerCost CostOf(string containerId);
 
 The cost row of one container, or all zeroes when no worker has reported it lately.
 
+### CapacityOf [#capacityof]
+
+```csharp
+public CapacityInfo CapacityOf(string containerId);
+```
+
+How full a container is, as this orchestrator last derived it. Unknown when no worker has reported it lately.
+
 ### Initialize [#initialize]
 
 ```csharp

@@ -1,0 +1,76 @@
+---
+title: "NebulaAdmission"
+description: "The hook that decides what happens when an interaction domain is full."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs)</div>
+
+```csharp
+public static class NebulaAdmission
+```
+
+The hook that decides what happens when an interaction domain is full. Nebula measures and reports; whether *this* player gets in anyway - a party member of somebody inside, a staff account, the last member of a raid group - is the game's business and nothing the mesh can guess.
+
+A static, because there is one answer per process and the decision must not depend on which gateway object a game happened to reach; the same reasoning as [`ScopeLifecycle.ShouldRetire`](/docs/reference/control-plane/scope-lifecycle#shouldretire). Consulted on every join and every prepared transfer into a target whose capacity says at-capacity, and on every one of them when [`AlwaysConsult`](#alwaysconsult) is set. A policy that throws is logged and read as [`AdmissionAction.Reject`](/docs/reference/gateway/admission-action#reject): the failure mode of a wrong answer here is a collapsed tick for everyone already inside. Design record: `docs/capacity-admission.md`.
+
+## Fields
+
+### Decide [#decide]
+
+```csharp
+public static AdmissionPolicy Decide = RejectWhenAtCapacity;
+```
+
+The policy. Defaults to [`RejectWhenAtCapacity`](#rejectwhenatcapacity); setting it to null restores that.
+
+### AlwaysConsult [#alwaysconsult]
+
+```csharp
+public static bool AlwaysConsult;
+```
+
+Consult [`Decide`](#decide) for every join and transfer, not only for the ones into a saturated target. Off by default: a hook that is asked about every arrival is a hook on the hot path of every join, and a game that only wants to say "let staff into a full station" should not pay for it.
+
+## Properties
+
+### PolicyErrors [#policyerrors]
+
+```csharp
+public static int PolicyErrors { get; }
+```
+
+Exceptions thrown by [`Decide`](#decide) since this process started. Anything but zero means the game is not deciding what it thinks it is.
+
+## Methods
+
+### RejectWhenAtCapacity [#rejectwhenatcapacity]
+
+```csharp
+public static AdmissionDecision RejectWhenAtCapacity(in AdmissionRequest request);
+```
+
+The default: refuse an arrival into a target that is at capacity, and admit everything else.
+
+### Ask [#ask]
+
+```csharp
+public static AdmissionDecision Ask(in AdmissionRequest request, string context = null);
+```
+
+Ask the policy, catching whatever it throws. `context` names the caller in the log line. Returns the decision; a target that is not at capacity and [`AlwaysConsult`](#alwaysconsult) off is admitted without calling anything.
+
+### DefaultReason [#defaultreason]
+
+```csharp
+public static string DefaultReason(in CapacityInfo capacity);
+```
+
+Nebula's own sentence for a refusal, used when the policy gives none.
+
+### Reset [#reset]
+
+```csharp
+public static void Reset();
+```
+
+Restore the defaults. For tests and for a process that reloads game code.

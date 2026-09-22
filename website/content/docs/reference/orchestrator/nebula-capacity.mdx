@@ -1,0 +1,74 @@
+---
+title: "NebulaCapacity"
+description: "Deriving the capacity signal from cost rows, and reading it back off the control plane."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/CapacityInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/CapacityInfo.cs)</div>
+
+```csharp
+public static class NebulaCapacity
+```
+
+Deriving the capacity signal from cost rows, and reading it back off the control plane. Pure and static: the orchestrator writes, every other role reads, and both sides run the same functions so a test can check one without a mesh. Design record: `docs/capacity-admission.md`.
+
+## Methods
+
+### Derive [#derive]
+
+```csharp
+public static CapacityInfo Derive(in ContainerCost row, float threshold);
+public static void Derive(IReadOnlyDictionary<string, ContainerCost> rows, float threshold, Dictionary<string, CapacityInfo> result);
+```
+
+Turn one cost row into a capacity reading. `threshold` is `NebulaConfig.CapacitySaturation`; 0 or less turns the signal off, so nothing is ever at capacity and every join is admitted as it was before. A row with no measurement in it at all ([`ContainerCost.ContainerId`](/docs/reference/orchestrator/container-cost#containerid) unset) is not a reading.
+
+### Of [#of]
+
+```csharp
+public static CapacityInfo Of(IControlPlane cp, string containerId);
+```
+
+The capacity of one container, as the orchestrator last published it on the lease row. Unknown when there is no row, or no reading on it yet.
+
+### OfScope [#ofscope]
+
+```csharp
+public static CapacityInfo OfScope(IControlPlane cp, string scopeKey);
+```
+
+The capacity of a whole scope: the worst of its parts. A scope is one interaction domain that cannot be split past its authored boundaries, so one saturated part is a saturated scope - taking the mean would hide exactly the part that is about to cost everyone their tick. The public world (an empty key) has no scope row and is never at capacity as a whole; its containers are judged one at a time.
+
+### Worse [#worse]
+
+```csharp
+public static CapacityInfo Worse(in CapacityInfo a, in CapacityInfo b);
+```
+
+The more saturated of two readings, preferring a known one over an unknown one. An unknown reading never wins, so one worker that has not reported yet cannot make a busy scope look idle.
+
+### IsPerContainer [#ispercontainer]
+
+```csharp
+public static bool IsPerContainer(ScopeInfo scope);
+public static bool IsPerContainer(IControlPlane cp, string scopeKey);
+```
+
+Whether this scope is judged one container at a time rather than as a whole. A grid scope ([`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid)) is an unbounded procedural world whose row names only the anchor chunk: its chunks are separate places, so "the world is full" is not a thing it can be. A parts scope is one authored interaction domain and is judged whole (D3).
+
+### Target [#target]
+
+```csharp
+public static CapacityInfo Target(IControlPlane cp, string scopeKey, string containerId);
+```
+
+The capacity of the target a client is asking to enter: the scope when it named one that is judged as a whole, otherwise the container it would be placed in. This is the one call a gateway or a worker makes.
+
+### Apply [#apply]
+
+```csharp
+public static void Apply(IReadOnlyList<SaturationReport> reports, float threshold, Dictionary<string, CapacityInfo> result);
+```
+
+Fold the planner's saturation reports ([`SaturationReport`](/docs/reference/orchestrator/saturation-report), docs/cohesion-rebalancing.md) into the readings. A container the planner reports it cannot relieve - because a cohesion group or an affinity group spans it, because it is held, because the game authored no boundary inside it, or because it asked for a worker of its own - is at capacity once its item's utilization reaches the threshold, whatever its own cost row says. This is the case the whole item exists for: moving something would fix a hot container, and here nothing can move, so the only honest answers are "queue", "deny" or "degrade".
+
+The report never lowers a reading: a container already at capacity by its own cost stays there, and the report's utilization is taken only when it is the larger of the two. Every container of the item is marked, not only the heaviest, because a client is placed into one of them and they move together.

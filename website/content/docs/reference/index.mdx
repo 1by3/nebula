@@ -134,11 +134,16 @@ Accept client connections, route input to workers, and send replicated state to 
 
 | Type | Summary |
 | --- | --- |
+| [AdmissionAction](/docs/reference/gateway/admission-action) | Enum. What the admission hook may answer (AdmissionDecision). |
+| [AdmissionDecision](/docs/reference/gateway/admission-decision) | Struct. The game's answer to AdmissionRequest. |
+| [AdmissionKind](/docs/reference/gateway/admission-kind) | Enum. Why somebody is asking to enter a target (AdmissionRequest.Kind). |
+| [AdmissionRequest](/docs/reference/gateway/admission-request) | Struct. What the game is told when something asks to enter a target that is at capacity. |
 | [AnonymousIdentityIssuer](/docs/reference/gateway/anonymous-identity-issuer) | Class. Identities the gateway hands to clients that present no token: an HS256 token with iss PlayerIdentity.AnonymousIssuer and a random sub, which the client keeps and presents on its next connection to get the same AuthResult.Identity back. |
 | [AuthResult](/docs/reference/gateway/auth-result) | Struct. Outcome of checking the token a client presented in Hello (see OidcTokenValidator). |
 | [InterestLinkReason](/docs/reference/gateway/interest-link-reason) | Enum. Why a gateway holds a link to a worker. |
 | [JsonWebToken](/docs/reference/gateway/json-web-token) | Static class. Compact JSON Web Token (JWT) encoding: split, decode and sign. |
 | [MeshPeerAuth](/docs/reference/gateway/mesh-peer-auth) | Static class. How gateways and workers prove to each other that they belong to the mesh: HelloMsg.Token on an infrastructure link carries unixSeconds.base64url(HMAC-SHA256(key, role\|id\|incarnation\|unixSeconds)) with a key derived from the mesh token (... |
+| [NebulaAdmission](/docs/reference/gateway/nebula-admission) | Static class. The hook that decides what happens when an interaction domain is full. |
 | [NebulaGateway](/docs/reference/gateway/nebula-gateway) | Class. Accepts client connections and maintains a connection to every worker. |
 | [OidcTokenValidator](/docs/reference/gateway/oidc-token-validator) | Class. Checks OpenID Connect ID tokens against the issuers a mesh trusts (NebulaConfig.AuthIssuers): signature (RS256/384/512 and ES256/384/512 with the provider's published keys), issuer, expiry, and audience. |
 | [PlayerIdentity](/docs/reference/gateway/player-identity) | Static class. A player's identity across sessions: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. |
@@ -157,6 +162,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [AssignmentPlan](/docs/reference/orchestrator/assignment-plan) | Class. What a policy would do with a hypothetical number of workers: which containers each of them would hold, and how loaded that would leave them. |
 | [AssignmentPlanner](/docs/reference/orchestrator/assignment-planner) | Static class. Runs an IAssignmentPolicy as a dry run against a hypothetical worker count. |
 | [BakedAssignmentPolicy](/docs/reference/orchestrator/baked-assignment-policy) | Class. The original policy: baked containers are dealt as evenly as possible by count, sticky to their owner, in wire order when that order is spatial (NebulaOrchestrator.ComputeAssignment). |
+| [CapacityInfo](/docs/reference/orchestrator/capacity-info) | Struct. How close one container - or one whole scope - is to what a single worker can carry, derived from the cost telemetry the worker already reports (ContainerCost, docs/cost-telemetry.md). |
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
 | [CloudWorkerHost](/docs/reference/orchestrator/cloud-worker-host) | Class. An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa... |
 | [CloudWorkerHostSettings](/docs/reference/orchestrator/cloud-worker-host-settings) | Class. Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. |
@@ -174,6 +180,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [JsonWriter](/docs/reference/orchestrator/json-writer) | Class. Just enough JSON writing for the dashboard state document; avoids a JSON library dependency in the runtime. |
 | [LogBuffer](/docs/reference/orchestrator/log-buffer) | Class. The mesh's recent log lines, kept on the orchestrator so one place holds what every process of the mesh said last: workers, gateways and the orchestrator's own shipper post batches to POST /api/logs (\{"lines":\[\{"at","role","instance","le... |
 | [MeshTelemetry](/docs/reference/orchestrator/mesh-telemetry) | Class. The data behind the World map page of the Nebula Dashboard (/map). |
+| [NebulaCapacity](/docs/reference/orchestrator/nebula-capacity) | Static class. Deriving the capacity signal from cost rows, and reading it back off the control plane. |
 | [NebulaOrchestrator](/docs/reference/orchestrator/nebula-orchestrator) | Class. Spins worker processes up and down and authoritatively assigns containers to them through the control plane. |
 | [OrchestratorEvent](/docs/reference/orchestrator/orchestrator-event) | Struct. One line of the orchestrator's recent history, shown on the dashboard. |
 | [OrchestratorHttpServer](/docs/reference/orchestrator/orchestrator-http-server) | Class. The orchestrator's tiny web server: serves the dashboard page and a JSON state document, and forwards commands (POST) to the main thread. |
@@ -299,6 +306,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [InterestSubscribeFlags](/docs/reference/protocol/interest-subscribe-flags) | Enum. Lists the supported interest subscribe flags values. |
 | [InterestSubscribeMsg](/docs/reference/protocol/interest-subscribe-msg) | Struct. Gateway -\> worker: the set of regions this gateway wants entities from. |
 | [JoinHoldReason](/docs/reference/protocol/join-hold-reason) | Enum. Why a join is being held in JoinState.Starting. |
+| [JoinRejectReason](/docs/reference/protocol/join-reject-reason) | Enum. Why a join was refused, in typed form. |
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |

@@ -85,6 +85,46 @@ public ContainerHint Hint = ContainerHint.Default;
 
 The runtime hint, when [`HasHint`](#hashint).
 
+### HasCapacity [#hascapacity]
+
+```csharp
+public bool HasCapacity;
+```
+
+The orchestrator has published a capacity reading for this container ([`IControlPlane.SetContainerCapacity`](/docs/reference/control-plane/i-control-plane#setcontainercapacity), docs/capacity-admission.md). False means no worker has reported cost for it lately, and an unknown container is never at capacity.
+
+### Saturation [#saturation]
+
+```csharp
+public float Saturation;
+```
+
+The dominant cost component's share of its own budget, when [`HasCapacity`](#hascapacity). 1 = the whole budget.
+
+### Dominant [#dominant]
+
+```csharp
+public CostComponent Dominant;
+```
+
+Which component [`Saturation`](#saturation) is about.
+
+### AtCapacity [#atcapacity]
+
+```csharp
+public bool AtCapacity;
+```
+
+[`Saturation`](#saturation) reached `NebulaConfig.CapacitySaturation`. The orchestrator decides it, so every gateway of a mesh answers the same way without knowing the threshold.
+
+### SaturationCause [#saturationcause]
+
+```csharp
+public SaturationCause SaturationCause;
+```
+
+Why the planner cannot relieve it by moving anything ([`SaturationReport.Cause`](/docs/reference/orchestrator/saturation-report#cause)), or `Nebula.SaturationCause.None` when the reading is cost telemetry alone.
+
 ## Properties
 
 ### Bounds [#bounds]

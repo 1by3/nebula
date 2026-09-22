@@ -70,6 +70,14 @@ public double LinkBytesPerSec = NebulaConfig.DefaultCostLinkBytesPerSec;
 
 The outbound budget a container's bytes are weighed against, in bytes per second ([`NebulaConfig.CostLinkBudgetMbps`](/docs/reference/core/nebula-config#costlinkbudgetmbps)). Only the comparison between the three components depends on it; the reported bytes are measured either way.
 
+### CapacitySaturation [#capacitysaturation]
+
+```csharp
+public float CapacitySaturation;
+```
+
+How saturated a container has to be before it counts as at capacity ([`NebulaConfig.CapacitySaturation`](/docs/reference/core/nebula-config#capacitysaturation), docs/capacity-admission.md). Only reported here; the orchestrator is what publishes the flag to the mesh. 0 leaves every row below capacity.
+
 ## Properties
 
 ### DetailWanted [#detailwanted]

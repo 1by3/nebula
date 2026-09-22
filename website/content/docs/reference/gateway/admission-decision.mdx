@@ -1,0 +1,54 @@
+---
+title: "AdmissionDecision"
+description: "The game's answer to AdmissionRequest."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs)</div>
+
+```csharp
+public struct AdmissionDecision
+```
+
+The game's answer to [`AdmissionRequest`](/docs/reference/gateway/admission-request). Build one with [`Admit`](#admit), [`Reject`](#reject) or [`Hold`](#hold).
+
+## Fields
+
+### Action [#action]
+
+```csharp
+public AdmissionAction Action;
+```
+
+### Reason [#reason]
+
+```csharp
+public string Reason;
+```
+
+What the arriving client is told, fit to show a player. Empty takes Nebula's own sentence, which names the dominant component and the saturation.
+
+## Methods
+
+### Admit [#admit]
+
+```csharp
+public static AdmissionDecision Admit();
+```
+
+Let this one in although the target is at capacity.
+
+### Reject [#reject]
+
+```csharp
+public static AdmissionDecision Reject(string reason = null);
+```
+
+Refuse, with an optional sentence for the player.
+
+### Hold [#hold]
+
+```csharp
+public static AdmissionDecision Hold(string reason = null);
+```
+
+Keep the client waiting ([`JoinHoldReason.AtCapacity`](/docs/reference/protocol/join-hold-reason#atcapacity)) and ask again shortly. A transfer reads this as a rejection.

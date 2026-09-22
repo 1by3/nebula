@@ -258,6 +258,14 @@ public float CostLinkBudgetMbps = 100f;
 
 Cost telemetry: the outbound budget one worker's traffic is weighed against, in megabits per second. It decides nothing about what is sent; it is the yardstick that lets a container's bytes be compared with its simulation time, so the dashboard and the scaler can say whether a hot container is hot in simulation, in replication or in gateway relay.
 
+### CapacitySaturation [#capacitysaturation]
+
+```csharp
+public float CapacitySaturation = 0.9f;
+```
+
+How full one container (or one scope, taken as the worst of its parts) may get before the mesh calls it at capacity: the dominant cost component's share of its own budget, 0.9 = 90 %. A join or a prepared transfer into a target at capacity is refused with a typed reason unless NebulaAdmission.Decide admits it. 0 turns the signal off and admits everything, as before. -nebula-capacity-saturation overrides.
+
 ### AutoScale [#autoscale]
 
 ```csharp

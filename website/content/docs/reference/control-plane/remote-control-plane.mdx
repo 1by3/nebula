@@ -246,6 +246,12 @@ public void SetLeaseState(string containerId, string state);
 public void SetContainerHint(string containerId, in ContainerHint hint);
 ```
 
+### SetContainerCapacity [#setcontainercapacity]
+
+```csharp
+public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None);
+```
+
 ### ReleaseContainer [#releasecontainer]
 
 ```csharp

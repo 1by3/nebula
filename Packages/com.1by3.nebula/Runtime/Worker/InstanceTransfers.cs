@@ -15,6 +15,16 @@ namespace Nebula
         public string Error { get; internal set; }
         /// <summary>Static container selected when preparation began.</summary>
         public Container Destination { get; internal set; }
+        /// <summary>
+        /// Why the preparation was refused, in typed form: <see cref="JoinRejectReason.AtCapacity"/> when the
+        /// destination was at capacity and the admission hook refused this crossing, and
+        /// <see cref="JoinRejectReason.Denied"/> when the hook refused a destination that was not
+        /// (<see cref="NebulaAdmission"/>, docs/capacity-admission.md). <see cref="JoinRejectReason.None"/> for
+        /// every other failure, which <see cref="Error"/> describes.
+        /// </summary>
+        public JoinRejectReason RejectReason { get; internal set; }
+        /// <summary>How saturated the destination was when it was refused; 0 when that was not the reason.</summary>
+        public float Saturation { get; internal set; }
         internal NetworkIdentity Entity;
         internal Container Source;
         internal uint Epoch;
@@ -116,6 +126,33 @@ namespace Nebula
                 throw new ArgumentException("An authoritative entity and a static destination are required");
             var transfer = new InstanceTransfer { Entity = entity, Source = entity.Container, Epoch = entity.Epoch,
                 Destination = destination, ClientReady = entity.OwnerClientId == 0, Deadline = Time.unscaledTime + Mathf.Max(1, timeoutSeconds) };
+            // Capacity, before anything is sent: a crossing into a destination that is at capacity fails typed, with
+            // the same reason and the same hook a join goes through, so a travel service gets one answer for both
+            // ways in (docs/capacity-admission.md). Nothing is ever split silently to make room.
+            var capacity = NebulaCapacity.Target(ControlPlane, destination.ScopeKey ?? "", destination.ContainerId);
+            if (capacity.AtCapacity || NebulaAdmission.AlwaysConsult)
+            {
+                var decision = NebulaAdmission.Ask(new AdmissionRequest
+                {
+                    Kind = AdmissionKind.Transfer,
+                    ScopeKey = destination.ScopeKey ?? "",
+                    ContainerId = destination.ContainerId,
+                    Capacity = capacity,
+                    EntityNetId = entity.NetId,
+                    OwnerClientId = entity.OwnerClientId,
+                    ClientId = entity.OwnerClientId,
+                }, $"entity {entity.NetId} crossing into {destination.ContainerId}");
+                // A transfer has nobody to hold: there is no join to keep open, so "wait" is a refusal the caller
+                // retries by preparing again.
+                if (decision.Action != AdmissionAction.Admit)
+                {
+                    transfer.RejectReason = capacity.AtCapacity ? JoinRejectReason.AtCapacity : JoinRejectReason.Denied;
+                    transfer.Saturation = capacity.Saturation;
+                    transfer.Error = string.IsNullOrEmpty(decision.Reason) ? NebulaAdmission.DefaultReason(capacity) : decision.Reason;
+                    transfer.Finished = true;
+                    return transfer;
+                }
+            }
             transfer.Message = new InstancePreparationMsg { RequestId = ++_nextInstanceRequest, EntityId = entity.NetId,
                 Destination = destination.Ref, SourceWorker = WorkerIndex, LeaseEpoch = destination.LeaseEpoch };
             _instanceTransfers.Add(transfer.Message.RequestId, transfer);

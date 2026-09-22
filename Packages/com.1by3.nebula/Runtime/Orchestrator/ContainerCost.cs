@@ -79,6 +79,17 @@ namespace Nebula
             }
         }
 
+        /// <summary>The component a wire name (<see cref="NameOf"/>) stands for; anything unknown reads as <see cref="CostComponent.Simulation"/>.</summary>
+        public static CostComponent ComponentOf(string name)
+        {
+            switch (name)
+            {
+                case "replication": return CostComponent.Replication;
+                case "gateway": return CostComponent.Gateway;
+                default: return CostComponent.Simulation;
+            }
+        }
+
         /// <summary>
         /// Decide <see cref="Dominant"/> and <see cref="DominantSaturation"/> for one row by measuring each
         /// component against a budget of its own: simulation against the tick period, replication and the gateway
@@ -118,8 +129,12 @@ namespace Nebula
             }
         }
 
-        /// <summary>One row as the dashboard and <c>GET /api/cost</c> serve it.</summary>
-        public static void Write(JsonWriter w, in ContainerCost row)
+        /// <summary>
+        /// One row as the dashboard and <c>GET /api/cost</c> serve it. <paramref name="capacitySaturation"/> is
+        /// <see cref="NebulaConfig.CapacitySaturation"/>, so the row can also say whether this container counts as
+        /// at capacity (docs/capacity-admission.md); 0 leaves <c>atCapacity</c> false.
+        /// </summary>
+        public static void Write(JsonWriter w, in ContainerCost row, float capacitySaturation = 0f)
         {
             w.BeginObject();
             w.Prop("id", row.ContainerId ?? "");
@@ -133,6 +148,7 @@ namespace Nebula
             w.Prop("ghosts", row.GhostCount);
             w.Prop("dominant", row.DominantName);
             w.Prop("saturation", Math.Round(row.DominantSaturation, 4));
+            w.Prop("atCapacity", NebulaCapacity.Derive(row, capacitySaturation).AtCapacity);
             w.EndObject();
         }
 

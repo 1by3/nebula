@@ -246,6 +246,22 @@ namespace Nebula
             Touch();
         }
 
+        public void SetContainerCapacity(string containerId, float saturation, CostComponent dominant, bool atCapacity, SaturationCause cause = SaturationCause.None)
+        {
+            var l = this.FindLease(containerId);
+            if (l == null) return;
+            if (float.IsNaN(saturation) || saturation < 0f) saturation = 0f;
+            if (l.HasCapacity && l.AtCapacity == atCapacity && l.Dominant == dominant && l.SaturationCause == cause &&
+                Math.Abs(l.Saturation - saturation) < 0.0005f) return;
+            l.HasCapacity = true;
+            l.Saturation = saturation;
+            l.Dominant = dominant;
+            l.AtCapacity = atCapacity;
+            l.SaturationCause = cause;
+            // Deliberately not l.UpdatedAt: that is the idle clock the scope lifecycle retires on.
+            Touch();
+        }
+
         public void SetLeaseState(string containerId, string state)
         {
             var l = this.FindLease(containerId);

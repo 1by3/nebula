@@ -48,6 +48,22 @@ public static bool IsScopeReady(this IControlPlane cp, string scopeKey, float wo
 
 Whether the scope can be entered: every container of it has a lease row in an owning state ([`LeaseState.IsOwning`](/docs/reference/control-plane/lease-state#isowning)) held by a worker that is still heartbeating. It does **not** say that the worker has loaded the scope's content — that stays with the per-crossing handshake ([`NebulaWorker.PrepareTransfer`](/docs/reference/worker/nebula-worker#preparetransfer)). See `docs/scope-activation.md` §4.
 
+### CapacityOf [#capacityof]
+
+```csharp
+public static CapacityInfo CapacityOf(this IControlPlane cp, string containerId);
+```
+
+How full a container is, as the orchestrator last published it ([`NebulaCapacity.Of`](/docs/reference/orchestrator/nebula-capacity#of)).
+
+### ScopeCapacityOf [#scopecapacityof]
+
+```csharp
+public static CapacityInfo ScopeCapacityOf(this IControlPlane cp, string scopeKey);
+```
+
+How full a whole scope is: the worst of its parts ([`NebulaCapacity.OfScope`](/docs/reference/orchestrator/nebula-capacity#ofscope)).
+
 ### GetSetting [#getsetting]
 
 ```csharp

@@ -93,6 +93,8 @@ namespace Nebula
         public double CostLinkBytesPerSec => CostLinkBudgetMbps > 0f ? CostLinkBudgetMbps * 1000.0 * 1000.0 / 8.0 : DefaultCostLinkBytesPerSec;
         [Tooltip("Cost telemetry: the outbound budget one worker's traffic is weighed against, in megabits per second. It decides nothing about what is sent; it is the yardstick that lets a container's bytes be compared with its simulation time, so the dashboard and the scaler can say whether a hot container is hot in simulation, in replication or in gateway relay.")]
         public float CostLinkBudgetMbps = 100f;
+        [Tooltip("How full one container (or one scope, taken as the worst of its parts) may get before the mesh calls it at capacity: the dominant cost component's share of its own budget, 0.9 = 90 %. A join or a prepared transfer into a target at capacity is refused with a typed reason unless NebulaAdmission.Decide admits it. 0 turns the signal off and admits everything, as before. -nebula-capacity-saturation overrides.")]
+        public float CapacitySaturation = 0.9f;
         [Tooltip("Keep the worker count between MinWorkers and MaxWorkers from how busy the workers are: add one when the busiest worker's tick time stays over ScaleOutUtilization of the tick budget, remove one when the mesh's mean stays under ScaleInUtilization. Every change is checked against a dry run of the assignment policy first.")]
         public bool AutoScale = true;
         [Tooltip("The fewest workers autoscaling will leave running. 0 allows scaling to zero (the first player then waits for a worker to boot).")]

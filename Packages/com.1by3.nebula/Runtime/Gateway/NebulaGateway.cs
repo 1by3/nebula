@@ -1307,16 +1307,18 @@ namespace Nebula
         }
 
         /// <summary>Tell the client why and drop the link a moment later, once the message has had time to go out.</summary>
-        private void Reject(ClientConn c, string reason, bool retry = false)
+        private void Reject(ClientConn c, string reason, bool retry = false, JoinRejectReason code = JoinRejectReason.None, float saturation = 0f)
         {
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
             _writer.Reset();
-            new JoinRejectedMsg { Reason = reason, Retry = retry }.Write(_writer);
+            new JoinRejectedMsg { Reason = reason, Retry = retry, Code = code, Saturation = saturation }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             c.DisconnectAt = Time.unscaledTime + 0.5f;
         }
 
         private readonly List<ClientConn> _toDrop = new List<ClientConn>();
+        /// <summary>Spawn candidates that are not at capacity, reused between placements so the filter allocates nothing.</summary>
+        private readonly List<Container> _openCandidates = new List<Container>();
 
         private void DropRejectedClients()
         {
@@ -1568,6 +1570,46 @@ namespace Nebula
                     ? $"no container available to spawn client {c.ClientId} yet; holding the join (world starting)"
                     : $"scope '{c.ScopeKey}' has no container with a live owner yet; holding the join of client {c.ClientId}");
                 return;
+            }
+            // Capacity: a target that is at capacity is not silently split and not silently overfilled. Candidates
+            // below capacity are preferred, and only when every one of them is full is the game asked what to do
+            // with this particular arrival (docs/capacity-admission.md).
+            var capacity = NebulaCapacity.Target(ControlPlane, c.ScopeKey, "");
+            if (NebulaCapacity.IsPerContainer(ControlPlane, c.ScopeKey))
+            {
+                _openCandidates.Clear();
+                for (int i = 0; i < candidates.Count; i++)
+                    if (!NebulaCapacity.Of(ControlPlane, candidates[i].ContainerId).AtCapacity) _openCandidates.Add(candidates[i]);
+                if (_openCandidates.Count > 0) { capacity = default; candidates.Clear(); candidates.AddRange(_openCandidates); }
+                else for (int i = 0; i < candidates.Count; i++) capacity = NebulaCapacity.Worse(capacity, NebulaCapacity.Of(ControlPlane, candidates[i].ContainerId));
+            }
+            if (capacity.AtCapacity || NebulaAdmission.AlwaysConsult)
+            {
+                var decision = NebulaAdmission.Ask(new AdmissionRequest
+                {
+                    Kind = AdmissionKind.Join,
+                    ScopeKey = c.ScopeKey,
+                    ContainerId = capacity.ContainerId ?? "",
+                    Capacity = capacity,
+                    ClientId = c.ClientId,
+                    Identity = c.Identity,
+                    Name = c.Name,
+                    IsBot = c.IsBot,
+                    Team = c.Team,
+                    Tags = c.Tags,
+                }, $"client {c.ClientId} joining '{(c.ScopeKey.Length == 0 ? "the public world" : c.ScopeKey)}'");
+                if (decision.Action == AdmissionAction.Hold)
+                {
+                    SendJoinStatus(c, JoinState.Starting, JoinHoldReason.AtCapacity);
+                    NebulaLog.Debugf($"admission holds client {c.ClientId}: the target is at capacity ({capacity})");
+                    return;
+                }
+                if (decision.Action == AdmissionAction.Reject)
+                {
+                    Reject(c, string.IsNullOrEmpty(decision.Reason) ? NebulaAdmission.DefaultReason(capacity) : decision.Reason,
+                        retry: false, code: capacity.AtCapacity ? JoinRejectReason.AtCapacity : JoinRejectReason.Denied, saturation: capacity.Saturation);
+                    return;
+                }
             }
 #if NEBULA_SERVICE
             var pick = candidates[System.Random.Shared.Next(candidates.Count)];
