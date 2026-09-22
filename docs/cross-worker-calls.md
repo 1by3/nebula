@@ -94,6 +94,13 @@ fail-fast semantics can have them.
 
 Staleness is checked **before** authority, so a ghost does not forward a call its own copy already knows is stale.
 
+The epoch is the only past the call carries. A call that needs a *tick* - "I shot at what tick 412 looked like" -
+puts it in the arguments, and the worker that applies the call answers it from its own recorded state history
+(`NetworkIdentity.StateAt`, `docs/state-history.md`). That works on the authority and on any worker holding a ghost,
+and it survives the forward: a worker that gained authority mid-flight still has the ticks it recorded while it was
+ghosting the entity (state history D5). Whether the claimed tick is one the caller could plausibly have been looking
+at is the game's decision, not the contract's (§11).
+
 ## 6. At-most-once
 
 **D4. Application is at most once per call id, per worker, within the ledger's bounds.** Every worker keeps one

@@ -23,6 +23,7 @@
     "guides/network-transform",
     "guides/network-animator",
     "guides/prediction",
+    "guides/lag-compensation",
     "guides/physics-and-handover-state",
     "---Players and clients---",
     "guides/connecting-clients",

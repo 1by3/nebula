@@ -428,6 +428,14 @@ public float GhostLingerSeconds = 2f;
 
 Ghosts stay resident this long after leaving the band.
 
+### StateHistoryTicks [#statehistoryticks]
+
+```csharp
+public int StateHistoryTicks = StateHistory.DefaultWindowTicks;
+```
+
+Ticks of pose and \[SyncHistory\] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second at 60 Hz by default. 0 turns recording off. -nebula-state-history overrides.
+
 ### AuthorityCallMaxHops [#authoritycallmaxhops]
 
 ```csharp

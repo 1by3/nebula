@@ -1,0 +1,125 @@
+---
+title: Lag compensation
+description: Ask a worker what an entity looked like at a recent tick, on the authority or on a ghost, and validate a client's claim against it.
+---
+
+A worker holds the present. A shot fired on a client left a gun aimed at what that client's screen showed, which is interpolation delay plus transit plus input lead behind the worker's current tick. To judge that shot the worker needs the past.
+
+Every worker records a bounded window of recent ticks for each entity it holds — the entities it simulates and the ghosts of its neighbours' entities. `NetworkIdentity.StateAt(tick)` reads that window.
+
+```csharp
+if (victim.TryGetStateAt(aimTick, out var state))
+{
+    // state.Position and state.Rotation are the world pose at aimTick.
+    // state.Available is already true here; state.Tick says which tick it really is.
+}
+```
+
+Nebula supplies the history. Rewinding colliders, performing the hit test and deciding which tick a client may claim stay yours; see [What Nebula does not do](#what-nebula-does-not-do).
+
+## What an entry holds
+
+`StateAt` returns a `HistoricalState` by value:
+
+| Member | Meaning |
+| --- | --- |
+| `Available` | An entry was found. Check this first; every other member is meaningless when it is `false`. |
+| `Tick` | The server tick the entry belongs to. The tick you asked for, unless it fell in a gap. |
+| `Position`, `Rotation` | The world pose at that tick. |
+| `Velocity` | The world-space velocity the authority reported for that tick. |
+| `Container` | The container the entity was in. Use it to reject a claim across a scope or a cell. |
+| `Epoch` | The entity's authority epoch at that tick. |
+| `FromAuthority` | `true` when this worker recorded the entry as the authority, `false` when it recorded it from a neighbour's stream. |
+| `TryGetValue(variable, out value)` | The value a `[SyncHistory]` variable held at that tick. |
+
+`OldestAvailableTick` and `NewestAvailableTick` on the identity say what the window can answer. `NebulaWorker.TryGetStateAt(netId, tick, out state)` asks the same question by net ID for anything the worker holds.
+
+## The window
+
+`NebulaConfig.StateHistoryTicks` sets how many ticks each entity keeps. The default is 32, about half a second at 60 Hz, which covers a player's interpolation delay plus half a round trip plus input lead at a few hundred milliseconds of latency. `-nebula-state-history <ticks>` overrides it per process, and `0` turns recording off entirely.
+
+An entry costs about 64 bytes plus whatever your `[SyncHistory]` variables serialize to. With the default window and no marked variables that is roughly 2 KB per entity **per worker that holds a copy** — an entity ghosted on three neighbours pays it four times. Recording is allocation-free once an entity's ring is warm.
+
+Widen the window if your players are further away than the default covers; a claim outside it cannot be checked.
+
+## What the answer promises
+
+**Inside the window, the entry for that tick.** A worker sends a ghost's state only when it changed, so an entity standing still leaves gaps. Within four ticks either side the nearest recorded entry is returned instead, and `state.Tick` tells you which tick it actually is. Nothing is interpolated between entries.
+
+**Outside the window, `Available` is `false`.** Nebula never extrapolates and never quietly returns the nearest edge: a tick older than `OldestAvailableTick` or newer than `NewestAvailableTick` is simply unanswerable, and your validator decides what to do about it. (`TryGetPoseAt` keeps its older behaviour: `false` plus the entity's *current* pose, for callers that only want a best effort.)
+
+**A ghost is exactly one tick behind the owner.** A worker running its tick *n* holds, for every ghost, the owner's tick *n − 1* at the newest: the owner built that stream during its previous tick. Entries are tagged with the **owner's** tick, never the receiving worker's, so `StateAt(412)` means the same instant on every worker in the mesh. Poses older than the newest are not approximations — they are the owner's own values for those ticks, to within the wire precision of the state stream.
+
+Under packet loss on the unreliable stream the bound degrades to "the newest tick that arrived". That is what `NewestAvailableTick` reports, which is why a validator should look at it rather than assume.
+
+**History survives a handover.** A worker that ghosted an entity and then gained authority over it can still answer for the ticks it recorded as a ghost. A cross-worker call that chases an entity across a handover therefore lands somewhere that can still see the tick the caller is talking about.
+
+## Record a variable in the history
+
+Pose, velocity, container and epoch are always recorded. A `NetworkVariable` is not, because a snapshot costs a serialization every tick on every worker that holds a copy. Mark the ones a validator needs:
+
+```csharp title="Pawn.cs"
+public sealed class Pawn : NetworkBehaviour
+{
+    // A crouching player is a shorter capsule: a validator wants the stance at the claimed tick.
+    [SyncHistory] public NetworkVariable<byte> Stance = new NetworkVariable<byte>();
+
+    // Not marked: nothing validates a claim against a score.
+    public NetworkVariable<int> Score = new NetworkVariable<int>();
+}
+```
+
+Read it back from the entry:
+
+```csharp
+if (victim.TryGetStateAt(aimTick, out var state) &&
+    state.TryGetValue(victim.GetComponent<Pawn>().Stance, out byte stance))
+{
+    float height = stance == Crouched ? 1.1f : 1.8f;
+}
+```
+
+On a ghost, a marked variable holds the value the owner's stream had delivered by that tick. The worker sends an entity's variable update ahead of its state entry for the same tick so the two agree, but the unreliable state batch travels on another channel and can cross it, so the promise is the same one tick as the pose — not tighter.
+
+## Validate a claim
+
+The shape of a validator, and what belongs to you at each step:
+
+```csharp
+[ServerRpc]
+public void Fire(Vector3 origin, Vector3 direction, uint aimTick)
+{
+    // 1. Is the claim one you are willing to check? Nebula does not decide this.
+    uint now = worker.CurrentTick;
+    if (aimTick > now || now - aimTick > MaxClaimTicks) return;
+
+    // 2. Rewind the candidates. Anything the worker holds can answer.
+    foreach (var candidate in worker.Entities)
+    {
+        if (!candidate.TryGetStateAt(aimTick, out var state)) continue; // no claim possible
+        if (state.Container != Identity.Container) continue;            // another scope or cell
+        // Test your own hitboxes at state.Position / state.Rotation. Move nothing.
+    }
+
+    // 3. Apply the result where the victim lives.
+    victim.GetComponent<Health>().ApplyDamage(10); // an [AuthorityRpc]
+}
+```
+
+Send the tick with the input rather than inferring it: on the client, `NetworkTime.RenderTick` is the tick it was rendering. Step 3 is an [`AuthorityRpc`](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call), so a victim that is a ghost here is damaged exactly once even if it hands over while the call is in flight.
+
+A complete version ships as the **Lag-compensated hitscan** sample in the package (`Samples~/LagCompensatedHitscan`): import it from the Package Manager, read it, then replace the capsule with your own hitboxes.
+
+## What Nebula does not do
+
+- **It does not move colliders.** Your hitboxes are yours; rewind them from `state.Position` and `state.Rotation` if that is the shape you want, and restore everything before simulation continues.
+- **It does not perform the hit test** and does not decide whether a claimed tick is one the client could plausibly have been rendering. Those are game rules.
+- **It does not keep history on clients.** A client already buffers what it receives for interpolation; history is a worker-side facility.
+- **It does not answer for an entity a worker does not hold.** Ask the worker that does, with an `AuthorityRpc` or a `WorkerQuery`.
+- **It does not persist.** A restarted worker starts with an empty window.
+
+<Cards>
+  <Card title="Prediction and reconciliation" href="/docs/guides/prediction" description="Where the client's aim tick comes from." />
+  <Card title="RPCs and worker messages" href="/docs/guides/rpcs" description="Apply a validated result on the victim's authority." />
+  <Card title="Distributed physics" href="/docs/concepts/distributed-physics" description="Why a ghost's colliders lag its owner." />
+</Cards>

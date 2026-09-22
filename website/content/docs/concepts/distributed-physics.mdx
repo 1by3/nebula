@@ -25,7 +25,7 @@ Every worker runs its own PhysX simulation with `Physics.simulationMode = Simula
 2. Calls `Physics.SyncTransforms()`, so ghost colliders are in place before anything raycasts against them.
 3. Calls `NetworkTick` on every entity it has authority over, carriers before their contents.
 4. Steps every loaded private instance scene (see [Instances](#instances)).
-5. Records every resident entity's pose, ghosts included, for `NetworkIdentity.TryGetPoseAt`.
+5. Records every entity it has authority over for `NetworkIdentity.StateAt`; ghosts record themselves when their owner's stream arrives, with the owner's tick.
 
 A dynamic `Rigidbody` on an authoritative entity is simulated by PhysX on that worker only. Two authoritative bodies on the same worker interact exactly as in a single-process Unity game: contacts, stacking, joints, and articulations all resolve in one solver. This is the only configuration in which a two-body constraint is solved with both bodies dynamic.
 
@@ -43,7 +43,7 @@ Because of this, a ghost contact is one-sided:
 
 - A local dynamic body collides with the ghost as with any moving kinematic collider. The local body reacts; the ghost does not, because PhysX treats a kinematic body as having infinite mass.
 - Nothing about that collision travels to the authoritative worker. The entity behind the ghost continues as if the contact never happened. To affect it, game code must send an `AuthorityRpc` (see [Call the worker that controls another entity](/docs/guides/rpcs#call-the-worker-that-controls-another-entity)).
-- Raycasts, sweeps, and overlap queries on the ghost's worker see the ghost's colliders at the previous tick's pose. Use `NetworkIdentity.TryGetPoseAt` when a hit test must account for that lag.
+- Raycasts, sweeps, and overlap queries on the ghost's worker see the ghost's colliders at the previous tick's pose. Use [`NetworkIdentity.StateAt`](/docs/guides/lag-compensation) when a hit test must account for that lag.
 - A ghost's `Rigidbody` reports no velocity of its own. `NetworkIdentity.Motion.Velocity` holds the linear velocity the owner streamed.
 
 A ghost contact is enough for many mechanics: a player pushing against a crate owned by the next worker feels a solid wall until the crate is handed over; a projectile owned by one worker hits an enemy owned by another and claims damage with an `AuthorityRpc`. It is not enough for anything that expects the other body to move in response.

@@ -501,6 +501,14 @@ Remove an entity from the mesh. A persistent entity ([`PersistentEntity`](/docs/
 public NetworkIdentity Find(ulong netId);
 ```
 
+### TryGetStateAt [#trygetstateat]
+
+```csharp
+public bool TryGetStateAt(ulong netId, uint tick, out HistoricalState state);
+```
+
+What the entity `netId` looked like at server tick `tick`, from this worker's own recorded history ([`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat)). Answers for anything this worker holds, authoritative or ghosted; false when it holds no copy or the tick is outside the recorded window ([`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks)). Nothing is extrapolated. See `docs/state-history.md`.
+
 ### FindPlayer [#findplayer]
 
 ```csharp

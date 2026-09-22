@@ -134,6 +134,8 @@ namespace Nebula
         public float HandoverHysteresis = 0.35f;
         [Tooltip("Ghosts stay resident this long after leaving the band.")]
         public float GhostLingerSeconds = 2f;
+        [Tooltip("Ticks of pose and [SyncHistory] state every worker keeps per entity, for lag compensation and time-sensitive validation (NetworkIdentity.StateAt). About half a second at 60 Hz by default. 0 turns recording off. -nebula-state-history overrides.")]
+        public int StateHistoryTicks = StateHistory.DefaultWindowTicks;
         [Tooltip("How many times an AuthorityRpc may be forwarded after the target entity changes worker before it is rejected with RejectedHopLimit. Also the number of authority changes a call's epoch may lag behind the entity before it is rejected as stale. -nebula-authority-call-hops overrides.")]
         public int AuthorityCallMaxHops = 3;
 

@@ -37,6 +37,14 @@ public bool PersistDirty { get; }
 
 Assigned since the last time this variable was written into a persistence blob.
 
+### SyncHistory [#synchistory]
+
+```csharp
+public bool SyncHistory { get; }
+```
+
+The field carries [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute): its value is snapshotted into the entity's [`StateHistory`](/docs/reference/core/state-history) every recorded tick and can be read back through [`HistoricalState.TryGetValue<T>`](/docs/reference/core/historical-state#trygetvalue).
+
 ## Methods
 
 ### Write [#write]

@@ -32,6 +32,7 @@ namespace Nebula.Tests
         private static readonly Type PeerType = typeof(NebulaWorker).GetNestedType("Peer", BindingFlags.NonPublic);
         private static readonly MethodInfo DispatchMethod = typeof(NebulaWorker).GetMethod("Dispatch", Flags);
         private static readonly MethodInfo TransferMethod = typeof(NebulaWorker).GetMethod("TransferAuthority", Flags);
+        private static readonly MethodInfo GhostBandMethod = typeof(NebulaWorker).GetMethod("UpdateGhostBand", Flags);
         /// <summary>Peer ids are global across the mesh: worker index <c>i</c> is peer <c>100 + i</c> on every other worker.</summary>
         private const int PeerIdBase = 100;
         private const int MaxPumpRounds = 64;
@@ -98,7 +99,7 @@ namespace Nebula.Tests
             internal readonly Dictionary<string, object> PeersById = new Dictionary<string, object>();
             private readonly ConformanceMesh _mesh;
 
-            internal Worker(ConformanceMesh mesh, GameObject host, string id, ushort index)
+            internal Worker(ConformanceMesh mesh, GameObject host, string id, ushort index, NebulaConfig config)
             {
                 _mesh = mesh;
                 Id = id;
@@ -107,6 +108,7 @@ namespace Nebula.Tests
                 Transport = new RecordingTransport();
                 SetProperty("WorkerId", id);
                 SetProperty("WorkerIndex", index);
+                SetProperty("Config", config);
                 SetField("_transport", Transport);
                 SetField("_interestGrid", InterestGrid.Resolve(InterestSettings.Default));
             }
@@ -145,6 +147,27 @@ namespace Nebula.Tests
                 Act(() => Invoke(TransferMethod, entity, peer));
             }
 
+            /// <summary>
+            /// The authority half of one tick, in the order <see cref="NebulaWorker"/> runs it: record every
+            /// authoritative entity's state for <paramref name="tick"/>, prepare its replication entry, then run the
+            /// worker's own ghost band, which spawns ghosts on the neighbouring owners and streams this tick's state
+            /// to them. The bytes wait in the outbox until <see cref="Pump"/>. There is still no tick loop: the
+            /// scenario decides when a tick happens and what moved before it.
+            /// </summary>
+            public void PublishTick(uint tick)
+            {
+                Act(() =>
+                {
+                    foreach (var e in Instance.Entities)
+                    {
+                        if (e == null || !e.HasAuthority) continue;
+                        e.RecordAuthoritativeState(tick);
+                        e.PrepareReplication(tick);
+                    }
+                    Invoke(GhostBandMethod, tick);
+                });
+            }
+
             /// <summary>The entity this worker holds under <paramref name="netId"/> (authoritative or ghost), or null.</summary>
             public NetworkIdentity Find(ulong netId) => Instance.Find(netId);
 
@@ -173,6 +196,9 @@ namespace Nebula.Tests
         public readonly List<WireMessage> Delivered = new List<WireMessage>();
         public IReadOnlyList<Worker> Workers => _workers;
 
+        /// <summary>The <see cref="NebulaConfig"/> every worker of the mesh was given; defaults, until a scenario changes a field.</summary>
+        public NebulaConfig Config { get; }
+
         /// <summary>Stand up <paramref name="workerCount"/> workers <c>w1..wN</c>, each connected to every other.</summary>
         public ConformanceMesh(int workerCount)
         {
@@ -180,11 +206,12 @@ namespace Nebula.Tests
             NebulaRuntime.Reset();
             NebulaRuntime.IsServer = true;
             ContainerRegistry.Rebuild();
+            Config = ScriptableObject.CreateInstance<NebulaConfig>();
             for (int i = 1; i <= workerCount; i++)
             {
                 var host = new GameObject($"worker-w{i}");
                 _objects.Add(host);
-                var worker = new Worker(this, host, $"w{i}", (ushort)i);
+                var worker = new Worker(this, host, $"w{i}", (ushort)i, Config);
                 _workers.Add(worker);
                 _byPeerId[PeerIdBase + i] = worker;
             }
@@ -218,6 +245,12 @@ namespace Nebula.Tests
             c.Center = new Vector3(0, size.y * 0.5f, 0);
             ContainerRegistry.Rebuild();
             return c;
+        }
+
+        /// <summary>Give <paramref name="container"/> to <paramref name="owner"/>, as a control-plane lease would.</summary>
+        public void SetOwner(Container container, Worker owner)
+        {
+            ContainerRegistry.ApplyLease(container.ContainerId, owner.Id, owner.Index, 1);
         }
 
         /// <summary>
@@ -302,6 +335,7 @@ namespace Nebula.Tests
             foreach (var go in _objects) if (go != null) Object.DestroyImmediate(go);
             _objects.Clear();
             _workers.Clear();
+            if (Config != null) Object.DestroyImmediate(Config);
             NetworkPrefabs.Register(null);
             SceneEntities.Clear();
             ContainerRegistry.Rebuild();

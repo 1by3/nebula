@@ -85,6 +85,7 @@ autoscaling grow it towards `B`.
 | `GhostBandMargin` | `4` m | Create a ghost copy when an entity comes within this distance of a neighboring container. |
 | `HandoverHysteresis` | `0.35` m | Require an entity to move this far into a new container before transferring authority. |
 | `GhostLingerSeconds` | `2` | Keep a ghost copy for this long after it leaves the ghost band. |
+| `StateHistoryTicks` | `32` | Ticks of pose and `[SyncHistory]` state each worker keeps per entity, for `NetworkIdentity.StateAt`. About half a second at 60 Hz. `0` turns recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 
 ### Persistence
 
@@ -213,6 +214,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-build-dir <path>` | orchestrator | Serve worker build files from this directory at `/build/`. |
 | `-nebula-ghost-band <metres>` | worker | Override `GhostBandMargin`. |
 | `-nebula-hysteresis <metres>` | worker | Override `HandoverHysteresis`. |
+| `-nebula-state-history <ticks>` | worker | Override `StateHistoryTicks`. `0` turns state recording off. See [Lag compensation](/docs/guides/lag-compensation). |
 | `-nebula-interest-radius <metres>` | gateway, worker | Override `InterestRadius`. See [Interest management](/docs/guides/interest-management). |
 | `-nebula-interest-cell <metres>` | gateway, worker | Override `InterestCellSize`. |
 | `-nebula-gateway-extension <file>` | gateway | Override `GatewayExtension`. The orchestrator forwards it to the gateway it launches. See [Extend the gateway](/docs/guides/gateway-extensions). |

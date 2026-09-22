@@ -17,6 +17,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
 | [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
+| [HistoricalState](/docs/reference/core/historical-state) | Struct. What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt. |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
 | [NebulaConfig](/docs/reference/core/nebula-config) | Class. Project-wide Nebula settings. |
@@ -42,6 +43,8 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [RemoteInterpolator](/docs/reference/core/remote-interpolator) | Class. Tick-indexed pose buffer for copies of an entity this process does not simulate: ghosts on a worker and remote entities on a client. |
 | [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
+| [StateHistory](/docs/reference/core/state-history) | Class. The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity. |
+| [SyncHistoryAttribute](/docs/reference/core/sync-history-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue\<T\>. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
 
 ## Containers

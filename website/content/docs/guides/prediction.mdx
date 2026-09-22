@@ -173,11 +173,11 @@ Store behavior state that must survive handover in a `NetworkVariable` or the ha
 
 ## Perform a lag-compensated query
 
-Each worker records about one second of poses for its resident entities, including ghosts. Call `NetworkIdentity.TryGetPoseAt(tick, out position, out rotation)` to retrieve the pose for a tick. When that exact tick is unavailable, the method can return the nearest later pose within a small window.
+Each worker records a bounded window of recent ticks for every entity it holds, ghosts included. Call `NetworkIdentity.StateAt(tick)` to read the pose, velocity, container and marked variables at a tick, on the authority or on a ghost.
 
-Use `NetworkTime.RenderTick` as the basis for the tick a client saw. Include that tick in the player's input when the worker must evaluate an action against past entity positions.
+Use `NetworkTime.RenderTick` as the basis for the tick a client saw, and include that tick in the player's input when the worker must evaluate an action against past entity positions.
 
-Nebula supplies pose history but does not implement a complete hit-validation system. Your game must decide which entities and containers to query, how to move colliders temporarily, and how to validate results from another worker. Restore every changed transform before you continue simulation.
+Nebula supplies the history but does not implement a complete hit-validation system. See [Lag compensation](/docs/guides/lag-compensation) for the window, the staleness bound, `[SyncHistory]` variables and the reference sample.
 
 ## Read correction diagnostics
 

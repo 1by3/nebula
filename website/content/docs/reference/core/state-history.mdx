@@ -1,0 +1,84 @@
+---
+title: "StateHistory"
+description: "The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/StateHistory.cs)</div>
+
+```csharp
+public sealed class StateHistory
+```
+
+The bounded per-entity ring of recorded ticks behind [`NetworkIdentity.StateAt`](/docs/reference/core/network-identity#stateat): pose, velocity, container, epoch and the [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute) variables, one entry per server tick, indexed by `tick % capacity`. One instance per [`NetworkIdentity`](/docs/reference/core/network-identity), created on the first recorded tick.
+
+The ring and the per-slot buffers are allocated once and reused: recording a tick copies into them and never allocates after the buffers have reached the size the entity's marked variables need.
+
+Design record: `docs/state-history.md`.
+
+## Fields
+
+### DefaultWindowTicks [#defaultwindowticks]
+
+```csharp
+public const int DefaultWindowTicks = 32;
+```
+
+Ticks kept per entity when the game does not say otherwise ([`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks)).
+
+### MaxWindowTicks [#maxwindowticks]
+
+```csharp
+public const int MaxWindowTicks = 1024;
+```
+
+The most ticks a window may be asked for. A larger value is clamped to this.
+
+### GapToleranceTicks [#gaptoleranceticks]
+
+```csharp
+public const int GapToleranceTicks = 4;
+```
+
+How far [`TryGetStateAt`](#trygetstateat) looks either side of the asked-for tick when that tick itself was not recorded (a ghost whose owner sent nothing that tick because nothing moved). The entry returned says which tick it is; nothing is interpolated or extrapolated.
+
+## Properties
+
+### WindowTicks [#windowticks]
+
+```csharp
+public static int WindowTicks { get; }
+```
+
+Ticks of history every entity in this process keeps, from [`NebulaConfig.StateHistoryTicks`](/docs/reference/core/nebula-config#statehistoryticks). Zero turns recording off entirely. Set by [`NebulaWorker`](/docs/reference/worker/nebula-worker) at start-up; a client leaves it at zero, because history is a worker-side facility (the client has [`RemoteInterpolator`](/docs/reference/core/remote-interpolator)).
+
+### Capacity [#capacity]
+
+```csharp
+public int Capacity { get; }
+```
+
+Ticks this ring can hold.
+
+### HasEntries [#hasentries]
+
+```csharp
+public bool HasEntries { get; }
+```
+
+True once at least one tick has been recorded.
+
+### NewestAvailableTick [#newestavailabletick]
+
+```csharp
+public uint NewestAvailableTick { get; }
+```
+
+The newest recorded tick; meaningless when [`HasEntries`](#hasentries) is false.
+
+### OldestAvailableTick [#oldestavailabletick]
+
+```csharp
+public uint OldestAvailableTick { get; }
+```
+
+The oldest tick still in the ring: the smallest recorded tick inside the window that ends at [`NewestAvailableTick`](#newestavailabletick). A tick nothing was recorded for (nothing moved, so nothing was streamed) does not shorten it; only the ring's capacity does. Meaningless when [`HasEntries`](#hasentries) is false.

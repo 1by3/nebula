@@ -10,5 +10,12 @@
   "author": { "name": "1by3", "url": "https://1by3.co" },
   "keywords": ["multiplayer", "netcode", "dedicated-server", "mesh", "persistence"],
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "samples": [
+    {
+      "displayName": "Lag-compensated hitscan",
+      "description": "A reference validator built on NetworkIdentity.StateAt(tick): rewind candidates to the tick a client claims, test the shot there, apply the result on the victim's authority.",
+      "path": "Samples~/LagCompensatedHitscan"
+    }
+  ]
 }
