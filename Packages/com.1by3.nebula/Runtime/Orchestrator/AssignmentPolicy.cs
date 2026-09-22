@@ -22,6 +22,14 @@ namespace Nebula
         public string WorkerId;
         /// <summary>When the report arrived, on the telemetry clock.</summary>
         public double ReceivedAt;
+        /// <summary>
+        /// What the worker's own tally of the entities inside came to, each one's category weight times its
+        /// <see cref="NebulaCost"/> multiplier (docs/cost-telemetry.md). Valid only when
+        /// <see cref="HasEntityCost"/>; <see cref="CostWeights.Base"/> is not in it.
+        /// </summary>
+        public float EntityCostSum;
+        /// <summary>The report carried an entity cost sum, so <see cref="CostWeights.Of"/> uses it instead of counting heads.</summary>
+        public bool HasEntityCost;
 
         public int Authoritative => Players + Bots + ServerDriven + Other;
     }
@@ -43,7 +51,15 @@ namespace Nebula
 
         public static CostWeights Default => new CostWeights { Base = 1f, Player = 4f, Bot = 2f, ServerDriven = 1f, Other = 0.5f };
 
-        public float Of(in ContainerLoad load) => Base + load.Players * Player + load.Bots * Bot + load.ServerDriven * ServerDriven + load.Other * Other;
+        /// <summary>
+        /// What this container costs. When the worker reported a per-entity cost sum
+        /// (<see cref="ContainerLoad.HasEntityCost"/>) that sum is used: it is these same category weights with each
+        /// entity's own multiplier applied (<see cref="NebulaCost"/>), so a world that sets no weights gets exactly
+        /// the number the head count below gives. Otherwise the heads are counted here, as they always were.
+        /// </summary>
+        public float Of(in ContainerLoad load) => Base + (load.HasEntityCost
+            ? load.EntityCostSum
+            : load.Players * Player + load.Bots * Bot + load.ServerDriven * ServerDriven + load.Other * Other);
     }
 
     /// <summary>
@@ -114,6 +130,12 @@ namespace Nebula
         /// <see cref="ContainerHint.Default"/>.
         /// </summary>
         public IReadOnlyDictionary<string, ContainerHint> Hints = new Dictionary<string, ContainerHint>();
+        /// <summary>
+        /// What each container is measured to cost its worker, split into simulation, replication and gateway
+        /// relay (<see cref="ContainerCost"/>, docs/cost-telemetry.md). Containers nobody reported are absent.
+        /// The policies do not read it; the scaler does, to name what makes a hot container hot.
+        /// </summary>
+        public IReadOnlyDictionary<string, ContainerCost> Cost = new Dictionary<string, ContainerCost>();
         /// <summary>The baked order is spatial (a partitioned world) and should be kept when dealing.</summary>
         public bool KeepOrder;
         /// <summary>

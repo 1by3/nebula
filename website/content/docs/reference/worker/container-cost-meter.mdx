@@ -1,0 +1,120 @@
+---
+title: "ContainerCostMeter"
+description: "What each container this worker leases is actually costing it, measured rather than guessed: the NetworkTick time spent on its entities, the replication bytes they put on the wire, and the owner state a gateway has to relay for them."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/ContainerCostMeter.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/ContainerCostMeter.cs)</div>
+
+```csharp
+public sealed class ContainerCostMeter
+```
+
+What each container this worker leases is actually costing it, measured rather than guessed: the `NetworkTick` time spent on its entities, the replication bytes they put on the wire, and the owner state a gateway has to relay for them. The numbers go out with the worker's telemetry document ([`WorkerTelemetry`](/docs/reference/worker/worker-telemetry)) as one row per container and end up in [`ContainerCost`](/docs/reference/orchestrator/container-cost).
+
+The accumulators live on [`Container`](/docs/reference/containers/container) itself, so the hot paths (once per authoritative entity per tick) add to a field instead of hashing a container id. The meter keeps the list of containers it has touched since the last sample so it can clear exactly those. Nothing here allocates once the world is warm.
+
+Design record: docs/cost-telemetry.md. The attribution is exact for what it covers and covers *only* what a container's own entities caused: the rest of a tick (physics, the interest pass, the publish loop, the engine's own frame work) belongs to no container and is deliberately left out.
+
+## Properties
+
+### Latest [#latest]
+
+```csharp
+public IReadOnlyDictionary<string, Rate> Latest { get; }
+```
+
+The latest sample, by container id ("" for entities in no container). Replaced by [`Sample`](#sample).
+
+### Ticks [#ticks]
+
+```csharp
+public int Ticks { get; }
+```
+
+Simulated ticks counted into the current window.
+
+## Methods
+
+### CountTick [#counttick]
+
+```csharp
+public void CountTick();
+```
+
+One simulated tick has begun; called from the worker's tick so a sample can be per tick.
+
+### AddSimulation [#addsimulation]
+
+```csharp
+public void AddSimulation(Container container, long stopwatchTicks);
+```
+
+Charge `stopwatchTicks` of `NetworkTick` time to `container`.
+
+### AddReplication [#addreplication]
+
+```csharp
+public void AddReplication(Container container, long bytes);
+```
+
+Charge `bytes` of worker-to-gateway replication to `container`.
+
+### AddGateway [#addgateway]
+
+```csharp
+public void AddGateway(Container container, long bytes);
+```
+
+Charge `bytes` of per-client relay traffic (owner state) to `container`.
+
+### Sample [#sample]
+
+```csharp
+public void Sample(float now);
+```
+
+Turn everything counted since the previous call into per-tick and per-second rates in [`Latest`](#latest), and start a new window. `now` is a monotonic clock in seconds; the first call only establishes the baseline. Main thread, outside the tick.
+
+### Of [#of]
+
+```csharp
+public Rate Of(string containerId);
+```
+
+The sample for a container id, or all zeroes when it has not been measured yet.
+
+## Nested types
+
+### Rate [#rate]
+
+```csharp
+public struct Rate
+```
+
+One container's costs since the last sample, as the telemetry document reports them.
+
+#### Fields
+
+##### TickMs [#tickms]
+
+```csharp
+public float TickMs;
+```
+
+Milliseconds of `NetworkTick` per simulated tick.
+
+##### BytesOutPerSec [#bytesoutpersec]
+
+```csharp
+public long BytesOutPerSec;
+```
+
+Bytes per second of world state, netvars and sync state, counted once per receiving gateway.
+
+##### GatewayBytesPerSec [#gatewaybytespersec]
+
+```csharp
+public long GatewayBytesPerSec;
+```
+
+Bytes per second of owner state (one client each, relayed by its gateway).

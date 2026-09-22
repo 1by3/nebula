@@ -51,6 +51,22 @@ public string BlockedBy;
 
 The container that makes growing pointless (all the load and no way to split it), or "".
 
+### BlockedComponent [#blockedcomponent]
+
+```csharp
+public CostComponent BlockedComponent;
+```
+
+What [`BlockedBy`](#blockedby) is mostly expensive in, from its cost row ([`ContainerCost`](/docs/reference/orchestrator/container-cost)): simulation is a case for splitting the container or cheapening its entities, replication a case for interest management, the gateway relay a case for more gateways. [`CostComponent.Simulation`](/docs/reference/orchestrator/cost-component#simulation) when nothing is blocked or no row has arrived; read it with [`BlockedBy`](#blockedby) non-empty.
+
+### BlockedSaturation [#blockedsaturation]
+
+```csharp
+public float BlockedSaturation;
+```
+
+How much of its component's budget [`BlockedBy`](#blockedby) is using (1 = all of it), or 0.
+
 ### RetireWorkerId [#retireworkerid]
 
 ```csharp

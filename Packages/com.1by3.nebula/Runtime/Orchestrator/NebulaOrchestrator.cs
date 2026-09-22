@@ -95,6 +95,15 @@ namespace Nebula
         private CostBalancedAssignmentPolicy _costPolicy;
         private readonly AssignmentInput _assignmentInput = new AssignmentInput();
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>
+        /// The latest cost row of every container the mesh holds, one per lease (<see cref="ContainerCost"/>,
+        /// docs/cost-telemetry.md): what it costs in simulation, in replication and in gateway relay. Refreshed
+        /// once per pass from telemetry, read by the scaler and served at <c>GET /api/cost</c>.
+        /// </summary>
+        private readonly Dictionary<string, ContainerCost> _containerCost = new Dictionary<string, ContainerCost>(StringComparer.Ordinal);
+        /// <summary>The cost row of one container, or all zeroes when no worker has reported it lately.</summary>
+        public ContainerCost CostOf(string containerId) => containerId != null && _containerCost.TryGetValue(containerId, out var row) ? row : default;
+        private readonly List<ContainerCost> _costRows = new List<ContainerCost>();
         /// <summary>Per-worker interest summary for the state document, refreshed from telemetry on every build.</summary>
         private readonly Dictionary<string, MeshTelemetry.WorkerInterest> _interestByWorker = new Dictionary<string, MeshTelemetry.WorkerInterest>(StringComparer.Ordinal);
         /// <summary>Total container cost the mesh carries, per the cost policy, as of the last pass.</summary>
@@ -218,6 +227,9 @@ namespace Nebula
             _local = new ProcessWorkerHost(config.WorkerExecutable, config.WorkerAdvertiseAddress);
             _host = CreateHost(config);
             Log("info", $"orchestrator {OrchestratorId}: desired workers = {DesiredWorkers}, host={_host.Name}, spawnGateway={config.OrchestratorSpawnsGateway}");
+            // The two yardsticks a container's cost components are weighed against (docs/cost-telemetry.md).
+            Telemetry.TickPeriodMs = WorkerLoadTracker.TickPeriodMs;
+            Telemetry.LinkBytesPerSec = config.CostLinkBytesPerSec;
             Telemetry.PublishGeometry(MeshTelemetry.BuildGeometryJson(config));
             ContainerRegistry.RuntimeRegistered += OnRuntimeContainersChanged;
             ContainerRegistry.RuntimeUnregistering += OnRuntimeContainersChanged;
@@ -274,6 +286,9 @@ namespace Nebula
                 });
                 _http.MapDirect("GET", "/api/map", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildMapJson()));
                 _http.MapDirect("GET", "/api/map/geometry", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.GeometryJson));
+                // Per-container cost rows (docs/cost-telemetry.md). Served straight off the telemetry store, like
+                // the map, so a monitor polling it never waits on the orchestrator's frame.
+                _http.MapDirect("GET", "/api/cost", _ => OrchestratorHttpServer.Response.Json(200, Telemetry.BuildCostJson()));
                 // Recent log lines from every process of the mesh (see LogBuffer): posted by the machines, read by
                 // whoever operates the mesh. With a mesh token both directions need it.
                 _http.MapDirect("POST", "/api/logs", req =>
@@ -905,6 +920,7 @@ namespace Nebula
         private AssignmentInput BuildAssignmentInput(IList<WorkerInfo> eligible)
         {
             Telemetry.CopyOccupancy(_occupancy);
+            Telemetry.CopyContainerCost(_containerCost);
             Loads.CopyUtilization(eligible, _utilization);
             WorkerLoadTracker.Attribute(_utilization, ControlPlane.Leases, _occupancy, Config.CostWeights, _containerUtilization);
             _assignmentInput.Utilization = _containerUtilization;
@@ -913,6 +929,7 @@ namespace Nebula
             _assignmentInput.Eligible = eligible;
             _assignmentInput.Leases = ControlPlane.Leases;
             _assignmentInput.Occupancy = _occupancy;
+            _assignmentInput.Cost = _containerCost;
             BuildHints();
             _assignmentInput.Hints = _containerHints;
             // The cohesion hints the workers reported: holds as seconds still to run on this orchestrator's clock,
@@ -1584,6 +1601,9 @@ namespace Nebula
             w.Prop("heldSeconds", _scale.HeldSeconds);
             w.Prop("holdSeconds", _scale.HoldSeconds);
             w.Prop("blockedBy", _scale.BlockedBy ?? "");
+            // What the blocking container is mostly expensive in, so the dashboard can say which fix to reach for.
+            w.Prop("blockedComponent", string.IsNullOrEmpty(_scale.BlockedBy) ? "" : ContainerCost.NameOf(_scale.BlockedComponent));
+            w.Prop("blockedSaturation", _scale.BlockedSaturation);
             w.Prop("reason", _scale.Reason ?? "");
             w.Prop("outUtilization", Config.ScaleOutUtilization);
             w.Prop("inUtilization", Config.ScaleInUtilization);
@@ -1702,6 +1722,21 @@ namespace Nebula
             foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, leases, workers, _containerHints);
             foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers, _containerHints);
             w.EndArray();
+
+            // Cost telemetry: one row per container the mesh has heard about lately, heaviest first
+            // (docs/cost-telemetry.md). The same rows are served on their own at GET /api/cost.
+            w.Key("cost");
+            w.BeginObject();
+            w.Prop("tickPeriodMs", WorkerLoadTracker.TickPeriodMs);
+            w.Prop("linkBytesPerSec", Config.CostLinkBytesPerSec);
+            w.Key("containers");
+            w.BeginArray();
+            _costRows.Clear();
+            foreach (var kv in _containerCost) _costRows.Add(kv.Value);
+            _costRows.Sort((a, b) => b.TickShareMs != a.TickShareMs ? b.TickShareMs.CompareTo(a.TickShareMs) : string.CompareOrdinal(a.ContainerId, b.ContainerId));
+            for (int i = 0; i < _costRows.Count; i++) ContainerCost.Write(w, _costRows[i]);
+            w.EndArray();
+            w.EndObject();
 
             // Carried containers: leases workers create for the containers their entities carry (ships, lifts).
             // They follow their carrier unless pinned to a worker of their own.

@@ -56,9 +56,17 @@ namespace Nebula
         private readonly Dictionary<string, Hold> _holds = new Dictionary<string, Hold>(StringComparer.Ordinal);
         /// <summary>Worker id -> the cohesion groups it last reported owning members of.</summary>
         private readonly Dictionary<string, List<CohesionSpan>> _cohesion = new Dictionary<string, List<CohesionSpan>>(StringComparer.Ordinal);
+        /// <summary>
+        /// The latest cost row per container (docs/cost-telemetry.md): what it costs the worker that leases it, in
+        /// simulation, replication and gateway relay. Kept per container - which is per lease, a container has one
+        /// owner - so the rows can be served as they are, and grouped by <see cref="ContainerCost.ScopeKey"/> by
+        /// anything that wants a per-scope signal.
+        /// </summary>
+        private readonly Dictionary<string, ContainerCost> _cost = new Dictionary<string, ContainerCost>(StringComparer.Ordinal);
         private readonly List<KeyValuePair<string, ContainerLoad>> _parsed = new List<KeyValuePair<string, ContainerLoad>>();
         private readonly List<KeyValuePair<string, float>> _parsedHolds = new List<KeyValuePair<string, float>>();
         private readonly List<CohesionSpan> _parsedCohesion = new List<CohesionSpan>();
+        private readonly List<ContainerCost> _parsedCost = new List<ContainerCost>();
         private readonly List<string> _expired = new List<string>();
         private readonly StringBuilder _sb = new StringBuilder(1 << 16);
         private readonly Func<double> _now;
@@ -71,6 +79,20 @@ namespace Nebula
         {
             _now = now ?? (() => Clock.Elapsed.TotalSeconds);
         }
+
+        /// <summary>
+        /// The tick budget a container's measured simulation time is weighed against when its dominant cost
+        /// component is decided (<see cref="ContainerCost.Resolve"/>). The orchestrator sets it from the mesh's
+        /// tick rate; it is <see cref="WorkerLoadTracker.TickPeriodMs"/> by default.
+        /// </summary>
+        public float TickPeriodMs = WorkerLoadTracker.TickPeriodMs;
+
+        /// <summary>
+        /// The outbound budget a container's bytes are weighed against, in bytes per second
+        /// (<see cref="NebulaConfig.CostLinkBudgetMbps"/>). Only the comparison between the three components
+        /// depends on it; the reported bytes are measured either way.
+        /// </summary>
+        public double LinkBytesPerSec = NebulaConfig.DefaultCostLinkBytesPerSec;
 
         /// <summary>Somebody read the map within <see cref="DetailWindowSeconds"/>, so workers should include their entities.</summary>
         public bool DetailWanted
@@ -128,7 +150,8 @@ namespace Nebula
                 double now = _now();
                 _documents[workerId] = new Document { Json = json, ReceivedAt = now };
                 _parsed.Clear();
-                ParseContainers(json, _parsed);
+                _parsedCost.Clear();
+                ParseContainers(json, _parsed, _parsedCost);
                 _expired.Clear();
                 foreach (var kv in _occupancy) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
                 foreach (var id in _expired) _occupancy.Remove(id);
@@ -140,6 +163,20 @@ namespace Nebula
                     _occupancy[_parsed[i].Key] = load;
                 }
                 AcceptCohesion(workerId, json, now);
+                // Cost rows follow the same rule: this worker's previous rows go, and the document's replace them.
+                // TickShare and the dominant component are relative to the document they came in, so they are
+                // resolved here, over one worker's rows, and never across the mesh.
+                _expired.Clear();
+                foreach (var kv in _cost) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
+                foreach (var id in _expired) _cost.Remove(id);
+                ContainerCost.Normalize(_parsedCost, TickPeriodMs, LinkBytesPerSec);
+                for (int i = 0; i < _parsedCost.Count; i++)
+                {
+                    var row = _parsedCost[i];
+                    row.WorkerId = workerId;
+                    row.ReceivedAt = now;
+                    _cost[row.ContainerId] = row;
+                }
                 if (ParseInterest(json, out var interest))
                 {
                     interest.ReceivedAt = now;
@@ -166,11 +203,56 @@ namespace Nebula
         }
 
         /// <summary>
+        /// Snapshot the latest cost row of every container into <paramref name="result"/> (cleared first), dropping
+        /// reports older than <see cref="ExpireSeconds"/>. One row per container, which is one row per lease: this
+        /// is the typed per-container signal the scaler explains a blocked grow with and <c>GET /api/cost</c>
+        /// serves (docs/cost-telemetry.md).
+        /// </summary>
+        public void CopyContainerCost(Dictionary<string, ContainerCost> result)
+        {
+            result.Clear();
+            lock (_lock)
+            {
+                double now = _now();
+                foreach (var kv in _cost) if (now - kv.Value.ReceivedAt <= ExpireSeconds) result[kv.Key] = kv.Value;
+            }
+        }
+
+        /// <summary>The cost rows as one JSON document, newest first by cost: the body of <c>GET /api/cost</c>.</summary>
+        public string BuildCostJson()
+        {
+            var rows = new List<ContainerCost>();
+            lock (_lock)
+            {
+                double now = _now();
+                foreach (var kv in _cost) if (now - kv.Value.ReceivedAt <= ExpireSeconds) rows.Add(kv.Value);
+            }
+            rows.Sort((a, b) => b.TickShareMs != a.TickShareMs ? b.TickShareMs.CompareTo(a.TickShareMs) : string.CompareOrdinal(a.ContainerId, b.ContainerId));
+            var sb = new StringBuilder(1 << 12);
+            var w = new JsonWriter(sb);
+            w.BeginObject();
+            w.Prop("tickPeriodMs", TickPeriodMs);
+            w.Prop("linkBytesPerSec", LinkBytesPerSec);
+            w.Key("containers");
+            w.BeginArray();
+            for (int i = 0; i < rows.Count; i++) ContainerCost.Write(w, rows[i]);
+            w.EndArray();
+            w.EndObject();
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// Pull the per-container counts out of a worker document without parsing the rest of it (the entity list
         /// can be megabytes). The array looks like <c>"containers":[{"id":"arena","players":1,"bots":0,...},...]</c>
         /// as <see cref="WorkerTelemetry"/> writes it; the slot for entities in no container ("") is skipped.
+        /// <para>
+        /// When <paramref name="costs"/> is given, the same pass also collects the cost row of each container
+        /// (<see cref="ContainerCost"/>, docs/cost-telemetry.md). A document from a worker that does not write
+        /// those keys yields rows of zeroes rather than nothing, which is what <see cref="ContainerLoad.HasEntityCost"/>
+        /// is for: the counts still balance the mesh as they always did.
+        /// </para>
         /// </summary>
-        public static void ParseContainers(string json, List<KeyValuePair<string, ContainerLoad>> result)
+        public static void ParseContainers(string json, List<KeyValuePair<string, ContainerLoad>> result, List<ContainerCost> costs = null)
         {
             int at = json.IndexOf("\"containers\"", StringComparison.Ordinal);
             if (at < 0) return;
@@ -184,6 +266,7 @@ namespace Nebula
                 at++;
                 string id = null;
                 var load = new ContainerLoad();
+                var cost = new ContainerCost { ScopeKey = "" };
                 while (at < json.Length)
                 {
                     while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
@@ -204,6 +287,7 @@ namespace Nebula
                         while (strEnd < json.Length && json[strEnd] != '"') { if (json[strEnd] == '\\') strEnd++; strEnd++; }
                         if (strEnd >= json.Length) return;
                         if (key == "id") id = json.Substring(at + 1, strEnd - at - 1);
+                        else if (key == "scope") cost.ScopeKey = json.Substring(at + 1, strEnd - at - 1);
                         at = strEnd + 1;
                     }
                     else
@@ -211,19 +295,28 @@ namespace Nebula
                         int numEnd = at;
                         while (numEnd < json.Length && (char.IsDigit(json[numEnd]) || json[numEnd] == '-' || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '+')) numEnd++;
                         if (numEnd == at) return;
-                        int.TryParse(json.Substring(at, numEnd - at), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value);
+                        double.TryParse(json.Substring(at, numEnd - at), NumberStyles.Float, CultureInfo.InvariantCulture, out double number);
+                        int value = (int)number;
                         switch (key)
                         {
                             case "players": load.Players = value; break;
                             case "bots": load.Bots = value; break;
                             case "serverDriven": load.ServerDriven = value; break;
                             case "other": load.Other = value; break;
-                            case "ghosts": load.Ghosts = value; break;
+                            case "ghosts": load.Ghosts = value; cost.GhostCount = value; break;
+                            case "cost": load.EntityCostSum = (float)number; load.HasEntityCost = true; cost.EntityCostSum = (float)number; break;
+                            case "tickMs": cost.TickShareMs = (float)number; break;
+                            case "bytesOut": cost.BytesOutPerSec = (long)number; break;
+                            case "gatewayBytes": cost.GatewayBytesPerSec = (long)number; break;
                         }
                         at = numEnd;
                     }
                 }
-                if (!string.IsNullOrEmpty(id)) result.Add(new KeyValuePair<string, ContainerLoad>(id, load));
+                if (!string.IsNullOrEmpty(id))
+                {
+                    result?.Add(new KeyValuePair<string, ContainerLoad>(id, load));
+                    if (costs != null) { cost.ContainerId = id; costs.Add(cost); }
+                }
                 while (at < json.Length && char.IsWhiteSpace(json[at])) at++;
                 if (at < json.Length && json[at] == ']') return;
             }
@@ -348,6 +441,9 @@ namespace Nebula
                 _expired.Clear();
                 foreach (var kv in _occupancy) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
                 foreach (var id in _expired) _occupancy.Remove(id);
+                _expired.Clear();
+                foreach (var kv in _cost) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
+                foreach (var id in _expired) _cost.Remove(id);
             }
         }
 

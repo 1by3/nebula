@@ -235,6 +235,14 @@ public WorkerTelemetry Telemetry { get; }
 
 What this worker reports to the dashboard's World map; null when telemetry is off (see [`WorkerTelemetry.Create`](/docs/reference/worker/worker-telemetry#create)).
 
+### CostMeter [#costmeter]
+
+```csharp
+public ContainerCostMeter CostMeter { get; }
+```
+
+What each container this worker leases costs it, measured per tick (see [`ContainerCostMeter`](/docs/reference/worker/container-cost-meter)). Always on: it is two stopwatch reads and a field add per authoritative entity per tick, and the rows it produces are what the scaler and the dashboard explain a hot container with (docs/cost-telemetry.md).
+
 ### Entities [#entities]
 
 ```csharp

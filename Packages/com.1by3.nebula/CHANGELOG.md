@@ -130,7 +130,7 @@ No runtime behaviour changed.
 
 The game can now declare that a set of entities must be simulated by one worker and move between workers as a unit, and that a container should not be rebalanced for a bounded time. See [Cohesion hints](https://nebula.1by3.co/docs/guides/cohesion); the design record is `docs/cohesion-hints.md`.
 
-**Wire (protocol 18, no further version bump):** `EntitySpawnMsg` gains a trailing `u32 cohesion_group` (0 for none), written last in the body. It therefore travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, so every process holding a copy knows which group the entity is in.
+**Wire (protocol 18, no further version bump):** `EntitySpawnMsg` gains a trailing `u32 cohesion_group` (0 for none), written after `view_seq` and before `cost_weight`. It therefore travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, so every process holding a copy knows which group the entity is in.
 
 **New public API:**
 
@@ -149,6 +149,13 @@ The game can now declare that a set of entities must be simulated by one worker 
 - `CostBalancedAssignmentPolicy` deals the containers of a cohesion group as one item, together with any affinity groups they touch, and skips moves for held items. A group whose containers need more than `MaxGroupUtilization` of a tick budget is dealt whole anyway and reported in `Unsplittable`, in `Note` and on the dashboard.
 - The orchestrator state document gains a `cohesion` object (`holds`, `groups`, `unsplittable`) and the dashboard a **Cohesion** card, shown only when there is something in it.
 - Conformance scenario 7 is covered (`ConformanceCohesionTests`, both builds; `ConformanceCohesionHandoverTests`, real workers), and the cohesion-group test of scenario 9 is no longer `[Ignore]`d.
+
+#### Per-entity cost weights (protocol 18)
+
+`EntitySpawnMsg` gained a trailing `f16 cost_weight` (last in the body, after `cohesion_group`), the entity's cost multiplier
+(`NetworkIdentity.EffectiveCostWeight`). It travels on `EntitySpawn`, `GhostSpawn` and
+`AuthorityTransfer`, so the worker an entity hands over to reports the same cost for it. `0` on the
+wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-telemetry.md`.
 
 ### Added
 
@@ -177,6 +184,44 @@ A worker can now ask, for any entity it holds — one it simulates or a ghost of
 - New sample `Samples~/LagCompensatedHitscan`: a reference hitscan validator that rewinds candidates to the tick a client claims, tests the shot there and applies the result through an `[AuthorityRpc]`. Rewinding colliders, performing the hit test and deciding which tick a client may claim stay game decisions; Nebula ships the history, not the policy.
 
 **The bound.** A ghost entry is tagged with the **owner's** tick, so `StateAt(t)` means the same instant on every worker. A ghost holder's `NewestAvailableTick` is exactly one tick behind the authority's (the owner built that stream during its previous tick). Inside the window a tick nothing was recorded for is answered by the nearest recorded entry within 4 ticks, and the result says which tick it actually is; outside the window the result is unavailable, never an extrapolation and never the nearest edge.
+
+#### Per-entity cost hints and per-container cost telemetry
+
+A game can say what one entity costs, and an operator can see what one container costs, split into
+simulation, replication and gateway relay. Design record: `docs/cost-telemetry.md`; user docs:
+[Container cost](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#container-cost) and
+[Entity cost weights](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#entity-cost-weights).
+
+- `NetworkIdentity.CostWeight` (inspector, default `1`) is a **multiplier** on the entity's category
+  weight in `NebulaConfig.CostWeights`, so a world that sets nothing behaves exactly as before.
+  `NetworkIdentity.EffectiveCostWeight` is what it carries; `NetworkIdentity.SetCostWeight(w)` pins one.
+- `NebulaCost.EntityWeight` (`Func<NetworkIdentity, float>`) decides a weight at spawn; a negative
+  return declines and leaves the authored value. Precedence: `SetCostWeight` or a carried weight >
+  the callback > `CostWeight`. Evaluated on spawn and on `SetCostWeight`, never per tick.
+  `NebulaCost.MaxWeight` (1024), `NebulaCost.Clamp`, `NebulaCost.Reset`.
+- `ContainerCost` and `CostComponent` (`Runtime/Orchestrator/ContainerCost.cs`): one typed row per
+  container - `EntityCostSum`, measured `TickShareMs` / `TickShare`, `BytesOutPerSec`,
+  `GatewayBytesPerSec`, `GhostCount`, `ScopeKey`, `WorkerId`, `Dominant`, `DominantSaturation`.
+  The orchestrator keeps the latest row per container (which is per lease):
+  `MeshTelemetry.CopyContainerCost`, `MeshTelemetry.BuildCostJson`, `NebulaOrchestrator.CostOf`,
+  `AssignmentInput.Cost`.
+- `ContainerCostMeter` (`Runtime/Worker/ContainerCostMeter.cs`) and `NebulaWorker.CostMeter`: the
+  worker **measures** the `NetworkTick` time of each container's own entities (two stopwatch reads
+  per entity per tick) and the bytes their replication and owner state cost. The rest of the tick
+  (physics, ghosts, interest, publishing) belongs to no container and is not attributed, so a
+  worker's rows add up to less than its utilization.
+- The telemetry document's `containers` rows gained `scope`, `cost`, `tickMs`, `bytesOut` and
+  `gatewayBytes`, additively. A document without them reads exactly as before.
+- `CostWeights.Of` prefers the worker's reported entity cost sum
+  (`ContainerLoad.EntityCostSum` / `HasEntityCost`) over counting heads, so weights reach the cost
+  policy, `WorkerLoadTracker.Attribute` and the scaler's dry runs, not only the dashboard.
+- `WorkerScaler` names the dominant component of a container it reports as unsplittable, in the
+  reason string and as `ScaleDecision.BlockedComponent` / `BlockedSaturation`
+  (`scale.blockedComponent` / `scale.blockedSaturation` in `/api/state`).
+- `GET /api/cost` serves the rows, and `/api/state` carries them under `cost`. The dashboard has a
+  **Container cost** table that highlights the blocked container.
+- New `NebulaConfig` field: `CostLinkBudgetMbps` (100), the yardstick a container's bytes are
+  weighed against when its dominant component is chosen. It limits nothing.
 
 ### Changed
 

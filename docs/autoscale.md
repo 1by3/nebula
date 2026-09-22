@@ -133,6 +133,7 @@ ScaleHoldSeconds = 30, ScaleWindowSeconds = 20
 IdlePoolSeconds = 0 (host default)
 AssignmentPolicy = auto | baked | cost    // auto = cost
 CostRebalanceThreshold, CostWeights      // unchanged
+CostLinkBudgetMbps = 100                 // added 2026-09-21; yardstick only, see docs/cost-telemetry.md
 ```
 
 `nebula start --workers N` keeps meaning a fixed count (sets Min = Max = N); `--min/--max` added.
@@ -227,6 +228,28 @@ needs the Hetzner trial. `nebula stop` left no Nebula process behind.
 | Dashboard | Worker cards and a desired count | A utilization bar and figure per worker, the decision line ("holding: peak 0.74 for 12/30 s"), blocked-by, an editable min/max band (`POST /api/scale/limits`), an idle-pool card with Resume / Delete, a scale-to-zero warning pill, a Joining column, per-container hints edited in place, and a `scale` object in `/api/state` |
 | Tests | 209 | 219 EditMode and 48 service tests: `WorkerLoadTrackerTests`, `WorkerScalerTests` (including the settle check with a parked worker, the two unbelievable dry runs and the cold-window rule), `AssignmentPolicyTests` (predict, the `ScaleMinGain` gate and its floor), `ContainerHintTests` (including the no-hint overload), `IdlePoolTests` (including an idle pool shorter than the billing margin), `ScaleToZeroTests`, plus service tests for the hint round trip, the 409 on resuming at the ceiling, and a real-UDP `GatewayHoldsTheJoinWhenNoWorkerIsRunning` |
 | Docs | - | `guides/configuration.mdx` gains an Autoscaling table with every field, its switch and its `nebula.json` key; `orchestrator-and-dashboard.mdx`, `runtime-containers.mdx`, `world-partition.mdx`, `docs/cli.md`, and the generated CLI and API reference |
+
+## Addendum (2026-09-21): what a hot container is hot in
+
+`CostWeights` is per category, and the per-container report was a head count, so "cell_3_0_1 cannot
+be split" said nothing about *why*. Per-entity cost hints and per-container cost telemetry
+(`docs/cost-telemetry.md`) change three things here:
+
+- **The weights are per entity.** `NetworkIdentity.CostWeight` multiplies the category weight and
+  `NebulaCost.EntityWeight` can decide it at spawn. The worker tallies the weighted sum per
+  container and reports it; `CostWeights.Of` prefers that sum over counting heads, so the cost
+  policy, `WorkerLoadTracker.Attribute` and the scaler's dry runs all see it. A world that sets no
+  weights gets exactly the numbers it got before.
+- **Simulation time is measured.** The worker times each entity's `NetworkTick` and charges it to
+  the entity's container, so a container of static props and a container of pathing NPCs no longer
+  cost the same merely for holding the same number of entities. The rest of the tick belongs to no
+  container and is left out, which is why the rows add up to less than a worker's utilization.
+- **The blocked reason names the component.** `ScaleDecision.BlockedComponent` is `simulation`,
+  `replication` or `gateway`, from the container's cost row, and the reason string says which:
+  three different fixes, one sentence apart.
+
+This closes the first follow-up below in part: occupancy reports still carry no positions, so seam
+grace is still unenforced, but they no longer carry only counts.
 
 ## Follow-ups
 

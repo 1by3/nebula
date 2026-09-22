@@ -427,6 +427,13 @@ namespace Nebula
         /// and a handover of any member can take the rest with it (protocol 18, <c>docs/cohesion-hints.md</c>).
         /// </summary>
         public uint CohesionGroup;
+        /// <summary>
+        /// What the game says this entity costs to simulate, as a multiplier on its category weight
+        /// (<see cref="NetworkIdentity.EffectiveCostWeight"/>, protocol 18). It travels with the entity so the
+        /// worker it lands on reports the same cost for it; sent as an f16, and 0 on the wire reads as "no
+        /// opinion" so an older sender does not silently make everything free.
+        /// </summary>
+        public float CostWeight;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -462,6 +469,7 @@ namespace Nebula
                 InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
                 InterestGroup = id.InterestGroup,
                 CohesionGroup = id.CohesionGroup,
+                CostWeight = id.EffectiveCostWeight,
             };
         }
 
@@ -494,6 +502,7 @@ namespace Nebula
             w.WriteByte(InterestGroup);
             w.WriteUShort(ViewSeq);
             w.WriteUInt(CohesionGroup);
+            w.WriteHalf(CostWeight);
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -519,7 +528,8 @@ namespace Nebula
                 InterestFlags = (EntityInterestFlags)r.ReadByte(),
                 InterestGroup = r.ReadByte(),
                 ViewSeq = r.ReadUShort(),
-                CohesionGroup = r.ReadUInt(),
+                CohesionGroup = r.Remaining > 0 ? r.ReadUInt() : 0u,
+                CostWeight = r.Remaining > 0 ? r.ReadHalf() : 0f,
             };
         }
     }

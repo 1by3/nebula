@@ -41,6 +41,49 @@ namespace Nebula
         [Tooltip("Entities sharing a non-zero cohesion group must be simulated by one worker: a handover of any member takes the others with it, and the planner treats their containers as one item. Set it here for a group that is authored (a ragdoll, a turret and its mount) or call JoinCohesionGroup at runtime. 0 means no group. See https://nebula.1by3.co/docs/guides/cohesion")]
         [SerializeField] private uint _cohesionGroup;
 
+        [Header("Cost")]
+        [Tooltip("What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.")]
+        public float CostWeight = 1f;
+
+        /// <summary>
+        /// The multiplier this entity actually carries right now (see <see cref="NebulaCost"/> for how it is
+        /// chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only
+        /// changes when the game calls <see cref="SetCostWeight"/>: never per tick. Multiply it by the entity's
+        /// category weight in <see cref="CostWeights"/> to get what the mesh thinks it costs.
+        /// </summary>
+        public float EffectiveCostWeight { get; private set; } = 1f;
+
+        /// <summary>
+        /// Say what this entity costs from now on, overruling both <see cref="CostWeight"/> and
+        /// <see cref="NebulaCost.EntityWeight"/>. The value is clamped to [0, <see cref="NebulaCost.MaxWeight"/>]
+        /// and travels with the entity: the worker it hands over to reports the same cost for it.
+        /// </summary>
+        public void SetCostWeight(float weight)
+        {
+            EffectiveCostWeight = NebulaCost.Clamp(weight);
+            _costWeightPinned = true;
+        }
+
+        /// <summary>Re-ask <see cref="NebulaCost"/> for this entity's weight, unless the game pinned one with <see cref="SetCostWeight"/>.</summary>
+        internal void RecomputeCostWeight()
+        {
+            if (_costWeightPinned) return;
+            EffectiveCostWeight = NebulaCost.Evaluate(this);
+        }
+
+        /// <summary>
+        /// Take the weight that arrived with the entity's state (a ghost spawn or a handover). It is pinned: the
+        /// receiving worker does not re-ask the callback, so an entity reports the same cost wherever it is
+        /// simulated (docs/cost-telemetry.md, D4).
+        /// </summary>
+        internal void ApplyCarriedCostWeight(float weight)
+        {
+            EffectiveCostWeight = NebulaCost.Clamp(weight);
+            _costWeightPinned = true;
+        }
+
+        private bool _costWeightPinned;
+
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 
@@ -402,6 +445,8 @@ namespace Nebula
             IsServerDriven = false;
             HasAuthority = false;
             IsLocalPlayer = false;
+            EffectiveCostWeight = NebulaCost.Clamp(CostWeight);
+            _costWeightPinned = false;
             OwnerWorkerIndex = 0;
             Motion.Velocity = Vector3.zero;
             HasStateTick = false;

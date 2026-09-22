@@ -52,7 +52,14 @@ Set the initial count in `NebulaConfig.WorkerCount`, with `-nebula-workers`, or 
 
 Only one change happens per hold, and nothing is decided while a launch or a drain is still in flight.
 
-When the mesh is overloaded but an extra worker would not help - one container holds the load and the policy cannot split it - the orchestrator does **not** grow. It publishes the container in `scale.blockedBy` and the dashboard says so ("cell_3_0_1 ... cannot be split"). That is the cue to split the cell or give it a [balancing hint](#balancing-hints).
+When the mesh is overloaded but an extra worker would not help - one container holds the load and the policy cannot split it - the orchestrator does **not** grow. It publishes the container in `scale.blockedBy` and names what that container is actually expensive in, from its [cost row](#container-cost):
+
+```
+blocked: cell_3_0_1 carries 0.81 of a tick on its own and cannot be split
+  (mostly simulation: 13.40 ms/tick, 0.80 of the tick budget); add a hint or split the cell
+```
+
+`scale.blockedComponent` is `simulation`, `replication` or `gateway`, and each points at a different fix: split the cell or make its entities cheaper, tighten [interest management](/docs/guides/interest-management), or run more gateways.
 
 `MinWorkers` may be 0; see [Scale to zero](#scale-to-zero).
 
@@ -95,6 +102,50 @@ A parked worker keeps its worker id and its worker index, so nothing new is ever
 A scale-out takes the most recently parked worker back before it launches anything: that worker is already booted and its build is already downloaded, so it starts holding containers in the next assignment pass instead of a minute later. `NebulaConfig.IdlePoolSeconds` (or `-nebula-idle-pool`, or `mesh.idlePoolSeconds` in `nebula.json`) shortens how long a parked worker is kept; the default `0` means "as long as it is already paid for", which is the host's own answer.
 
 The dashboard shows an **Idle pool** card listing each parked worker with how long it has been parked and how much paid time is left, plus two actions: **Resume** takes it back into service (`POST /api/workers/unpark`), and **Delete** drops it now instead of waiting (`POST /api/workers/delete-parked`). When the host does not park, the card explains that and shows what a cold start costs on it.
+
+## Container cost
+
+The utilization band tells you *which worker* is busy. The **Container cost** table on the dashboard tells you which container is making it busy, and in which of three ways:
+
+| Column | What it measures | What it means |
+| --- | --- | --- |
+| **Cost** | the cost-weighted entities inside it | what the planner charges for the container (see [Entity cost weights](#entity-cost-weights)) |
+| **Sim** | measured `NetworkTick` milliseconds per tick for its own entities | simulation |
+| **Out** | world state, netvars and sync state leaving the worker for it | replication |
+| **Relay** | owner state, which a gateway forwards to one client each | gateway |
+| **Dominant** | whichever of the three is closest to its budget | which knob to reach for |
+
+The simulation figure is **measured**, not derived from the head count: a cell full of static props and a cell full of NPCs chasing paths hold the same number of entities and do not cost the same. Simulation is weighed against the 16.7 ms tick budget, the two byte figures against `CostLinkBudgetMbps` (100 Mbit/s by default) - a yardstick only, so that milliseconds and bytes can be compared at all; it limits nothing.
+
+Interest management bounds **Out** and **Relay**. It does nothing for **Sim**: five hundred NPCs cost the same to simulate whether anybody is watching them or not. That is why the three are kept apart.
+
+The rest of a tick - physics, the ghost pass, the interest pass, publishing - belongs to no container and is deliberately left out, so a worker's rows add up to less than its utilization. **Share** is each container's share of the time that *could* be attributed on that worker.
+
+The same rows are at `GET /api/cost`:
+
+```json
+{"tickPeriodMs":16.67,"linkBytesPerSec":12500000,"containers":[
+  {"id":"cell_3_0_1","scope":"","worker":"w1","cost":84.5,"tickMs":13.4,"tickShare":0.91,
+   "bytesOut":940000,"gatewayBytes":210000,"ghosts":12,"dominant":"simulation","saturation":0.8}]}
+```
+
+and under `cost` in `GET /api/state`. `scope` is the entity's simulation scope - empty in the public world, the instance key inside an instance - so the rows can be grouped per scope as well as per container.
+
+## Entity cost weights
+
+`CostWeights` says what a player, a bot, a server-driven entity and anything else cost. That is per *category*, and in a world with ambient critters and raid bosses in it both are "server-driven". `NetworkIdentity.CostWeight` (on the prefab, default `1`) is a **multiplier** on the category weight: a boss at `8` costs eight server-driven entities, a critter at `0.25` costs a quarter of one. At `1` everywhere nothing changes.
+
+For something decided at runtime rather than authored, install a callback once at start-up, or set the weight on the entity:
+
+```csharp
+// Once, on a worker. Return a negative number to decline and let the prefab's value stand.
+NebulaCost.EntityWeight = id => id.TryGetComponent<Boss>(out _) ? 8f : -1f;
+
+// Or per entity, at any time. This wins over both, and travels with the entity.
+identity.SetCostWeight(12f);
+```
+
+Precedence is `SetCostWeight` (or a weight carried in from another worker) > the callback > the prefab's `CostWeight`. It is evaluated at spawn, never per tick, and it travels in the entity's handover state, so a boss reports the same cost on whichever worker is simulating it. The weight feeds the planner and the scaler, not just the dashboard: weighting a boss changes where it is placed and when the mesh grows.
 
 ## Balancing hints
 
@@ -281,6 +332,7 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `POST /api/persistence/clear` | none | Deletes every persisted record. |
 | `GET /api/map/geometry` | none | Returns static world and container geometry. |
 | `GET /api/map` | none | Returns the latest worker telemetry. |
+| `GET /api/cost` | none | Returns one [cost row](#container-cost) per container: weighted entity cost, measured tick time, bytes out, gateway relay, ghosts and the dominant component. |
 
 Successful changes return `{"ok":true}`. Invalid requests return an error message. An API write can return `503` when it cannot reach the orchestrator's main thread within three seconds.
 

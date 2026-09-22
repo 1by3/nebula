@@ -51,6 +51,15 @@ namespace Nebula
         public float HeldSeconds, HoldSeconds;
         /// <summary>The container that makes growing pointless (all the load and no way to split it), or "".</summary>
         public string BlockedBy;
+        /// <summary>
+        /// What <see cref="BlockedBy"/> is mostly expensive in, from its cost row (<see cref="ContainerCost"/>):
+        /// simulation is a case for splitting the container or cheapening its entities, replication a case for
+        /// interest management, the gateway relay a case for more gateways. <see cref="CostComponent.Simulation"/>
+        /// when nothing is blocked or no row has arrived; read it with <see cref="BlockedBy"/> non-empty.
+        /// </summary>
+        public CostComponent BlockedComponent;
+        /// <summary>How much of its component's budget <see cref="BlockedBy"/> is using (1 = all of it), or 0.</summary>
+        public float BlockedSaturation;
         /// <summary>The worker that should retire when <see cref="Action"/> is <see cref="ScaleAction.Shrink"/>.</summary>
         public string RetireWorkerId;
         /// <summary>One line for the dashboard and the event log.</summary>
@@ -219,7 +228,7 @@ namespace Nebula
                 {
                     d.BlockedBy = more.HeaviestContainer;
                     d.Reason = d.BlockedBy.Length > 0
-                        ? $"blocked: {d.BlockedBy} carries {more.HeaviestUtilization:0.00} of a tick on its own and cannot be split; add a hint or split the cell"
+                        ? $"blocked: {d.BlockedBy} carries {more.HeaviestUtilization:0.00} of a tick on its own and cannot be split{DescribeComponent(input, d.BlockedBy, ref d)}; add a hint or split the cell"
                         : $"blocked: another worker would not lower the peak ({here.Peak:0.00} -> {more.Peak:0.00})";
                     return d;
                 }
@@ -276,6 +285,35 @@ namespace Nebula
             d.HeldSeconds = 0f;
             d.Reason = $"steady: peak {d.Peak:0.00}, mean {d.Mean:0.00}";
             return d;
+        }
+
+        /// <summary>
+        /// Name what the blocking container is actually expensive in, from its cost row, and record it on the
+        /// decision. "Unsplittable" is the same sentence whether an arena is full of NPCs or a plaza is full of
+        /// players, and the two want opposite fixes; this is the half of the sentence that tells them apart
+        /// (docs/cost-telemetry.md, D8). Returns "" when no row has arrived, so the reason stays as it was.
+        /// </summary>
+        private static string DescribeComponent(AssignmentInput input, string containerId, ref ScaleDecision d)
+        {
+            if (input?.Cost == null || !input.Cost.TryGetValue(containerId, out var row)) return "";
+            d.BlockedComponent = row.Dominant;
+            d.BlockedSaturation = row.DominantSaturation;
+            switch (row.Dominant)
+            {
+                case CostComponent.Replication:
+                    return $" (mostly replication: {Bytes(row.BytesOutPerSec)}/s out, {row.DominantSaturation:0.00} of the link budget)";
+                case CostComponent.Gateway:
+                    return $" (mostly gateway relay: {Bytes(row.GatewayBytesPerSec)}/s of owner state, {row.DominantSaturation:0.00} of the link budget)";
+                default:
+                    return $" (mostly simulation: {row.TickShareMs:0.00} ms/tick, {row.DominantSaturation:0.00} of the tick budget)";
+            }
+        }
+
+        private static string Bytes(long n)
+        {
+            if (n >= 1024L * 1024L) return (n / (1024.0 * 1024.0)).ToString("0.0") + " MB";
+            if (n >= 1024L) return (n / 1024.0).ToString("0.0") + " kB";
+            return n + " B";
         }
 
         /// <summary>The worker that costs least to hand over: the lowest attributed load among those that may retire.</summary>

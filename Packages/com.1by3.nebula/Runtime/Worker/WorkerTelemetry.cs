@@ -41,6 +41,10 @@ namespace Nebula
         private struct Counts
         {
             public int Players, Bots, ServerDriven, Other, Ghosts;
+            /// <summary>The cost-weighted sum of the authoritative entities in this container, without <see cref="CostWeights.Base"/>.</summary>
+            public float Cost;
+            /// <summary>The container's scope key; "" in the public world (<see cref="Container.ScopeKey"/>).</summary>
+            public string Scope;
         }
 
         /// <summary>
@@ -70,6 +74,10 @@ namespace Nebula
         private readonly Dictionary<string, int> _slotById = new Dictionary<string, int>();
         private readonly List<string> _slotIds = new List<string>();
         private readonly List<Counts> _counts = new List<Counts>();
+        /// <summary>The measured per-container costs of the window this document covers; null before the first sample.</summary>
+        private ContainerCostMeter _costs;
+        /// <summary>The category weights the entity cost sum is computed with (<see cref="NebulaConfig.CostWeights"/>).</summary>
+        private CostWeights _weights = CostWeights.Default;
         private readonly List<NetworkIdentity> _carriers = new List<NetworkIdentity>();
         private readonly List<NetworkIdentity> _points = new List<NetworkIdentity>();
         private readonly List<NebulaWorker.ContainerHold> _holds = new List<NebulaWorker.ContainerHold>();
@@ -128,6 +136,11 @@ namespace Nebula
             // The cohesion hints are read here, on the main thread, and written into the document below.
             worker.CopyHolds(_holds);
             worker.CopyCohesion(_cohesion);
+            // Close the cost window on the same beat as the document, so a row's ms/tick and bytes/s cover exactly
+            // the interval between two documents (docs/cost-telemetry.md).
+            worker.CostMeter.Sample(now);
+            _costs = worker.CostMeter;
+            _weights = worker.Config != null ? worker.Config.CostWeights : CostWeights.Default;
             var streamer = NebulaWorld.IsActive ? NebulaWorld.Streamer : null;
             string json = Write(worker.WorkerId, worker.WorkerIndex, worker.CurrentTick, worker.Entities, _detail, streamer != null ? streamer.LoadedCells : null);
             Sent++;
@@ -292,10 +305,10 @@ namespace Nebula
                     int slot = SlotOf(e.Container);
                     var c = _counts[slot];
                     if (!e.HasAuthority) c.Ghosts++;
-                    else if (e.IsServerDriven) c.ServerDriven++;
-                    else if (e.OwnerClientId == 0) c.Other++;
-                    else if (e.OwnerIsBot) c.Bots++;
-                    else c.Players++;
+                    else if (e.IsServerDriven) { c.ServerDriven++; c.Cost += _weights.ServerDriven * e.EffectiveCostWeight; }
+                    else if (e.OwnerClientId == 0) { c.Other++; c.Cost += _weights.Other * e.EffectiveCostWeight; }
+                    else if (e.OwnerIsBot) { c.Bots++; c.Cost += _weights.Bot * e.EffectiveCostWeight; }
+                    else { c.Players++; c.Cost += _weights.Player * e.EffectiveCostWeight; }
                     _counts[slot] = c;
                     if (!e.HasAuthority) continue;
                     if (e.Carried != null && e.Carried.IsDynamic) _carriers.Add(e);
@@ -334,6 +347,7 @@ namespace Nebula
             for (int i = 0; i < _slotIds.Count; i++)
             {
                 var c = _counts[i];
+                var cost = _costs != null ? _costs.Of(_slotIds[i]) : default;
                 w.BeginObject();
                 w.Prop("id", _slotIds[i]);
                 w.Prop("players", c.Players);
@@ -341,6 +355,14 @@ namespace Nebula
                 w.Prop("serverDriven", c.ServerDriven);
                 w.Prop("other", c.Other);
                 w.Prop("ghosts", c.Ghosts);
+                // Cost telemetry (docs/cost-telemetry.md). Additive: a reader that does not know these keys skips
+                // them, and a worker that never measured anything still writes zeroes rather than leaving them out,
+                // so "reported 0" and "never reported" stay distinguishable from the presence of the row.
+                w.Prop("scope", c.Scope ?? "");
+                w.Prop("cost", Math.Round(c.Cost, 3));
+                w.Prop("tickMs", Math.Round(cost.TickMs, 4));
+                w.Prop("bytesOut", cost.BytesOutPerSec);
+                w.Prop("gatewayBytes", cost.GatewayBytesPerSec);
                 w.EndObject();
             }
             w.EndArray();
@@ -413,7 +435,7 @@ namespace Nebula
             slot = _slotIds.Count;
             _slotById[id] = slot;
             _slotIds.Add(id);
-            _counts.Add(default);
+            _counts.Add(new Counts { Scope = container != null ? container.ScopeKey : EntityLocation.PublicScope });
             return slot;
         }
 
