@@ -55,7 +55,10 @@ mean would hide exactly the part that is about to cost everybody their tick, and
 as empty would open a full station because one worker missed a telemetry post.
 
 The public world has no scope row, so it has no scope-wide reading. Its containers are judged one at a time
-(§3), which is right: the public world is many domains and a full cell is not a full world.
+(§3), which is right: the public world is many domains and a full cell is not a full world. A **grid** scope
+(`ScopeKind.Grid`, NEB-239) is judged the same way: it is an unbounded procedural world whose row names only the
+anchor chunk, its chunks are separate places, and "the world is full" is not a thing it can be.
+`NebulaCapacity.IsPerContainer` is that distinction, and it is the only place the two kinds of scope differ here.
 
 **D4 Unknown is not full.** `Known` is false until a worker reports the container. An unknown target is admitted,
 so a mesh with no cost telemetry — an older worker, the first second after a start, a container nobody has

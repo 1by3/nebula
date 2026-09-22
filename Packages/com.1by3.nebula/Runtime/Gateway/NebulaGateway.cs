@@ -1575,7 +1575,7 @@ namespace Nebula
             // below capacity are preferred, and only when every one of them is full is the game asked what to do
             // with this particular arrival (docs/capacity-admission.md).
             var capacity = NebulaCapacity.Target(ControlPlane, c.ScopeKey, "");
-            if (c.ScopeKey.Length == 0)
+            if (NebulaCapacity.IsPerContainer(ControlPlane, c.ScopeKey))
             {
                 _openCandidates.Clear();
                 for (int i = 0; i < candidates.Count; i++)

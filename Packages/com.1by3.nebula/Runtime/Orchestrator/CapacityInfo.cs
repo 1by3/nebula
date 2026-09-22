@@ -102,7 +102,7 @@ namespace Nebula
             var result = new CapacityInfo { ScopeKey = scopeKey ?? "" };
             if (cp == null || string.IsNullOrEmpty(scopeKey)) return result;
             var scope = cp.FindScope(scopeKey);
-            if (scope?.ContainerIds == null) return result;
+            if (scope?.ContainerIds == null || IsPerContainer(scope)) return result;
             for (int i = 0; i < scope.ContainerIds.Count; i++) result = Worse(result, Of(cp, scope.ContainerIds[i]));
             result.ScopeKey = scopeKey;
             return result;
@@ -121,11 +121,24 @@ namespace Nebula
         }
 
         /// <summary>
-        /// The capacity of the target a client is asking to enter: the scope when it named one, otherwise the
-        /// container it would be placed in. This is the one call a gateway or a worker makes.
+        /// Whether this scope is judged one container at a time rather than as a whole. A grid scope
+        /// (<see cref="ScopeKind.Grid"/>) is an unbounded procedural world whose row names only the anchor chunk:
+        /// its chunks are separate places, so "the world is full" is not a thing it can be. A parts scope is one
+        /// authored interaction domain and is judged whole (D3).
+        /// </summary>
+        public static bool IsPerContainer(ScopeInfo scope) =>
+            scope == null || string.Equals(scope.Definition?.Kind, ScopeKind.Grid, StringComparison.Ordinal);
+
+        /// <summary>Whether the target a client named is judged per container: the public world, or a grid scope.</summary>
+        public static bool IsPerContainer(IControlPlane cp, string scopeKey) =>
+            string.IsNullOrEmpty(scopeKey) || IsPerContainer(cp != null ? cp.FindScope(scopeKey) : null);
+
+        /// <summary>
+        /// The capacity of the target a client is asking to enter: the scope when it named one that is judged as a
+        /// whole, otherwise the container it would be placed in. This is the one call a gateway or a worker makes.
         /// </summary>
         public static CapacityInfo Target(IControlPlane cp, string scopeKey, string containerId) =>
-            string.IsNullOrEmpty(scopeKey) ? Of(cp, containerId) : OfScope(cp, scopeKey);
+            IsPerContainer(cp, scopeKey) ? Of(cp, containerId) : OfScope(cp, scopeKey);
 
         /// <summary>
         /// The readings for a set of cost rows, keyed by container. Used by the orchestrator to decide what to

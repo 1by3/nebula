@@ -169,6 +169,43 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AGridScopeIsJudgedOneChunkAtATime()
+        {
+            var plane = new LocalControlPlane();
+            plane.Connect();
+            plane.ActivateScope(new ScopeActivationRequest
+            {
+                ScopeKey = "region/seed-9",
+                Requester = "matchmaker",
+                Definition = new ScopeDefinition
+                {
+                    Kind = ScopeKind.Grid,
+                    Payload = new ChunkGridDefinition { CellSize = new Vector3(64f, 512f, 64f) }.ToJson(),
+                    Parts = { new ScopePart { PartId = "0_0_0", Center = new Vector3(0, 0, 0), Size = new Vector3(64, 64, 64) } },
+                },
+            });
+            var scope = plane.FindScope("region/seed-9");
+            Assert.IsNotNull(scope);
+            string anchor = scope.ContainerIds[0];
+            plane.SetContainerCapacity(anchor, 0.99f, CostComponent.Simulation, true);
+
+            Assert.IsTrue(NebulaCapacity.IsPerContainer(plane, "region/seed-9"),
+                "an unbounded procedural world is many places: 'the world is full' is not a thing it can be");
+            Assert.IsFalse(NebulaCapacity.OfScope(plane, "region/seed-9").Known, "so there is no scope-wide reading");
+            Assert.IsTrue(NebulaCapacity.Target(plane, "region/seed-9", anchor).AtCapacity, "the chunk itself still answers");
+        }
+
+        [Test]
+        public void APartsScopeIsJudgedAsAWhole()
+        {
+            var plane = Mesh(out string dock, out _);
+            Assert.IsFalse(NebulaCapacity.IsPerContainer(plane, "station/alpha"));
+            plane.SetContainerCapacity(dock, 0.95f, CostComponent.Simulation, true);
+            Assert.IsTrue(NebulaCapacity.Target(plane, "station/alpha", "").AtCapacity,
+                "the whole domain answers, whichever part the client would have landed in");
+        }
+
+        [Test]
         public void AnUnknownPartNeverMakesABusyScopeLookIdle()
         {
             var plane = Mesh(out string dock, out string hold);
