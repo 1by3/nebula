@@ -74,6 +74,27 @@ namespace Nebula
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
 
+
+        [Header("Transport encryption")]
+        [Tooltip("The gateway answers a client that asks for an encrypted UDP link (ChaCha20-Poly1305 over X25519, docs/transport-encryption.md). Clients that do not ask still connect in the clear unless RequireEncryption is on. Worker and gateway links are never encrypted: they belong inside your private network. -nebula-encrypt-clients overrides.")]
+        public bool EncryptClients = true;
+        [Tooltip("Refuse a client whose link is not encrypted, with a typed JoinRejected reason. Turn this on once your players' builds encrypt. -nebula-require-encryption overrides.")]
+        public bool RequireEncryption = false;
+        [Tooltip("PEM file holding the certificate the gateway presents to clients (an RSA certificate; the key may be in the same file). Empty = a self-signed certificate generated on first run and kept in EncryptionSelfSignedPath. -nebula-encryption-cert overrides.")]
+        public string EncryptionCertPath = "";
+        [Tooltip("PEM file holding the certificate's private key, when it is not in EncryptionCertPath. -nebula-encryption-key overrides.")]
+        public string EncryptionKeyPath = "";
+        [Tooltip("The certificate as PEM text instead of a file, for deployments that inject secrets as environment variables. The standalone gateway also reads NEBULA_ENCRYPTION_CERT.")]
+        public string EncryptionCertPem = "";
+        [Tooltip("The private key as PEM text instead of a file. The standalone gateway also reads NEBULA_ENCRYPTION_KEY.")]
+        public string EncryptionKeyPem = "";
+        [Tooltip("Where a generated self-signed certificate is kept, so its fingerprint survives a restart. Empty = nebula-transport.pem next to the gateway.")]
+        public string EncryptionSelfSignedPath = "";
+        [Tooltip("Client: encrypt the link to the gateway. Off is the historical behaviour and what the local development mesh uses. -nebula-encrypt overrides.")]
+        public bool ClientEncryption = false;
+        [Tooltip("Client: the gateway certificate's SHA-256 SubjectPublicKeyInfo fingerprint, as hex. Empty encrypts the link but does not authenticate the gateway. The gateway prints the value to pin when it starts. -nebula-gateway-fingerprint overrides.")]
+        public string GatewayFingerprint = "";
+
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]
         public int WorkerCount = 4;

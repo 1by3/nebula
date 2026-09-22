@@ -1,0 +1,113 @@
+---
+title: Encrypt client connections
+description: Turn on encryption for the UDP link between a client and the gateway, give the gateway a certificate, pin it in the client, and keep worker traffic on a private network.
+---
+
+A Nebula client connects to the gateway over UDP. By default that link is not encrypted: anyone on the network path can read a player's input, the replicated state the gateway sends back, and the identity token in the first message. Turn on transport encryption to close that, then require it once your players run a build that uses it.
+
+Encryption covers the **client-to-gateway** link only. Traffic between the gateway and the workers, and between workers, is never encrypted, so those processes must run on a private network. See [Workers belong on a private network](#workers-belong-on-a-private-network).
+
+A web build already has an encrypted link: WebRTC carries its data channels over DTLS. The settings on this page apply to native clients.
+
+## What encryption gives you
+
+With encryption on, a client and the gateway agree on a key before the client sends anything else, and every packet after that is sealed with ChaCha20-Poly1305:
+
+- **Nobody on the path can read the traffic**, including the player's ID or session token.
+- **Nobody can alter it.** A packet changed in flight fails its authentication tag and is dropped before the game sees it. A recorded packet replayed later is dropped too.
+- **The client can check which gateway it is talking to**, by pinning the fingerprint of the gateway's certificate.
+
+It does not decide who may join — that is [Authentication](/docs/guides/authentication) — and it does not stop a player from modifying their own client.
+
+## Turn it on
+
+Encryption has two switches on the gateway and one on the client.
+
+| Setting | Where | Default | Effect |
+| --- | --- | --- | --- |
+| `EncryptClients` | gateway | on | Answer a client that asks for an encrypted link. Clients that do not ask still connect in the clear. |
+| `RequireEncryption` | gateway | off | Refuse any client whose link is not encrypted. |
+| `ClientEncryption` | client | off | Ask the gateway for an encrypted link. |
+| `GatewayFingerprint` | client | empty | The gateway certificate the client accepts. Empty encrypts the link but does not check which gateway answered. |
+
+Roll it out in two steps, so players on an older build are not locked out:
+
+1. Ship a client build with `ClientEncryption` on, and set `GatewayFingerprint` to your gateway's fingerprint.
+2. When those builds are the only ones left, set `RequireEncryption` on the gateway.
+
+Set the fields on the `NebulaConfig` asset, or override them on the command line:
+
+```bash
+Builds\Linux64\MyGame.x86_64 -nebula-role gateway -nebula-require-encryption true
+Builds\Win64\MyGame.exe -nebula-role client -nebula-encrypt true -nebula-gateway-fingerprint 6f2c…
+```
+
+A client that is refused for connecting in the clear receives a rejection with the reason "this gateway only accepts encrypted connections; update your client" and does not retry. Show `NebulaClient.LastError` in your connection UI so the player sees it.
+
+## Give the gateway a certificate
+
+The gateway proves who it is with an RSA certificate. You have two options.
+
+### Use a self-signed certificate
+
+With no certificate configured, the gateway generates one the first time it starts and keeps it in `nebula-transport.pem` next to its executable, so the fingerprint stays the same across restarts. It prints the fingerprint at startup:
+
+```
+[nebula] transport encryption: clients may encrypt this link; certificate fingerprint 6f2c… (clients pin it with GatewayFingerprint / -nebula-gateway-fingerprint)
+```
+
+Copy that value into the client's `GatewayFingerprint`. This is the path a local mesh and a small deployment take; `nebula start` needs no configuration for it.
+
+Set `EncryptionSelfSignedPath` to keep the file somewhere else, such as a mounted volume that survives redeployment. If the file is lost, the gateway generates a new certificate with a new fingerprint, and clients that pinned the old one refuse to connect until you ship the new value.
+
+### Use your own certificate
+
+To use a certificate you already have, point the gateway at the PEM files:
+
+```bash
+-nebula-encryption-cert /etc/nebula/gateway.pem -nebula-encryption-key /etc/nebula/gateway-key.pem
+```
+
+The certificate must be RSA. Leave `-nebula-encryption-key` out when the key is in the same file. The standalone gateway also reads the PEM text from the `NEBULA_ENCRYPTION_CERT` and `NEBULA_ENCRYPTION_KEY` environment variables, for deployments that inject secrets that way.
+
+Clients pin the fingerprint of the certificate's **public key**, so re-issuing a certificate for the same key does not invalidate what players have shipped.
+
+<Callout type="warn" title="Pin the fingerprint">
+An empty `GatewayFingerprint` encrypts the traffic but accepts any certificate, so a machine in the middle of the connection can present its own and read everything. The client logs a warning when it connects that way. Nebula does not validate a certificate against a public certificate authority or a hostname; pinning is the check it offers.
+</Callout>
+
+## Workers belong on a private network
+
+**This is a deployment requirement, not a recommendation.** Nebula encrypts the client-to-gateway link only. Gateway-to-worker and worker-to-worker traffic carries entity state, authority handovers, and player input in the clear, on the mesh's busiest links.
+
+For every deployment you run:
+
+- Put the workers, the orchestrator, and the gateways in one private network — a cloud VPC, a VLAN, or a WireGuard mesh.
+- Allow inbound traffic to the worker ports (`WorkerBasePort` and up) and the orchestrator's dashboard port from that network only. No worker port may be reachable from the internet.
+- Expose only the gateway's client port, and its web port when you serve web builds.
+- Set a mesh token (`-nebula-token`, or `NEBULA_MESH_TOKEN`) so a process that reaches those ports anyway cannot register with the mesh.
+
+`nebula deploy --target hetzner` builds the firewall rules this way; see [Deploy to Hetzner Cloud](/docs/deploy/hetzner) for the port table. [Nebula Cloud](/docs/deploy/cloud) runs each deployment's workers in a private network for you.
+
+## What it costs
+
+Measured on one development machine, on a 200-byte packet:
+
+| | Cost |
+| --- | --- |
+| Every packet | 21 bytes more on the wire |
+| Connecting | one extra round trip, and about 1.1 KB of handshake |
+| Gateway CPU | about 0.8 µs to seal or open a packet, so under 2 % of one core at 20,000 packets a second |
+| Client CPU | about 8 µs to seal or open a packet in a Unity build, so about 0.5 ms a second at 60 packets a second |
+
+The per-packet 21 bytes matter most for small packets. The gateway already batches small reliable messages into one packet, which limits how often you pay it.
+
+## Troubleshoot
+
+**The client logs "the gateway did not answer the key exchange (is encryption turned off there?)".** The gateway has `EncryptClients` off, or it could not load a certificate. Check the gateway's startup log for a line about transport encryption.
+
+**The client logs "the gateway presented certificate …, which is not the pinned …".** The client's `GatewayFingerprint` does not match this gateway. Either the gateway's certificate changed, or the client is connecting to a different gateway. Copy the fingerprint from the gateway's startup log.
+
+**The gateway fails to start with "RequireEncryption is on but the gateway has no usable certificate".** The configured certificate or key could not be read, and refusing every client would be worse than failing loudly. Check the paths and that the key belongs to the certificate.
+
+**Every gateway prints a different fingerprint.** Each generated its own self-signed certificate. Issue one certificate and give every gateway of the mesh the same `EncryptionCertPath` and `EncryptionKeyPath`, so a client can pin one value whichever gateway it reaches.

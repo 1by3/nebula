@@ -1,4 +1,4 @@
 {
   "title": "Transport",
-  "pages": ["delivery", "i-transport", "lite-net-transport", "multi-transport", "transport-event"]
+  "pages": ["cha-cha20-poly1305-managed", "client-encryption", "delivery", "encrypted-transport", "i-secure-transport", "i-transport", "lite-net-transport", "multi-transport", "nebula-crypto", "transport-event", "transport-identity", "transport-security", "x25519"]
 }

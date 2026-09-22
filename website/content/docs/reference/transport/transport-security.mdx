@@ -1,0 +1,26 @@
+---
+title: "TransportSecurity"
+description: "Whether a link is encrypted, for callers that hold a plain ITransport."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public static class TransportSecurity
+```
+
+Whether a link is encrypted, for callers that hold a plain [`ITransport`](/docs/reference/transport/i-transport).
+
+## Methods
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+public static bool IsEncrypted(ITransport transport, int peerId);
+```
+
+### ErrorOf [#errorof]
+
+```csharp
+public static string ErrorOf(ITransport transport);
+```

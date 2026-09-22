@@ -1,0 +1,64 @@
+---
+title: "ChaCha20Poly1305Managed"
+description: "ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce, a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
+
+```csharp
+public static class ChaCha20Poly1305Managed
+```
+
+ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce, a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext.
+
+## Fields
+
+### KeySize [#keysize]
+
+```csharp
+public const int KeySize = 32;
+```
+
+### NonceSize [#noncesize]
+
+```csharp
+public const int NonceSize = 12;
+```
+
+### TagSize [#tagsize]
+
+```csharp
+public const int TagSize = 16;
+```
+
+## Methods
+
+### Seal [#seal]
+
+```csharp
+public static int Seal(byte[] key, byte[] nonce, ArraySegment<byte> plaintext, byte[] aad, int aadLength, byte[] output, int outputOffset);
+```
+
+Encrypt `plaintext` into `output` (ciphertext then the 16-byte tag). `output` needs `plaintext.Count + 16` bytes from `outputOffset`.
+
+### SealManaged [#sealmanaged]
+
+```csharp
+public static int SealManaged(byte[] key, byte[] nonce, ArraySegment<byte> plaintext, byte[] aad, int aadLength, byte[] output, int outputOffset);
+```
+
+The managed implementation, which a Unity build always takes; kept public so tests measure both.
+
+### Open [#open]
+
+```csharp
+public static int Open(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset);
+```
+
+Check the tag and decrypt in place into `output`. Returns the plaintext length, or -1 when the packet was tampered with (or is not for this key) — the caller drops it without a word.
+
+### OpenManaged [#openmanaged]
+
+```csharp
+public static int OpenManaged(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset);
+```

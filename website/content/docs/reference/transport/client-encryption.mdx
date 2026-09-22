@@ -1,0 +1,30 @@
+---
+title: "ClientEncryption"
+description: "How a client treats the gateway's certificate."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public sealed class ClientEncryption
+```
+
+How a client treats the gateway's certificate. See `docs/transport-encryption.md` §4.
+
+## Fields
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint = "";
+```
+
+The SHA-256 of the gateway's SubjectPublicKeyInfo, as hex (colons and case are ignored). Empty accepts whatever certificate the gateway presents, which encrypts the link but does not authenticate the gateway; the client logs that once per connection.
+
+### TimeoutSeconds [#timeoutseconds]
+
+```csharp
+public float TimeoutSeconds = 5f;
+```
+
+How long the client waits for the gateway's half of the handshake before giving up.

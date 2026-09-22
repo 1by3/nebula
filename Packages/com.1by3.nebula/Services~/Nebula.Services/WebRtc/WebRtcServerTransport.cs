@@ -29,7 +29,7 @@ namespace Nebula.WebRtc
     /// LiteNetLib. The data channel itself is unordered, so without it a late snapshot could land after a newer one.
     /// </para>
     /// </summary>
-    internal sealed class WebRtcServerTransport : ITransport
+    internal sealed class WebRtcServerTransport : ITransport, ISecureTransport
     {
         public const ushort ReliableStream = 0, UnreliableStream = 1;
         public const int SequenceBytes = 2;
@@ -74,6 +74,11 @@ namespace Nebula.WebRtc
             Name = name;
             _advertise = advertiseAddress;
         }
+
+        /// <summary>A WebRTC data channel is carried by DTLS, so every link on it is encrypted (docs/transport-encryption.md §2).</summary>
+        public bool IsEncrypted(int peerId) => IsConnected(peerId);
+
+        public string SecurityError => "";
 
         public string Name { get; }
         public bool IsRunning => _running;

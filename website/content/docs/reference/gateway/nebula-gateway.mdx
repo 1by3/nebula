@@ -145,6 +145,14 @@ public SessionTokens Sessions { get; }
 
 Issues and checks the session tokens clients reconnect with.
 
+### CertificateFingerprint [#certificatefingerprint]
+
+```csharp
+public string CertificateFingerprint { get; }
+```
+
+The SHA-256 SubjectPublicKeyInfo fingerprint of the certificate this gateway presents to clients, or null when it accepts no encrypted links. A client pins this value (`NebulaConfig.GatewayFingerprint`).
+
 ### InterestPolicy [#interestpolicy]
 
 ```csharp

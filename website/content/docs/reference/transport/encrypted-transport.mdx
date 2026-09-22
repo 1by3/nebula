@@ -1,0 +1,148 @@
+---
+title: "EncryptedTransport"
+description: "Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and the client exchange exactly the messages they always did, and this layer seals each packet."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public sealed class EncryptedTransport : ITransport, ISecureTransport
+```
+
+Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and the client exchange exactly the messages they always did, and this layer seals each packet.
+
+A client wrapper ([`ForClient`](#forclient)) runs the handshake as soon as the link comes up and holds the `Connected` event back until it finishes, so the first thing above it ever sends is already encrypted. A gateway wrapper ([`ForGateway`](#forgateway)) answers a handshake on any inbound link that opens with one and leaves every other link exactly as it was: that is what keeps worker and gateway peers, which share the gateway's socket and live inside the deployment's private network, on plaintext (D1).
+
+Wire format, all little-endian: a handshake frame is `[tag][body]` and a data frame is `[0xE3][seq:u32]` followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id), so a gateway with encryption turned off simply ignores the frame.
+
+## Properties
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint { get; }
+```
+
+The certificate fingerprint this gateway presents; null on a client.
+
+### SecurityError [#securityerror]
+
+```csharp
+public string SecurityError { get; } = "";
+```
+
+### DroppedPackets [#droppedpackets]
+
+```csharp
+public long DroppedPackets { get; }
+```
+
+Packets refused by the AEAD (forged, corrupted or replayed) since the transport started.
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsRunning [#isrunning]
+
+```csharp
+public bool IsRunning { get; }
+```
+
+### LocalPort [#localport]
+
+```csharp
+public int LocalPort { get; }
+```
+
+## Methods
+
+### ForGateway [#forgateway]
+
+```csharp
+public static EncryptedTransport ForGateway(ITransport inner, TransportIdentity identity);
+```
+
+The gateway's side: answers handshakes with `identity`, passes plaintext links through.
+
+### ForClient [#forclient]
+
+```csharp
+public static EncryptedTransport ForClient(ITransport inner, ClientEncryption settings);
+```
+
+The client's side: every link this transport dials is encrypted, or it does not come up at all.
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+public bool IsEncrypted(int peerId);
+```
+
+### Listen [#listen]
+
+```csharp
+public void Listen(int port);
+```
+
+### StartClient [#startclient]
+
+```csharp
+public void StartClient();
+```
+
+### Disconnect [#disconnect]
+
+```csharp
+public void Disconnect(int peerId);
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected(int peerId);
+```
+
+### RoundTripMs [#roundtripms]
+
+```csharp
+public int RoundTripMs(int peerId);
+```
+
+### Flush [#flush]
+
+```csharp
+public void Flush();
+```
+
+### Connect [#connect]
+
+```csharp
+public int Connect(string host, int port);
+```
+
+### Send [#send]
+
+```csharp
+public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
+```
+
+### Poll [#poll]
+
+```csharp
+public void Poll(Action<TransportEvent> handler);
+```
+
+### Stop [#stop]
+
+```csharp
+public void Stop();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

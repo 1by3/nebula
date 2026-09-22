@@ -393,6 +393,11 @@ namespace Nebula
         AtCapacity = 1,
         /// <summary>The admission hook refused this particular arrival for its own reasons, with the target below capacity (<see cref="NebulaAdmission.AlwaysConsult"/>).</summary>
         Denied = 2,
+        /// <summary>
+        /// The mesh accepts encrypted client links only (<see cref="NebulaConfig.RequireEncryption"/>) and this
+        /// one is in the clear. Retrying without turning encryption on will be refused again.
+        /// </summary>
+        EncryptionRequired = 3,
     }
 
     /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>

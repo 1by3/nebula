@@ -259,6 +259,43 @@ wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-te
 
 ### Added
 
+#### Transport encryption for native clients (NEB-226)
+
+A native client's UDP link to the gateway can now be encrypted and the gateway authenticated. See
+[Encrypt client connections](https://nebula.1by3.co/docs/deploy/encryption); the design record is
+`docs/transport-encryption.md`.
+
+**What it does.** A client that asks for encryption exchanges keys with the gateway before it sends anything
+else (X25519, one round trip, below `Hello`), and every packet after that is sealed with ChaCha20-Poly1305 —
+21 bytes of overhead, whatever the payload. A packet altered in flight, or replayed, is dropped before the game
+sees it. The gateway signs the exchange with an RSA certificate; the client checks it against a pinned
+SHA-256 SubjectPublicKeyInfo fingerprint. With no certificate configured, the gateway generates a self-signed
+one on first run, keeps it beside its executable and prints the fingerprint to pin, so a local mesh needs no
+configuration.
+
+**Scope.** Client-to-gateway only. Gateway-to-worker and worker-to-worker links are unchanged and unencrypted:
+those processes must run on a private network reachable only by the mesh's gateways, which is now stated as a
+requirement in the deployment guides. A web client's link was, and remains, encrypted by DTLS.
+
+**New `NebulaConfig` fields,** mirrored into the services config, with command-line overrides:
+`EncryptClients` (`-nebula-encrypt-clients`, default on: answer a key exchange), `RequireEncryption`
+(`-nebula-require-encryption`, default off: refuse plaintext clients), `EncryptionCertPath` /
+`EncryptionKeyPath` (`-nebula-encryption-cert`, `-nebula-encryption-key`), `EncryptionCertPem` /
+`EncryptionKeyPem` (`NEBULA_ENCRYPTION_CERT`, `NEBULA_ENCRYPTION_KEY`), `EncryptionSelfSignedPath`
+(`-nebula-encryption-store`), and on the client `ClientEncryption` (`-nebula-encrypt`) and
+`GatewayFingerprint` (`-nebula-gateway-fingerprint`). The orchestrator passes the gateway settings to the
+gateway it starts.
+
+**Protocol 18, no version bump.** The handshake is a transport frame below `Hello`, not a protocol message.
+`JoinRejectReason` gained the value `3`, `EncryptionRequired`, sent with `Retry = false` when
+`RequireEncryption` refuses a plaintext client.
+
+**New public API:** `EncryptedTransport`, `ClientEncryption`, `ISecureTransport`, `TransportSecurity`,
+`TransportIdentity`, and the managed primitives `NebulaCrypto`, `X25519` and `ChaCha20Poly1305Managed`
+(Unity's profile ships none of them). `NebulaGateway.CertificateFingerprint` reports what clients should pin.
+On .NET the services use the platform's hardware-accelerated ChaCha20-Poly1305 and fall back to the managed
+implementation elsewhere; both are checked against RFC 8439.
+
 #### Scale and failure suite (NEB-237)
 
 Measured, repeatable evidence of what a mesh does under load and when something breaks, in two clearly separated layers. Design record: `docs/scale-suite.md`; user page: [Run the scale and failure suite](https://nebula.1by3.co/docs/guides/scale-suite). No runtime behaviour changed; this is test and tooling only.

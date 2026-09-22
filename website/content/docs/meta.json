@@ -51,6 +51,7 @@
     "guides/conformance-suite",
     "guides/scale-suite",
     "---Deploying---",
+    "deploy/encryption",
     "deploy/cloud",
     "deploy/hetzner",
     "---Specifications---",

@@ -16,7 +16,7 @@ namespace Nebula
     /// a message older than the newest one delivered is dropped, as LiteNetLib does for <see cref="Delivery.Sequenced"/>.
     /// </para>
     /// </summary>
-    public sealed class WebRtcClientTransport : ITransport
+    public sealed class WebRtcClientTransport : ITransport, ISecureTransport
     {
         [DllImport("__Internal")] private static extern int NebulaRtc_Connect(string host, int port);
         [DllImport("__Internal")] private static extern int NebulaRtc_State(int id);
@@ -45,6 +45,11 @@ namespace Nebula
         private byte[] _sendBuffer = new byte[1500];
 
         public WebRtcClientTransport(string name) { Name = name; }
+
+        /// <summary>A WebRTC data channel is carried by DTLS, so every link on it is encrypted and the certificate checked against the SDP fingerprint.</summary>
+        public bool IsEncrypted(int peerId) => IsConnected(peerId);
+
+        public string SecurityError => "";
 
         public string Name { get; }
         public bool IsRunning { get; private set; }
