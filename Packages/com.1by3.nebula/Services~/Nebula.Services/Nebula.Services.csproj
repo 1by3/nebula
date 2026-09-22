@@ -34,5 +34,8 @@
     <EmbeddedResource Include="../../Runtime/Orchestrator/Resources/*.html" LogicalName="%(Filename)%(Extension)" />
     <InternalsVisibleTo Include="Nebula.Services.Tests" />
     <InternalsVisibleTo Include="Nebula.Persistence.Benchmarks" />
+    <!-- The restore drill (Tools/restore-drill.ps1) clears the gateway-session and scope claims through the
+         same internal store interfaces the orchestrator uses, so the wipe it verifies is the real one. -->
+    <InternalsVisibleTo Include="nebula-restore-drill" />
   </ItemGroup>
 </Project>
