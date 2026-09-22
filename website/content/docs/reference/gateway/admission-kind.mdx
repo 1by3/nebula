@@ -1,0 +1,19 @@
+---
+title: "AdmissionKind"
+description: "Why somebody is asking to enter a target (AdmissionRequest.Kind)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs)</div>
+
+```csharp
+public enum AdmissionKind : byte
+```
+
+Why somebody is asking to enter a target ([`AdmissionRequest.Kind`](/docs/reference/gateway/admission-request#kind)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="join"></span>`Join` | `0` | A client is being placed for the first time on this gateway: its `Hello` named the scope. |
+| <span id="transfer"></span>`Transfer` | `1` | An entity already in the mesh is crossing into the target ([`NebulaWorker.PrepareTransfer`](/docs/reference/worker/nebula-worker#preparetransfer)). |

@@ -27,6 +27,22 @@ public bool Retry;
 
 The refusal is about this gateway, not the client (it is draining): the client should try again shortly, and a load balancer will hand it to another gateway. False means the client's credentials were refused and retrying with the same ones is pointless.
 
+### Code [#code]
+
+```csharp
+public JoinRejectReason Code;
+```
+
+The refusal in typed form ([`JoinRejectReason`](/docs/reference/protocol/join-reject-reason)), appended after the rest of v18 was settled. [`JoinRejectReason.None`](/docs/reference/protocol/join-reject-reason#none) from a gateway that does not write it.
+
+### Saturation [#saturation]
+
+```csharp
+public float Saturation;
+```
+
+How saturated the target was, for [`JoinRejectReason.AtCapacity`](/docs/reference/protocol/join-reject-reason#atcapacity): 1 = the whole of the dominant component's budget ([`CapacityInfo.Saturation`](/docs/reference/orchestrator/capacity-info#saturation)). Sent as an f16; 0 when unknown.
+
 ## Methods
 
 ### Write [#write]

@@ -131,6 +131,14 @@ public static string NameOf(CostComponent c);
 
 The lowercase wire name of a component.
 
+### ComponentOf [#componentof]
+
+```csharp
+public static CostComponent ComponentOf(string name);
+```
+
+The component a wire name ([`NameOf`](#nameof)) stands for; anything unknown reads as [`CostComponent.Simulation`](/docs/reference/orchestrator/cost-component#simulation).
+
 ### Resolve [#resolve]
 
 ```csharp
@@ -150,10 +158,10 @@ Fill in [`TickShare`](#tickshare) for every row of one worker (they are a fracti
 ### Write [#write]
 
 ```csharp
-public static void Write(JsonWriter w, in ContainerCost row);
+public static void Write(JsonWriter w, in ContainerCost row, float capacitySaturation = 0f);
 ```
 
-One row as the dashboard and `GET /api/cost` serve it.
+One row as the dashboard and `GET /api/cost` serve it. `capacitySaturation` is [`NebulaConfig.CapacitySaturation`](/docs/reference/core/nebula-config#capacitysaturation), so the row can also say whether this container counts as at capacity (docs/capacity-admission.md); 0 leaves `atCapacity` false.
 
 ### ToString [#tostring]
 

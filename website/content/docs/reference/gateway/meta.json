@@ -1,4 +1,4 @@
 {
   "title": "Gateway",
-  "pages": ["anonymous-identity-issuer", "auth-result", "interest-link-reason", "json-web-token", "mesh-peer-auth", "nebula-gateway", "oidc-token-validator", "player-identity", "session-claims", "session-ids", "session-tokens"]
+  "pages": ["admission-action", "admission-decision", "admission-kind", "admission-request", "anonymous-identity-issuer", "auth-result", "interest-link-reason", "json-web-token", "mesh-peer-auth", "nebula-admission", "nebula-gateway", "oidc-token-validator", "player-identity", "session-claims", "session-ids", "session-tokens"]
 }

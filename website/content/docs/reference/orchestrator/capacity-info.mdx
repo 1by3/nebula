@@ -1,0 +1,82 @@
+---
+title: "CapacityInfo"
+description: "How close one container - or one whole scope - is to what a single worker can carry, derived from the cost telemetry the worker already reports (ContainerCost, docs/cost-telemetry.md)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/CapacityInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/CapacityInfo.cs)</div>
+
+```csharp
+public struct CapacityInfo
+```
+
+How close one container - or one whole scope - is to what a single worker can carry, derived from the cost telemetry the worker already reports ([`ContainerCost`](/docs/reference/orchestrator/container-cost), docs/cost-telemetry.md). One number and the name of the component it came from, because "full" is not a head count: a station can be full of simulation, of replication or of per-client relay, and the three have different fixes.
+
+The orchestrator derives it and publishes it on the lease row, so a gateway answers "is this target at capacity" from the control-plane document it already mirrors, without asking anybody. Design record: `docs/capacity-admission.md`.
+
+## Fields
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId;
+```
+
+The container this is about; empty when the reading is about a whole scope.
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey;
+```
+
+The scope the reading belongs to ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)); empty in the public world.
+
+### Known [#known]
+
+```csharp
+public bool Known;
+```
+
+A worker has reported cost for this target lately. False means "nobody has said": an unknown target is never at capacity, so a mesh without cost telemetry admits exactly what it always did.
+
+### Saturation [#saturation]
+
+```csharp
+public float Saturation;
+```
+
+The dominant component's share of its own budget ([`ContainerCost.DominantSaturation`](/docs/reference/orchestrator/container-cost#dominantsaturation)). 1 = the whole budget. For a scope, the worst of its parts.
+
+### Dominant [#dominant]
+
+```csharp
+public CostComponent Dominant;
+```
+
+Which component [`Saturation`](#saturation) is about ([`ContainerCost.Dominant`](/docs/reference/orchestrator/container-cost#dominant)).
+
+### AtCapacity [#atcapacity]
+
+```csharp
+public bool AtCapacity;
+```
+
+[`Saturation`](#saturation) is at or above `NebulaConfig.CapacitySaturation`. The orchestrator decides this, not the reader: the threshold is one mesh-wide setting and the gateways must not disagree about it.
+
+## Properties
+
+### DominantName [#dominantname]
+
+```csharp
+public string DominantName { get; }
+```
+
+The name [`Dominant`](#dominant) goes by in the JSON, a log line and the dashboard.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

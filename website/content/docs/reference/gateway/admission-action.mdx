@@ -1,0 +1,20 @@
+---
+title: "AdmissionAction"
+description: "What the admission hook may answer (AdmissionDecision)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Gateway/NebulaAdmission.cs)</div>
+
+```csharp
+public enum AdmissionAction : byte
+```
+
+What the admission hook may answer ([`AdmissionDecision`](/docs/reference/gateway/admission-decision)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="admit"></span>`Admit` | `0` | Let this one in anyway. The mesh does not split the target and does not change what it costs; the game has decided the arrival is worth it. |
+| <span id="reject"></span>`Reject` | `1` | Refuse with a typed rejection the caller can act on (a queue, another instance, a message). |
+| <span id="hold"></span>`Hold` | `2` | Neither: keep the client waiting and ask again shortly. Only a join can be held; a transfer reads a hold as a rejection. |

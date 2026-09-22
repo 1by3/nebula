@@ -1,0 +1,20 @@
+---
+title: "JoinRejectReason"
+description: "Why a join was refused, in typed form."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public enum JoinRejectReason : byte
+```
+
+Why a join was refused, in typed form. A reason string is for the player; this is for the game's client code, which has to tell "your token is bad" (pointless to retry) from "that station is full" (try a queue, another instance, or later). See `docs/capacity-admission.md`.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | No typed reason: read [`JoinRejectedMsg.Reason`](/docs/reference/protocol/join-rejected-msg#reason) and [`JoinRejectedMsg.Retry`](/docs/reference/protocol/join-rejected-msg#retry). What a gateway from before the field existed sends. |
+| <span id="atcapacity"></span>`AtCapacity` | `1` | The target the client asked for is at capacity and the admission hook refused it ([`JoinRejectedMsg.Saturation`](/docs/reference/protocol/join-rejected-msg#saturation) says how full). |
+| <span id="denied"></span>`Denied` | `2` | The admission hook refused this particular arrival for its own reasons, with the target below capacity ([`NebulaAdmission.AlwaysConsult`](/docs/reference/gateway/nebula-admission#alwaysconsult)). |
