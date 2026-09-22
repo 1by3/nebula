@@ -4,6 +4,24 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### NEB-228: deployment and protocol compatibility policy
+
+Nebula now states which versions may talk to each other, and enforces it with a refusal a client can act on instead of a silent disconnect. Design record: `docs/compatibility-policy.md`. Version table: `docs/protocol-versions.md`. User-facing page: [Upgrade a running mesh](https://nebula.1by3.co/docs/deploy/upgrades).
+
+**The window.** A gateway accepts a client whose protocol is in `HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion` — N-1 and N. Both are `18` in this release: 18 is the floor the policy starts from, so no older client is admitted, and the window widens at the next protocol change. Gateway-to-worker and worker-to-worker links still require an exact match, and now refuse with a logged reason on both sides instead of closing the link silently. Inside the window every protocol change must be additive; the gateway records the negotiated version on the session and encodes that client's traffic at it.
+
+**Wire (protocol 18, appended after the rest of 18 was settled; the version is unchanged):**
+
+- `HelloMsg` now writes the **sender's own** `Version` rather than always writing the `ProtocolVersion` constant, so a peer can announce a version that is not its build's. It also gained a trailing `u32 game_content_version`; a `Hello` that ends before it reads as `0`.
+- `Welcome` gained a trailing `u16 negotiated_version`: the protocol the gateway settled on for the session. A `Welcome` that ends before it reads as `0`, meaning the version the client sent.
+- `JoinRejected` gained trailing `u16 supported_min_version`, `u16 supported_max_version` and `u32 server_content_version`, sent on **every** refusal, and two `code` values: `3` `ProtocolUnsupported` and `4` `ContentVersionMismatch`. A client below the minimum must update; one above the maximum has reached a server that has not been upgraded yet.
+
+**The game's own content version.** `NebulaConfig.GameContentVersion` (with `MinGameContentVersion`, and `-nebula-content-version` / `-nebula-min-content-version`) is a number your game chooses. The client announces it and the gateway refuses a mismatch with its own reason code — exact match by default, a range when a minimum is set, and no check at all while it is `0`. Nebula only compares the numbers.
+
+**Client API.** `NebulaClient` gained `ServerProtocolWindow`, `ServerContentVersion` and `NegotiatedProtocolVersion`, and does not reconnect by itself after either build mismatch.
+
+**Rolling upgrades** are a documented procedure, not a new command: drain a gateway through its control-plane row and replace it while its clients move to another one with their sessions intact; hand a worker's entities and leases to its neighbours before replacing it, so it leaves no orphaned container. Both are now tested in `RollingUpgradeTests` (scale scenarios S9a and S9b), the compatibility window at its four edges in scenario S9, and a **recorded** client stream replayed against a gateway of this build in `ConformanceProtocolCompatibilityTests`, from the checked-in fixture `Services~/Nebula.Services.Tests/Fixtures/protocol-18-handshake.json`.
+
 ### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
 
 Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.
@@ -267,7 +285,7 @@ Measured, repeatable evidence of what a mesh does under load and when something 
 - **Real-worker layer**: `Tools/scale-suite.ps1`, which starts a real mesh through the `nebula` CLI, drives `Services~/Nebula.LoadGen`, kills real processes, and scrapes `/api/state`, `/api/cost` and each worker log's `[nebula] profile` line into CSV. Modes `-DryRun` (check preconditions, run nothing), `-Synthetic` (run the other layer) and the real run, plus `-Build`.
 - **Artifacts**: one CSV per scenario under `Logs/scale/`, stamped `synthetic` or `unity` in the first column and in every line of runner output, so the two layers are never read as one series. The whole-mesh restore curve is compared against a checked-in baseline, `docs/baselines/mesh-restart.csv`.
 - **Test fixtures** (`Services~/Nebula.Services.Tests/Fixtures/`): `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway(hard)`, `RestartControlPlane(snapshot)`, `FakeWorker.SpawnIntoRequestedContainer`, and the new `ScaleHarness`/`ScaleWorld` helpers.
-- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there is no protocol compatibility window at all — a gateway requires an exact version match — so a rolling upgrade may replace processes at one protocol version but may not span two.
+- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there was no protocol compatibility window at all — a gateway required an exact version match — so a rolling upgrade could replace processes at one protocol version but not span two. That last finding is closed by NEB-228 above, which is where the window and the rolling-upgrade procedure are now described.
 
 #### Lifecycle hooks for materialization and dematerialization (NEB-242)
 

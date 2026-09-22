@@ -318,6 +318,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |
 | [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
+| [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. The deployment compatibility rules, in one place so the gateway, the tests and a game's own tooling all answer the same way. |
 | [SessionReplacedMsg](/docs/reference/protocol/session-replaced-msg) | Struct. Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer). |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
 | [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |
