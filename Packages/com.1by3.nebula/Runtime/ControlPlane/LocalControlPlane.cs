@@ -30,6 +30,7 @@ namespace Nebula
         internal Func<DateTime> Clock = () => DateTime.UtcNow;
 
         public DateTime Now => Clock();
+        /// <summary>Identity of this control-plane document, preserved on import and replaced on reset.</summary>
         public string DocumentId { get; private set; } = NewDocumentId();
         private static string NewDocumentId() => Guid.NewGuid().ToString("N");
         public event Action Changed;

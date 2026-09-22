@@ -19,7 +19,7 @@ Carries the hello protocol message.
 public const ushort ProtocolVersion = 18;
 ```
 
-The protocol this build speaks and writes: **N** in the compatibility window.
+The wire protocol version used by this build.
 
 ### MinProtocolVersion [#minprotocolversion]
 
@@ -27,9 +27,7 @@ The protocol this build speaks and writes: **N** in the compatibility window.
 public const ushort MinProtocolVersion = 18;
 ```
 
-The oldest protocol a gateway of this build accepts from a **client**: **N-1**, or N while the policy has no older version to admit yet. Gateway-to-worker and worker-to-worker links ignore it and require [`ProtocolVersion`](#protocolversion) exactly. See `docs/compatibility-policy.md`.
-
-To bump the protocol: raise [`ProtocolVersion`](#protocolversion) to the new number and set this to the previous one, so the gateway keeps admitting clients of the build that is being replaced. Never widen it past one version, and never make a change inside the window that is not additive (a new message, or a trailing optional field gated on the negotiated version).
+The oldest client protocol the gateway accepts. Both this limit and [`ProtocolVersion`](#protocolversion) are 18, so only protocol-18 clients can join. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
 
 ### Role [#role]
 
@@ -85,7 +83,7 @@ Gateway and worker peers: a number that changes every time the process starts, s
 public string ScopeKey;
 ```
 
-Client only: the simulation scope to be placed in, as an opaque key ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty is the public world, which is what every client sent before this field existed. The gateway spawns the player only into containers of that scope, and holds the join while the scope is not ready (`docs/scope-activation.md` §5). It does not activate the scope: whoever sent the player to the key is the one that called [`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope).
+Client only: the simulation scope to be placed in, as an opaque key ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty selects the public world. The gateway spawns the player only into containers of that scope, and holds the join while the scope is not ready (`docs/scope-activation.md` §5). It does not activate the scope: whoever sent the player to the key is the one that called [`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope).
 
 ### Version [#version]
 
@@ -93,7 +91,7 @@ Client only: the simulation scope to be placed in, as an opaque key ([`EntityLoc
 public ushort Version;
 ```
 
-The protocol this peer speaks. 0 on a message that was built rather than read, which [`Write`](#write) sends as [`ProtocolVersion`](#protocolversion); set it to announce an older one (what the compatibility tests do to play a client of the previous build).
+The protocol version the peer announces. [`Write`](#write) substitutes [`ProtocolVersion`](#protocolversion) when this value is zero.
 
 ### GameContentVersion [#gamecontentversion]
 
@@ -101,7 +99,7 @@ The protocol this peer speaks. 0 on a message that was built rather than read, w
 public uint GameContentVersion;
 ```
 
-Client only: the version of the game's own content and rules this build carries, declared by the game ([`NebulaConfig.GameContentVersion`](/docs/reference/core/nebula-config#gamecontentversion), `-nebula-content-version`). Nebula does not interpret it: the gateway compares it with its own configured window and refuses a client outside it with [`JoinRejectReason.ContentVersionMismatch`](/docs/reference/protocol/join-reject-reason#contentversionmismatch). 0 means the game does not version its content, and every gateway that does not either will accept it.
+The client's game content version, set by [`NebulaConfig.GameContentVersion`](/docs/reference/core/nebula-config#gamecontentversion). The gateway checks it against its configured range unless the gateway's content version is zero. An incompatible value is refused with [`JoinRejectReason.ContentVersionMismatch`](/docs/reference/protocol/join-reject-reason#contentversionmismatch).
 
 ## Methods
 

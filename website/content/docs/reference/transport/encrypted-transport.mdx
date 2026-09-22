@@ -1,6 +1,6 @@
 ---
 title: "EncryptedTransport"
-description: "Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and the client exchange exactly the messages they always did, and this layer seals each packet."
+description: "Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
@@ -9,11 +9,11 @@ description: "Client-to-gateway encryption, wrapped around a UDP transport so no
 public sealed class EncryptedTransport : ITransport, ISecureTransport
 ```
 
-Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and the client exchange exactly the messages they always did, and this layer seals each packet.
+Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport.
 
-A client wrapper ([`ForClient`](#forclient)) runs the handshake as soon as the link comes up and holds the `Connected` event back until it finishes, so the first thing above it ever sends is already encrypted. A gateway wrapper ([`ForGateway`](#forgateway)) answers a handshake on any inbound link that opens with one and leaves every other link exactly as it was: that is what keeps worker and gateway peers, which share the gateway's socket and live inside the deployment's private network, on plaintext (D1).
+[`ForClient`](#forclient) starts a key exchange when the underlying link connects and delays the `Connected` event until the gateway response is verified. Send application packets after this event. [`ForGateway`](#forgateway) answers links that begin with a key exchange and passes other links through without encryption. Worker and gateway peers that use these plaintext links must run on a private network.
 
-Wire format, all little-endian: a handshake frame is `[tag][body]` and a data frame is `[delivery tag][seq:u32]` followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id), so a gateway with encryption turned off simply ignores the frame.
+A handshake frame is `[tag][body]`. A data frame is `[delivery tag][seq:u32]`, followed by the ChaCha20-Poly1305 ciphertext and authentication tag, adding 21 bytes to the plaintext size. The sequence is little-endian. The frame header is authenticated as associated data. Sequenced and reliable traffic use separate counters, nonce domains, and replay windows. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id); a gateway with encryption disabled ignores handshake frames.
 
 ## Properties
 
@@ -37,7 +37,7 @@ public string SecurityError { get; } = "";
 public long DroppedPackets { get; }
 ```
 
-Packets refused by the AEAD (forged, corrupted or replayed) since the transport started.
+Data packets rejected as malformed, unauthenticated, replayed, or outside the replay window during this transport object's lifetime.
 
 ### Name [#name]
 
@@ -65,7 +65,7 @@ public int LocalPort { get; }
 public static EncryptedTransport ForGateway(ITransport inner, TransportIdentity identity);
 ```
 
-The gateway's side: answers handshakes with `identity`, passes plaintext links through.
+Creates a gateway wrapper that answers handshakes with `identity` and passes plaintext links through.
 
 ### ForClient [#forclient]
 
@@ -73,7 +73,7 @@ The gateway's side: answers handshakes with `identity`, passes plaintext links t
 public static EncryptedTransport ForClient(ITransport inner, ClientEncryption settings);
 ```
 
-The client's side: every link this transport dials is encrypted, or it does not come up at all.
+Creates a client wrapper that reports a connection only after its encryption handshake succeeds.
 
 ### IsEncrypted [#isencrypted]
 

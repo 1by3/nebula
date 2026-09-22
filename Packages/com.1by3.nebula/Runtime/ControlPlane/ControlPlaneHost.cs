@@ -65,10 +65,9 @@ namespace Nebula
         public LocalControlPlane Plane => _plane;
         public string StorageBackend => _storage.Backend;
         /// <summary>
-        /// Why the last save to storage failed, or null when the last one succeeded. Not a mesh failure by
-        /// itself: the control plane keeps running on its in-memory state and the save is retried on the next
-        /// interval (a whole-document replace has nothing to replay), so this is what an operator watches across
-        /// a database failover. See <c>docs/control-plane-availability.md</c> D4.
+        /// Error from the latest background save, or null before a save fails or after a successful save.
+        /// Failed saves are retried at the next save interval while the control plane continues using its
+        /// in-memory state.
         /// </summary>
         public string StorageError => Volatile.Read(ref _storageError);
         public bool HasToken => _token != null;
@@ -79,6 +78,7 @@ namespace Nebula
 
         public bool IsConnected => _plane.IsConnected;
         public DateTime Now => _plane.Now;
+        /// <summary>Identity of the hosted control-plane document; see <see cref="IControlPlane.DocumentId"/>.</summary>
         public string DocumentId => _plane.DocumentId;
         public event Action Changed { add => _plane.Changed += value; remove => _plane.Changed -= value; }
         public IReadOnlyList<WorkerInfo> Workers => _plane.Workers;

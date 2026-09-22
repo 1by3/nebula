@@ -33,7 +33,7 @@ Best estimate of the control plane's clock (for heartbeat age checks).
 string DocumentId { get; }
 ```
 
-Identity of the document this plane holds. It changes only when the document is started again from nothing (a fresh orchestrator, `-nebula-reset`, a restore of storage that never held this mesh) and survives a restart that kept its storage. A row missing from the *same* document was removed on purpose; a row missing from a *new* document was lost, and is what [`WorkerRegistration`](/docs/reference/worker/worker-registration) puts back. Empty until a mirror has received its first document.
+Identity of the document containing process registrations, container assignments, and shared settings. Preserved when that document is restored from storage; replaced when the control plane starts empty or is reset. [`WorkerRegistration`](/docs/reference/worker/worker-registration) uses changes to this identity to reclaim missing assignments. A remote mirror reports an empty string until it receives a document with an identity.
 
 ### Workers [#workers]
 

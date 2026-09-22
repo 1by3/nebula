@@ -49,7 +49,7 @@ public sealed class ConnectMenu : MonoBehaviour
 }
 ```
 
-`ConnectTo` replaces the configured gateway address and keeps retrying every 2 seconds until the connection succeeds or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
+`ConnectTo` replaces the configured gateway address and retries connection failures every 2 seconds until it connects, receives a refusal that stops automatic retries, or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
 
 The gateway also identifies the player when it connects: anonymously by default, or from an OpenID Connect token you set in `NebulaClient.AuthToken` before connecting. See [Authentication and player identity](/docs/guides/authentication).
 
@@ -90,11 +90,15 @@ client.JoinStateChanged += (state, seconds) =>
 
 The client keeps its **session** across a reconnection. The gateway's welcome carries a session token, which the client stores in `NebulaClient.SessionToken` and presents on every later connection. A gateway that verifies it, any gateway of the mesh, welcomes the client with the same `ClientId` and, when the worker still holds the pawn, the same pawn; `SessionReclaimed` is then `true`. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection) for what the token does and does not guarantee.
 
-Two situations trigger a reconnection without any code on your side:
+The client handles these connection events automatically:
 
-- **The link drops.** `ConnectionState` becomes `Disconnected`, `LastError` reads `disconnected from gateway (retrying)`, and the client reconnects to the same address after one second, then every two seconds, until it succeeds or you call `Disconnect()`. The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it. This is also what a player sees when their gateway process is lost outright (killed, crashed, the host went away): Nebula's session coordination reclaims that player's session onto another gateway once the dead one's heartbeat goes stale, in **9 seconds or less** on the machine this was measured on (usually around 5 s) — see the gateway-kill row of [the scale suite](/docs/guides/scale-suite). That bound only starts once a *reconnect attempt actually reaches a live gateway*: the client always retries the address it was given (`NebulaConfig.GatewayAddress`), and Nebula does not run a load balancer in front of the fleet, so if that address names the one gateway that died, point it at a load balancer or a DNS name your infrastructure keeps pointed at a live gateway.
+- **The link drops.** `ConnectionState` becomes `Disconnected`, `LastError` reads `disconnected from gateway (retrying)`, and the client reconnects to the same address after one second, then every two seconds, until it succeeds or you call `Disconnect()`. The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it.
 - **This player connected again somewhere else.** The gateway sends `SessionReplaced`, the `SessionReplaced` event fires with a reason fit to show the player, and the client leaves the world and stays out: the newer connection has the player's session and pawn. Reconnect only when the player asks to, which takes the player back. See [One connection per player](/docs/guides/authentication#one-connection-per-player).
 - **The gateway is being taken out of service.** The gateway sends `GatewayDraining` with the number of seconds it gives its clients, the `GatewayDraining` event fires with that number, and the client drops the link and reconnects at once with its session token. When the gateway address is a load balancer, the retry lands on another gateway; when it is one gateway, the client keeps retrying until that gateway is back in service. A gateway that is draining refuses a new join with the reason `gateway is draining`; the client retries after a second instead of giving up.
+
+If a gateway process fails, session coordination can reclaim its sessions after its heartbeat exceeds the configured `WorkerTimeoutSeconds` (default 5 s). Reclaim time also depends on failure detection, retries, network delays, and control-plane availability. Tests with default settings use a 9-second threshold measured from a reconnect attempt reaching a live gateway; this is not a deployment guarantee. See [the scale suite](/docs/guides/scale-suite).
+
+The client retries its configured `GatewayAddress`. Nebula does not provide a load balancer: configure your address and infrastructure so a retry can reach a surviving gateway. If the address still points only to the failed gateway, the session cannot be reclaimed there.
 
 The replicated world is cleared on every reconnection and replayed by the gateway that answers, so entities disappear for a moment and `LocalPlayerSpawned` fires again. Show a short "reconnecting" message from `ConnectionStateChanged` or `GatewayDraining` rather than returning to your main menu.
 

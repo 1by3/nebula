@@ -47,6 +47,7 @@ namespace Nebula
         private volatile bool _running;
         private ControlPlaneJson.Snapshot _incoming;
         private long _version = -1;
+        /// <summary>Identity of the mirrored document, or an empty string until a document with an identity arrives.</summary>
         public string DocumentId { get; private set; } = "";
         private double _lastReadAt = double.NegativeInfinity;
         private DateTime _serverNow = DateTime.UtcNow;

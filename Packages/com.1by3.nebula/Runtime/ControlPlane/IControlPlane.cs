@@ -250,11 +250,10 @@ namespace Nebula
         /// <summary>Best estimate of the control plane's clock (for heartbeat age checks).</summary>
         DateTime Now { get; }
         /// <summary>
-        /// Identity of the document this plane holds. It changes only when the document is started again from
-        /// nothing (a fresh orchestrator, <c>-nebula-reset</c>, a restore of storage that never held this mesh) and
-        /// survives a restart that kept its storage. A row missing from the <i>same</i> document was removed on
-        /// purpose; a row missing from a <i>new</i> document was lost, and is what <see cref="WorkerRegistration"/>
-        /// puts back. Empty until a mirror has received its first document.
+        /// Identity of the document containing process registrations, container assignments, and shared settings.
+        /// Preserved when that document is restored from storage; replaced when the control plane starts empty
+        /// or is reset. <see cref="WorkerRegistration"/> uses changes to this identity to reclaim missing assignments.
+        /// A remote mirror reports an empty string until it receives a document with an identity.
         /// </summary>
         string DocumentId { get; }
         event Action Changed;

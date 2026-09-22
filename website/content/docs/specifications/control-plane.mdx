@@ -44,7 +44,7 @@ Nebula's runtime applies these conventions:
 
 ## The document
 
-`document` identifies the document itself. It is assigned when the orchestrator starts a document from nothing and is kept across a restart that restored the document from storage. Workers use it to tell a lease that was lost (the document is a new one) from a lease that was removed on purpose (the document is the one they registered into): only the first is re-claimed. A client MUST treat a missing `document` field as an empty identity. See [Restart and restore a mesh](/docs/deploy/availability).
+`document` is an identity assigned when the control plane starts empty or is reset. Restoring the document from storage preserves its identity. When the identity changes, workers request missing assignments for containers they still own; removals within the same document remain in effect. A client MUST treat a missing `document` field as an empty identity. See [Restart and restore a mesh](/docs/deploy/availability).
 
 ```json
 {

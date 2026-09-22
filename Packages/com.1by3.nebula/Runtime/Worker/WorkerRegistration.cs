@@ -8,21 +8,8 @@ using UnityEngine;
 namespace Nebula
 {
     /// <summary>
-    /// A worker's registration row on the control plane, and what has to be said again when that row is gone.
-    /// <para>
-    /// A control plane that restarts <i>with</i> its storage needs none of this: every row comes back and the
-    /// mesh never notices. A control plane that comes back <b>empty</b> — a fresh orchestrator with
-    /// <c>-nebula-reset</c>, a database restored from a backup taken before this mesh started, a failover to a
-    /// replica that never had the document — does: the rows describing which processes exist and what they
-    /// simulate live only in the running processes, and a worker that registered once at startup would sit
-    /// there simulating containers nobody can route to. See <c>docs/control-plane-availability.md</c> D1.
-    /// </para>
-    /// <para>
-    /// <see cref="NebulaGateway"/> already had half of this shape (it re-registers from
-    /// <c>OnControlPlaneChanged</c> when its own row has gone); this is the same rule for a worker, plus the part
-    /// a gateway does not need — re-claiming the containers, because a worker is the only process that knows it
-    /// is still simulating them.
-    /// </para>
+    /// Registers a worker with the control plane and restores missing container assignments after the
+    /// control-plane document is replaced. Existing assignments are preserved.
     /// </summary>
     public sealed class WorkerRegistration
     {
@@ -31,17 +18,17 @@ namespace Nebula
         public string Address = "";
         public ushort Port;
 
-        /// <summary>The row has been asked for at least once since this process started.</summary>
+        /// <summary>Whether registration has been requested since construction or the last <see cref="Forget"/> call.</summary>
         public bool IsRegistered { get; private set; }
 
-        /// <summary>How many times the row has been written: 1 at startup, one more per re-registration.</summary>
+        /// <summary>Total registration requests issued by this instance, including requests queued for remote delivery.</summary>
         public int RegistrationCount { get; private set; }
 
         /// <summary>
-        /// The first registration, from the worker's update loop. Does nothing once the row has been asked for:
-        /// noticing that it went away is <see cref="RegisterAgainIfForgotten"/>'s job, and only it can tell the
-        /// difference between "not there yet" and "not there any more".
+        /// Requests the initial worker registration when the control plane is connected.
+        /// Does nothing if registration has already been requested.
         /// </summary>
+        /// <returns>True if this call issued a registration request.</returns>
         public bool Register(IControlPlane controlPlane)
         {
             if (IsRegistered || controlPlane == null || !controlPlane.IsConnected) return false;
@@ -54,14 +41,11 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Call this when the mirrored control-plane document <b>changed</b> — never on a timer. A
-        /// <see cref="RemoteControlPlane"/> learns of its own registration only when the next document arrives, so
-        /// a poll would re-register on every frame of the round trip; a change means the document that just landed
-        /// is one this worker is not in. Registering twice is harmless either way (the row is keyed by id), which
-        /// is what makes the rare double write on an unrelated change a non-event.
-        /// <para>Returns true when it wrote the row again, which is the caller's cue to
-        /// <see cref="ReclaimContainers"/> and heartbeat at once.</para>
+        /// Requests registration again if the connected control plane no longer lists this worker.
+        /// Call from <see cref="IControlPlane.Changed"/> after initial registration; polling can issue duplicate
+        /// requests while a remote control plane is waiting for the updated document.
         /// </summary>
+        /// <returns>True if this call issued a registration request. The worker can then send a heartbeat immediately.</returns>
         public bool RegisterAgainIfForgotten(IControlPlane controlPlane)
         {
             if (!IsRegistered || controlPlane == null || !controlPlane.IsConnected) return false;
@@ -71,35 +55,17 @@ namespace Nebula
             return true;
         }
 
-        /// <summary>Forget the row without touching the control plane (the process is shutting down).</summary>
+        /// <summary>Clears the local registration flag without unregistering the worker on the control plane.</summary>
         public void Forget() => IsRegistered = false;
 
         /// <summary>
-        /// Put back the lease rows for every container this worker is still simulating and that the control plane
-        /// no longer has a row for. Only the missing ones: a row that is there is the control plane's to decide,
-        /// and a worker that overwrote a lease it had lost would take a container back off whoever was given it.
-        /// <para>
-        /// Call it on every control-plane change; it decides for itself when a missing row means <i>lost</i>. The
-        /// signal is <see cref="IControlPlane.DocumentId"/>, not the worker's own row: a mirror flushes writes it
-        /// queued while the orchestrator was away, so a replacement can have this worker's registration back —
-        /// from a queued write — in the very document that first shows the leases gone, and a reclaim hung off
-        /// "my row went missing" strands the containers for good. A document this worker has not reconciled with
-        /// yet is reconciled once, whatever else it contains. A row missing from a document it <i>has</i> reconciled
-        /// with was removed on purpose — a retiring scope, a runtime container the orchestrator dropped — and is
-        /// left alone, because a worker that put it back would be fighting the orchestrator's own lifecycle
-        /// (<c>docs/control-plane-availability.md</c> D1b).
-        /// </para>
-        /// <list type="bullet">
-        /// <item>A baked container is claimed with <see cref="IControlPlane.EnsureContainer"/> +
-        /// <see cref="IControlPlane.AssignContainer"/>, which starts its epoch again at 1. An epoch only ever has
-        /// to be increasing <i>within</i> one control-plane document, and this document is a new one: every peer
-        /// reads the epochs out of it, none of them remembers the old document's.</item>
-        /// <item>A runtime container is re-announced with its box
-        /// (<see cref="IControlPlane.EnsureRuntimeContainer"/>), because nothing else in the mesh knows the box:
-        /// the worker that asked for it is the only copy of that fact.</item>
-        /// </list>
-        /// Returns how many rows were written this call.
+        /// Requests missing leases, which assign containers to workers, for containers this worker still owns.
+        /// Call on each control-plane change before applying the updated leases. Reconciliation runs once for
+        /// each new <see cref="IControlPlane.DocumentId"/>; removals within the same document are preserved.
+        /// <para>Existing leases and dynamic containers are skipped. Runtime containers are reclaimed with their
+        /// bounds and instance metadata; other containers are ensured and assigned to this worker.</para>
         /// </summary>
+        /// <returns>The number of containers for which this call issued reclaim requests.</returns>
         public int ReclaimContainers(IControlPlane controlPlane)
         {
             if (!IsRegistered || controlPlane == null || !controlPlane.IsConnected) return 0;

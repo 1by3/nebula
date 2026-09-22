@@ -3,24 +3,22 @@
     Backup-and-restore drill for a Nebula entity store and control plane.
 
 .DESCRIPTION
-    Seeds a database with known records, takes a snapshot, backs it up, WIPES it, proves the wipe emptied it,
-    restores from the backup and proves the restored database is the one that was backed up. It leaves an
-    artifact under Logs/restore-drill/<timestamp>.json and prints PASS or FAIL with a non-zero exit code.
+    Use a disposable database or an offline copy. This drill adds test data, replaces the control-plane
+    document, then backs up and wipes the database before restoring it. A failed restore can leave it empty.
+    The drill compares snapshots before and after restoration and saves the result under
+    Logs/restore-drill/<timestamp>.json. It prints PASS on success or FAIL with a non-zero exit code.
 
-    The verification is done by `Services~/Nebula.RestoreDrill`, which reads every record through Nebula's own
-    SqlPersistenceStore and SqlControlPlaneStorage rather than through hand-written SQL. A drill that compares
-    tables proves the bytes came back; this one proves the mesh can read what came back.
+    Verification reads saved entities through SqlPersistenceStore and the control-plane document through
+    SqlControlPlaneStorage. It also compares the gateway session and scope claim tables. Portable JSON import
+    restores these tables in one SQL transaction, preserving entity versions and save times.
 
     It needs no player build, no Unity and no running mesh. By default it runs against a scratch SQLite database
     under Logs/restore-drill/, so it never touches the mesh's own Library/Nebula/nebula.db unless you name it.
 
-    Design of record: docs/control-plane-availability.md D7. User-facing page:
-    website/content/docs/deploy/availability.mdx.
-
 .PARAMETER Database
     Nebula database URL to drill: `sqlite:<path>` or `postgres://user:pass@host:port/db`. The default is a
-    throwaway SQLite file under Logs/restore-drill/. Drilling a database you care about is safe in the sense that
-    the drill restores what it wiped, but it does wipe it, so do not point it at a live mesh.
+    throwaway SQLite file under Logs/restore-drill/. Supply only a disposable database or an offline copy;
+    the drill modifies and wipes it. Never point it at a live mesh.
 
 .PARAMETER Entities
     How many records to seed (default 250).
@@ -30,9 +28,8 @@
 
 .PARAMETER Method
     `auto` (default) uses the engine's own tools when it can: SQLite's online VACUUM INTO, or pg_dump/pg_restore
-    when they are on PATH. `nebula` forces the engine-independent JSON export/import through the store, which is
-    the only route that is portable between backends. `engine` insists on the engine tools and fails if they are
-    missing.
+    when they are on PATH. `nebula` uses JSON export and an atomic SQL import that can restore across backends.
+    `engine` requires the database engine's backup tools and fails if they are missing.
 
 .PARAMETER SkipBuild
     Do not `dotnet build` the drill tool first (it must already be built).

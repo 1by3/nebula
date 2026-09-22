@@ -5,8 +5,8 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 
 ## The rule, in one paragraph
 
-A **client** may talk to a **gateway** whose protocol is its own or one newer: a gateway accepts
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, which is N-1 and N. Anything outside that is refused
+A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`. Both values are currently 18; protocol 17 is not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a

@@ -37,7 +37,7 @@ namespace Nebula
 
         public int Connect(string host, int port) => Outer(_transports[0].Connect(host, port), 0);
 
-        /// <summary>Whether the transport this peer arrived on calls the link encrypted (a WebRTC link always is).</summary>
+        /// <summary>Returns the peer's encryption status from its underlying <see cref="ISecureTransport"/>, or false when that interface is unavailable.</summary>
         public bool IsEncrypted(int peerId) =>
             TryInner(peerId, out var transport, out int inner) && transport is ISecureTransport secure && secure.IsEncrypted(inner);
 

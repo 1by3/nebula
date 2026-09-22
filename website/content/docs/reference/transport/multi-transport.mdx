@@ -71,7 +71,7 @@ public int Connect(string host, int port);
 public bool IsEncrypted(int peerId);
 ```
 
-Whether the transport this peer arrived on calls the link encrypted (a WebRTC link always is).
+Returns the peer's encryption status from its underlying [`ISecureTransport`](/docs/reference/transport/i-secure-transport), or false when that interface is unavailable.
 
 ### Disconnect [#disconnect]
 

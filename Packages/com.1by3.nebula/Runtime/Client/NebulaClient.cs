@@ -76,23 +76,19 @@ namespace Nebula
         /// </summary>
         public float JoinRejectSaturation { get; private set; }
         /// <summary>
-        /// The protocol versions the gateway that refused the last join accepts, as a <c>Min</c>..<c>Max</c> pair;
-        /// (0, 0) when it did not say. With <see cref="Nebula.JoinRejectReason.ProtocolUnsupported"/> this is what
-        /// tells the player whether to update the game (this build's <see cref="HelloMsg.ProtocolVersion"/> is
-        /// below <c>Min</c>) or to wait for the server to be upgraded (it is above <c>Max</c>). See
-        /// <c>docs/compatibility-policy.md</c>.
+        /// The inclusive protocol range reported by the gateway on the last refused join.
+        /// Use it with <see cref="Nebula.JoinRejectReason.ProtocolUnsupported"/> to identify a version mismatch.
+        /// A (0, 0) value means no range has been reported.
         /// </summary>
         public (ushort Min, ushort Max) ServerProtocolWindow { get; private set; }
         /// <summary>
-        /// The game content version the gateway that refused the last join runs
-        /// (<see cref="NebulaConfig.GameContentVersion"/>), for
-        /// <see cref="Nebula.JoinRejectReason.ContentVersionMismatch"/>; 0 when it did not say.
+        /// The gateway's game content version from the last refused join.
+        /// Zero means content version checks are disabled or no version has been reported.
         /// </summary>
         public uint ServerContentVersion { get; private set; }
         /// <summary>
-        /// The protocol this session speaks, as the gateway settled it (<see cref="WelcomeMsg.NegotiatedVersion"/>).
-        /// It is this build's <see cref="HelloMsg.ProtocolVersion"/> unless the gateway is newer and admitted this
-        /// client on the older half of its window. 0 before the first welcome.
+        /// The protocol version accepted in the last welcome, or <see cref="HelloMsg.ProtocolVersion"/>
+        /// when the welcome omits it. Zero before the first welcome.
         /// </summary>
         public ushort NegotiatedProtocolVersion { get; private set; }
         public int RttMs { get; private set; } = -1;

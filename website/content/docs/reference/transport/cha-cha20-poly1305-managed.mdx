@@ -1,6 +1,6 @@
 ---
 title: "ChaCha20Poly1305Managed"
-description: "ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce, a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext."
+description: "Implements ChaCha20-Poly1305 authenticated encryption with associated data (AEAD), as specified in RFC 8439."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
@@ -9,7 +9,7 @@ description: "ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client 
 public static class ChaCha20Poly1305Managed
 ```
 
-ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce, a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext.
+Implements ChaCha20-Poly1305 authenticated encryption with associated data (AEAD), as specified in RFC 8439. It uses a 32-byte key, a 12-byte nonce, and a 16-byte authentication tag. Ciphertext has the same length as plaintext; the tag adds 16 bytes. A nonce must not be reused with the same key.
 
 ## Fields
 
@@ -47,7 +47,7 @@ Encrypt `plaintext` into `output` (ciphertext then the 16-byte tag). `output` ne
 public static int SealManaged(byte[] key, byte[] nonce, ArraySegment<byte> plaintext, byte[] aad, int aadLength, byte[] output, int outputOffset);
 ```
 
-The managed implementation, which a Unity build always takes; kept public so tests measure both.
+Encrypts the payload and appends its 16-byte authentication tag using the managed implementation used by Unity builds.
 
 ### Open [#open]
 
@@ -55,10 +55,12 @@ The managed implementation, which a Unity build always takes; kept public so tes
 public static int Open(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset);
 ```
 
-Check the tag and decrypt in place into `output`. Returns the plaintext length, or -1 when the packet was tampered with (or is not for this key) — the caller drops it without a word.
+Verifies the authentication tag and decrypts into `output`. Returns the plaintext length, or -1 if the input is shorter than a tag or authentication fails. Output is valid only on success.
 
 ### OpenManaged [#openmanaged]
 
 ```csharp
 public static int OpenManaged(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset);
 ```
+
+Verifies and decrypts with the managed implementation. Returns the plaintext length, or -1 for a truncated tag or failed authentication.

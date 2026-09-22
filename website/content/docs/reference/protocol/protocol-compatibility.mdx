@@ -1,6 +1,6 @@
 ---
 title: "ProtocolCompatibility"
-description: "The deployment compatibility rules, in one place so the gateway, the tests and a game's own tooling all answer the same way."
+description: "Checks client protocol and game content versions against the gateway's supported range."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/CompatibilityWindow.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/CompatibilityWindow.cs)</div>
@@ -9,9 +9,9 @@ description: "The deployment compatibility rules, in one place so the gateway, t
 public static class ProtocolCompatibility
 ```
 
-The deployment compatibility rules, in one place so the gateway, the tests and a game's own tooling all answer the same way. Design record: `docs/compatibility-policy.md`; version table: `docs/protocol-versions.md`.
+Checks client protocol and game content versions against the gateway's supported range.
 
-Client to gateway accepts a window of protocol versions ([`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg#minprotocolversion)..[`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion), N-1 and N). Gateway to worker and worker to worker require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly, because those processes are upgraded together by the operator and a half-upgraded mesh has no client to keep happy.
+Both protocol limits are 18, so only protocol-18 clients are accepted. Gateway-to-worker and worker-to-worker connections also require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
 
 ## Methods
 
@@ -21,7 +21,7 @@ Client to gateway accepts a window of protocol versions ([`HelloMsg.MinProtocolV
 public static bool ClientProtocolAccepted(ushort version);
 ```
 
-Is this client's protocol inside the gateway's window?
+Returns whether the client's protocol is within the gateway's inclusive supported range.
 
 ### WindowText [#windowtext]
 
@@ -29,7 +29,7 @@ Is this client's protocol inside the gateway's window?
 public static string WindowText();
 ```
 
-The window as a string fit for a log line or a refusal reason ("18", or "18-19" once it spans two).
+Formats the supported protocol range for logs and refusal messages.
 
 ### MinContentVersion [#mincontentversion]
 
@@ -37,7 +37,7 @@ The window as a string fit for a log line or a refusal reason ("18", or "18-19" 
 public static uint MinContentVersion(uint server, uint configuredMin);
 ```
 
-The oldest game content version a gateway configured with `server` and `configuredMin` admits: the server's own number when no minimum is configured, which makes the default an exact match.
+Returns the minimum accepted content version. A zero minimum or one greater than `server` uses the server's version, requiring an exact match.
 
 ### ContentVersionAccepted [#contentversionaccepted]
 
@@ -45,4 +45,4 @@ The oldest game content version a gateway configured with `server` and `configur
 public static bool ContentVersionAccepted(uint client, uint server, uint configuredMin);
 ```
 
-Is this client's game content version one the gateway runs? A gateway that declares no content version (`server` 0) does not check, so a game that does not version its content is unaffected.
+Returns whether the client's content version is within the configured inclusive range. A `server` value of zero accepts every content version.

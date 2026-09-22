@@ -1,6 +1,6 @@
 ---
 title: "X25519"
-description: "X25519 (RFC 7748 §5) over BigInteger."
+description: "Implements X25519 key agreement from RFC 7748 §5 using BigInteger arithmetic."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
@@ -9,7 +9,7 @@ description: "X25519 (RFC 7748 §5) over BigInteger."
 public static class X25519
 ```
 
-X25519 (RFC 7748 §5) over `BigInteger`. A scalar multiplication costs well under a millisecond and happens once per connection, so the field arithmetic is written for reviewability rather than speed.
+Implements X25519 key agreement from RFC 7748 §5 using `BigInteger` arithmetic. This managed implementation is not constant-time.
 
 ## Fields
 
@@ -27,7 +27,7 @@ public const int KeySize = 32;
 public static byte[] NewPrivateKey();
 ```
 
-A fresh private scalar. [`PublicKey`](#publickey) turns it into the value sent on the wire.
+Generates a random 32-byte private scalar with the X25519 clamping rules applied.
 
 ### PublicKey [#publickey]
 
@@ -41,4 +41,4 @@ public static byte[] PublicKey(byte[] privateKey);
 public static byte[] Agree(byte[] privateKey, byte[] peerPublicKey);
 ```
 
-The shared secret, or null when the peer sent a point of small order (an all-zero result).
+Computes the shared secret from two 32-byte keys. Returns null when agreement produces an all-zero result.

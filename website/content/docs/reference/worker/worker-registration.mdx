@@ -1,6 +1,6 @@
 ---
 title: "WorkerRegistration"
-description: "A worker's registration row on the control plane, and what has to be said again when that row is gone."
+description: "Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs)</div>
@@ -9,11 +9,7 @@ description: "A worker's registration row on the control plane, and what has to 
 public sealed class WorkerRegistration
 ```
 
-A worker's registration row on the control plane, and what has to be said again when that row is gone.
-
-A control plane that restarts *with* its storage needs none of this: every row comes back and the mesh never notices. A control plane that comes back **empty** — a fresh orchestrator with `-nebula-reset`, a database restored from a backup taken before this mesh started, a failover to a replica that never had the document — does: the rows describing which processes exist and what they simulate live only in the running processes, and a worker that registered once at startup would sit there simulating containers nobody can route to. See `docs/control-plane-availability.md` D1.
-
-[`NebulaGateway`](/docs/reference/gateway/nebula-gateway) already had half of this shape (it re-registers from `OnControlPlaneChanged` when its own row has gone); this is the same rule for a worker, plus the part a gateway does not need — re-claiming the containers, because a worker is the only process that knows it is still simulating them.
+Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced. Existing assignments are preserved.
 
 ## Fields
 
@@ -49,7 +45,7 @@ public ushort Port;
 public bool IsRegistered { get; }
 ```
 
-The row has been asked for at least once since this process started.
+Whether registration has been requested since construction or the last [`Forget`](#forget) call.
 
 ### RegistrationCount [#registrationcount]
 
@@ -57,7 +53,7 @@ The row has been asked for at least once since this process started.
 public int RegistrationCount { get; }
 ```
 
-How many times the row has been written: 1 at startup, one more per re-registration.
+Total registration requests issued by this instance, including requests queued for remote delivery.
 
 ## Methods
 
@@ -67,7 +63,9 @@ How many times the row has been written: 1 at startup, one more per re-registrat
 public bool Register(IControlPlane controlPlane);
 ```
 
-The first registration, from the worker's update loop. Does nothing once the row has been asked for: noticing that it went away is [`RegisterAgainIfForgotten`](#registeragainifforgotten)'s job, and only it can tell the difference between "not there yet" and "not there any more".
+Requests the initial worker registration when the control plane is connected. Does nothing if registration has already been requested.
+
+**Returns:** True if this call issued a registration request.
 
 ### RegisterAgainIfForgotten [#registeragainifforgotten]
 
@@ -75,9 +73,9 @@ The first registration, from the worker's update loop. Does nothing once the row
 public bool RegisterAgainIfForgotten(IControlPlane controlPlane);
 ```
 
-Call this when the mirrored control-plane document **changed** — never on a timer. A [`RemoteControlPlane`](/docs/reference/control-plane/remote-control-plane) learns of its own registration only when the next document arrives, so a poll would re-register on every frame of the round trip; a change means the document that just landed is one this worker is not in. Registering twice is harmless either way (the row is keyed by id), which is what makes the rare double write on an unrelated change a non-event.
+Requests registration again if the connected control plane no longer lists this worker. Call from [`IControlPlane.Changed`](/docs/reference/control-plane/i-control-plane#changed) after initial registration; polling can issue duplicate requests while a remote control plane is waiting for the updated document.
 
-Returns true when it wrote the row again, which is the caller's cue to [`ReclaimContainers`](#reclaimcontainers) and heartbeat at once.
+**Returns:** True if this call issued a registration request. The worker can then send a heartbeat immediately.
 
 ### Forget [#forget]
 
@@ -85,7 +83,7 @@ Returns true when it wrote the row again, which is the caller's cue to [`Reclaim
 public void Forget();
 ```
 
-Forget the row without touching the control plane (the process is shutting down).
+Clears the local registration flag without unregistering the worker on the control plane.
 
 ### ReclaimContainers [#reclaimcontainers]
 
@@ -93,11 +91,8 @@ Forget the row without touching the control plane (the process is shutting down)
 public int ReclaimContainers(IControlPlane controlPlane);
 ```
 
-Put back the lease rows for every container this worker is still simulating and that the control plane no longer has a row for. Only the missing ones: a row that is there is the control plane's to decide, and a worker that overwrote a lease it had lost would take a container back off whoever was given it.
+Requests missing leases, which assign containers to workers, for containers this worker still owns. Call on each control-plane change before applying the updated leases. Reconciliation runs once for each new [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid); removals within the same document are preserved.
 
-Call it on every control-plane change; it decides for itself when a missing row means *lost*. The signal is [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid), not the worker's own row: a mirror flushes writes it queued while the orchestrator was away, so a replacement can have this worker's registration back — from a queued write — in the very document that first shows the leases gone, and a reclaim hung off "my row went missing" strands the containers for good. A document this worker has not reconciled with yet is reconciled once, whatever else it contains. A row missing from a document it *has* reconciled with was removed on purpose — a retiring scope, a runtime container the orchestrator dropped — and is left alone, because a worker that put it back would be fighting the orchestrator's own lifecycle (`docs/control-plane-availability.md` D1b).
+Existing leases and dynamic containers are skipped. Runtime containers are reclaimed with their bounds and instance metadata; other containers are ensured and assigned to this worker.
 
-- A baked container is claimed with [`IControlPlane.EnsureContainer`](/docs/reference/control-plane/i-control-plane#ensurecontainer) + [`IControlPlane.AssignContainer`](/docs/reference/control-plane/i-control-plane#assigncontainer), which starts its epoch again at 1. An epoch only ever has to be increasing *within* one control-plane document, and this document is a new one: every peer reads the epochs out of it, none of them remembers the old document's.
-- A runtime container is re-announced with its box ([`IControlPlane.EnsureRuntimeContainer`](/docs/reference/control-plane/i-control-plane#ensureruntimecontainer)), because nothing else in the mesh knows the box: the worker that asked for it is the only copy of that fact.
-
-Returns how many rows were written this call.
+**Returns:** The number of containers for which this call issued reclaim requests.

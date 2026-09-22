@@ -6,36 +6,35 @@ using System.Text;
 namespace Nebula
 {
     /// <summary>
-    /// How a client treats the gateway's certificate. See <c>docs/transport-encryption.md</c> §4.
+    /// Configures gateway certificate pinning and the client handshake timeout.
     /// </summary>
     public sealed class ClientEncryption
     {
         /// <summary>
-        /// The SHA-256 of the gateway's SubjectPublicKeyInfo, as hex (colons and case are ignored). Empty accepts
-        /// whatever certificate the gateway presents, which encrypts the link but does not authenticate the
-        /// gateway; the client logs that once per connection.
+        /// SHA-256 hash of the gateway certificate's SubjectPublicKeyInfo, as hexadecimal text. Comparison ignores
+        /// case and non-hexadecimal characters. An empty value accepts any certificate and logs a warning for
+        /// each connection: traffic is encrypted, but the gateway's identity is not verified.
         /// </summary>
         public string Fingerprint = "";
 
-        /// <summary>How long the client waits for the gateway's half of the handshake before giving up.</summary>
+        /// <summary>Seconds the client waits for the gateway's handshake response before disconnecting.</summary>
         public float TimeoutSeconds = 5f;
     }
 
     /// <summary>
-    /// A transport that can tell, per peer, whether the link is encrypted. <see cref="EncryptedTransport"/>,
-    /// <see cref="MultiTransport"/> and the WebRTC transports implement it; the gateway asks it before it lets a
-    /// client's <c>Hello</c> through when <c>NebulaConfig.RequireEncryption</c> is set.
+    /// Reports encryption status for each peer. The gateway checks this status before accepting a client's
+    /// <c>Hello</c> message when <c>NebulaConfig.RequireEncryption</c> is enabled.
     /// </summary>
     public interface ISecureTransport
     {
-        /// <summary>Whether traffic with this peer is encrypted and its far end authenticated as far as the configuration asked.</summary>
+        /// <summary>Whether this peer has established encryption. Gateway identity verification depends on the transport's certificate settings.</summary>
         bool IsEncrypted(int peerId);
 
-        /// <summary>The last handshake failure, for the connection UI. Empty when nothing has failed.</summary>
+        /// <summary>The last recorded handshake failure for display in connection status. Empty when no failure has been recorded.</summary>
         string SecurityError { get; }
     }
 
-    /// <summary>Whether a link is encrypted, for callers that hold a plain <see cref="ITransport"/>.</summary>
+    /// <summary>Reads encryption status and handshake errors through an <see cref="ITransport"/> reference.</summary>
     public static class TransportSecurity
     {
         public static bool IsEncrypted(ITransport transport, int peerId) =>
@@ -46,19 +45,18 @@ namespace Nebula
     }
 
     /// <summary>
-    /// Client-to-gateway encryption, wrapped around a UDP transport so nothing above it changes: the gateway and
-    /// the client exchange exactly the messages they always did, and this layer seals each packet.
+    /// Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport.
     ///
-    /// <para>A client wrapper (<see cref="ForClient"/>) runs the handshake as soon as the link comes up and holds
-    /// the <c>Connected</c> event back until it finishes, so the first thing above it ever sends is already
-    /// encrypted. A gateway wrapper (<see cref="ForGateway"/>) answers a handshake on any inbound link that opens
-    /// with one and leaves every other link exactly as it was: that is what keeps worker and gateway peers, which
-    /// share the gateway's socket and live inside the deployment's private network, on plaintext (D1).</para>
+    /// <para><see cref="ForClient"/> starts a key exchange when the underlying link connects and delays the
+    /// <c>Connected</c> event until the gateway response is verified. Send application packets after this event.
+    /// <see cref="ForGateway"/> answers links that begin with a key exchange and passes other links through
+    /// without encryption. Worker and gateway peers that use these plaintext links must run on a private network.</para>
     ///
-    /// <para>Wire format, all little-endian: a handshake frame is <c>[tag][body]</c> and a data frame is
-    /// <c>[delivery tag][seq:u32]</c> followed by the ChaCha20-Poly1305 sealing of the payload with the frame header as
-    /// associated data — 21 bytes over the plaintext. Tags start at 0xE0, above every <see cref="MsgId"/>, so a
-    /// gateway with encryption turned off simply ignores the frame.</para>
+    /// <para>A handshake frame is <c>[tag][body]</c>. A data frame is <c>[delivery tag][seq:u32]</c>, followed by
+    /// the ChaCha20-Poly1305 ciphertext and authentication tag, adding 21 bytes to the plaintext size. The
+    /// sequence is little-endian. The frame header is authenticated as associated data. Sequenced and reliable
+    /// traffic use separate counters, nonce domains, and replay windows. Tags start at 0xE0, above every
+    /// <see cref="MsgId"/>; a gateway with encryption disabled ignores handshake frames.</para>
     /// </summary>
     public sealed class EncryptedTransport : ITransport, ISecureTransport
     {
@@ -89,10 +87,10 @@ namespace Nebula
             _forward = OnInner;
         }
 
-        /// <summary>The gateway's side: answers handshakes with <paramref name="identity"/>, passes plaintext links through.</summary>
+        /// <summary>Creates a gateway wrapper that answers handshakes with <paramref name="identity"/> and passes plaintext links through.</summary>
         public static EncryptedTransport ForGateway(ITransport inner, TransportIdentity identity) => new EncryptedTransport(inner, identity, null);
 
-        /// <summary>The client's side: every link this transport dials is encrypted, or it does not come up at all.</summary>
+        /// <summary>Creates a client wrapper that reports a connection only after its encryption handshake succeeds.</summary>
         public static EncryptedTransport ForClient(ITransport inner, ClientEncryption settings) => new EncryptedTransport(inner, null, settings ?? new ClientEncryption());
 
         /// <summary>The certificate fingerprint this gateway presents; null on a client.</summary>
@@ -100,7 +98,7 @@ namespace Nebula
 
         public string SecurityError { get; private set; } = "";
 
-        /// <summary>Packets refused by the AEAD (forged, corrupted or replayed) since the transport started.</summary>
+        /// <summary>Data packets rejected as malformed, unauthenticated, replayed, or outside the replay window during this transport object's lifetime.</summary>
         public long DroppedPackets => _dropped;
 
         public bool IsEncrypted(int peerId) => _links.TryGetValue(peerId, out var link) && link.Keyed;

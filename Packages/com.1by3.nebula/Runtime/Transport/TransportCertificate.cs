@@ -8,12 +8,11 @@ using System.Text;
 namespace Nebula
 {
     /// <summary>
-    /// The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins.
-    /// The certificate is an ordinary X.509 RSA certificate: either one the operator supplies as PEM (their own
-    /// CA's, or the one the web port already uses) or one the gateway generates for itself on first run and keeps
-    /// next to its other state. Encoding and decoding is done here, over <see cref="RSAParameters"/> and DER,
-    /// because Unity's profile has neither <c>CertificateRequest</c> nor the PKCS#8 import helpers
-    /// (<c>docs/transport-encryption.md</c> D3).
+    /// Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client
+    /// pinning. Load a supplied certificate and key from Privacy-Enhanced Mail (PEM) text, or generate and
+    /// optionally store a self-signed identity with <see cref="Create"/>. Certificates use Distinguished
+    /// Encoding Rules (DER) for their binary representation. Client verification checks the handshake signature
+    /// and configured fingerprint; it does not validate a certificate chain or hostname.
     /// </summary>
     public sealed class TransportIdentity : IDisposable
     {
@@ -24,14 +23,14 @@ namespace Nebula
             Fingerprint = fingerprint;
         }
 
-        /// <summary>The DER certificate sent to every client during the handshake.</summary>
+        /// <summary>The DER-encoded X.509 certificate sent during the encryption handshake.</summary>
         public byte[] Certificate { get; }
-        /// <summary>The private key; only the gateway has it.</summary>
+        /// <summary>The private RSA key used to sign gateway handshake messages.</summary>
         public RSA Key { get; }
         /// <summary>
-        /// SHA-256 of the certificate's SubjectPublicKeyInfo as 64 lowercase hex characters: what a client pins with
-        /// <c>NebulaConfig.GatewayFingerprint</c>. It is the fingerprint of the key, not of the certificate, so
-        /// re-issuing the certificate for the same key does not invalidate what players pinned.
+        /// SHA-256 hash of the certificate's SubjectPublicKeyInfo as 64 lowercase hexadecimal characters.
+        /// Set <c>NebulaConfig.GatewayFingerprint</c> to this value to pin the gateway's public key.
+        /// Reissuing a certificate with the same public key preserves the fingerprint.
         /// </summary>
         public string Fingerprint { get; }
 
@@ -39,10 +38,10 @@ namespace Nebula
 
         public void Dispose() => Key.Dispose();
 
-        /// <summary>The fingerprint a client would pin for a certificate it received.</summary>
+        /// <summary>Computes the SHA-256 fingerprint of a DER-encoded certificate's SubjectPublicKeyInfo.</summary>
         public static string FingerprintOf(byte[] certificateDer) => Hex(NebulaCrypto.Sha256(Der.SubjectPublicKeyInfo(certificateDer)));
 
-        /// <summary>Check a signature the gateway made with the key in <paramref name="certificateDer"/>.</summary>
+        /// <summary>Verifies an RSA PKCS#1 SHA-256 signature using the public key in <paramref name="certificateDer"/>. Does not validate certificate trust.</summary>
         public static bool Verify(byte[] certificateDer, byte[] data, byte[] signature)
         {
             using (var rsa = RSA.Create())
@@ -53,10 +52,11 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Build the identity a gateway presents. In order: the PEM strings, then the PEM files, then a self-signed
-        /// certificate read from (or written to) <paramref name="selfSignedPath"/>.
+        /// Creates a gateway identity. Uses both PEM strings when supplied; otherwise uses the certificate file
+        /// and optional separate key file. With neither source configured, loads the self-signed identity from
+        /// <paramref name="selfSignedPath"/> or generates one and attempts to store it there.
         /// </summary>
-        /// <param name="subject">Common name of a generated certificate: the address clients dial.</param>
+        /// <param name="subject">Common name for a generated certificate. An empty value uses <c>nebula-gateway</c>.</param>
         public static TransportIdentity Create(string certificatePem, string keyPem, string certificatePath, string keyPath, string selfSignedPath, string subject)
         {
             if (!string.IsNullOrEmpty(certificatePem) && !string.IsNullOrEmpty(keyPem)) return FromPem(certificatePem, keyPem);
@@ -89,7 +89,7 @@ namespace Nebula
             return identity;
         }
 
-        /// <summary>A certificate and key in PEM form, the two blocks in either order and optionally in one file.</summary>
+        /// <summary>Loads a PEM certificate and RSA private key. Supports PKCS#1 <c>RSA PRIVATE KEY</c> and unencrypted PKCS#8 <c>PRIVATE KEY</c> blocks. Both arguments may contain the same combined PEM document.</summary>
         public static TransportIdentity FromPem(string certificatePem, string keyPem)
         {
             byte[] certificate = Pem.First(certificatePem, "CERTIFICATE");
@@ -110,7 +110,7 @@ namespace Nebula
             return new TransportIdentity(certificate, rsa, FingerprintOf(certificate));
         }
 
-        /// <summary>A fresh 2048-bit RSA key in a self-signed certificate valid for ten years.</summary>
+        /// <summary>Generates a 2048-bit RSA key and a self-signed certificate with a ten-year validity period.</summary>
         public static TransportIdentity SelfSigned(string subject)
         {
             var rsa = RSA.Create();
@@ -121,7 +121,7 @@ namespace Nebula
             return new TransportIdentity(certificate, rsa, FingerprintOf(certificate));
         }
 
-        /// <summary>The certificate and its key as one PEM document, which is what the self-signed store holds.</summary>
+        /// <summary>Exports the certificate and unencrypted private key as one PEM document. Treat the result as a secret.</summary>
         public string ToPem() =>
             Pem.Write("CERTIFICATE", Certificate) + Pem.Write("RSA PRIVATE KEY", Der.Pkcs1From(Key.ExportParameters(true)));
 
@@ -132,7 +132,7 @@ namespace Nebula
             return sb.ToString();
         }
 
-        /// <summary>Compare fingerprints the way a player would paste them: case and separators do not matter.</summary>
+        /// <summary>Compares fingerprints after removing non-hexadecimal characters and ignoring case. Returns false for an empty normalized fingerprint.</summary>
         public static bool FingerprintMatches(string expected, string actual)
         {
             string a = Normalize(expected), b = Normalize(actual);

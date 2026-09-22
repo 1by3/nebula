@@ -25,7 +25,7 @@ public string Reason;
 public bool Retry;
 ```
 
-The refusal is about this gateway, not the client (it is draining): the client should try again shortly, and a load balancer will hand it to another gateway. False means the client's credentials were refused and retrying with the same ones is pointless.
+Whether the client should retry automatically, such as when this gateway is draining. Reaching another gateway requires a configured load balancer or another routing mechanism. When false, inspect [`Code`](#code) and [`Reason`](#reason) before reconnecting.
 
 ### Code [#code]
 
@@ -33,7 +33,7 @@ The refusal is about this gateway, not the client (it is draining): the client s
 public JoinRejectReason Code;
 ```
 
-The refusal in typed form ([`JoinRejectReason`](/docs/reference/protocol/join-reject-reason)), appended after the rest of v18 was settled. [`JoinRejectReason.None`](/docs/reference/protocol/join-reject-reason#none) from a gateway that does not write it.
+The typed refusal reason. Defaults to [`JoinRejectReason.None`](/docs/reference/protocol/join-reject-reason#none) when omitted.
 
 ### Saturation [#saturation]
 
@@ -43,13 +43,21 @@ public float Saturation;
 
 How saturated the target was, for [`JoinRejectReason.AtCapacity`](/docs/reference/protocol/join-reject-reason#atcapacity): 1 = the whole of the dominant component's budget ([`CapacityInfo.Saturation`](/docs/reference/orchestrator/capacity-info#saturation)). Sent as an f16; 0 when unknown.
 
-### SupportedMinVersion, SupportedMaxVersion [#supportedminversion-supportedmaxversion]
+### SupportedMinVersion [#supportedminversion]
 
 ```csharp
-public ushort SupportedMinVersion, SupportedMaxVersion;
+public ushort SupportedMinVersion;
 ```
 
-The oldest and newest protocol this gateway accepts ([`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg#minprotocolversion) and [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion)), on every refusal. With [`JoinRejectReason.ProtocolUnsupported`](/docs/reference/protocol/join-reject-reason#protocolunsupported) it is what lets a client say "update required" (its version is below [`SupportedMinVersion`](#supportedminversion)) rather than "this server is older than this build" (its version is above [`SupportedMaxVersion`](#supportedmaxversion)). 0 from a gateway that does not write them.
+The gateway's inclusive supported protocol range, supplied on every refusal. Both limits are 18. Zero means the corresponding field was omitted.
+
+### SupportedMaxVersion [#supportedmaxversion]
+
+```csharp
+public ushort SupportedMaxVersion;
+```
+
+The gateway's inclusive supported protocol range, supplied on every refusal. Both limits are 18. Zero means the corresponding field was omitted.
 
 ### ServerContentVersion [#servercontentversion]
 
@@ -57,7 +65,7 @@ The oldest and newest protocol this gateway accepts ([`HelloMsg.MinProtocolVersi
 public uint ServerContentVersion;
 ```
 
-The game content version this gateway runs ([`HelloMsg.GameContentVersion`](/docs/reference/protocol/hello-msg#gamecontentversion)), with [`JoinRejectReason.ContentVersionMismatch`](/docs/reference/protocol/join-reject-reason#contentversionmismatch), so the client can say which build to fetch.
+The gateway's configured game content version, supplied on every refusal. Zero means content version checks are disabled or the field was omitted.
 
 ## Methods
 

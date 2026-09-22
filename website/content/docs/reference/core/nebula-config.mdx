@@ -208,7 +208,7 @@ When a gateway is asked to drain, how many seconds its clients are told they hav
 public uint GameContentVersion = 0;
 ```
 
-The version of your game's own content and rules this build carries. A client announces it when it joins; a gateway refuses a client whose number is outside MinGameContentVersion..GameContentVersion with a distinct reason. 0 = your game does not version its content and the gateway does not check. Nebula only compares the numbers. -nebula-content-version overrides.
+The game's content version. Clients announce this value when joining. A gateway with a nonzero value checks the client's version against MinGameContentVersion..GameContentVersion. A gateway value of 0 disables the check. -nebula-content-version overrides.
 
 ### MinGameContentVersion [#mingamecontentversion]
 
@@ -224,7 +224,7 @@ The oldest game content version a gateway admits, when GameContentVersion is set
 public bool EncryptClients = true;
 ```
 
-The gateway answers a client that asks for an encrypted UDP link (ChaCha20-Poly1305 over X25519, docs/transport-encryption.md). Clients that do not ask still connect in the clear unless RequireEncryption is on. Worker and gateway links are never encrypted: they belong inside your private network. -nebula-encrypt-clients overrides.
+Enable encrypted client UDP connections using ChaCha20-Poly1305 and X25519. Plaintext clients are accepted unless RequireEncryption is enabled. Infrastructure connections are unencrypted and require a private network. -nebula-encrypt-clients overrides.
 
 ### RequireEncryption [#requireencryption]
 
@@ -232,7 +232,7 @@ The gateway answers a client that asks for an encrypted UDP link (ChaCha20-Poly1
 public bool RequireEncryption = false;
 ```
 
-Refuse a client whose link is not encrypted, with a typed JoinRejected reason. Turn this on once your players' builds encrypt. -nebula-require-encryption overrides.
+Require encrypted client connections. Plaintext clients receive an EncryptionRequired refusal. -nebula-require-encryption overrides.
 
 ### EncryptionCertPath [#encryptioncertpath]
 
@@ -272,7 +272,7 @@ The private key as PEM text instead of a file. The standalone gateway also reads
 public string EncryptionSelfSignedPath = "";
 ```
 
-Where a generated self-signed certificate is kept, so its fingerprint survives a restart. Empty = nebula-transport.pem next to the gateway.
+File for the generated self-signed certificate and key. Empty uses nebula-transport.pem in the standalone gateway's application directory or Unity's persistent data directory.
 
 ### ClientEncryption [#clientencryption]
 
@@ -280,7 +280,7 @@ Where a generated self-signed certificate is kept, so its fingerprint survives a
 public bool ClientEncryption = false;
 ```
 
-Client: encrypt the link to the gateway. Off is the historical behaviour and what the local development mesh uses. -nebula-encrypt overrides.
+Client: encrypt UDP connections to the gateway. Disabled by default. WebRTC connections use their own encryption. -nebula-encrypt overrides.
 
 ### GatewayFingerprint [#gatewayfingerprint]
 
@@ -288,7 +288,7 @@ Client: encrypt the link to the gateway. Off is the historical behaviour and wha
 public string GatewayFingerprint = "";
 ```
 
-Client: the gateway certificate's SHA-256 SubjectPublicKeyInfo fingerprint, as hex. Empty encrypts the link but does not authenticate the gateway. The gateway prints the value to pin when it starts. -nebula-gateway-fingerprint overrides.
+Client: the expected SHA-256 fingerprint of the gateway certificate's SubjectPublicKeyInfo public-key encoding, as hex. Used when ClientEncryption is enabled. Empty skips certificate authentication. The gateway prints its fingerprint at startup. -nebula-gateway-fingerprint overrides.
 
 ### WorkerCount [#workercount]
 

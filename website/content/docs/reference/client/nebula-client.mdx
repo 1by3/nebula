@@ -129,7 +129,7 @@ How full the target was when it refused the join, for `Nebula.JoinRejectReason.A
 public (ushort Min, ushort Max) ServerProtocolWindow { get; }
 ```
 
-The protocol versions the gateway that refused the last join accepts, as a `Min`..`Max` pair; (0, 0) when it did not say. With `Nebula.JoinRejectReason.ProtocolUnsupported` this is what tells the player whether to update the game (this build's [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) is below `Min`) or to wait for the server to be upgraded (it is above `Max`). See `docs/compatibility-policy.md`.
+The inclusive protocol range reported by the gateway on the last refused join. Use it with `Nebula.JoinRejectReason.ProtocolUnsupported` to identify a version mismatch. A (0, 0) value means no range has been reported.
 
 ### ServerContentVersion [#servercontentversion]
 
@@ -137,7 +137,7 @@ The protocol versions the gateway that refused the last join accepts, as a `Min`
 public uint ServerContentVersion { get; }
 ```
 
-The game content version the gateway that refused the last join runs ([`NebulaConfig.GameContentVersion`](/docs/reference/core/nebula-config#gamecontentversion)), for `Nebula.JoinRejectReason.ContentVersionMismatch`; 0 when it did not say.
+The gateway's game content version from the last refused join. Zero means content version checks are disabled or no version has been reported.
 
 ### NegotiatedProtocolVersion [#negotiatedprotocolversion]
 
@@ -145,7 +145,7 @@ The game content version the gateway that refused the last join runs ([`NebulaCo
 public ushort NegotiatedProtocolVersion { get; }
 ```
 
-The protocol this session speaks, as the gateway settled it ([`WelcomeMsg.NegotiatedVersion`](/docs/reference/protocol/welcome-msg#negotiatedversion)). It is this build's [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) unless the gateway is newer and admitted this client on the older half of its window. 0 before the first welcome.
+The protocol version accepted in the last welcome, or [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) when the welcome omits it. Zero before the first welcome.
 
 ### RttMs [#rttms]
 

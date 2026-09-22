@@ -105,12 +105,8 @@ namespace Nebula
             /// </summary>
             public string ScopeKey = "";
             /// <summary>
-            /// The protocol version negotiated with this client in its Hello, inside the gateway's window
-            /// (<see cref="HelloMsg.MinProtocolVersion"/>..<see cref="HelloMsg.ProtocolVersion"/>). Everything the
-            /// gateway encodes for this client is encoded at this version: a field added in a newer protocol is
-            /// written only when this number is at least the version that introduced it
-            /// (docs/compatibility-policy.md). It stays with the session when the client reconnects, because the
-            /// reconnecting client sends its Hello again.
+            /// The accepted version from this connection's Hello, echoed in the welcome.
+            /// The gateway accepts protocol 18 only.
             /// </summary>
             public ushort ProtocolVersion = HelloMsg.ProtocolVersion;
             public string CoordinationClaim = "";
@@ -366,8 +362,9 @@ namespace Nebula
         public SessionTokens Sessions => _sessions;
 
         /// <summary>
-        /// The SHA-256 SubjectPublicKeyInfo fingerprint of the certificate this gateway presents to clients, or
-        /// null when it accepts no encrypted links. A client pins this value (<c>NebulaConfig.GatewayFingerprint</c>).
+        /// The SHA-256 fingerprint of the certificate's SubjectPublicKeyInfo public-key encoding for encrypted
+        /// UDP connections, or null when UDP encryption is unavailable. Set <see cref="NebulaConfig.GatewayFingerprint"/>
+        /// on clients to require this certificate key.
         /// </summary>
         public string CertificateFingerprint { get; private set; }
 
@@ -394,12 +391,9 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Wrap the client socket so a client that asks for an encrypted link gets one
-        /// (<see cref="EncryptedTransport"/>). Worker and gateway peers share this socket and are left in the
-        /// clear on purpose: <c>docs/transport-encryption.md</c> D1 makes a private network around them a
-        /// deployment requirement. A gateway that cannot get a certificate keeps accepting plaintext clients
-        /// unless <see cref="NebulaConfig.RequireEncryption"/> says it must not, which is a configuration error
-        /// worth failing on.
+        /// Configures encrypted UDP client connections. Infrastructure connections remain unencrypted and
+        /// require a private network. Certificate setup errors prevent startup when
+        /// <see cref="NebulaConfig.RequireEncryption"/> is enabled; otherwise the gateway accepts plaintext.
         /// </summary>
         private ITransport InitializeEncryption(NebulaConfig config, ITransport udp)
         {

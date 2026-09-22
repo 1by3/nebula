@@ -6,16 +6,11 @@ using System.Text;
 namespace Nebula
 {
     /// <summary>
-    /// The primitives the encrypted client link is built from, in managed C# so the same code runs in the Unity
-    /// player (Mono and IL2CPP), in WebGL and in the .NET services. Unity's profile has no
-    /// <c>System.Security.Cryptography.AesGcm</c> or <c>ChaCha20Poly1305</c>, and no X25519 at all, so
-    /// <c>docs/transport-encryption.md</c> D2 settles on implementing RFC 7748 and RFC 8439 here. Only
-    /// SHA-256, HMAC-SHA256, RSA (verify and sign, PKCS#1) and the random number generator come from the
-    /// platform: every Unity runtime has those and <see cref="OidcTokenValidator"/> already relies on them.
+    /// Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation
+    /// for encrypted transport connections. Randomness, hashing, and HMAC use the platform's cryptography APIs.
     ///
-    /// <para>These are not constant-time implementations. The key agreement uses a key pair that is generated for
-    /// one connection and thrown away, and the AEAD's secret-dependent work is table-free 32-bit arithmetic;
-    /// see the design record's "what was not verified" for the limits of that argument.</para>
+    /// <para>The associated <see cref="X25519"/> and managed <see cref="ChaCha20Poly1305Managed"/>
+    /// implementations are not constant-time. The transport generates a new key pair for each connection.</para>
     /// </summary>
     public static class NebulaCrypto
     {
@@ -28,7 +23,7 @@ namespace Nebula
             return b;
         }
 
-        /// <summary>Equality that does not stop at the first differing byte.</summary>
+        /// <summary>Compares equal-length arrays without stopping at a differing byte. Returns false for null arrays or unequal lengths.</summary>
         public static bool FixedTimeEquals(byte[] a, byte[] b)
         {
             if (a == null || b == null || a.Length != b.Length) return false;
@@ -47,7 +42,7 @@ namespace Nebula
             using (var mac = new HMACSHA256(key)) return mac.ComputeHash(data);
         }
 
-        /// <summary>HKDF (RFC 5869) over SHA-256: extract then expand to <paramref name="length"/> bytes.</summary>
+        /// <summary>Derives <paramref name="length"/> bytes using the HMAC-based extract-and-expand key derivation function (HKDF) with SHA-256, as specified in RFC 5869.</summary>
         public static byte[] Hkdf(byte[] salt, byte[] ikm, string info, int length)
         {
             byte[] prk = HmacSha256(salt ?? new byte[32], ikm);
@@ -71,8 +66,8 @@ namespace Nebula
     }
 
     /// <summary>
-    /// X25519 (RFC 7748 §5) over <see cref="BigInteger"/>. A scalar multiplication costs well under a millisecond
-    /// and happens once per connection, so the field arithmetic is written for reviewability rather than speed.
+    /// Implements X25519 key agreement from RFC 7748 §5 using <see cref="BigInteger"/> arithmetic.
+    /// This managed implementation is not constant-time.
     /// </summary>
     public static class X25519
     {
@@ -80,7 +75,7 @@ namespace Nebula
         private static readonly BigInteger P = BigInteger.Pow(2, 255) - 19;
         private static readonly BigInteger A24 = 121665;
 
-        /// <summary>A fresh private scalar. <see cref="PublicKey"/> turns it into the value sent on the wire.</summary>
+        /// <summary>Generates a random 32-byte private scalar with the X25519 clamping rules applied.</summary>
         public static byte[] NewPrivateKey()
         {
             var k = NebulaCrypto.Random(KeySize);
@@ -95,7 +90,7 @@ namespace Nebula
             return Agree(privateKey, basePoint);
         }
 
-        /// <summary>The shared secret, or null when the peer sent a point of small order (an all-zero result).</summary>
+        /// <summary>Computes the shared secret from two 32-byte keys. Returns null when agreement produces an all-zero result.</summary>
         public static byte[] Agree(byte[] privateKey, byte[] peerPublicKey)
         {
             if (privateKey == null || privateKey.Length != KeySize || peerPublicKey == null || peerPublicKey.Length != KeySize)
@@ -171,8 +166,9 @@ namespace Nebula
     }
 
     /// <summary>
-    /// ChaCha20-Poly1305 AEAD (RFC 8439), the cipher every Nebula client packet is sealed with: a 12-byte nonce,
-    /// a 16-byte tag, and no block padding, so a 40-byte input stays a 40-byte ciphertext.
+    /// Implements ChaCha20-Poly1305 authenticated encryption with associated data (AEAD), as specified in
+    /// RFC 8439. It uses a 32-byte key, a 12-byte nonce, and a 16-byte authentication tag. Ciphertext has the
+    /// same length as plaintext; the tag adds 16 bytes. A nonce must not be reused with the same key.
     /// </summary>
     public static class ChaCha20Poly1305Managed
     {
@@ -206,7 +202,7 @@ namespace Nebula
             return SealManaged(key, nonce, plaintext, aad, aadLength, output, outputOffset);
         }
 
-        /// <summary>The managed implementation, which a Unity build always takes; kept public so tests measure both.</summary>
+        /// <summary>Encrypts the payload and appends its 16-byte authentication tag using the managed implementation used by Unity builds.</summary>
         public static int SealManaged(byte[] key, byte[] nonce, ArraySegment<byte> plaintext, byte[] aad, int aadLength, byte[] output, int outputOffset)
         {
             Check(key, nonce);
@@ -218,8 +214,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Check the tag and decrypt in place into <paramref name="output"/>. Returns the plaintext length, or -1
-        /// when the packet was tampered with (or is not for this key) — the caller drops it without a word.
+        /// Verifies the authentication tag and decrypts into <paramref name="output"/>. Returns the plaintext
+        /// length, or -1 if the input is shorter than a tag or authentication fails. Output is valid only on success.
         /// </summary>
         public static int Open(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset)
         {
@@ -245,7 +241,7 @@ namespace Nebula
             return OpenManaged(key, nonce, sealedInput, aad, aadLength, output, outputOffset);
         }
 
-        /// <inheritdoc cref="SealManaged"/>
+        /// <summary>Verifies and decrypts with the managed implementation. Returns the plaintext length, or -1 for a truncated tag or failed authentication.</summary>
         public static int OpenManaged(byte[] key, byte[] nonce, ArraySegment<byte> sealedInput, byte[] aad, int aadLength, byte[] output, int outputOffset)
         {
             Check(key, nonce);

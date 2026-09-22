@@ -68,12 +68,8 @@ namespace Nebula
     {
         internal const string Path = "/api/gateway-sessions";
         /// <summary>
-        /// A pending claim on a gateway that has stopped heartbeating waits this long past
-        /// <see cref="Entry.PendingUntil"/> before its owner's claim is evicted (D7a / NEB-229). Matches
-        /// <c>NebulaConfig.WorkerTimeoutSeconds</c>'s default: the gateway row itself is considered gone once its
-        /// last heartbeat is older than this, the same cutoff <see cref="ControlPlaneExtensions.IsWorkerAlive"/>
-        /// uses for a worker row. A caller that knows the mesh's actual <c>WorkerTimeoutSeconds</c> may set
-        /// <see cref="GatewayStaleAfterSeconds"/> instead of relying on the default.
+        /// Default maximum gateway heartbeat age in seconds before another gateway can reclaim its sessions.
+        /// The orchestrator overrides this with its configured worker timeout.
         /// </summary>
         internal const double DefaultGatewayStaleAfterSeconds = 5.0;
         private sealed class Entry
@@ -103,11 +99,10 @@ namespace Nebula
         }
 
         /// <param name="workerAlive">True while the named worker is still registered and not dead.</param>
-        /// <param name="now">Clock seam for tests.</param>
+        /// <param name="now">Clock used to expire pending claims; null selects UTC system time.</param>
         /// <param name="gatewayAlive">
         /// True while the gateway named by a <see cref="PlayerSessions.GatewayKey"/> (id + incarnation) is still
-        /// heartbeating under that same incarnation. Null means every gateway is assumed alive, which reproduces
-        /// the pre-NEB-229 behaviour (a killed gateway strands its sessions forever; see D7a).
+        /// heartbeating under that same incarnation. Null disables reclamation based on gateway liveness.
         /// </param>
         internal GatewaySessionDirectory(Func<string, bool> workerAlive, Func<DateTime> now = null, Func<string, bool> gatewayAlive = null)
         {
@@ -412,9 +407,8 @@ namespace Nebula
     {
         private GatewaySessionDirectory _sessionDirectory;
         /// <summary>
-        /// Seconds since a gateway's last heartbeat before its claims become evictable (D7a / NEB-229). A test
-        /// that wants to drive a hard-kill reclaim without waiting real time sets this alongside the fake
-        /// <see cref="Clock"/>. The orchestrator sets this to <c>NebulaConfig.WorkerTimeoutSeconds</c>
+        /// Seconds since a gateway's last heartbeat before another gateway can reclaim its sessions.
+        /// The orchestrator sets this to <c>NebulaConfig.WorkerTimeoutSeconds</c>
         /// for both local and hosted control planes.
         /// </summary>
         internal double GatewayStaleAfterSeconds = GatewaySessionDirectory.DefaultGatewayStaleAfterSeconds;

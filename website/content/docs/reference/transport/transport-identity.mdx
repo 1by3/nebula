@@ -1,6 +1,6 @@
 ---
 title: "TransportIdentity"
-description: "The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins."
+description: "Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs)</div>
@@ -9,7 +9,7 @@ description: "The gateway's transport certificate and the key that signs with it
 public sealed class TransportIdentity : IDisposable
 ```
 
-The gateway's transport certificate and the key that signs with it, plus the fingerprint a client pins. The certificate is an ordinary X.509 RSA certificate: either one the operator supplies as PEM (their own CA's, or the one the web port already uses) or one the gateway generates for itself on first run and keeps next to its other state. Encoding and decoding is done here, over `RSAParameters` and DER, because Unity's profile has neither `CertificateRequest` nor the PKCS#8 import helpers (`docs/transport-encryption.md` D3).
+Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. Load a supplied certificate and key from Privacy-Enhanced Mail (PEM) text, or generate and optionally store a self-signed identity with [`Create`](#create). Certificates use Distinguished Encoding Rules (DER) for their binary representation. Client verification checks the handshake signature and configured fingerprint; it does not validate a certificate chain or hostname.
 
 ## Properties
 
@@ -19,7 +19,7 @@ The gateway's transport certificate and the key that signs with it, plus the fin
 public byte[] Certificate { get; }
 ```
 
-The DER certificate sent to every client during the handshake.
+The DER-encoded X.509 certificate sent during the encryption handshake.
 
 ### Key [#key]
 
@@ -27,7 +27,7 @@ The DER certificate sent to every client during the handshake.
 public RSA Key { get; }
 ```
 
-The private key; only the gateway has it.
+The private RSA key used to sign gateway handshake messages.
 
 ### Fingerprint [#fingerprint]
 
@@ -35,7 +35,7 @@ The private key; only the gateway has it.
 public string Fingerprint { get; }
 ```
 
-SHA-256 of the certificate's SubjectPublicKeyInfo as 64 lowercase hex characters: what a client pins with `NebulaConfig.GatewayFingerprint`. It is the fingerprint of the key, not of the certificate, so re-issuing the certificate for the same key does not invalidate what players pinned.
+SHA-256 hash of the certificate's SubjectPublicKeyInfo as 64 lowercase hexadecimal characters. Set `NebulaConfig.GatewayFingerprint` to this value to pin the gateway's public key. Reissuing a certificate with the same public key preserves the fingerprint.
 
 ## Methods
 
@@ -57,7 +57,7 @@ public void Dispose();
 public static string FingerprintOf(byte[] certificateDer);
 ```
 
-The fingerprint a client would pin for a certificate it received.
+Computes the SHA-256 fingerprint of a DER-encoded certificate's SubjectPublicKeyInfo.
 
 ### Verify [#verify]
 
@@ -65,7 +65,7 @@ The fingerprint a client would pin for a certificate it received.
 public static bool Verify(byte[] certificateDer, byte[] data, byte[] signature);
 ```
 
-Check a signature the gateway made with the key in `certificateDer`.
+Verifies an RSA PKCS#1 SHA-256 signature using the public key in `certificateDer`. Does not validate certificate trust.
 
 ### Create [#create]
 
@@ -73,11 +73,11 @@ Check a signature the gateway made with the key in `certificateDer`.
 public static TransportIdentity Create(string certificatePem, string keyPem, string certificatePath, string keyPath, string selfSignedPath, string subject);
 ```
 
-Build the identity a gateway presents. In order: the PEM strings, then the PEM files, then a self-signed certificate read from (or written to) `selfSignedPath`.
+Creates a gateway identity. Uses both PEM strings when supplied; otherwise uses the certificate file and optional separate key file. With neither source configured, loads the self-signed identity from `selfSignedPath` or generates one and attempts to store it there.
 
 | Parameter | Description |
 | --- | --- |
-| `subject` | Common name of a generated certificate: the address clients dial. |
+| `subject` | Common name for a generated certificate. An empty value uses `nebula-gateway`. |
 
 ### FromPem [#frompem]
 
@@ -85,7 +85,7 @@ Build the identity a gateway presents. In order: the PEM strings, then the PEM f
 public static TransportIdentity FromPem(string certificatePem, string keyPem);
 ```
 
-A certificate and key in PEM form, the two blocks in either order and optionally in one file.
+Loads a PEM certificate and RSA private key. Supports PKCS#1 `RSA PRIVATE KEY` and unencrypted PKCS#8 `PRIVATE KEY` blocks. Both arguments may contain the same combined PEM document.
 
 ### SelfSigned [#selfsigned]
 
@@ -93,7 +93,7 @@ A certificate and key in PEM form, the two blocks in either order and optionally
 public static TransportIdentity SelfSigned(string subject);
 ```
 
-A fresh 2048-bit RSA key in a self-signed certificate valid for ten years.
+Generates a 2048-bit RSA key and a self-signed certificate with a ten-year validity period.
 
 ### ToPem [#topem]
 
@@ -101,7 +101,7 @@ A fresh 2048-bit RSA key in a self-signed certificate valid for ten years.
 public string ToPem();
 ```
 
-The certificate and its key as one PEM document, which is what the self-signed store holds.
+Exports the certificate and unencrypted private key as one PEM document. Treat the result as a secret.
 
 ### FingerprintMatches [#fingerprintmatches]
 
@@ -109,4 +109,4 @@ The certificate and its key as one PEM document, which is what the self-signed s
 public static bool FingerprintMatches(string expected, string actual);
 ```
 
-Compare fingerprints the way a player would paste them: case and separators do not matter.
+Compares fingerprints after removing non-hexadecimal characters and ignoring case. Returns false for an empty normalized fingerprint.

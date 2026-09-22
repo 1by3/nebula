@@ -1,6 +1,6 @@
 ---
 title: "ClientEncryption"
-description: "How a client treats the gateway's certificate."
+description: "Configures gateway certificate pinning and the client handshake timeout."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
@@ -9,7 +9,7 @@ description: "How a client treats the gateway's certificate."
 public sealed class ClientEncryption
 ```
 
-How a client treats the gateway's certificate. See `docs/transport-encryption.md` §4.
+Configures gateway certificate pinning and the client handshake timeout.
 
 ## Fields
 
@@ -19,7 +19,7 @@ How a client treats the gateway's certificate. See `docs/transport-encryption.md
 public string Fingerprint = "";
 ```
 
-The SHA-256 of the gateway's SubjectPublicKeyInfo, as hex (colons and case are ignored). Empty accepts whatever certificate the gateway presents, which encrypts the link but does not authenticate the gateway; the client logs that once per connection.
+SHA-256 hash of the gateway certificate's SubjectPublicKeyInfo, as hexadecimal text. Comparison ignores case and non-hexadecimal characters. An empty value accepts any certificate and logs a warning for each connection: traffic is encrypted, but the gateway's identity is not verified.
 
 ### TimeoutSeconds [#timeoutseconds]
 
@@ -27,4 +27,4 @@ The SHA-256 of the gateway's SubjectPublicKeyInfo, as hex (colons and case are i
 public float TimeoutSeconds = 5f;
 ```
 
-How long the client waits for the gateway's half of the handshake before giving up.
+Seconds the client waits for the gateway's handshake response before disconnecting.

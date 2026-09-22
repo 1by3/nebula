@@ -29,7 +29,7 @@ namespace Nebula
         {
             public long Version;
             public DateTime Now;
-            /// <summary>See <see cref="IControlPlane.DocumentId"/>; empty for a document written before identities existed.</summary>
+            /// <summary>The <see cref="IControlPlane.DocumentId"/> value, or an empty string when the JSON omits it.</summary>
             public string DocumentId = "";
             public List<WorkerInfo> Workers = new List<WorkerInfo>();
             public List<LeaseInfo> Leases = new List<LeaseInfo>();

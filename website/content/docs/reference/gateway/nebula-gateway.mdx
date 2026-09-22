@@ -151,7 +151,7 @@ Issues and checks the session tokens clients reconnect with.
 public string CertificateFingerprint { get; }
 ```
 
-The SHA-256 SubjectPublicKeyInfo fingerprint of the certificate this gateway presents to clients, or null when it accepts no encrypted links. A client pins this value (`NebulaConfig.GatewayFingerprint`).
+The SHA-256 fingerprint of the certificate's SubjectPublicKeyInfo public-key encoding for encrypted UDP connections, or null when UDP encryption is unavailable. Set [`NebulaConfig.GatewayFingerprint`](/docs/reference/core/nebula-config#gatewayfingerprint) on clients to require this certificate key.
 
 ### InterestPolicy [#interestpolicy]
 

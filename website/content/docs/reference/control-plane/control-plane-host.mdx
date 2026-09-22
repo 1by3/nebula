@@ -82,7 +82,7 @@ public string StorageBackend { get; }
 public string StorageError { get; }
 ```
 
-Why the last save to storage failed, or null when the last one succeeded. Not a mesh failure by itself: the control plane keeps running on its in-memory state and the save is retried on the next interval (a whole-document replace has nothing to replay), so this is what an operator watches across a database failover. See `docs/control-plane-availability.md` D4.
+Error from the latest background save, or null before a save fails or after a successful save. Failed saves are retried at the next save interval while the control plane continues using its in-memory state.
 
 ### HasToken [#hastoken]
 
@@ -115,6 +115,8 @@ public DateTime Now { get; }
 ```csharp
 public string DocumentId { get; }
 ```
+
+Identity of the hosted control-plane document; see [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid).
 
 ### Workers [#workers]
 
