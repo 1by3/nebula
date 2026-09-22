@@ -2296,9 +2296,13 @@ namespace Nebula
             // the very ownership the reclaim is derived from.
             if (_registration.RegisterAgainIfForgotten(ControlPlane))
             {
-                int reclaimed = WorkerRegistration.ReclaimContainers(ControlPlane, WorkerId);
                 _nextHeartbeat = 0f;
-                NebulaLog.Warn($"worker {WorkerId} is no longer on the control plane; registered again and re-claimed {reclaimed} container(s)");
+                NebulaLog.Warn($"worker {WorkerId} is no longer on the control plane; registering again");
+            }
+            if (_registered)
+            {
+                int reclaimed = _registration.ReclaimContainers(ControlPlane);
+                if (reclaimed > 0) NebulaLog.Warn($"worker {WorkerId} re-claimed {reclaimed} container(s) the control plane had no row for");
             }
             // Runtime containers come and go with their lease rows; register them before their leases are applied.
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);

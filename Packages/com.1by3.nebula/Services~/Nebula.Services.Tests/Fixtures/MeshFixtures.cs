@@ -1110,11 +1110,8 @@ public sealed class Fleet : IDisposable
             // the row and the containers only it knows it is still simulating. Checking it every pump rather than
             // only on a change is the one difference, and it costs nothing here because LocalControlPlane answers
             // from memory; on a real mesh the document has to arrive first (docs/control-plane-availability.md D5).
-            if (worker.Registration.RegisterAgainIfForgotten(Plane))
-            {
-                worker.Reregistrations++;
-                worker.ReclaimedContainers += WorkerRegistration.ReclaimContainers(Plane, worker.WorkerId);
-            }
+            if (worker.Registration.RegisterAgainIfForgotten(Plane)) worker.Reregistrations++;
+            worker.ReclaimedContainers += worker.Registration.ReclaimContainers(Plane);
             Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
         }
         Plane.Tick();

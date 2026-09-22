@@ -76,6 +76,15 @@ namespace Nebula
         /// Put back the lease rows for every container this worker is still simulating and that the control plane
         /// no longer has a row for. Only the missing ones: a row that is there is the control plane's to decide,
         /// and a worker that overwrote a lease it had lost would take a container back off whoever was given it.
+        /// <para>
+        /// This is a <b>standing reconciliation</b>, run on every control-plane change, not a one-off triggered by
+        /// <see cref="RegisterAgainIfForgotten"/>. It has to be: the moment the worker's row is missing and the
+        /// moment the lease rows are missing are not the same moment. A mirror flushes writes it queued while the
+        /// orchestrator was away, so a replacement can have this worker's registration back — from a queued
+        /// re-registration — in the very document that first shows the leases gone, and a reclaim that only ran on
+        /// the transition would have missed it and stranded the containers for good. Re-running it costs a scan
+        /// over the containers this worker owns and writes nothing while their rows are there.
+        /// </para>
         /// <list type="bullet">
         /// <item>A baked container is claimed with <see cref="IControlPlane.EnsureContainer"/> +
         /// <see cref="IControlPlane.AssignContainer"/>, which starts its epoch again at 1. An epoch only ever has
@@ -85,16 +94,20 @@ namespace Nebula
         /// (<see cref="IControlPlane.EnsureRuntimeContainer"/>), because nothing else in the mesh knows the box:
         /// the worker that asked for it is the only copy of that fact.</item>
         /// </list>
-        /// Returns how many rows were written.
+        /// Returns how many rows were written this call.
         /// </summary>
-        public static int ReclaimContainers(IControlPlane controlPlane, string workerId)
+        public int ReclaimContainers(IControlPlane controlPlane)
         {
-            if (controlPlane == null || !controlPlane.IsConnected || string.IsNullOrEmpty(workerId)) return 0;
-            return Reclaim(controlPlane, workerId, ContainerRegistry.All) +
-                   Reclaim(controlPlane, workerId, ContainerRegistry.Runtime);
+            if (!IsRegistered || controlPlane == null || !controlPlane.IsConnected) return 0;
+            // A claim is answered by its row appearing; until then it is outstanding and must not be written again.
+            if (_claimed.Count > 0) _claimed.RemoveWhere(id => controlPlane.FindLease(id) != null);
+            return Reclaim(controlPlane, ContainerRegistry.All) + Reclaim(controlPlane, ContainerRegistry.Runtime);
         }
 
-        private static int Reclaim(IControlPlane controlPlane, string workerId, IReadOnlyList<Container> containers)
+        /// <summary>Containers claimed whose lease row has not come back yet: one write each, not one per change.</summary>
+        private readonly HashSet<string> _claimed = new HashSet<string>();
+
+        private int Reclaim(IControlPlane controlPlane, IReadOnlyList<Container> containers)
         {
             int written = 0;
             for (int i = 0; i < containers.Count; i++)
@@ -102,14 +115,15 @@ namespace Nebula
                 var c = containers[i];
                 // A dynamic container follows its carrier; its lease is written by whoever owns the carrier, and
                 // the carrier's own container is in this same sweep.
-                if (c == null || c.IsDynamic || c.OwnerWorkerId != workerId) continue;
+                if (c == null || c.IsDynamic || c.OwnerWorkerId != WorkerId) continue;
                 if (controlPlane.FindLease(c.ContainerId) != null) continue;
+                if (!_claimed.Add(c.ContainerId)) continue; // asked already; the write is in flight
                 if (c.IsRuntime)
-                    controlPlane.EnsureRuntimeContainer(c.ContainerId, ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId), workerId, c.Instance);
+                    controlPlane.EnsureRuntimeContainer(c.ContainerId, ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId), WorkerId, c.Instance);
                 else
                 {
                     controlPlane.EnsureContainer(c.ContainerId);
-                    controlPlane.AssignContainer(c.ContainerId, workerId);
+                    controlPlane.AssignContainer(c.ContainerId, WorkerId);
                 }
                 written++;
             }

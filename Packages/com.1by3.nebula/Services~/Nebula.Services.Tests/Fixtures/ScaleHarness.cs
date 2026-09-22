@@ -38,6 +38,25 @@ public static class ScaleThresholds
     /// the control plane is away, because a gateway's client links do not depend on it.
     /// </summary>
     public const double ControlPlaneStallSeconds = 5.0;
+
+    /// <summary>
+    /// Wall-clock seconds from an orchestrator process going down to every worker and gateway mirroring its
+    /// leases again from a replacement on the same storage. <b>Derived</b>, and the derivation is the reason the
+    /// decision in <c>docs/control-plane-availability.md</c> D3 is "fast restart, not hot standby":
+    /// <see cref="RemoteControlPlane.DisconnectAfterSeconds"/> is 15 s, so a restart inside this budget is one no
+    /// mirror even reports as a disconnection. A restart slower than 15 s is still survived — writes are queued,
+    /// not dropped — but it is no longer invisible.
+    /// </summary>
+    public const double OrchestratorRestartSeconds = 15.0;
+
+    /// <summary>
+    /// Wall-clock seconds the control plane's <i>store</i> may be unreachable across a database failover before
+    /// the mesh is called broken. <b>Provisional</b>, and deliberately loose: what it bounds is a container
+    /// restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion that
+    /// matters beside it is not the number — it is that nothing was lost and nothing threw out of
+    /// <c>ControlPlaneHost.Tick</c> while the database was gone.
+    /// </summary>
+    public const double DatabaseFailoverSeconds = 60.0;
 }
 
 /// <summary>
