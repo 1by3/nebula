@@ -18,8 +18,12 @@ uploads Builds/nebula-linux.tar.gz as a content-addressed artifact, creates an i
 service manifest, the Nebula and protocol versions and the git commit, and rolls the release out, printing the
 operation's steps until it finishes. Ctrl-C leaves the rollout running; the next `nebula deploy` reattaches to it.
 --release rolls out an existing release without building. --min/--max change the deployment's worker band first.
-A rollout is refused when the wire protocol version changed, because connected players would be disconnected;
---allow-protocol-change accepts that.
+The release records the protocol window its gateways admit (HelloMsg.ProtocolVersion and MinProtocolVersion) and the
+game content version from Assets/Resources/NebulaConfig.asset. A gateway admits clients at its own protocol and one
+older, so a rollout that moves the protocol one version forward keeps every connected player. A rollout is refused
+when it moves the protocol more than one version, moves it backwards, or the release's MinProtocolVersion excludes
+the clients of the current release; --allow-protocol-change accepts disconnecting them. A content version bump that
+would refuse the current release's clients is reported as a warning at the start of the rollout.
 
 --target hetzner deploys to your own Hetzner Cloud project (`nebula config hetzner` first):
 
@@ -49,7 +53,7 @@ A deploy target must be configured (`nebula cloud login` or `nebula config hetzn
         WorkerBand.MinOption, WorkerBand.MaxOption,
         new OptionSpec("release", true, "cloud: roll out this existing release instead of building a new one", "rel_id"),
         new OptionSpec("label", true, "cloud: a label for the new release, e.g. v12", "text"),
-        new OptionSpec("allow-protocol-change", false, "cloud: roll out even when the wire protocol version changed (players are disconnected)"),
+        new OptionSpec("allow-protocol-change", false, "cloud: roll out even when the protocol change would refuse the current release's players (they are disconnected)"),
         new OptionSpec("region", true, "cloud: region of a deployment created by this run", "id"),
         new OptionSpec("worker-size", true, "cloud: worker machine size (small, medium, large)", "size"),
         CloudTarget.OrgOption, CloudTarget.CloudProjectOption, CloudTarget.DeploymentOption,

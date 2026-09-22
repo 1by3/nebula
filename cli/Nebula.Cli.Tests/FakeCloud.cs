@@ -99,7 +99,8 @@ internal sealed class FakeCloud : IDisposable
         settings = new { }, currentReleaseId = release, previousReleaseId = release != null ? "rel_0" : null,
         gatewayAddress = state == "running" ? "203.0.113.10:7000" : null, webUrl = state == "running" ? "https://203-0-113-10.example.test/" : null,
         dashboardUrl = $"https://cloud.example.test/d/{id}/mesh", createdAt = "2026-09-01T00:00:00Z", updatedAt = "2026-09-01T00:00:00Z",
-        lastRolloutAt = (string?)null, spendLimited = false,
+        lastRolloutAt = (string?)null, spendLimited = false, requireEncryption = false,
+        encryption = new { accepted = true, required = false, fingerprint = state == "running" ? new string('0', 0) + string.Concat(Enumerable.Repeat("0f", 32)) : null },
     });
 
     public IEnumerable<Request> Of(string method, string pathPattern) =>
@@ -266,6 +267,7 @@ internal sealed class FakeCloud : IDisposable
             {
                 id = "rel_" + (Releases.Count + 1), projectId = mm.Groups[1].Value, number = Releases.Count + 1, label = body!["label"]?.ToString(),
                 artifactId = body["artifactId"]!.ToString(), nebulaVersion = body["nebulaVersion"]?.ToString(), protocolVersion = body["protocolVersion"]?.GetValue<int>(),
+                minProtocolVersion = body["minProtocolVersion"]?.GetValue<int>(), gameContentVersion = body["gameContentVersion"]?.GetValue<long>(), minGameContentVersion = body["minGameContentVersion"]?.GetValue<long>(),
                 git = body["git"]?.DeepClone(), notes = body["notes"]?.ToString(), createdBy = "usr_1", createdAt = "2026-09-16T00:00:00Z", immutable = true,
             });
             Releases.Add(rel); Reply(ctx, 201, rel); return;
