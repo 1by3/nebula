@@ -74,15 +74,15 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | Type | Summary |
 | --- | --- |
 | [ChunkContent](/docs/reference/world/chunk-content) | Abstract class. Scene-object form of NebulaChunks.Loaded/NebulaChunks.Unloading: drop a subclass in the game scene and override OnChunkLoaded. |
-| [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a turnkey chunked world. |
+| [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a chunked world. |
 | [ChunkGridDefinition](/docs/reference/world/chunk-grid-definition) | Class. What one procedural chunk grid is: the cell arithmetic every role must agree on, plus the one chunk that is brought into being with the scope so a client always has somewhere to arrive. |
 | [ChunkKeys](/docs/reference/world/chunk-keys) | Static class. How a chunk coordinate becomes the ids a scope's containers are named by. |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
 | [NebulaChunkedWorld](/docs/reference/world/nebula-chunked-world) | Class. The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld plus a NebulaConfig.RuntimeWorld). |
-| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. The content-streaming face of the turnkey chunked worlds in this process: one place, on every role, where a game is told which chunks exist. |
+| [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. Reports the runtime chunks available on each role so your game can load their content. |
 | [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
-| [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. |
+| [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Maps runtime containers to a planar or three-dimensional grid. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |
 | [ScopeFrame](/docs/reference/world/scope-frame) | Class. One scope's floating origin: which cell of that scope's grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves. |
 | [ScopeFrames](/docs/reference/world/scope-frames) | Static class. The origin frames this process holds, one per scope. |
@@ -400,7 +400,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [InterestPolicies](/docs/reference/interest/interest-policies) | Static class. Combining policies, so a game can add one concern (parties) without rewriting another (fog of war). |
 | [InterestQuery](/docs/reference/interest/interest-query) | Class. What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. |
 | [InterestSchedule](/docs/reference/interest/interest-schedule) | Class. Which clients a gateway re-evaluates on this tick. |
-| [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
+| [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest settings, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
 | [RegionKeys](/docs/reference/interest/region-keys) | Static class. How an interest region id is made unique to its scope. |
 | [RegionPublisher](/docs/reference/interest/region-publisher) | Class. The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them. |
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |

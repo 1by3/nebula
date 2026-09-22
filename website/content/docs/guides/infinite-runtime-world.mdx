@@ -1,13 +1,13 @@
 ---
 title: Build an infinite runtime world
-description: Turn on the turnkey chunked world, add one content callback, move a predicted player, and place persistent blocks.
+description: Configure runtime chunks, add one content callback, move a predicted player, and place persistent blocks.
 ---
 
-Build a procedural world whose chunks appear as players explore, retire when nobody needs them, and return with their saved entities. This tutorial uses Nebula's turnkey **chunked world**: a `RuntimeWorld` definition plus `NebulaConfig.ChunkedWorld` builds the chunk grid, leases chunks around every pawn, keeps the floating origin near the pawn, and raises one event pair for your game's content. It combines that with [runtime containers](/docs/guides/runtime-containers), prediction, remote procedure calls (RPCs), and persistence.
+Build a procedural world whose chunks appear as players explore, retire when nobody needs them, and return with their saved entities. This tutorial uses Nebula's **chunked world**: a `RuntimeWorld` definition plus `NebulaConfig.ChunkedWorld` builds the chunk grid, leases chunks around every pawn, keeps the floating origin near the pawn, and raises one event pair for your game's content. It combines that with [runtime containers](/docs/guides/runtime-containers), prediction, remote procedure calls (RPCs), and persistence.
 
-The example uses a 3D chunk grid with 64 m square ground cells generated in its `y = 0` layer. A player can walk without a fixed world boundary and press F to place a block. Blocks are authoritative worker entities and survive chunk retirement, worker failure, and a mesh restart.
+The example uses a planar chunk grid with 64 m square ground cells in its `y = 0` layer. A player can walk without a fixed world boundary and press F to place a block. Blocks are authoritative worker entities and survive chunk retirement, worker failure, and a mesh restart.
 
-The implementation uses public Nebula APIs. It does not create containers locally behind the control plane, move networked entities outside Nebula's container model, or add absolute positions to the wire protocol.
+A **worker** is a headless Unity process that simulates entities in assigned box-shaped **containers**. A **lease** assigns a container to a worker through the **control plane**, the shared registry hosted by the orchestrator. **Authority** is responsibility for simulating an entity and producing its state. See [Containers and handover](/docs/concepts/containers-and-handover) for how that responsibility moves between workers.
 
 ## Understand the pieces
 
@@ -139,6 +139,7 @@ Then create the predicted controller. Movement travels through Nebula's input an
 using Nebula;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Nebula.World;
 
 public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 {
@@ -226,7 +227,7 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 
         var position = transform.position + transform.forward * placementDistance;
         position.x = Mathf.Round(position.x - 0.5f) + 0.5f;
-        position.y = 0.5f;
+        position.y = Identity.Container.WorldBounds.min.y + 0.5f;
         position.z = Mathf.Round(position.z - 0.5f) + 0.5f;
 
         if (Physics.CheckBox(position, Vector3.one * 0.45f, Quaternion.identity,
@@ -234,9 +235,13 @@ public sealed class PlayerController : PredictedBehaviour<PlayerInput>
 
         var worker = NebulaBootstrap.Instance.Worker;
 
-        NebulaChunks.EnsureAt(position, container =>
+        var chunkCoord = NebulaChunks.Grid.CoordOf(position);
+        var chunkOffset = position - NebulaChunks.Grid.BoundsOf(chunkCoord).center;
+        NebulaChunks.EnsureAt(chunkCoord, container =>
         {
-            var block = worker.SpawnPrefab(blockPrefab, position, Quaternion.identity, container);
+            if (container == null) return;
+            var spawnPosition = container.WorldBounds.center + chunkOffset;
+            var block = worker.SpawnPrefab(blockPrefab, spawnPosition, Quaternion.identity, container);
 
             // New persistent entities are checkpointed automatically. SaveNow narrows the window
             // between confirming the placement and its first durable checkpoint.
@@ -250,7 +255,7 @@ Keep one camera in the game scene and set its tag to `MainCamera`. Do not add a 
 
 The client never instantiates a networked block. It only asks through `ServerRpc`; the worker checks authority, rate-limits the request, rejects overlaps, and calls `NebulaChunks.EnsureAt` so the chunk under the target position is leased (creating it if this is the first entity to reach that spot) before spawning into it. Add your game's permissions, inventory cost, reach test, and placement rules in the same handler.
 
-`NebulaChunks.EnsureAt` on a worker requests the chunk's lease through the allocator and waits; on a client or gateway it only waits, because a client does not decide which chunks exist. The position is in the worker's current floating-origin frame. Nebula converts it to container-local placement when it spawns the entity, so the block remains stable across later origin shifts.
+`NebulaChunks.EnsureAt` on a worker requests the chunk's lease through the allocator and waits; on a client or gateway it only waits, because a client does not decide which chunks exist. The callback waits for container registration, which does not guarantee that this worker owns the lease. The example preserves the target as a chunk coordinate and offset while it waits, then resolves it into the current floating-origin frame before spawning. Nebula routes authority as the entity enters the container. Recheck game-specific placement rules in the callback if they may change while waiting.
 
 </Step>
 <Step>
@@ -366,9 +371,9 @@ Use the dashboard's World map to watch chunk containers appear and move between 
 
 ### Verify chunk retirement and restore
 
-Place a block, walk more than one chunk away, and wait longer than `ChunkRetireSeconds` (default 30 seconds). The owning worker releases the old chunk. Nebula checkpoints and despawns the block before removing the lease.
+Place a block outside the permanently anchored spawn area. With the settings above, the allocator keeps a four-cell ring around every pawn and the origin anchor (`NearCells + 1`), so choose a chunk more than four cells from the origin. Move every player more than four cells from that chunk, then wait longer than `ChunkRetireSeconds` (default 30 seconds). The owning worker releases the old chunk. Nebula checkpoints and despawns the block before removing the lease.
 
-Walk back. `NebulaChunks.EnsureAt` requests the chunk again, the control plane leases it, and persistence restores the block into the same runtime container at its saved pose. The restore starts after `PersistenceRestoreGraceSeconds`, which defaults to 3 seconds, so wait briefly before treating a missing block as a failure.
+Walk back. The runtime allocator requests the chunk again, the control plane leases it, and persistence restores the block into the same runtime container at its saved pose. The restore starts after `PersistenceRestoreGraceSeconds`, which defaults to 3 seconds, so wait briefly before treating a missing block as a failure.
 
 To verify restart persistence:
 
@@ -377,7 +382,7 @@ nebula stop
 nebula start --workers 2 --open-ui
 ```
 
-The anchored spawn chunk returns as soon as a worker starts. Blocks elsewhere return when a player approaches and `NebulaChunks.EnsureAt` requests their chunk.
+The anchored spawn chunk returns as soon as a worker starts. Blocks elsewhere return when a player approaches and the runtime allocator requests their chunk.
 
 Do not pass `--reset-persistence` during this test. That option deletes every saved entity before the mesh starts.
 
@@ -436,7 +441,7 @@ This is also why a worker never costs more because a mesh has more worlds. The a
 - **Persistence is opt-in per entity and field.** The block exists and keeps its pose because it has `PersistentEntity`. Add `[Persist]` to any `NetworkVariable` whose value must also survive. Ordinary fields and transient entities are not restored.
 - **One world, one frame per worker.** The cost policy tends to give a worker spatially neighboring chunks of the same world. A game that expects one worker to simulate many extremely distant active regions *of one world* should measure the cost of repeated origin shifts; distant regions of *different* worlds each get their own frame and cost nothing extra.
 - **Interest management bounds who hears about an entity, not who simulates it.** More chunks means more containers to spread across workers, but a single container is still one worker's budget. See [Scaling limits and when to partition](/docs/guides/interest-management#scaling-limits-and-when-to-partition).
-- **Only one anchor exists by default.** `NebulaChunkedWorld` anchors chunk `(0, 0, 0)` so a joining player always has somewhere to spawn. A game that wants another permanently loaded area (a second town, a hub reachable by teleport) adds anchors to `NebulaChunks.Allocator`, or works with the runtime grid and allocator directly — see [Runtime containers](/docs/guides/runtime-containers) for the lower-level API this turnkey path builds on.
+- **Only one anchor exists by default.** `NebulaChunkedWorld` anchors chunk `(0, 0, 0)` so a joining player always has somewhere to spawn. A game that wants another permanently loaded area (a second town, a hub reachable by teleport) adds anchors to `NebulaChunks.Allocator`, or works with the runtime grid and allocator directly — see [Runtime containers](/docs/guides/runtime-containers) for the lower-level API this path builds on.
 
 <Cards>
   <Card title="Interest management" href="/docs/guides/interest-management" description="Understand what bounds a client's bandwidth as the world grows, and its limits." />

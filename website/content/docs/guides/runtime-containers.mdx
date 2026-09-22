@@ -5,7 +5,7 @@ description: Register containers while the mesh runs, so a world whose shape is 
 
 Use a **runtime container** when the game decides where the containers are while the mesh runs. A chunked landscape that grows as players explore it, plots that appear when someone buys land, or an instance that exists while a group is inside are all runtime containers. Baked containers (authored in the scene or in a world manifest) and dynamic containers (carried by an entity) keep working alongside them.
 
-For a chunked landscape specifically, `NebulaConfig.ChunkedWorld` builds and balances runtime containers for you — see [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for that turnkey path, built on the API this page describes. Use this page directly when your game's containers are not a uniform chunk grid, or you need more control than `NebulaChunks` gives you.
+For a chunked landscape specifically, `NebulaConfig.ChunkedWorld` builds and balances runtime containers for you — see [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for that path, built on the API this page describes. Use this page directly when your game's containers are not a uniform chunk grid, or you need more control than `NebulaChunks` gives you.
 
 A client only learns about a runtime container that overlaps a [`NearCells` window](/docs/guides/interest-management#scoped-container-ownership) around one of the client's authorized foci (its pawn by default; every focus with a free camera or a policy), its current instance, or a dynamic container carrying an entity already in its interest set — not every runtime container the mesh has registered. `ContainerRegistry.Runtime` and the events below still enumerate every registered container on a worker or the orchestrator, which see the whole mesh regardless of any one client's interest set.
 
@@ -52,7 +52,7 @@ The orchestrator measures how busy each worker is, but it cannot know what a con
 | --- | --- |
 | `CostMultiplier` | Scales what the planner treats the container as costing. `1` is "as measured"; `2` gives it twice the room. The correction for a container whose occupant count is a poor proxy for its tick time. |
 | `AffinityGroup` | Containers sharing a non-empty group are dealt as a single item, so they land on one worker. |
-| `SeamCost` | `0..1`. Where two neighbours both carry it, the planner is charged for cutting between them and prefers to cut elsewhere. |
+| `SeamCost` | `0..1`. Where two neighbors both carry it, the planner is charged for cutting between them and prefers to cut elsewhere. |
 | `Dedicated` | Reserves a worker for this container before dealing the rest. A worker holding one is never chosen for retirement. |
 
 Worked examples:
@@ -86,7 +86,7 @@ worker.ReleaseRuntimeContainer(id);
 
 Persistent entities still inside are checkpointed and despawned; anything else inside is despawned for good. The lease row is deleted and every process forgets the box. When the container is asked for again, Nebula's persistence restores the entities that were saved in it: a persisted entity's record names its container by id (`rt_<id>`), so the props of a chunk come back with the chunk.
 
-Only the owner can release. Before retiring, read `worker.RuntimeContainerIdleSeconds(id)`: every worker that still wants the box re-stamps its lease row while an entity of its is near it, so the row's age is the mesh-wide idle time. A clock of the owner's own would retire a chunk the neighbour's pawn is about to enter, and its props would blink out and back.
+Only the owner can release. Before retiring, read `worker.RuntimeContainerIdleSeconds(id)`: every worker that still wants the box re-stamps its lease row while an entity of its is near it, so the row's age is the mesh-wide idle time. A clock of the owner's own would retire a chunk the neighbor's pawn is about to enter, and its props would blink out and back.
 
 Entities inside a container that goes away are detached from it, never destroyed with it: ghosts on a worker and every remote entity on a client stay alive and pick up the next container from the following state update.
 

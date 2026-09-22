@@ -29,7 +29,7 @@ namespace Nebula
         /// </summary>
         public string AffinityGroup;
         /// <summary>
-        /// 0..1: how much a worker boundary next to this container hurts. Where two neighbours on the curve both
+        /// 0..1: how much a worker boundary next to this container hurts. Where two neighbors on the curve both
         /// carry it, the planner charges itself for cutting between them and prefers to cut somewhere else. Raise it
         /// on whatever is currently hot and contested (the cells inside a battle royale's circle).
         /// </summary>

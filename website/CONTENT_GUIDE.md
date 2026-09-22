@@ -78,13 +78,13 @@ Important current boundaries include:
 - An entity persists only if it carries a `PersistentEntity` component: Nebula checkpoints those entities and restores them when a worker gains the lease of their container. The transient state of every other entity is still lost when a worker fails, as is any state on a persistent entity that is neither a `[Persist]` NetworkVariable nor written by `WritePersistentState`.
 - A client reconnects by itself with its session token, through any gateway of the mesh, and keeps its pawn when it returns within `SessionReclaimSeconds`. Session coordination can reclaim a failed gateway's sessions after its control-plane heartbeat becomes stale. Recovery time depends on the configured heartbeat timeout and on the reconnect reaching a live gateway; the single-digit-second measurements with default settings are not a deployment guarantee (see `docs/gateway-fleet-audit.md` and `docs/scale-suite.md`). Nebula does not provide a load balancer or redirect retries to a live gateway. The orchestrator starts only its own gateway and does not restart it.
 - A native client's UDP link is encrypted only when both sides turn it on: the gateway answers a key exchange by default (`EncryptClients`), the client asks for one only when `ClientEncryption` is set, and the gateway refuses plaintext clients only when `RequireEncryption` is set. The client checks the gateway's certificate against a pinned fingerprint, or accepts any certificate when none is pinned; Nebula does not validate certificate chains or hostnames. WebRTC encrypts a web client's link with DTLS. Gateway-to-worker and worker-to-worker links are never encrypted, so those processes must run on a private network. The gateway identifies players by an anonymous or OpenID Connect token; gateways and workers authenticate each other only when a mesh token is set.
-- The gateway filters entities by instance visibility, then reduces state update frequency by distance. Distance alone does not omit entities within the same instance. Private occupants can receive a bounded observation-only view of the public world.
+- The gateway checks instance visibility and the game's interest policy, then sends only entities in each client's interest set. Distance, explicit subscriptions, and always-relevant entities determine that set; distance also reduces transform update frequency within it. Private occupants can receive a bounded observation-only view of the public world.
 - Bots and server-driven entities require game-supplied behavior.
 - The CLI deploys to two targets: Nebula Cloud (`--target cloud`) and the reader's own Hetzner Cloud project (`--target hetzner`). Do not describe Nebula Cloud prices, the hosting provider behind it, or its internal services; document only what the CLI does.
 
 Recheck these statements against the code before repeating them. Change this guide when the implementation changes.
 
-Do not document release history, migrations from earlier alpha builds, retired options, or how current behavior differs from a prior Nebula version. Describe the current workflow and API. Keep current compatibility requirements only when readers must act on them, such as running every mesh process with the same wire protocol. Generated API reference remains complete, including members marked `[Obsolete]`; task-oriented guides should direct readers to the current API.
+Keep task-oriented guides focused on the current workflow and API. Include release history, version comparisons, or migration instructions when they help readers understand a change or take a required action. Changelogs and feature posts may describe earlier behavior. State compatibility requirements clearly, such as running every mesh process with the same wire protocol. Generated API reference remains complete, including members marked `[Obsolete]`.
 
 ## Keep examples public and self-contained
 
@@ -111,13 +111,13 @@ Audit screenshots and other images visually. A text search cannot find private n
 
 ### Approved dashboard screenshot exception
 
-The following landing-page screenshots are approved for publication even though they contain ShooterGame names and data:
+The following screenshots are approved for publication even though they contain ShooterGame names and data:
 
 - `website/public/screenshots/dashboard-overview.png`
 - `website/public/screenshots/dashboard-world-map.png`
 - `website/public/screenshots/dashboard-world-map-container.png`
 
-Keep these screenshots on the site unless the project owner withdraws the exception or provides replacements. This exception applies only to these three existing image files. Do not add their private names to surrounding prose, examples, alt text, or new assets.
+The screenshots were intentionally removed from the landing page. This exception permits their use but does not require their display; do not restore them as part of a content audit. It applies only to these three existing image files. Do not add their private names to surrounding prose, examples, alt text, or new assets.
 
 ## Make commands actionable
 

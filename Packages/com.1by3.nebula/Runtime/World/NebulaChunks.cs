@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Nebula.World
 {
     /// <summary>
-    /// What a game is told about one chunk of a turnkey chunked world.
+    /// What a game is told about one chunk of a chunked world.
     /// Passed by <c>in</c> reference so a content callback that runs for every chunk entering and leaving a role's
     /// window costs no allocation.
     /// </summary>
@@ -64,20 +64,18 @@ namespace Nebula.World
     public delegate void ChunkHandler(in ChunkContext chunk);
 
     /// <summary>
-    /// The content-streaming face of the turnkey chunked worlds in this process: one place, on every role, where a
-    /// game is told which chunks exist. <see cref="NebulaBootstrap"/> activates the public world's grid from
-    /// <see cref="NebulaConfig.ChunkedWorld"/> plus a <see cref="NebulaConfig.RuntimeWorld"/>; a game supplies
-    /// content and nothing else.
+    /// Reports the runtime chunks available on each role so your game can load their content.
+    /// <see cref="NebulaBootstrap"/> activates the public world's grid when
+    /// <see cref="NebulaConfig.ChunkedWorld"/> and <see cref="NebulaConfig.RuntimeWorld"/> are configured.
     /// <para>
-    /// There is a grid <b>per scope</b>, not one per process (<c>docs/scoped-chunk-grids.md</c>). <c>Grid</c> is
-    /// the public world's, which is what a single-world game has and all it ever needs; a game with instanced open
-    /// areas activates more through <see cref="NebulaChunkedWorld.ActivateGrid"/> and reaches them with
-    /// <see cref="GridFor"/>. Each grid has its own cell size, planar flag, allocator, lease rows, persistence
-    /// container ids and interest: chunk (x,y,z) of two scopes is two containers that never see each other.
+    /// Each scope, a separately identified simulation area, has its own grid. <see cref="Grid"/> returns
+    /// the public world's grid. Activate additional grids with <see cref="NebulaChunkedWorld.ActivateGrid"/>
+    /// and retrieve them with <see cref="GridFor"/>. Each grid has its own cell size, planar setting,
+    /// allocator, container assignments, and persistence identifiers.
     /// </para>
     /// <para>
     /// Chunks are Nebula runtime containers, so "which chunks exist" means something slightly different per role and
-    /// that is exactly the point: a worker sees the cells it and its neighbours lease, a client sees the containers
+    /// that is exactly the point: a worker sees the cells it and its neighbors lease, a client sees the containers
     /// the gateway told it about (its interest window), and both learn about them through the same two events. A
     /// game's callback therefore never needs to know which role it is running on, nor to poll.
     /// </para>
@@ -289,7 +287,7 @@ namespace Nebula.World
 
         /// <summary>
         /// The deterministic per-chunk seed (<see cref="ChunkContext.Seed"/>). A 64-bit finalizer mix of the packed
-        /// id, so neighbouring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never
+        /// id, so neighboring coordinates — whose ids differ in one low bit — produce unrelated seeds. Never
         /// zero-sensitive: chunk (0,0,0) gets a seed like any other.
         /// </summary>
         public static int SeedOf(ulong id)

@@ -19,7 +19,7 @@ The worker registers with the control plane and listens on `WorkerBasePort + ind
 
 The standalone `nebula-gateway` executable listens for clients on UDP port 7000 by default. It also accepts clients from a Unity Web build: it answers WebRTC offers and serves the web build over HTTP on TCP port 7000, and receives their WebRTC traffic on UDP port 7001. See [Build for the web](/docs/guides/web-builds). `nebula start` launches it for you. When starting it directly, keep `nebula-services.json` beside the executable or select an export with `-nebula-service-manifest <path>`.
 
-The gateway connects to every worker. It routes each client's input to the worker that controls that client's entity and sends worker replication streams to clients. It rejects entity messages with an old authority epoch or an invalid sender.
+The gateway connects to workers that hold regions or entities its clients need. It routes each client's input to the worker that controls that client's entity and sends worker replication streams to clients. It rejects entity messages with an old authority epoch or an invalid sender.
 
 When a client connects, the gateway chooses a ready container and asks its worker to spawn the player's entity. It caches one keyframe for each sync behavior so a new client can create entities in the correct state.
 
@@ -105,7 +105,7 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | Message | Delivery | Purpose |
 | --- | --- | --- |
 | `WorldState` | Sequenced or Reliable | Batched selected fields from opted-in root transforms. Reliable delivery carries container changes, teleports, recovery updates, and transforms configured for reliable delivery. |
-| `OwnerState` | Sequenced | The predicted behaviour's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
+| `OwnerState` | Sequenced | The predicted behavior's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
 | `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
 | `EntityState` | either | Sends state from sync components that have changed. |

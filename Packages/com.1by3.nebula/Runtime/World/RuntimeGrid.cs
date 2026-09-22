@@ -5,16 +5,11 @@ using UnityEngine;
 namespace Nebula.World
 {
     /// <summary>
-    /// Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an
-    /// "infinite chunked world") rather than a fixed set the game enumerates itself. Nebula still does not decide
-    /// the game's world architecture (that stays the game's job, see <c>docs/dynamic-worlds.md</c>); this only
-    /// packages the arithmetic every such game was writing by hand: a stable 64-bit id per cell, cell bounds in the
-    /// current floating-origin frame, and neighbourhood queries.
+    /// Maps runtime containers to a planar or three-dimensional grid. Provides a stable 64-bit id per cell,
+    /// cell bounds in the current floating-origin frame, and neighborhood queries.
     /// <para>
-    /// The id packing (three signed 21-bit fields) is fixed and must never change: ids are persisted (a runtime
-    /// container id is a control-plane lease key and may be a database key in a game's own persistence). The format
-    /// preserves the established three-axis packing used by existing projects, so persisted ids keep resolving to
-    /// the same cell after adopting this type.
+    /// Each id packs three signed 21-bit coordinates. Keep this format stable because container leases and
+    /// persisted entities use these ids to identify cells.
     /// </para>
     /// </summary>
     public sealed class RuntimeGrid
@@ -24,14 +19,14 @@ namespace Nebula.World
         public const int MaxCoordinate = (1 << 20) - 1;
         private const ulong Mask = (1UL << 21) - 1;
 
-        /// <summary>Size of one cell in metres, per axis.</summary>
+        /// <summary>Size of one cell in meters, per axis.</summary>
         public Vector3 CellSize { get; }
 
         /// <summary>
         /// Cells are columns: the grid has a single layer at y = 0 and <see cref="CellSize"/>.y is the column's
-        /// height, centred on absolute y = 0. Surface worlds want this — a chunk that is 64 m wide and 512 m tall
+        /// height, centered on absolute y = 0. Surface worlds want this — a chunk that is 64 m wide and 512 m tall
         /// is one container nothing ever leaves vertically, so verticality never costs a cell, a lease, or a
-        /// neighbourhood dimension. The packing is unchanged (y is simply always 0), so a planar and a volumetric
+        /// neighborhood dimension. The packing is unchanged (y is simply always 0), so a planar and a volumetric
         /// grid produce the same ids for the same coordinates.
         /// </summary>
         public bool Planar { get; }
@@ -191,7 +186,7 @@ namespace Nebula.World
         }
 
         /// <summary>
-        /// Centre of a cell in the current floating-origin frame. A planar grid's column is centred on absolute
+        /// Centre of a cell in the current floating-origin frame. A planar grid's column is centered on absolute
         /// y = 0 (the origin never shifts vertically in a planar world), so its box spans ±CellSize.y/2 around the
         /// ground plane rather than sitting above it.
         /// </summary>
@@ -230,7 +225,7 @@ namespace Nebula.World
         }
 
         /// <summary>
-        /// The neighbourhood of this grid, appended to <paramref name="into"/>: a cube for a volumetric grid, a
+        /// The neighborhood of this grid, appended to <paramref name="into"/>: a cube for a volumetric grid, a
         /// square in the y = 0 layer for a <see cref="Planar"/> one. Takes a list rather than yielding, because
         /// the allocator walks it every policy tick and an iterator would allocate an enumerator each time.
         /// </summary>

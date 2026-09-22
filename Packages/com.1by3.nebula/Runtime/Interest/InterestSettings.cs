@@ -9,7 +9,7 @@ namespace Nebula
         Info = 0,
         /// <summary>The value was clamped or raised to something that works; the mesh runs, but not as configured.</summary>
         Warning = 1,
-        /// <summary>The value cannot produce correct behaviour (a non-positive size). Start-up should stop.</summary>
+        /// <summary>The value cannot produce correct behavior (a non-positive size). Start-up should stop.</summary>
         Error = 2,
     }
 
@@ -29,14 +29,14 @@ namespace Nebula
     }
 
     /// <summary>
-    /// The interest knobs, resolved from <see cref="NebulaConfig"/> and already clamped into a set of values that
+    /// The interest settings, resolved from <see cref="NebulaConfig"/> and already clamped into a set of values that
     /// work together (see <see cref="Validate"/>). Everything downstream — grid, per-client evaluation,
     /// subscription margins, worker publishing — reads this and nothing else, so the standalone gateway and the
     /// Unity worker cannot drift apart over what "near" means.
     /// </summary>
     public struct InterestSettings
     {
-        /// <summary>Metres a client hears about an entity at, unless the entity's prefab overrides it.</summary>
+        /// <summary>Meters a client hears about an entity at, unless the entity's prefab overrides it.</summary>
         public float Radius;
         /// <summary>Extra meters an entity must travel past <see cref="Radius"/> before it leaves the set (hysteresis).</summary>
         public float ExitMargin;
@@ -60,7 +60,7 @@ namespace Nebula
         public float MaxRadius;
         /// <summary>Most foci one client may have (RTS camera plus owned units, spectators).</summary>
         public int MaxFoci;
-        /// <summary>Metres a client's focus hint may sit from its pawn before it is clamped.</summary>
+        /// <summary>Meters a client's focus hint may sit from its pawn before it is clamped.</summary>
         public float HintMaxDistance;
         /// <summary>Most focus hints accepted from one client per second; the rest are dropped.</summary>
         public float HintMaxHz;
@@ -109,10 +109,10 @@ namespace Nebula
             PartitionWarnFilterMs = 2f,
         };
 
-        /// <summary>Metres an entity must be outside before the linger clock even starts.</summary>
+        /// <summary>Meters an entity must be outside before the linger clock even starts.</summary>
         public float ExitRadius => Radius + ExitMargin;
 
-        /// <summary>Metres of regions a gateway subscribes around a focus: the exit radius plus the pre-subscription margin.</summary>
+        /// <summary>Meters of regions a gateway subscribes around a focus: the exit radius plus the pre-subscription margin.</summary>
         public float SubscribeRadius => Radius + ExitMargin + SubscribeMargin;
 
         /// <summary>Seconds between two evaluations of one client.</summary>

@@ -72,7 +72,7 @@ namespace Nebula
     /// <summary>
     /// What the server decided about one incoming focus hint: which mode to treat it in, and the point itself
     /// (a policy may move it — snap an RTS camera to the territory it is allowed to watch, say). A struct, so
-    /// the hook on the hot path allocates nothing.
+    /// policy evaluation allocates no additional memory.
     /// </summary>
     public struct FocusHintDecision
     {
