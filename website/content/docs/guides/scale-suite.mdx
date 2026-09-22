@@ -72,7 +72,7 @@ An open Unity Editor is a warning, not a blocker: `nebula build` mirrors the pro
 
 These are measured rather than hidden. Each is pinned by a test that fails when the behaviour changes, so whoever closes the gap is told to come back and update the suite.
 
-**A hard gateway loss does not reclaim its sessions.** A takeover is granted only when the previous gateway releases its claim. A gateway stopped cleanly does; a gateway that is killed never does, and nothing evicts the claim of a gateway that has stopped heartbeating, so every reclaim is refused after the coordination deadline. The workaround today is to request a drain on the dead gateway's control-plane row, which clears the claim.
+**A hard gateway loss does not reclaim its sessions.** A takeover is granted only when the previous gateway releases its claim. A gateway stopped cleanly does; a gateway that is killed never does, and nothing evicts the claim of a gateway that has stopped heartbeating, so every reclaim is refused after the coordination deadline. There is no workaround from outside the dead process: a release is matched on both the owning gateway and the per-connection claim id it minted.
 
 **A control plane that comes back empty loses its workers.** A gateway re-registers itself when it notices its row has gone; a worker registers once and never again. A control plane restarted *with* its storage keeps everything; one restarted *without* it has no workers and no leases until every worker process is restarted.
 

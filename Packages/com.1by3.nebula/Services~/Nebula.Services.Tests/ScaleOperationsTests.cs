@@ -5,12 +5,13 @@ using NUnit.Framework;
 namespace Nebula.ServiceTests;
 
 /// <summary>
-/// The two operational scenarios of the scale and failure suite (<c>docs/scale-suite.md</c>, D8 and D9):
+/// The two operational scenarios of the scale and failure suite (<c>docs/scale-suite.md</c>, S8 and S9):
 /// autoscale and rebalance under holds, and a rolling upgrade across the compatibility window.
 /// <para>
-/// Both are fast and deterministic — the planner, the scaler and the version check are pure code, so nothing here
-/// runs a mesh for seconds. They are tagged <c>Scale</c> but <b>not</b> <c>Soak</c>: they cost milliseconds and a
-/// developer can run them on every change.
+/// The autoscale scenarios are pure — the planner and the scaler are ordinary classes — so they cost
+/// milliseconds and carry <c>Scale</c> only; a developer can run them on every change. The rolling-upgrade
+/// scenario stands up real gateways on real sockets, so it carries <c>Soak</c> as well and stays out of the
+/// default <c>TestCategory!=Soak</c> run.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -56,7 +57,7 @@ public class ScaleOperationsTests
             Cost = cost,
         };
 
-    // -------------------------------------------------------------------------- D8: autoscale and rebalance
+    // -------------------------------------------------------------------------- S8: autoscale and rebalance
 
     /// <summary>
     /// The scenario the issue asks for, in three parts on one world: a rebalance moves containers while nothing
@@ -171,7 +172,7 @@ public class ScaleOperationsTests
         return info;
     }
 
-    // ------------------------------------------------------------------------------- D9: rolling upgrade
+    // ------------------------------------------------------------------------------- S9: rolling upgrade
 
     /// <summary>
     /// <b>There is no compatibility window.</b> <c>NebulaGateway.DispatchClient</c> compares the peer's

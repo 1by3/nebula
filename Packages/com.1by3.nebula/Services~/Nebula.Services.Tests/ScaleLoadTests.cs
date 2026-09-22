@@ -6,7 +6,7 @@ using NUnit.Framework;
 namespace Nebula.ServiceTests;
 
 /// <summary>
-/// The load half of the scale and failure suite (<c>docs/scale-suite.md</c>, scenarios D1–D3): sustained load,
+/// The load half of the scale and failure suite (<c>docs/scale-suite.md</c>, scenarios S1–S3): sustained load,
 /// a burst, and many scopes at once, with explicit bounds on what one client is sent.
 /// <para>
 /// <b>Synthetic layer (tier A).</b> Hundreds of real client handshakes through real
@@ -66,7 +66,7 @@ public class ScaleLoadTests
         return fleet;
     }
 
-    // ------------------------------------------------------------------------------------- D1: sustained load
+    // ------------------------------------------------------------------------------------- S1: sustained load
 
     [Test]
     public void SustainedLoadKeepsEveryClientInsideItsReplicaAndBandwidthBounds()
@@ -108,7 +108,7 @@ public class ScaleLoadTests
         Assert.That(orphans, Is.Zero, "no client was sent state for an entity it does not hold");
     }
 
-    // ---------------------------------------------------------------------------------------- D2: burst load
+    // ---------------------------------------------------------------------------------------- S2: burst load
 
     [Test]
     public void ABurstOfJoinsIsAdmittedWithoutRejectingAnyoneOrLosingASession()
@@ -135,7 +135,7 @@ public class ScaleLoadTests
         Assert.That(fleet.Workers.Sum(w => w.Pawns.Count), Is.EqualTo(burst), "one pawn each, no duplicates");
     }
 
-    // --------------------------------------------------------------------------------------- D3: many scopes
+    // --------------------------------------------------------------------------------------- S3: many scopes
 
     [Test]
     public void ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything()

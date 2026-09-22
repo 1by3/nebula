@@ -145,8 +145,10 @@ when the previous gateway *releases* its claim. A gateway that is stopped cleanl
 sends a `release` for every session it holds), and the measured reclaim is 0.05 s. A gateway that is *killed*
 never does: every claim on it stays pending for 15 s, is re-pended by the next attempt, and nothing evicts it —
 a gateway that has stopped heartbeating is not treated as gone. Every reclaim is therefore refused after the
-10 s coordination deadline with `the other session could not be disconnected`. The operator workaround today is
-to request a drain on the dead gateway's control-plane row, which clears the claim.
+10 s coordination deadline with `the other session could not be disconnected`. There is no operator workaround
+in the code today: `release` is matched on the owning gateway's key **and** its per-connection claim id
+(`GatewaySessionDirectory.Matches`), which nobody outside the dead process knows, and a drain request is read
+by a gateway that is still ticking — which this one is not.
 `AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims` asserts this **negative** and says
 in its failure message that closing the gap means updating this document and turning the assertion around.
 

@@ -6,7 +6,7 @@ using NUnit.Framework;
 namespace Nebula.ServiceTests;
 
 /// <summary>
-/// The failure half of the scale and failure suite (<c>docs/scale-suite.md</c>, scenarios D4–D7): a worker dies,
+/// The failure half of the scale and failure suite (<c>docs/scale-suite.md</c>, scenarios S4–S7): a worker dies,
 /// a gateway is lost without a drain, the control plane restarts under the mesh, and the whole mesh comes back
 /// container by container. Each one measures a time against a stated threshold and writes its numbers to
 /// <c>Logs/scale/synthetic-*.csv</c>.
@@ -134,7 +134,7 @@ public class ScaleFailureTests
         return fleet;
     }
 
-    // --------------------------------------------------------------------------------------- D4: worker kill
+    // --------------------------------------------------------------------------------------- S4: worker kill
 
     [Test]
     public void AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities()
@@ -184,7 +184,7 @@ public class ScaleFailureTests
             Assert.That(c.Replicas.Count, Is.EqualTo(c.Replicas.Distinct().Count()), "replicas are a set; a duplicate would be a bug in the fixture");
     }
 
-    // -------------------------------------------------------------------------------------- D5: gateway loss
+    // -------------------------------------------------------------------------------------- S5: gateway loss
 
     [Test]
     public void AnAbruptGatewayStopLetsEverySessionBeReclaimedOnAnotherGateway()
@@ -241,8 +241,9 @@ public class ScaleFailureTests
         report.Note("a hard gateway loss is NOT recovered today: the coordinator holds the dead gateway's claim and " +
                     "every reclaim is refused with \"" + reason + "\". Automatic eviction of a gateway that has stopped " +
                     "heartbeating is the control-plane availability work (NEB-227) and the gateway audit (NEB-229); " +
-                    "this row is the measurement those issues have to move. Operator workaround today: request a drain " +
-                    "on the dead gateway's row, which clears the claim.");
+                    "this row is the measurement those issues have to move. There is no operator workaround in the code " +
+                    "today: a release is matched on the owning gateway's key AND its per-connection claim id, " +
+                    "which nobody outside the dead process knows.");
         report.Write();
 
         Assert.That(settled, Is.True, "the reclaim attempts neither completed nor were refused within 40 s");
@@ -253,7 +254,7 @@ public class ScaleFailureTests
             "the refusal must say why, so an operator can tell this apart from a rejected player");
     }
 
-    // --------------------------------------------------------------------------- D6: control-plane restart
+    // --------------------------------------------------------------------------- S6: control-plane restart
 
     [Test]
     public void AControlPlaneRestartKeepsEveryLeaseAndDisconnectsNobody()
@@ -312,7 +313,7 @@ public class ScaleFailureTests
         Assert.That(clients.All(c => !c.Disconnected), Is.True, "and still nobody was disconnected");
     }
 
-    // -------------------------------------------------------------------------------- D7: whole-mesh restart
+    // -------------------------------------------------------------------------------- S7: whole-mesh restart
 
     [Test]
     public void AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded()
