@@ -1,0 +1,65 @@
+---
+title: Run the conformance suite
+description: Run the deterministic test suite that checks Nebula's handover, scope, and interaction guarantees, and read what each scenario proves.
+---
+
+The conformance suite is a set of deterministic tests that check Nebula's cross-worker guarantees on a small mesh built inside one process. Run it after you change Nebula itself, or when you want to confirm that a package version keeps the guarantees this page lists. It needs no build, no running mesh, and no game content.
+
+To run the whole suite from the repository root, close the Unity Editor for this project and run:
+
+```powershell
+powershell -File Tools/conformance.ps1
+```
+
+To run only the pure C# part, which takes seconds and works while the Editor is open, run:
+
+```powershell
+powershell -File Tools/conformance.ps1 -DotnetOnly
+```
+
+The script prints one row per test tier with the number of passed, failed, and skipped tests, the names of any failed tests, and a final `PASS` or `FAIL`. It exits with code 0 only when every tier that ran passed. Result files are written to `Logs/conformance/`.
+
+## Prerequisites
+
+- The .NET SDK, for the pure C# tier (`dotnet test`).
+- Unity 6000.6.0f1 installed through Unity Hub, for the Unity tier. Pass `-UnityVersion` or `-UnityPath` for another install.
+- The Unity Editor must be closed for this project when you run the Unity tier. The script refuses to start the Editor while `Temp/UnityLockfile` exists and tells you to close it or use `-DotnetOnly`.
+
+## What the suite runs
+
+Every conformance test is an NUnit test tagged with the category `Conformance`. The script runs that category in two places:
+
+| Tier | Where the tests are | How the script runs them |
+| --- | --- | --- |
+| Pure C# | `Packages/com.1by3.nebula/Services~/Nebula.Services.Tests` | `dotnet test --filter "TestCategory=Conformance"` |
+| Unity | `Packages/com.1by3.nebula/Tests/EditMode` | the Editor in batch mode with `-testCategory Conformance` |
+
+The Unity tier stands up two real workers (the `NebulaWorker` component) in one Editor process. Each worker writes to a recording transport instead of a socket, and the test delivers the recorded bytes into the other worker's message handler. A handover in this tier is built, serialized, parsed, and applied by the same code a live mesh runs. What this tier does not include: a gateway, the orchestrator, leases, and the fixed-tick loop. A test triggers a handover directly instead of waiting for a worker to detect that an entity left its container.
+
+The pure C# tier runs the parts of a scenario that need no Unity types, such as the wire format of a message. The standalone gateway is built from the same sources, so this tier is also what confirms that the gateway and a worker agree on those bytes.
+
+You can also run the tests from the Unity Test Runner window (Window > General > Test Runner), filtered by the `Conformance` category, or with `dotnet test` directly using the filter above.
+
+## Scenarios
+
+Each scenario checks one guarantee. A scenario marked **available** has a test in the suite today. A scenario marked **not yet available** describes a guarantee that Nebula does not provide yet, or that has no test yet; the row is listed so that you can see what the suite will cover, not what you can rely on now.
+
+| # | Guarantee | Status |
+| --- | --- | --- |
+| 1 | The same location (world, scope, chunk) resolves to the same container on the gateway, a worker, the orchestrator, and a client, and still does after a handover, a restart, and a round trip through the persistence store. | Not yet available (in progress) |
+| 2 | Activating a scope is idempotent when two requesters ask at the same time, and a private key produces a distinct scope. | Not yet available |
+| 3 | An idle scope retires, restores with the same persisted entities, and refuses admission until the restore completes. | Not yet available |
+| 4 | Two scopes whose chunks share coordinates get distinct leases and distinct records, and neither sees the other's ghosts or replicated entities. | Not yet available |
+| 5 | A cross-worker call is applied at most once when its target changes worker between send and apply, and a call carrying an outdated epoch is rejected with a reason. | Not yet available (in progress) |
+| 6 | `StateAt(tick)` returns a pose that matches the recorded history on the authoritative worker and on a ghost, within a documented bound. | Not yet available |
+| 7 | Entities in one cohesion group change worker together, the planner never assigns them to different workers, and a group too large for one worker is reported. | Not yet available |
+| 8 | A server-driven entity that carries custom handover state keeps every field when it changes worker: position, rotation, velocity, `NetworkVariable` values, the bytes written by `WriteHandoverState`, the server-driven flag, and an epoch increased by exactly one. `OnLostAuthority` runs once on the old worker and `OnGainedAuthority` runs once on the new one, after the handover state is applied. A duplicate of the transfer message is ignored. | Available |
+| 9 | Nebula reports a physics joint that connects entities in different containers when those entities are not in a cohesion group. | Not yet available (in progress) |
+
+Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `ConformanceHandoverWireTests` (both tiers), plus two older tests that check the handover-state format and a persistent entity's key crossing a handover. See [Physics and handover state](/docs/guides/physics-and-handover-state) for how to write handover state in your own behaviors.
+
+## Read a failure
+
+A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result, including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
+
+If the Unity tier reports `not run`, the summary says why: the Editor was not found, the project is open in an Editor, or the Editor produced no result file. The last case usually means a compile error; the Editor log names it.

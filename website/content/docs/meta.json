@@ -44,6 +44,7 @@
     "---Debugging and testing---",
     "guides/debugging",
     "guides/load-testing",
+    "guides/conformance-suite",
     "---Deploying---",
     "deploy/cloud",
     "deploy/hetzner",

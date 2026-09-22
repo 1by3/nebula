@@ -15,6 +15,9 @@
     <!-- The location contract (docs/location-contract.md) is pure C# too: the same conformance tests run against the
          service registry here and against the Unity registry in the package. -->
     <Compile Include="../../Tests/EditMode/ConformanceLocationTests.cs" />
+    <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
+         exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
+    <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

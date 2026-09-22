@@ -376,6 +376,7 @@ namespace Nebula.Tests
         }
 
         [Test]
+        [Category("Conformance")] // scenario 8: a persistent entity's identity is part of its handover state (docs/conformance-suite.md)
         public void TheKeyTravelsWithTheHandoverSoTheNextWorkerUpdatesTheSameRecord()
         {
             var a = NewObject("Crate");
