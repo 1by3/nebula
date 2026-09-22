@@ -1,0 +1,307 @@
+using System.Diagnostics;
+using Nebula;
+using Nebula.ServicePrimitives;
+using NUnit.Framework;
+
+namespace Nebula.ServiceTests;
+
+/// <summary>
+/// The failure half of the scale and failure suite (<c>docs/scale-suite.md</c>, scenarios D4–D7): a worker dies,
+/// a gateway is lost without a drain, the control plane restarts under the mesh, and the whole mesh comes back
+/// container by container. Each one measures a time against a stated threshold and writes its numbers to
+/// <c>Logs/scale/synthetic-*.csv</c>.
+/// <para>
+/// <b>Synthetic layer (tier A).</b> The processes here are objects: killing a worker means dropping its socket
+/// and its control-plane registration, killing a gateway means the process stops answering. That is exactly what
+/// the rest of the mesh can observe of a real kill, so what these tests measure — how long the survivors take to
+/// notice, what they do about it, and what a client sees meanwhile — is real. What it is <b>not</b> is the cost
+/// of a Unity worker loading a scene back in, which is tier D (<c>Tools/scale-suite.ps1</c>).
+/// </para>
+/// </summary>
+[TestFixture]
+[Category("Scale")]
+[Category("Soak")]
+public class ScaleFailureTests
+{
+    private const int Cells = 4;
+    private const int SceneryPerCell = 40;
+
+    private ScaleWorld _world = null!;
+
+    [SetUp] public void Setup() => _world = new ScaleWorld(Cells);
+    [TearDown] public void Cleanup() => _world.Dispose();
+
+    /// <summary>One piece of scenery as the mesh would have persisted it: id, where it is, and in what.</summary>
+    private readonly record struct Record(ulong NetId, string ContainerId, Vector3 Local);
+
+    private readonly Dictionary<string, List<Record>> _contents = new();
+
+    /// <summary>Fill every cell with scenery and remember it, so a replacement worker can restore exactly it.</summary>
+    private void Populate(Fleet fleet)
+    {
+        _contents.Clear();
+        for (int i = 0; i < _world.Cells.Count; i++)
+        {
+            string id = _world.Cells[i];
+            var worker = fleet.Workers[i % fleet.Workers.Count];
+            var container = ContainerRef.Of(ContainerRegistry.FindById(id));
+            var random = new Random(i * 7919);
+            var records = new List<Record>();
+            for (int n = 0; n < SceneryPerCell; n++)
+            {
+                var local = new Vector3((float)(random.NextDouble() - 0.5) * ScaleWorld.CellSize, 0,
+                    (float)(random.NextDouble() - 0.5) * ScaleWorld.CellSize);
+                ulong netId = 500_000UL + (ulong)i * 10_000UL + (ulong)n;
+                worker.Spawn(netId, local, container);
+                records.Add(new Record(netId, id, local));
+            }
+            _contents[id] = records;
+        }
+    }
+
+    /// <summary>
+    /// Restore a container onto a worker: take the lease and put back every record it held, under the same net
+    /// ids. This stands in for what a real worker does when the orchestrator hands it an orphaned container — it
+    /// reads the container's persisted records and spawns them (the store leg itself is covered by conformance
+    /// scenarios 3 and 11; what is under test here is what the gateways and clients do while it happens).
+    /// </summary>
+    private void Restore(Fleet fleet, FakeWorker worker, string containerId)
+    {
+        fleet.Assign(containerId, worker.WorkerId);
+        var container = ContainerRef.Of(ContainerRegistry.FindById(containerId));
+        foreach (var record in _contents[containerId]) worker.Spawn(record.NetId, record.Local, container);
+    }
+
+    private Fleet Build(int gateways, int workers, int clients, out List<FakeClient> connected)
+    {
+        var fleet = new Fleet(gateways, workers: workers, world: _ => { });
+        _world.Deal(fleet);
+        foreach (var w in fleet.Workers) w.SpawnIntoRequestedContainer = true;
+        Populate(fleet);
+        fleet.OnPump = () => { foreach (var w in fleet.Workers) w.PublishStates(); };
+        connected = new List<FakeClient>();
+        for (int i = 0; i < clients; i++) connected.Add(fleet.Connect(i % gateways, "p" + i));
+        Assert.That(fleet.Run(() => fleet.Clients.All(c => c.Join == JoinState.Joined), seconds: 60), Is.True,
+            "the mesh did not admit every client before the failure was injected");
+        fleet.RunFor(1.0);
+        return fleet;
+    }
+
+    // --------------------------------------------------------------------------------------- D4: worker kill
+
+    [Test]
+    public void AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities()
+    {
+        var report = new ScaleReport("worker-kill",
+            "containersOrphaned", "clients", "noticedAfterSeconds", "restoredAfterSeconds", "secondsPerContainer",
+            "duplicateSpawns", "orphanUpdates", "pawnsAfter", "replicasRestored");
+
+        using var fleet = Build(gateways: 2, workers: Cells, clients: 40, out var clients);
+        var victim = fleet.Workers[Cells - 1];
+        var survivor = fleet.Workers[0];
+        var lost = _contents[_world.Cells[Cells - 1]].Select(r => r.NetId).ToHashSet();
+        int heldBefore = clients.Sum(c => c.Replicas.Count(lost.Contains));
+        Assert.That(heldBefore, Is.GreaterThan(0), "no client could see the dying worker's entities, so nothing is being measured");
+
+        var clock = Stopwatch.StartNew();
+        var orphaned = fleet.KillWorker(victim);
+        Assert.That(orphaned, Is.EquivalentTo(new[] { _world.Cells[Cells - 1] }), "the kill orphaned exactly the leases it held");
+
+        // The gateways notice by losing the link and drop what that worker owned; nothing else is disturbed.
+        Assert.That(fleet.Run(() => clients.All(c => c.Replicas.All(id => !lost.Contains(id))), seconds: 30), Is.True,
+            "a client still holds a replica of an entity nobody owns");
+        double noticed = clock.Elapsed.TotalSeconds;
+        Assert.That(clients.All(c => !c.Disconnected), Is.True, "a worker death must not disconnect a client");
+
+        foreach (string containerId in orphaned) Restore(fleet, survivor, containerId);
+        Assert.That(fleet.Run(() => clients.All(c => c.Join == JoinState.Joined) &&
+            clients.Sum(c => c.Replicas.Count(lost.Contains)) >= heldBefore, seconds: 60), Is.True,
+            "the restored container's entities did not come back to the clients that could see them");
+        double restored = clock.Elapsed.TotalSeconds;
+
+        int duplicates = clients.Sum(c => c.DuplicateSpawns), orphanUpdates = clients.Sum(c => c.OrphanUpdates);
+        int pawns = fleet.Workers.Sum(w => w.Pawns.Count);
+        report.Row(orphaned.Count, clients.Count, noticed, restored, restored / Math.Max(1, orphaned.Count),
+            duplicates, orphanUpdates, pawns, clients.Sum(c => c.Replicas.Count(lost.Contains)));
+        report.Note($"{orphaned.Count} container(s) orphaned, noticed in {noticed:0.00} s, whole again in {restored:0.00} s");
+        report.Write();
+
+        Assert.That(restored / Math.Max(1, orphaned.Count), Is.LessThan(ScaleThresholds.RestoreSecondsPerContainer),
+            "the restore took longer than the per-container budget");
+        Assert.That(duplicates, Is.Zero, "a client was given a second live view of an entity it already held");
+        Assert.That(pawns, Is.EqualTo(clients.Count), "one pawn per client after the restore: no duplicate players");
+        foreach (var c in clients)
+            Assert.That(c.Replicas.Count, Is.EqualTo(c.Replicas.Distinct().Count()), "replicas are a set; a duplicate would be a bug in the fixture");
+    }
+
+    // -------------------------------------------------------------------------------------- D5: gateway loss
+
+    [Test]
+    public void AnAbruptGatewayStopLetsEverySessionBeReclaimedOnAnotherGateway()
+    {
+        var report = new ScaleReport("gateway-stop", "kind", "clients", "reclaimed", "reclaimRate", "reclaimSeconds", "sameSessionIds");
+
+        using var fleet = Build(gateways: 2, workers: 2, clients: 24, out var clients);
+        var onDoomed = clients.Where((_, i) => i % 2 == 0).ToList();
+        var identities = onDoomed.ToDictionary(c => c, c => c.Welcome!.Value);
+
+        // Stopped, not crashed: the socket closes and the coordinator's claims are released, but nobody was told
+        // to drain and no client was given time to reconnect first.
+        fleet.KillGateway(0, hard: false);
+        Assert.That(fleet.Run(() => onDoomed.All(c => c.Disconnected), seconds: 20), Is.True, "the stopped gateway's clients were not dropped");
+
+        var clock = Stopwatch.StartNew();
+        var back = onDoomed.Select(c => fleet.Connect(1, "reclaim", identities[c].Token, identities[c].SessionToken)).ToList();
+        bool all = fleet.Run(() => back.All(c => c.Join == JoinState.Joined), seconds: 30);
+        double seconds = clock.Elapsed.TotalSeconds;
+
+        int reclaimed = back.Count(c => c.Welcome is { Reclaimed: true });
+        int same = back.Where(c => c.Welcome != null).Select((c, i) => c.Welcome!.Value.ClientId == identities[onDoomed[i]].ClientId).Count(x => x);
+        report.Row("abrupt-stop", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds, same);
+        report.Note($"{reclaimed}/{onDoomed.Count} sessions reclaimed on the surviving gateway in {seconds:0.00} s");
+        report.Write();
+
+        Assert.That(all, Is.True, "not every client of the stopped gateway got back in");
+        Assert.That(reclaimed, Is.EqualTo(onDoomed.Count), "every reclaim kept the session it had");
+        Assert.That(same, Is.EqualTo(onDoomed.Count), "a reclaim must return the same session id");
+        Assert.That(seconds, Is.LessThan(ScaleThresholds.GatewayReclaimSeconds), "the reclaim took longer than the budget");
+        Assert.That(clients.Except(onDoomed).All(c => !c.Disconnected), Is.True, "the surviving gateway's clients were untouched");
+    }
+
+    [Test]
+    public void AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims()
+    {
+        var report = new ScaleReport("gateway-kill", "kind", "clients", "reclaimed", "reclaimRate", "secondsWaited", "refusalReason");
+
+        using var fleet = Build(gateways: 2, workers: 2, clients: 8, out var clients);
+        var onDoomed = clients.Where((_, i) => i % 2 == 0).ToList();
+        var identities = onDoomed.ToDictionary(c => c, c => c.Welcome!.Value);
+
+        // A killed process: it stops answering, and it never gets to release the session claims it holds.
+        fleet.KillGateway(0, hard: true);
+
+        var clock = Stopwatch.StartNew();
+        var back = onDoomed.Select(c => fleet.Connect(1, "reclaim", identities[c].Token, identities[c].SessionToken)).ToList();
+        bool settled = fleet.Run(() => back.All(c => c.Join == JoinState.Joined || c.Rejected != null), seconds: 40);
+        double seconds = clock.Elapsed.TotalSeconds;
+
+        int reclaimed = back.Count(c => c.Join == JoinState.Joined);
+        string reason = back.FirstOrDefault(c => c.Rejected != null)?.Rejected!.Value.Reason ?? "";
+        report.Row("hard-kill", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds, reason);
+        report.Note("a hard gateway loss is NOT recovered today: the coordinator holds the dead gateway's claim and " +
+                    "every reclaim is refused with \"" + reason + "\". Automatic eviction of a gateway that has stopped " +
+                    "heartbeating is the control-plane availability work (NEB-227) and the gateway audit (NEB-229); " +
+                    "this row is the measurement those issues have to move. Operator workaround today: request a drain " +
+                    "on the dead gateway's row, which clears the claim.");
+        report.Write();
+
+        Assert.That(settled, Is.True, "the reclaim attempts neither completed nor were refused within 40 s");
+        Assert.That(reclaimed, Is.Zero,
+            "a hard gateway loss now reclaims sessions by itself — the NEB-227/229 gap this test pins has been closed; " +
+            "update docs/scale-suite.md D5 and turn this into the positive assertion");
+        Assert.That(reason, Does.Contain("could not be disconnected"),
+            "the refusal must say why, so an operator can tell this apart from a rejected player");
+    }
+
+    // --------------------------------------------------------------------------- D6: control-plane restart
+
+    [Test]
+    public void AControlPlaneRestartKeepsEveryLeaseAndDisconnectsNobody()
+    {
+        var report = new ScaleReport("control-plane-restart",
+            "leasesBefore", "leasesAfter", "stallSeconds", "clients", "disconnected", "sessionsChanged", "duplicateSpawns");
+
+        using var fleet = Build(gateways: 2, workers: Cells, clients: 24, out var clients);
+        var sessionsBefore = clients.ToDictionary(c => c, c => c.Welcome!.Value.ClientId);
+        var leasesBefore = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => (l.WorkerId, l.State, l.Epoch));
+        string snapshot = fleet.Plane.ToJson(); // what the orchestrator's storage holds when it goes down
+
+        var clock = Stopwatch.StartNew();
+        fleet.RestartControlPlane(snapshot);
+        Assert.That(fleet.Run(() => fleet.Plane.Leases.Count == leasesBefore.Count, seconds: 20), Is.True,
+            "the leases did not come back");
+        double stall = clock.Elapsed.TotalSeconds;
+        fleet.RunFor(2.0); // let the gateways re-register and re-read ownership
+
+        var leasesAfter = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => (l.WorkerId, l.State, l.Epoch));
+        int changed = clients.Count(c => c.Welcome!.Value.ClientId != sessionsBefore[c]);
+        report.Row(leasesBefore.Count, leasesAfter.Count, stall, clients.Count,
+            clients.Count(c => c.Disconnected), changed, clients.Sum(c => c.DuplicateSpawns));
+        report.Note($"{leasesAfter.Count} leases restored in {stall:0.000} s with no client disconnected");
+        report.Write();
+
+        Assert.That(leasesAfter, Is.EqualTo(leasesBefore), "every lease came back with the same owner, state and epoch");
+        Assert.That(stall, Is.LessThan(ScaleThresholds.ControlPlaneStallSeconds), "the mesh was without leases for too long");
+        Assert.That(clients.All(c => !c.Disconnected), Is.True, "a control-plane restart must not disconnect a client");
+        Assert.That(changed, Is.Zero, "a control-plane restart must not change a session id");
+        Assert.That(fleet.Run(() => fleet.Plane.Gateways.Count == 2, seconds: 20), Is.True,
+            "both gateways re-registered after the restart");
+    }
+
+    [Test]
+    public void ARestartThatCameBackEmptyReclaimsItsGatewaysButNotItsWorkers()
+    {
+        var report = new ScaleReport("control-plane-cold-restart", "workersKnown", "gatewaysKnown", "leases", "clientsDisconnected");
+
+        using var fleet = Build(gateways: 1, workers: 2, clients: 8, out var clients);
+        fleet.RestartControlPlane(null); // storage lost everything, or was reset
+        fleet.RunFor(3.0);
+
+        report.Row(fleet.Plane.Workers.Count, fleet.Plane.Gateways.Count, fleet.Plane.Leases.Count,
+            clients.Count(c => c.Disconnected));
+        report.Note("a gateway re-registers itself when the control plane forgets it (NebulaGateway.OnControlPlaneChanged); " +
+                    "a worker does not — NebulaWorker registers once and never again — so a control plane that comes back " +
+                    "with nothing has no workers and no leases until every worker process is restarted. Durable " +
+                    "control-plane state is NEB-227; this row is what happens without it.");
+        report.Write();
+
+        Assert.That(fleet.Plane.Gateways.Count, Is.EqualTo(1), "the gateway put itself back on the control plane");
+        Assert.That(fleet.Plane.Workers, Is.Empty,
+            "a worker now re-registers after a cold control-plane restart — update docs/scale-suite.md D6 and this test");
+        Assert.That(fleet.Plane.Leases, Is.Empty, "no worker means no leases");
+        Assert.That(clients.All(c => !c.Disconnected), Is.True, "and still nobody was disconnected");
+    }
+
+    // -------------------------------------------------------------------------------- D7: whole-mesh restart
+
+    [Test]
+    public void AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded()
+    {
+        var report = new ScaleReport("mesh-restart", "step", "containerId", "worker", "secondsFromRestartStart", "clientsHoldingItsEntities");
+
+        using var fleet = Build(gateways: 2, workers: Cells, clients: 24, out var clients);
+        var expected = _world.Cells.ToDictionary(id => id, id => _contents[id].Select(r => r.NetId).ToHashSet());
+        foreach (string id in _world.Cells)
+            Assert.That(clients.Sum(c => c.Replicas.Count(expected[id].Contains)), Is.GreaterThan(0), id + " was invisible before the restart");
+
+        // Every worker dies. The gateways and the clients stay up, which is what makes this a mesh restart and
+        // not a client restart: the measurement is how long a connected player waits for the world to come back.
+        foreach (var w in fleet.Workers.ToList()) fleet.KillWorker(w);
+        Assert.That(fleet.Run(() => clients.All(c => c.Replicas.Count == 0), seconds: 30), Is.True,
+            "the clients still hold entities although no worker is alive");
+        Assert.That(clients.All(c => !c.Disconnected), Is.True, "a whole-worker-fleet loss must not disconnect a client");
+
+        var clock = Stopwatch.StartNew();
+        var curve = new List<(string Container, double Seconds)>();
+        for (int i = 0; i < _world.Cells.Count; i++)
+        {
+            string id = _world.Cells[i];
+            var worker = fleet.StartWorker();
+            worker.SpawnIntoRequestedContainer = true;
+            Restore(fleet, worker, id);
+            Assert.That(fleet.Run(() => clients.Sum(c => c.Replicas.Count(expected[id].Contains)) > 0, seconds: 45), Is.True,
+                id + " did not come back to any client");
+            double at = clock.Elapsed.TotalSeconds;
+            curve.Add((id, at));
+            report.Row(i + 1, id, worker.WorkerId, at, clients.Count(c => c.Replicas.Any(expected[id].Contains)));
+        }
+        Assert.That(fleet.Run(() => clients.All(c => c.Join == JoinState.Joined), seconds: 60), Is.True,
+            "not every player was given a pawn again once the mesh was back");
+        report.Note($"{curve.Count} containers back in {curve[^1].Seconds:0.00} s ({curve[^1].Seconds / curve.Count:0.00} s each)");
+        report.Write();
+
+        ScaleBaseline.CompareCurve("mesh-restart", curve, ScaleThresholds.RestoreSecondsPerContainer);
+        Assert.That(clients.All(c => !c.Disconnected), Is.True);
+        Assert.That(fleet.Workers.Sum(w => w.Pawns.Count), Is.EqualTo(clients.Count), "one pawn per player after the restart");
+    }
+}
