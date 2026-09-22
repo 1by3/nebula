@@ -280,12 +280,17 @@ namespace Nebula
         }
 
         /// <summary>
-        /// The floating origin moved: recorded world positions are in the old frame, so move them with it. Entries
-        /// under a container are left alone; their container moved with the frame and the pose is rebuilt from it.
+        /// The floating origin of this entity's frame moved: every recorded pose is a <b>world</b> pose in the old
+        /// frame, so every one of them moves with it — including the entries recorded under a container, whose
+        /// container moved by exactly this delta too. <see cref="TryGetStateAt"/> returns the stored pose as it
+        /// stands and never rebuilds one from its container, so skipping them would make
+        /// <see cref="NetworkIdentity.StateAt"/> answer with a pose from the previous frame
+        /// (<c>docs/scope-frames.md</c> D8). With per-scope frames the caller addresses the shift to one frame, so
+        /// an entity only ever gets its own scope's delta.
         /// </summary>
         internal void Shift(Vector3 delta)
         {
-            for (int i = 0; i < _ring.Length; i++) if (_ring[i].Valid && _ring[i].Container == null) _ring[i].Position += delta;
+            for (int i = 0; i < _ring.Length; i++) if (_ring[i].Valid) _ring[i].Position += delta;
         }
 
         /// <summary>Forget everything recorded so far (the entity changed authority, or was rebound to a new copy).</summary>

@@ -329,6 +329,9 @@ namespace Nebula.World
             string scope = grid.ScopeKey;
             GridsByScope[scope] = grid;
             GridsByInstance[grid.InstanceId] = grid;
+            // A scoped grid owns its floating origin from the moment it exists here: registering the frame up
+            // front is what keeps its containers out of the public world's origin shifts (docs/scope-frames.md D2).
+            _ = grid.Frame;
             if (grid.IsPublic) { Grid = grid; Allocator = allocator; }
             if (allocator != null) AllocatorsByScope[scope] = allocator;
             else AllocatorsByScope.Remove(scope);
@@ -336,6 +339,10 @@ namespace Nebula.World
             IsHeadless = headless;
             // Every grid resolves its own ids; one hook for all of them, so a second scope cannot take the first's.
             ContainerRegistry.RuntimeBoundsInFrame = BoundsOfId;
+            // Containers of this scope that turned up before the grid did were placed in the public frame, because
+            // nothing here could say otherwise yet. A zero-delta shift of the new frame re-asks the bounds hook for
+            // every one of them, so each is recomputed from its coordinate in its own frame (docs/scope-frames.md D5).
+            if (!grid.IsPublic) ContainerRegistry.ShiftRuntime(grid.InstanceId, Vector3.zero);
             var snapshot = new List<Container>(ContainerRegistry.Runtime);
             for (int i = 0; i < snapshot.Count; i++) if (snapshot[i] != null) OnRegistered(snapshot[i]);
         }
@@ -351,6 +358,7 @@ namespace Nebula.World
             GridsByScope.Remove(grid.ScopeKey);
             GridsByInstance.Remove(grid.InstanceId);
             AllocatorsByScope.Remove(grid.ScopeKey);
+            ScopeFrames.Remove(grid.ScopeKey);
             if (grid.IsPublic) { Grid = null; Allocator = null; }
         }
 

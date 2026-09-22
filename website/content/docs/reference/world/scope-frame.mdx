@@ -1,0 +1,99 @@
+---
+title: "ScopeFrame"
+description: "One scope's floating origin: which cell of that scope's grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/ScopeFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/ScopeFrames.cs)</div>
+
+```csharp
+public sealed class ScopeFrame
+```
+
+One scope's floating origin: which cell of *that scope's* grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves. The public world's frame is [`ScopeFrames.Public`](/docs/reference/world/scope-frames#public), which is [`WorldOrigin`](/docs/reference/world/world-origin) itself, so a project with no scopes behaves exactly as it always did.
+
+A worker may hold containers of many scopes whose coordinates have nothing to do with each other. Each of them keeps its own origin cell, so two scopes can both sit near Unity's origin on one worker without interfering: they are already in separate physics scenes (`InstanceScenes`) and separate container graphs. Design record: `docs/scope-frames.md`.
+
+## Properties
+
+### ScopeKey [#scopekey]
+
+```csharp
+public string ScopeKey { get; }
+```
+
+The opaque scope key (`""` is the public world).
+
+### InstanceId [#instanceid]
+
+```csharp
+public ulong InstanceId { get; }
+```
+
+The 64-bit isolation id of [`ScopeKey`](#scopekey); 0 for the public world.
+
+### IsPublic [#ispublic]
+
+```csharp
+public bool IsPublic { get; }
+```
+
+Whether this is the public world's frame, which is [`WorldOrigin`](/docs/reference/world/world-origin).
+
+### Cell [#cell]
+
+```csharp
+public Vector3Int Cell { get; }
+```
+
+The cell of this scope's grid that sits at Unity's origin.
+
+### CellSize [#cellsize]
+
+```csharp
+public Vector3 CellSize { get; }
+```
+
+Size of one cell of this scope's grid, in metres. The public frame's is the world definition's.
+
+### ShiftCount [#shiftcount]
+
+```csharp
+public int ShiftCount { get; }
+```
+
+How many times this scope's origin has moved.
+
+### OriginOffset [#originoffset]
+
+```csharp
+public Vector3 OriginOffset { get; }
+```
+
+Where absolute (0,0,0) sits in this scope's frame: what turns an absolute box into a frame box.
+
+## Events
+
+### Shifted [#shifted]
+
+```csharp
+public event Action<Vector3> Shifted;
+```
+
+Raised after this scope's containers were moved: the delta to add to any other frame position of this scope (cached positions, history buffers, world-space effects). The public frame re-raises [`WorldOrigin.Shifted`](/docs/reference/world/world-origin#shifted).
+
+## Methods
+
+### ShiftDelta [#shiftdelta]
+
+```csharp
+public Vector3 ShiftDelta(Vector3Int from, Vector3Int to);
+public static Vector3 ShiftDelta(Vector3 cellSize, Vector3Int from, Vector3Int to);
+```
+
+Delta every frame position of this scope gets when its origin moves from `from` to `to`.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

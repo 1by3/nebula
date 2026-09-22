@@ -84,6 +84,8 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
 | [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Opt-in helper for a game whose runtime containers are cells of a procedural, unbounded 3D grid (an "infinite chunked world") rather than a fixed set the game enumerates itself. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |
+| [ScopeFrame](/docs/reference/world/scope-frame) | Class. One scope's floating origin: which cell of that scope's grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves. |
+| [ScopeFrames](/docs/reference/world/scope-frames) | Static class. The origin frames this process holds, one per scope. |
 | [WorldAnchor](/docs/reference/world/world-anchor) | Class. Anchor component: keeps the cells around this transform loaded. |
 | [WorldCell](/docs/reference/world/world-cell) | Class. Marks the root of a cell scene with its grid coordinate. |
 | [WorldContainerManifest](/docs/reference/world/world-container-manifest) | Class. The baked container tree of a partitioned world: one container per cell plus every hand-authored Container found inside the cell scenes, with cell-local poses. |
@@ -389,6 +391,7 @@ Keep the control plane and saved entities in SQLite or PostgreSQL from the stand
 | [InterestQuery](/docs/reference/interest/interest-query) | Class. What a policy fills in for one client: where it is looking, and any entities it must have whatever the distance. |
 | [InterestSchedule](/docs/reference/interest/interest-schedule) | Class. Which clients a gateway re-evaluates on this tick. |
 | [InterestSettings](/docs/reference/interest/interest-settings) | Struct. The interest knobs, resolved from NebulaConfig and already clamped into a set of values that work together (see Validate). |
+| [RegionKeys](/docs/reference/interest/region-keys) | Static class. How an interest region id is made unique to its scope. |
 | [RegionPublisher](/docs/reference/interest/region-publisher) | Class. The worker's side of interest management: which gateways hear about each region, and the grouping that lets one serialization serve all of them. |
 | [RegionSubscription](/docs/reference/interest/region-subscription) | Static class. The shared arithmetic of the region-subscription protocol: a set's fingerprint. |
 | [RegionSubscriptionReceiver](/docs/reference/interest/region-subscription-receiver) | Class. The worker's end of one gateway link's subscription: the region set it filters that gateway's traffic with. |

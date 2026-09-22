@@ -75,6 +75,17 @@ run the **same** code:
   worker (to decide which gateways hear about them) and on the gateway (to decide which clients do).
 - Rebucketing happens only when the key changes: the gateway recomputes a key when it relays a state entry with a
   position change (one multiply/floor per axis), the worker once per tick per authoritative entity.
+- **Scope salt (D100, NEB-241).** With per-scope origin frames (`docs/scope-frames.md`) two scopes may legitimately
+  occupy exactly the same absolute coordinates on one worker, so the *key* a region is known by is the packing XORed
+  with a strong mix of the scope's isolation id: `RegionKeys.Salt(region, instanceId)`. The public world's salt is
+  zero, so an unscoped mesh's keys — and therefore its subscription bytes — are byte for byte what they were, and no
+  message, field or protocol version changed. The salt is invertible given the scope, and every holder of a region id
+  always knows its scope (a subscription, a focus and an entity each sit in exactly one), so
+  `InterestGrid.BoundsOf`/`SqrDistanceToRegion` still work on the plain packing: `WorkersForRegion` and
+  `RegionPublisher.WideMask` unsalt before they measure. This closes the deliberate cost recorded as
+  `docs/scoped-chunk-grids.md` D12 — a worker no longer streams a gateway the entities of a scope that gateway has no
+  client in. The per-client instance check (`NebulaGateway.CanSee`) is unchanged and is still what decides what a
+  client actually sees; the salt makes the bandwidth match it.
 
 ## 4. Per-client interest (gateway)
 

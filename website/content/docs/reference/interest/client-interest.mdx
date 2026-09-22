@@ -45,6 +45,22 @@ public InterestGrid Grid = InterestGrid.Resolve(InterestSettings.Default);
 
 The grid the region scan uses. Must be the grid the index was bucketed with.
 
+### ScopeSalt [#scopesalt]
+
+```csharp
+public ulong ScopeSalt;
+```
+
+This client's scope salt ([`RegionKeys.SaltOf`](/docs/reference/interest/region-keys#saltof)), applied to every region the scan collects. 0 — the public world — leaves the keys exactly what they were. It must be the salt the index was bucketed with, or the scan looks in another world's buckets (`docs/scope-frames.md` D7).
+
+### ScanPublicToo [#scanpublictoo]
+
+```csharp
+public bool ScanPublicToo;
+```
+
+Also scan the public world's buckets (salt 0). Set for a client whose scope is an `ObservePublic` window onto the public world: the entities it may see through that window are bucketed in the public world, not in its scope, and `NebulaGateway.CanSee` is what decides which of them it actually gets.
+
 ### Clock [#clock]
 
 ```csharp

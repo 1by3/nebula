@@ -44,6 +44,8 @@ namespace Nebula
         public int Ring { get; private set; }
 
         private readonly HashSet<Vector3Int> _owned = new HashSet<Vector3Int>();
+        /// <summary>Scratch for <see cref="FollowOwnedCells"/>: the owned cells of every scoped grid, by grid.</summary>
+        private readonly Dictionary<RuntimeGrid, HashSet<Vector3Int>> _ownedByGrid = new Dictionary<RuntimeGrid, HashSet<Vector3Int>>();
         /// <summary>One allocator per scoped grid this worker has joined; the public world's is <see cref="Allocator"/>.</summary>
         private readonly Dictionary<string, RuntimeGridAllocator> _scopedAllocators = new Dictionary<string, RuntimeGridAllocator>(System.StringComparer.Ordinal);
         private bool _leasesDirty;
@@ -214,31 +216,44 @@ namespace Nebula
             var pawn = Client.LocalPlayer;
             var anchor = Client.ActiveContentAnchor;
             if (anchor == null) return;
+            // A client is in exactly one scope at a time, so it keeps exactly one origin — the frame of the scope
+            // its pawn stands in, which for an unscoped game is the public world's and is the behaviour this had
+            // before per-scope frames existed (docs/scope-frames.md D6).
+            var grid = (pawn != null ? NebulaChunks.GridOf(pawn.Container) : null) ?? Grid;
             // The pawn is asked by entity, not by position: inside a runtime container its cell is the
             // container's, which is the answer that survives a pose that has not been reconciled yet.
-            if (pawn != null && anchor == pawn.transform) Grid.KeepOriginNear(pawn, _originRing);
-            else Grid.KeepOriginNear(Grid.CoordOf(anchor.position), _originRing);
+            if (pawn != null && anchor == pawn.transform) grid.KeepOriginNear(pawn, _originRing);
+            else grid.KeepOriginNear(grid.CoordOf(anchor.position), _originRing);
         }
 
         /// <summary>
-        /// A worker has no pawn of its own to follow, so its origin follows the centroid of the cells it leases —
-        /// the same rule <see cref="NebulaWorldStreaming"/> applies to a baked world. Recomputed only when the
+        /// A worker has no pawn of its own to follow, so each scope's origin follows the centroid of the cells of
+        /// <b>that scope</b> this worker leases — the same rule <see cref="NebulaWorldStreaming"/> applies to a
+        /// baked world, once per origin frame. A worker holding two scopes keeps both precision-safe at the same
+        /// time, and neither shift disturbs the other (<c>docs/scope-frames.md</c> D3). Recomputed only when the
         /// lease set changes, which is rare.
         /// </summary>
         private void FollowOwnedCells()
         {
             if (Worker == null || string.IsNullOrEmpty(Worker.WorkerId)) return;
+            foreach (var cells in _ownedByGrid.Values) cells.Clear();
             _owned.Clear();
             var runtime = ContainerRegistry.Runtime;
             for (int i = 0; i < runtime.Count; i++)
             {
                 var c = runtime[i];
-                // The public world's cells only: a scoped grid has its own frame from NEB-241 on, and until then
-                // the origin must not be dragged to a chunk of somebody else's world.
-                if (c != null && c.IsOwnedBy(Worker.WorkerId) && Grid.Owns(c) && Grid.TryCoordOf(c.RuntimeId, out var cell)) _owned.Add(cell);
+                if (c == null || !c.IsOwnedBy(Worker.WorkerId)) continue;
+                // Each cell counts towards its own grid's centroid. A runtime container that is not a chunk of any
+                // grid this process has joined belongs to no frame here and is left out of every centroid.
+                var grid = NebulaChunks.GridOf(c);
+                if (grid == null || !grid.TryCoordOf(c.RuntimeId, out var cell)) continue;
+                if (grid == Grid) { _owned.Add(cell); continue; }
+                if (!_ownedByGrid.TryGetValue(grid, out var set)) _ownedByGrid[grid] = set = new HashSet<Vector3Int>();
+                set.Add(cell);
             }
-            if (_owned.Count == 0) return;
-            Grid.KeepOriginNear(NebulaWorldStreaming.Centroid(_owned), _originRing);
+            if (_owned.Count > 0) Grid.KeepOriginNear(NebulaWorldStreaming.Centroid(_owned), _originRing);
+            foreach (var pair in _ownedByGrid)
+                if (pair.Value.Count > 0) pair.Key.KeepOriginNear(NebulaWorldStreaming.Centroid(pair.Value), _originRing);
         }
     }
 }

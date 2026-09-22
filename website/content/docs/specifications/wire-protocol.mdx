@@ -513,6 +513,15 @@ A region's coordinate on each axis is `floor((position - offset) / edge)` in dou
 coordinates rather than a peer's floating-origin frame. With `planar` set, the Y coordinate is always zero and
 regions are infinite columns.
 
+A region **identifier** is that coordinate packed into three signed 21-bit fields, X in the high bits, XORed with
+the scope's salt. The salt is the SplitMix64 finalizer of the scope's 64-bit isolation ID, and is **zero for the
+public world** — so a mesh with no scopes puts exactly the packed coordinate on the wire, as it always did. Two
+scopes may hold the same absolute coordinates, because each scope has its own floating-origin frame; the salt is
+what keeps their regions, and therefore their subscriptions, disjoint. It is an XOR, so a peer that knows which
+scope an identifier belongs to — and both ends always do, since a subscription, a focus and an entity each sit in
+exactly one scope — recovers the coordinate by XORing again. `add_region`, `remove_region` and `focus_region` all
+carry salted identifiers.
+
 `flags` bit 0 (`Full`) means the message replaces the worker's whole set; bit 1 (`Commit`) marks the last message of
 an update. A set too large for one message is split into several with the same `seq`, and a worker MUST NOT adopt
 any of them until the committing message verifies. Other bits are reserved.

@@ -137,6 +137,7 @@ The counterpart: these gateways subscribed the old region only, and are told to 
 
 ```csharp
 public ulong WideMask(in InterestGrid grid, double x, double y, double z, double radius);
+public ulong WideMask(in InterestGrid grid, ulong instanceId, double x, double y, double z, double radius);
 ```
 
 Which gateways a wide entity (one whose own radius exceeds a region scan) reaches: the ones with a focus region within its radius. Matched at the evaluation rate, not per tick.

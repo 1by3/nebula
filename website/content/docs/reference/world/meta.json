@@ -1,4 +1,4 @@
 {
   "title": "World partition",
-  "pages": ["chunk-content", "chunk-context", "chunk-grid-definition", "chunk-keys", "i-world-anchor", "nebula-chunked-world", "nebula-chunks", "nebula-world", "nebula-world-streaming", "runtime-grid", "runtime-grid-allocator", "world-anchor", "world-cell", "world-container-manifest", "world-definition", "world-grid", "world-origin", "world-streamer"]
+  "pages": ["chunk-content", "chunk-context", "chunk-grid-definition", "chunk-keys", "i-world-anchor", "nebula-chunked-world", "nebula-chunks", "nebula-world", "nebula-world-streaming", "runtime-grid", "runtime-grid-allocator", "scope-frame", "scope-frames", "world-anchor", "world-cell", "world-container-manifest", "world-definition", "world-grid", "world-origin", "world-streamer"]
 }

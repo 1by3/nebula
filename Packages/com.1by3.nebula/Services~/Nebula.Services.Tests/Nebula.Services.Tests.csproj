@@ -32,6 +32,8 @@
     <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
     <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
+    <!-- Per-scope origin frames (docs/scope-frames.md): the scaler's dry run and the scope-salted region ids are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -532,7 +532,7 @@ namespace Nebula
                 var l = leases[i];
                 if (!l.HasBounds || !TryParseRuntimeId(l.ContainerId, out ulong id)) continue;
                 RuntimeKeep.Add(id);
-                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize)), l.Instance);
+                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize), l.Instance?.InstanceId ?? 0UL), l.Instance);
             }
             PruneRuntime(RuntimeKeep);
             RuntimeKeep.Clear();
@@ -547,31 +547,53 @@ namespace Nebula
             RuntimeScratchIds.Clear();
         }
 
-        /// <summary>An absolute box (as leases and telemetry carry it) in this process's frame: the same box unless a floating origin is active.</summary>
-        public static Bounds ToFrame(Bounds absolute)
+        /// <summary>An absolute box (as leases and telemetry carry it) in the public world's frame.</summary>
+        public static Bounds ToFrame(Bounds absolute) => ToFrame(absolute, 0UL);
+
+        /// <summary>
+        /// An absolute box in the frame of the scope that owns it. A scope with a frame of its own (a scoped chunk
+        /// grid) has its own origin cell, so its boxes are brought in relative to <i>that</i> origin; every other
+        /// scope, and the public world, use <see cref="WorldOrigin"/> exactly as before (<c>docs/scope-frames.md</c>).
+        /// </summary>
+        public static Bounds ToFrame(Bounds absolute, ulong instanceId)
         {
+            if (ScopeFrames.HasFrame(instanceId)) return new Bounds(absolute.center + ScopeFrames.Of(instanceId).OriginOffset, absolute.size);
             var world = WorldOrigin.Definition;
             if (world == null) return absolute;
             var origin = world.FrameOrigin(Vector3Int.zero, WorldOrigin.Cell); // where absolute (0,0,0) sits in this frame
             return new Bounds(absolute.center + origin, absolute.size);
         }
 
-        /// <summary>A box in this process's frame as an absolute box: the inverse of <see cref="ToFrame"/>.</summary>
-        public static Bounds ToAbsolute(Bounds frame)
+        /// <summary>A box in the public world's frame as an absolute box: the inverse of <see cref="ToFrame(Bounds)"/>.</summary>
+        public static Bounds ToAbsolute(Bounds frame) => ToAbsolute(frame, 0UL);
+
+        /// <summary>A box in a scope's own frame as an absolute box: the inverse of <see cref="ToFrame(Bounds,ulong)"/>.</summary>
+        public static Bounds ToAbsolute(Bounds frame, ulong instanceId)
         {
+            if (ScopeFrames.HasFrame(instanceId)) return new Bounds(frame.center - ScopeFrames.Of(instanceId).OriginOffset, frame.size);
             var world = WorldOrigin.Definition;
             if (world == null) return frame;
             var origin = world.FrameOrigin(Vector3Int.zero, WorldOrigin.Cell);
             return new Bounds(frame.center - origin, frame.size);
         }
 
-        /// <summary>The floating origin moved: runtime containers move with everything else and are rehashed.</summary>
-        public static void ShiftRuntime(Vector3 delta)
+        /// <summary>The public world's floating origin moved: every container in the public frame moves with it.</summary>
+        public static void ShiftRuntime(Vector3 delta) => ShiftRuntime(0UL, delta);
+
+        /// <summary>
+        /// One frame's origin moved by <paramref name="delta"/>: only the runtime containers of that frame move, and
+        /// the runtime hash is rebuilt. <paramref name="frameId"/> is 0 for the public frame — which is where every
+        /// container whose scope has no frame of its own still lives — and a scope's isolation id for a scope that
+        /// owns its origin (<c>docs/scope-frames.md</c> D2).
+        /// </summary>
+        public static void ShiftRuntime(ulong frameId, Vector3 delta)
         {
             if (RuntimeList.Count == 0) return;
+            bool moved = false;
             for (int i = 0; i < RuntimeList.Count; i++)
             {
                 var c = RuntimeList[i];
+                if (c == null || ScopeFrames.FrameIdOf(c.InstanceId) != frameId) continue;
                 // Ask the hook with the translated box as the fallback: a chunk of any grid, public or scoped, is
                 // recomputed from its coordinate so it never drifts; anything the hook does not place (an
                 // instance's interior, a game's own runtime box) simply moves with everything else.
@@ -579,9 +601,10 @@ namespace Nebula
                 c.transform.position = RuntimeBoundsInFrame != null
                     ? RuntimeBoundsInFrame(c.RuntimeId, shifted).center
                     : shifted.center;
-                RuntimeList[i].RefreshCache();
+                c.RefreshCache();
+                moved = true;
             }
-            RehashRuntime();
+            if (moved) RehashRuntime();
         }
 
         private static Vector3Int BucketOf(Vector3 p)

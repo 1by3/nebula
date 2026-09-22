@@ -158,7 +158,7 @@ public sealed class FakeWorker : IDisposable
         e.Local = local;
         if (e.Placement != InterestPlacement.Region) { _index.SetValue(netId, e); PublishOwned(e); return; }
         if (_index.CarrierOf(netId) != 0) { _index.SetValue(netId, e); return; }
-        ulong to = Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z);
+        ulong to = RegionOf(e);
         if (to == e.Region) { _index.SetValue(netId, e); return; }
         _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Move(netId, to);
@@ -185,7 +185,7 @@ public sealed class FakeWorker : IDisposable
         _index.SetCarrier(netId, carrierNetId);
         // Free again: its own position decides where it sits, and its own subtree comes along.
         if (carrierNetId == 0 && e.Placement == InterestPlacement.Region)
-            _index.Move(netId, Grid.RegionOf(Abs(e).x, Abs(e).y, Abs(e).z));
+            _index.Move(netId, RegionOf(e));
         PublishCarried();
     }
 
@@ -583,7 +583,7 @@ public sealed class FakeWorker : IDisposable
         else if (e.RelevanceRadius > Settings.Radius) { _index.AddWide(e.NetId, e); e.Placement = InterestPlacement.Wide; }
         else
         {
-            e.Region = Grid.RegionOf(abs.x, abs.y, abs.z);
+            e.Region = RegionOf(e);
             _index.Add(e.NetId, e.Region, e);
             e.Placement = InterestPlacement.Region;
         }
@@ -591,6 +591,24 @@ public sealed class FakeWorker : IDisposable
         // it with the carrier, and that - not its own resolved position - is where it is.
         _index.SetCarrier(e.NetId, e.Container.IsDynamic ? e.Container.NetId : 0);
         SyncPlacement(e);
+    }
+
+    /// <summary>
+    /// The scope an entity's region key is salted with (docs/scope-frames.md D7): its root carrier's, exactly as
+    /// the gateway resolves it, so a crate in a ship in a scope is bucketed in that scope and not in the public
+    /// world. Zero for the public world, and then the key is the plain packing, as it has always been.
+    /// </summary>
+    private ulong ScopeOf(Entity e)
+    {
+        var root = _entities.TryGetValue(_index.RootOf(e.NetId), out var r) ? r : e;
+        return ContainerRegistry.Resolve(root.Container)?.InstanceId ?? 0;
+    }
+
+    /// <summary>The region key an entity is held under: its absolute position, packed, salted with its scope.</summary>
+    private ulong RegionOf(Entity e)
+    {
+        var abs = Abs(e);
+        return RegionKeys.Salt(Grid.RegionOf(abs.x, abs.y, abs.z), ScopeOf(e));
     }
 
     private bool IsOwnersGateway(Entity e, int peerId) =>
@@ -616,8 +634,9 @@ public sealed class FakeWorker : IDisposable
         var subject = _entities.TryGetValue(_index.RootOf(e.NetId), out var root) ? root : e;
         var abs = Abs(subject);
         var foci = link.Receiver.FociRegions;
+        ulong salt = RegionKeys.SaltOf(ScopeOf(subject));
         double r2 = (double)subject.RelevanceRadius * subject.RelevanceRadius;
-        for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i], abs.x, abs.y, abs.z) <= r2) return true;
+        for (int i = 0; i < foci.Count; i++) if (Grid.SqrDistanceToRegion(foci[i] ^ salt, abs.x, abs.y, abs.z) <= r2) return true;
         return false;
     }
 

@@ -82,6 +82,14 @@ public bool IsPublic { get; }
 
 Whether this is the public world's grid, whose ids are the pinned packing and nothing else.
 
+### Frame [#frame]
+
+```csharp
+public ScopeFrame Frame { get; }
+```
+
+This grid's floating-origin frame: [`WorldOrigin`](/docs/reference/world/world-origin) for the public world, and a frame of its own for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on one worker both sit near Unity's origin (`docs/scope-frames.md`).
+
 ## Methods
 
 ### From [#from]
@@ -163,7 +171,7 @@ public Vector3Int CoordOf(Vector3 framePosition);
 public Vector3Int CoordOf(NetworkIdentity entity);
 ```
 
-Which cell a position in the current floating-origin frame falls in.
+Which cell a position in this grid's own floating-origin frame falls in.
 
 ### CenterOf [#centerof]
 
@@ -229,6 +237,14 @@ public static void ShiftOriginTo(Vector3Int target);
 ```
 
 Opt-in floating-origin policy for a grid world: shift the origin to `target` (a no-op when it is already there, or when no runtime world is loaded), suspending enabled `CharacterController`s on entities of runtime containers across the shift and syncing physics transforms after. PhysX controllers must be reinserted at the new pose, not sweep over the shift. Call from the game's own update once it has decided where the origin belongs, or use [`KeepOriginNear`](#keeporiginnear) for the usual policy.
+
+### ShiftOrigin [#shiftorigin]
+
+```csharp
+public void ShiftOrigin(Vector3Int target);
+```
+
+Move **this grid's** origin to `target`. The public world's frame is the process's (the streamer moves the authored cell scenes with it), so that case is [`ShiftOriginTo`](#shiftoriginto) unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state history and interpolation buffers move, and no other scope on this worker notices (`docs/scope-frames.md` D3).
 
 ### KeepOriginNear [#keeporiginnear]
 

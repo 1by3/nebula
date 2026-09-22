@@ -856,7 +856,7 @@ namespace Nebula
                 if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                 _runtimeKeep.Add(runtimeId);
                 if (ContainerRegistry.GetRuntime(runtimeId) == null)
-                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize)), e.Instance);
+                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize), e.Instance?.InstanceId ?? 0UL), e.Instance);
             }
 
             // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement

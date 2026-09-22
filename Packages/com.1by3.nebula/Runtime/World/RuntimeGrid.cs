@@ -78,6 +78,15 @@ namespace Nebula.World
         public static RuntimeGrid From(ChunkGridDefinition definition, string scopeKey) =>
             definition == null ? null : new RuntimeGrid(definition.CellSize, definition.Planar, scopeKey);
 
+        private ScopeFrame _frame;
+
+        /// <summary>
+        /// This grid's floating-origin frame: <see cref="WorldOrigin"/> for the public world, and a frame of its own
+        /// for every other scope. Every piece of arithmetic below is relative to it, which is what lets two scopes on
+        /// one worker both sit near Unity's origin (<c>docs/scope-frames.md</c>).
+        /// </summary>
+        public ScopeFrame Frame => _frame ??= IsPublic ? ScopeFrames.Public : ScopeFrames.Ensure(ScopeKey, InstanceId, CellSize);
+
         // ------------------------------------------------------------------------------------------ ids
 
         /// <summary>
@@ -156,11 +165,15 @@ namespace Nebula.World
         /// <summary>Inverse of <see cref="PackId"/>.</summary>
         public static Vector3Int UnpackId(ulong id) => new Vector3Int(Signed(id >> 42), Signed(id >> 21), Signed(id));
 
-        /// <summary>Which cell a position in the current floating-origin frame falls in.</summary>
-        public Vector3Int CoordOf(Vector3 framePosition) => new Vector3Int(
-            WorldOrigin.Cell.x + Mathf.FloorToInt(framePosition.x / CellSize.x),
-            Planar ? 0 : WorldOrigin.Cell.y + Mathf.FloorToInt(framePosition.y / CellSize.y),
-            WorldOrigin.Cell.z + Mathf.FloorToInt(framePosition.z / CellSize.z));
+        /// <summary>Which cell a position in this grid's own floating-origin frame falls in.</summary>
+        public Vector3Int CoordOf(Vector3 framePosition)
+        {
+            var origin = Frame.Cell;
+            return new Vector3Int(
+                origin.x + Mathf.FloorToInt(framePosition.x / CellSize.x),
+                Planar ? 0 : origin.y + Mathf.FloorToInt(framePosition.y / CellSize.y),
+                origin.z + Mathf.FloorToInt(framePosition.z / CellSize.z));
+        }
 
         /// <summary>
         /// Which cell an entity is in: its container's cell (if it sits in a runtime container registered by this
@@ -182,12 +195,16 @@ namespace Nebula.World
         /// y = 0 (the origin never shifts vertically in a planar world), so its box spans ±CellSize.y/2 around the
         /// ground plane rather than sitting above it.
         /// </summary>
-        public Vector3 CenterOf(Vector3Int coord) => new Vector3(
-            (float)(((long)coord.x - WorldOrigin.Cell.x + 0.5) * CellSize.x),
-            Planar
-                ? (float)(-(long)WorldOrigin.Cell.y * (double)CellSize.y)
-                : (float)(((long)coord.y - WorldOrigin.Cell.y + 0.5) * CellSize.y),
-            (float)(((long)coord.z - WorldOrigin.Cell.z + 0.5) * CellSize.z));
+        public Vector3 CenterOf(Vector3Int coord)
+        {
+            var origin = Frame.Cell;
+            return new Vector3(
+                (float)(((long)coord.x - origin.x + 0.5) * CellSize.x),
+                Planar
+                    ? (float)(-(long)origin.y * (double)CellSize.y)
+                    : (float)(((long)coord.y - origin.y + 0.5) * CellSize.y),
+                (float)(((long)coord.z - origin.z + 0.5) * CellSize.z));
+        }
 
         /// <summary>Box of a cell in the current floating-origin frame.</summary>
         public Bounds BoundsOf(Vector3Int coord) => new Bounds(CenterOf(coord), CellSize);
@@ -256,18 +273,59 @@ namespace Nebula.World
         public static void ShiftOriginTo(Vector3Int target)
         {
             if (NebulaWorld.Streamer == null || target == WorldOrigin.Cell) return;
+            Suspend(0UL);
+            NebulaWorld.Streamer.ShiftOrigin(target);
+            Resume();
+            Physics.SyncTransforms();
+        }
+
+        /// <summary>
+        /// Move <b>this grid's</b> origin to <paramref name="target"/>. The public world's frame is the process's
+        /// (the streamer moves the authored cell scenes with it), so that case is <see cref="ShiftOriginTo"/>
+        /// unchanged. A scoped grid owns its frame: only that scope's containers, the entities in them, their state
+        /// history and interpolation buffers move, and no other scope on this worker notices
+        /// (<c>docs/scope-frames.md</c> D3).
+        /// </summary>
+        public void ShiftOrigin(Vector3Int target)
+        {
+            if (Planar) target = new Vector3Int(target.x, Frame.Cell.y, target.z);
+            if (IsPublic) { ShiftOriginTo(target); return; }
+            if (target == Frame.Cell) return;
+            var delta = Frame.ShiftDelta(Frame.Cell, target);
+            Suspend(InstanceId);
+            // The frame moves first: ContainerRegistry asks the bounds hook, which recomputes every chunk of this
+            // grid from its coordinate in the *new* frame rather than translating a box and letting it drift.
+            Frame.Apply(target, delta);
+            ContainerRegistry.ShiftRuntime(InstanceId, delta);
+            ContainerRegistry.RefreshCaches();
+            NetworkIdentity.ShiftFrameAll(InstanceId, delta);
+            Resume();
+            Physics.SyncTransforms();
+        }
+
+        /// <summary>
+        /// PhysX controllers must be reinserted at the new pose rather than sweep over the shift, so every enabled
+        /// <see cref="CharacterController"/> on an entity of the moving frame is switched off across it.
+        /// </summary>
+        private static void Suspend(ulong frameId)
+        {
             Suspended.Clear();
             foreach (var c in ContainerRegistry.Runtime)
+            {
+                if (c == null || ScopeFrames.FrameIdOf(c.InstanceId) != frameId) continue;
                 foreach (var entity in c.Entities)
                 {
                     if (entity == null) continue;
                     var controller = entity.GetComponent<CharacterController>();
                     if (controller != null && controller.enabled) { controller.enabled = false; Suspended.Add(controller); }
                 }
-            NebulaWorld.Streamer.ShiftOrigin(target);
+            }
+        }
+
+        private static void Resume()
+        {
             foreach (var controller in Suspended) if (controller != null) controller.enabled = true;
             Suspended.Clear();
-            Physics.SyncTransforms();
         }
 
         /// <summary>
@@ -288,8 +346,9 @@ namespace Nebula.World
         /// </summary>
         public void KeepOriginNear(Vector3Int cell, int ring = 1)
         {
-            if (Planar) cell = new Vector3Int(cell.x, WorldOrigin.Cell.y, cell.z);
-            if (!IsNear(cell, WorldOrigin.Cell, ring)) ShiftOriginTo(cell);
+            var origin = Frame.Cell;
+            if (Planar) cell = new Vector3Int(cell.x, origin.y, cell.z);
+            if (!IsNear(cell, origin, ring)) ShiftOrigin(cell);
         }
     }
 }

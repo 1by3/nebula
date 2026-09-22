@@ -1,0 +1,93 @@
+---
+title: "ScopeFrames"
+description: "The origin frames this process holds, one per scope."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/World/ScopeFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/World/ScopeFrames.cs)</div>
+
+```csharp
+public static class ScopeFrames
+```
+
+The origin frames this process holds, one per scope. The public world's frame always exists and is [`WorldOrigin`](/docs/reference/world/world-origin); a scope gets one the first time this process names it, which on a worker is the first time one of its containers turns up here (`docs/scoped-chunk-grids.md` D7).
+
+A container or an entity whose scope has **no** frame here is in the public frame: that is what keeps an instance scope (a room, a dungeon) behaving exactly as it did before per-scope frames existed. Only a scope that asked for a frame of its own — a scoped chunk grid — leaves it.
+
+## Properties
+
+### Public [#public]
+
+```csharp
+public static ScopeFrame Public { get; } = new ScopeFrame("", 0UL, Vector3.zero);
+```
+
+The public world's frame. Its cell, shift count and event are [`WorldOrigin`](/docs/reference/world/world-origin)'s.
+
+### All [#all]
+
+```csharp
+public static IEnumerable<ScopeFrame> All { get; }
+```
+
+Every frame this process holds, the public one first.
+
+### ScopedCount [#scopedcount]
+
+```csharp
+public static int ScopedCount { get; }
+```
+
+Scoped frames only (the public one is always there and is not one of these).
+
+## Events
+
+### AnyShifted [#anyshifted]
+
+```csharp
+public static event Action<ScopeFrame, Vector3> AnyShifted;
+```
+
+Raised after any frame moved: the frame and its delta. The public frame reports here too.
+
+## Methods
+
+### HasFrame [#hasframe]
+
+```csharp
+public static bool HasFrame(ulong instanceId);
+```
+
+Whether `instanceId` has a frame of its own here (false for the public world and for any scope that shares it).
+
+### Of [#of]
+
+```csharp
+public static ScopeFrame Of(ulong instanceId);
+public static ScopeFrame Of(string scopeKey);
+```
+
+The frame `instanceId`'s containers live in: its own when it has one, the public frame otherwise. Never null, so every caller has one answer to convert with.
+
+### FrameIdOf [#frameidof]
+
+```csharp
+public static ulong FrameIdOf(ulong instanceId);
+```
+
+The id of the frame a scope's containers move with: the scope's own id when it has a frame, 0 (the public frame) otherwise. This is the key an origin shift is addressed to.
+
+### Ensure [#ensure]
+
+```csharp
+public static ScopeFrame Ensure(string scopeKey, ulong instanceId, Vector3 cellSize);
+```
+
+Give a scope a frame of its own, or return the one it has. The public world's is [`Public`](#public) and is never created here. The cell size is the scope's grid's; a later call with a different one updates it (a definition is validated once at activation, so this only ever refines a frame made from an inference).
+
+### Remove [#remove]
+
+```csharp
+public static void Remove(string scopeKey);
+```
+
+Forget a scope's frame (its last container went away). The public frame cannot be removed.

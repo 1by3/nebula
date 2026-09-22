@@ -75,8 +75,10 @@ the owner reported for that tick even though its transform will not be there unt
 hit test needs no frame conversion, and the container so a validator can tell scopes apart and reject a claim across
 a seam. The world pose of an entity inside a *moving* container is resolved through the container's frame at the
 moment of recording; a claim against a fast carrier is therefore accurate to that tick's frame, which is the same
-approximation the ghost stream itself makes. A floating-origin shift moves the recorded world positions of entries
-with no container (`StateHistory.Shift`); entries inside a container are rebuilt from the container, which moved.
+approximation the ghost stream itself makes. A floating-origin shift moves every recorded world position
+(`StateHistory.Shift`), including entries recorded inside a container: the read path returns the stored pose and
+never rebuilds one, and the container moved by the same delta. With per-scope origin frames
+(`docs/scope-frames.md`) the shift is addressed to one frame, so an entity only ever gets its own scope's delta.
 
 **D5. History is not cleared by a handover.** A worker that ghosted an entity and then gained authority over it can
 still answer for the ticks it recorded as a ghost; the entries keep saying `FromAuthority == false`. A call that
@@ -194,7 +196,7 @@ worker's own code. `Mesh.SetOwner(container, worker)` applies a lease, which is 
 - **D1** Authority records after simulation from the transform; a ghost holder records on apply, from the stream (§2).
 - **D2** Every entry carries the server tick it belongs to, the owner's on a ghost (§2).
 - **D3** A ghost's pose is the delivered sample, not the (still smoothing) transform (§2).
-- **D4** Entries hold a world pose plus the container; origin shifts move uncontained entries (§2).
+- **D4** Entries hold a world pose plus the container; an origin shift moves every entry of that frame (§2; corrected by NEB-241, which found that a contained entry was left in the previous frame because nothing rebuilds it on read).
 - **D5** A handover does not clear history; entries keep saying where they came from (§2).
 - **D6** `Record` is monotonic: a replay or a late packet cannot rewrite an entry (§2).
 - **D7** One knob, `StateHistoryTicks`, default 32, `-nebula-state-history`, 0 = off, clamped to 1024 (§3).
