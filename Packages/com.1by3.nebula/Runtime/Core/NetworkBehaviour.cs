@@ -176,7 +176,17 @@ namespace Nebula
                 throw new InvalidOperationException($"{GetType().Name}.{methodName} is a {m.Kind} RPC, sent as {kind}");
             if (!IsSpawned)
             {
+                if (kind == RpcKind.Authority) NebulaDiagnostics.RejectedAuthorityRpcSends++;
                 NebulaLog.Warn($"RPC {methodName} on unspawned {GetType().Name} ignored");
+                return;
+            }
+            // An AuthorityRpc may only leave a worker that simulates the target or holds a ghost of it. On a worker
+            // every spawned copy is one or the other, so this catches a client (or a misconfigured process) calling
+            // it. Checked before the sink so the rule holds without one, and counted for the profile line and tests.
+            if (kind == RpcKind.Authority && !HasAuthority && !IsGhost)
+            {
+                NebulaDiagnostics.RejectedAuthorityRpcSends++;
+                NebulaLog.Warn($"AuthorityRpc {methodName} on {GetType().Name} {NetId}: this process holds neither an authoritative nor a ghost copy of the entity, so it cannot address the entity's worker; discarded. Send AuthorityRpc from a worker that simulates or ghosts the target (https://nebula.1by3.co/docs/concepts/distributed-physics)");
                 return;
             }
             var sink = NebulaRuntime.RpcSink;
@@ -199,7 +209,7 @@ namespace Nebula
                     sink.SendServerRpc(Identity, BehaviourIndex, m.Hash, payload);
                     break;
                 case RpcKind.Authority:
-                    if (!IsServer) { NebulaLog.Warn($"AuthorityRpc {methodName} can only be sent from a worker"); return; }
+                    // IsServer is implied: HasAuthority || IsGhost was checked above and both require a worker.
                     if (HasAuthority)
                     {
                         // We are the authority: run it right here.

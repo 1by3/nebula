@@ -11,8 +11,8 @@ namespace Nebula.Editor
     /// <summary>
     /// Nebula &gt; Validate Project: checks the things that otherwise only show up as a broken build or a silent
     /// mesh. The config asset, the boot and game scenes in the build settings, the game mode, containers, the network
-    /// prefab table (including prefabs that kept a scene entity id), a partitioned world's manifest and cell scenes, static batching in cells and scene entities
-    /// waiting for an id. Each issue is logged with its object as context, so clicking the log line selects it.
+    /// prefab table (including prefabs that kept a scene entity id), a partitioned world's manifest and cell scenes, static batching in cells, scene entities
+    /// waiting for an id, and joints whose bodies sit in different containers (<see cref="CheckPhysicsIslands"/>). Each issue is logged with its object as context, so clicking the log line selects it.
     /// </summary>
     public static class NebulaValidator
     {
@@ -81,8 +81,62 @@ namespace Nebula.Editor
             if (config.WorldManifest != null) CheckWorld(config, issues);
             else if (config.RuntimeWorld != null) CheckRuntimeWorld(config, issues);
             CheckSceneEntities(issues);
+            CheckPhysicsIslands(config, issues);
             return issues;
         }
+
+        /// <summary>
+        /// Warns about every <see cref="Joint"/> or child <see cref="ArticulationBody"/> in the open scenes and the
+        /// network prefabs whose two bodies belong to entities in different containers (or one in a container and
+        /// one in none). Such a constraint has each side simulated by whichever worker owns that entity, against a
+        /// kinematic ghost of the other, and Nebula does not make it symmetric. At edit time an entity's container
+        /// is the <see cref="Container"/> above it in the hierarchy, else the smallest scene container holding its
+        /// position, else none (<see cref="PhysicsIslands"/>). Exposed so tests and tools can run it alone.
+        /// </summary>
+        public static void CheckPhysicsIslands(NebulaConfig config, List<Issue> issues)
+        {
+            var results = new List<CrossIslandJoint>();
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                var containers = NebulaSetup.FindInScene<Container>(scene);
+                Container Resolve(NetworkIdentity identity)
+                {
+                    var byHierarchy = PhysicsIslands.ContainerOf(identity);
+                    if (byHierarchy != null) return byHierarchy;
+                    Container best = null;
+                    var own = identity.GetComponent<Container>();
+                    foreach (var c in containers)
+                    {
+                        if (c == own || !c.Contains(identity.transform.position)) continue;
+                        if (best == null || c.Volume < best.Volume) best = c;
+                    }
+                    return best;
+                }
+                foreach (var identity in NebulaSetup.FindInScene<NetworkIdentity>(scene))
+                {
+                    if (!PhysicsIslands.HasConstraints(identity.gameObject)) continue;
+                    results.Clear();
+                    PhysicsIslands.FindCrossIslandJoints(identity, results, Resolve);
+                    foreach (var j in results) issues.Add(CrossIslandIssue(j));
+                }
+            }
+            if (config == null) return;
+            foreach (var prefab in config.NetworkPrefabs)
+            {
+                if (prefab == null || !PhysicsIslands.HasConstraints(prefab)) continue;
+                foreach (var identity in prefab.GetComponentsInChildren<NetworkIdentity>(true))
+                {
+                    results.Clear();
+                    PhysicsIslands.FindCrossIslandJoints(identity, results);
+                    foreach (var j in results) issues.Add(CrossIslandIssue(j));
+                }
+            }
+        }
+
+        private static Issue CrossIslandIssue(CrossIslandJoint j) => new Issue(Severity.Warning,
+            $"{j}: a joint across containers is simulated by each entity's worker against a kinematic ghost of the other body, one tick behind, and is not symmetric; keep both bodies in one container or move the seam ({NebulaSetup.DocsUrl}/concepts/distributed-physics)",
+            j.Constraint);
 
         private static void CheckScenes(NebulaConfig config, List<Issue> issues)
         {

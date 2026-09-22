@@ -56,11 +56,13 @@ Workers discover each other through the control plane and peer directly over UDP
 
 On a worker that does not control it, an entity exists as a ghost. `GhostSpawn` identifies the prefab and includes its container, pose, velocity, `NetworkVariable` values, and component sync keyframes.
 
-On a ghost, `IsGhost` is `true` and `HasAuthority` is `false`. Nebula does not call `NetworkTick`, allow `NetworkVariable` writes, or send RPCs from that copy. `NetworkRigidbody` makes its rigidbody kinematic.
+On a ghost, `IsGhost` is `true` and `HasAuthority` is `false`. Nebula does not call `NetworkTick`, allow `NetworkVariable` writes, or send `ClientRpc` from that copy. A ghost can send `AuthorityRpc` to the entity's worker. The worker makes a ghost's `Rigidbody` kinematic, with or without `NetworkRigidbody`.
 
 An enabled `NetworkTransform` moves a ghost from state sent by its controlling worker. Without one, the ghost keeps its initial placement until a container change or new spawn snapshot. Local raycasts and dynamic entities can detect the ghost. A local entity can collide with and respond to a ghost, but the collision does not change the ghost on its controlling worker.
 
 The neighbour thus holds full warm state before the entity can cross. If the entity leaves the band without crossing, the ghost lingers for `GhostLingerSeconds` and is then despawned.
+
+For what a collision with a ghost does and does not do, and why a joint across two workers is unsupported, see [Distributed physics](/docs/concepts/distributed-physics).
 
 ## Complete the handover
 
