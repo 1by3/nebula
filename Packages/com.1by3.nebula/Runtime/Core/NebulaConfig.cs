@@ -149,6 +149,9 @@ namespace Nebula
         [Tooltip("After gaining a container lease, how long a worker waits before restoring that container's persisted entities. Gives the previous owner's handover time to arrive so nothing comes back twice.")]
         public float PersistenceRestoreGraceSeconds = 3f;
 
+        [Tooltip("Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.")]
+        public float ScopeIdleRetireSeconds = 300f;
+
         [Header("Scene entities")]
         [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]
         public float SceneEntityGraceSeconds = 2f;

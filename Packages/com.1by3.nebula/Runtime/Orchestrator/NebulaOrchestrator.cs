@@ -352,6 +352,7 @@ namespace Nebula
             WakeForDemand();
             ReconcileDesiredCount();
             Rebalance();
+            SweepScopes();
             FinishRetirements();
             RelaunchIfNeeded();
             PublishState();
@@ -1206,6 +1207,81 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- dashboard
 
+        // ---------------------------------------------------------------------------------------- scope lifecycle
+
+        /// <summary>
+        /// The scope state machine, one step per pass. The orchestrator is its single writer: it already aggregates
+        /// leases and load, and a scope's parts are leases. Every step is a control-plane write, so every role sees
+        /// the same sequence through the ordinary document. Design of record: <c>docs/scope-lifecycle.md</c>.
+        /// </summary>
+        private void SweepScopes()
+        {
+            var scopes = ControlPlane.Scopes;
+            if (scopes == null || scopes.Count == 0) return;
+            // The per-container counts the workers report. Rebalance refreshes these too, but it can return early
+            // (nothing to plan), and a scope must not be judged on a stale reading of what is inside it.
+            Telemetry.CopyOccupancy(_occupancy);
+            for (int i = 0; i < scopes.Count; i++)
+            {
+                var scope = scopes[i];
+                if (scope == null || string.IsNullOrEmpty(scope.ScopeKey)) continue;
+                double elapsed = Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds);
+                switch (scope.State)
+                {
+                    case ScopeState.Active:
+                        JudgeScope(scope);
+                        break;
+                    case ScopeState.Retiring:
+                    {
+                        // Every part checkpointed and emptied itself, or the deadline passed. Only now are the lease
+                        // rows deleted: the checkpoint has to finish while the owner still holds the box.
+                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish checkpointing within {ScopeLifecycle.StepTimeoutSeconds:0} s; retiring it anyway");
+                        int saved = scope.AckedCount(ScopePhase.Checkpointed);
+                        int parts = scope.ContainerIds.Count;
+                        for (int c = 0; c < scope.ContainerIds.Count; c++) ControlPlane.RemoveContainer(scope.ContainerIds[c]);
+                        ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Retired);
+                        Log("info", $"scope '{scope.ScopeKey}' retired: {parts} container(s) released, {saved} persistent entities checkpointed");
+                        break;
+                    }
+                    case ScopeState.Restoring:
+                    {
+                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish restoring within {ScopeLifecycle.StepTimeoutSeconds:0} s; admitting clients anyway");
+                        int restored = scope.AckedCount(ScopePhase.Restored);
+                        ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Active);
+                        Log("info", $"scope '{scope.ScopeKey}' restored {restored} persistent entities and admits clients again");
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Ask the retire policy about one active scope (<see cref="ScopeLifecycle.ShouldRetire"/>).</summary>
+        private void JudgeScope(ScopeInfo scope)
+        {
+            ScopeLifecycle.Occupancy(scope, _occupancy, out int entities, out int players);
+            var context = new ScopeRetireContext
+            {
+                Scope = scope,
+                IdleSeconds = ScopeLifecycle.IdleSeconds(ControlPlane, scope),
+                Entities = entities,
+                Players = players,
+                RetireAfterSeconds = Config.ScopeIdleRetireSeconds,
+            };
+            bool retire;
+            // The policy is the game's code. One that throws must not stop the sweep or retire the scope by accident.
+            try { retire = (ScopeLifecycle.ShouldRetire ?? ScopeLifecycle.RetireWhenIdle)(context); }
+            catch (Exception e)
+            {
+                Log("error", $"the scope retire policy threw for '{scope.ScopeKey}': {e.Message}; keeping the scope");
+                return;
+            }
+            if (!retire) return;
+            ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Retiring);
+            Log("info", $"scope '{scope.ScopeKey}' has been idle for {context.IdleSeconds:0} s; retiring it");
+        }
+
         private void Log(string level, string message)
         {
             switch (level)
@@ -1724,6 +1800,34 @@ namespace Nebula
                 w.EndObject();
             }
             w.EndArray();
+
+            // Scopes: the keyed worlds the mesh has been asked to bring into being, with their lifecycle state, what
+            // is inside them and how long nothing has wanted them (docs/scope-lifecycle.md).
+            w.Key("scopes");
+            w.BeginArray();
+            foreach (var scope in ControlPlane.Scopes.OrderBy(x => x.ScopeKey, StringComparer.Ordinal))
+            {
+                ScopeLifecycle.Occupancy(scope, _occupancy, out int scopeEntities, out int scopePlayers);
+                w.BeginObject();
+                w.Prop("key", scope.ScopeKey);
+                w.Prop("state", scope.State ?? ScopeState.Active);
+                w.Prop("requester", scope.Requester ?? "");
+                w.Prop("parts", scope.ContainerIds.Count);
+                w.Prop("ready", ControlPlane.IsScopeReady(scope, Config.WorkerTimeoutSeconds));
+                w.Prop("entities", scopeEntities);
+                w.Prop("players", scopePlayers);
+                w.Prop("idleSeconds", ScopeLifecycle.IdleSeconds(ControlPlane, scope));
+                w.Prop("stateSeconds", Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds));
+                w.Prop("ageSeconds", Math.Max(0.0, (ControlPlane.Now - scope.CreatedAt).TotalSeconds));
+                w.Prop("acked", scope.Acks != null ? scope.Acks.Count : 0);
+                w.Key("containers");
+                w.BeginArray();
+                foreach (var id in scope.ContainerIds) w.Value(id ?? "");
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Prop("scopeIdleRetireSeconds", Config.ScopeIdleRetireSeconds);
 
             w.Key("gateways");
             w.BeginArray();
