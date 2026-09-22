@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using NUnit.Framework;
@@ -12,11 +11,6 @@ namespace Nebula.ServiceTests;
 /// </summary>
 public static class ScaleThresholds
 {
-    /// <summary>Synthetic sustained load: fake clients, fake workers, real gateways, one process.</summary>
-    public const int SustainedClients = 240;
-    public const int SustainedWorkers = 4;
-    public const int SustainedScopes = 3;
-
     /// <summary>
     /// Bytes per second one client may be sent while every entity it can see is moving. Provisional: it is a
     /// property of this fixture's world (how many entities sit inside one client's interest radius), not of a
@@ -110,7 +104,6 @@ public sealed class ScaleReport
 
     private readonly string _scenario;
     private readonly StringBuilder _rows = new();
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly List<string> _notes = new();
 
     public ScaleReport(string scenario, params string[] columns)
@@ -118,11 +111,6 @@ public sealed class ScaleReport
         _scenario = scenario;
         _rows.Append("layer,scenario,").AppendLine(string.Join(",", columns));
     }
-
-    /// <summary>Seconds since this report was opened: the clock every scenario measures its bounds on.</summary>
-    public double Elapsed => _clock.Elapsed.TotalSeconds;
-
-    public void Restart() => _clock.Restart();
 
     /// <summary>One measurement. Doubles are written invariant with three decimals; everything else verbatim.</summary>
     public void Row(params object[] values)
@@ -159,8 +147,6 @@ public sealed class ScaleReport
     /// <summary>The checked-in baseline for a scenario, as <c>docs/baselines/&lt;name&gt;.csv</c>.</summary>
     public static string BaselinePath(string name) =>
         Path.Combine(RepositoryRoot(), "docs", "baselines", name + ".csv");
-
-    internal static string Root() => RepositoryRoot();
 
     /// <summary>
     /// The checkout this assembly was built from. Found by the package rather than by <c>.git</c>: in a git
