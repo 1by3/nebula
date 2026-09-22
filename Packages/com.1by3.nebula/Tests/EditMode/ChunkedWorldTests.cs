@@ -354,6 +354,70 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ActivatingAnotherGridOnlyBackfillsItsOwnContentOnce()
+        {
+            var alpha = ScopedGrid("world/alpha");
+            var beta = ScopedGrid("world/beta");
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+            var loaded = new List<ulong>();
+            NebulaChunks.Loaded += (in ChunkContext c) =>
+            {
+                loaded.Add(c.Id);
+                new GameObject("generated content").transform.SetParent(c.Root, false);
+            };
+            var a = RegisterScoped(alpha, 0, 0);
+            var b = RegisterScoped(beta, 0, 0);
+            CollectionAssert.AreEqual(new[] { a.RuntimeId }, loaded);
+
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(beta, NebulaRoles.Client, headless: true, allocator: null);
+            NebulaChunks.Activate(alpha, NebulaRoles.Client, headless: true, allocator: null);
+
+            CollectionAssert.AreEqual(new[] { a.RuntimeId, b.RuntimeId }, loaded);
+            Assert.AreEqual(1, a.transform.Find("content").childCount, "alpha's generated content was not duplicated");
+            Assert.AreEqual(1, b.transform.Find("content").childCount, "repeated activation is idempotent");
+        }
+
+        [Test]
+        public void PublicOriginShiftTranslatesAnOrdinaryInstanceWithoutDecodingItsIdAsAChunk()
+        {
+            var grid = PlanarGrid();
+            NebulaChunks.Activate(grid, NebulaRoles.Client, headless: true, allocator: null);
+            var chunk = Register(grid, 2, 3);
+            const string scope = "dungeon/interior";
+            var bounds = new Bounds(new Vector3(350f, 20f, -110f), new Vector3(20f, 40f, 30f));
+            var interior = ContainerRegistry.RegisterRuntime(ScopeKeys.Hash(scope + "/main"), bounds,
+                new InstanceContainerInfo { InstanceId = ScopeKeys.Hash(scope), ScopeKey = scope, PartId = "main" });
+            Assert.IsNull(NebulaChunks.GridOf(interior));
+            var child = new GameObject("occupant");
+            child.transform.SetParent(interior.transform, false);
+            child.transform.localPosition = new Vector3(2f, 3f, 4f);
+            var before = child.transform.position;
+            var origin = new Vector3Int(4, 0, -2);
+            var delta = new Vector3(-4f * Size, 0f, 2f * Size);
+
+            grid.ShiftOrigin(origin);
+
+            Assert.AreEqual(bounds.center + delta, interior.transform.position);
+            Assert.AreEqual(before + delta, child.transform.position);
+            Assert.AreEqual(bounds.size, interior.WorldBounds.size);
+            Assert.AreEqual(grid.BoundsOf(new Vector3Int(2, 0, 3)), chunk.WorldBounds);
+            Assert.AreSame(interior, ContainerRegistry.Find(interior.transform.position, null, interior.InstanceId));
+        }
+
+        [Test]
+        public void OriginShiftStillUsesACustomPublicBoundsHook()
+        {
+            var container = ContainerRegistry.RegisterRuntime(123UL, new Bounds(Vector3.zero, Vector3.one));
+            var placed = new Vector3(10f, 20f, 30f);
+            ContainerRegistry.RuntimeBoundsInFrame = (id, fallback) => new Bounds(placed, fallback.size);
+
+            ContainerRegistry.ShiftRuntime(new Vector3(-100f, 0f, 0f));
+
+            Assert.AreEqual(placed, container.transform.position);
+        }
+
+        [Test]
         public void TwoScopesAtTheSameCoordinateAreTwoChunksWithTwoIdsAndOneEventEach()
         {
             var alpha = ScopedGrid("world/alpha");

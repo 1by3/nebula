@@ -192,6 +192,34 @@ namespace Nebula.Tests
         // ---- holds -----------------------------------------------------------------------------------------
 
         [Test]
+        public void AHoldCannotTurnPredictedReliefIntoAnIncreaseInPeakLoad()
+        {
+            var containers = Row(6);
+            var workers = Workers(1, 2);
+            var leases = Leases(("c0", "w2"), ("c1", "w1"), ("c2", "w1"),
+                ("c3", "w1"), ("c4", "w1"), ("c5", "w2"));
+            var utilization = new Dictionary<string, float>
+            {
+                { "c0", 0.13f }, { "c1", 0.21f }, { "c2", 0.09f },
+                { "c3", 0.41f }, { "c4", 0.25f }, { "c5", 0.25f },
+            };
+            var input = Input(containers, workers, leases,
+                holds: new Dictionary<string, float> { { "c4", 10f } }, utilization: utilization);
+            int[] players = { 3, 5, 2, 10, 6, 6 };
+            input.Occupancy = containers.Select((container, i) => new
+                { container.ContainerId, Load = new ContainerLoad { Players = players[i] } })
+                .ToDictionary(row => row.ContainerId, row => row.Load);
+            var policy = new CostBalancedAssignmentPolicy();
+
+            var changes = policy.Compute(input);
+
+            Assert.IsEmpty(changes,
+                "moving c0 onto w1 while c4 is held would increase its peak from 0.96 to 1.09 ticks");
+            input.Holds = new Dictionary<string, float>();
+            Assert.IsNotEmpty(policy.Compute(input), "once the hold expires the complete rebalance gives real relief");
+        }
+
+        [Test]
         public void AHeldDistrictIsNotMovedUntilItsHoldExpires()
         {
             var containers = Row(4);

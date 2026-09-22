@@ -30,6 +30,10 @@ namespace Nebula.World
         /// <summary>The scope blob each chunk's lease row is born with; null (and never built) for the public world.</summary>
         private readonly Dictionary<ulong, InstanceContainerInfo> instances;
         private float next;
+        private bool hasSeenScope;
+        private string observedDefinition;
+        private bool definitionChanged;
+        private bool warnedDefinitionChanged;
 
         /// <summary>Ring radius (Chebyshev distance in cells) requested around every anchor and owned entity.</summary>
         public int Ring { get; set; } = 1;
@@ -43,6 +47,7 @@ namespace Nebula.World
             this.worker = worker ?? throw new ArgumentNullException(nameof(worker));
             this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
             if (!grid.IsPublic) instances = new Dictionary<ulong, InstanceContainerInfo>();
+            ReadScope();
         }
 
         /// <summary>The grid this allocator works in.</summary>
@@ -107,12 +112,18 @@ namespace Nebula.World
             next = unscaledTime + TickIntervalSeconds;
 
             wanted.Clear();
-            foreach (var a in anchors) AddRing(a);
-            for (int i = 0; i < pins.Count; i++) wanted.Add(grid.IdOf(pins[i]));
-            foreach (var entity in worker.Authoritative)
-                // Only this grid's own pawns: a player standing in another scope must not drag this world's
-                // chunks into being at the coordinate he happens to occupy over there.
-                if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddRing(grid.CoordOf(entity));
+            var scope = ReadScope();
+            if (definitionChanged) return;
+            bool retiring = scope?.State == ScopeState.Retiring;
+            if (MayAllocate(scope))
+            {
+                foreach (var a in anchors) AddRing(a);
+                for (int i = 0; i < pins.Count; i++) wanted.Add(grid.IdOf(pins[i]));
+                foreach (var entity in worker.Authoritative)
+                    // Only this grid's own pawns: a player standing in another scope must not drag this world's
+                    // chunks into being at the coordinate he happens to occupy over there.
+                    if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddRing(grid.CoordOf(entity));
+            }
 
             foreach (var id in wanted)
             {
@@ -128,6 +139,8 @@ namespace Nebula.World
                 // Only this grid's chunks: another scope's allocator owns its own, and retiring a box that is not
                 // ours would empty somebody else's world.
                 if (!grid.Owns(c)) continue;
+                // The lifecycle owns the checkpoint barrier for its parts. Other idle chunks may drain normally.
+                if (retiring && scope.ContainerIds.Contains(c.ContainerId)) continue;
                 if (!c.IsOwnedBy(worker.WorkerId) || wanted.Contains(c.RuntimeId)) continue;
                 if (!lastWanted.TryGetValue(c.RuntimeId, out var last)) { lastWanted[c.RuntimeId] = unscaledTime; continue; }
                 if (unscaledTime - last < RetireAfterSeconds || worker.RuntimeContainerIdleSeconds(c.RuntimeId) < RetireAfterSeconds) continue;
@@ -151,6 +164,29 @@ namespace Nebula.World
             for (int i = 0; i < ring.Count; i++) wanted.Add(grid.IdOf(ring[i]));
         }
 
+        private ScopeInfo ReadScope()
+        {
+            var scope = grid.IsPublic ? null : worker.ControlPlane?.FindScope(grid.ScopeKey);
+            if (scope != null)
+            {
+                string definition = ScopeJson.WriteDefinition(scope.Definition);
+                if (!hasSeenScope) observedDefinition = definition;
+                hasSeenScope = true;
+                // Removing a scope releases its key for different content, but this allocator still owns the
+                // original grid arithmetic and pins. Do not create or retire leases using that stale layout.
+                definitionChanged = !string.Equals(observedDefinition, definition, StringComparison.Ordinal);
+                if (definitionChanged && !warnedDefinitionChanged)
+                {
+                    warnedDefinitionChanged = true;
+                    NebulaLog.Warn($"chunk allocator for scope '{grid.ScopeKey}' stopped because its definition changed; restart the worker or use a new scope key to load the new grid definition");
+                }
+            }
+            return scope;
+        }
+
+        private bool MayAllocate(ScopeInfo scope) =>
+            !definitionChanged && (scope != null || !hasSeenScope) && scope?.State != ScopeState.Retiring && scope?.State != ScopeState.Retired;
+
         /// <summary>
         /// Request the container at <paramref name="coord"/> and call <paramref name="onReady"/> once it is
         /// registered (immediately, if it already is). Event-driven, not polling: replaces the
@@ -162,6 +198,7 @@ namespace Nebula.World
         public void EnsureContainer(Vector3Int coord, Action<Container> onReady)
         {
             if (onReady == null) return;
+            if (!MayAllocate(ReadScope())) return;
             coord = grid.Normalize(coord);
             ulong id = grid.IdOf(coord);
             var existing = ContainerRegistry.GetRuntime(id);
@@ -172,6 +209,7 @@ namespace Nebula.World
             {
                 if (c.RuntimeId != id) return;
                 ContainerRegistry.RuntimeRegistered -= handler;
+                if (!MayAllocate(ReadScope())) return;
                 onReady(c);
             };
             ContainerRegistry.RuntimeRegistered += handler;

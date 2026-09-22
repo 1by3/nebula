@@ -501,8 +501,8 @@ namespace Nebula
         /// <summary>
         /// What the game says this entity costs to simulate, as a multiplier on its category weight
         /// (<see cref="NetworkIdentity.EffectiveCostWeight"/>, protocol 18). It travels with the entity so the
-        /// worker it lands on reports the same cost for it; sent as an f16, and 0 on the wire reads as "no
-        /// opinion" so an older sender does not silently make everything free.
+        /// worker it lands on reports the same cost for it. Sent as an f16; zero is a valid weight. A missing
+        /// field reads as -1, which leaves the receiver's current weight unchanged.
         /// </summary>
         public float CostWeight;
 
@@ -600,7 +600,7 @@ namespace Nebula
                 InterestGroup = r.ReadByte(),
                 ViewSeq = r.ReadUShort(),
                 CohesionGroup = r.Remaining > 0 ? r.ReadUInt() : 0u,
-                CostWeight = r.Remaining > 0 ? r.ReadHalf() : 0f,
+                CostWeight = r.Remaining > 0 ? r.ReadHalf() : -1f,
             };
         }
     }

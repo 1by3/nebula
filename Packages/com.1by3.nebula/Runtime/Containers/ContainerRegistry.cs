@@ -594,13 +594,14 @@ namespace Nebula
             {
                 var c = RuntimeList[i];
                 if (c == null || ScopeFrames.FrameIdOf(c.InstanceId) != frameId) continue;
-                // Ask the hook with the translated box as the fallback: a chunk of any grid, public or scoped, is
-                // recomputed from its coordinate so it never drifts; anything the hook does not place (an
-                // instance's interior, a game's own runtime box) simply moves with everything else.
+                // Resolve scoped grids from the container's isolation id: the public grid can unpack any id,
+                // including an ordinary instance interior's hash. Custom public bounds hooks still apply.
                 var shifted = new Bounds(c.transform.position + delta, c.WorldBounds.size);
-                c.transform.position = RuntimeBoundsInFrame != null
-                    ? RuntimeBoundsInFrame(c.RuntimeId, shifted).center
-                    : shifted.center;
+                var grid = c.InstanceId != 0 ? NebulaChunks.GridOf(c) : null;
+                c.transform.position = grid != null ? grid.BoundsOfId(c.RuntimeId, shifted).center
+                    : c.InstanceId == 0 && RuntimeBoundsInFrame != null
+                        ? RuntimeBoundsInFrame(c.RuntimeId, shifted).center
+                        : shifted.center;
                 c.RefreshCache();
                 moved = true;
             }

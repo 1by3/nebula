@@ -180,7 +180,7 @@ namespace Nebula
                 return;
             }
             var store = _worker.Persistence != null ? _worker.Persistence.Store : null;
-            if (store == null || !store.IsConnected)
+            if (store == null)
             {
                 // No store on this worker: nothing can have been saved, so the answer is "no records" and it is final.
                 state.Raised = true;
@@ -188,12 +188,12 @@ namespace Nebula
                 NebulaLifecycle.RaiseScopeActivating(scope, false);
                 return;
             }
-            if (!state.Asked)
+            if (!state.Asked && store.IsConnected)
             {
                 state.Asked = true;
                 store.CountRecords(key, "", count =>
                 {
-                    if (!_activating.TryGetValue(key, out var pending) || pending.Raised) return;
+                    if (!_activating.TryGetValue(key, out var pending) || !ReferenceEquals(pending, state) || pending.Raised) return;
                     pending.Raised = true;
                     pending.Open = true;
                     NebulaLifecycle.RaiseScopeActivating(scope, count > 0);
@@ -329,7 +329,7 @@ namespace Nebula
         {
             if (scope.FindAck(containerId, ScopePhase.Restored) != null) return;
             var persistence = _worker.Persistence;
-            if (persistence == null || !persistence.IsConnected)
+            if (persistence == null || persistence.Store == null)
             {
                 // No store on this worker: there is nothing to bring back and nothing to wait for.
                 cp.AckScopePart(scope.ScopeKey, containerId, ScopePhase.Restored, 0, _worker.WorkerId);

@@ -41,6 +41,7 @@ namespace Nebula
         private struct Counts
         {
             public int Players, Bots, ServerDriven, Other, Ghosts;
+            public string Owner;
             /// <summary>The cost-weighted sum of the authoritative entities in this container, without <see cref="CostWeights.Base"/>.</summary>
             public float Cost;
             /// <summary>The container's scope key; "" in the public world (<see cref="Container.ScopeKey"/>).</summary>
@@ -297,6 +298,11 @@ namespace Nebula
             _counts.Clear();
             _carriers.Clear();
             _points.Clear();
+            // An owned box is still a measurement when its last entity has left. Omitting it would leave the
+            // last published capacity on its lease indefinitely, because missing telemetry is not a zero.
+            SeedOwnedContainers(ContainerRegistry.All, workerId);
+            SeedOwnedContainers(ContainerRegistry.Runtime, workerId);
+            SeedOwnedContainers(ContainerRegistry.Dynamic, workerId);
             if (entities != null)
             {
                 foreach (var e in entities)
@@ -350,6 +356,11 @@ namespace Nebula
                 var cost = _costs != null ? _costs.Of(_slotIds[i]) : default;
                 w.BeginObject();
                 w.Prop("id", _slotIds[i]);
+                // Keep ghost counts in the map document, but do not let a neighbor's row replace the owner's
+                // occupancy or cost reading in the orchestrator. Unleased entities can still report their cost.
+                bool owned = !string.IsNullOrEmpty(c.Owner) ? c.Owner == workerId
+                    : c.Players + c.Bots + c.ServerDriven + c.Other > 0;
+                w.Prop("owned", owned ? 1 : 0);
                 w.Prop("players", c.Players);
                 w.Prop("bots", c.Bots);
                 w.Prop("serverDriven", c.ServerDriven);
@@ -435,8 +446,16 @@ namespace Nebula
             slot = _slotIds.Count;
             _slotById[id] = slot;
             _slotIds.Add(id);
-            _counts.Add(new Counts { Scope = container != null ? container.ScopeKey : EntityLocation.PublicScope });
+            _counts.Add(new Counts { Scope = container != null ? container.ScopeKey : EntityLocation.PublicScope,
+                Owner = container != null ? container.OwnerWorkerId : "" });
             return slot;
+        }
+
+        private void SeedOwnedContainers(IReadOnlyList<Container> containers, string workerId)
+        {
+            if (string.IsNullOrEmpty(workerId)) return;
+            for (int i = 0; i < containers.Count; i++)
+                if (containers[i].OwnerWorkerId == workerId) SlotOf(containers[i]);
         }
 
         public void Dispose()

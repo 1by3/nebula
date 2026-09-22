@@ -64,6 +64,89 @@ namespace Nebula.Tests
         // ---- the group moves as a unit --------------------------------------------------------------------
 
         [Test]
+        public void AFailedGroupHandoffCannotMoveItsMembersWithTheNextUnrelatedHandoff()
+        {
+            var w1 = _mesh[0];
+            var w2 = _mesh[1];
+            var w3 = _mesh[2];
+            var leader = Spawn(w1, _north, Group);
+            var follower = Spawn(w1, _south, Group);
+            var unrelated = Spawn(w1, _north, 0);
+            System.Action<NetworkIdentity, string> thrower = (e, target) =>
+                throw new System.InvalidOperationException("handoff callback failed");
+            w1.Instance.AuthorityHandedOff += thrower;
+            try { Assert.Throws<System.InvalidOperationException>(() => w1.Transfer(leader, w2)); }
+            finally { w1.Instance.AuthorityHandedOff -= thrower; }
+            _mesh.Pump();
+
+            w1.Transfer(unrelated, w3);
+            _mesh.Pump();
+
+            Assert.IsTrue(follower.HasAuthority, "the failed group's queue must not join an unrelated transfer");
+            CollectionAssert.AreEquivalent(new[] { unrelated.NetId }, TransferredTo(_mesh, w3.Id));
+
+            var laterMember = Spawn(w1, _south, Group);
+            w1.Transfer(follower, w2);
+            _mesh.Pump();
+            Assert.IsTrue(w2.Find(laterMember.NetId).HasAuthority, "the group must be expanded anew after a failed transfer");
+            Assert.AreEqual(_splitsBefore, NebulaDiagnostics.SplitCohesionGroups);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ZeroCostWeightSurvivesHandoverToANewOrExistingCopy(bool existingCopy)
+        {
+            var source = _mesh[0];
+            var target = _mesh[1];
+            var entity = Spawn(source, _north, 0);
+            if (existingCopy)
+            {
+                entity.SetCostWeight(7f);
+                source.Transfer(entity, target);
+                _mesh.Pump();
+                source = _mesh[1];
+                target = _mesh[0];
+                entity = source.Find(entity.NetId);
+                Assert.AreEqual(7f, target.Find(entity.NetId).EffectiveCostWeight);
+            }
+            entity.SetCostWeight(0f);
+
+            source.Transfer(entity, target);
+            _mesh.Pump();
+
+            var received = target.Find(entity.NetId);
+            Assert.IsTrue(received.HasAuthority);
+            Assert.AreEqual(0f, received.EffectiveCostWeight, "zero is an explicit weight, even when an older copy had positive cost");
+            received.RecomputeCostWeight();
+            Assert.AreEqual(0f, received.EffectiveCostWeight, "the received weight remains pinned");
+        }
+
+        [TestCase(2)]
+        [TestCase(6)]
+        public void ASpawnWithoutTheCostFieldPreservesTheReceiversWeight(int omittedBytes)
+        {
+            var w1 = _mesh[0];
+            var w2 = _mesh[1];
+            var entity = Spawn(w1, _north, 0);
+            entity.SetCostWeight(7f);
+            w1.Transfer(entity, w2);
+            _mesh.Pump();
+            var msg = EntitySpawnMsg.From(w2.Find(entity.NetId), new NetworkWriter());
+            var writer = new NetworkWriter();
+            msg.Write(writer, MsgId.GhostSpawn);
+            var bytes = writer.ToArray();
+            // Omit either the final weight or both added trailing fields, as a shorter spawn payload does.
+            System.Array.Resize(ref bytes, bytes.Length - omittedBytes);
+            var reader = new NetworkReader(bytes);
+            reader.ReadByte();
+            Assert.AreEqual(-1f, EntitySpawnMsg.Read(reader).CostWeight, "absence is distinct from an explicit zero");
+
+            w1.Dispatch(w1.PeersById[w2.Id], bytes);
+
+            Assert.AreEqual(7f, entity.EffectiveCostWeight, "a missing field has no opinion about the receiver's weight");
+        }
+
+        [Test]
         public void HandingOverOneMemberTakesTheWholeGroupToTheSameWorker()
         {
             var w1 = _mesh[0];

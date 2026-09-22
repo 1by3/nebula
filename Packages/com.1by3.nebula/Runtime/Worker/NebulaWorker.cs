@@ -1430,21 +1430,20 @@ namespace Nebula
         /// </summary>
         private void TransferAuthority(NetworkIdentity e, Peer target)
         {
-            // A member of a cohesion group takes the rest of the group with it: the game promised one worker
-            // simulates all of them (docs/cohesion-hints.md, D4). The members are collected before anything moves,
-            // because the first transfer flips this worker's authority over the entity it moved.
-            if (e.CohesionGroup != 0 && _cohesionExpanded.Add(e.CohesionGroup)) CollectCohesionMembers(e, target);
-            using (var frame = _handover.Begin())
-            {
-                if (frame.IsOutermost) CollectHandoverFollowers(e);
-                TransferAuthorityInScope(e, target);
-            }
-            // Only the outermost handoff drains the queue, and only one of them at a time: a member that is itself
-            // a carrier must open a handover scope of its own so its passengers are collected (design D85).
-            if (_handover.Depth > 0 || _cohesionDraining) return;
-            _cohesionDraining = true;
+            bool outermost = _handover.Depth == 0 && !_cohesionDraining;
             try
             {
+                // Collect before authority changes, and keep collection and the first transfer inside cleanup:
+                // persistence or a handoff subscriber may throw before the queue starts draining.
+                if (e.CohesionGroup != 0 && _cohesionExpanded.Add(e.CohesionGroup)) CollectCohesionMembers(e, target);
+                using (var frame = _handover.Begin())
+                {
+                    if (frame.IsOutermost) CollectHandoverFollowers(e);
+                    TransferAuthorityInScope(e, target);
+                }
+                // A queued carrier opens its own handover scope so its passengers are collected too.
+                if (!outermost) return;
+                _cohesionDraining = true;
                 // Grows while it is walked: a member of one group may belong to another that is expanded in turn.
                 for (int i = 0; i < _cohesionPending.Count; i++)
                 {
@@ -1454,9 +1453,12 @@ namespace Nebula
             }
             finally
             {
-                _cohesionDraining = false;
-                _cohesionPending.Clear();
-                _cohesionExpanded.Clear();
+                if (outermost)
+                {
+                    _cohesionDraining = false;
+                    _cohesionPending.Clear();
+                    _cohesionExpanded.Clear();
+                }
             }
         }
 
@@ -1731,8 +1733,8 @@ namespace Nebula
             // did when it hands the entity on (docs/cohesion-hints.md, D3).
             e.JoinCohesionGroup(msg.CohesionGroup);
             // The cost weight travels with the entity, so a boss costs the same on the worker it hands over to
-            // (docs/cost-telemetry.md, D4). 0 on the wire means the sender had nothing to say; keep what we have.
-            if (msg.CostWeight > 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
+            // (docs/cost-telemetry.md, D4). Zero is valid; a negative value means the field was absent.
+            if (msg.CostWeight >= 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {

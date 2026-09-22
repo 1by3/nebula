@@ -149,6 +149,7 @@ namespace Nebula.Tests
             ContainerRegistry.SyncRuntime(_plane.Leases);
             foreach (var lease in _plane.Leases)
                 ContainerRegistry.ApplyLease(lease.ContainerId, lease.WorkerId, 0, lease.Epoch, lease.State);
+            ContainerRegistry.NotifyLeasesChanged();
         }
 
         private void Activate() => _plane.ActivateScope(new ScopeActivationRequest
@@ -283,6 +284,125 @@ namespace Nebula.Tests
             _persistence.Update();
             _store.Tick();
             Assert.That(_persistence.IsContainerRestored(_containerId), Is.True, "no gate, no wait: the restore runs on the frame the grace period ends");
+        }
+
+        [Test]
+        public void RecreatingARetiredPartOnTheSameWorkerLoadsItAgain()
+        {
+            Mesh();
+            int completions = 0;
+            _persistence.ContainerRestored += (id, count) => completions++;
+            LeasedSinceOf(_persistence)[_containerId] = 0f;
+            _clock = 2f;
+            Frame();
+            Assert.That(completions, Is.EqualTo(1));
+
+            _plane.RemoveContainer(_containerId);
+            _plane.SetScopeState(Key, ScopeState.Retired);
+            Sync();
+            _agent.Pass(_clock);
+            Assert.That(_persistence.IsContainerRestored(_containerId), Is.False);
+
+            Activate();
+            Sync();
+            Frame();
+            Assert.That(_plane.FindScope(Key).Acks, Is.Empty, "the previous lease's completion cannot acknowledge this restore");
+            Assert.That(completions, Is.EqualTo(1), "a new lease waits out its own restore grace");
+
+            _clock = 4f;
+            Frame();
+            Frame();
+            Assert.That(completions, Is.EqualTo(2), "the recreated part was loaded again");
+            Assert.That(_plane.FindScope(Key).FindAck(_containerId, ScopePhase.Restored), Is.Not.Null);
+        }
+
+        [Test]
+        public void ALoadFromThePreviousLeaseCannotCompleteTheNextRestore()
+        {
+            Mesh();
+            LeasedSinceOf(_persistence)[_containerId] = 0f;
+            _clock = 2f;
+            _persistence.Update(); // Queue the old lease's load result without delivering it.
+
+            _plane.RemoveContainer(_containerId);
+            _plane.SetScopeState(Key, ScopeState.Retired);
+            Sync();
+            Activate();
+            Sync();
+            _store.Tick();
+            Assert.That(_persistence.IsContainerRestored(_containerId), Is.False,
+                "even an empty result from the old lease must be discarded");
+
+            _clock = 4f;
+            Frame();
+            Assert.That(_persistence.IsContainerRestored(_containerId), Is.True);
+        }
+
+        [Test]
+        public void ADisconnectedStoreDoesNotSeedOrAcknowledgeARestoringScope()
+        {
+            Mesh();
+            SaveRecord("saved-colonist");
+            _store.Dispose(); // Keep the records but model a configured store that is temporarily unavailable.
+            _plane.SetScopeState(Key, ScopeState.Restoring);
+            bool? hasRecords = null;
+            NebulaLifecycle.OnScopeActivating += (scope, any) => hasRecords = any;
+            LeasedSinceOf(_persistence)[_containerId] = 0f;
+
+            _clock = 2f;
+            Frame();
+            Assert.That(hasRecords, Is.Null, "an unavailable store does not prove that the scope is empty");
+            Assert.That(_plane.FindScope(Key).Acks, Is.Empty, "an unavailable store has not restored the part");
+            Assert.That(_agent.MayRestore(_containerId), Is.False);
+
+            _store.Connect();
+            Frame();
+            Assert.That(hasRecords, Is.True);
+            Frame();
+            Frame();
+            Assert.That(_plane.FindScope(Key).FindAck(_containerId, ScopePhase.Restored), Is.Not.Null);
+        }
+
+        [Test]
+        public void AnUnavailableStoreOpensTheGateOnTimeoutWithoutClaimingTheScopeIsEmpty()
+        {
+            Mesh();
+            _store.Dispose();
+            bool? hasRecords = null;
+            NebulaLifecycle.OnScopeActivating += (scope, any) => hasRecords = any;
+            _agent.Pass(0f);
+
+            LogAssert.Expect(LogType.Warning, new Regex("store did not answer whether it holds any records"));
+            _agent.Pass(WorkerScopeLifecycle.ActivatingTimeoutSeconds + 1f);
+            Assert.That(_agent.MayRestore(_containerId), Is.True);
+            Assert.That(hasRecords, Is.Null);
+
+            SaveRecord("saved-colonist");
+            _store.Connect();
+            _agent.Pass(WorkerScopeLifecycle.ActivatingTimeoutSeconds + 2f);
+            _store.Tick();
+            Assert.That(hasRecords, Is.True, "recovery still raises the hook with the store's actual answer");
+        }
+
+        [Test]
+        public void ACountFromThePreviousActivationCannotSeedTheNextOne()
+        {
+            Mesh();
+            var answers = new List<bool>();
+            NebulaLifecycle.OnScopeActivating += (scope, any) => answers.Add(any);
+            _agent.Pass(0f); // Queue the old activation's answer: no records.
+
+            _plane.RemoveContainer(_containerId);
+            _plane.SetScopeState(Key, ScopeState.Retired);
+            Sync();
+            _agent.Pass(1f);
+            SaveRecord("saved-colonist");
+            Activate();
+            Sync();
+            _agent.Pass(2f); // The new activation has a different answer.
+            _store.Tick();
+
+            Assert.That(answers, Is.EqualTo(new[] { true }), "the old callback belongs to an activation that ended");
         }
 
         // ------------------------------------------------------------------------- D3, D6: going back to sleep

@@ -554,7 +554,10 @@ namespace Nebula
                         float u = 0f;
                         foreach (string id in items[i].Ids) u += AssignmentPlanner.UtilizationOf(input, id);
                         if (items[i].Owner != "" && before.ContainsKey(items[i].Owner)) before[items[i].Owner] += u;
-                        after[runOwner[r]] += u;
+                        // Held items stay put when changes are emitted below, so relief must be measured against
+                        // that actual placement rather than the unconstrained run layout.
+                        string destination = items[i].Held ? items[i].Owner : runOwner[r];
+                        after[destination] += u;
                     }
                 beforeMax = before.Values.Max();
                 afterMax = after.Values.Max();

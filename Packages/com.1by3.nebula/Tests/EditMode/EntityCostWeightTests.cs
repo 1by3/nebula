@@ -118,6 +118,57 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AnEmptyOwnedContainerReportsZeroCapacityAfterItsLastEntityLeaves()
+        {
+            var go = new GameObject("arena");
+            _objects.Add(go);
+            var container = go.AddComponent<Container>();
+            container.ContainerId = "arena";
+            container.Size = new Vector3(64f, 64f, 64f);
+            ContainerRegistry.Rebuild();
+            container.OwnerWorkerId = "w1";
+
+            var telemetry = new MeshTelemetry(() => 1.0);
+            telemetry.Accept("{\"worker\":\"w1\",\"containers\":[{\"id\":\"arena\",\"owned\":1,\"tickMs\":20}]}", out _);
+            var rows = new Dictionary<string, ContainerCost>();
+            telemetry.CopyContainerCost(rows);
+            Assert.IsTrue(NebulaCapacity.Derive(rows["arena"], 0.9f).AtCapacity);
+
+            string empty = WorkerTelemetry.ForTests().Write("w1", 1, 11,
+                System.Array.Empty<NetworkIdentity>(), false, null);
+            telemetry.Accept(empty, out _);
+            telemetry.CopyContainerCost(rows);
+            Assert.IsTrue(rows.ContainsKey("arena"), "a healthy empty owner publishes zero, not missing telemetry");
+            var capacity = NebulaCapacity.Derive(rows["arena"], 0.9f);
+            Assert.IsTrue(capacity.Known);
+            Assert.IsFalse(capacity.AtCapacity);
+            Assert.AreEqual(0f, capacity.Saturation);
+        }
+
+        [Test]
+        public void AGhostOnlyWorkerMarksItsContainerRowAsUnowned()
+        {
+            var go = new GameObject("arena");
+            _objects.Add(go);
+            var container = go.AddComponent<Container>();
+            container.ContainerId = "arena";
+            container.Size = new Vector3(64f, 64f, 64f);
+            ContainerRegistry.Rebuild();
+            container.OwnerWorkerId = "w1";
+            var ghost = Make("ghost");
+            ghost.NetId = 42;
+            ghost.HasAuthority = false;
+            ghost.SetContainer(container);
+
+            string json = WorkerTelemetry.ForTests().Write("w2", 2, 10, new[] { ghost }, false, null);
+            StringAssert.Contains("\"owned\":0", json);
+            StringAssert.Contains("\"ghosts\":1", json);
+            var rows = new List<ContainerCost>();
+            MeshTelemetry.ParseContainers(json, null, rows);
+            Assert.IsEmpty(rows, "the map retains ghost counts without replacing the owner's capacity");
+        }
+
+        [Test]
         public void TheTelemetryDocumentReportsTheWeightedSumPerContainer()
         {
             var go = new GameObject("arena");

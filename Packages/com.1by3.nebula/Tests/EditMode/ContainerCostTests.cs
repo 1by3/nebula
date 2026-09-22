@@ -145,6 +145,34 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AGhostReportCannotReplaceTheOwnersCostOrOccupancy()
+        {
+            var telemetry = new MeshTelemetry(() => 1.0);
+            string owner = Row("arena", "", 4, 0, 0, 0, 16, 20, 200000, 40000)
+                .Replace("\"players\"", "\"owned\":1,\"players\"");
+            string ghost = Row("arena", "", 0, 0, 0, 4, 0, 0, 0, 0)
+                .Replace("\"players\"", "\"owned\":0,\"players\"");
+            telemetry.Accept(Document("owner", owner), out _);
+            telemetry.Accept(Document("neighbor", ghost), out _);
+
+            var costs = new Dictionary<string, ContainerCost>();
+            var loads = new Dictionary<string, ContainerLoad>();
+            telemetry.CopyContainerCost(costs);
+            telemetry.CopyOccupancy(loads);
+            Assert.AreEqual("owner", costs["arena"].WorkerId);
+            Assert.IsTrue(NebulaCapacity.Derive(costs["arena"], 0.9f).AtCapacity);
+            Assert.AreEqual(4, loads["arena"].Players);
+
+            // A handover changes which worker may publish the row; the previous owner's next ghost report
+            // must neither replace nor remove the new owner's measurement.
+            telemetry.Accept(Document("neighbor", owner), out _);
+            telemetry.Accept(Document("owner", ghost), out _);
+            telemetry.CopyContainerCost(costs);
+            Assert.AreEqual("neighbor", costs["arena"].WorkerId);
+            Assert.IsTrue(NebulaCapacity.Derive(costs["arena"], 0.9f).AtCapacity);
+        }
+
+        [Test]
         public void TheRowsSurviveAJsonRoundTripThroughTheApiDocument()
         {
             double clock = 0.0;

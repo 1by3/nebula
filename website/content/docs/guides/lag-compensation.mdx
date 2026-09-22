@@ -27,7 +27,7 @@ Nebula supplies the history. Rewinding colliders, performing the hit test and de
 | `Tick` | The server tick the entry belongs to. The tick you asked for, unless it fell in a gap. |
 | `Position`, `Rotation` | The world pose at that tick. |
 | `Velocity` | The world-space velocity the authority reported for that tick. |
-| `Container` | The container the entity was in. Use it to reject a claim across a scope or a cell. |
+| `Container` | The container the entity was in. Its `InstanceId` identifies the simulation scope; adjacent containers in the same scope can interact. |
 | `Epoch` | The entity's authority epoch at that tick. |
 | `FromAuthority` | `true` when this worker recorded the entry as the authority, `false` when it recorded it from a neighbour's stream. |
 | `TryGetValue(variable, out value)` | The value a `[SyncHistory]` variable held at that tick. |
@@ -86,8 +86,11 @@ On a ghost, a marked variable holds the value the owner's stream had delivered b
 The shape of a validator, and what belongs to you at each step:
 
 ```csharp
+public void Fire(Vector3 origin, Vector3 direction, uint aimTick) =>
+    ServerRpc(RpcFire, origin, direction, aimTick);
+
 [ServerRpc]
-public void Fire(Vector3 origin, Vector3 direction, uint aimTick)
+private void RpcFire(Vector3 origin, Vector3 direction, uint aimTick)
 {
     // 1. Is the claim one you are willing to check? Nebula does not decide this.
     uint now = worker.CurrentTick;
@@ -97,16 +100,17 @@ public void Fire(Vector3 origin, Vector3 direction, uint aimTick)
     foreach (var candidate in worker.Entities)
     {
         if (!candidate.TryGetStateAt(aimTick, out var state)) continue; // no claim possible
-        if (state.Container != Identity.Container) continue;            // another scope or cell
+        ulong scope = state.Container != null ? state.Container.InstanceId : 0UL;
+        if (scope != Identity.InstanceId) continue; // another simulation scope
         // Test your own hitboxes at state.Position / state.Rotation. Move nothing.
     }
 
     // 3. Apply the result where the victim lives.
-    victim.GetComponent<Health>().ApplyDamage(10); // an [AuthorityRpc]
+    victim.GetComponent<SampleHealth>().ApplyDamage(10);
 }
 ```
 
-Send the tick with the input rather than inferring it: on the client, `NetworkTime.RenderTick` is the tick it was rendering. Step 3 is an [`AuthorityRpc`](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call), so a victim that is a ghost here is damaged exactly once even if it hands over while the call is in flight.
+Send the tick with the input rather than inferring it: on the client, `NetworkTime.RenderTick` is the tick it was rendering. `SampleHealth.ApplyDamage` wraps `AuthorityRpc(RpcApplyDamage, amount)` and marks the receiving method with `[AuthorityRpc]`. Attributes identify receiving methods; the send helpers dispatch calls. This sends damage to a ghost's authoritative worker under the [cross-worker call contract](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call), including its rejection and delivery limits.
 
 A complete version ships as the **Lag-compensated hitscan** sample in the package (`Samples~/LagCompensatedHitscan`): import it from the Package Manager, read it, then replace the capsule with your own hitboxes.
 

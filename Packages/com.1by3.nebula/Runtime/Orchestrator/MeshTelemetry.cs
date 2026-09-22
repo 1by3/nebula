@@ -273,6 +273,7 @@ namespace Nebula
                 if (at >= json.Length || json[at] != '{') return;
                 at++;
                 string id = null;
+                bool owned = true; // Older workers did not include an ownership marker.
                 var load = new ContainerLoad();
                 var cost = new ContainerCost { ScopeKey = "" };
                 while (at < json.Length)
@@ -307,6 +308,7 @@ namespace Nebula
                         int value = (int)number;
                         switch (key)
                         {
+                            case "owned": owned = value != 0; break;
                             case "players": load.Players = value; break;
                             case "bots": load.Bots = value; break;
                             case "serverDriven": load.ServerDriven = value; break;
@@ -320,7 +322,7 @@ namespace Nebula
                         at = numEnd;
                     }
                 }
-                if (!string.IsNullOrEmpty(id))
+                if (!string.IsNullOrEmpty(id) && owned)
                 {
                     result?.Add(new KeyValuePair<string, ContainerLoad>(id, load));
                     if (costs != null) { cost.ContainerId = id; costs.Add(cost); }

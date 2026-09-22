@@ -64,9 +64,8 @@ entity's cost is a property of what it is, not of what it is doing this frame.
 `AuthorityTransfer` and of a ghost spawn, so one field covers handover, ghosting and the client
 spawn. The receiving worker **takes** the value and pins it rather than re-asking its own callback:
 a boss that costs 12 on one side of a seam must cost 12 on the other, or the planner would see load
-appear and disappear every time something crossed. A `0` on the wire means "no opinion" and leaves
-what the receiver already has; that is also what an older sender writes, so nothing becomes free by
-accident.
+appear and disappear every time something crossed. Zero is a valid weight and travels with the
+entity. A missing weight field reads as `-1` and leaves the receiver's current weight unchanged.
 
 ### D5. Simulation time is measured, not apportioned
 

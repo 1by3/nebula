@@ -63,7 +63,7 @@ namespace Nebula
         /// <summary>Static containers this worker leases, and when the lease appeared.</summary>
         private readonly Dictionary<string, float> _leasedSince = new Dictionary<string, float>();
         /// <summary>Containers whose records have been asked for, so a lease that stays put is loaded once.</summary>
-        private readonly HashSet<string> _loadRequested = new HashSet<string>();
+        private readonly Dictionary<string, object> _loadRequested = new Dictionary<string, object>();
         /// <summary>Containers whose load came back and was judged, and how many entities each one brought back (see <see cref="ContainerRestored"/>).</summary>
         private readonly Dictionary<string, int> _restoreComplete = new Dictionary<string, int>();
         /// <summary>Records held back because their saver may still hand the entity over; re-judged after another grace.</summary>
@@ -435,9 +435,15 @@ namespace Nebula
                 // The scope's activation hook comes first when there is one (docs/lifecycle-hooks.md D4). The gate
                 // is asked again every frame and opens on its own deadline, so nothing can wedge a restore here.
                 if (RestoreGate != null && !RestoreGate(kv.Key)) continue;
-                if (!_loadRequested.Add(kv.Key)) continue;
+                if (_loadRequested.ContainsKey(kv.Key)) continue;
                 string containerId = kv.Key;
-                _store.LoadContainer(containerId, records => OnContainerRecords(containerId, records));
+                var request = new object();
+                _loadRequested[containerId] = request;
+                _store.LoadContainer(containerId, records =>
+                {
+                    if (!_loadRequested.TryGetValue(containerId, out var current) || !ReferenceEquals(current, request)) return;
+                    OnContainerRecords(containerId, records);
+                });
             }
         }
 
@@ -569,6 +575,20 @@ namespace Nebula
 
         private void OnLeasesChanged()
         {
+            // SyncRuntime removes retired boxes before this event. Clear their lease bookkeeping even when
+            // the old container no longer exists in either registry list.
+            var lost = new List<string>();
+            foreach (var id in _leasedSince.Keys)
+            {
+                var container = ContainerRegistry.FindById(id);
+                if (container == null || !container.IsOwnedBy(_worker.WorkerId)) lost.Add(id);
+            }
+            foreach (var id in lost)
+            {
+                _leasedSince.Remove(id);
+                _loadRequested.Remove(id);
+                _restoreComplete.Remove(id);
+            }
             float now = Now();
             DateLeases(ContainerRegistry.All, now);
             DateLeases(ContainerRegistry.Runtime, now); // runtime boxes are leased like baked ones; carried containers come back with their carrier

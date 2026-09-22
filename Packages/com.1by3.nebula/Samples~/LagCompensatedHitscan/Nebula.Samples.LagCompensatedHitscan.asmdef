@@ -1,0 +1,5 @@
+{
+    "name": "Nebula.Samples.LagCompensatedHitscan",
+    "references": ["Nebula.Runtime"],
+    "autoReferenced": true
+}

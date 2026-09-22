@@ -327,6 +327,7 @@ namespace Nebula.World
                 _hooked = true;
             }
             string scope = grid.ScopeKey;
+            bool newlyActive = !GridsByScope.ContainsKey(scope);
             GridsByScope[scope] = grid;
             GridsByInstance[grid.InstanceId] = grid;
             // A scoped grid owns its floating origin from the moment it exists here: registering the frame up
@@ -343,8 +344,10 @@ namespace Nebula.World
             // nothing here could say otherwise yet. A zero-delta shift of the new frame re-asks the bounds hook for
             // every one of them, so each is recomputed from its coordinate in its own frame (docs/scope-frames.md D5).
             if (!grid.IsPublic) ContainerRegistry.ShiftRuntime(grid.InstanceId, Vector3.zero);
+            if (!newlyActive) return;
             var snapshot = new List<Container>(ContainerRegistry.Runtime);
-            for (int i = 0; i < snapshot.Count; i++) if (snapshot[i] != null) OnRegistered(snapshot[i]);
+            for (int i = 0; i < snapshot.Count; i++)
+                if (snapshot[i] != null && GridOf(snapshot[i]) == grid) OnRegistered(snapshot[i]);
         }
 
         /// <summary>

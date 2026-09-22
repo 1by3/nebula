@@ -16,7 +16,7 @@ namespace NebulaSamples
     /// </summary>
     public sealed class LagCompensatedHitscan : NetworkBehaviour
     {
-        [Tooltip("Half-height and radius of the capsule the sample stands in for a victim's hitboxes.")]
+        [Tooltip("Total height and radius of the capsule the sample uses for a victim's hitboxes.")]
         public float VictimHeight = 1.8f;
         public float VictimRadius = 0.35f;
         [Tooltip("Metres the shot may reach.")]
@@ -37,10 +37,13 @@ namespace NebulaSamples
 
         /// <summary>
         /// Called by the shooter's client. <paramref name="aimTick"/> is the tick the client was rendering, which is
-        /// its own <c>NetworkTime.Tick</c> minus its interpolation delay.
+        /// <c>NetworkTime.RenderTick</c>.
         /// </summary>
+        public void Fire(Vector3 origin, Vector3 direction, uint aimTick) =>
+            ServerRpc(RpcFire, origin, direction, aimTick);
+
         [ServerRpc]
-        public void Fire(Vector3 origin, Vector3 direction, uint aimTick)
+        private void RpcFire(Vector3 origin, Vector3 direction, uint aimTick)
         {
             // Your game mode already has the worker (OnWorkerStarted); this sample keeps it simple.
             var worker = Worker;
@@ -60,7 +63,7 @@ namespace NebulaSamples
             {
                 if (candidate == null || candidate == Identity) continue;
                 if (!candidate.TryGetStateAt(aimTick, out var state)) continue; // outside the window: no claim
-                if (state.Container != Identity.Container) continue;            // different scope or cell: not a target
+                if ((state.Container != null ? state.Container.InstanceId : 0UL) != Identity.InstanceId) continue;
 
                 var bottom = state.Position + Vector3.up * VictimRadius;
                 var top = state.Position + Vector3.up * (VictimHeight - VictimRadius);
@@ -81,28 +84,58 @@ namespace NebulaSamples
         /// <summary>Ray against a capsule, closest hit. Analytic on purpose: no physics query, so nothing is moved.</summary>
         private static bool IntersectsCapsule(Ray ray, Vector3 a, Vector3 b, float radius, out float distance)
         {
-            // Treat the capsule as a sphere swept along a-b: solve for the ray's closest approach to the segment.
+            distance = 0f;
+            if (radius < 0f || ray.direction.sqrMagnitude < 1e-12f) return false;
+            var direction = ray.direction.normalized;
             var ab = b - a;
             var ao = ray.origin - a;
             float abab = Vector3.Dot(ab, ab);
-            float abd = Vector3.Dot(ab, ray.direction);
+            float abd = Vector3.Dot(ab, direction);
             float abao = Vector3.Dot(ab, ao);
-            float m = abab > 1e-6f ? abd / abab : 0f;
-            float n = abab > 1e-6f ? abao / abab : 0f;
-            var q = ray.direction - ab * m;
-            var r = ao - ab * n;
-            float qq = Vector3.Dot(q, q);
-            float qr = Vector3.Dot(q, r);
-            float rr = Vector3.Dot(r, r) - radius * radius;
-            distance = 0f;
-            if (qq < 1e-6f) return rr <= 0f;
-            float disc = qr * qr - qq * rr;
-            if (disc < 0f) return false;
-            float t = (-qr - Mathf.Sqrt(disc)) / qq;
-            if (t < 0f) return false;
-            // Clamp to the segment: a hit past either cap is a hit on the cap sphere, near enough for a sample.
-            distance = t;
+            var closest = a + ab * (abab > 1e-12f ? Mathf.Clamp01(abao / abab) : 0f);
+            if ((ray.origin - closest).sqrMagnitude <= radius * radius) return true;
+
+            // A finite cylinder plus its two endpoint spheres is exactly the capsule. Test all three and keep
+            // the closest forward intersection, including rays parallel to the axis and zero-length capsules.
+            float best = Mathf.Min(SphereDistance(ray.origin, direction, a, radius),
+                SphereDistance(ray.origin, direction, b, radius));
+            if (abab > 1e-12f)
+            {
+                var q = direction - ab * (abd / abab);
+                var r = ao - ab * (abao / abab);
+                float qq = Vector3.Dot(q, q);
+                float qr = Vector3.Dot(q, r);
+                float rr = Vector3.Dot(r, r) - radius * radius;
+                float disc = qr * qr - qq * rr;
+                if (qq > 1e-12f && disc >= 0f)
+                {
+                    float root = Mathf.Sqrt(disc);
+                    ConsiderSide((-qr - root) / qq);
+                    ConsiderSide((-qr + root) / qq);
+                }
+            }
+            if (float.IsPositiveInfinity(best)) return false;
+            distance = best;
             return true;
+
+            void ConsiderSide(float t)
+            {
+                float axial = abao + t * abd;
+                if (t >= 0f && t < best && axial >= 0f && axial <= abab) best = t;
+            }
+        }
+
+        private static float SphereDistance(Vector3 origin, Vector3 direction, Vector3 center, float radius)
+        {
+            var offset = origin - center;
+            float projection = Vector3.Dot(offset, direction);
+            float disc = projection * projection - (offset.sqrMagnitude - radius * radius);
+            if (disc < 0f) return float.PositiveInfinity;
+            float root = Mathf.Sqrt(disc);
+            float near = -projection - root;
+            if (near >= 0f) return near;
+            float far = -projection + root;
+            return far >= 0f ? far : float.PositiveInfinity;
         }
     }
 
@@ -121,8 +154,10 @@ namespace NebulaSamples
         /// Runs on whoever has authority over this entity. Called in-process when the shooter's worker is also the
         /// victim's, and forwarded over the worker link (fenced, at most once) when it is not.
         /// </summary>
+        public void ApplyDamage(int amount) => AuthorityRpc(RpcApplyDamage, amount);
+
         [AuthorityRpc]
-        public void ApplyDamage(int amount)
+        private void RpcApplyDamage(int amount)
         {
             if (!HasAuthority) return;
             Health.Value = Mathf.Max(0, Health.Value - amount);

@@ -204,9 +204,9 @@ namespace Nebula.Tests
             // carries its cost telemetry (docs/cost-telemetry.md): the scope, the weighted entity sum, and the
             // measured rates, which are 0 here because nothing has been ticked.
             StringAssert.Contains("\"containers\":[" +
-                "{\"id\":\"outdoor\",\"players\":0,\"bots\":0,\"serverDriven\":2,\"other\":0,\"ghosts\":1,\"scope\":\"\",\"cost\":2,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
-                "{\"id\":\"hut\",\"players\":1,\"bots\":1,\"serverDriven\":0,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"cost\":6,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
-                "{\"id\":\"ship#42\",\"players\":0,\"bots\":0,\"serverDriven\":1,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"cost\":1,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}]", doc);
+                "{\"id\":\"outdoor\",\"owned\":1,\"players\":0,\"bots\":0,\"serverDriven\":2,\"other\":0,\"ghosts\":1,\"scope\":\"\",\"cost\":2,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
+                "{\"id\":\"hut\",\"owned\":1,\"players\":1,\"bots\":1,\"serverDriven\":0,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"cost\":6,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
+                "{\"id\":\"ship#42\",\"owned\":1,\"players\":0,\"bots\":0,\"serverDriven\":1,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"cost\":1,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}]", doc);
             StringAssert.Contains("\"carried\":[{\"id\":\"ship#42\",\"carrier\":\"42\",\"enclosing\":\"outdoor\",\"depth\":1,\"pinned\":false,\"contents\":1,\"center\":[-20,3,0],\"size\":[10,6,20],\"rotation\":[0,0,0,1],\"position\":[-20,0,0]", doc);
             StringAssert.Contains("[\"42\",\"v\",-20,0,0,0,0]", doc);
             StringAssert.Contains("[\"1\",\"p\",50,1,50,0,1,\"Player Jesse (3)\"]", doc);

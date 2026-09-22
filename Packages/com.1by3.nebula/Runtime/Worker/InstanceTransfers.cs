@@ -126,6 +126,12 @@ namespace Nebula
                 throw new ArgumentException("An authoritative entity and a static destination are required");
             var transfer = new InstanceTransfer { Entity = entity, Source = entity.Container, Epoch = entity.Epoch,
                 Destination = destination, ClientReady = entity.OwnerClientId == 0, Deadline = Time.unscaledTime + Mathf.Max(1, timeoutSeconds) };
+            if (!TransferScopeAdmits(destination))
+            {
+                transfer.Error = "Destination scope is not accepting transfers";
+                transfer.Finished = true;
+                return transfer;
+            }
             // Capacity, before anything is sent: a crossing into a destination that is at capacity fails typed, with
             // the same reason and the same hook a join goes through, so a travel service gets one answer for both
             // ways in (docs/capacity-admission.md). Nothing is ever split silently to make room.
@@ -194,7 +200,10 @@ namespace Nebula
         private bool ValidTransfer(InstanceTransfer transfer) => transfer.Entity != null && transfer.Entity.IsSpawned &&
             transfer.Entity.HasAuthority && transfer.Entity.Epoch == transfer.Epoch && transfer.Entity.Container == transfer.Source &&
             transfer.Destination != null && transfer.Destination.LeaseEpoch == transfer.Message.LeaseEpoch &&
-            LeaseState.IsOwning(transfer.Destination.LeaseState);
+            LeaseState.IsOwning(transfer.Destination.LeaseState) && TransferScopeAdmits(transfer.Destination);
+
+        private bool TransferScopeAdmits(Container destination) =>
+            ScopeLifecycle.Admits(ControlPlane, destination.ScopeKey, out _);
 
         private void UpdateInstancePreparations()
         {
@@ -203,7 +212,7 @@ namespace Nebula
             {
                 var transfer = pair.Value;
                 if (Time.unscaledTime < transfer.Deadline && ValidTransfer(transfer)) continue;
-                transfer.Error = "Preparation expired or container authority changed";
+                transfer.Error = "Preparation expired, container authority changed, or destination scope stopped admitting";
                 transfer.Finished = true;
                 _expiredInstanceRequests.Add(pair.Key);
             }
@@ -215,7 +224,7 @@ namespace Nebula
             if (peer.Role != PeerRole.Worker || peer.Index != message.SourceWorker) return;
             var destination = message.Destination.Resolve();
             message.Success = destination != null && destination.OwnerWorkerId == WorkerId &&
-                destination.LeaseEpoch == message.LeaseEpoch && InstanceScenes.Prepare(destination);
+                destination.LeaseEpoch == message.LeaseEpoch && TransferScopeAdmits(destination) && InstanceScenes.Prepare(destination);
             _writer.Reset(); message.Write(_writer, MsgId.InstanceReady);
             _transport.Send(peer.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }
