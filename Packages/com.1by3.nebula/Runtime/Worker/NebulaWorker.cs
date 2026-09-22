@@ -353,6 +353,12 @@ namespace Nebula
             _transport.Listen(Port);
             IsListening = true;
             _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
+            // The row this worker asks the control plane for, settled before anything can read the document: the
+            // port is known only now, and OnControlPlaneChanged may fire before the first Update.
+            _registration.WorkerId = WorkerId;
+            _registration.WorkerIndex = WorkerIndex;
+            _registration.Address = Config.WorkerAdvertiseAddress;
+            _registration.Port = Port;
             ControlPlane.Changed += OnControlPlaneChanged;
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
@@ -572,10 +578,6 @@ namespace Nebula
                 ReportProfile();
             }
 
-            _registration.WorkerId = WorkerId;
-            _registration.WorkerIndex = WorkerIndex;
-            _registration.Address = Config.WorkerAdvertiseAddress;
-            _registration.Port = Port;
             if (_registration.Register(ControlPlane))
             {
                 _nextHeartbeat = 0f;
