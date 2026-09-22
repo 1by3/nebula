@@ -117,6 +117,11 @@ upgraded in one pass, together, while the client window covers the clients that 
 | `RollingUpgradeTests` (S9a, S9b) | drain and replace a gateway under a connected client; drain and replace a worker with no entity lost |
 | `ScaleOperationsTests` S9 | all four edges of the window, with reason codes |
 
+`RollingUpgradeTests` carries `Scale` but **not** `Soak`, unlike S9. The scale suite's rule (D10) is that a
+scenario running a mesh for seconds carries `Soak` too; these two take about 10 s together, and the drain paths
+they cover are exactly the kind that rot quietly, so they are worth running in the default `dotnet test` pass.
+The deviation is deliberate and recorded here rather than left to be noticed.
+
 **The recorded fixture.** `Services~/Nebula.Services.Tests/Fixtures/protocol-18-handshake.json` holds the exact
 frames a client sent and a gateway answered, as hex, recorded from the mesh fixtures by the explicit test
 `RecordTheHandshakeFixture`. The replay pushes the client frames byte for byte at a gateway built from today's
