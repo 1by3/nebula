@@ -219,9 +219,14 @@ public class ScaleFailureTests
     }
 
     [Test]
-    public void AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims()
+    public void AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale()
     {
-        var report = new ScaleReport("gateway-kill", "kind", "clients", "reclaimed", "reclaimRate", "secondsWaited", "refusalReason");
+        // D7a closed (NEB-229): GatewaySessionDirectory now treats a gateway whose control-plane heartbeat has
+        // gone stale (GatewayStaleAfterSeconds, LocalControlPlane) as gone, and evicts its claims for a waiting
+        // claimant instead of holding them until something releases them (which a killed process never does).
+        // The measured number below is what sets ScaleThresholds.HardKillGatewayReclaimSeconds
+        // (docs/scale-suite.md D2/D6); see docs/gateway-fleet-audit.md finding 1.
+        var report = new ScaleReport("gateway-kill", "kind", "clients", "reclaimed", "reclaimRate", "secondsWaited");
 
         using var fleet = Build(gateways: 2, workers: 2, clients: 8, out var clients);
         var onDoomed = clients.Where((_, i) => i % 2 == 0).ToList();
@@ -236,22 +241,16 @@ public class ScaleFailureTests
         double seconds = clock.Elapsed.TotalSeconds;
 
         int reclaimed = back.Count(c => c.Join == JoinState.Joined);
-        string reason = back.FirstOrDefault(c => c.Rejected != null)?.Rejected!.Value.Reason ?? "";
-        report.Row("hard-kill", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds, reason);
-        report.Note("a hard gateway loss is NOT recovered today: the coordinator holds the dead gateway's claim and " +
-                    "every reclaim is refused with \"" + reason + "\". Automatic eviction of a gateway that has stopped " +
-                    "heartbeating is the control-plane availability work (NEB-227) and the gateway audit (NEB-229); " +
-                    "this row is the measurement those issues have to move. There is no operator workaround in the code " +
-                    "today: a release is matched on the owning gateway's key AND its per-connection claim id, " +
-                    "which nobody outside the dead process knows.");
+        report.Row("hard-kill", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds);
+        report.Note($"a hard gateway kill now reclaims every session in {seconds:0.00} s once the owning gateway's " +
+                    "control-plane heartbeat is stale (GatewaySessionDirectory / GatewayStaleAfterSeconds, D7a). " +
+                    "ScaleThresholds.HardKillGatewayReclaimSeconds is set from this row.");
         report.Write();
 
         Assert.That(settled, Is.True, "the reclaim attempts neither completed nor were refused within 40 s");
-        Assert.That(reclaimed, Is.Zero,
-            "a hard gateway loss now reclaims sessions by itself — the NEB-227/229 gap this test pins has been closed; " +
-            "update docs/scale-suite.md D7a and turn this into the positive assertion");
-        Assert.That(reason, Does.Contain("could not be disconnected"),
-            "the refusal must say why, so an operator can tell this apart from a rejected player");
+        Assert.That(reclaimed, Is.EqualTo(onDoomed.Count), "a hard gateway kill must lose no session: D7a is closed");
+        Assert.That(seconds, Is.LessThanOrEqualTo(ScaleThresholds.HardKillGatewayReclaimSeconds),
+            $"hard-kill reclaim took {seconds:0.00} s, over the {ScaleThresholds.HardKillGatewayReclaimSeconds} s threshold derived in docs/scale-suite.md D2");
     }
 
     // --------------------------------------------------------------------------- S6: control-plane restart

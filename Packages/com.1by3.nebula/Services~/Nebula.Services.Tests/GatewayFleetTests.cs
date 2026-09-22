@@ -437,18 +437,28 @@ public class GatewayFleetTests
     }
 
     [Test]
-    public void UnreachablePreviousGatewayBlocksTheNewConnection()
+    public void UnreachablePreviousGatewayBlocksTheNewConnectionUntilItsHeartbeatGoesStale()
     {
+        // NEB-229 / D7a: a gateway that has stopped answering (paused here exactly as a hard kill is: it simply
+        // stops ticking, so it stops heartbeating) no longer strands the claim forever. The new connection waits
+        // while the old gateway's heartbeat is still within GatewayStaleAfterSeconds, then is granted once it
+        // goes stale — see docs/gateway-fleet-audit.md finding 1 and docs/scale-suite.md D7a.
         using var fleet = new Fleet(2);
         var first = fleet.Connect(0, "playing");
         Assert.That(fleet.Run(() => first.Join == JoinState.Joined), Is.True);
         fleet.PausedGateways.Add(fleet.Gateways[0]);
         var second = fleet.Connect(1, "playing", first.Welcome.Value.Token);
-        Assert.That(fleet.Run(() => second.Rejected != null, seconds: 12), Is.True);
-        Assert.That(second.Welcome, Is.Null);
-        Assert.That(second.Rejected.Value.Reason, Does.Contain("could not be disconnected"));
-        Assert.That(first.Disconnected, Is.False);
-        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1));
+
+        // Still within the staleness window: neither granted nor refused yet.
+        Assert.That(fleet.Run(() => second.Join == JoinState.Joined || second.Rejected != null, seconds: 2), Is.False,
+            "a merely-unreachable gateway that has not gone stale yet must not be evicted early");
+
+        Assert.That(fleet.Run(() => second.Join == JoinState.Joined, seconds: 12), Is.True,
+            "once the old gateway's heartbeat is stale, the claim must be evictable and the reclaim granted");
+        Assert.That(second.Rejected, Is.Null);
+        Assert.That(second.Welcome!.Value.ClientId, Is.EqualTo(first.Welcome.Value.ClientId));
+        Assert.That(first.Disconnected, Is.False, "the paused gateway never ticks again, so it never sees its own client leave");
+        Assert.That(fleet.Worker.Pawns, Has.Count.EqualTo(1), "no duplicate pawn from the reclaim");
     }
 
     [Test]
