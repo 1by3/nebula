@@ -153,7 +153,14 @@ namespace Nebula
 
     public struct HelloMsg
     {
+        /// <summary>The wire protocol version used by this build.</summary>
         public const ushort ProtocolVersion = 18;
+        /// <summary>
+        /// The oldest client protocol the gateway accepts. Both this limit and <see cref="ProtocolVersion"/>
+        /// are 18, so only protocol-18 clients can join. Gateway-to-worker and worker-to-worker connections
+        /// require <see cref="ProtocolVersion"/> exactly.
+        /// </summary>
+        public const ushort MinProtocolVersion = 18;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -178,18 +185,30 @@ namespace Nebula
         public uint Incarnation;
         /// <summary>
         /// Client only: the simulation scope to be placed in, as an opaque key (<see cref="EntityLocation.ScopeKey"/>).
-        /// Empty is the public world, which is what every client sent before this field existed. The gateway spawns
+        /// Empty selects the public world. The gateway spawns
         /// the player only into containers of that scope, and holds the join while the scope is not ready
         /// (<c>docs/scope-activation.md</c> §5). It does not activate the scope: whoever sent the player to the key
         /// is the one that called <see cref="IControlPlane.ActivateScope"/>.
         /// </summary>
         public string ScopeKey;
+        /// <summary>
+        /// The protocol version the peer announces. <see cref="Write"/> substitutes
+        /// <see cref="ProtocolVersion"/> when this value is zero.
+        /// </summary>
         public ushort Version;
+        /// <summary>
+        /// The client's game content version, set by <see cref="NebulaConfig.GameContentVersion"/>.
+        /// The gateway checks it against its configured range unless the gateway's content version is zero.
+        /// An incompatible value is refused with <see cref="JoinRejectReason.ContentVersionMismatch"/>.
+        /// </summary>
+        public uint GameContentVersion;
 
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.Hello);
-            w.WriteUShort(ProtocolVersion);
+            // A peer announces its own version when it has one. Until this field was written, every build sent
+            // the constant, which is why a gateway could never admit anything but its exact own protocol.
+            w.WriteUShort(Version != 0 ? Version : ProtocolVersion);
             w.WriteByte((byte)Role);
             w.WriteString(Id);
             w.WriteUInt(Index);
@@ -198,6 +217,7 @@ namespace Nebula
             w.WriteString(Session ?? "");
             w.WriteUInt(Incarnation);
             w.WriteString(ScopeKey ?? "");
+            w.WriteUInt(GameContentVersion);
         }
 
         public static HelloMsg Read(NetworkReader r)
@@ -213,6 +233,9 @@ namespace Nebula
             m.Incarnation = r.ReadUInt();
             // Appended after the rest of v18 was settled: a Hello that ends here is the public world.
             m.ScopeKey = r.Remaining > 0 ? r.ReadString() ?? "" : "";
+            // Appended for the compatibility policy: a Hello that ends here is a client that does not version
+            // its game content, which a gateway that does not either accepts (docs/compatibility-policy.md).
+            m.GameContentVersion = r.Remaining > 0 ? r.ReadUInt() : 0;
             return m;
         }
     }
@@ -242,6 +265,11 @@ namespace Nebula
         public string SessionToken;
         /// <summary>True when the session was reclaimed from a token: the pawn, when the worker still holds it, is the same one.</summary>
         public bool Reclaimed;
+        /// <summary>
+        /// The accepted protocol version from the client's <see cref="HelloMsg"/>. The gateway accepts
+        /// protocol 18 only. Zero means the field was omitted; the client uses its announced version.
+        /// </summary>
+        public ushort NegotiatedVersion;
 
         public void Write(NetworkWriter w)
         {
@@ -253,13 +281,21 @@ namespace Nebula
             w.WriteString(Token ?? "");
             w.WriteString(SessionToken ?? "");
             w.WriteByte(Reclaimed ? (byte)1 : (byte)0);
+            w.WriteUShort(NegotiatedVersion);
         }
 
-        public static WelcomeMsg Read(NetworkReader r) => new WelcomeMsg
+        public static WelcomeMsg Read(NetworkReader r)
         {
-            ClientId = r.ReadULong(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "",
-            SessionToken = r.ReadString() ?? "", Reclaimed = r.ReadByte() != 0,
-        };
+            var m = new WelcomeMsg
+            {
+                ClientId = r.ReadULong(), TickRate = r.ReadByte(), ServerTick = r.ReadUInt(), Identity = r.ReadString() ?? "", Token = r.ReadString() ?? "",
+                SessionToken = r.ReadString() ?? "", Reclaimed = r.ReadByte() != 0,
+            };
+            // Appended for the compatibility policy: a welcome that ends here came from a gateway that only ever
+            // spoke one protocol, so the negotiated version is the one the client sent.
+            m.NegotiatedVersion = r.Remaining > 0 ? r.ReadUShort() : (ushort)0;
+            return m;
+        }
     }
 
     /// <summary>
@@ -285,14 +321,13 @@ namespace Nebula
     {
         public string Reason;
         /// <summary>
-        /// The refusal is about this gateway, not the client (it is draining): the client should try again shortly,
-        /// and a load balancer will hand it to another gateway. False means the client's credentials were refused
-        /// and retrying with the same ones is pointless.
+        /// Whether the client should retry automatically, such as when this gateway is draining.
+        /// Reaching another gateway requires a configured load balancer or another routing mechanism.
+        /// When false, inspect <see cref="Code"/> and <see cref="Reason"/> before reconnecting.
         /// </summary>
         public bool Retry;
         /// <summary>
-        /// The refusal in typed form (<see cref="JoinRejectReason"/>), appended after the rest of v18 was settled.
-        /// <see cref="JoinRejectReason.None"/> from a gateway that does not write it.
+        /// The typed refusal reason. Defaults to <see cref="JoinRejectReason.None"/> when omitted.
         /// </summary>
         public JoinRejectReason Code;
         /// <summary>
@@ -300,6 +335,21 @@ namespace Nebula
         /// dominant component's budget (<see cref="CapacityInfo.Saturation"/>). Sent as an f16; 0 when unknown.
         /// </summary>
         public float Saturation;
+        /// <summary>
+        /// The gateway's inclusive supported protocol range, supplied on every refusal.
+        /// Both limits are 18. Zero means the corresponding field was omitted.
+        /// </summary>
+        public ushort SupportedMinVersion;
+        /// <summary>
+        /// The gateway's inclusive supported protocol range, supplied on every refusal.
+        /// Both limits are 18. Zero means the corresponding field was omitted.
+        /// </summary>
+        public ushort SupportedMaxVersion;
+        /// <summary>
+        /// The gateway's configured game content version, supplied on every refusal.
+        /// Zero means content version checks are disabled or the field was omitted.
+        /// </summary>
+        public uint ServerContentVersion;
 
         public void Write(NetworkWriter w)
         {
@@ -308,6 +358,9 @@ namespace Nebula
             w.WriteByte(Retry ? (byte)1 : (byte)0);
             w.WriteByte((byte)Code);
             w.WriteHalf(Saturation);
+            w.WriteUShort(SupportedMinVersion);
+            w.WriteUShort(SupportedMaxVersion);
+            w.WriteUInt(ServerContentVersion);
         }
 
         public static JoinRejectedMsg Read(NetworkReader r)
@@ -317,6 +370,10 @@ namespace Nebula
             // already carried; there is nothing typed to read and nothing is assumed.
             if (r.Remaining > 0) m.Code = (JoinRejectReason)r.ReadByte();
             if (r.Remaining > 0) m.Saturation = r.ReadHalf();
+            // Appended for the compatibility policy (docs/compatibility-policy.md).
+            if (r.Remaining > 0) m.SupportedMinVersion = r.ReadUShort();
+            if (r.Remaining > 0) m.SupportedMaxVersion = r.ReadUShort();
+            if (r.Remaining > 0) m.ServerContentVersion = r.ReadUInt();
             return m;
         }
     }
@@ -361,7 +418,7 @@ namespace Nebula
     /// </summary>
     public enum JoinHoldReason : byte
     {
-        /// <summary>Not held (or a gateway from before the field existed, which only ever held for <see cref="WorldStarting"/>).</summary>
+        /// <summary>The join is not held.</summary>
         None = 0,
         /// <summary>No worker holds an active lease yet: the mesh is booting one.</summary>
         WorldStarting = 1,
@@ -387,12 +444,28 @@ namespace Nebula
     /// </summary>
     public enum JoinRejectReason : byte
     {
-        /// <summary>No typed reason: read <see cref="JoinRejectedMsg.Reason"/> and <see cref="JoinRejectedMsg.Retry"/>. What a gateway from before the field existed sends.</summary>
+        /// <summary>No typed reason was supplied. Read <see cref="JoinRejectedMsg.Reason"/> and <see cref="JoinRejectedMsg.Retry"/>.</summary>
         None = 0,
         /// <summary>The target the client asked for is at capacity and the admission hook refused it (<see cref="JoinRejectedMsg.Saturation"/> says how full).</summary>
         AtCapacity = 1,
         /// <summary>The admission hook refused this particular arrival for its own reasons, with the target below capacity (<see cref="NebulaAdmission.AlwaysConsult"/>).</summary>
         Denied = 2,
+        /// <summary>
+        /// The client's protocol is outside the gateway's supported range
+        /// (<see cref="JoinRejectedMsg.SupportedMinVersion"/>..<see cref="JoinRejectedMsg.SupportedMaxVersion"/>).
+        /// The client stops automatic retries; use a client and gateway with matching protocol versions.
+        /// </summary>
+        ProtocolUnsupported = 3,
+        /// <summary>
+        /// The client's <see cref="HelloMsg.GameContentVersion"/> is outside the gateway's configured range.
+        /// The client stops automatic retries. The game defines the content version numbers.
+        /// </summary>
+        ContentVersionMismatch = 4,
+        /// <summary>
+        /// The mesh accepts encrypted client links only (<see cref="NebulaConfig.RequireEncryption"/>) and this
+        /// one is in the clear. Retrying without turning encryption on will be refused again.
+        /// </summary>
+        EncryptionRequired = 5,
     }
 
     /// <summary>Gateway -> client: the join's state and, while <see cref="JoinState.Starting"/>, a rough wait in seconds (0 = unknown) and why.</summary>

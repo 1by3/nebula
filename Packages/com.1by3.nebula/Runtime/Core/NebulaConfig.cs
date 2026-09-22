@@ -73,6 +73,31 @@ namespace Nebula
         public bool SingleSessionPerPlayer = true;
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
+        [Tooltip("The game's content version. Clients announce this value when joining. A gateway with a nonzero value checks the client's version against MinGameContentVersion..GameContentVersion. A gateway value of 0 disables the check. -nebula-content-version overrides.")]
+        public uint GameContentVersion = 0;
+        [Tooltip("The oldest game content version a gateway admits, when GameContentVersion is set. 0 = exact match: only clients carrying GameContentVersion may join. -nebula-min-content-version overrides.")]
+        public uint MinGameContentVersion = 0;
+
+
+        [Header("Transport encryption")]
+        [Tooltip("Enable encrypted client UDP connections using ChaCha20-Poly1305 and X25519. Plaintext clients are accepted unless RequireEncryption is enabled. Infrastructure connections are unencrypted and require a private network. -nebula-encrypt-clients overrides.")]
+        public bool EncryptClients = true;
+        [Tooltip("Require encrypted client connections. Plaintext clients receive an EncryptionRequired refusal. -nebula-require-encryption overrides.")]
+        public bool RequireEncryption = false;
+        [Tooltip("PEM file holding the certificate the gateway presents to clients (an RSA certificate; the key may be in the same file). Empty = a self-signed certificate generated on first run and kept in EncryptionSelfSignedPath. -nebula-encryption-cert overrides.")]
+        public string EncryptionCertPath = "";
+        [Tooltip("PEM file holding the certificate's private key, when it is not in EncryptionCertPath. -nebula-encryption-key overrides.")]
+        public string EncryptionKeyPath = "";
+        [Tooltip("The certificate as PEM text instead of a file, for deployments that inject secrets as environment variables. The standalone gateway also reads NEBULA_ENCRYPTION_CERT.")]
+        public string EncryptionCertPem = "";
+        [Tooltip("The private key as PEM text instead of a file. The standalone gateway also reads NEBULA_ENCRYPTION_KEY.")]
+        public string EncryptionKeyPem = "";
+        [Tooltip("File for the generated self-signed certificate and key. Empty uses nebula-transport.pem in the standalone gateway's application directory or Unity's persistent data directory.")]
+        public string EncryptionSelfSignedPath = "";
+        [Tooltip("Client: encrypt UDP connections to the gateway. Disabled by default. WebRTC connections use their own encryption. -nebula-encrypt overrides.")]
+        public bool ClientEncryption = false;
+        [Tooltip("Client: the expected SHA-256 fingerprint of the gateway certificate's SubjectPublicKeyInfo public-key encoding, as hex. Used when ClientEncryption is enabled. Empty skips certificate authentication. The gateway prints its fingerprint at startup. -nebula-gateway-fingerprint overrides.")]
+        public string GatewayFingerprint = "";
 
         [Header("Orchestrator")]
         [Tooltip("How many worker processes the orchestrator starts with. Autoscaling then moves the count between MinWorkers and MaxWorkers.")]

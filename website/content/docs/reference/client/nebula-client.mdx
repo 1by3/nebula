@@ -123,6 +123,30 @@ public float JoinRejectSaturation { get; }
 
 How full the target was when it refused the join, for `Nebula.JoinRejectReason.AtCapacity`: 1 = the whole of the dominant cost component's budget. 0 when the gateway did not say.
 
+### ServerProtocolWindow [#serverprotocolwindow]
+
+```csharp
+public (ushort Min, ushort Max) ServerProtocolWindow { get; }
+```
+
+The inclusive protocol range reported by the gateway on the last refused join. Use it with `Nebula.JoinRejectReason.ProtocolUnsupported` to identify a version mismatch. A (0, 0) value means no range has been reported.
+
+### ServerContentVersion [#servercontentversion]
+
+```csharp
+public uint ServerContentVersion { get; }
+```
+
+The gateway's game content version from the last refused join. Zero means content version checks are disabled or no version has been reported.
+
+### NegotiatedProtocolVersion [#negotiatedprotocolversion]
+
+```csharp
+public ushort NegotiatedProtocolVersion { get; }
+```
+
+The protocol version accepted in the last welcome, or [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) when the welcome omits it. Zero before the first welcome.
+
 ### RttMs [#rttms]
 
 ```csharp

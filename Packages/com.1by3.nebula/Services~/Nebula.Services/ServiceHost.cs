@@ -22,6 +22,7 @@ namespace Nebula
                 Console.WriteLine("Orchestrator: -nebula-worker-exe <Unity player> -nebula-workers <count> -nebula-dashboard-port <port> [-nebula-database sqlite:<file>|postgres://...|memory] [-nebula-reset-persistence]");
                 Console.WriteLine("Gateway: -nebula-gateway <advertised-address:port> -nebula-control-plane <orchestrator url> [-nebula-web false] [-nebula-web-port <tcp>] [-nebula-webrtc-port <udp>] [-nebula-web-root <folder>]");
                 Console.WriteLine("Gateway extension: [-nebula-gateway-extension <Game.Gateway.dll>] [-nebula-gateway-extension-type <Namespace.Class>] [-nebula-ext-<key> <value>]");
+                Console.WriteLine("Compatibility: [-nebula-content-version <n>] [-nebula-min-content-version <n>] (the game's own content version the gateway admits)");
                 return 0;
             }
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -143,7 +144,16 @@ namespace Nebula
             c.AuthAudience = CommandLine.Get("nebula-auth-audience", c.AuthAudience);
             c.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", c.AuthAnonymous);
             c.AuthSigningKey = CommandLine.Get("nebula-auth-key", Environment.GetEnvironmentVariable("NEBULA_AUTH_KEY") is { Length: > 0 } authKey ? authKey : c.AuthSigningKey);
+            c.EncryptClients = CommandLine.GetBool("nebula-encrypt-clients", c.EncryptClients);
+            c.RequireEncryption = CommandLine.GetBool("nebula-require-encryption", c.RequireEncryption);
+            c.EncryptionCertPath = CommandLine.Get("nebula-encryption-cert", c.EncryptionCertPath);
+            c.EncryptionKeyPath = CommandLine.Get("nebula-encryption-key", c.EncryptionKeyPath);
+            c.EncryptionCertPem = Environment.GetEnvironmentVariable("NEBULA_ENCRYPTION_CERT") is { Length: > 0 } certPem ? certPem : c.EncryptionCertPem;
+            c.EncryptionKeyPem = Environment.GetEnvironmentVariable("NEBULA_ENCRYPTION_KEY") is { Length: > 0 } certKeyPem ? certKeyPem : c.EncryptionKeyPem;
+            c.EncryptionSelfSignedPath = CommandLine.Get("nebula-encryption-store", c.EncryptionSelfSignedPath);
             c.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", c.SingleSessionPerPlayer);
+            c.GameContentVersion = CommandLine.GetUInt("nebula-content-version", c.GameContentVersion);
+            c.MinGameContentVersion = CommandLine.GetUInt("nebula-min-content-version", c.MinGameContentVersion);
             c.WorkerCount = CommandLine.GetInt("nebula-workers", c.WorkerCount);
             c.MinWorkers = CommandLine.GetInt("nebula-min-workers", c.MinWorkers);
             c.MaxWorkers = CommandLine.GetInt("nebula-max-workers", c.MaxWorkers);

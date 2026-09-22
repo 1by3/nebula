@@ -102,6 +102,16 @@ public sealed class FakeWorker : IDisposable
     private ulong _nextNetId;
     private uint _tick;
 
+    /// <summary>
+    /// This worker's control-plane row, kept by the <b>real</b> <see cref="WorkerRegistration"/> a Unity worker
+    /// uses (docs/control-plane-availability.md D1). The fleet drives it from <see cref="Fleet.Pump"/>, which is
+    /// this fixture's update loop; a fixture that re-registered by itself would be testing the fixture.
+    /// </summary>
+    public readonly WorkerRegistration Registration = new();
+
+    /// <summary>How many times this worker had to put its control-plane row back, and how many leases it re-claimed.</summary>
+    public int Reregistrations, ReclaimedContainers;
+
     public InterestGrid Grid = InterestGrid.Resolve(InterestSettings.Default);
     /// <summary>The interest settings this worker publishes with; must match the gateway's.</summary>
     public InterestSettings Settings = InterestSettings.Default;
@@ -734,7 +744,12 @@ public sealed class FakeWorker : IDisposable
 /// <summary>A client link: sends Hello on connect and collects what the gateway says (unpacking batches).</summary>
 public sealed class FakeClient : IDisposable
 {
-    public readonly LiteNetTransport Transport = new("fake-client");
+    /// <summary>
+    /// The client's link. Plain UDP unless the constructor was given <see cref="ClientEncryption"/>, in which
+    /// case it is wrapped in an <see cref="EncryptedTransport"/> and everything from Hello on is encrypted
+    /// (docs/transport-encryption.md).
+    /// </summary>
+    public readonly ITransport Transport;
     public WelcomeMsg? Welcome;
     public JoinRejectedMsg? Rejected;
     public string? Replaced;
@@ -743,6 +758,25 @@ public sealed class FakeClient : IDisposable
     public JoinHoldReason JoinReason;
     public int DrainWithin = -1;
     public bool Disconnected;
+    /// <summary>
+    /// The protocol version this client announces in its <c>Hello</c>; 0 means this build's
+    /// <see cref="HelloMsg.ProtocolVersion"/>. A compatibility test sets it to play a client of another build
+    /// (<c>docs/compatibility-policy.md</c>).
+    /// </summary>
+    public ushort AnnounceVersion;
+    /// <summary>The game content version this client announces (<see cref="HelloMsg.GameContentVersion"/>).</summary>
+    public uint ContentVersion;
+    /// <summary>
+    /// When set, every frame this client sends and receives is appended here, outbound first-class, so a test can
+    /// record a real handshake and snapshot stream to a fixture file (<c>ProtocolRecorder</c>).
+    /// </summary>
+    public List<(bool Outbound, byte[] Bytes)>? Record;
+    /// <summary>
+    /// When set, these exact bytes are sent, in order, in place of a <c>Hello</c> this build would write: a
+    /// recorded client stream replayed against a gateway of this version. Everything the gateway answers is
+    /// parsed by this client's ordinary reader, so a reply this build cannot parse fails the test.
+    /// </summary>
+    public IReadOnlyList<byte[]>? Replay;
     /// <summary>Every spawn ever received, in order (a re-entry appears twice; that is what the churn tests read).</summary>
     public readonly List<ulong> Spawned = new();
     public readonly List<ulong> Despawned = new();
@@ -776,16 +810,23 @@ public sealed class FakeClient : IDisposable
     private readonly int _peer;
 
     /// <param name="scope">The simulation scope to join into (<see cref="HelloMsg.ScopeKey"/>); empty is the public world.</param>
-    public FakeClient(int port, string name, string token = "", string session = "", string scope = "")
+    /// <param name="encryption">Non-null connects over an encrypted link, pinning the gateway's fingerprint.</param>
+    public FakeClient(int port, string name, string token = "", string session = "", string scope = "", ClientEncryption? encryption = null)
     {
         _name = name; _token = token; _session = session; _scope = scope;
+        ITransport transport = new LiteNetTransport("fake-client");
+        Transport = encryption != null ? EncryptedTransport.ForClient(transport, encryption) : transport;
         _peer = Transport.Connect("127.0.0.1", port);
     }
+
+    /// <summary>Whether the gateway link is encrypted, which a test asserts after the handshake has settled.</summary>
+    public bool Encrypted => TransportSecurity.IsEncrypted(Transport, _peer);
 
     public void SendInput()
     {
         var w = new NetworkWriter();
         new ClientInputMsg { Frames = new List<ClientInputMsg.Frame> { new() { Tick = 1, Payload = new byte[] { 1 } } } }.Write(w, MsgId.ClientInput);
+        Record?.Add((true, w.ToSegment().ToArray()));
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
     }
 
@@ -802,6 +843,7 @@ public sealed class FakeClient : IDisposable
     {
         var w = new NetworkWriter();
         new ClientFocusHintMsg { X = x, Y = y, Z = z, Generation = generation }.Write(w);
+        Record?.Add((true, w.ToSegment().ToArray()));
         Transport.Send(_peer, Delivery.Sequenced, w.ToSegment());
         Transport.Flush();
     }
@@ -827,16 +869,26 @@ public sealed class FakeClient : IDisposable
     {
         Transport.Poll(e =>
         {
-            if (e.Type == TransportEvent.Kind.Connected)
+            if (e.Type == TransportEvent.Kind.Connected && Replay != null)
+            {
+                foreach (var frame in Replay) Transport.Send(e.PeerId, Delivery.ReliableOrdered, new ArraySegment<byte>(frame));
+            }
+            else if (e.Type == TransportEvent.Kind.Connected)
             {
                 var w = new NetworkWriter();
-                new HelloMsg { Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope }.Write(w);
+                new HelloMsg
+                {
+                    Role = PeerRole.Client, Id = _name, Token = _token, Session = _session, ScopeKey = _scope,
+                    Version = AnnounceVersion, GameContentVersion = ContentVersion,
+                }.Write(w);
+                Record?.Add((true, w.ToSegment().ToArray()));
                 Transport.Send(e.PeerId, Delivery.ReliableOrdered, w.ToSegment());
             }
             else if (e.Type == TransportEvent.Kind.Disconnected) Disconnected = true;
             else if (e.Type == TransportEvent.Kind.Data)
             {
                 BytesIn += e.Data.Count;
+                Record?.Add((false, e.Data.ToArray()));
                 // A malformed message must fail the test loudly rather than silently cost the client a batch.
                 try { Dispatch(new NetworkReader(e.Data)); }
                 catch (Exception ex) { LastError = ex.ToString(); }
@@ -991,7 +1043,11 @@ public sealed class Fleet : IDisposable
         ushort index = (ushort)(++_workerSeq);
         var worker = new FakeWorker(_meshToken, workerId ?? "w" + index, index) { Grid = _grid, Settings = _settings };
         Workers.Add(worker);
-        Plane.RegisterWorker(worker.WorkerId, index, "127.0.0.1", (ushort)worker.Port);
+        worker.Registration.WorkerId = worker.WorkerId;
+        worker.Registration.WorkerIndex = index;
+        worker.Registration.Address = "127.0.0.1";
+        worker.Registration.Port = (ushort)worker.Port;
+        worker.Registration.Register(Plane);
         Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
         return worker;
     }
@@ -1090,7 +1146,16 @@ public sealed class Fleet : IDisposable
     /// <summary>One pass over everything: control plane, gateways, workers, clients.</summary>
     public void Pump()
     {
-        foreach (var worker in Workers) Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        foreach (var worker in Workers)
+        {
+            // What a Unity worker does from its OnControlPlaneChanged: notice its row has gone and put back both
+            // the row and the containers only it knows it is still simulating. Checking it every pump rather than
+            // only on a change is the one difference, and it costs nothing here because LocalControlPlane answers
+            // from memory; on a real mesh the document has to arrive first (docs/control-plane-availability.md D5).
+            if (worker.Registration.RegisterAgainIfForgotten(Plane)) worker.Reregistrations++;
+            worker.ReclaimedContainers += worker.Registration.ReclaimContainers(Plane);
+            Plane.HeartbeatWorker(worker.WorkerId, WorkerStatus.Ready, new WorkerStats());
+        }
         Plane.Tick();
         foreach (var g in Gateways) if (!PausedGateways.Contains(g)) g.Tick();
         foreach (var worker in Workers) worker.Poll();

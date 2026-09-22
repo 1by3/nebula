@@ -15,7 +15,7 @@ Why a join is being held in [`JoinState.Starting`](/docs/reference/protocol/join
 
 | Name | Value | Description |
 | --- | --- | --- |
-| <span id="none"></span>`None` | `0` | Not held (or a gateway from before the field existed, which only ever held for `WorldStarting`). |
+| <span id="none"></span>`None` | `0` | The join is not held. |
 | <span id="worldstarting"></span>`WorldStarting` | `1` | No worker holds an active lease yet: the mesh is booting one. |
 | <span id="scopenotready"></span>`ScopeNotReady` | `2` | The scope the client named has not been activated, or has no container with a live owner yet. Whoever sent the player to the key is the one that activates it. |
 | <span id="scoperestoring"></span>`ScopeRestoring` | `3` | The scope is coming back from a retire and its persisted entities are still being restored. |

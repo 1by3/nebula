@@ -1,7 +1,8 @@
 # Scale and failure suite (NEB-237)
 
-Status: landed with NEB-237. User-facing page: `website/content/docs/guides/scale-suite.mdx`. Synthetic layer:
-`Services~/Nebula.Services.Tests/Scale*Tests.cs` (`[Category("Scale")]`). Real-worker layer:
+Status: landed with NEB-237; the availability scenarios added by NEB-227
+(`docs/control-plane-availability.md`). User-facing page: `website/content/docs/guides/scale-suite.mdx`.
+Synthetic layer: `Services~/Nebula.Services.Tests/Scale*Tests.cs` (`[Category("Scale")]`). Real-worker layer:
 `Tools/scale-suite.ps1`. Artifacts: `Logs/scale/`. Baseline: `docs/baselines/mesh-restart.csv`.
 Related: `docs/conformance-suite.md` §2 (this is tier D, now partly built), `docs/persistence-durability.md`
 (the worker-kill bound), `docs/cohesion-rebalancing.md` and `docs/cohesion-hints.md` (holds, saturation),
@@ -46,20 +47,29 @@ planner scenarios (about 12 ms together) stay in it.
 | S2 | Burst: 150 clients join at once, no ramp | synthetic | nobody refused; one session each; one pawn each | covered — `ABurstOfJoinsIsAdmittedWithoutRejectingAnyoneOrLosingASession` |
 | S3 | Many scopes: 4 keyed scopes of 20 clients plus 20 public clients | synthetic | zero cross-scope leaks; per-scope bandwidth recorded | covered — `ManyScopesCarryTheirOwnLoadAndNeverShowEachOtherAnything` |
 | S4 | Worker kill: a worker dies with clients watching its container | synthetic | restore ≤ 2 s per container; zero duplicate entities; nobody disconnected; loss ≤ the NEB-224 bound | covered — `ScaleFailureTests.AWorkerKillOrphansItsContainersAndTheRestoreBringsThemBackWithNoDuplicateEntities`; the loss bound itself is conformance scenario 10 |
-| S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: **not recovered** | covered, and the hard-kill half is a pinned gap (D7a) |
-| S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered for a restart that kept its storage; a real database failover is NEB-227 (D7c) |
+| S5 | Gateway lost without a drain | synthetic | abrupt stop: every session reclaimed, ≤ 10 s. Hard kill: every session reclaimed, ≤ 9 s | covered — `ScaleFailureTests.AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale`; D7a closed by NEB-229, see `docs/gateway-fleet-audit.md` finding 4 |
+| | the same, fanned out (3 gateways, 2 workers, 18 clients, 6 doomed) | synthetic | reclaim bound must hold regardless of how many claimants queue behind the same dead owner | covered — `ScaleGatewayAuditTests.EveryClientOnAHardKilledGatewayReclaimsWithinTheDocumentedBoundRegardlessOfFleetSize` |
+| | no authoritative state lost, same pawn after reclaim | synthetic | worker's pawn count and NetId unchanged across the kill; reclaiming client sees the same pawn | covered — `ScaleGatewayAuditTests.AHardGatewayKillLosesNoAuthoritativeStateAndTheReclaimingClientSeesTheSamePawn` |
+| S6 | Control-plane restart and failover | synthetic | leases identical after the restart; stall ≤ 5 s; nobody disconnected; no session changed | covered — `ScaleFailureTests.AControlPlaneRestartKeepsEveryLeaseAndDisconnectsNobody` (the control plane as an object, with real clients on real gateways) |
+| S6b | **Orchestrator process restart** with live workers: the host, its HTTP listener and its database go down and a replacement takes the same port and database | synthetic | every lease back with the same owner, state and epoch; recovery ≤ 15 s; no mirror reports itself disconnected | covered — `ScaleAvailabilityTests.AnOrchestratorRestartOnTheSameDatabaseKeepsEveryLeaseAndIsMeasured`, and the empty-database variant beside it (D7b) |
+| S6c | **PostgreSQL failover** under a running orchestrator | synthetic, Docker | the store is writable again ≤ 60 s; no row lost; nothing throws out of `Tick` | written — `ScaleAvailabilityTests.APostgresFailoverStallsTheControlPlaneStoreAndLosesNothing`, **not run here**: no Docker daemon (D7c) |
 | S7 | Whole-mesh restart | synthetic | monotonic curve, ≤ 2 s per container, within 6× the checked-in baseline | covered — `AWholeMeshRestartBringsTheContainersBackOneAtATimeAndTheCurveIsRecorded`, baseline `docs/baselines/mesh-restart.csv` |
 | S8 | Autoscale and rebalance | synthetic | no move touches a held container or its cohesion group; a saturated container is reported with a typed cause and component | covered — `ScaleOperationsTests.ARebalanceMovesNothingThatIsHeldAndASaturatedContainerIsReportedWithItsReason` |
-| S9 | Rolling upgrade | synthetic | a version mismatch is refused cleanly; a gateway process is replaced under connected clients with no session lost | covered, with the finding that **there is no compatibility window** (D8) |
+| S9 | Rolling upgrade: the compatibility window at its edges | synthetic | the window's minimum and current version are admitted and negotiated; one below and one above are refused with `ProtocolUnsupported` and the gateway's range; a refused peer disturbs nobody | covered — `ScaleOperationsTests.TheCompatibilityWindowAdmitsItsEdgesAndRefusesWhatIsOutsideItWithAReason` (D8) |
+| S9a | Gateway drain and replace | synthetic | a drained gateway's client moves to another one keeping its session id, identity and pawn; the replacement takes new clients; nobody else is disturbed | covered — `RollingUpgradeTests.AGatewayIsDrainedAndReplacedUnderConnectedClientsWithNoSessionLost` |
+| S9b | Worker drain and replace | synthetic | a drained worker leaves no orphaned container; no replica is lost, no pawn despawned, no client disconnected | covered — `RollingUpgradeTests.AWorkerIsDrainedAndReplacedWithNoEntityLostAndNoClientDisconnected` |
 
 ### Where the numbers come from
 
 | Threshold | Value | Derivation |
 |---|---|---|
 | Worker-kill loss | `PersistenceCheckpointSeconds + MinSaveIntervalSeconds + ceil(N/64)×framePeriod + storeLatency` ≈ **5.6 s** at the defaults | **Derived** from the scheduler in `Runtime/Persistence/NebulaPersistence.cs`; see `docs/persistence-durability.md` D2. Asserted by conformance scenario 10, which reuses the `NebulaPersistence.Now` clock seam; this suite does not re-derive it. |
-| Gateway reclaim | **≤ 10 s** | **Derived**: `GatewaySessionAdmission` gives a coordinated welcome a `CoordinationDeadline` of 10 s. Past it the join is refused, so anything slower is not a reclaim at all. The measured abrupt-stop reclaim is 0.05 s. |
+| Gateway reclaim (abrupt stop) | **≤ 10 s** | **Derived**: `GatewaySessionAdmission` gives a coordinated welcome a `CoordinationDeadline` of 10 s. Past it the join is refused, so anything slower is not a reclaim at all. The measured abrupt-stop reclaim is 0.05 s. |
+| Gateway reclaim (hard kill) | **≤ 9 s** | **Derived + measured** (NEB-229, `docs/gateway-fleet-audit.md` finding 4): `WorkerHeartbeatSeconds` (1 s) + `GatewayStaleAfterSeconds` (5 s) + coordination retry/round trip ≈ 6.25 s derived; measured 4.73–5.02 s across single-pair and fan-out runs; threshold set with ~1.9× headroom. |
 | Restore per container | **≤ 2 s** | **Provisional, measured.** The synthetic restore is an in-process re-spawn (measured 0.31 s per container, of which 0.3 s is the fixture's own settle after a focus hint), so this budget has headroom for a scene load it has never seen. A real Unity number needs the tier-D run. |
 | Control-plane stall | **≤ 5 s** | **Provisional, measured** (0.003 s in process). What is *not* provisional is the assertion beside it: no client is disconnected and no session changes, because a gateway's client links do not depend on the control plane. |
+| Orchestrator restart | **≤ 15 s** | **Derived**: `RemoteControlPlane.DisconnectAfterSeconds` (the 10 s long poll plus 5 s) is the window inside which a restart is not merely survived but *invisible* — no mirror changes state and every write is queued, not dropped. Past it the restart is an outage a mirror can see. Measured 2.59 s on the same database, 2.61 s on an empty one. See `docs/control-plane-availability.md` D3. |
+| Database failover | **≤ 60 s** | **Provisional, measured** (a `postgres:16-alpine` container restarted under Docker Desktop: store stall 0.069 s, container back in 0.549 s, 3 write errors seen and retried, document identical). What it bounds is a container restart on a development machine, and a managed PostgreSQL failover is usually slower. The assertion that matters beside it is that nothing was lost and nothing threw out of `ControlPlaneHost.Tick`. |
 | Per-client bandwidth | **< 512 kB/s** | **Provisional.** It is a property of this fixture's world (how many entities sit inside one interest window), not a production budget. It exists to catch an interest regression that starts sending a client the world; measured 6.4 kB/s. |
 | Worker tick (tier D) | **≤ 16.7 ms** | **Derived**: one tick period at the default 60 Hz tick rate, the same budget `ContainerCost` weighs a container's simulation share against. |
 | Baseline slack | **6×** | **Provisional.** Absolute times depend on the machine; the baseline is compared as a shape (same containers, monotonic, each step inside the per-container budget and within 6× the recorded step). |
@@ -111,7 +121,7 @@ looks.
 
 ## D6. Measured on this machine
 
-The numbers below are one run of the synthetic layer (12 scenarios, **1 m 19 s** wall clock) on a Windows
+The numbers below are one run of the synthetic layer (14 scenarios, **1 m 30 s** wall clock) on a Windows
 development machine. They are what the CSVs held; treat absolute values as machine-dependent.
 
 | Scenario | Result |
@@ -121,9 +131,13 @@ development machine. They are what the CSVs held; treat absolute values as machi
 | many-scopes | 4 scopes × 20 clients + 20 public; 8.5 kB/s per scoped client, 5.7 kB/s per public client, **0 cross-scope leaks** |
 | worker-kill | 1 container orphaned; the gateways dropped its entities in 0.03 s; whole again in 1.08 s; 0 duplicate spawns; 40 clients, 40 pawns; 34 orphan updates (see below) |
 | gateway-stop (abrupt) | 12/12 sessions reclaimed on the surviving gateway in 0.05 s, same session ids |
-| gateway-kill (hard) | **0/4 reclaimed**, refused after 10.05 s — see D7a |
+| gateway-kill (hard) | **4/4 reclaimed** in 4.73–4.76 s (three runs); fan-out variant (18 clients, 3 gateways, 6 doomed) 6/6 reclaimed in 5.02 s — D7a closed, see `docs/gateway-fleet-audit.md` finding 4 |
+| gateway-kill (state) | 4 pawns before and after a hard kill and reclaim, same `NetId`, **0 duplicates** |
 | control-plane-restart | 4 leases back in 0.003 s, 0 disconnected, 0 session changes |
-| control-plane-cold-restart | gateway re-registered; **0 workers, 0 leases** — see D7b |
+| control-plane-cold-restart | gateway re-registered; **2 workers back, 4/4 leases re-claimed**, 0 clients disconnected — D7b is closed |
+| orchestrator-restart | the orchestrator process down and whole again on the same SQLite database in **2.59 s**; 4/4 leases identical; **0** mirrors reported themselves disconnected |
+| orchestrator-cold-restart | a replacement on an *empty* database converged in **2.61 s**; 2 workers re-registered and re-claimed **4** containers, owners identical |
+| postgres-failover | a real `postgres:16-alpine` primary restarted under Docker Desktop 29.6.2: container back in **0.549 s**, store stall **0.069 s**, 3 write errors seen and retried, 4/4 leases, 1 worker, document identical |
 | mesh-restart | 4 containers back in 1.25 s, 0.31 s each, curve in `docs/baselines/mesh-restart.csv` |
 | autoscale-rebalance | 2 moves explained; under a hold, 0 moves; saturated `c0` reported as `no-boundary`, `Simulation`, 0.948 of the tick budget |
 | rolling-upgrade | protocol 17 and 19 both disconnected; 18 admitted; session kept across a gateway replacement |
@@ -136,52 +150,70 @@ one counts it, which is the whole point of the counter).
 
 ## D7. Gaps this suite measures rather than hides
 
-Two of the issue's scenarios depend on work that is not done (NEB-227, control-plane availability; NEB-229, the
-gateway audit). Both are **built against what exists**, and the current behaviour is pinned by a test that will
-fail when it changes, so the issue that closes the gap is told to come back here.
+One of the issue's scenarios still depends on work that is not done (NEB-227, control-plane availability). It is
+**built against what exists**, and the current behaviour is pinned by a test that will fail when it changes, so
+the issue that closes the gap is told to come back here.
 
-**D7a. A hard gateway loss does not reclaim its sessions.** `GatewaySessionDirectory` grants a takeover only
-when the previous gateway *releases* its claim. A gateway that is stopped cleanly does release (its `Dispose`
-sends a `release` for every session it holds), and the measured reclaim is 0.05 s. A gateway that is *killed*
-never does: every claim on it stays pending for 15 s, is re-pended by the next attempt, and nothing evicts it —
-a gateway that has stopped heartbeating is not treated as gone. Every reclaim is therefore refused after the
-10 s coordination deadline with `the other session could not be disconnected`. There is no operator workaround
-in the code today: `release` is matched on the owning gateway's key **and** its per-connection claim id
-(`GatewaySessionDirectory.Matches`), which nobody outside the dead process knows, and a drain request is read
-by a gateway that is still ticking — which this one is not.
-`AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims` asserts this **negative** and says
-in its failure message that closing the gap means updating this document and turning the assertion around.
+**D7a. Closed by NEB-229.** A hard gateway loss used to strand its sessions: `GatewaySessionDirectory` granted a
+takeover only when the previous gateway *released* its claim, and a killed gateway never does — every claim on it
+stayed pending for 15 s, was re-pended by the next attempt, and nothing evicted it, because a gateway that had
+stopped heartbeating was not treated as gone. NEB-229 wires the control plane's existing gateway heartbeat
+(`GatewayInfo.LastHeartbeat`, already used by the orchestrator to evict a stale gateway from the fleet) into
+`GatewaySessionDirectory`: a claim against an owner whose heartbeat is stale (`GatewayStaleAfterSeconds`,
+5 s default) is evicted and granted to the waiting claimant instead of parked or re-parked. Measured hard-kill
+reclaim: 4.73–5.02 s across single-pair and fan-out runs, against a 9 s threshold
+(`ScaleThresholds.HardKillGatewayReclaimSeconds`). `AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale`
+(formerly the pinned negative test) now asserts the positive. Full audit: `docs/gateway-fleet-audit.md`.
 
-**D7b. A control plane that comes back empty loses its workers.** `NebulaGateway.OnControlPlaneChanged`
-re-registers the gateway when it notices its row has gone. `NebulaWorker` has no such path: it registers once
-(`if (!_registered && ControlPlane.IsConnected)`) and never again. So a control plane restarted *with* its
-storage keeps every lease, every session and every client (measured: 4/4 leases, 0.003 s, nobody disconnected),
-while one restarted *without* it has no workers and no leases until every worker process is restarted. Durable
-control-plane state and failover are NEB-227. `ARestartThatCameBackEmptyReclaimsItsGatewaysButNotItsWorkers`
-pins both halves.
+**D7b. A control plane that comes back empty loses its workers.** *Closed by NEB-227
+(`docs/control-plane-availability.md` D1).* `NebulaWorker` used to register once
+(`if (!_registered && ControlPlane.IsConnected)`) and never again, so a control plane restarted *without* its
+storage had no workers and no leases until every worker process was restarted by hand.
+`Runtime/Worker/WorkerRegistration.cs` now gives a worker the rule `NebulaGateway` already had, plus the part
+only a worker can supply: re-claiming the containers it is still simulating, because nothing else in the mesh
+knows it is simulating them. The reclaim is a standing reconciliation run on every control-plane change, not a
+one-off hung off the re-registration — the two moments are not the same one, and a reclaim tied to the
+transition stranded the containers (D1b of that record). `ARestartThatCameBackEmptyReclaimsItsGatewaysAndItsWorkers`
+is the turned-around assertion; `ScaleAvailabilityTests.AnOrchestratorThatCameBackEmptyIsPutRightByTheWorkersThatAreStillSimulating`
+is the same thing at the process level.
 
-**D7c. Database failover itself is not exercised.** The synthetic layer restarts a `LocalControlPlane` in place
-through the same snapshot/import path the orchestrator uses at startup, which is the right shape but not a real
-failover: no storage is swapped, no connection is lost mid-write, no write is replayed. That needs NEB-227's
-work and a real database. Status: **partially covered**.
+**D7c. Database failover itself is not exercised.** *Closed by NEB-227.* The gap was that the synthetic layer restarted a `LocalControlPlane` in place, which swaps no storage
+and loses no connection mid-write. `ScaleAvailabilityTests` now restarts the orchestrator **process** against a
+real `SqlControlPlaneStorage` over SQLite (S6b, measured), and `APostgresFailoverStallsTheControlPlaneStoreAndLosesNothing`
+restarts a real PostgreSQL primary in Docker and measures the stall (S6c). The second one was run on this machine
+once Docker Desktop was started (`dotnet test --filter "TestCategory=Docker"`, 7 s): the store was unreachable for
+0.069 s, the container was back in 0.549 s, three saves failed and were retried, and the document came back identical.
+Status: **covered.** The scenario still skips with a reason on a machine without a Docker daemon, and the 60 s bound
+stays provisional because a managed failover is slower than a local container restart.
 
-## D8. There is no compatibility window
+## D8. The compatibility window
 
-`NebulaGateway.DispatchClient` compares the peer's `HelloMsg.Version` to the `HelloMsg.ProtocolVersion` constant
-for **exact equality** and disconnects on any difference. There is no minimum version, no negotiation and nothing
-that reads N-1. `HelloMsg.Write` does not even serialise the instance's `Version` field — it always writes the
-constant — so a peer built from this source *cannot* announce an older protocol. The test therefore lays the
-`Hello` bytes out by hand; that is the finding, not a shortcut.
+**Closed by NEB-228.** When this suite was written there was no window at all: `NebulaGateway.DispatchClient`
+compared the peer's `HelloMsg.Version` to the `HelloMsg.ProtocolVersion` constant for exact equality and closed
+the link without a word, and `HelloMsg.Write` did not even serialise the instance's `Version` field, so a peer
+built from this source could not announce anything else. The scenario had to lay the `Hello` bytes out by hand.
 
-Consequently a rolling upgrade **across protocol versions is not possible today**, and the scenario tests what
-the issue's guidance says to test instead: that a mismatch in either direction is refused cleanly (the link is
-closed, nothing is welcomed, no worker is ever asked to spawn a pawn, and peers of the current version are
-undisturbed). The half of a rolling upgrade that *does* work — replacing a gateway process under connected
-clients at one protocol version, with every session kept — is asserted in the same test.
+Today the policy is stated and enforced (`docs/compatibility-policy.md`):
 
-A real compatibility window would need a minimum-supported-version field on the gateway, a `Hello` that writes
-the sender's own version, and per-version encoders. It is out of scope here; this document is where the case
-for it is now written down.
+- **Client to gateway** accepts the closed range `HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion` —
+  N-1 and N. Both are 18 in this release, because 18 is the floor the policy starts from; the first genuine N-1
+  admission happens at the 19 bump.
+- **Gateway to worker and worker to worker** stay an exact match, and both sides now log the two versions rather
+  than dropping the link silently.
+- Anything outside the window is refused with a message: `JoinRejectReason.ProtocolUnsupported` and the
+  gateway's range, so a client can tell "update the game" from "this server has not been upgraded yet". The
+  game's own content version has its own field and its own code.
+- The gateway records the negotiated version on the session and encodes for that client at that version, and
+  `HelloMsg.Write` writes the sender's own version.
+
+S9 is now the window at its four edges, written against the constants so bumping the protocol turns its first
+row into a real N-1 admission with nothing to edit. The recorded-stream half — a real byte stream replayed
+against a gateway of this build — is the conformance test `ConformanceProtocolCompatibilityTests`. Replacing
+processes under connected clients is S9a and S9b (`RollingUpgradeTests`), which is what a rolling upgrade is
+actually made of.
+
+What is still not proven here: a genuine older build (none exists to run), and processes rather than objects —
+these scenarios replace in-process gateways and workers, not machines behind a load balancer (see D9a).
 
 ## D9. The real-worker runner
 
@@ -218,8 +250,9 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 1. Decide the layer by D1: if the guarantee is something a gateway or the control plane decides, it is
    synthetic; if it is what a worker costs, it is tier D.
-2. Synthetic: a `[Test]` in `Scale{Load,Failure,Operations}Tests.cs`, `[Category("Soak")]` too if it runs a mesh
-   for seconds. Open a `ScaleReport` with its columns, `Row(...)` every measurement, `Note(...)` the conclusion,
+2. Synthetic: a `[Test]` in `Scale{Load,Failure,Operations,Availability}Tests.cs`, `[Category("Soak")]` too if it
+   runs a mesh for seconds, and `[Category("Docker")]` too if it needs a container (it must then `Assert.Ignore`
+   with a reason when Docker is not there). Open a `ScaleReport` with its columns, `Row(...)` every measurement, `Note(...)` the conclusion,
    `Write()` before the assertions so a failing run still leaves its CSV.
 3. Put the threshold in `ScaleThresholds` **and** in the table above, with its derivation or the word
    provisional.
@@ -229,7 +262,9 @@ not a blocker: the CLI mirrors the project to a scratch directory and builds the
 
 ## D11. What was verified, and what was not
 
-The synthetic layer was run in full and is green: **12 scenarios, 0 failed, 1 m 19 s**. Its numbers are in D6.
+The synthetic layer was run in full and is green. The NEB-237 run was **12 scenarios, 0 failed, 1 m 19 s**; its numbers are in D6.
+NEB-229 (gateway-kill scenarios) and NEB-228 (S9a and S9b) each added two scenarios; the merged suite is re-measured in D11a
+below.
 
 The tier-D runner was verified in three ways: `-DryRun` (reports the missing player build, prints the plan and
 the port state, exits 0), `-Synthetic` (runs the other layer and reports its wall clock, exits 0), and a real run

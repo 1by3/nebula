@@ -219,9 +219,14 @@ public class ScaleFailureTests
     }
 
     [Test]
-    public void AGatewayThatIsKilledOutrightStrandsItsSessionsUntilSomethingEvictsItsClaims()
+    public void AGatewayThatIsKilledOutrightHasItsSessionsReclaimedOnceItsHeartbeatGoesStale()
     {
-        var report = new ScaleReport("gateway-kill", "kind", "clients", "reclaimed", "reclaimRate", "secondsWaited", "refusalReason");
+        // D7a closed (NEB-229): GatewaySessionDirectory now treats a gateway whose control-plane heartbeat has
+        // gone stale (GatewayStaleAfterSeconds, LocalControlPlane) as gone, and evicts its claims for a waiting
+        // claimant instead of holding them until something releases them (which a killed process never does).
+        // The measured number below is what sets ScaleThresholds.HardKillGatewayReclaimSeconds
+        // (docs/scale-suite.md D2/D6); see docs/gateway-fleet-audit.md finding 1.
+        var report = new ScaleReport("gateway-kill", "kind", "clients", "reclaimed", "reclaimRate", "secondsWaited");
 
         using var fleet = Build(gateways: 2, workers: 2, clients: 8, out var clients);
         var onDoomed = clients.Where((_, i) => i % 2 == 0).ToList();
@@ -236,22 +241,16 @@ public class ScaleFailureTests
         double seconds = clock.Elapsed.TotalSeconds;
 
         int reclaimed = back.Count(c => c.Join == JoinState.Joined);
-        string reason = back.FirstOrDefault(c => c.Rejected != null)?.Rejected!.Value.Reason ?? "";
-        report.Row("hard-kill", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds, reason);
-        report.Note("a hard gateway loss is NOT recovered today: the coordinator holds the dead gateway's claim and " +
-                    "every reclaim is refused with \"" + reason + "\". Automatic eviction of a gateway that has stopped " +
-                    "heartbeating is the control-plane availability work (NEB-227) and the gateway audit (NEB-229); " +
-                    "this row is the measurement those issues have to move. There is no operator workaround in the code " +
-                    "today: a release is matched on the owning gateway's key AND its per-connection claim id, " +
-                    "which nobody outside the dead process knows.");
+        report.Row("hard-kill", onDoomed.Count, reclaimed, (double)reclaimed / onDoomed.Count, seconds);
+        report.Note($"a hard gateway kill now reclaims every session in {seconds:0.00} s once the owning gateway's " +
+                    "control-plane heartbeat is stale (GatewaySessionDirectory / GatewayStaleAfterSeconds, D7a). " +
+                    "ScaleThresholds.HardKillGatewayReclaimSeconds is set from this row.");
         report.Write();
 
         Assert.That(settled, Is.True, "the reclaim attempts neither completed nor were refused within 40 s");
-        Assert.That(reclaimed, Is.Zero,
-            "a hard gateway loss now reclaims sessions by itself — the NEB-227/229 gap this test pins has been closed; " +
-            "update docs/scale-suite.md D7a and turn this into the positive assertion");
-        Assert.That(reason, Does.Contain("could not be disconnected"),
-            "the refusal must say why, so an operator can tell this apart from a rejected player");
+        Assert.That(reclaimed, Is.EqualTo(onDoomed.Count), "a hard gateway kill must lose no session: D7a is closed");
+        Assert.That(seconds, Is.LessThanOrEqualTo(ScaleThresholds.HardKillGatewayReclaimSeconds),
+            $"hard-kill reclaim took {seconds:0.00} s, over the {ScaleThresholds.HardKillGatewayReclaimSeconds} s threshold derived in docs/scale-suite.md D2");
     }
 
     // --------------------------------------------------------------------------- S6: control-plane restart
@@ -289,27 +288,41 @@ public class ScaleFailureTests
             "both gateways re-registered after the restart");
     }
 
+    /// <summary>
+    /// The other half of S6, and the gap NEB-227 closed (docs/scale-suite.md D7b): a control plane that comes
+    /// back <b>empty</b>. Until NEB-227 a gateway put itself back and a worker did not, so the mesh converged on
+    /// no workers and no leases; now both roles notice their row has gone and a worker re-claims the containers
+    /// it is still simulating. The richer measurement — how long the mesh is without leases, and whether the
+    /// clients get their world back — is <c>ScaleAvailabilityTests</c>.
+    /// </summary>
     [Test]
-    public void ARestartThatCameBackEmptyReclaimsItsGatewaysButNotItsWorkers()
+    public void ARestartThatCameBackEmptyReclaimsItsGatewaysAndItsWorkers()
     {
-        var report = new ScaleReport("control-plane-cold-restart", "workersKnown", "gatewaysKnown", "leases", "clientsDisconnected");
+        var report = new ScaleReport("control-plane-cold-restart",
+            "workersKnown", "gatewaysKnown", "leases", "leasesBefore", "clientsDisconnected", "reregistrations", "reclaimedContainers");
 
         using var fleet = Build(gateways: 1, workers: 2, clients: 8, out var clients);
-        fleet.RestartControlPlane(null); // storage lost everything, or was reset
-        fleet.RunFor(3.0);
+        int leasesBefore = fleet.Plane.Leases.Count;
+        var ownersBefore = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => l.WorkerId);
 
-        report.Row(fleet.Plane.Workers.Count, fleet.Plane.Gateways.Count, fleet.Plane.Leases.Count,
-            clients.Count(c => c.Disconnected));
-        report.Note("a gateway re-registers itself when the control plane forgets it (NebulaGateway.OnControlPlaneChanged); " +
-                    "a worker does not — NebulaWorker registers once and never again — so a control plane that comes back " +
-                    "with nothing has no workers and no leases until every worker process is restarted. Durable " +
-                    "control-plane state is NEB-227; this row is what happens without it.");
+        fleet.RestartControlPlane(null); // storage lost everything, or was reset
+        bool converged = fleet.Run(() => fleet.Plane.Workers.Count == 2 && fleet.Plane.Leases.Count == leasesBefore, seconds: 20);
+        fleet.RunFor(2.0);
+
+        var ownersAfter = fleet.Plane.Leases.ToDictionary(l => l.ContainerId, l => l.WorkerId);
+        report.Row(fleet.Plane.Workers.Count, fleet.Plane.Gateways.Count, fleet.Plane.Leases.Count, leasesBefore,
+            clients.Count(c => c.Disconnected), fleet.Workers.Sum(w => w.Reregistrations), fleet.Workers.Sum(w => w.ReclaimedContainers));
+        report.Note("both roles put themselves back: a gateway from NebulaGateway.OnControlPlaneChanged, a worker from " +
+                    "WorkerRegistration (NEB-227), which also re-claims the containers the worker is still simulating — " +
+                    "the only copy of that fact in the mesh. The epochs start again at 1 because this is a new document.");
         report.Write();
 
+        Assert.That(converged, Is.True, "the mesh did not put its workers and leases back after an empty control plane");
         Assert.That(fleet.Plane.Gateways.Count, Is.EqualTo(1), "the gateway put itself back on the control plane");
-        Assert.That(fleet.Plane.Workers, Is.Empty,
-            "a worker now re-registers after a cold control-plane restart — update docs/scale-suite.md D7b and this test");
-        Assert.That(fleet.Plane.Leases, Is.Empty, "no worker means no leases");
+        Assert.That(fleet.Plane.Workers.Select(w => w.WorkerId).OrderBy(id => id),
+            Is.EqualTo(fleet.Workers.Select(w => w.WorkerId).OrderBy(id => id)).AsCollection,
+            "every live worker registered again");
+        Assert.That(ownersAfter, Is.EqualTo(ownersBefore), "every container is owned again by the worker that still simulates it");
         Assert.That(clients.All(c => !c.Disconnected), Is.True, "and still nobody was disconnected");
     }
 

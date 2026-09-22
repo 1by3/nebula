@@ -163,7 +163,9 @@ The gateway logs every rejection with the client's session ID and the same reaso
 
 ## What this does and does not protect
 
-Authentication answers "which player is this?" so that saved state follows the right person. It does not encrypt the client link on its own: LiteNetLib traffic is plain UDP, so a token can be read in transit on an untrusted network. WebRTC links from web builds are encrypted with DTLS. Anonymous tokens have no expiry; a copied token is that player until the signing key changes or the client forgets it. Session tokens expire after 24 hours and are useless without the identity credential they were issued for.
+Authentication identifies the player so that saved state follows the right person. It does not encrypt the client link on its own: native client traffic is readable on an untrusted network unless you enable encryption. See [Encrypt client connections](/docs/deploy/encryption). WebRTC links from web builds use Datagram Transport Layer Security (DTLS) encryption.
+
+Anonymous tokens have no expiry. Changing the signing key invalidates a copied token; forgetting the token on one client does not invalidate another copy. Session tokens expire after 24 hours and require the identity credential they were issued for.
 
 Gateways and workers authenticate each other only when the mesh has a `MeshToken`: each presents a credential derived from it when it connects, and a peer without one is refused. Without a mesh token every gateway and worker peer is accepted, which is fine on a development machine or a private network.
 

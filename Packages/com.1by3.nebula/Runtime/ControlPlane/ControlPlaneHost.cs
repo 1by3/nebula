@@ -64,6 +64,12 @@ namespace Nebula
         /// <summary>The state machine itself, for tests.</summary>
         public LocalControlPlane Plane => _plane;
         public string StorageBackend => _storage.Backend;
+        /// <summary>
+        /// Error from the latest background save, or null before a save fails or after a successful save.
+        /// Failed saves are retried at the next save interval while the control plane continues using its
+        /// in-memory state.
+        /// </summary>
+        public string StorageError => Volatile.Read(ref _storageError);
         public bool HasToken => _token != null;
         /// <summary>Version of the document subscribers currently receive.</summary>
         public long PublishedVersion => _documentVersion;
@@ -72,6 +78,8 @@ namespace Nebula
 
         public bool IsConnected => _plane.IsConnected;
         public DateTime Now => _plane.Now;
+        /// <summary>Identity of the hosted control-plane document; see <see cref="IControlPlane.DocumentId"/>.</summary>
+        public string DocumentId => _plane.DocumentId;
         public event Action Changed { add => _plane.Changed += value; remove => _plane.Changed -= value; }
         public IReadOnlyList<WorkerInfo> Workers => _plane.Workers;
         public IReadOnlyList<LeaseInfo> Leases => _plane.Leases;

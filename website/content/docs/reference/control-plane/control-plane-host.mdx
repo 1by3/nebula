@@ -76,6 +76,14 @@ The state machine itself, for tests.
 public string StorageBackend { get; }
 ```
 
+### StorageError [#storageerror]
+
+```csharp
+public string StorageError { get; }
+```
+
+Error from the latest background save, or null before a save fails or after a successful save. Failed saves are retried at the next save interval while the control plane continues using its in-memory state.
+
 ### HasToken [#hastoken]
 
 ```csharp
@@ -101,6 +109,14 @@ public bool IsConnected { get; }
 ```csharp
 public DateTime Now { get; }
 ```
+
+### DocumentId [#documentid]
+
+```csharp
+public string DocumentId { get; }
+```
+
+Identity of the hosted control-plane document; see [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid).
 
 ### Workers [#workers]
 

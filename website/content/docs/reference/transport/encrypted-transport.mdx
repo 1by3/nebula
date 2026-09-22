@@ -1,0 +1,148 @@
+---
+title: "EncryptedTransport"
+description: "Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public sealed class EncryptedTransport : ITransport, ISecureTransport
+```
+
+Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport.
+
+[`ForClient`](#forclient) starts a key exchange when the underlying link connects and delays the `Connected` event until the gateway response is verified. Send application packets after this event. [`ForGateway`](#forgateway) answers links that begin with a key exchange and passes other links through without encryption. Worker and gateway peers that use these plaintext links must run on a private network.
+
+A handshake frame is `[tag][body]`. A data frame is `[delivery tag][seq:u32]`, followed by the ChaCha20-Poly1305 ciphertext and authentication tag, adding 21 bytes to the plaintext size. The sequence is little-endian. The frame header is authenticated as associated data. Sequenced and reliable traffic use separate counters, nonce domains, and replay windows. Tags start at 0xE0, above every [`MsgId`](/docs/reference/protocol/msg-id); a gateway with encryption disabled ignores handshake frames.
+
+## Properties
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint { get; }
+```
+
+The certificate fingerprint this gateway presents; null on a client.
+
+### SecurityError [#securityerror]
+
+```csharp
+public string SecurityError { get; } = "";
+```
+
+### DroppedPackets [#droppedpackets]
+
+```csharp
+public long DroppedPackets { get; }
+```
+
+Data packets rejected as malformed, unauthenticated, replayed, or outside the replay window during this transport object's lifetime.
+
+### Name [#name]
+
+```csharp
+public string Name { get; }
+```
+
+### IsRunning [#isrunning]
+
+```csharp
+public bool IsRunning { get; }
+```
+
+### LocalPort [#localport]
+
+```csharp
+public int LocalPort { get; }
+```
+
+## Methods
+
+### ForGateway [#forgateway]
+
+```csharp
+public static EncryptedTransport ForGateway(ITransport inner, TransportIdentity identity);
+```
+
+Creates a gateway wrapper that answers handshakes with `identity` and passes plaintext links through.
+
+### ForClient [#forclient]
+
+```csharp
+public static EncryptedTransport ForClient(ITransport inner, ClientEncryption settings);
+```
+
+Creates a client wrapper that reports a connection only after its encryption handshake succeeds.
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+public bool IsEncrypted(int peerId);
+```
+
+### Listen [#listen]
+
+```csharp
+public void Listen(int port);
+```
+
+### StartClient [#startclient]
+
+```csharp
+public void StartClient();
+```
+
+### Disconnect [#disconnect]
+
+```csharp
+public void Disconnect(int peerId);
+```
+
+### IsConnected [#isconnected]
+
+```csharp
+public bool IsConnected(int peerId);
+```
+
+### RoundTripMs [#roundtripms]
+
+```csharp
+public int RoundTripMs(int peerId);
+```
+
+### Flush [#flush]
+
+```csharp
+public void Flush();
+```
+
+### Connect [#connect]
+
+```csharp
+public int Connect(string host, int port);
+```
+
+### Send [#send]
+
+```csharp
+public void Send(int peerId, Delivery delivery, ArraySegment<byte> payload);
+```
+
+### Poll [#poll]
+
+```csharp
+public void Poll(Action<TransportEvent> handler);
+```
+
+### Stop [#stop]
+
+```csharp
+public void Stop();
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```

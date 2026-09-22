@@ -1,0 +1,30 @@
+---
+title: "ClientEncryption"
+description: "Configures gateway certificate pinning and the client handshake timeout."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public sealed class ClientEncryption
+```
+
+Configures gateway certificate pinning and the client handshake timeout.
+
+## Fields
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint = "";
+```
+
+SHA-256 hash of the gateway certificate's SubjectPublicKeyInfo, as hexadecimal text. Comparison ignores case and non-hexadecimal characters. An empty value accepts any certificate and logs a warning for each connection: traffic is encrypted, but the gateway's identity is not verified.
+
+### TimeoutSeconds [#timeoutseconds]
+
+```csharp
+public float TimeoutSeconds = 5f;
+```
+
+Seconds the client waits for the gateway's handshake response before disconnecting.

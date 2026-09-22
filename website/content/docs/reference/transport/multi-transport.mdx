@@ -6,7 +6,7 @@ description: "Several transports behind one ITransport, so the gateway accepts n
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/MultiTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/MultiTransport.cs)</div>
 
 ```csharp
-public sealed class MultiTransport : ITransport
+public sealed class MultiTransport : ITransport, ISecureTransport
 ```
 
 Several transports behind one [`ITransport`](/docs/reference/transport/i-transport), so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. The first transport is the primary: [`Listen`](#listen), [`StartClient`](#startclient) and [`Connect`](#connect) go to it, and the others accept on ports of their own that were opened before they were added. A peer id is the inner id times the number of transports plus the transport's index.
@@ -39,6 +39,12 @@ public bool IsRunning { get; }
 public int LocalPort { get; }
 ```
 
+### SecurityError [#securityerror]
+
+```csharp
+public string SecurityError { get; }
+```
+
 ## Methods
 
 ### Listen [#listen]
@@ -58,6 +64,14 @@ public void StartClient();
 ```csharp
 public int Connect(string host, int port);
 ```
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+public bool IsEncrypted(int peerId);
+```
+
+Returns the peer's encryption status from its underlying [`ISecureTransport`](/docs/reference/transport/i-secure-transport), or false when that interface is unavailable.
 
 ### Disconnect [#disconnect]
 

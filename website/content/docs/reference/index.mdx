@@ -118,6 +118,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [NebulaLifecycle](/docs/reference/worker/nebula-lifecycle) | Static class. The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
+| [WorkerRegistration](/docs/reference/worker/worker-registration) | Class. Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced. |
 | [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |
 | [WorkerTelemetry](/docs/reference/worker/worker-telemetry) | Class. Reports what a worker holds to the World map of the Nebula Dashboard (MeshTelemetry): for every container with anything in it on this worker, how many players, bots, server-driven and other authoritative entities it holds there, and how ... |
 
@@ -266,11 +267,19 @@ Send reliable ordered or unreliable sequenced messages through LiteNetLib.
 
 | Type | Summary |
 | --- | --- |
+| [ChaCha20Poly1305Managed](/docs/reference/transport/cha-cha20-poly1305-managed) | Static class. Implements ChaCha20-Poly1305 authenticated encryption with associated data (AEAD), as specified in RFC 8439. |
+| [ClientEncryption](/docs/reference/transport/client-encryption) | Class. Configures gateway certificate pinning and the client handshake timeout. |
 | [Delivery](/docs/reference/transport/delivery) | Enum. Delivery classes supported by each Nebula network link. |
+| [EncryptedTransport](/docs/reference/transport/encrypted-transport) | Class. Encrypts client-to-gateway packets over a User Datagram Protocol (UDP) transport. |
+| [ISecureTransport](/docs/reference/transport/i-secure-transport) | Interface. Reports encryption status for each peer. |
 | [ITransport](/docs/reference/transport/i-transport) | Interface. Provides the network transport used by Nebula. |
 | [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
 | [MultiTransport](/docs/reference/transport/multi-transport) | Class. Several transports behind one ITransport, so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. |
+| [NebulaCrypto](/docs/reference/transport/nebula-crypto) | Static class. Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections. |
 | [TransportEvent](/docs/reference/transport/transport-event) | Struct. Stores the values used by transport event. |
+| [TransportIdentity](/docs/reference/transport/transport-identity) | Class. Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. |
+| [TransportSecurity](/docs/reference/transport/transport-security) | Static class. Reads encryption status and handshake errors through an ITransport reference. |
+| [X25519](/docs/reference/transport/x25519) | Static class. Implements X25519 key agreement from RFC 7748 §5 using BigInteger arithmetic. |
 
 ## Protocol
 
@@ -318,6 +327,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |
 | [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
+| [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |
 | [SessionReplacedMsg](/docs/reference/protocol/session-replaced-msg) | Struct. Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer). |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
 | [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |

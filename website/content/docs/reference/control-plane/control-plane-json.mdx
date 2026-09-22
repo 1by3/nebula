@@ -28,7 +28,7 @@ Names of the writes, as they travel on the wire.
 ### Write [#write]
 
 ```csharp
-public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null);
+public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null, string documentId = null);
 ```
 
 ### Parse [#parse]
@@ -140,6 +140,14 @@ public long Version;
 ```csharp
 public DateTime Now;
 ```
+
+##### DocumentId [#documentid]
+
+```csharp
+public string DocumentId = "";
+```
+
+The [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid) value, or an empty string when the JSON omits it.
 
 ##### Workers [#workers]
 

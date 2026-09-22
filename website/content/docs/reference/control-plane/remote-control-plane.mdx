@@ -58,6 +58,14 @@ public const int MaxQueuedWrites = 10000;
 
 ## Properties
 
+### DocumentId [#documentid]
+
+```csharp
+public string DocumentId { get; } = "";
+```
+
+Identity of the mirrored document, or an empty string until a document with an identity arrives.
+
 ### Url [#url]
 
 ```csharp

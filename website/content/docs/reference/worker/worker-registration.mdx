@@ -1,0 +1,98 @@
+---
+title: "WorkerRegistration"
+description: "Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerRegistration.cs)</div>
+
+```csharp
+public sealed class WorkerRegistration
+```
+
+Registers a worker with the control plane and restores missing container assignments after the control-plane document is replaced. Existing assignments are preserved.
+
+## Fields
+
+### WorkerId [#workerid]
+
+```csharp
+public string WorkerId = "";
+```
+
+### WorkerIndex [#workerindex]
+
+```csharp
+public uint WorkerIndex;
+```
+
+### Address [#address]
+
+```csharp
+public string Address = "";
+```
+
+### Port [#port]
+
+```csharp
+public ushort Port;
+```
+
+## Properties
+
+### IsRegistered [#isregistered]
+
+```csharp
+public bool IsRegistered { get; }
+```
+
+Whether registration has been requested since construction or the last [`Forget`](#forget) call.
+
+### RegistrationCount [#registrationcount]
+
+```csharp
+public int RegistrationCount { get; }
+```
+
+Total registration requests issued by this instance, including requests queued for remote delivery.
+
+## Methods
+
+### Register [#register]
+
+```csharp
+public bool Register(IControlPlane controlPlane);
+```
+
+Requests the initial worker registration when the control plane is connected. Does nothing if registration has already been requested.
+
+**Returns:** True if this call issued a registration request.
+
+### RegisterAgainIfForgotten [#registeragainifforgotten]
+
+```csharp
+public bool RegisterAgainIfForgotten(IControlPlane controlPlane);
+```
+
+Requests registration again if the connected control plane no longer lists this worker. Call from [`IControlPlane.Changed`](/docs/reference/control-plane/i-control-plane#changed) after initial registration; polling can issue duplicate requests while a remote control plane is waiting for the updated document.
+
+**Returns:** True if this call issued a registration request. The worker can then send a heartbeat immediately.
+
+### Forget [#forget]
+
+```csharp
+public void Forget();
+```
+
+Clears the local registration flag without unregistering the worker on the control plane.
+
+### ReclaimContainers [#reclaimcontainers]
+
+```csharp
+public int ReclaimContainers(IControlPlane controlPlane);
+```
+
+Requests missing leases, which assign containers to workers, for containers this worker still owns. Call on each control-plane change before applying the updated leases. Reconciliation runs once for each new [`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid); removals within the same document are preserved.
+
+Existing leases and dynamic containers are skipped. Runtime containers are reclaimed with their bounds and instance metadata; other containers are ensured and assigned to this worker.
+
+**Returns:** The number of containers for which this call issued reclaim requests.

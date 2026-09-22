@@ -56,6 +56,8 @@ The orchestrator resets the control plane at its first tick regardless (`-nebula
 
 Every SQL statement is written once for both engines. A PostgreSQL URL may carry `?sslmode=require`; a `Host=...;Username=...;` connection string works too. See [Persistence](/docs/guides/persistence#the-orchestrators-database) for the entity table.
 
+To restart the orchestrator under live workers, survive a database failover, or rehearse a restore from backup, see [Restart and restore a mesh](/docs/deploy/availability).
+
 ## The document
 
 The control plane is one JSON document with a version number that grows on every change:

@@ -2,6 +2,7 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><ImplicitUsings>enable</ImplicitUsings><DefineConstants>$(DefineConstants);NEBULA_SERVICE</DefineConstants></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Nebula.Services/Nebula.Services.csproj" />
+    <ProjectReference Include="../Nebula.RestoreDrill/Nebula.RestoreDrill.csproj" />
     <!-- The sample gateway extension, built and copied beside the test host so it sits next to the running
          process exactly as it sits next to a published gateway. The tests name it by file name and never use
          its types: what is under test is the gateway loading it from configuration. -->

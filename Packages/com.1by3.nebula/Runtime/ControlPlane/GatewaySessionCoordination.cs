@@ -67,6 +67,11 @@ namespace Nebula
     internal sealed class GatewaySessionDirectory
     {
         internal const string Path = "/api/gateway-sessions";
+        /// <summary>
+        /// Default maximum gateway heartbeat age in seconds before another gateway can reclaim its sessions.
+        /// The orchestrator overrides this with its configured worker timeout.
+        /// </summary>
+        internal const double DefaultGatewayStaleAfterSeconds = 5.0;
         private sealed class Entry
         {
             public GatewaySessionRequest Owner;
@@ -80,6 +85,7 @@ namespace Nebula
         private readonly Queue<KeyValuePair<string, DateTime>> _retired = new Queue<KeyValuePair<string, DateTime>>();
         private readonly Func<DateTime> _now;
         private readonly Func<string, bool> _workerAlive;
+        private readonly Func<string, bool> _gatewayAlive;
         private readonly object _gate = new object();
         internal IGatewaySessionStore Store;
 
@@ -92,10 +98,17 @@ namespace Nebula
             }
         }
 
-        internal GatewaySessionDirectory(Func<string, bool> workerAlive, Func<DateTime> now = null)
+        /// <param name="workerAlive">True while the named worker is still registered and not dead.</param>
+        /// <param name="now">Clock used to expire pending claims; null selects UTC system time.</param>
+        /// <param name="gatewayAlive">
+        /// True while the gateway named by a <see cref="PlayerSessions.GatewayKey"/> (id + incarnation) is still
+        /// heartbeating under that same incarnation. Null disables reclamation based on gateway liveness.
+        /// </param>
+        internal GatewaySessionDirectory(Func<string, bool> workerAlive, Func<DateTime> now = null, Func<string, bool> gatewayAlive = null)
         {
             _workerAlive = workerAlive;
             _now = now ?? (() => DateTime.UtcNow);
+            _gatewayAlive = gatewayAlive;
         }
 
         internal GatewaySessionReply Handle(GatewaySessionRequest request)
@@ -185,8 +198,17 @@ namespace Nebula
                 _players.TryGetValue(request.Identity, out var entry);
                 if (entry != null && entry.Pending != null && entry.PendingUntil <= now)
                 {
+                    // The waiting claim outlived its 15 s coordination window. If the owner is still heartbeating
+                    // (just slow), drop the stale pending claim and make the caller re-claim and re-wait — the
+                    // owner might still release normally. If the owner's gateway is gone (never released, no
+                    // Dispose, a hard kill: D7a), nobody will ever release it, so transfer ownership to the
+                    // waiting claimant now instead of re-pending forever. The incarnation check inside
+                    // _gatewayAlive means a slow-but-alive owner is never evicted by a same-key retry racing it.
+                    bool ownerGone = _gatewayAlive != null && entry.Owner.Gateway.Length > 0 && !_gatewayAlive(entry.Owner.Gateway);
+                    var evicted = entry.Pending;
                     RemoveRevocation(entry.Owner);
                     entry.Pending = null;
+                    if (ownerGone) Activate(entry, evicted);
                 }
                 if (request.Operation == "claim")
                 {
@@ -204,6 +226,19 @@ namespace Nebula
                     if (entry.Pending != null && !Matches(entry.Pending, request)) return Failure("another connection is already waiting for this player");
                     if (entry.Owner.Gateway.Length == 0)
                     {
+                        Activate(entry, request);
+                        return Granted(entry);
+                    }
+                    // Fast path for D7a: the owning gateway hasn't heartbeated inside GatewayStaleAfterSeconds, so
+                    // nothing is ever going to release it. Take the claim over now — whether this is the first
+                    // claim after the owner died, or a retry of an already-pending claim whose owner died mid-wait
+                    // — rather than parking or re-parking it for the 15 s window below (which exists for an owner
+                    // that might still be alive). This keeps the reclaim bound to roughly the staleness window
+                    // plus one claim round trip, not the pending window's 15 s.
+                    if ((entry.Pending == null || Matches(entry.Pending, request)) && _gatewayAlive != null && !_gatewayAlive(entry.Owner.Gateway))
+                    {
+                        RemoveRevocation(entry.Owner);
+                        entry.Pending = null;
                         Activate(entry, request);
                         return Granted(entry);
                     }
@@ -371,8 +406,29 @@ namespace Nebula
     sealed partial class LocalControlPlane : IGatewaySessionControlPlane
     {
         private GatewaySessionDirectory _sessionDirectory;
+        /// <summary>
+        /// Seconds since a gateway's last heartbeat before another gateway can reclaim its sessions.
+        /// The orchestrator sets this to <c>NebulaConfig.WorkerTimeoutSeconds</c>
+        /// for both local and hosted control planes.
+        /// </summary>
+        internal double GatewayStaleAfterSeconds = GatewaySessionDirectory.DefaultGatewayStaleAfterSeconds;
         internal GatewaySessionDirectory SessionDirectory => _sessionDirectory ?? (_sessionDirectory = new GatewaySessionDirectory(
-            id => { var worker = this.FindWorker(id); return worker != null && worker.Status != WorkerStatus.Dead; }));
+            id => { var worker = this.FindWorker(id); return worker != null && worker.Status != WorkerStatus.Dead; },
+            gatewayAlive: GatewayKeyAlive));
+
+        /// <summary>True while the gateway named by a <see cref="PlayerSessions.GatewayKey"/> (id#incarnation) is still registered under that incarnation and has heartbeated inside <see cref="GatewayStaleAfterSeconds"/>.</summary>
+        private bool GatewayKeyAlive(string gatewayKey)
+        {
+            int hash = gatewayKey.LastIndexOf('#');
+            if (hash < 0) return true; // malformed key: fail open rather than evict on a guess
+            string gatewayId = gatewayKey.Substring(0, hash);
+            if (!uint.TryParse(gatewayKey.Substring(hash + 1), out var incarnation)) return true;
+            var g = this.FindGateway(gatewayId);
+            if (g == null) return false; // never registered, or already unregistered: gone
+            if (g.Incarnation != incarnation) return false; // a different process now owns this id: the old claim's owner is gone
+            return (Now - g.LastHeartbeat).TotalSeconds <= GatewayStaleAfterSeconds;
+        }
+
         void IGatewaySessionControlPlane.SessionRequest(GatewaySessionRequest request, Action<GatewaySessionReply> complete) => complete(SessionDirectory.Handle(request));
     }
 

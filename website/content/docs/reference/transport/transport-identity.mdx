@@ -1,0 +1,112 @@
+---
+title: "TransportIdentity"
+description: "Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/TransportCertificate.cs)</div>
+
+```csharp
+public sealed class TransportIdentity : IDisposable
+```
+
+Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. Load a supplied certificate and key from Privacy-Enhanced Mail (PEM) text, or generate and optionally store a self-signed identity with [`Create`](#create). Certificates use Distinguished Encoding Rules (DER) for their binary representation. Client verification checks the handshake signature and configured fingerprint; it does not validate a certificate chain or hostname.
+
+## Properties
+
+### Certificate [#certificate]
+
+```csharp
+public byte[] Certificate { get; }
+```
+
+The DER-encoded X.509 certificate sent during the encryption handshake.
+
+### Key [#key]
+
+```csharp
+public RSA Key { get; }
+```
+
+The private RSA key used to sign gateway handshake messages.
+
+### Fingerprint [#fingerprint]
+
+```csharp
+public string Fingerprint { get; }
+```
+
+SHA-256 hash of the certificate's SubjectPublicKeyInfo as 64 lowercase hexadecimal characters. Set `NebulaConfig.GatewayFingerprint` to this value to pin the gateway's public key. Reissuing a certificate with the same public key preserves the fingerprint.
+
+## Methods
+
+### Sign [#sign]
+
+```csharp
+public byte[] Sign(byte[] data);
+```
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+### FingerprintOf [#fingerprintof]
+
+```csharp
+public static string FingerprintOf(byte[] certificateDer);
+```
+
+Computes the SHA-256 fingerprint of a DER-encoded certificate's SubjectPublicKeyInfo.
+
+### Verify [#verify]
+
+```csharp
+public static bool Verify(byte[] certificateDer, byte[] data, byte[] signature);
+```
+
+Verifies an RSA PKCS#1 SHA-256 signature using the public key in `certificateDer`. Does not validate certificate trust.
+
+### Create [#create]
+
+```csharp
+public static TransportIdentity Create(string certificatePem, string keyPem, string certificatePath, string keyPath, string selfSignedPath, string subject);
+```
+
+Creates a gateway identity. Uses both PEM strings when supplied; otherwise uses the certificate file and optional separate key file. With neither source configured, loads the self-signed identity from `selfSignedPath` or generates one and attempts to store it there.
+
+| Parameter | Description |
+| --- | --- |
+| `subject` | Common name for a generated certificate. An empty value uses `nebula-gateway`. |
+
+### FromPem [#frompem]
+
+```csharp
+public static TransportIdentity FromPem(string certificatePem, string keyPem);
+```
+
+Loads a PEM certificate and RSA private key. Supports PKCS#1 `RSA PRIVATE KEY` and unencrypted PKCS#8 `PRIVATE KEY` blocks. Both arguments may contain the same combined PEM document.
+
+### SelfSigned [#selfsigned]
+
+```csharp
+public static TransportIdentity SelfSigned(string subject);
+```
+
+Generates a 2048-bit RSA key and a self-signed certificate with a ten-year validity period.
+
+### ToPem [#topem]
+
+```csharp
+public string ToPem();
+```
+
+Exports the certificate and unencrypted private key as one PEM document. Treat the result as a secret.
+
+### FingerprintMatches [#fingerprintmatches]
+
+```csharp
+public static bool FingerprintMatches(string expected, string actual);
+```
+
+Compares fingerprints after removing non-hexadecimal characters and ignoring case. Returns false for an empty normalized fingerprint.

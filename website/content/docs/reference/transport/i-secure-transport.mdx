@@ -1,0 +1,32 @@
+---
+title: "ISecureTransport"
+description: "Reports encryption status for each peer."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/EncryptedTransport.cs)</div>
+
+```csharp
+public interface ISecureTransport
+```
+
+Reports encryption status for each peer. The gateway checks this status before accepting a client's `Hello` message when `NebulaConfig.RequireEncryption` is enabled.
+
+## Properties
+
+### SecurityError [#securityerror]
+
+```csharp
+string SecurityError { get; }
+```
+
+The last recorded handshake failure for display in connection status. Empty when no failure has been recorded.
+
+## Methods
+
+### IsEncrypted [#isencrypted]
+
+```csharp
+bool IsEncrypted(int peerId);
+```
+
+Whether this peer has established encryption. Gateway identity verification depends on the transport's certificate settings.

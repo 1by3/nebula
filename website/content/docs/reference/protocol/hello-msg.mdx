@@ -19,6 +19,16 @@ Carries the hello protocol message.
 public const ushort ProtocolVersion = 18;
 ```
 
+The wire protocol version used by this build.
+
+### MinProtocolVersion [#minprotocolversion]
+
+```csharp
+public const ushort MinProtocolVersion = 18;
+```
+
+The oldest client protocol the gateway accepts. Both this limit and [`ProtocolVersion`](#protocolversion) are 18, so only protocol-18 clients can join. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
+
 ### Role [#role]
 
 ```csharp
@@ -73,13 +83,23 @@ Gateway and worker peers: a number that changes every time the process starts, s
 public string ScopeKey;
 ```
 
-Client only: the simulation scope to be placed in, as an opaque key ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty is the public world, which is what every client sent before this field existed. The gateway spawns the player only into containers of that scope, and holds the join while the scope is not ready (`docs/scope-activation.md` §5). It does not activate the scope: whoever sent the player to the key is the one that called [`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope).
+Client only: the simulation scope to be placed in, as an opaque key ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)). Empty selects the public world. The gateway spawns the player only into containers of that scope, and holds the join while the scope is not ready (`docs/scope-activation.md` §5). It does not activate the scope: whoever sent the player to the key is the one that called [`IControlPlane.ActivateScope`](/docs/reference/control-plane/i-control-plane#activatescope).
 
 ### Version [#version]
 
 ```csharp
 public ushort Version;
 ```
+
+The protocol version the peer announces. [`Write`](#write) substitutes [`ProtocolVersion`](#protocolversion) when this value is zero.
+
+### GameContentVersion [#gamecontentversion]
+
+```csharp
+public uint GameContentVersion;
+```
+
+The client's game content version, set by [`NebulaConfig.GameContentVersion`](/docs/reference/core/nebula-config#gamecontentversion). The gateway checks it against its configured range unless the gateway's content version is zero. An incompatible value is refused with [`JoinRejectReason.ContentVersionMismatch`](/docs/reference/protocol/join-reject-reason#contentversionmismatch).
 
 ## Methods
 

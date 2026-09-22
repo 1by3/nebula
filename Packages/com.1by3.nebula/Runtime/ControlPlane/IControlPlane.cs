@@ -249,6 +249,13 @@ namespace Nebula
         bool IsConnected { get; }
         /// <summary>Best estimate of the control plane's clock (for heartbeat age checks).</summary>
         DateTime Now { get; }
+        /// <summary>
+        /// Identity of the document containing process registrations, container assignments, and shared settings.
+        /// Preserved when that document is restored from storage; replaced when the control plane starts empty
+        /// or is reset. <see cref="WorkerRegistration"/> uses changes to this identity to reclaim missing assignments.
+        /// A remote mirror reports an empty string until it receives a document with an identity.
+        /// </summary>
+        string DocumentId { get; }
         event Action Changed;
 
         IReadOnlyList<WorkerInfo> Workers { get; }

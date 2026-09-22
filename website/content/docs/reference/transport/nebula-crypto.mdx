@@ -1,0 +1,50 @@
+---
+title: "NebulaCrypto"
+description: "Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/NebulaCrypto.cs)</div>
+
+```csharp
+public static class NebulaCrypto
+```
+
+Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections. Randomness, hashing, and HMAC use the platform's cryptography APIs.
+
+The associated [`X25519`](/docs/reference/transport/x25519) and managed [`ChaCha20Poly1305Managed`](/docs/reference/transport/cha-cha20-poly1305-managed) implementations are not constant-time. The transport generates a new key pair for each connection.
+
+## Methods
+
+### Random [#random]
+
+```csharp
+public static byte[] Random(int bytes);
+```
+
+### FixedTimeEquals [#fixedtimeequals]
+
+```csharp
+public static bool FixedTimeEquals(byte[] a, byte[] b);
+```
+
+Compares equal-length arrays without stopping at a differing byte. Returns false for null arrays or unequal lengths.
+
+### Sha256 [#sha256]
+
+```csharp
+public static byte[] Sha256(byte[] data);
+```
+
+### HmacSha256 [#hmacsha256]
+
+```csharp
+public static byte[] HmacSha256(byte[] key, byte[] data);
+```
+
+### Hkdf [#hkdf]
+
+```csharp
+public static byte[] Hkdf(byte[] salt, byte[] ikm, string info, int length);
+```
+
+Derives `length` bytes using the HMAC-based extract-and-expand key derivation function (HKDF) with SHA-256, as specified in RFC 5869.

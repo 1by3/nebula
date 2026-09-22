@@ -1,0 +1,91 @@
+---
+title: Restart and restore a mesh
+description: Preserve container assignments during an orchestrator restart, understand database outages, and verify a restore from backup.
+---
+
+Restart the orchestrator against its existing database, and rehearse recovery with an offline database copy before you need it.
+
+A **mesh** is the group of processes running one game world. Its **workers** simulate entities in **containers**, which are assigned areas of the world. The **orchestrator** manages those assignments and hosts the **control plane**, the document containing process registrations and assignments. A **lease** records a container's assigned worker; its **epoch** increases when that assignment changes.
+
+Choose the orchestrator's database with `-nebula-database`, or `NEBULA_DATABASE_URL` for standalone services. See [Control plane](/docs/guides/control-plane) and [Persistence](/docs/guides/persistence).
+
+## Understand an orchestrator outage
+
+Workers and gateways keep the last control-plane document they received while the orchestrator is unreachable. Existing client connections and worker simulation can continue. New joins, session coordination, process replacement, and assignment changes may wait for the orchestrator.
+
+Workers normally save entities through the orchestrator's persistence endpoint. During an orchestrator outage, those writes wait for the endpoint to recover. Queued writes are not yet durable; losing the worker before they reach storage can lose that state.
+
+A control-plane mirror reports itself disconnected after 15 seconds without a successful read. Completing a restart within that interval can preserve its connection status, but does not eliminate delays to operations that need the orchestrator.
+
+## Restart the orchestrator
+
+Keep the existing database and configure `-nebula-reset false` before restarting. The default, `-nebula-reset true`, clears registrations and leases on the first tick.
+
+For a standalone orchestrator, run the following from the directory containing its executable. Replace the database placeholders with the credentials, host, and database used by your deployment:
+
+```bash
+./nebula-orchestrator -nebula-database "postgres://<user>:<password>@<host>:5432/<database>" -nebula-reset false
+```
+
+If you manage the process with systemd, update its service command instead. After editing `/etc/systemd/system/nebula-orchestrator.service`, reload the configuration and restart the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart nebula-orchestrator
+```
+
+Verify that the replacement restores the expected workers and leases, including their owners and epochs, in the dashboard.
+
+A development-machine test with two workers, one gateway, and four containers measured approximately 2.6 seconds to restore the control-plane mirrors. Measure your deployment separately; process startup and database access affect recovery time. See [Run the scale and failure suite](/docs/guides/scale-suite).
+
+### Recover missing assignments
+
+When the control plane has a new document identity, workers reclaim missing leases for containers they still simulate. Gateways also restore their registrations when missing. Leases recreated in the new document start at epoch 1.
+
+This recovers registrations and assignments from live processes. It does not restore lost saved entities, durable session claims, or all scope metadata. Prefer the existing database and `-nebula-reset false`; use a backup when durable data is missing.
+
+## Handle a database outage
+
+The orchestrator keeps serving its in-memory control-plane document while a database save fails. It logs the failure and retries the complete document in the background. Read [`ControlPlaneHost.StorageError`](/docs/reference/control-plane/control-plane-host#storageerror) to check for an outstanding save error.
+
+Entity checkpoints also wait for storage to recover. New operations that need durable session or scope coordination may fail or remain pending. If a process crashes before its pending state reaches storage, that state can be lost.
+
+Configure database replication, failover, backup schedules, and monitoring for your deployment. The automated PostgreSQL scenario exercises a local Docker container stop and start; it does not verify your hosted database's promotion procedure.
+
+## Rehearse a restore
+
+Install PowerShell 7 and the .NET 10 SDK, then run the drill from the repository root. The default creates a disposable SQLite database under `Logs/restore-drill/`:
+
+```powershell
+pwsh Tools/restore-drill.ps1
+```
+
+The drill seeds records, takes a backup, wipes the database, restores it, and compares the result. It needs no Unity installation, player build, or running mesh.
+
+<Callout type="warn" title="Use an offline database copy">
+The drill modifies and wipes the database you name, including saved entities, the control-plane document, session claims, and scope claims. A failed restore can leave it empty. Run it against an offline copy with a separate backup, never a live mesh.
+</Callout>
+
+To test PostgreSQL, replace the placeholders with the connection details for that offline copy:
+
+```powershell
+pwsh Tools/restore-drill.ps1 -Database "postgres://<user>:<password>@<host>:5432/<database>" -Entities 2000
+```
+
+Each run writes `<timestamp>.json` and `<timestamp>.txt` under `Logs/restore-drill/`. These contain step durations and comparison results. The script prints `PASS` or `FAIL` and returns a nonzero exit code on failure. It redacts database credentials from its logs; backup files still contain application data.
+
+### Choose a backup method
+
+| Method | When used | Behavior |
+| --- | --- | --- |
+| SQLite online backup | A `sqlite:` database | Copies the database with `VACUUM INTO`, including its write-ahead log contents. The complete drill still requires an offline database. |
+| PostgreSQL tools | A PostgreSQL database with `pg_dump` and `pg_restore` on `PATH` | Creates a custom-format backup and restores it with `pg_restore --clean --if-exists`. |
+| Nebula export | PostgreSQL without those tools, or `-Method nebula` | Exports entities, the control-plane document, session claims, and scope claims to JSON. Import replaces those tables in one transaction and preserves entity versions and save times. |
+
+Use `-Method engine` to require the database-specific tools instead of allowing the portable fallback. Add `-KeepBackup` to retain the backup after a successful drill.
+
+### Check the result
+
+The comparison reads entities and the control-plane document through Nebula's runtime stores and snapshots the durable claim tables. It compares saved entity fields, the control-plane document except its refreshed clock, and every scope and session claim. Missing or changed data fails the drill.
+
+Schedule the drill against an offline copy, retain its results, and repeat it after schema changes. The drill verifies recovery; it does not manage your production backup schedule or retention.

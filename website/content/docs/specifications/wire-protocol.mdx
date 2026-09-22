@@ -9,12 +9,17 @@ The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** descri
 
 ## Compatibility
 
-The current protocol version is `18`. Every `Hello` carries that version.
+The current protocol version is `18`. Every `Hello` carries the version its sender speaks.
 
-- A gateway disconnects a client whose version is not exactly `18`. There is no feature negotiation or backward-compatible field skipping.
-- Only the gateway's inbound `Hello` path currently enforces exact equality. The normal gateway-to-worker and worker-to-worker handlers read the version without rejecting a mismatch. Run every service process from the same build.
-- A change to a message identifier, field order, primitive encoding, or field meaning is incompatible and requires a protocol-version change.
-- The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats.
+A gateway accepts protocol-18 clients only: both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `18`. Gateway-to-worker and worker-to-worker connections MUST also match protocol `18` exactly.
+
+- A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
+- A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
+- A sender MUST preserve the message identifiers, field order, primitive encodings, and field meanings defined here. Fields explicitly described as optional may be omitted at the end of a message.
+- The gateway returns the client's accepted version in `Welcome.negotiated_version`. All accepted clients use protocol `18`; this field does not select a different encoder.
+- The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats. `Hello.game_content_version` is a number the game chooses for its own content; Nebula compares it and refuses a mismatch, and gives it no other meaning.
+
+For process replacement and compatibility requirements, see [Upgrade a running mesh](/docs/deploy/upgrades).
 
 Unsigned tick and entity-epoch comparisons do not include wraparound handling. A process that remains up across a `u32` wrap is outside the current compatibility contract.
 
@@ -27,7 +32,7 @@ Nebula uses LiteNetLib over User Datagram Protocol (UDP). A connection request u
 | `Sequenced` | 0 | `Sequenced` | Unreliable and newest-wins. A packet larger than the peer's maximum transmission unit cannot be fragmented and is dropped. |
 | `ReliableOrdered` | 1 | `ReliableOrdered` | Retried and delivered in order. LiteNetLib may fragment it. |
 
-Except for `Batch`, one LiteNetLib application payload contains one complete Nebula message. The first byte is always its `MsgId`. A sender MUST use the delivery class listed below; the receiver does not derive or verify the class from the payload.
+Except for `Batch`, one decoded application payload contains one complete Nebula message. The first byte is its `MsgId`. Encrypted UDP connections wrap these payloads in an encryption envelope; the layouts below describe the plaintext after decryption. A sender MUST use the delivery class listed below; the receiver does not derive or verify the class from the payload.
 
 ### Web clients
 
@@ -38,8 +43,10 @@ A client built for the web connects to the gateway over WebRTC data channels ins
 | `Sequenced` | id 1 | `ordered: false`, `maxRetransmits: 0` | Each message starts with a `u16` sequence number that increases by one per message and wraps. A receiver MUST drop a message whose number is not newer than the newest it delivered; a number is newer when it differs and `(number - newest) mod 65536` is below 32768. The Nebula message follows the two bytes. |
 | `ReliableOrdered` | id 0 | reliable, ordered | One data channel message contains one Nebula payload, as on LiteNetLib. |
 
-<Callout type="warn" title="The wire is not secure">
-LiteNetLib connections are not encrypted. WebRTC encrypts a web client's link with DTLS, but the gateway accepts every offer. A peer can claim any role, process identifier, worker index, or client name in `Hello`. A client's `token` and `session` are checked (see [Authentication](/docs/guides/authentication)), and a gateway or worker must present a credential derived from the mesh token when the mesh has one; all of them travel in the clear on a LiteNetLib link. Without a mesh token, every gateway and worker peer is accepted. Run service links on a trusted private network, and put public client traffic behind ingress that supplies the security your game requires.
+<Callout type="warn" title="Configure client encryption and protect service links">
+Native UDP client connections are plaintext unless the client enables encryption and the gateway supports it. Set `RequireEncryption` to refuse plaintext clients and configure a client certificate fingerprint to authenticate the gateway. WebRTC encrypts browser connections with Datagram Transport Layer Security (DTLS). See [Encrypt client connections](/docs/deploy/encryption).
+
+Gateway-to-worker and worker-to-worker traffic remains unencrypted and requires a trusted private network. These peers authenticate only when a mesh token is configured. Client identities and session tokens are checked separately; see [Authentication](/docs/guides/authentication).
 </Callout>
 
 ## Primitive encodings
@@ -171,11 +178,15 @@ The layouts below omit the leading `u8 msg_id`. Fields appear in wire order. Rep
 
 ```text
 Hello           := u16 protocol_version, u8 role, string id, u32 index, u8 flags,
-                   string token, string session, u32 incarnation, string scope_key
+                   string token, string session, u32 incarnation, string scope_key,
+                   u32 game_content_version
 Welcome         := u64 client_id, u8 tick_rate, u32 server_tick, string identity,
-                   string token, string session_token, bool reclaimed
+                   string token, string session_token, bool reclaimed,
+                   u16 negotiated_version
 JoinStatus      := u8 state, u16 estimated_seconds, u8 reason
-JoinRejected    := string reason, bool retry, u8 code, f16 saturation
+JoinRejected    := string reason, bool retry, u8 code, f16 saturation,
+                   u16 supported_min_version, u16 supported_max_version,
+                   u32 server_content_version
 GatewayDraining := u16 reconnect_within_seconds
 SessionReplaced := string reason
 Ping            := f64 client_time
@@ -184,17 +195,23 @@ Pong            := f64 client_time, u32 server_tick
 
 For a client, `Hello.id` is the requested player name, `index` is zero, `flags` may include `Bot`, `token` is an OpenID Connect ID token, a token from an earlier `Welcome`, or empty to ask for a new anonymous identity, `session` is the `session_token` from the last `Welcome` or empty on a first connection, and `incarnation` is zero.
 
-`scope_key` is the [simulation scope](/docs/guides/scopes) the client asks to be placed in: the opaque key the game chose, or empty for the public world. The gateway spawns the player only into a container whose scope key is ordinally equal to it, and holds the join in `JoinStatus.state` `1` while no such container has a live owner; it never falls back to another scope. The gateway does not activate the scope, so the key must already have been activated through the control plane. `scope_key` was appended to `Hello` after the rest of protocol 18 was settled: a `Hello` that ends before it reads as the public world, and the protocol version is unchanged. It is ignored on a gateway or worker `Hello`.
+`scope_key` is the [simulation scope](/docs/guides/scopes) the client asks to be placed in: the opaque key the game chose, or empty for the public world. The gateway spawns the player only into a container whose scope key is ordinally equal to it, and holds the join in `JoinStatus.state` `1` while no such container has a live owner; it never falls back to another scope. The gateway does not activate the scope, so the key must already have been activated through the control plane. If `Hello` ends before `scope_key`, the receiver uses an empty key for the public world. It is ignored on a gateway or worker `Hello`.
+
+`game_content_version` is the version of the game's own content and rules the client build carries. The gateway compares it with the version it was configured with and refuses a client outside that window with `JoinRejected` `code` `4`. A gateway configured with `0` does not check. Nebula gives the number no meaning beyond the comparison. If `Hello` ends before `game_content_version`, the receiver uses `0`. It is ignored on a gateway or worker `Hello`.
 
 For a worker, `id` is the worker ID and `index` is its worker index. A gateway sends its gateway ID with an index of zero. Both send a nonzero `incarnation`, a random number drawn when the process started, so a peer that sees the same ID twice can tell a restart from a reconnect. When the mesh has a mesh token, `token` on a gateway or worker `Hello` is the credential `unix_seconds.base64url(HMAC-SHA256(key, role|id|incarnation|unix_seconds))`, where `key = SHA-256("nebula-peer-auth:" + mesh_token)` and `role` is the decimal `PeerRole` value. A receiver rejects a credential whose timestamp differs from its clock by more than 300 seconds or whose MAC does not match. Without a mesh token, `token` is empty and every peer is accepted.
 
 The gateway assigns the client ID, a mesh-wide session ID, and sends the fixed tick rate, currently `60`, in `Welcome`. `Welcome.identity` is the player's identity: 64 lowercase hex characters, the SHA-256 of the token's issuer and subject. `Welcome.token` is set only when the client presented no token; it is the anonymous token the gateway issued for that identity, which the client keeps for its next `Hello`. `Welcome.session_token` is a signed token naming the session: an HS256 JSON Web Token over the session ID, identity, display name, bot flag, and connection generation, valid for 24 hours. The client keeps it for the life of the process and presents it as `Hello.session` when it reconnects. A gateway that verifies it, for the identity that just authenticated, welcomes the client with the same `client_id` and sets `reclaimed`; the pawn is the same one when the worker still holds it. A session token for another identity, an expired one, or one signed for another mesh is ignored; single-session coordination can still reclaim a session using the authenticated identity. See [Authentication](/docs/guides/authentication).
 
-`JoinStatus.state` is `0` (none), `1` (starting: welcomed, but not placed yet) or `2` (joined). `estimated_seconds` is a rough wait while starting; `0` means unknown. `reason` says why a join is being held: `0` none, `1` the world is starting (no worker holds a lease yet), `2` the named scope has not been activated or has no live owner, `3` the scope is restoring after a retire, `4` the scope is retiring, `5` every container the client could be placed in is at capacity and the game's [admission hook](/docs/guides/scopes#when-a-target-is-full) asked for the client to wait rather than be refused. `reason` was appended after the rest of protocol 18 was settled: a `JoinStatus` that ends before it reads as `1` while starting and `0` otherwise, and the protocol version is unchanged.
+`Welcome.negotiated_version` echoes the accepted version from the client's `Hello`, currently `18`. If the field is omitted, it reads as `0` and the client uses the version it announced.
+
+`JoinStatus.state` is `0` (none), `1` (starting: welcomed, but not placed yet) or `2` (joined). `estimated_seconds` is a rough wait while starting; `0` means unknown. `reason` says why a join is being held: `0` none, `1` the world is starting (no worker holds a lease yet), `2` the named scope has not been activated or has no live owner, `3` the scope is restoring after a retire, `4` the scope is retiring, `5` every container the client could be placed in is at capacity and the game's [admission hook](/docs/guides/scopes#when-a-target-is-full) asked for the client to wait rather than be refused. If `JoinStatus` ends before `reason`, the receiver uses `1` while starting and `0` otherwise.
 
 A gateway that does not accept a client's token sends `JoinRejected` with a reason fit to show the player and disconnects the client. `retry` set means the refusal is about the gateway, not the client: it is draining, and the client SHOULD reconnect after a short delay, which a load balancer then hands to another gateway. `retry` clear means the client must wait for the player to retry. This includes refused credentials and a session takeover whose previous connection could not be disconnected.
 
-`code` is the refusal in typed form: `0` none (read `reason` and `retry`), `1` the target is at capacity and the admission hook refused the arrival, `2` the admission hook refused this particular arrival although the target had room. `saturation` is how full the target was for `code` `1`: the dominant cost component's share of its own budget, `1.0` being the whole of it; `0` when the gateway did not say. A client that receives `code` `1` or `2` MUST NOT reconnect on a timer: the refusal is neither about its credentials nor about this gateway, and the game decides what happens next (a queue, another instance, a different scope). `code` and `saturation` were appended after the rest of protocol 18 was settled: a `JoinRejected` that ends before them reads as `0` and `0`, and the protocol version is unchanged.
+`code` is the refusal in typed form: `0` none (read `reason` and `retry`), `1` the target is at capacity and the admission hook refused the arrival, `2` the admission hook refused this particular arrival although the target had room. `saturation` is how full the target was for `code` `1`: the dominant cost component's share of its own budget, `1.0` being the whole of it; `0` when the gateway did not say. A client that receives `code` `1` or `2` MUST NOT reconnect on a timer: the refusal is neither about its credentials nor about this gateway, and the game decides what happens next (a queue, another instance, a different scope). If `JoinRejected` ends before `code` or `saturation`, each omitted field defaults to `0`.
+
+`code` `3` means the client's protocol is outside the gateway's window and `code` `4` means its `game_content_version` is not one the gateway runs. The client stops automatic retries for either code and preserves its saved identity. The game can select a compatible server or ask the player to use compatible content before reconnecting. `supported_min_version` and `supported_max_version` are the window the gateway accepts and `server_content_version` is the content version it runs; all three are sent on every refusal, whatever the code, and are `0` from a gateway that does not write them. For `code` `3`, a client below `supported_min_version` needs updating and one above `supported_max_version` has reached a server that has not been upgraded yet. `code` `5` means the gateway accepts encrypted client links only (`RequireEncryption`) and this link is in the clear; the client must turn encryption on before trying again (see [Encrypt client connections](/docs/deploy/encryption)).
 
 `GatewayDraining` tells a connected client that the gateway is leaving service. The client SHOULD reconnect within `reconnect_within_seconds`, presenting its session token, so the session and pawn carry over to the gateway that answers.
 

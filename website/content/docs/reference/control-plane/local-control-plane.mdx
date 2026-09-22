@@ -25,6 +25,14 @@ public bool IsConnected { get; }
 public DateTime Now { get; }
 ```
 
+### DocumentId [#documentid]
+
+```csharp
+public string DocumentId { get; } = NewDocumentId();
+```
+
+Identity of this control-plane document, preserved on import and replaced on reset.
+
 ### Workers [#workers]
 
 ```csharp

@@ -169,6 +169,10 @@ From the create call to a registered, container-owning worker takes about 30 s. 
 
 The firewalls are `<meshName>-orchestrator` (22, the dashboard port, the gateway port over UDP and TCP, the gateway port plus one over UDP, and TCP port 80, from anywhere) and `<meshName>-worker` (22 only). Each deployment adds missing required rules and keeps rules you added. Traffic on the private network is not filtered by Hetzner firewalls.
 
+<Callout type="warn" title="Keep the worker ports private">
+Nebula encrypts only the client-to-gateway link, and only when you turn it on. Worker traffic carries entity state and player input in the clear, so the worker ports must stay reachable from the private network alone. Do not expose the configured worker ports to the internet. See [Encrypt client connections](/docs/deploy/encryption).
+</Callout>
+
 ## Choose VM types
 
 Worker and orchestrator VMs default to `cpx21`. A four-worker mesh uses five VMs: four workers and one orchestrator.

@@ -394,6 +394,15 @@ namespace Nebula
             cfg.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", cfg.AuthAnonymous);
             cfg.AuthSigningKey = CommandLine.Get("nebula-auth-key", cfg.AuthSigningKey);
             cfg.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", cfg.SingleSessionPerPlayer);
+            cfg.GameContentVersion = CommandLine.GetUInt("nebula-content-version", cfg.GameContentVersion);
+            cfg.MinGameContentVersion = CommandLine.GetUInt("nebula-min-content-version", cfg.MinGameContentVersion);
+            cfg.EncryptClients = CommandLine.GetBool("nebula-encrypt-clients", cfg.EncryptClients);
+            cfg.RequireEncryption = CommandLine.GetBool("nebula-require-encryption", cfg.RequireEncryption);
+            cfg.EncryptionCertPath = CommandLine.Get("nebula-encryption-cert", cfg.EncryptionCertPath);
+            cfg.EncryptionKeyPath = CommandLine.Get("nebula-encryption-key", cfg.EncryptionKeyPath);
+            cfg.EncryptionSelfSignedPath = CommandLine.Get("nebula-encryption-store", cfg.EncryptionSelfSignedPath);
+            cfg.ClientEncryption = CommandLine.GetBool("nebula-encrypt", cfg.ClientEncryption);
+            cfg.GatewayFingerprint = CommandLine.Get("nebula-gateway-fingerprint", cfg.GatewayFingerprint);
             cfg.DatabaseUrl = CommandLine.Get("nebula-database", cfg.DatabaseUrl);
             cfg.WorkerCount = CommandLine.GetInt("nebula-workers", cfg.WorkerCount);
             cfg.MinWorkers = CommandLine.GetInt("nebula-min-workers", cfg.MinWorkers);

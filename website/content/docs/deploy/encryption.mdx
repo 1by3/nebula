@@ -1,0 +1,99 @@
+---
+title: Encrypt client connections
+description: Encrypt native client traffic, authenticate gateways with a pinned certificate, and restrict internal traffic to a private network.
+---
+
+Enable encryption and pin the gateway's certificate before sending player credentials over an untrusted network. A **gateway** accepts client connections and routes their traffic to **workers**, the processes that simulate the game.
+
+Native clients use User Datagram Protocol (UDP). Their connections are unencrypted by default. Web builds use Web Real-Time Communication (WebRTC), whose data channels are encrypted with Datagram Transport Layer Security (DTLS); they do not use the native encryption settings below.
+
+Encryption covers the client-to-gateway link. It does not replace [player authentication](/docs/guides/authentication), and it does not encrypt internal worker traffic.
+
+## Configure a certificate
+
+The gateway needs an RSA public-key certificate and its matching private key. Clients authenticate that key by comparing its fingerprint with `GatewayFingerprint`.
+
+### Use a generated certificate
+
+With no certificate configured, the gateway generates a self-signed certificate and writes `nebula-transport.pem`. The standalone service stores it beside its executable; a Unity gateway uses `Application.persistentDataPath`.
+
+Set `EncryptionSelfSignedPath`, or `-nebula-encryption-store <file>`, to choose a writable location that survives redeployment. The file contains the private key, so restrict access to the gateway process.
+
+Start the gateway and copy the complete 64-character fingerprint from its startup log into the client's `GatewayFingerprint`. If the gateway cannot save its certificate, or the file is lost, the fingerprint can change on restart and pinned clients will refuse the connection.
+
+### Supply a certificate
+
+Use PEM (Privacy-Enhanced Mail) text files containing the certificate and private key. For example, from your project root, start a Linux Unity gateway build with:
+
+```bash
+./Builds/Linux64/MyGame.x86_64 -nebula-role gateway -nebula-encryption-cert /etc/nebula/gateway.pem -nebula-encryption-key /etc/nebula/gateway-key.pem
+```
+
+Replace the executable and file paths with your build and certificate paths. Omit `-nebula-encryption-key` when the certificate file also contains the private key.
+
+The standalone gateway also accepts PEM text in `NEBULA_ENCRYPTION_CERT` and `NEBULA_ENCRYPTION_KEY`. Set both variables. A certificate renewed with the same public key keeps the same fingerprint.
+
+<Callout type="warn" title="Pin the gateway fingerprint">
+An empty `GatewayFingerprint` accepts any certificate. The connection is encrypted, but an attacker between client and gateway can impersonate the gateway. Nebula does not validate certificate chains or hostnames; configure a trusted fingerprint to authenticate the server.
+</Callout>
+
+## Enable encryption
+
+Set these fields on your `NebulaConfig` asset:
+
+| Setting | Process | Default | Effect |
+| --- | --- | --- | --- |
+| `EncryptClients` | Gateway | `true` | Accept encrypted client connections while also allowing plaintext. |
+| `RequireEncryption` | Gateway | `false` | Refuse plaintext clients. Encrypted connections remain enabled even if `EncryptClients` is false. |
+| `ClientEncryption` | Native client | `false` | Require an encrypted connection to the gateway. |
+| `GatewayFingerprint` | Native client | Empty | Accept only the configured public-key fingerprint when set. |
+
+Enable `ClientEncryption` and configure `GatewayFingerprint` in your client builds. Set `RequireEncryption` on the gateway once all clients you intend to admit use encryption.
+
+To override the settings for a Linux player build, run these commands in separate terminals from the project root. Replace `MyGame.x86_64` with your executable and `<fingerprint>` with the full fingerprint obtained through a trusted channel:
+
+```bash
+./Builds/Linux64/MyGame.x86_64 -nebula-role gateway -nebula-require-encryption true
+./Builds/Linux64/MyGame.x86_64 -nebula-role client -nebula-encrypt true -nebula-gateway-fingerprint "<fingerprint>"
+```
+
+A plaintext client receives `EncryptionRequired` and stops retrying without discarding its saved identity. Show `NebulaClient.LastError` in your connection interface.
+
+After the key exchange, packets use ChaCha20-Poly1305 authenticated encryption. Altered and replayed packets are discarded. This protects traffic in transit; it does not prevent a player from modifying their own client.
+
+## Restrict internal traffic
+
+A **mesh** is the group of clients, gateways, workers, and orchestrator running one game world. The **orchestrator** manages worker processes and container assignments. Links between gateways and workers, and between workers, are unencrypted.
+
+For each deployment:
+
+- Place server processes on a private network, such as a virtual private cloud (VPC) or a WireGuard network.
+- Allow worker ports, starting at `WorkerBasePort`, only from that network. Do not expose them to the internet.
+- Restrict the orchestrator's dashboard and control-plane endpoint to trusted server processes and operators.
+- Expose the gateway's client port and the web port needed for browser clients.
+- Set `MeshToken` with `-nebula-token` or `NEBULA_MESH_TOKEN` to authenticate server processes.
+
+Check your deployment's actual firewall rules. See the port table in [Deploy to Hetzner Cloud](/docs/deploy/hetzner); its dashboard exposure also needs to match your access policy.
+
+For multiple gateways behind one client address, configure the same certificate and key on each gateway so clients can use one pinned fingerprint.
+
+## Estimate overhead
+
+| Operation | Measured overhead |
+| --- | --- |
+| Encrypted packet | 21 bytes |
+| Connection handshake | One additional round trip and approximately 1.1 KB |
+| Service implementation, 200-byte packet | Approximately 0.8 microseconds to encrypt or decrypt |
+| Managed implementation, 200-byte packet | Approximately 8 microseconds to encrypt or decrypt |
+
+These timings were measured on one development machine. The managed implementation was measured outside a Unity player; these are not measurements of a Unity player on a target device. Measure on your target platforms before setting a performance budget.
+
+## Troubleshoot connections
+
+**The gateway does not answer the key exchange.** Check that `EncryptClients` or `RequireEncryption` is enabled and that the startup log reports a usable certificate.
+
+**The presented fingerprint does not match.** Verify the gateway address and certificate through a trusted channel before changing the client's pin. Do not copy a fingerprint from an unverified connection.
+
+**The gateway cannot start with `RequireEncryption`.** Check that the certificate and matching private key exist and are readable by the gateway process.
+
+**Gateways have different fingerprints.** Configure a shared certificate and private key rather than generating a separate identity on each gateway.

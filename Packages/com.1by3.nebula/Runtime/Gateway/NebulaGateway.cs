@@ -104,6 +104,11 @@ namespace Nebula
             /// owner (docs/scope-activation.md §5).
             /// </summary>
             public string ScopeKey = "";
+            /// <summary>
+            /// The accepted version from this connection's Hello, echoed in the welcome.
+            /// The gateway accepts protocol 18 only.
+            /// </summary>
+            public ushort ProtocolVersion = HelloMsg.ProtocolVersion;
             public string CoordinationClaim = "";
             public Action RetryCoordination;
             public bool CoordinationInFlight;
@@ -334,6 +339,7 @@ namespace Nebula
         private AnonymousIdentityIssuer _anonymous;
         private SessionTokens _sessions;
         private byte[] _peerKey;
+        private EncryptedTransport _encrypted;
 
         // Load figures for the heartbeat (GatewayStats): traffic counted per direction and per side, CPU from the
         // process clock, loop lag from a stopwatch around Tick.
@@ -355,6 +361,13 @@ namespace Nebula
         /// <summary>Issues and checks the session tokens clients reconnect with.</summary>
         public SessionTokens Sessions => _sessions;
 
+        /// <summary>
+        /// The SHA-256 fingerprint of the certificate's SubjectPublicKeyInfo public-key encoding for encrypted
+        /// UDP connections, or null when UDP encryption is unavailable. Set <see cref="NebulaConfig.GatewayFingerprint"/>
+        /// on clients to require this certificate key.
+        /// </summary>
+        public string CertificateFingerprint { get; private set; }
+
         /// <param name="browserTransport">A second transport clients arrive on, already listening: the standalone
         /// gateway's WebRTC listener for web builds. Null accepts UDP clients only.</param>
         /// <param name="gatewayId">This gateway's id; null reads <c>-nebula-gateway-id</c> ("gw1" by default).</param>
@@ -367,13 +380,50 @@ namespace Nebula
             _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
             var udp = new LiteNetTransport("gateway");
             udp.Listen(config.GatewayPort);
-            _transport = browserTransport != null ? new MultiTransport(udp, browserTransport) : (ITransport)udp;
+            ITransport clientLink = InitializeEncryption(config, udp);
+            _transport = browserTransport != null ? new MultiTransport(clientLink, browserTransport) : clientLink;
             InitializeInterest();
             ControlPlane.Changed += OnControlPlaneChanged;
             NebulaLog.Info($"gateway {GatewayId} (incarnation {Incarnation:x8}) listening on udp/{config.GatewayPort}" + (_peerKey == null ? "; no mesh token: any worker is trusted" : ""));
             InitializeAuth(config);
             _statsSince = _clock.Elapsed.TotalSeconds;
             _lastCpu = ProcessorTime();
+        }
+
+        /// <summary>
+        /// Configures encrypted UDP client connections. Infrastructure connections remain unencrypted and
+        /// require a private network. Certificate setup errors prevent startup when
+        /// <see cref="NebulaConfig.RequireEncryption"/> is enabled; otherwise the gateway accepts plaintext.
+        /// </summary>
+        private ITransport InitializeEncryption(NebulaConfig config, ITransport udp)
+        {
+            if (!config.EncryptClients && !config.RequireEncryption) return udp;
+            if (!config.EncryptClients) NebulaLog.Warn("transport encryption: RequireEncryption is on, so EncryptClients being off is ignored");
+            try
+            {
+                string store = string.IsNullOrEmpty(config.EncryptionSelfSignedPath) ? DefaultStatePath("nebula-transport.pem") : config.EncryptionSelfSignedPath;
+                var identity = TransportIdentity.Create(config.EncryptionCertPem, config.EncryptionKeyPem, config.EncryptionCertPath, config.EncryptionKeyPath, store, config.GatewayAddress);
+                _encrypted = EncryptedTransport.ForGateway(udp, identity);
+                CertificateFingerprint = identity.Fingerprint;
+                NebulaLog.Info($"transport encryption: clients may encrypt this link{(config.RequireEncryption ? " and must" : "")}; certificate fingerprint {identity.Fingerprint} (clients pin it with GatewayFingerprint / -nebula-gateway-fingerprint)");
+                return _encrypted;
+            }
+            catch (Exception e)
+            {
+                if (config.RequireEncryption) throw new InvalidOperationException($"RequireEncryption is on but the gateway has no usable certificate: {e.Message}", e);
+                NebulaLog.Warn($"transport encryption: off, no usable certificate ({e.Message}); clients connect in the clear");
+                return udp;
+            }
+        }
+
+        /// <summary>Where per-gateway state (the self-signed certificate, the auth key) lives.</summary>
+        private static string DefaultStatePath(string file)
+        {
+#if NEBULA_SERVICE
+            return System.IO.Path.Combine(AppContext.BaseDirectory, file);
+#else
+            return System.IO.Path.Combine(Application.persistentDataPath, file);
+#endif
         }
 
         /// <summary>
@@ -1017,7 +1067,8 @@ namespace Nebula
             }
             entry.Write(c.Pending);
             c.PendingCount++;
-            if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes) FlushWorldState(c);
+            // Reserve the envelope even for plaintext peers so every batch fits the minimum UDP MTU.
+            if (c.Pending.Length + EntityStateEntry.WireSize > WorldStateMsg.BatchBytes - EncryptedTransport.PacketOverhead) FlushWorldState(c);
         }
 
         private void FlushWorldState(ClientConn c)
@@ -1160,9 +1211,12 @@ namespace Nebula
             if (id == MsgId.Hello)
             {
                 var hello = HelloMsg.Read(r);
-                if (hello.Version != HelloMsg.ProtocolVersion)
+                // Infrastructure peers are upgraded together and match exactly; a client gets the window
+                // (docs/compatibility-policy.md), checked below once there is a connection to refuse politely.
+                if (hello.Role != PeerRole.Client && hello.Version != HelloMsg.ProtocolVersion)
                 {
-                    NebulaLog.Warn($"client protocol {hello.Version} != {HelloMsg.ProtocolVersion}; disconnecting");
+                    NebulaLog.Warn($"{hello.Role} '{hello.Id}' refused: protocol {hello.Version} != {HelloMsg.ProtocolVersion} " +
+                                   "(gateway, worker and orchestrator processes of one mesh must run the same build); disconnecting");
                     _transport.Disconnect(peerId);
                     return;
                 }
@@ -1190,7 +1244,31 @@ namespace Nebula
                     _clientsById[c.ClientId] = c;
                 }
                 if (c.Welcomed || c.AuthPending || c.DisconnectAt != 0) return; // one Hello per link
+                if (Config.RequireEncryption && !TransportSecurity.IsEncrypted(_transport, peerId))
+                {
+                    Reject(c, "this gateway only accepts encrypted connections; update your client", false, JoinRejectReason.EncryptionRequired);
+                    return;
+                }
                 c.Name = string.IsNullOrEmpty(hello.Id) ? $"player{SessionIds.Sequence(c.ClientId)}" : hello.Id;
+                // ---- NEB-228 compatibility window (docs/compatibility-policy.md). Refuse with a code the game
+                // can turn into "update required" or "this server is older than your build", and record the
+                // negotiated protocol on the session: everything sent to this client is encoded at that version.
+                if (!ProtocolCompatibility.ClientProtocolAccepted(hello.Version))
+                {
+                    Reject(c, hello.Version < HelloMsg.MinProtocolVersion
+                        ? $"this game server speaks protocol {ProtocolCompatibility.WindowText()}; your client speaks {hello.Version} and needs updating"
+                        : $"this game server speaks protocol {ProtocolCompatibility.WindowText()} and has not been updated to your client's {hello.Version}",
+                        false, JoinRejectReason.ProtocolUnsupported);
+                    return;
+                }
+                c.ProtocolVersion = hello.Version;
+                if (!ProtocolCompatibility.ContentVersionAccepted(hello.GameContentVersion, Config.GameContentVersion, Config.MinGameContentVersion))
+                {
+                    Reject(c, $"this game server runs content version {Config.GameContentVersion}; your client has {hello.GameContentVersion}",
+                        false, JoinRejectReason.ContentVersionMismatch);
+                    return;
+                }
+                // ---- end NEB-228 block
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
                 c.ScopeKey = hello.ScopeKey ?? "";
                 if (Draining) { Reject(c, "gateway is draining", true); return; }
@@ -1311,7 +1389,14 @@ namespace Nebula
         {
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' rejected: {reason}");
             _writer.Reset();
-            new JoinRejectedMsg { Reason = reason, Retry = retry, Code = code, Saturation = saturation }.Write(_writer);
+            new JoinRejectedMsg
+            {
+                Reason = reason, Retry = retry, Code = code, Saturation = saturation,
+                // Every refusal carries the window and the content version, so a client that was refused for
+                // another reason still learns whether an update is waiting for it.
+                SupportedMinVersion = HelloMsg.MinProtocolVersion, SupportedMaxVersion = HelloMsg.ProtocolVersion,
+                ServerContentVersion = Config.GameContentVersion,
+            }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             c.DisconnectAt = Time.unscaledTime + 0.5f;
         }
@@ -1471,7 +1556,7 @@ namespace Nebula
                 ExpiresAt = JsonWebToken.UnixNow() + SessionTokenLifetimeSeconds,
             });
             _writer.Reset();
-            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed }.Write(_writer);
+            new WelcomeMsg { ClientId = c.ClientId, TickRate = NetworkTime.TickRate, ServerTick = NetworkTime.DerivedTick, Identity = c.Identity, Token = issuedToken, SessionToken = sessionToken, Reclaimed = c.Reclaimed, NegotiatedVersion = c.ProtocolVersion }.Write(_writer);
             Send(peerId, Delivery.ReliableOrdered, _writer.ToSegment());
             // A session taken over through identity coordination rather than a token never went through
             // TryReclaim, so the pawn it already owns has to be found here. With interest management the pawn is

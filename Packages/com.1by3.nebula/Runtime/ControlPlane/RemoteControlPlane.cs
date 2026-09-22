@@ -47,6 +47,8 @@ namespace Nebula
         private volatile bool _running;
         private ControlPlaneJson.Snapshot _incoming;
         private long _version = -1;
+        /// <summary>Identity of the mirrored document, or an empty string until a document with an identity arrives.</summary>
+        public string DocumentId { get; private set; } = "";
         private double _lastReadAt = double.NegativeInfinity;
         private DateTime _serverNow = DateTime.UtcNow;
         private double _serverNowAtLocal;
@@ -127,6 +129,7 @@ namespace Nebula
             _serverNowAtLocal = _clock.Elapsed.TotalSeconds;
             if (incoming.Version == _version) return; // an unchanged document after a full wait: only the clock moved
             _version = incoming.Version;
+            DocumentId = incoming.DocumentId ?? "";
             _workers.Clear(); _workers.AddRange(incoming.Workers);
             _leases.Clear(); _leases.AddRange(incoming.Leases);
             _gateways.Clear(); _gateways.AddRange(incoming.Gateways);

@@ -4,6 +4,66 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### NEB-228: deployment and protocol compatibility policy
+
+Nebula now states which versions may talk to each other, and enforces it with a refusal a client can act on instead of a silent disconnect. Design record: `docs/compatibility-policy.md`. Version table: `docs/protocol-versions.md`. User-facing page: [Upgrade a running mesh](https://nebula.1by3.co/docs/deploy/upgrades).
+
+**The window.** A gateway accepts a client whose protocol is in `HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion` — N-1 and N. Both are `18` in this release: 18 is the floor the policy starts from, so no older client is admitted, and the window widens at the next protocol change. Gateway-to-worker and worker-to-worker links still require an exact match, and now refuse with a logged reason on both sides instead of closing the link silently. Inside the window every protocol change must be additive; the gateway records the negotiated version on the session and encodes that client's traffic at it.
+
+**Wire (protocol 18, appended after the rest of 18 was settled; the version is unchanged):**
+
+- `HelloMsg` now writes the **sender's own** `Version` rather than always writing the `ProtocolVersion` constant, so a peer can announce a version that is not its build's. It also gained a trailing `u32 game_content_version`; a `Hello` that ends before it reads as `0`.
+- `Welcome` gained a trailing `u16 negotiated_version`: the protocol the gateway settled on for the session. A `Welcome` that ends before it reads as `0`, meaning the version the client sent.
+- `JoinRejected` gained trailing `u16 supported_min_version`, `u16 supported_max_version` and `u32 server_content_version`, sent on **every** refusal, and two `code` values: `3` `ProtocolUnsupported` and `4` `ContentVersionMismatch`. A client below the minimum must update; one above the maximum has reached a server that has not been upgraded yet.
+
+**The game's own content version.** `NebulaConfig.GameContentVersion` (with `MinGameContentVersion`, and `-nebula-content-version` / `-nebula-min-content-version`) is a number your game chooses. The client announces it and the gateway refuses a mismatch with its own reason code — exact match by default, a range when a minimum is set, and no check at all while it is `0`. Nebula only compares the numbers.
+
+**Client API.** `NebulaClient` gained `ServerProtocolWindow`, `ServerContentVersion` and `NegotiatedProtocolVersion`, and does not reconnect by itself after either build mismatch.
+
+**Rolling upgrades** are a documented procedure, not a new command: drain a gateway through its control-plane row and replace it while its clients move to another one with their sessions intact; hand a worker's entities and leases to its neighbours before replacing it, so it leaves no orphaned container. Both are now tested in `RollingUpgradeTests` (scale scenarios S9a and S9b), the compatibility window at its four edges in scenario S9, and a **recorded** client stream replayed against a gateway of this build in `ConformanceProtocolCompatibilityTests`, from the checked-in fixture `Services~/Nebula.Services.Tests/Fixtures/protocol-18-handshake.json`.
+### NEB-227: control-plane and entity-store availability
+
+No wire change; the protocol stays 18. Design record: `docs/control-plane-availability.md`. User-facing page:
+[Restart and restore a mesh](https://nebula.1by3.co/docs/deploy/availability).
+
+**Fixed: a worker never noticed a control plane that came back empty.** `NebulaWorker` registered once at startup
+and never again, so an orchestrator restarted without its document — a reset, a restore from an older backup, a
+failover to a replica that never had it — left every worker simulating containers the mesh had no route to, until
+each worker process was restarted by hand. A worker now registers again when it sees a document it is not in
+(the rule `NebulaGateway` already had) and, on every control-plane change, re-claims the lease rows of the
+containers it is still simulating, because nothing else in the mesh knows it is simulating them. Measured: a
+replacement orchestrator on an empty database converges in 2.6 s with every container owned again by the worker
+that holds its entities.
+
+- **New public class `WorkerRegistration`** (`Runtime/Worker/WorkerRegistration.cs`): `Register`,
+  `RegisterAgainIfForgotten`, `ReclaimContainers`, `Forget`. Pure C#, compiled into the standalone services as
+  well, so the same decision code runs on a Unity worker and in the tests. Game code does not need to call it;
+  `NebulaWorker` owns one.
+- **New `IControlPlane.DocumentId`** (and a `document` field in the control-plane JSON document): the identity of the
+  document, new when the orchestrator starts one from nothing and kept across a restart that restored it. The
+  worker's reclaim is gated on it: a lease missing from a document the worker already reconciled with was removed on
+  purpose (a retiring scope) and is left alone; a lease missing from a new document was lost and is put back.
+- **New public property `ControlPlaneHost.StorageError`**: why the last save to the control-plane store failed,
+  or null. Not a mesh failure by itself — the control plane keeps running in memory and the save is retried —
+  but it is the window an operator watches across a database failover.
+
+**New: a scripted backup-and-restore drill.** `Tools/restore-drill.ps1` seeds a database with known records,
+snapshots it, backs it up, wipes it, proves the wipe emptied it, restores it and proves the restored database is
+the one that was backed up, leaving `Logs/restore-drill/<timestamp>.json` and a summary. It needs no player
+build, no Unity and no running mesh, and drills a throwaway SQLite database unless you name another. The
+verification runs through `SqlPersistenceStore` and `SqlControlPlaneStorage` rather than hand-written SQL, so a
+pass means the mesh can read what came back. Backup routes: SQLite `VACUUM INTO`, `pg_dump`/`pg_restore`, or an
+engine-independent JSON export/import through the store. New project `Services~/Nebula.RestoreDrill`.
+
+**New scale scenarios** in `Services~/Nebula.Services.Tests/ScaleAvailabilityTests.cs` (`docs/scale-suite.md`
+S6b/S6c): an orchestrator **process** restart against a real `ControlPlaneHost`, `OrchestratorHttpServer` and
+SQLite store with `RemoteControlPlane` mirrors attached (2.59 s, every lease identical, no mirror disconnected);
+the same with an empty database; and a PostgreSQL failover under Docker, which skips with a reason when no
+Docker daemon is there. New thresholds `ScaleThresholds.OrchestratorRestartSeconds` (15 s, derived from
+`RemoteControlPlane.DisconnectAfterSeconds`) and `DatabaseFailoverSeconds` (60 s, provisional). The pinned gap
+`docs/scale-suite.md` D7b is closed and its assertion turned around.
+
+
 ### Breaking: protocol 17 → 18, the scoped worlds and interaction contracts project
 
 Every Nebula process must be rebuilt and restarted together. A gateway disconnects a client whose protocol version is not exactly `18`; there is no negotiation between 17 and 18. This release settles the first milestone of the scoped-worlds project: the cross-worker call contract, the entity location contract, the distributed-physics model, and the conformance suite that pins them.
@@ -259,6 +319,43 @@ wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-te
 
 ### Added
 
+#### Transport encryption for native clients (NEB-226)
+
+A native client's UDP link to the gateway can now be encrypted and the gateway authenticated. See
+[Encrypt client connections](https://nebula.1by3.co/docs/deploy/encryption); the design record is
+`docs/transport-encryption.md`.
+
+**What it does.** A client that asks for encryption exchanges keys with the gateway before it sends anything
+else (X25519, one round trip, below `Hello`), and every packet after that is sealed with ChaCha20-Poly1305 —
+21 bytes of overhead, whatever the payload. A packet altered in flight, or replayed, is dropped before the game
+sees it. The gateway signs the exchange with an RSA certificate; the client checks it against a pinned
+SHA-256 SubjectPublicKeyInfo fingerprint. With no certificate configured, the gateway generates a self-signed
+one on first run, keeps it beside its executable and prints the fingerprint to pin, so a local mesh needs no
+configuration.
+
+**Scope.** Client-to-gateway only. Gateway-to-worker and worker-to-worker links are unchanged and unencrypted:
+those processes must run on a private network reachable only by the mesh's gateways, which is now stated as a
+requirement in the deployment guides. A web client's link was, and remains, encrypted by DTLS.
+
+**New `NebulaConfig` fields,** mirrored into the services config, with command-line overrides:
+`EncryptClients` (`-nebula-encrypt-clients`, default on: answer a key exchange), `RequireEncryption`
+(`-nebula-require-encryption`, default off: refuse plaintext clients), `EncryptionCertPath` /
+`EncryptionKeyPath` (`-nebula-encryption-cert`, `-nebula-encryption-key`), `EncryptionCertPem` /
+`EncryptionKeyPem` (`NEBULA_ENCRYPTION_CERT`, `NEBULA_ENCRYPTION_KEY`), `EncryptionSelfSignedPath`
+(`-nebula-encryption-store`), and on the client `ClientEncryption` (`-nebula-encrypt`) and
+`GatewayFingerprint` (`-nebula-gateway-fingerprint`). The orchestrator passes the gateway settings to the
+gateway it starts.
+
+**Protocol 18, no version bump.** The handshake is a transport frame below `Hello`, not a protocol message.
+`JoinRejectReason` gained the value `5`, `EncryptionRequired`, sent with `Retry = false` when
+`RequireEncryption` refuses a plaintext client.
+
+**New public API:** `EncryptedTransport`, `ClientEncryption`, `ISecureTransport`, `TransportSecurity`,
+`TransportIdentity`, and the managed primitives `NebulaCrypto`, `X25519` and `ChaCha20Poly1305Managed`
+(Unity's profile ships none of them). `NebulaGateway.CertificateFingerprint` reports what clients should pin.
+On .NET the services use the platform's hardware-accelerated ChaCha20-Poly1305 and fall back to the managed
+implementation elsewhere; both are checked against RFC 8439.
+
 #### Scale and failure suite (NEB-237)
 
 Measured, repeatable evidence of what a mesh does under load and when something breaks, in two clearly separated layers. Design record: `docs/scale-suite.md`; user page: [Run the scale and failure suite](https://nebula.1by3.co/docs/guides/scale-suite). No runtime behaviour changed; this is test and tooling only.
@@ -267,7 +364,17 @@ Measured, repeatable evidence of what a mesh does under load and when something 
 - **Real-worker layer**: `Tools/scale-suite.ps1`, which starts a real mesh through the `nebula` CLI, drives `Services~/Nebula.LoadGen`, kills real processes, and scrapes `/api/state`, `/api/cost` and each worker log's `[nebula] profile` line into CSV. Modes `-DryRun` (check preconditions, run nothing), `-Synthetic` (run the other layer) and the real run, plus `-Build`.
 - **Artifacts**: one CSV per scenario under `Logs/scale/`, stamped `synthetic` or `unity` in the first column and in every line of runner output, so the two layers are never read as one series. The whole-mesh restore curve is compared against a checked-in baseline, `docs/baselines/mesh-restart.csv`.
 - **Test fixtures** (`Services~/Nebula.Services.Tests/Fixtures/`): `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway(hard)`, `RestartControlPlane(snapshot)`, `FakeWorker.SpawnIntoRequestedContainer`, and the new `ScaleHarness`/`ScaleWorld` helpers.
-- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there is no protocol compatibility window at all — a gateway requires an exact version match — so a rolling upgrade may replace processes at one protocol version but may not span two.
+- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there was no protocol compatibility window at all — a gateway required an exact version match — so a rolling upgrade could replace processes at one protocol version but not span two. That last finding is closed by NEB-228 above, which is where the window and the rolling-upgrade procedure are now described.
+
+#### Gateway fleet operations gap audit (NEB-229)
+
+Closes the hard-gateway-kill session-reclaim gap the scale suite pinned (D7a). Design record:
+`docs/gateway-fleet-audit.md`; user page: [Connecting clients](https://nebula.1by3.co/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway).
+
+- **A gateway that has stopped heartbeating is now treated as gone by session coordination.** `GatewaySessionDirectory` (`Runtime/ControlPlane/GatewaySessionCoordination.cs`) takes an optional gateway-liveness predicate; `LocalControlPlane` wires it to the control plane's existing `GatewayInfo.LastHeartbeat` (a new `GatewayStaleAfterSeconds`, default 5 s, the same cutoff a worker row uses). A claim against an owner already confirmed gone is granted immediately instead of parked for the 15 s pending window; a claim already pending re-checks the owner's liveness on every retry, so an owner that dies mid-wait is evicted as soon as it goes stale. An incarnation check keeps a merely slow-but-alive owner from ever being evicted.
+- **Measured, not assumed:** a hard-killed gateway's sessions now reclaim in 4.7–5.0 s across single-pair and fan-out runs (was: never, refused after the 10 s coordination deadline). `ScaleThresholds.HardKillGatewayReclaimSeconds = 9.0 s` is set from the measurement with headroom. `ScaleFailureTests`' pinned negative test now asserts the positive; new `ScaleGatewayAuditTests.cs` adds a higher-fan-out measurement and asserts directly that a hard kill loses no authoritative worker state (same `NetId`, zero duplicate pawns).
+- **Everything else in the audit — load balancing, drain, gateway replacement, client-side reconnect behaviour — was already correct** and is recorded closed with its evidence in `docs/gateway-fleet-audit.md`; nothing else changed. Nebula still does not run a load balancer in front of the gateway fleet; that boundary in `website/CONTENT_GUIDE.md` is restated, not changed.
+- No wire format or protocol version change.
 
 #### Lifecycle hooks for materialization and dematerialization (NEB-242)
 
@@ -280,7 +387,6 @@ Game callbacks at the moments the mesh brings a container or a scope to life, or
 - New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
 - `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
 
-<<<<<<< HEAD
 #### Cohesion-aware rebalancing along game-defined boundaries (NEB-235)
 
 The planner already cut along the boundaries the game authored and already refused to split a cohesion group or move
@@ -306,7 +412,6 @@ a held container. It now explains what it did, and says why when it could not. D
   could split a cohesion group the real deal may not and promise the scaler a relief that never arrives. It now
   carries `Cohesion`, `Cost` and `Holds`, and `AssignmentPlan.Moves` carries the dry run's explanations.
 - Conformance scenario 13 (`Tests/EditMode/ConformanceRebalanceTests.cs`, 10 tests, both builds).
-=======
 #### Explicit capacity limits and admission reporting (NEB-236)
 
 See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-target-is-full) and [Capacity and admission](https://nebula.1by3.co/docs/guides/orchestrator-and-dashboard#capacity-and-admission); the design record is `docs/capacity-admission.md`.
@@ -338,7 +443,6 @@ See [When a target is full](https://nebula.1by3.co/docs/guides/scopes#when-a-tar
 **Dashboard and API:** `GET /api/cost` and the `cost` block of `/api/state` gained `capacitySaturation` and an `atCapacity` flag per row; each `scopes` row gained `capacityKnown`, `saturation`, `dominant`, `atCapacity` and `capacityCause`; `/api/state` gained `capacitySaturation`. The Container cost table has a **Full** column and the Scopes card a **Capacity** column.
 
 **Conformance:** scenario 12 of `docs/conformance-suite.md` is covered by `Services~/Nebula.Services.Tests/ConformanceCapacityAdmissionTests.cs`, with the derivation unit tested in both builds by `Tests/EditMode/CapacityAdmissionTests.cs`.
->>>>>>> d059a5c (NEB-236: explicit capacity limits and admission reporting)
 
 #### Persistence durability window (NEB-224)
 

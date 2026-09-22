@@ -1,0 +1,48 @@
+---
+title: "ProtocolCompatibility"
+description: "Checks client protocol and game content versions against the gateway's supported range."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/CompatibilityWindow.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/CompatibilityWindow.cs)</div>
+
+```csharp
+public static class ProtocolCompatibility
+```
+
+Checks client protocol and game content versions against the gateway's supported range.
+
+Both protocol limits are 18, so only protocol-18 clients are accepted. Gateway-to-worker and worker-to-worker connections also require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
+
+## Methods
+
+### ClientProtocolAccepted [#clientprotocolaccepted]
+
+```csharp
+public static bool ClientProtocolAccepted(ushort version);
+```
+
+Returns whether the client's protocol is within the gateway's inclusive supported range.
+
+### WindowText [#windowtext]
+
+```csharp
+public static string WindowText();
+```
+
+Formats the supported protocol range for logs and refusal messages.
+
+### MinContentVersion [#mincontentversion]
+
+```csharp
+public static uint MinContentVersion(uint server, uint configuredMin);
+```
+
+Returns the minimum accepted content version. A zero minimum or one greater than `server` uses the server's version, requiring an exact match.
+
+### ContentVersionAccepted [#contentversionaccepted]
+
+```csharp
+public static bool ContentVersionAccepted(uint client, uint server, uint configuredMin);
+```
+
+Returns whether the client's content version is within the configured inclusive range. A `server` value of zero accepts every content version.

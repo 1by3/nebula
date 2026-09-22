@@ -9,7 +9,7 @@ namespace Nebula
     /// ports of their own that were opened before they were added. A peer id is the inner id times the number of
     /// transports plus the transport's index.
     /// </summary>
-    public sealed class MultiTransport : ITransport
+    public sealed class MultiTransport : ITransport, ISecureTransport
     {
         private readonly ITransport[] _transports;
         private readonly Action<TransportEvent>[] _forwarders;
@@ -36,6 +36,20 @@ namespace Nebula
         public void StartClient() => _transports[0].StartClient();
 
         public int Connect(string host, int port) => Outer(_transports[0].Connect(host, port), 0);
+
+        /// <summary>Returns the peer's encryption status from its underlying <see cref="ISecureTransport"/>, or false when that interface is unavailable.</summary>
+        public bool IsEncrypted(int peerId) =>
+            TryInner(peerId, out var transport, out int inner) && transport is ISecureTransport secure && secure.IsEncrypted(inner);
+
+        public string SecurityError
+        {
+            get
+            {
+                foreach (var t in _transports)
+                    if (t is ISecureTransport secure && !string.IsNullOrEmpty(secure.SecurityError)) return secure.SecurityError;
+                return "";
+            }
+        }
 
         public void Disconnect(int peerId)
         {

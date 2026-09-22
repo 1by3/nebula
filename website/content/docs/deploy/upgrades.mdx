@@ -1,0 +1,90 @@
+---
+title: Replace gateways and workers
+description: Check protocol and content compatibility, drain server processes, and verify client traffic after replacement.
+---
+
+Check compatibility before replacing server processes in a running game. The drain procedures below apply to builds that use the same wire protocol and compatible game content.
+
+A **mesh** is the group of processes running one game world. Its **gateway** accepts client connections, and its **workers** simulate entities in assigned **containers**, or areas of the world. The **orchestrator** manages worker processes and assignments through the **control plane**.
+
+## Check compatibility
+
+| Connection | Current requirement |
+| --- | --- |
+| Native or browser client to gateway | Protocol `18`; both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `18`. |
+| Gateway to worker, worker to worker | Exact protocol match. |
+
+The gateway records the client's accepted protocol version and returns it in `Welcome.negotiated_version`. A client outside the supported range receives `ProtocolUnsupported`.
+
+<Callout type="warn" title="Protocol changes need a separate rollout plan">
+Only protocol 18 is currently accepted. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
+</Callout>
+
+### Configure game content compatibility
+
+Nebula's protocol does not describe your scenes, prefab identifiers, component layouts, or custom serialized data. Keep those compatible across processes, and declare your game's content version with `GameContentVersion` on `NebulaConfig`.
+
+- A gateway configured with `GameContentVersion = 0` disables this check.
+- With a nonzero version, the default requires an exact client match.
+- Set `MinGameContentVersion` to a nonzero value no greater than `GameContentVersion` to admit that inclusive range.
+
+The gateway compares the client's number with its configured range. Your game determines which content versions can interoperate. Nebula does not migrate content.
+
+The command-line options `-nebula-content-version <n>` and `-nebula-min-content-version <n>` override these values on the process receiving them. Replace `<n>` with your chosen version number and configure each gateway that accepts clients. See [Configuration](/docs/guides/configuration).
+
+## Prepare the replacement
+
+1. Build and stage server processes with matching wire protocols and compatible game data.
+2. Ensure the remaining workers have enough capacity to accept transferred entities.
+3. Configure the client-facing address to reach another healthy gateway during replacement. Nebula does not provide a load balancer.
+4. Keep the gateway signing key, mesh token, and encryption certificate consistent across the fleet. See [Authentication](/docs/guides/authentication) and [Encrypt client connections](/docs/deploy/encryption).
+
+## Drain and replace a gateway
+
+Draining stops new joins and asks connected clients to reconnect. Clients present their session tokens to reclaim their identities and player-controlled entities, or **pawns**. Reclaim must finish within `SessionReclaimSeconds` to retain a disconnected session's pawn.
+
+1. Set `IControlPlane.SetGatewayDraining(gatewayId, true)` through your server tooling, or use the dashboard's gateway drain action. See [the control-plane API](/docs/reference/control-plane/i-control-plane#setgatewaydraining).
+2. Wait for clients to reconnect through a healthy gateway. `GatewayDrainReconnectSeconds` sets the reconnect deadline, defaulting to 10 seconds.
+3. Confirm the draining gateway has no active clients before stopping it. If the deadline expires first, investigate clients that have not reconnected.
+4. Start the replacement, confirm it accepts clients, and check that reclaimed clients retain their sessions and pawns.
+5. Repeat for the next gateway.
+
+Clear the draining flag to cancel a drain. A client always retries its configured address, so an address that reaches only the stopped gateway prevents successful reclaim.
+
+## Drain and replace a worker
+
+**Authority** is responsibility for simulating an entity. A **handover** transfers that authority and the entity's state to another worker.
+
+Use the orchestrator's worker retirement controls to move assignments and hand over authority before terminating a process. See [Autoscale workers](/docs/guides/orchestrator-and-dashboard#autoscale) for managed worker retirement.
+
+1. Retire the worker through your deployment or orchestrator controls while other eligible workers have capacity.
+2. Wait until the worker owns no containers and reports zero authoritative entities. An empty assignment list alone does not prove that entity transfers have finished.
+3. Stop the drained process if your worker host has not already stopped or parked it, then start the replacement build.
+4. Confirm the replacement registers and receives assignments. Verify fresh client input and replicated state after the transfer.
+
+`WorkerDrainTimeoutSeconds` limits how long the orchestrator waits for entities to transfer during retirement. If that deadline expires, it may stop the worker before every transfer finishes. Set the limit for your workload and investigate transfers that exceed it; do not assume a timeout is a successful drain.
+
+## Handle a refused join
+
+Read `NebulaClient.JoinRejectReason` and `LastError` to display the refusal. `ServerProtocolWindow` contains the gateway's supported protocol range, and `ServerContentVersion` contains its configured content version.
+
+For a `NebulaClient` instance named `client`, subscribe to `JoinRefused` in your game's connection code:
+
+```csharp
+client.JoinRefused += rejected =>
+{
+    if (rejected.Code == JoinRejectReason.ProtocolUnsupported)
+    {
+        bool clientIsOlder = HelloMsg.ProtocolVersion < rejected.SupportedMinVersion;
+        ShowMessage(clientIsOlder
+            ? "Update this game before joining."
+            : "This server does not support this client build.");
+    }
+    else if (rejected.Code == JoinRejectReason.ContentVersionMismatch)
+    {
+        ShowMessage($"This server requires compatible content for version {rejected.ServerContentVersion}.");
+    }
+};
+```
+
+Import the `Nebula` namespace. `ShowMessage(string message)` represents your game's message display method. `JoinRefused` runs on the main thread; the client stops automatic retries for these compatibility refusals. A draining gateway instead returns a retryable refusal.

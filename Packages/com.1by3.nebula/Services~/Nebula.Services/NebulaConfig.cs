@@ -25,6 +25,19 @@ namespace Nebula
         public float SessionReclaimSeconds = 30f;
         public bool SingleSessionPerPlayer = true;
         public float GatewayDrainReconnectSeconds = 10f;
+        // The game's own content version and the window the gateway admits (docs/compatibility-policy.md).
+        // 0 = the game does not version its content and the gateway does not check.
+        public uint GameContentVersion = 0;
+        public uint MinGameContentVersion = 0;
+        public bool EncryptClients = true;
+        public bool RequireEncryption = false;
+        public string EncryptionCertPath = "";
+        public string EncryptionKeyPath = "";
+        public string EncryptionCertPem = "";
+        public string EncryptionKeyPem = "";
+        public string EncryptionSelfSignedPath = "";
+        public bool ClientEncryption = false;
+        public string GatewayFingerprint = "";
         public int WorkerCount = 4;
         public int MaxWorkers = 32;
         public string AssignmentPolicy = "auto";

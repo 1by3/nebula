@@ -29,6 +29,8 @@ namespace Nebula
         {
             public long Version;
             public DateTime Now;
+            /// <summary>The <see cref="IControlPlane.DocumentId"/> value, or an empty string when the JSON omits it.</summary>
+            public string DocumentId = "";
             public List<WorkerInfo> Workers = new List<WorkerInfo>();
             public List<LeaseInfo> Leases = new List<LeaseInfo>();
             public List<GatewayInfo> Gateways = new List<GatewayInfo>();
@@ -37,12 +39,13 @@ namespace Nebula
             public List<ScopeInfo> Scopes = new List<ScopeInfo>();
         }
 
-        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null)
+        public static string Write(long version, DateTime now, IReadOnlyList<WorkerInfo> workers, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<GatewayInfo> gateways, IReadOnlyDictionary<string, string> settings, IReadOnlyList<ScopeInfo> scopes = null, string documentId = null)
         {
             var sb = new StringBuilder(4096);
             var w = new JsonWriter(sb);
             w.BeginObject();
             w.Prop("version", version);
+            if (!string.IsNullOrEmpty(documentId)) w.Prop("document", documentId);
             w.Prop("now", ToUnixMs(now));
             w.Key("workers");
             w.BeginArray();
@@ -146,6 +149,7 @@ namespace Nebula
             {
                 Version = (long)Num(root, "version"),
                 Now = FromUnixMs(Num(root, "now")),
+                DocumentId = Str(root, "document") ?? "",
             };
             if (root.TryGetValue("workers", out var workers) && workers is List<object> wl)
             {
