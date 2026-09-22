@@ -109,7 +109,39 @@ public event Action<NetworkIdentity> EntityRestored;
 
 An entity was brought back from the store and spawned on this worker.
 
+### ContainerRestored [#containerrestored]
+
+```csharp
+public event Action<string, int> ContainerRestored;
+```
+
+Every persisted record of a container this worker has just gained has been read and dealt with: the container id, and how many entities were actually brought back (0 when there was nothing saved). Raised once per lease, on the main thread, after the grace period and the load. This is the seam the scope lifecycle waits on before a restored scope admits clients (`docs/scope-lifecycle.md`); NEB-242 exposes it to games as `OnContainerRestored`.
+
 ## Methods
+
+### IsContainerRestored [#iscontainerrestored]
+
+```csharp
+public bool IsContainerRestored(string containerId);
+```
+
+The container's records have been read and restored since this worker gained its lease.
+
+### RestoredCountFor [#restoredcountfor]
+
+```csharp
+public int RestoredCountFor(string containerId);
+```
+
+How many entities that restore brought back; 0 when it has not finished or there was nothing saved.
+
+### CheckpointContainer [#checkpointcontainer]
+
+```csharp
+public int CheckpointContainer(string containerId);
+```
+
+Save every authoritative persistent entity in `containerId` right now, whatever the checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence: the saves are issued here and [`IPersistenceStore.WhenWritten`](/docs/reference/persistence/i-persistence-store#whenwritten) is the barrier that says they reached the store. Does not despawn anything.
 
 ### Find [#find]
 

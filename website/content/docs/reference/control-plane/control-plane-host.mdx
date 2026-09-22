@@ -296,6 +296,18 @@ Main thread: apply a batch of writes when `req` is one. Returns false for any ot
 public void ActivateScope(ScopeActivationRequest request);
 ```
 
+### SetScopeState [#setscopestate]
+
+```csharp
+public void SetScopeState(string scopeKey, string state);
+```
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
 ### RemoveScope [#removescope]
 
 ```csharp

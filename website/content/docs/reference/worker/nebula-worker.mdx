@@ -67,6 +67,14 @@ public NebulaPersistence Persistence { get; }
 
 Long-term storage for the entities that opted into it ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)): checkpoints of what this worker owns, and restores of what the containers it leases held. Null when persistence is off (`-nebula-persistence-mode off`, or no store handed to [`Initialize`](#initialize)).
 
+### ScopeLifecycleAgent [#scopelifecycleagent]
+
+```csharp
+public WorkerScopeLifecycle ScopeLifecycleAgent { get; }
+```
+
+This worker's half of the scope lifecycle: the idle clock of the scope parts it owns, the retire sequence for a scope the orchestrator is retiring, and the restore acknowledgement a restored scope waits on. See `docs/scope-lifecycle.md`.
+
 ### WorkerId [#workerid]
 
 ```csharp
@@ -480,6 +488,14 @@ public bool ReleaseRuntimeContainer(ulong id);
 ```
 
 Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box. Persistent entities still inside are checkpointed and despawned (they come back when the box is asked for again); anything else inside is despawned for good. Returns false when the container is not here or belongs to another worker.
+
+### EmptyContainer [#emptycontainer]
+
+```csharp
+public void EmptyContainer(Container container);
+```
+
+Despawn everything this worker is authoritative for inside `container`, keeping the records of persistent entities (they come back when the box is asked for again) and losing everything else. The contents half of [`ReleaseRuntimeContainer`](#releaseruntimecontainer), split out because the scope lifecycle empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every part has reported its checkpoint done (`docs/scope-lifecycle.md`).
 
 ### Spawn [#spawn]
 

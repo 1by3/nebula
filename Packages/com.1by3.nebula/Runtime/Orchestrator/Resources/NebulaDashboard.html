@@ -246,6 +246,14 @@
         <tbody id="cohesion"></tbody>
       </table>
     </section>
+    <section class="card wide" id="scopesCard" hidden>
+      <h2>Scopes</h2>
+      <div class="muted" id="scopesHint" style="font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>Scope</th><th>State</th><th>Parts</th><th>Players</th><th>Entities</th><th>Idle</th><th>Age</th><th>Requester</th></tr></thead>
+        <tbody id="scopes"></tbody>
+      </table>
+    </section>
     <section class="card wide">
       <h2>Gateways</h2>
       <table>
@@ -462,6 +470,26 @@
             ? `<button class="small" data-act="unpin" data-id="${esc(c.id)}" title="Let it follow its carrier again">Unpin</button>`
             : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';
+
+    // Scopes: keyed worlds the mesh has been asked for. Hidden until something activates one, so a mesh that
+    // never uses them looks exactly as it did.
+    const scopes = s.scopes || [];
+    $('scopesCard').hidden = scopes.length === 0;
+    if (scopes.length) {
+      const retire = s.scopeIdleRetireSeconds || 0;
+      $('scopesHint').innerHTML = retire > 0
+        ? `A scope with nobody in it retires after <b>${fmtSecs(retire)}</b> idle: its persistent entities are checkpointed, its containers released, and it comes back when it is activated again.`
+        : 'Idle retirement is off (<span class="mono">ScopeIdleRetireSeconds = 0</span>): a scope keeps its containers until something removes it.';
+      $('scopes').innerHTML = scopes.map(sc => `
+        <tr><td class="mono">${esc(sc.key)}</td>
+            <td>${esc(sc.state)}${sc.state === 'active' && !sc.ready ? ' <span class="muted">(no owner)</span>' : ''}</td>
+            <td>${sc.parts}</td>
+            <td>${sc.players}</td>
+            <td>${sc.entities}</td>
+            <td>${sc.state === 'active' ? fmtSecs(sc.idleSeconds) : '<span class="muted">—</span>'}</td>
+            <td>${fmtSecs(sc.ageSeconds)}</td>
+            <td class="mono">${sc.requester ? esc(sc.requester) : '<span class="muted">—</span>'}</td></tr>`).join('');
+    }
 
     $('gateways').innerHTML = s.gateways.length ? s.gateways.map(g => {
       const state = g.draining ? 'draining' : g.drainRequested ? 'drain requested' : g.ready ? 'ready' : 'starting';

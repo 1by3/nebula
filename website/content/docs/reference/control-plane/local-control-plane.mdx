@@ -229,10 +229,26 @@ public void ActivateScope(ScopeActivationRequest request);
 
 Make the scope named by `request` exist, or leave the one that already exists alone. Called on the orchestrator's main thread, which serialises it against every other control-plane write, so the check and the create are one step; the durable claim ([`IScopeStore`](/docs/reference/control-plane/i-scope-store)) makes the same hold across orchestrator runs.
 
+### SetScopeState [#setscopestate]
+
+```csharp
+public void SetScopeState(string scopeKey, string state);
+```
+
+Move a scope to another lifecycle state ([`ScopeState`](/docs/reference/control-plane/scope-state)). The orchestrator's sweep is the only caller in Nebula: it is the single writer of the machine, which is what keeps the ordering guarantees (`docs/scope-lifecycle.md`). The acknowledgements of the previous step are dropped with the change.
+
+### AckScopePart [#ackscopepart]
+
+```csharp
+public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
+```
+
+A worker reporting that it finished the step the scope is in for one of its containers ([`ScopePhase`](/docs/reference/control-plane/scope-phase)). Recorded on the row, so the orchestrator's next sweep sees it and every other role can watch the progress. An ack for a container the scope does not own, or in a phase that does not match the scope's state, is dropped: it belongs to a step that has already ended.
+
 ### RemoveScope [#removescope]
 
 ```csharp
 public void RemoveScope(string scopeKey);
 ```
 
-Drop a scope row, its claim and the lease rows of its containers. The mechanism NEB-240's retirement policy drives.
+Drop a scope row, its claim and the lease rows of its containers. The explicit way out, whatever state the row is in.

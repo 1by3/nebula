@@ -99,6 +99,14 @@ public int JoinEstimatedSeconds { get; }
 
 Roughly how many seconds the gateway expects the [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) hold to last; 0 when unknown.
 
+### JoinHoldReason [#joinholdreason]
+
+```csharp
+public JoinHoldReason JoinHoldReason { get; }
+```
+
+Why the gateway is holding the join, while [`Join`](#join) is [`JoinState.Starting`](/docs/reference/protocol/join-state#starting): the world is booting, or the scope this client named is not ready, is restoring or is retiring. Read it in a [`JoinStateChanged`](#joinstatechanged) handler to say something more useful than "please wait".
+
 ### RttMs [#rttms]
 
 ```csharp

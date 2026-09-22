@@ -208,6 +208,7 @@ Use the overview to:
 - See every gateway's load and drain one (see [Run more than one gateway](#run-more-than-one-gateway)).
 - Edit game-defined mesh settings.
 - Pin a dynamic container to a worker or return it to its carrier's worker.
+- Watch the [simulation scopes](/docs/guides/scopes) a mesh has been asked for: their lifecycle state, how many players and entities are in each, how long nothing has wanted one, and how old it is. The card appears once something activates a scope, and is read-only — retiring is decided by `ScopeIdleRetireSeconds` and `ScopeLifecycle.ShouldRetire`, not by hand.
 - Read recent orchestrator events.
 
 Stopping a worker with **Kill** simulates a crash. The orchestrator reassigns its containers and starts a replacement. Removing a worker performs a graceful drain and reduces the requested worker count.

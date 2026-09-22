@@ -1,0 +1,68 @@
+---
+title: "WorkerScopeLifecycle"
+description: "The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/WorkerScopeLifecycle.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/WorkerScopeLifecycle.cs)</div>
+
+```csharp
+public sealed class WorkerScopeLifecycle
+```
+
+The worker's half of the scope lifecycle (`docs/scope-lifecycle.md`): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to [`ScopeState.Retiring`](/docs/reference/control-plane/scope-state#retiring), and reports a restore finished for a scope in [`ScopeState.Restoring`](/docs/reference/control-plane/scope-state#restoring). It decides nothing — the orchestrator owns the state machine and this only ever acts on the state it reads off the control-plane document.
+
+The retire sequence for one part, in order: the **before-retire window** ([`BeforeRetire`](#beforeretire), the seam NEB-242 exposes as `OnBeforeRetire(container, cancelToken)`), a forced checkpoint of every persistent entity in the part, the store's write barrier, emptying the part, and only then the acknowledgement the orchestrator waits for before it deletes the lease rows.
+
+## Constructors
+
+### WorkerScopeLifecycle [#workerscopelifecycle]
+
+```csharp
+public WorkerScopeLifecycle(NebulaWorker worker);
+```
+
+## Fields
+
+### PassSeconds [#passseconds]
+
+```csharp
+public const float PassSeconds = 0.5f;
+```
+
+Seconds between passes. The steps are slow and rare; a pass per frame would only cost.
+
+### BeforeRetireTimeoutSeconds [#beforeretiretimeoutseconds]
+
+```csharp
+public const float BeforeRetireTimeoutSeconds = 10f;
+```
+
+How long the before-retire window may run before it is cancelled and the retire carries on regardless. Kept below [`ScopeLifecycle.StepTimeoutSeconds`](/docs/reference/control-plane/scope-lifecycle#steptimeoutseconds) so the checkpoint still happens inside the orchestrator's deadline rather than being cut off by it.
+
+## Properties
+
+### RetiringParts [#retiringparts]
+
+```csharp
+public int RetiringParts { get; }
+```
+
+Parts this worker is currently retiring; for tests and the worker's own diagnostics.
+
+## Methods
+
+### Update [#update]
+
+```csharp
+public void Update();
+```
+
+Called from the worker's frame pass. Never from the tick loop.
+
+### IsBusy [#isbusy]
+
+```csharp
+public static bool IsBusy(Container container);
+```
+
+Whether emptying this container now would lose something. Pure over the container's contents.

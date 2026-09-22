@@ -1,6 +1,6 @@
 ---
 title: "JoinStatusMsg"
-description: "Gateway -> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown)."
+description: "Gateway -> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "Gateway -> client: the join's state and, while JoinState.Starting,
 public struct JoinStatusMsg
 ```
 
-Gateway -\> client: the join's state and, while [`JoinState.Starting`](/docs/reference/protocol/join-state#starting), a rough wait in seconds (0 = unknown).
+Gateway -\> client: the join's state and, while [`JoinState.Starting`](/docs/reference/protocol/join-state#starting), a rough wait in seconds (0 = unknown) and why.
 
 ## Fields
 
@@ -26,6 +26,14 @@ public ushort EstimatedSeconds;
 ```
 
 Roughly how long the client should expect to wait, in seconds; 0 when nobody can say.
+
+### Reason [#reason]
+
+```csharp
+public JoinHoldReason Reason;
+```
+
+Why the join is held, while [`JoinState.Starting`](/docs/reference/protocol/join-state#starting).
 
 ## Methods
 
