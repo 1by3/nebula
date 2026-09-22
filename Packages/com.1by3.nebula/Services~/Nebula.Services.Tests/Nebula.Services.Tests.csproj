@@ -12,6 +12,9 @@
     <Compile Include="../../Tests/EditMode/OrchestratorAssignmentTests.cs;../../Tests/EditMode/ControlPlaneJsonTests.cs" />
     <!-- Interest management is pure C#, so the standalone gateway runs the same tests the package does. -->
     <Compile Include="../../Tests/EditMode/InterestGridTests.cs;../../Tests/EditMode/InterestIndexTests.cs;../../Tests/EditMode/CarriedTransitionTests.cs;../../Tests/EditMode/HandoverScopeTests.cs;../../Tests/EditMode/InterestSubscriptionTests.cs;../../Tests/EditMode/RegionPublisherTests.cs;../../Tests/EditMode/InterestSettingsTests.cs;../../Tests/EditMode/InterestPolicyTests.cs;../../Tests/EditMode/ClientInterestTests.cs;../../Tests/EditMode/InterestWireTests.cs" />
+    <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
+         exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
+    <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

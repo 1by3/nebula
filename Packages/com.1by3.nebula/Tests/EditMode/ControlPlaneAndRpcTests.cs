@@ -97,6 +97,7 @@ namespace Nebula.Tests
         }
 
         [Test]
+        [Category("Conformance")] // scenario 8: the per-behaviour handover-state codec (docs/conformance-suite.md)
         public void HandoverStateRoundTripsPerBehaviourAndIsolatesFaultyChunks()
         {
             var a = new GameObject("a");
