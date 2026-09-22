@@ -237,6 +237,15 @@
         <tbody id="carried"></tbody>
       </table>
     </section>
+    <section class="card wide" id="cohesionCard" style="display:none">
+      <h2>Cohesion</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">What the game says must stay together. A <b>hold</b> keeps a container on its worker for a bounded time; a <b>group</b> is a set of entities one worker must simulate, so the planner deals their containers as one item and never splits them.</div>
+      <div class="warn" id="cohesionWarn" style="display:none; font-size:12px; margin-bottom:8px"></div>
+      <table>
+        <thead><tr><th>What</th><th>Worker(s)</th><th>Containers</th><th>Detail</th></tr></thead>
+        <tbody id="cohesion"></tbody>
+      </table>
+    </section>
     <section class="card wide">
       <h2>Gateways</h2>
       <table>
@@ -420,6 +429,23 @@
       hintNote.textContent = (s.scale && s.scale.hintNote) || '';
       hintNote.style.display = (s.scale && s.scale.hintNote) ? '' : 'none';
     }
+
+    // Cohesion (docs/cohesion-hints.md): holds first, then the entity groups, then whatever did not fit a worker.
+    const coh = s.cohesion || { holds: [], groups: [], unsplittable: [] };
+    const cohRows = []
+      .concat((coh.holds || []).map(h => `
+        <tr><td>hold</td><td class="mono">${esc(h.worker || '')}</td><td class="mono">${esc(h.container)}</td>
+            <td>not rebalanced for ${Number(h.seconds).toFixed(1)}s</td></tr>`))
+      .concat((coh.groups || []).map(g => `
+        <tr><td>group ${g.group}</td><td class="mono">${esc((g.workers || []).join(', '))}</td>
+            <td class="mono">${esc((g.containers || []).join(', ')) || '<span class="muted">none</span>'}</td>
+            <td>${g.members} member(s)${g.split ? ' · <span class="warn">on more than one worker</span>' : ''}</td></tr>`));
+    $('cohesion').innerHTML = cohRows.join('');
+    const cohWarn = $('cohesionWarn');
+    const oversize = coh.unsplittable || [];
+    cohWarn.innerHTML = oversize.map(u => esc(u.reason)).join('<br>');
+    cohWarn.style.display = oversize.length ? '' : 'none';
+    $('cohesionCard').style.display = (cohRows.length || oversize.length) ? '' : 'none';
 
     $('containers').innerHTML = s.containers.map(c => `
       <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>

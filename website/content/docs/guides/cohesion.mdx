@@ -1,0 +1,97 @@
+---
+title: Cohesion hints
+description: Keep a set of entities on one worker, move them between workers as a unit, and pause rebalancing of a container for a bounded time.
+---
+
+Nebula decides which worker simulates which container, and hands an entity over when it crosses into a container another worker leases. Only your game knows which entities must not be separated while that happens: the bodies of one physics island, a player and the crate mid-throw, the two sides of an interaction that is half applied.
+
+Two hints say so.
+
+- A **cohesion group** is a number you put on a set of entities. One worker simulates all of them: a handover of any member takes the others with it, the planner deals their containers as one item, and the [cross-container joint warning](/docs/concepts/distributed-physics) stops firing between them.
+- A **hold** asks the orchestrator to leave one container where it is for a few seconds, so a boss fight or a cutscene is not interrupted by a rebalance.
+
+Both are assertions you make. Nebula never infers a group and never checks that one is small enough to fit a worker — if it does not fit, it says so and keeps it whole anyway.
+
+## Cohesion groups
+
+Give every member the same non-zero `CohesionGroup`. Author it on the prefab in the **Cohesion** section of the `NetworkIdentity` inspector, or set it while the game runs:
+
+```csharp
+// Everything that will fall apart together belongs to one group.
+uint group = (uint)ragdoll.NetId;           // any non-zero number both sides agree on
+foreach (var piece in pieces) piece.Identity.JoinCohesionGroup(group);
+
+// ...and when the interaction is over:
+foreach (var piece in pieces) piece.Identity.LeaveCohesionGroup();
+```
+
+| Member | What it does |
+| --- | --- |
+| `NetworkIdentity.CohesionGroup` | The group, or `0` for none. |
+| `JoinCohesionGroup(uint group)` | Put the entity in a group, leaving the one it was in. |
+| `LeaveCohesionGroup()` | Leave the group. Nothing else about the entity changes. |
+| `CohesionGroups.Members(group)` | Every copy of a group's entities in this process (authoritative and ghost). |
+| `CohesionGroups.Same(a, b)` | Whether two entities are in the same non-zero group. |
+
+The group travels with the entity in its spawn, ghost-spawn and handover messages, so every worker that holds a copy knows it. A group you join **after** an entity is spawned reaches the other workers with that entity's next spawn or handover, so run the join on every copy — game code runs on all of them — rather than only on the authority.
+
+### What a group changes
+
+**Handover.** When a worker hands over any member, it hands over every member it owns, to the same worker, in the same pass. Each member is a normal handover: its own epoch bump, its own ghost, its own redirect. A member that is itself a carrier takes its passengers too.
+
+**Rebalancing.** Each worker reports which of its containers hold members of which group. The planner treats those containers as a single item: they are dealt together, to one worker, exactly like containers sharing an [`AffinityGroup`](/docs/guides/orchestrator-and-dashboard). A group whose members are all in one container binds nothing.
+
+**Physics diagnostics.** A `Joint` between two entities in one cohesion group is no longer reported as crossing containers: you promised one worker simulates both.
+
+### When a group cannot be honoured
+
+Nebula never splits a group quietly. There are two ways it can fail, and both are reported.
+
+- A worker hands over a member while another member is owned by a *different* worker. The worker cannot move what it does not own, so it logs a warning naming the group and counts it in `NebulaDiagnostics.SplitCohesionGroups`. The handover still happens — refusing it would strand the entity on a worker that no longer leases its container — and the next planning pass puts the group's containers back on one worker.
+- The group's containers together cost more than one worker's tick budget. The planner deals them to one worker anyway and adds a row to the dashboard's **Cohesion** card and to the orchestrator log: which group, which containers, what it costs. Make the group smaller, or give the mesh bigger workers.
+
+## Holds
+
+A hold is a worker saying "do not rebalance this container for the next few seconds".
+
+```csharp
+// The boss fight has started: do not move this container out from under it.
+worker.HoldContainer(arena, 30f);
+
+// ...and when it is over, before the hold runs out:
+worker.ReleaseHold(arena.ContainerId);
+```
+
+| Member | What it does |
+| --- | --- |
+| `HoldContainer(Container c, float seconds)` | Ask for a hold. Repeating extends it; it never shortens an existing one. |
+| `HoldContainer(string containerId, float seconds)` | The same by id, for a container this worker does not hold an object for. |
+| `ReleaseHold(string containerId)` | Drop the hold early. `HoldContainer(c, 0)` does the same. |
+| `HoldRemaining(string containerId)` | Seconds left, or 0. |
+| `NebulaWorker.MaxHoldSeconds` | The ceiling, 120 seconds. Longer requests are clamped. |
+
+A hold is a pause, not a pin:
+
+- It is **bounded**. The longest one is two minutes, and it expires by itself.
+- It **dies with its worker**. The orchestrator keeps holds per worker and drops them when that worker stops reporting, so a crash cannot freeze the layout.
+- It **never leaves a container unowned**. If nobody owns the container — a fresh mesh, a dead worker — it is placed regardless.
+- It applies to the whole item. Holding one container of a cohesion or affinity group holds the group, because moving the rest would be the split the group exists to prevent.
+
+For something permanent, use a container hint instead: `dedicated` gives a container a worker to itself, and a [carried container](/docs/guides/dynamic-containers) can be pinned.
+
+### Clocks
+
+The worker reports how many seconds a hold still has to run; the orchestrator turns that into a deadline on its own clock the moment the report arrives. The two processes need no common time base and no clock synchronisation — only monotonic clocks that run at about the same rate. The cost is the telemetry hop: a hold reaches the orchestrator up to a second after you asked for it, and is that much shorter as the planner sees it.
+
+## On the dashboard
+
+The **Cohesion** card of the [orchestrator dashboard](/docs/guides/orchestrator-and-dashboard) lists every live hold (container, worker, seconds left) and every cohesion group (id, members, the containers it spans, the workers holding it). A group on more than one worker is flagged, and a group that does not fit one worker is shown as a warning above the table. The card hides itself when there is nothing to show.
+
+## Related
+
+<Cards>
+  <Card title="Distributed physics" href="/docs/concepts/distributed-physics" description="Why a joint across containers is not symmetric, and how a group exempts one." />
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="Ghosts, the ghost band, and authority transfer." />
+  <Card title="Orchestrator and dashboard" href="/docs/guides/orchestrator-and-dashboard" description="Container hints, the assignment policy, and what the dashboard shows." />
+  <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carry entities in a moving container so they move as one by construction." />
+</Cards>

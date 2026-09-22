@@ -22,6 +22,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceCallContractTests.cs" />
     <!-- Scope activation (docs/scope-activation.md) is decided by the control plane, which is pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceScopeActivationTests.cs" />
+    <!-- The cohesion hints (docs/cohesion-hints.md): the planner and the telemetry parsing are pure C#. -->
+    <Compile Include="../../Tests/EditMode/ConformanceCohesionTests.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

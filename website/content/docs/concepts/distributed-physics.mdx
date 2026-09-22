@@ -88,7 +88,9 @@ Keep every body that a constraint touches under one authority:
 - **Attach through a carrier, not a joint.** To keep an object on a vehicle or lift, give the vehicle a `DynamicContainer` and let the object ride in its frame.
 - **Replace the constraint with a claim.** When two entities in different containers must react to each other, raycast or overlap against the ghost and send an `AuthorityRpc` to the other entity. Nebula delivers the claim; the receiving worker decides what it does with it.
 
-Nebula does not yet offer a way to declare that two entities must always share a worker. Until such a hint exists, the checks below report every cross-container joint, including one whose entities currently share a worker by coincidence. `PhysicsIslands.IsCohesive` is the extension point where such a rule plugs in; it is `null` by default.
+- **Declare a cohesion group.** When two entities really must be simulated together, put them in one [cohesion group](/docs/guides/cohesion): one worker then simulates both, a handover of either takes the other with it, and the checks below stop reporting joints between them. Nebula does not infer a group and does not check that one fits a worker; it reports a group that does not.
+
+The checks below report every cross-container joint that no cohesion group covers, including one whose entities share a worker by coincidence today. `PhysicsIslands.IsCohesive` is the extension point for a guarantee that comes from somewhere other than a group; it is `null` by default.
 
 ## Diagnostics
 
@@ -107,10 +109,10 @@ Both checks share `PhysicsIslands`:
 | Member | Purpose |
 | --- | --- |
 | `SameIsland(Container a, Container b)` | `true` when both are the same container, including two `null` values. |
-| `SameIsland(NetworkIdentity a, NetworkIdentity b, resolve)` | `true` for the same entity, a body without a `NetworkIdentity`, a pair `IsCohesive` accepts, or two entities in one container. |
+| `SameIsland(NetworkIdentity a, NetworkIdentity b, resolve)` | `true` for the same entity, a body without a `NetworkIdentity`, two members of one [cohesion group](/docs/guides/cohesion), a pair `IsCohesive` accepts, or two entities in one container. |
 | `ContainerOf(NetworkIdentity)` | The entity's container: `NetworkIdentity.Container` once spawned, otherwise the nearest `Container` above it in the hierarchy. |
 | `FindCrossIslandJoints(root, results, resolve)` | Appends a `CrossIslandJoint` for each constraint under `root` whose bodies are in different islands. |
-| `IsCohesive` | A `Func<NetworkIdentity, NetworkIdentity, bool>` that can exempt a pair. `null` by default. |
+| `IsCohesive` | A `Func<NetworkIdentity, NetworkIdentity, bool>` that can exempt a pair beyond what the cohesion groups already exempt. `null` by default. |
 
 ### AuthorityRpc from a copy that is neither authoritative nor a ghost
 
@@ -123,4 +125,5 @@ Both checks share `PhysicsIslands`:
   <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="Configure NetworkRigidbody and carry state through a handover." />
   <Card title="RPCs and worker messages" href="/docs/guides/rpcs" description="Send an AuthorityRpc to the worker that controls another entity." />
   <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Carry entities in a moving container instead of a joint." />
+  <Card title="Cohesion hints" href="/docs/guides/cohesion" description="Declare that a set of entities must share one worker." />
 </Cards>

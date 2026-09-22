@@ -37,6 +37,10 @@ namespace Nebula
         [Tooltip("A number your interest policy can filter on (team markers, quest objects). Nebula only carries it; 0 means no group.")]
         public byte InterestGroup;
 
+        [Header("Cohesion")]
+        [Tooltip("Entities sharing a non-zero cohesion group must be simulated by one worker: a handover of any member takes the others with it, and the planner treats their containers as one item. Set it here for a group that is authored (a ragdoll, a turret and its mount) or call JoinCohesionGroup at runtime. 0 means no group. See https://nebula.1by3.co/docs/guides/cohesion")]
+        [SerializeField] private uint _cohesionGroup;
+
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 
@@ -58,6 +62,33 @@ namespace Nebula
         public bool IsServerDriven { get; internal set; }
         /// <summary>Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.</summary>
         public uint Epoch { get; internal set; }
+        /// <summary>
+        /// The cohesion group this entity belongs to, or 0 for none: the game's promise that every member is
+        /// simulated by one worker and moves between workers as a unit (<see cref="CohesionGroups"/>,
+        /// <c>docs/cohesion-hints.md</c>). Authored in the inspector or set at runtime with
+        /// <see cref="JoinCohesionGroup"/>; it travels with the entity in the spawn, ghost and handover messages,
+        /// so every worker holding a copy knows it. The ids are the game's own - any non-zero number both sides of
+        /// an interaction agree on.
+        /// </summary>
+        public uint CohesionGroup => _cohesionGroup;
+
+        /// <summary>
+        /// Put this entity in a cohesion group, leaving the one it was in. The authority's value is the one that
+        /// counts: it is what a handover expands and what the worker reports to the orchestrator. Ghosts and client
+        /// replicas learn the new value with the next spawn, ghost spawn or handover of the entity, so join before
+        /// the interaction that needs the group rather than in the middle of it (<c>docs/cohesion-hints.md</c>, D3).
+        /// </summary>
+        /// <param name="group">A non-zero group id. 0 is <see cref="LeaveCohesionGroup"/>.</param>
+        public void JoinCohesionGroup(uint group)
+        {
+            if (_cohesionGroup == group) return;
+            CohesionGroups.Unregister(this, _cohesionGroup);
+            _cohesionGroup = group;
+            if (Initialized) CohesionGroups.Register(this);
+        }
+
+        /// <summary>Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.</summary>
+        public void LeaveCohesionGroup() => JoinCohesionGroup(0);
         public Container Container { get; internal set; }
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
@@ -352,6 +383,7 @@ namespace Nebula
         private void OnDestroy()
         {
             if (IsSceneEntity) SceneEntities.Unregister(this);
+            CohesionGroups.Unregister(this, _cohesionGroup);
             Live.Remove(this);
         }
 
@@ -390,6 +422,7 @@ namespace Nebula
             if (Initialized) return;
             Initialized = true;
             Live.Add(this);
+            CohesionGroups.Register(this);
 
             var found = GetComponentsInChildren<NetworkBehaviour>(true);
             // Deterministic order on every process: the same prefab yields the same component order.

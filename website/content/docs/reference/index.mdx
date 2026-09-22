@@ -14,6 +14,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [AuthorityMode](/docs/reference/core/authority-mode) | Enum. Lists which process produces state for a synchronized component. |
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
+| [CohesionGroups](/docs/reference/core/cohesion-groups) | Static class. Which entities belong to which NetworkIdentity.CohesionGroup, in this process. |
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
 | [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
@@ -152,6 +153,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [CloudHostSettings](/docs/reference/orchestrator/cloud-host-settings) | Class. Settings a cloud host needs to create a worker machine. |
 | [CloudWorkerHost](/docs/reference/orchestrator/cloud-worker-host) | Class. An IWorkerHost for managed hosting: instead of calling a cloud provider, the orchestrator asks a deployment-scoped resource API for a worker (POST /d/workers), polls the list for its state and private address, and deletes, parks and unpa... |
 | [CloudWorkerHostSettings](/docs/reference/orchestrator/cloud-worker-host-settings) | Class. Where a managed deployment's orchestrator asks for worker machines: a resource API scoped to this one deployment, reached with a token that can do nothing else. |
+| [CohesionGroupInfo](/docs/reference/orchestrator/cohesion-group-info) | Class. One entity cohesion group as the orchestrator sees it: the union of what every worker reported about the members it owns (NebulaWorker.CohesionSpan, docs/cohesion-hints.md D7). |
 | [ContainerLoad](/docs/reference/orchestrator/container-load) | Struct. What one worker last reported about one container: who is inside it (see WorkerTelemetry). |
 | [CostBalancedAssignmentPolicy](/docs/reference/orchestrator/cost-balanced-assignment-policy) | Class. Deal by load: every container (baked or runtime) costs what CostWeights says its occupants cost, containers are ordered along a Morton curve of their centres so neighbours sit next to each other, and the curve is cut into one contiguous ... |
 | [CostWeights](/docs/reference/orchestrator/cost-weights) | Struct. How much simulating a container costs a worker, from what is inside it. |
@@ -170,6 +172,7 @@ Start and stop workers, assign containers, and serve the dashboard.
 | [ScaleAction](/docs/reference/orchestrator/scale-action) | Enum. What the scaler decided this pass. |
 | [ScaleDecision](/docs/reference/orchestrator/scale-decision) | Struct. The scaler's answer, and everything the dashboard needs to explain it. |
 | [ScaleSettings](/docs/reference/orchestrator/scale-settings) | Struct. The two lines and the two clocks the scaler works to; a copy of the matching NebulaConfig fields. |
+| [UnsplittableGroup](/docs/reference/orchestrator/unsplittable-group) | Struct. A group of containers the planner had to keep on one worker but could not fit there (docs/cohesion-hints.md, D9). |
 | [WorkerHandleState](/docs/reference/orchestrator/worker-handle-state) | Enum. Lists the supported worker handle state values. |
 | [WorkerHostBase](/docs/reference/orchestrator/worker-host-base) | Abstract class. Base class for hosts that do not park: Park kills, Unpark fails, and the orchestrator never parks into them. |
 | [WorkerLaunchSpec](/docs/reference/orchestrator/worker-launch-spec) | Class. What the orchestrator asks a host to run. |

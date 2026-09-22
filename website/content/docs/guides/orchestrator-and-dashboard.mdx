@@ -128,6 +128,12 @@ The compact form used by the dashboard and the HTTP API is `x2,group=keep,seam=0
 
 If more containers ask to be `Dedicated` than the mesh has workers to spare (it needs one more worker than there are dedicated containers), none of them is reserved and they share like anything else. The orchestrator logs it and the dashboard shows the reason above the container list.
 
+### Cohesion groups and holds
+
+Two more hints come from the workers rather than from the container rows, and the **Cohesion** card of the dashboard shows both. A [cohesion group](/docs/guides/cohesion) is a set of entities that must be simulated by one worker: the planner deals the containers its members occupy as one item, exactly like an `AffinityGroup`, and a handover of any member takes the others with it. A **hold** is a worker asking for one container not to be rebalanced for a bounded number of seconds, for a fight or a cutscene that should not be interrupted.
+
+Neither can be honoured unconditionally, and neither fails quietly. A group whose containers need more than one worker's tick budget is dealt whole anyway and reported above the table; a hold never leaves a container unowned, never lasts more than two minutes, and dies with the worker that asked for it.
+
 ## Handle a failed worker
 
 Each worker writes a heartbeat to the control plane. When a heartbeat is older than `WorkerTimeoutSeconds`, the orchestrator treats the worker as dead and assigns its containers to surviving workers.

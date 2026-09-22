@@ -421,6 +421,12 @@ namespace Nebula
         /// client has just re-entered. Workers send 0.
         /// </summary>
         public ushort ViewSeq;
+        /// <summary>
+        /// The entity's cohesion group (<see cref="NetworkIdentity.CohesionGroup"/>), 0 for none. It travels with
+        /// every spawn, ghost spawn and handover, so each worker holding a copy knows which group the entity is in
+        /// and a handover of any member can take the rest with it (protocol 18, <c>docs/cohesion-hints.md</c>).
+        /// </summary>
+        public uint CohesionGroup;
 
 #if !NEBULA_SERVICE
         public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
@@ -455,6 +461,7 @@ namespace Nebula
                 RelevanceRadius = id.RelevanceRadius,
                 InterestFlags = id.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
                 InterestGroup = id.InterestGroup,
+                CohesionGroup = id.CohesionGroup,
             };
         }
 
@@ -486,6 +493,7 @@ namespace Nebula
             w.WriteByte((byte)InterestFlags);
             w.WriteByte(InterestGroup);
             w.WriteUShort(ViewSeq);
+            w.WriteUInt(CohesionGroup);
         }
 
         public static EntitySpawnMsg Read(NetworkReader r)
@@ -511,6 +519,7 @@ namespace Nebula
                 InterestFlags = (EntityInterestFlags)r.ReadByte(),
                 InterestGroup = r.ReadByte(),
                 ViewSeq = r.ReadUShort(),
+                CohesionGroup = r.ReadUInt(),
             };
         }
     }

@@ -62,6 +62,14 @@ public const uint SyncKeyframeInterval = 30;
 
 Every this many ticks a dirty sync behaviour writes a keyframe instead of a delta, and an unreliable one writes a keyframe whether it is dirty or not. Keyframes heal lost packets and are what the gateway hands to late joiners.
 
+### PoseHistoryTicks [#posehistoryticks]
+
+```csharp
+public const int PoseHistoryTicks = 64;
+```
+
+Ticks of pose history kept per entity (about a second at 60 Hz).
+
 ## Properties
 
 ### IsSceneEntity [#issceneentity]
@@ -115,6 +123,14 @@ public uint Epoch { get; }
 ```
 
 Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.
+
+### CohesionGroup [#cohesiongroup]
+
+```csharp
+public uint CohesionGroup { get; }
+```
+
+The cohesion group this entity belongs to, or 0 for none: the game's promise that every member is simulated by one worker and moves between workers as a unit ([`CohesionGroups`](/docs/reference/core/cohesion-groups), `docs/cohesion-hints.md`). Authored in the inspector or set at runtime with [`JoinCohesionGroup`](#joincohesiongroup); it travels with the entity in the spawn, ghost and handover messages, so every worker holding a copy knows it. The ids are the game's own - any non-zero number both sides of an interaction agree on.
 
 ### Container [#container]
 
@@ -255,30 +271,6 @@ public PersistentEntity Persistent { get; }
 
 The [`PersistentEntity`](/docs/reference/persistence/persistent-entity) on this entity, or null when it is transient. Cached by [`Initialize`](#initialize); everything about persistence hangs off it (see [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence)).
 
-### History [#history]
-
-```csharp
-public StateHistory History { get; }
-```
-
-The recorded ticks of this entity on this process, or null when nothing has been recorded (recording is off, this is a client, or the entity is too young). See [`StateAt`](#stateat).
-
-### OldestAvailableTick [#oldestavailabletick]
-
-```csharp
-public uint OldestAvailableTick { get; }
-```
-
-The oldest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
-
-### NewestAvailableTick [#newestavailabletick]
-
-```csharp
-public uint NewestAvailableTick { get; }
-```
-
-The newest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
-
 ### HasSyncState [#hassyncstate]
 
 ```csharp
@@ -325,21 +317,25 @@ public event Action<Container, Container> ContainerChanged;
 
 ## Methods
 
-### StateAt [#stateat]
+### JoinCohesionGroup [#joincohesiongroup]
 
 ```csharp
-public HistoricalState StateAt(uint tick);
+public void JoinCohesionGroup(uint group);
 ```
 
-What this entity looked like at server tick `tick`: its world pose, velocity, container, epoch and the [`SyncHistoryAttribute`](/docs/reference/core/sync-history-attribute) variables. Answered on the worker that has authority and on any worker holding a ghost of it; a ghost's newest tick is one behind the owner's (the tick the owner's stream was built on). Outside the recorded window the result's [`HistoricalState.Available`](/docs/reference/core/historical-state#available) is false and nothing is extrapolated.
+Put this entity in a cohesion group, leaving the one it was in. The authority's value is the one that counts: it is what a handover expands and what the worker reports to the orchestrator. Ghosts and client replicas learn the new value with the next spawn, ghost spawn or handover of the entity, so join before the interaction that needs the group rather than in the middle of it (`docs/cohesion-hints.md`, D3).
 
-### TryGetStateAt [#trygetstateat]
+| Parameter | Description |
+| --- | --- |
+| `group` | A non-zero group id. 0 is [`LeaveCohesionGroup`](#leavecohesiongroup). |
+
+### LeaveCohesionGroup [#leavecohesiongroup]
 
 ```csharp
-public bool TryGetStateAt(uint tick, out HistoricalState state);
+public void LeaveCohesionGroup();
 ```
 
-As [`StateAt`](#stateat), in the try-pattern.
+Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.
 
 ### TryGetPoseAt [#trygetposeat]
 
@@ -347,7 +343,7 @@ As [`StateAt`](#stateat), in the try-pattern.
 public bool TryGetPoseAt(uint tick, out Vector3 position, out Quaternion rotation);
 ```
 
-The pose recorded for `tick`, or the nearest one within [`StateHistory.GapToleranceTicks`](/docs/reference/core/state-history#gaptoleranceticks). False (with the entity's current pose) when nothing usable was recorded. A thin wrapper over [`StateAt`](#stateat).
+The pose recorded for `tick`, or the nearest later one within a few ticks (a ghost that arrived recently has a short history). False when nothing usable was recorded.
 
 ### WriteVars [#writevars]
 

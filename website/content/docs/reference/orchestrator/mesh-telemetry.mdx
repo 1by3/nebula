@@ -154,6 +154,46 @@ public string BuildMapJson();
 
 The live map document: every worker's latest telemetry, with its age in seconds, sorted by worker id. Reading it marks the map as watched, which asks workers for their entities ([`DetailWanted`](#detailwanted)).
 
+### CopyHolds [#copyholds]
+
+```csharp
+public void CopyHolds(Dictionary<string, float> result);
+```
+
+Snapshot the live holds into `result` (cleared first) as container id -\> seconds still to run, dropping the ones that have expired. This is what the planner skips moves for.
+
+### HolderOf [#holderof]
+
+```csharp
+public string HolderOf(string containerId);
+```
+
+The worker that asked for a container's hold, or "" when it is not held.
+
+### CopyCohesion [#copycohesion]
+
+```csharp
+public void CopyCohesion(List<CohesionGroupInfo> result);
+```
+
+Snapshot the cohesion groups every live worker reported into `result` (cleared first), one row per group with the union of the containers its members sit in and the workers that reported it. Rows from a worker that stopped reporting are dropped after [`ExpireSeconds`](#expireseconds).
+
+### ParseHolds [#parseholds]
+
+```csharp
+public static void ParseHolds(string json, List<KeyValuePair<string, float>> result);
+```
+
+Pull the `"holds"` array out of a worker document: `[{"id":"arena","seconds":4.2},...]`, as [`WorkerTelemetry`](/docs/reference/worker/worker-telemetry) writes it before the container counts and the entity list.
+
+### ParseCohesion [#parsecohesion]
+
+```csharp
+public static void ParseCohesion(string json, List<CohesionSpan> result);
+```
+
+Pull the `"cohesion"` array out of a worker document: `[{"group":17,"members":3,"in":["a","b"]},...]`. The containers are under `"in"` rather than `"containers"` so that [`ParseContainers`](#parsecontainers), which scans for the first `"containers"` key in the document, cannot land in this block. Rows without a group are ignored.
+
 ### BuildGeometryJson [#buildgeometryjson]
 
 ```csharp
@@ -225,6 +265,46 @@ public long EntriesSent, EntriesTotal, BytesSent, BytesUnfiltered;
 
 ```csharp
 public string Warning;
+```
+
+##### ReceivedAt [#receivedat]
+
+```csharp
+public double ReceivedAt;
+```
+
+### CohesionSpan [#cohesionspan]
+
+```csharp
+public struct CohesionSpan
+```
+
+What one worker said about one cohesion group in its latest document.
+
+#### Fields
+
+##### Group [#group]
+
+```csharp
+public uint Group;
+```
+
+##### Members [#members]
+
+```csharp
+public int Members;
+```
+
+##### Containers [#containers]
+
+```csharp
+public List<string> Containers;
+```
+
+##### WorkerId [#workerid]
+
+```csharp
+public string WorkerId;
 ```
 
 ##### ReceivedAt [#receivedat]

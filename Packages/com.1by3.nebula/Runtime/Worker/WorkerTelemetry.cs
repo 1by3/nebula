@@ -72,6 +72,8 @@ namespace Nebula
         private readonly List<Counts> _counts = new List<Counts>();
         private readonly List<NetworkIdentity> _carriers = new List<NetworkIdentity>();
         private readonly List<NetworkIdentity> _points = new List<NetworkIdentity>();
+        private readonly List<NebulaWorker.ContainerHold> _holds = new List<NebulaWorker.ContainerHold>();
+        private readonly List<NebulaWorker.CohesionSpan> _cohesion = new List<NebulaWorker.CohesionSpan>();
         private float _next;
         private int _inFlight;
         private volatile bool _detail;
@@ -123,6 +125,9 @@ namespace Nebula
             _next = now + (_detail ? DetailIntervalSeconds : IdleIntervalSeconds);
 
             SampleInterest(worker, now);
+            // The cohesion hints are read here, on the main thread, and written into the document below.
+            worker.CopyHolds(_holds);
+            worker.CopyCohesion(_cohesion);
             var streamer = NebulaWorld.IsActive ? NebulaWorld.Streamer : null;
             string json = Write(worker.WorkerId, worker.WorkerIndex, worker.CurrentTick, worker.Entities, _detail, streamer != null ? streamer.LoadedCells : null);
             Sent++;
@@ -198,6 +203,44 @@ namespace Nebula
             }
             w.EndArray();
             w.EndObject();
+        }
+
+        /// <summary>
+        /// The cohesion block: the containers this worker is holding, with the seconds each hold still has to run,
+        /// and one row per cohesion group it owns members of, whose <c>"in"</c> array names the containers its
+        /// members sit in (<c>docs/cohesion-hints.md</c>, D7/D8). Both blocks are always written, so a document that
+        /// carries neither says so with two empty arrays.
+        /// </summary>
+        private void WriteCohesion(JsonWriter w)
+        {
+            w.Key("holds");
+            w.BeginArray();
+            for (int i = 0; i < _holds.Count; i++)
+            {
+                w.BeginObject();
+                w.Prop("id", _holds[i].ContainerId ?? "");
+                w.Prop("seconds", Math.Round(_holds[i].SecondsRemaining, 2));
+                w.EndObject();
+            }
+            w.EndArray();
+
+            w.Key("cohesion");
+            w.BeginArray();
+            for (int i = 0; i < _cohesion.Count; i++)
+            {
+                var span = _cohesion[i];
+                w.BeginObject();
+                w.Prop("group", (long)span.Group);
+                w.Prop("members", span.Members);
+                // "in", not "containers": MeshTelemetry.ParseContainers finds the document's container counts by
+                // scanning for the first "containers" key, so no block before it may carry one.
+                w.Key("in");
+                w.BeginArray();
+                if (span.Containers != null) for (int j = 0; j < span.Containers.Count; j++) w.Value(span.Containers[j]);
+                w.EndArray();
+                w.EndObject();
+            }
+            w.EndArray();
         }
 
         private async Task PostAsync(string json)
@@ -283,6 +326,8 @@ namespace Nebula
                 }
                 w.EndArray();
             }
+
+            WriteCohesion(w);
 
             w.Key("containers");
             w.BeginArray();

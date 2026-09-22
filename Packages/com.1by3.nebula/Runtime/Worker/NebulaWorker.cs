@@ -1340,6 +1340,13 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- handover
 
+        /// <summary>Members of cohesion groups still to hand to the same target this handoff (<see cref="CollectCohesionMembers"/>).</summary>
+        private readonly List<NetworkIdentity> _cohesionPending = new List<NetworkIdentity>();
+        /// <summary>Groups already expanded this handoff, so a group is collected once however many members move.</summary>
+        private readonly HashSet<uint> _cohesionExpanded = new HashSet<uint>();
+        /// <summary>True while the queue is being drained, so a member's own transfer does not start a second drain.</summary>
+        private bool _cohesionDraining;
+
         /// <summary>
         /// Record everything that will follow <paramref name="carrier"/> to the new owner: its authoritative
         /// contents, to any depth, unless an interior is pinned to a worker of its own — those stay here, are
@@ -1372,11 +1379,69 @@ namespace Nebula
         /// </summary>
         private void TransferAuthority(NetworkIdentity e, Peer target)
         {
+            // A member of a cohesion group takes the rest of the group with it: the game promised one worker
+            // simulates all of them (docs/cohesion-hints.md, D4). The members are collected before anything moves,
+            // because the first transfer flips this worker's authority over the entity it moved.
+            if (e.CohesionGroup != 0 && _cohesionExpanded.Add(e.CohesionGroup)) CollectCohesionMembers(e, target);
             using (var frame = _handover.Begin())
             {
                 if (frame.IsOutermost) CollectHandoverFollowers(e);
                 TransferAuthorityInScope(e, target);
             }
+            // Only the outermost handoff drains the queue, and only one of them at a time: a member that is itself
+            // a carrier must open a handover scope of its own so its passengers are collected (design D85).
+            if (_handover.Depth > 0 || _cohesionDraining) return;
+            _cohesionDraining = true;
+            try
+            {
+                // Grows while it is walked: a member of one group may belong to another that is expanded in turn.
+                for (int i = 0; i < _cohesionPending.Count; i++)
+                {
+                    var member = _cohesionPending[i];
+                    if (member != null && member.HasAuthority) TransferAuthority(member, target);
+                }
+            }
+            finally
+            {
+                _cohesionDraining = false;
+                _cohesionPending.Clear();
+                _cohesionExpanded.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Queue the other members of <paramref name="e"/>'s cohesion group that this worker owns, so they leave with
+        /// it. A member this worker holds only as a ghost cannot be included: the group is about to be split across
+        /// two workers, which is a reported failure of the transfer and never a silent split
+        /// (<see cref="NebulaDiagnostics.SplitCohesionGroups"/>, <c>docs/cohesion-hints.md</c> D4). The transfer
+        /// itself still goes ahead: refusing it would strand the entity in a container this worker no longer leases.
+        /// </summary>
+        private void CollectCohesionMembers(NetworkIdentity e, Peer target)
+        {
+            var members = CohesionGroups.Members(e.CohesionGroup);
+            string foreign = null;
+            int split = 0;
+            for (int i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                if (member == null || member == e) continue;
+                // The group table is process-wide, so in a test mesh that runs two workers in one process it also
+                // holds the other worker's copies. This worker only ever deals with the copy it knows under that
+                // net id; in a live mesh, which has one copy per process, the check always passes.
+                if (Find(member.NetId) != member) continue;
+                if (member.HasAuthority && _authoritative.Contains(member))
+                {
+                    if (!_cohesionPending.Contains(member)) _cohesionPending.Add(member);
+                    continue;
+                }
+                // A ghost whose owner is the worker the entity is going to is not a split: the group is meeting up.
+                if (member.OwnerWorkerIndex == target.Index) continue;
+                split++;
+                if (foreign == null) foreign = member.ToString();
+            }
+            if (split == 0) return;
+            NebulaDiagnostics.SplitCohesionGroups++;
+            NebulaLog.Warn($"cohesion group {e.CohesionGroup} cannot be handed over as a unit: {e} leaves, but {split} member(s) of the group are not owned here (for example {foreign}). The group is split across workers until they meet again; keep a group inside one worker's containers or use a container hold (https://nebula.1by3.co/docs/guides/cohesion).");
         }
 
         /// <summary>One transfer's work, always inside the handover scope <see cref="TransferAuthority"/> opened.</summary>
@@ -1611,6 +1676,9 @@ namespace Nebula
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
+            // The cohesion group travels with the entity, so this worker expands the same group the previous owner
+            // did when it hands the entity on (docs/cohesion-hints.md, D3).
+            e.JoinCohesionGroup(msg.CohesionGroup);
             var container = ContainerRegistry.Resolve(msg.Container);
             if (container == null && msg.Container.MayArriveLater)
             {

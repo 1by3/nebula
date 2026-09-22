@@ -1,0 +1,56 @@
+---
+title: "UnsplittableGroup"
+description: "A group of containers the planner had to keep on one worker but could not fit there (docs/cohesion-hints.md, D9)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/AssignmentPolicy.cs)</div>
+
+```csharp
+public struct UnsplittableGroup
+```
+
+A group of containers the planner had to keep on one worker but could not fit there (`docs/cohesion-hints.md`, D9). Reported, never acted on by splitting the group: the mesh keeps running with the group whole on an overloaded worker, and this row says so on the dashboard and in the log.
+
+## Fields
+
+### Group [#group]
+
+```csharp
+public string Group;
+```
+
+"cohesion 17" or "affinity dungeon-3": which kind of group and which one.
+
+### Containers [#containers]
+
+```csharp
+public string[] Containers;
+```
+
+Its containers, as the planner dealt them.
+
+### Utilization [#utilization]
+
+```csharp
+public float Utilization;
+```
+
+The measured utilization of the whole group, in tick budgets (1 = a whole worker).
+
+### Limit [#limit]
+
+```csharp
+public float Limit;
+```
+
+What it was compared against ([`CostBalancedAssignmentPolicy.MaxGroupUtilization`](/docs/reference/orchestrator/cost-balanced-assignment-policy#maxgrouputilization)).
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```
+
+One line for the log and the dashboard.

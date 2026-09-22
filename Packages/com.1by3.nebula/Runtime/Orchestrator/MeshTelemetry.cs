@@ -52,7 +52,13 @@ namespace Nebula
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
         /// <summary>The latest interest summary per worker, from the same documents.</summary>
         private readonly Dictionary<string, WorkerInterest> _interest = new Dictionary<string, WorkerInterest>(StringComparer.Ordinal);
+        /// <summary>Container id -> when its hold expires on this process's clock, and which worker asked for it.</summary>
+        private readonly Dictionary<string, Hold> _holds = new Dictionary<string, Hold>(StringComparer.Ordinal);
+        /// <summary>Worker id -> the cohesion groups it last reported owning members of.</summary>
+        private readonly Dictionary<string, List<CohesionSpan>> _cohesion = new Dictionary<string, List<CohesionSpan>>(StringComparer.Ordinal);
         private readonly List<KeyValuePair<string, ContainerLoad>> _parsed = new List<KeyValuePair<string, ContainerLoad>>();
+        private readonly List<KeyValuePair<string, float>> _parsedHolds = new List<KeyValuePair<string, float>>();
+        private readonly List<CohesionSpan> _parsedCohesion = new List<CohesionSpan>();
         private readonly List<string> _expired = new List<string>();
         private readonly StringBuilder _sb = new StringBuilder(1 << 16);
         private readonly Func<double> _now;
@@ -133,6 +139,7 @@ namespace Nebula
                     load.ReceivedAt = now;
                     _occupancy[_parsed[i].Key] = load;
                 }
+                AcceptCohesion(workerId, json, now);
                 if (ParseInterest(json, out var interest))
                 {
                     interest.ReceivedAt = now;
@@ -334,6 +341,10 @@ namespace Nebula
             {
                 _documents.Remove(workerId);
                 _interest.Remove(workerId);
+                _cohesion.Remove(workerId);
+                _expired.Clear();
+                foreach (var kv in _holds) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
+                foreach (var id in _expired) _holds.Remove(id);
                 _expired.Clear();
                 foreach (var kv in _occupancy) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
                 foreach (var id in _expired) _occupancy.Remove(id);
@@ -374,6 +385,271 @@ namespace Nebula
                 w.EndObject();
                 return _sb.ToString();
             }
+        }
+
+        // ---------------------------------------------------------------------------------------- cohesion hints
+
+        /// <summary>One container a worker asked not to be rebalanced, as the orchestrator keeps it.</summary>
+        private struct Hold
+        {
+            public string WorkerId;
+            /// <summary>When the hold expires, on this object's clock.</summary>
+            public double ExpiresAt;
+        }
+
+        /// <summary>What one worker said about one cohesion group in its latest document.</summary>
+        public struct CohesionSpan
+        {
+            public uint Group;
+            public int Members;
+            public List<string> Containers;
+            public string WorkerId;
+            public double ReceivedAt;
+        }
+
+        /// <summary>
+        /// Replace what <paramref name="workerId"/> last said about holds and cohesion groups. A hold is reported as
+        /// the seconds it still has to run and becomes a deadline on the orchestrator's clock here, so the two
+        /// processes need no common time base; the cost of that is one telemetry hop of latency
+        /// (<c>docs/cohesion-hints.md</c>, D8). A worker that stops reporting loses its holds when its rows expire.
+        /// Called with the lock held.
+        /// </summary>
+        private void AcceptCohesion(string workerId, string json, double now)
+        {
+            _expired.Clear();
+            foreach (var kv in _holds) if (kv.Value.WorkerId == workerId) _expired.Add(kv.Key);
+            foreach (var id in _expired) _holds.Remove(id);
+            _parsedHolds.Clear();
+            ParseHolds(json, _parsedHolds);
+            for (int i = 0; i < _parsedHolds.Count; i++)
+            {
+                if (_parsedHolds[i].Value <= 0f) continue;
+                _holds[_parsedHolds[i].Key] = new Hold { WorkerId = workerId, ExpiresAt = now + _parsedHolds[i].Value };
+            }
+
+            _parsedCohesion.Clear();
+            ParseCohesion(json, _parsedCohesion);
+            if (_parsedCohesion.Count == 0) { _cohesion.Remove(workerId); return; }
+            var rows = new List<CohesionSpan>(_parsedCohesion.Count);
+            for (int i = 0; i < _parsedCohesion.Count; i++)
+            {
+                var span = _parsedCohesion[i];
+                span.WorkerId = workerId;
+                span.ReceivedAt = now;
+                rows.Add(span);
+            }
+            _cohesion[workerId] = rows;
+        }
+
+        /// <summary>
+        /// Snapshot the live holds into <paramref name="result"/> (cleared first) as container id -> seconds still
+        /// to run, dropping the ones that have expired. This is what the planner skips moves for.
+        /// </summary>
+        public void CopyHolds(Dictionary<string, float> result)
+        {
+            result.Clear();
+            lock (_lock)
+            {
+                double now = _now();
+                _expired.Clear();
+                foreach (var kv in _holds)
+                {
+                    double left = kv.Value.ExpiresAt - now;
+                    if (left <= 0.0) { _expired.Add(kv.Key); continue; }
+                    result[kv.Key] = (float)left;
+                }
+                foreach (var id in _expired) _holds.Remove(id);
+            }
+        }
+
+        /// <summary>The worker that asked for a container's hold, or "" when it is not held.</summary>
+        public string HolderOf(string containerId)
+        {
+            if (containerId == null) return "";
+            lock (_lock)
+            {
+                if (!_holds.TryGetValue(containerId, out var hold)) return "";
+                return hold.ExpiresAt - _now() > 0.0 ? hold.WorkerId : "";
+            }
+        }
+
+        /// <summary>
+        /// Snapshot the cohesion groups every live worker reported into <paramref name="result"/> (cleared first),
+        /// one row per group with the union of the containers its members sit in and the workers that reported it.
+        /// Rows from a worker that stopped reporting are dropped after <see cref="ExpireSeconds"/>.
+        /// </summary>
+        public void CopyCohesion(List<CohesionGroupInfo> result)
+        {
+            result.Clear();
+            lock (_lock)
+            {
+                double now = _now();
+                foreach (var worker in _cohesion)
+                {
+                    var rows = worker.Value;
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        var span = rows[i];
+                        if (now - span.ReceivedAt > ExpireSeconds) continue;
+                        CohesionGroupInfo info = null;
+                        for (int j = 0; j < result.Count; j++) if (result[j].Group == span.Group) { info = result[j]; break; }
+                        if (info == null) result.Add(info = new CohesionGroupInfo { Group = span.Group });
+                        info.Members += span.Members;
+                        if (!info.Workers.Contains(span.WorkerId)) info.Workers.Add(span.WorkerId);
+                        if (span.Containers != null)
+                            for (int c = 0; c < span.Containers.Count; c++)
+                                if (!info.Containers.Contains(span.Containers[c])) info.Containers.Add(span.Containers[c]);
+                    }
+                }
+            }
+            result.Sort((a, b) => a.Group.CompareTo(b.Group));
+        }
+
+        /// <summary>
+        /// Pull the <c>"holds"</c> array out of a worker document: <c>[{"id":"arena","seconds":4.2},...]</c>, as
+        /// <see cref="WorkerTelemetry"/> writes it before the container counts and the entity list.
+        /// </summary>
+        public static void ParseHolds(string json, List<KeyValuePair<string, float>> result)
+        {
+            int at = ArrayStart(json, "\"holds\"");
+            while (at >= 0)
+            {
+                at = ObjectStart(json, at, out bool done);
+                if (done) return;
+                string id = null;
+                float seconds = 0f;
+                while (NextProperty(json, ref at, out string key, out string text, out double number, out bool isString))
+                {
+                    if (key == "id" && isString) id = text;
+                    else if (key == "seconds" && !isString) seconds = (float)number;
+                }
+                if (!string.IsNullOrEmpty(id)) result.Add(new KeyValuePair<string, float>(id, seconds));
+            }
+        }
+
+        /// <summary>
+        /// Pull the <c>"cohesion"</c> array out of a worker document:
+        /// <c>[{"group":17,"members":3,"in":["a","b"]},...]</c>. The containers are under <c>"in"</c> rather than
+        /// <c>"containers"</c> so that <see cref="ParseContainers"/>, which scans for the first <c>"containers"</c>
+        /// key in the document, cannot land in this block. Rows without a group are ignored.
+        /// </summary>
+        public static void ParseCohesion(string json, List<CohesionSpan> result)
+        {
+            int at = ArrayStart(json, "\"cohesion\"");
+            while (at >= 0)
+            {
+                at = ObjectStart(json, at, out bool done);
+                if (done) return;
+                var span = new CohesionSpan { Containers = new List<string>(2) };
+                while (true)
+                {
+                    while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+                    if (at >= json.Length) return;
+                    if (json[at] == '}') { at++; break; }
+                    if (json[at] != '"') return;
+                    int keyEnd = json.IndexOf('"', at + 1);
+                    if (keyEnd < 0) return;
+                    string key = json.Substring(at + 1, keyEnd - at - 1);
+                    at = json.IndexOf(':', keyEnd);
+                    if (at < 0) return;
+                    at++;
+                    while (at < json.Length && char.IsWhiteSpace(json[at])) at++;
+                    if (at >= json.Length) return;
+                    if (json[at] == '[')
+                    {
+                        at++;
+                        while (true)
+                        {
+                            while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+                            if (at >= json.Length) return;
+                            if (json[at] == ']') { at++; break; }
+                            if (json[at] != '"') return;
+                            int end = EndOfString(json, at);
+                            if (end < 0) return;
+                            string value = json.Substring(at + 1, end - at - 1);
+                            if (key == "in" && value.Length > 0 && !span.Containers.Contains(value)) span.Containers.Add(value);
+                            at = end + 1;
+                        }
+                    }
+                    else if (json[at] == '"')
+                    {
+                        int end = EndOfString(json, at);
+                        if (end < 0) return;
+                        at = end + 1;
+                    }
+                    else
+                    {
+                        int numEnd = at;
+                        while (numEnd < json.Length && (char.IsDigit(json[numEnd]) || json[numEnd] == '-' || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '+')) numEnd++;
+                        if (numEnd == at) return;
+                        double.TryParse(json.Substring(at, numEnd - at), NumberStyles.Float, CultureInfo.InvariantCulture, out double value);
+                        if (key == "group") span.Group = (uint)value;
+                        else if (key == "members") span.Members = (int)value;
+                        at = numEnd;
+                    }
+                }
+                if (span.Group != 0) result.Add(span);
+            }
+        }
+
+        /// <summary>Index just after the '[' of the named array, or -1 when the document has none.</summary>
+        private static int ArrayStart(string json, string key)
+        {
+            int at = json.IndexOf(key, StringComparison.Ordinal);
+            if (at < 0) return -1;
+            at = json.IndexOf('[', at);
+            return at < 0 ? -1 : at + 1;
+        }
+
+        /// <summary>Index just after the next '{' of an array; <paramref name="done"/> at anything else (its ']').</summary>
+        private static int ObjectStart(string json, int at, out bool done)
+        {
+            while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+            done = at >= json.Length || json[at] != '{';
+            return done ? at : at + 1;
+        }
+
+        /// <summary>Index of the closing quote of the string starting at <paramref name="at"/>, or -1.</summary>
+        private static int EndOfString(string json, int at)
+        {
+            int end = at + 1;
+            while (end < json.Length && json[end] != '"') { if (json[end] == '\\') end++; end++; }
+            return end < json.Length ? end : -1;
+        }
+
+        /// <summary>
+        /// Read the next property of a flat object (no nested arrays or objects) and advance past it. False at the
+        /// object's '}' or on anything malformed.
+        /// </summary>
+        private static bool NextProperty(string json, ref int at, out string key, out string text, out double number, out bool isString)
+        {
+            key = null; text = null; number = 0; isString = false;
+            while (at < json.Length && (char.IsWhiteSpace(json[at]) || json[at] == ',')) at++;
+            if (at >= json.Length || json[at] == '}') { if (at < json.Length) at++; return false; }
+            if (json[at] != '"') return false;
+            int keyEnd = json.IndexOf('"', at + 1);
+            if (keyEnd < 0) return false;
+            key = json.Substring(at + 1, keyEnd - at - 1);
+            at = json.IndexOf(':', keyEnd);
+            if (at < 0) return false;
+            at++;
+            while (at < json.Length && char.IsWhiteSpace(json[at])) at++;
+            if (at >= json.Length) return false;
+            if (json[at] == '"')
+            {
+                int end = EndOfString(json, at);
+                if (end < 0) return false;
+                text = json.Substring(at + 1, end - at - 1);
+                isString = true;
+                at = end + 1;
+                return true;
+            }
+            int numEnd = at;
+            while (numEnd < json.Length && (char.IsDigit(json[numEnd]) || json[numEnd] == '-' || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '+')) numEnd++;
+            if (numEnd == at) return false;
+            double.TryParse(json.Substring(at, numEnd - at), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+            at = numEnd;
+            return true;
         }
 
         // ---------------------------------------------------------------------------------------- geometry

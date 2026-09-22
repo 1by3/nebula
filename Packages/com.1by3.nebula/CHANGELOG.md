@@ -126,6 +126,30 @@ A deterministic test suite for Nebula's cross-worker guarantees, run with `Tools
 
 No runtime behaviour changed.
 
+#### Cohesion hints
+
+The game can now declare that a set of entities must be simulated by one worker and move between workers as a unit, and that a container should not be rebalanced for a bounded time. See [Cohesion hints](https://nebula.1by3.co/docs/guides/cohesion); the design record is `docs/cohesion-hints.md`.
+
+**Wire (protocol 18, no further version bump):** `EntitySpawnMsg` gains a trailing `u32 cohesion_group` (0 for none), written last in the body. It therefore travels in `EntitySpawn`, `GhostSpawn` and `AuthorityTransfer`, so every process holding a copy knows which group the entity is in.
+
+**New public API:**
+
+- `NetworkIdentity.CohesionGroup` (`uint`, 0 = none), `JoinCohesionGroup(uint)`, `LeaveCohesionGroup()`, and a **Cohesion** section in the inspector for authoring one on a prefab.
+- `CohesionGroups` (`Runtime/Core/CohesionGroups.cs`): the process-wide table of group membership - `Members`, `MemberCount`, `GroupCount`, `Groups`, `Same(a, b)`.
+- `NebulaWorker.HoldContainer(container | containerId, seconds)`, `ReleaseHold(containerId)`, `HoldRemaining(containerId)`, `HeldContainers`, `MaxHoldSeconds` (120), `NebulaWorker.ContainerHold`, `NebulaWorker.CohesionSpan`.
+- `NebulaDiagnostics.SplitCohesionGroups`: handovers that could not move a whole group because a member was not owned here. Each is also logged as a warning.
+- `AssignmentInput.Holds`, `AssignmentInput.Cohesion`, `AssignmentInput.IsHeld(id)`, `AssignmentInput.DropHeldChanges(changes)`; `CohesionGroupInfo`, `UnsplittableGroup`; `CostBalancedAssignmentPolicy.MaxGroupUtilization` (1) and `.Unsplittable`.
+- `MeshTelemetry.CopyHolds`, `CopyCohesion`, `HolderOf`, `ParseHolds`, `ParseCohesion`, `MeshTelemetry.CohesionSpan`.
+
+**Behaviour that changed:**
+
+- A handover of any member of a cohesion group now also hands over every other member the sending worker owns, to the same worker, each as a handover of its own (so a member that is a carrier still takes its passengers). A member the sender does not own cannot be included: that is logged and counted, never a silent split, and the transfer that was asked for still goes ahead.
+- `PhysicsIslands.SameIsland` treats two entities in one cohesion group as one island, so `Nebula > Validate Project` and the worker's authority check no longer warn about a joint between them. `PhysicsIslands.IsCohesive` remains as the extension point for a guarantee that comes from elsewhere.
+- The worker telemetry document gains `holds` (container id and seconds remaining) and `cohesion` (group, members, and the containers it spans under `in`) arrays. The orchestrator turns a reported hold into a deadline on its own clock, so the two processes need no common time base; a hold dies with the worker that asked for it.
+- `CostBalancedAssignmentPolicy` deals the containers of a cohesion group as one item, together with any affinity groups they touch, and skips moves for held items. A group whose containers need more than `MaxGroupUtilization` of a tick budget is dealt whole anyway and reported in `Unsplittable`, in `Note` and on the dashboard.
+- The orchestrator state document gains a `cohesion` object (`holds`, `groups`, `unsplittable`) and the dashboard a **Cohesion** card, shown only when there is something in it.
+- Conformance scenario 7 is covered (`ConformanceCohesionTests`, both builds; `ConformanceCohesionHandoverTests`, real workers), and the cohesion-group test of scenario 9 is no longer `[Ignore]`d.
+
 ### Added
 
 #### Persistence durability window (NEB-224)
