@@ -62,6 +62,18 @@ namespace Nebula
         public InterestSettings Settings = InterestSettings.Default;
         /// <summary>The grid the region scan uses. Must be the grid the index was bucketed with.</summary>
         public InterestGrid Grid = InterestGrid.Resolve(InterestSettings.Default);
+        /// <summary>
+        /// This client's scope salt (<see cref="RegionKeys.SaltOf"/>), applied to every region the scan collects.
+        /// 0 — the public world — leaves the keys exactly what they were. It must be the salt the index was
+        /// bucketed with, or the scan looks in another world's buckets (<c>docs/scope-frames.md</c> D7).
+        /// </summary>
+        public ulong ScopeSalt;
+        /// <summary>
+        /// Also scan the public world's buckets (salt 0). Set for a client whose scope is an <c>ObservePublic</c>
+        /// window onto the public world: the entities it may see through that window are bucketed in the public
+        /// world, not in its scope, and <c>NebulaGateway.CanSee</c> is what decides which of them it actually gets.
+        /// </summary>
+        public bool ScanPublicToo;
         /// <summary>Where the evaluation gets "now" from; tests and the standalone gateway supply their own.</summary>
         public Func<double> Clock;
 
@@ -203,15 +215,28 @@ namespace Nebula
                 else Grid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regions);
                 for (int r = 0; r < _regions.Count; r++)
                 {
-                    if (!_scanned.Add(_regions[r])) continue;
-                    foreach (var entry in index.Region(_regions[r]))
-                    {
-                        if (_visited.Contains(entry.Id)) continue;
-                        Consider(index, entry.Id, entry.Value, false, now, entered, left);
-                    }
+                    ScanRegion(index, _regions[r] ^ ScopeSalt, now, entered, left);
+                    if (ScanPublicToo && ScopeSalt != 0) ScanRegion(index, _regions[r], now, entered, left);
                 }
             }
 
+            ScanRest(index, now, entered, left, enterFrom, leaveFrom);
+        }
+
+        /// <summary>One region bucket, by the key it is actually held under (see <see cref="ScopeSalt"/>).</summary>
+        private void ScanRegion(InterestIndex<T> index, ulong key, double now, List<ulong> entered, List<ulong> left)
+        {
+            if (!_scanned.Add(key)) return;
+            foreach (var entry in index.Region(key))
+            {
+                if (_visited.Contains(entry.Id)) continue;
+                Consider(index, entry.Id, entry.Value, false, now, entered, left);
+            }
+        }
+
+        private void ScanRest(InterestIndex<T> index, double now, List<ulong> entered, List<ulong> left,
+            int enterFrom, int leaveFrom)
+        {
             // Members the scan did not reach: either they moved out of every scanned region (test them where
             // they are now) or they are gone from the index entirely (leave at once, nothing will announce them).
             _stale.Clear();

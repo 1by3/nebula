@@ -179,8 +179,30 @@ namespace Nebula
             return grid.RegionOf(x, y, z);
         }
 
-        /// <summary>The region an entity belongs in, from its absolute position. Origin-shift invariant by construction.</summary>
-        private ulong RegionOf(NetworkIdentity e) => RegionOfFrame(_interestGrid, _originCell, _originCellSize, e.transform.position);
+        /// <summary>
+        /// A frame position of a given scope as absolute world coordinates. Every scope with an origin frame of its
+        /// own converts through <i>its</i> origin (<c>docs/scope-frames.md</c> D4); the public world, and every
+        /// scope that shares its frame, uses the origin cached for this tick exactly as before. A scoped frame is
+        /// read live rather than cached: a scope's origin only moves in <c>NebulaChunkedWorld.Update</c>, which runs
+        /// at execution order −500, before any tick work.
+        /// </summary>
+        private void ToAbsolute(NetworkIdentity e, out double x, out double y, out double z)
+        {
+            var frame = Nebula.World.ScopeFrames.Of(e.InstanceId);
+            if (frame.IsPublic) { ToAbsolute(e.transform.position, out x, out y, out z); return; }
+            ToAbsolute(frame.Cell, frame.CellSize, e.transform.position, out x, out y, out z);
+        }
+
+        /// <summary>
+        /// The region an entity belongs in: its absolute position in its own scope's frame, packed, and salted with
+        /// that scope (<see cref="RegionKeys"/>) so two scopes standing on the same ground are two sets of regions.
+        /// Origin-shift invariant by construction.
+        /// </summary>
+        private ulong RegionOf(NetworkIdentity e)
+        {
+            ToAbsolute(e, out double x, out double y, out double z);
+            return RegionKeys.Salt(_interestGrid.RegionOf(x, y, z), e.InstanceId);
+        }
 
         /// <summary>
         /// Where an entity belongs in the index and how far it reaches: always-relevant prefabs are global, a prefab
@@ -719,10 +741,11 @@ namespace Nebula
                 if (e == null) continue;
                 var subject = WideSubjectOf(entry.Id, e);
                 PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
-                ToAbsolute(subject.transform.position, out double x, out double y, out double z);
+                ToAbsolute(subject, out double x, out double y, out double z);
+                ulong scope = subject.InstanceId;
                 _wideMask.TryGetValue(entry.Id, out ulong before);
-                ulong enter = _publisher.WideMask(_interestGrid, x, y, z, radius);
-                ulong stay = before == 0 ? 0 : _publisher.WideMask(_interestGrid, x, y, z, radius + _interest.ExitMargin);
+                ulong enter = _publisher.WideMask(_interestGrid, scope, x, y, z, radius);
+                ulong stay = before == 0 ? 0 : _publisher.WideMask(_interestGrid, scope, x, y, z, radius + _interest.ExitMargin);
                 ulong after = enter | (before & stay);
                 if (after == before) continue;
                 _wideMask[entry.Id] = after;
@@ -757,8 +780,8 @@ namespace Nebula
             if (!_index.TryGetValue(netId, out var e) || e == null) return 0;
             var subject = WideSubjectOf(netId, e);
             PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
-            ToAbsolute(subject.transform.position, out double x, out double y, out double z);
-            ulong mask = _publisher.WideMask(_interestGrid, x, y, z, radius);
+            ToAbsolute(subject, out double x, out double y, out double z);
+            ulong mask = _publisher.WideMask(_interestGrid, subject.InstanceId, x, y, z, radius);
             _wideMask[netId] = mask;
             return mask;
         }

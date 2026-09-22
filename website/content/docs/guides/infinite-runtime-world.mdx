@@ -414,13 +414,27 @@ NebulaChunkedWorld.ActivateGrid(controlPlane, "world/arena#run-4812", new ChunkG
 
 Chunk `(3, 0, -7)` of that world is a different container from chunk `(3, 0, -7)` of the public world: a different lease, a different persistence record, a different seed, and no visibility between them. Your content callback serves both — `ChunkContext.ScopeKey` says which world a chunk belongs to — and `NebulaChunks.GridFor(key)`, `At(position, key)` and `EnsureAt(position, key, cb)` are the scope-qualified forms of the calls used above.
 
+### Each world keeps its own floating origin
+
+One worker can hold chunks of several worlds at once, and those worlds' coordinates have nothing to do with each other: an arena at `(0, 0, 0)` and a continent at `(100000, 0, 100000)` are both real places. Nebula therefore gives **each scope its own origin frame**. The worker follows a centroid per world and shifts each one on its own, moving only that world's containers, entities, interpolation and state history, so two worlds can both sit next to Unity's origin on one machine and neither loses float precision because of the other.
+
+```csharp
+var frame = NebulaChunks.GridFor("world/arena#run-4812").Frame;
+frame.Cell;                       // which cell of THIS world sits at Unity's (0,0,0)
+frame.Shifted += delta => { };    // move anything of this world Nebula does not know about
+```
+
+The public world's frame is `WorldOrigin`, exactly as before, so a game with one world sees no change. A **client** still has one origin: the frame of the scope its pawn stands in. Nothing about poses, prediction or interpolation differs between a scoped client and a public one.
+
+This is also why a worker never costs more because a mesh has more worlds. The assignment policy and the autoscaler weigh containers by measured load and know nothing about scopes, so a dozen quiet worlds consolidate onto one worker exactly as a dozen quiet chunks of one world would.
+
 ## Current boundaries
 
 - **Runtime-grid IDs have a fixed coordinate range.** Keep coordinates within `RuntimeGrid.MinCoordinate` and `RuntimeGrid.MaxCoordinate`, in every world. Changing the packing later would break persisted chunk IDs.
-- **Every world shares one floating origin and one physics scene per worker.** A scoped world whose content sits very far from the public world's origin in absolute coordinates loses float precision accordingly. Per-scope origin frames are not available yet.
+- **Precision inside one world is still one frame.** Each scope gets its own origin frame and its own physics scene, but a single very large world held by one worker has one origin: two players thousands of kilometres apart in the *same* world share it, and the far one loses float precision. The answer to that is more workers, not more frames.
 - **Procedural content is not network state.** Every role that needs terrain or colliders must generate or load it from the stable chunk ID inside a `ChunkContent` handler. Network interactive objects must be registered prefabs spawned by a worker.
 - **Persistence is opt-in per entity and field.** The block exists and keeps its pose because it has `PersistentEntity`. Add `[Persist]` to any `NetworkVariable` whose value must also survive. Ordinary fields and transient entities are not restored.
-- **One Unity worker has one floating-origin frame.** The cost policy tends to give a worker spatially neighboring chunks. A game that expects one worker to simulate many extremely distant active regions should measure the cost of repeated origin shifts.
+- **One world, one frame per worker.** The cost policy tends to give a worker spatially neighboring chunks of the same world. A game that expects one worker to simulate many extremely distant active regions *of one world* should measure the cost of repeated origin shifts; distant regions of *different* worlds each get their own frame and cost nothing extra.
 - **Interest management bounds who hears about an entity, not who simulates it.** More chunks means more containers to spread across workers, but a single container is still one worker's budget. See [Scaling limits and when to partition](/docs/guides/interest-management#scaling-limits-and-when-to-partition).
 - **Only one anchor exists by default.** `NebulaChunkedWorld` anchors chunk `(0, 0, 0)` so a joining player always has somewhere to spawn. A game that wants another permanently loaded area (a second town, a hub reachable by teleport) adds anchors to `NebulaChunks.Allocator`, or works with the runtime grid and allocator directly — see [Runtime containers](/docs/guides/runtime-containers) for the lower-level API this turnkey path builds on.
 

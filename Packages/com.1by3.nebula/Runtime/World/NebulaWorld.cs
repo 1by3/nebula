@@ -162,9 +162,11 @@ namespace Nebula
         {
             // Cell scenes were moved by the streamer; the virtual containers (and the entities under them) follow.
             foreach (var kv in CellContainers) kv.Value.transform.position += delta;
-            ContainerRegistry.ShiftRuntime(delta);
+            // The public frame only: a scope with an origin of its own moves through RuntimeGrid.ShiftOrigin and
+            // must not be dragged along by this one (docs/scope-frames.md D2).
+            ContainerRegistry.ShiftRuntime(0UL, delta);
             ContainerRegistry.RefreshCaches();
-            NetworkIdentity.ShiftFrameAll(delta);
+            NetworkIdentity.ShiftFrameAll(0UL, delta);
             Physics.SyncTransforms();
             NebulaLog.Debugf($"origin shifted to cell {WorldOrigin.Cell} (delta {delta})");
         }

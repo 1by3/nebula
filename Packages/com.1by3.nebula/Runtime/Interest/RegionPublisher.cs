@@ -123,9 +123,19 @@ namespace Nebula
         /// Which gateways a wide entity (one whose own radius exceeds a region scan) reaches: the ones with a
         /// focus region within its radius. Matched at the evaluation rate, not per tick.
         /// </summary>
-        public ulong WideMask(in InterestGrid grid, double x, double y, double z, double radius)
+        public ulong WideMask(in InterestGrid grid, double x, double y, double z, double radius) =>
+            WideMask(grid, 0UL, x, y, z, radius);
+
+        /// <summary>
+        /// <see cref="WideMask(in InterestGrid,double,double,double,double)"/> for an entity of
+        /// <paramref name="instanceId"/>. A focus region id is salted with the scope it was collected in
+        /// (<see cref="RegionKeys"/>), so unsalting with this entity's scope is what turns the foci of <i>its</i>
+        /// scope back into coordinates — and what makes a focus in another world land nowhere near it.
+        /// </summary>
+        public ulong WideMask(in InterestGrid grid, ulong instanceId, double x, double y, double z, double radius)
         {
             ulong mask = 0;
+            ulong salt = RegionKeys.SaltOf(instanceId);
             double r2 = radius * radius;
             for (int bit = 0; bit < MaxGateways; bit++)
             {
@@ -133,7 +143,7 @@ namespace Nebula
                 if (receiver == null) continue;
                 var foci = receiver.FociRegions;
                 for (int i = 0; i < foci.Count; i++)
-                    if (grid.SqrDistanceToRegion(foci[i], x, y, z) <= r2) { mask |= 1UL << bit; break; }
+                    if (grid.SqrDistanceToRegion(foci[i] ^ salt, x, y, z) <= r2) { mask |= 1UL << bit; break; }
             }
             return mask;
         }

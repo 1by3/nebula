@@ -456,7 +456,9 @@ namespace Nebula
             var lease = ControlPlane.FindLease(containerId);
             if (lease == null)
             {
-                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds), WorkerId, instance);
+                // The box on the lease row is absolute, and a scope with an origin frame of its own converts
+                // through that frame, not through the public world's (docs/scope-frames.md D4).
+                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds, instance?.InstanceId ?? 0UL), WorkerId, instance);
                 if (writeHint && !hint.IsDefault) ControlPlane.SetContainerHint(containerId, hint);
                 return;
             }

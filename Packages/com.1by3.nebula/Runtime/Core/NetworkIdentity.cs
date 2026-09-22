@@ -395,9 +395,17 @@ namespace Nebula
         /// The floating origin moved by <paramref name="delta"/>: entities under a container were moved with it, but
         /// cached frame positions (pose history, interpolation buffers, game-side state) must follow by hand.
         /// </summary>
-        internal static void ShiftFrameAll(Vector3 delta)
+        internal static void ShiftFrameAll(Vector3 delta) => ShiftFrameAll(0UL, delta);
+
+        /// <summary>
+        /// One origin frame moved: only the entities of that frame follow it. <paramref name="frameId"/> is 0 for
+        /// the public frame, which is also where every entity whose scope has no frame of its own lives
+        /// (<c>docs/scope-frames.md</c>).
+        /// </summary>
+        internal static void ShiftFrameAll(ulong frameId, Vector3 delta)
         {
-            foreach (var e in Live) if (e != null) e.ShiftFrame(delta);
+            foreach (var e in Live)
+                if (e != null && Nebula.World.ScopeFrames.FrameIdOf(e.InstanceId) == frameId) e.ShiftFrame(delta);
         }
 
         internal void ShiftFrame(Vector3 delta)

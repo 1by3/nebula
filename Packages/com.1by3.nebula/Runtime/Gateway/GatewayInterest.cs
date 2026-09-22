@@ -113,6 +113,13 @@ namespace Nebula
 
         /// <summary>Resolved once per control-plane change: which workers a region's entities could live on.</summary>
         private readonly Dictionary<ulong, List<string>> _regionWorkers = new Dictionary<ulong, List<string>>();
+        /// <summary>
+        /// Salted region key → the scope it belongs to (<see cref="RegionKeys"/>). A key is opaque, and resolving
+        /// one to its owning workers needs both its coordinates and the scope to ask the registry in, so the pair
+        /// is recorded where the key is made (<c>docs/scope-frames.md</c> D7). Entries are never removed: the map
+        /// is bounded by the regions this gateway's clients have covered, exactly like <see cref="_regionWorkers"/>.
+        /// </summary>
+        private readonly Dictionary<ulong, ulong> _regionScope = new Dictionary<ulong, ulong>();
         /// <summary>Regions at least one link subscribes; a record outside every one of them is evicted.</summary>
         private readonly HashSet<ulong> _subscribedRegions = new HashSet<ulong>();
         private readonly Dictionary<string, ContainerOwnershipEntry> _ownershipById = new Dictionary<string, ContainerOwnershipEntry>();
@@ -533,10 +540,30 @@ namespace Nebula
             return rec;
         }
 
+        /// <summary>
+        /// The region key a record is bucketed under: its root carrier's absolute position, packed, and salted with
+        /// the scope that carrier chain resolves to (<see cref="RegionKeys"/>). Two scopes may occupy exactly the
+        /// same absolute coordinates once each has its own origin frame, so the salt is what keeps their regions —
+        /// and therefore their subscriptions — apart (<c>docs/scope-frames.md</c> D7).
+        /// </summary>
         private ulong RegionOf(EntityRecord rec)
         {
             var root = RootOf(rec);
-            return _interestGrid.RegionOf(root.AbsX, root.AbsY, root.AbsZ);
+            return RegionKeys.Salt(_interestGrid.RegionOf(root.AbsX, root.AbsY, root.AbsZ), InstanceOf(root));
+        }
+
+        /// <summary>The isolation id an entity's carrier chain resolves to; 0 for the public world.</summary>
+        private ulong InstanceOf(EntityRecord rec) => ScopeContainer(rec.Container)?.InstanceId ?? 0UL;
+
+        /// <summary>
+        /// The scope a client's region keys are salted with: the one its pawn actually stands in, and the key it
+        /// asked for in its <c>Hello</c> while it has no pawn yet, so a client's window is in its own world from
+        /// the first evaluation rather than from the first spawn.
+        /// </summary>
+        private ulong InstanceOf(ClientConn client)
+        {
+            if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn)) return InstanceOf(pawn);
+            return string.IsNullOrEmpty(client.ScopeKey) ? 0UL : ScopeKeys.Hash(client.ScopeKey);
         }
 
         // ------------------------------------------------------------------------------------------- the index
@@ -801,6 +828,9 @@ namespace Nebula
             client.Interest ??= new ClientInterest<EntityRecord, InterestSource>(new InterestSource(this));
             client.Interest.Settings = _interest;
             client.Interest.Grid = _interestGrid;
+            // Before the scan, not after it: the index is bucketed per scope, so a client whose salt was still the
+            // public world's would find nothing in its own world on this pass (docs/scope-frames.md D7).
+            client.Interest.ScopeSalt = RegionKeys.SaltOf(InstanceOf(client));
             client.Query ??= new InterestQuery();
 
             var snapshot = SnapshotClient(client);
@@ -876,9 +906,13 @@ namespace Nebula
         /// </summary>
         private void AddObservationWindows(ClientConn client, in InterestClient snapshot, InterestQuery query)
         {
+            if (client.Interest != null) client.Interest.ScanPublicToo = false;
             if (client.PawnNetId == 0 || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
             var view = ScopeContainer(pawn.Container)?.Instance;
             if (view == null || !view.ObservePublic) return;
+            // Entities seen through the window are bucketed in the public world, not in this client's scope
+            // (docs/scope-frames.md D7); the window's box focus alone would scan the wrong buckets.
+            if (client.Interest != null) client.Interest.ScanPublicToo = true;
             query.AddFocus(InterestFocus.Box(view.ObservationCenter.x, view.ObservationCenter.y, view.ObservationCenter.z,
                 view.ObservationSize.x, view.ObservationSize.y, view.ObservationSize.z));
         }
@@ -899,6 +933,17 @@ namespace Nebula
         /// The regions this client's foci cover at the subscribe radius: what the gateway asks workers for, and
         /// the key of the region → clients map that makes an arriving entity cheap.
         /// </summary>
+        /// <summary>One region key this client wants this pass, remembering which scope resolves it.</summary>
+        private void Want(ClientConn client, ulong region, ulong instanceId, ref bool changed)
+        {
+            _regionScope[region] = instanceId;
+            if (!client.NextRegions.Add(region)) return;
+            if (client.Regions.Contains(region)) return;
+            changed = true;
+            if (!_regionClients.TryGetValue(region, out var list)) _regionClients[region] = list = new List<ClientConn>(4);
+            list.Add(client);
+        }
+
         private void UpdateClientRegions(ClientConn client)
         {
             _regionScratch.Clear();
@@ -913,15 +958,18 @@ namespace Nebula
                 else _interestGrid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regionScratch);
             }
             bool changed = false;
+            // A client is in one scope, so its window is salted with that scope: it asks its workers for the regions
+            // of its own world and never for another's (docs/scope-frames.md D7). The one exception is a scope that
+            // is an ObservePublic window onto the public world — what it may see through the window is bucketed in
+            // the public world, so those keys are subscribed as well, and CanSee still decides what reaches it.
+            ulong instance = InstanceOf(client);
+            ulong salt = RegionKeys.SaltOf(instance);
+            bool alsoPublic = salt != 0 && (client.Interest?.ScanPublicToo ?? false);
             client.NextRegions.Clear();
             for (int i = 0; i < _regionScratch.Count; i++)
             {
-                ulong region = _regionScratch[i];
-                if (!client.NextRegions.Add(region)) continue;
-                if (client.Regions.Contains(region)) continue;
-                changed = true;
-                if (!_regionClients.TryGetValue(region, out var list)) _regionClients[region] = list = new List<ClientConn>(4);
-                list.Add(client);
+                Want(client, _regionScratch[i] ^ salt, instance, ref changed);
+                if (alsoPublic) Want(client, _regionScratch[i], 0UL, ref changed);
             }
             foreach (ulong region in client.Regions)
             {
@@ -1092,6 +1140,8 @@ namespace Nebula
             foreach (var client in _clientsById.Values)
             {
                 if (!client.Welcomed) continue;
+                // Every region id this client contributes is its own scope's (docs/scope-frames.md D7).
+                ulong instance = InstanceOf(client);
                 foreach (ulong region in client.Regions)
                 {
                     var owners = WorkersForRegion(region);
@@ -1102,7 +1152,7 @@ namespace Nebula
                     var foci = client.Interest.Foci;
                     for (int i = 0; i < foci.Count; i++)
                     {
-                        ulong key = _interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z);
+                        ulong key = RegionKeys.Salt(_interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z), instance);
                         if (!_fociRegions.Contains(key)) _fociRegions.Add(key);
                         LinkNearbyOwners(foci[i]);
                     }
@@ -1225,14 +1275,17 @@ namespace Nebula
         {
             if (_regionWorkers.TryGetValue(region, out var cached)) return cached;
             var owners = new List<string>(2);
-            _interestGrid.BoundsOf(region, out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
+            _regionScope.TryGetValue(region, out ulong instanceId);
+            // The key is per scope; the arithmetic is on the plain packing, and the container query is asked in
+            // the same scope, so a region of one world never resolves to the owner of another's box.
+            _interestGrid.BoundsOf(RegionKeys.Unsalt(region, instanceId), out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
             float margin = Config.GhostBandMargin + Config.HandoverHysteresis;
             // A planar region is an infinite column; a finite box tall enough to hold any world is what a
             // container query can answer, and the exact per-entity test happens on the gateway anyway.
             if (double.IsInfinity(minY)) { minY = -10000; maxY = 10000; }
             var center = new Vector3((float)((minX + maxX) / 2), (float)((minY + maxY) / 2), (float)((minZ + maxZ) / 2));
             var size = new Vector3((float)(maxX - minX) + 2 * margin, (float)(maxY - minY) + 2 * margin, (float)(maxZ - minZ) + 2 * margin);
-            ContainerRegistry.Overlapping(new Bounds(center, size), _containerScratch);
+            ContainerRegistry.Overlapping(new Bounds(center, size), _containerScratch, instanceId);
             for (int i = 0; i < _containerScratch.Count; i++)
             {
                 string id = _containerScratch[i].OwnerWorkerId;
@@ -1240,7 +1293,7 @@ namespace Nebula
             }
             if (owners.Count == 0)
             {
-                var nearest = ContainerRegistry.Find(center);
+                var nearest = ContainerRegistry.Find(center, null, instanceId);
                 if (nearest != null && !string.IsNullOrEmpty(nearest.OwnerWorkerId)) owners.Add(nearest.OwnerWorkerId);
             }
             _regionWorkers[region] = owners;
