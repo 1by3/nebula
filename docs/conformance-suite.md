@@ -88,10 +88,33 @@ Instantiate `NetworkIdentity` and behaviours and drive the codecs directly: `Con
 `PersistenceTests`, `SyncComponentTests`. Good for one behaviour's contract (a codec, a hook order); it cannot say
 anything about what a worker does with the bytes. Use it when tier B would only add ceremony.
 
-### Not built: a multi-process mesh (tier D, later)
+### Scale and failure suite (tier D is now partly built)
 
-Real worker builds, a real gateway and orchestrator, driven and observed from a script. `Tools/smoke-test.ps1` is
-this with a player build and wall-clock waits; it is not deterministic and needs a build. A conformance-grade
+`docs/scale-suite.md` (NEB-237) is the sibling of this document for the question this suite deliberately does not
+answer: not "does the guarantee hold on a small deterministic mesh" but "what does a busy mesh do when a worker
+dies, a gateway is lost without a drain, the control plane restarts, or everything comes back at once, and how
+long does each take". It has two layers, and the boundary matters here because it is exactly this section's
+tiering seen from the other side:
+
+- its **synthetic** layer is tier A — the same fake mesh (`MeshFixtures.cs`: real gateways, real control plane,
+  real interest code, real client handshakes) driven at hundreds of clients across several workers and scopes,
+  with the pieces killed and restarted. It runs under `dotnet test --filter "TestCategory=Scale"` in about eighty
+  seconds. The fixtures gained what it needed: `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway`,
+  `RestartControlPlane`, and `FakeWorker.SpawnIntoRequestedContainer`.
+- its **real-worker** layer is the tier D described below, as far as one exists: `Tools/scale-suite.ps1` starts a
+  real mesh through the `nebula` CLI, drives the load-test client, kills real processes and scrapes the
+  orchestrator API and the workers' `[nebula] profile` lines into CSV. It is a measurement runner, not a
+  deterministic test, and it needs a player build.
+
+The two are not the same suite and must not be run as one. `[Category("Scale")]` is what keeps them apart:
+`Tools/conformance.ps1` selects `TestCategory=Conformance` and never sees a scale scenario. The one place they
+meet is scenario 10 below — the worker-kill loss bound — which the scale suite reuses rather than re-deriving.
+
+### Not built: a full multi-process conformance mesh (tier D, later)
+
+Real worker builds, a real gateway and orchestrator, driven and observed from a script. `Tools/smoke-test.ps1`
+and `Tools/scale-suite.ps1` are this with a player build and wall-clock waits; neither is deterministic and both
+need a build. A conformance-grade
 version would need a scripted worker (headless player build with a test game mode, or the `Nebula.LoadGen` model
 extended to workers), deterministic scheduling across processes and a log/telemetry oracle. It is the only tier
 that can prove restart and process-loss guarantees end to end (scenario 1's "survives restart", scenario 3's restore

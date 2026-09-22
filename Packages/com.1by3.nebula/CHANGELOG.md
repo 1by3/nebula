@@ -259,6 +259,16 @@ wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-te
 
 ### Added
 
+#### Scale and failure suite (NEB-237)
+
+Measured, repeatable evidence of what a mesh does under load and when something breaks, in two clearly separated layers. Design record: `docs/scale-suite.md`; user page: [Run the scale and failure suite](https://nebula.1by3.co/docs/guides/scale-suite). No runtime behaviour changed; this is test and tooling only.
+
+- **Synthetic layer**: twelve scenarios over the in-process fake mesh (real gateways, real control plane, real interest code, real client handshakes on loopback), tagged `[Category("Scale")]` so `Tools/conformance.ps1` never picks them up — `dotnet test --filter "TestCategory=Scale"`, about eighty seconds. Sustained load (120 clients, 4 workers, 2 gateways), a 150-client burst, four keyed scopes asserted for zero cross-scope leakage, a worker kill with its restore and no duplicate entities, a gateway lost without a drain, a control-plane restart with and without its storage, a whole-mesh restart curve, autoscale and rebalance under holds, and a rolling upgrade. The ones that run a mesh for seconds also carry `Soak`, so the default `TestCategory!=Soak` run is unaffected.
+- **Real-worker layer**: `Tools/scale-suite.ps1`, which starts a real mesh through the `nebula` CLI, drives `Services~/Nebula.LoadGen`, kills real processes, and scrapes `/api/state`, `/api/cost` and each worker log's `[nebula] profile` line into CSV. Modes `-DryRun` (check preconditions, run nothing), `-Synthetic` (run the other layer) and the real run, plus `-Build`.
+- **Artifacts**: one CSV per scenario under `Logs/scale/`, stamped `synthetic` or `unity` in the first column and in every line of runner output, so the two layers are never read as one series. The whole-mesh restore curve is compared against a checked-in baseline, `docs/baselines/mesh-restart.csv`.
+- **Test fixtures** (`Services~/Nebula.Services.Tests/Fixtures/`): `Fleet.StartWorker`/`KillWorker`, `StartGateway`/`KillGateway(hard)`, `RestartControlPlane(snapshot)`, `FakeWorker.SpawnIntoRequestedContainer`, and the new `ScaleHarness`/`ScaleWorld` helpers.
+- **Findings recorded rather than hidden**, each pinned by a test that fails when the behaviour changes: a gateway killed outright never releases its session claims and its sessions cannot be reclaimed (the workaround is a drain request on its control-plane row); a control plane restarted without its storage keeps its gateways but loses its workers, because a worker registers once and never again; and there is no protocol compatibility window at all — a gateway requires an exact version match — so a rolling upgrade may replace processes at one protocol version but may not span two.
+
 #### Lifecycle hooks for materialization and dematerialization (NEB-242)
 
 Game callbacks at the moments the mesh brings a container or a scope to life, or puts it to sleep, with the ordering a game needs to seed from — or collapse into — its own state. Design record: `docs/lifecycle-hooks.md`; user page: [Lifecycle hooks](https://nebula.1by3.co/docs/guides/lifecycle-hooks). Conformance scenario 11.

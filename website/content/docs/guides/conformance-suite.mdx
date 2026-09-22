@@ -76,3 +76,11 @@ Scenario 8 is covered by `ConformanceHandoverStateTests` (Unity tier) and `Confo
 A failed row names the test. Open the test file under `Packages/com.1by3.nebula/Tests/EditMode/` to read the assertion; each assertion message says which field or step it checks. For the Unity tier, `Logs/conformance/unity.log` holds the Editor log and `Logs/conformance/editmode.xml` the full result, including the messages Nebula logged during the test. For the pure C# tier, the TRX file under `Logs/conformance/dotnet/` holds the same for `dotnet test`.
 
 If the Unity tier reports `not run`, the summary says why: the Editor was not found, the project is open in an Editor, or the Editor produced no result file. The last case usually means a compile error; the Editor log names it.
+
+## What this suite does not measure
+
+The conformance suite is not a load test, a soak or a benchmark: every scenario runs in one process in
+milliseconds, and a slow machine never changes its answer. What a busy mesh does when a worker dies, a gateway is
+lost, the control plane restarts, or everything comes back at once — and how long each of those takes — is the
+[scale and failure suite](/docs/guides/scale-suite), which runs under its own category and is never picked up by
+`Tools/conformance.ps1`.

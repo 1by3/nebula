@@ -34,6 +34,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceRebalanceTests.cs" />
     <!-- Per-scope origin frames (docs/scope-frames.md): the scaler's dry run and the scope-salted region ids are pure C#. -->
     <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />
+    <!-- The scale and failure suite (docs/scale-suite.md) is the synthetic layer: it drives the fake mesh at
+         scale and kills parts of it. Tagged `Scale` so the conformance runner never picks it up. -->
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
