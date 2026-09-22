@@ -109,7 +109,15 @@ Every record whose [`PersistedEntityRecord.CarrierKey`](/docs/reference/persiste
 void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
 ```
 
-Every record that matches `predicate`. For tools and game directors, not for the per-lease restore path.
+Every record that matches `predicate`. For tools and game directors, not for the per-lease restore path. This is the **offline read**: the records of a scope nothing is simulating are ordinary records and can be read, and written, without activating it (`docs/lifecycle-hooks.md` §5).
+
+### CountRecords [#countrecords]
+
+```csharp
+void CountRecords(string scopeKey, string containerId, Action<int> onCounted);
+```
+
+How many records the store holds for a scope, **without reading them**. `scopeKey` is matched exactly ([`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope), the empty key, is the public world) and `containerId` narrows the count to one container when it is non-empty; records inside a carrier are counted like any other. Cheap on purpose — a `COUNT` on the backend, never a list — so that "is there anything saved here?" can be asked on the path that brings a scope to life. The answer lands on the main thread like every other read. Behind `NebulaLifecycle.OnScopeActivating`'s `hasRecords`.
 
 ### Clear [#clear]
 

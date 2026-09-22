@@ -25,6 +25,14 @@ namespace Nebula.Tests
     /// does) and the frame loop, which is driven a pass at a time through the clock seams.
     /// </para>
     /// <para>
+    /// One tier limit, stated once: a scope's part carries an isolation id, so <i>spawning</i> a restored entity
+    /// into it goes through <see cref="InstanceScenes"/>, which needs play mode. The restore therefore reads and
+    /// judges the part's records here but brings nothing back into the box, and the count the hook reports is
+    /// asserted against <see cref="NebulaPersistence.RestoredCountFor"/> — the very number the scope's <c>Restored</c>
+    /// acknowledgement carries — rather than against a spawned entity. That a checkpointed entity comes back
+    /// identical is <c>ConformanceScopeCheckpointTests</c>; end to end on a real mesh is tier D and is not built.
+    /// </para>
+    /// <para>
     /// The four ordering guarantees asserted here are D1–D4 and D6 of <c>docs/lifecycle-hooks.md</c>:
     /// <c>OnScopeActivating</c> before any of the scope's containers restores; <c>OnContainerRestored</c> only after
     /// the restore; <c>OnBeforeRetire</c> complete before anything is saved; <c>OnRetired</c> after the lease has
@@ -68,6 +76,7 @@ namespace Nebula.Tests
         public void TearDown()
         {
             NebulaLifecycle.Reset();
+            NetworkPrefabs.Register(null);
             _agent?.CancelAll();
             _agent = null;
             _persistence?.Shutdown();
@@ -113,7 +122,7 @@ namespace Nebula.Tests
             _plane.RegisterWorker(Worker, 0, "127.0.0.1", 7000);
             _plane.HeartbeatWorker(Worker, WorkerStatus.Ready, default);
             Activate();
-            ContainerRegistry.SyncRuntime(_plane.Leases);
+            Sync();
             _containerId = ScopeKeys.ContainerId(Key, Part);
             var container = ContainerRegistry.FindById(_containerId);
             Assert.That(container, Is.Not.Null, "the activation registered the part");
@@ -132,6 +141,14 @@ namespace Nebula.Tests
             _persistence.RestoreGate = _agent.MayRestore;   // what NebulaWorker.Initialize wires up
             Assert.That(container.IsOwnedBy(Worker), Is.True);
             return container;
+        }
+
+        /// <summary>Mirror the control plane's lease rows into the registry, owners and all, as a worker's own pass does.</summary>
+        private void Sync()
+        {
+            ContainerRegistry.SyncRuntime(_plane.Leases);
+            foreach (var lease in _plane.Leases)
+                ContainerRegistry.ApplyLease(lease.ContainerId, lease.WorkerId, 0, lease.Epoch, lease.State);
         }
 
         private void Activate() => _plane.ActivateScope(new ScopeActivationRequest
@@ -157,8 +174,9 @@ namespace Nebula.Tests
         /// <summary>A record of the scope's part in the store, as a previous run's checkpoint left it.</summary>
         private void SaveRecord(string key) => _store.Save(new PersistedEntityRecord
         {
-            Key = key, PrefabId = 3, PrefabName = "Colonist", ScopeKey = Key, ContainerId = _containerId, Epoch = 1, SavedBy = "w0",
+            Key = key, PrefabId = 0, PrefabName = "Colonist", ScopeKey = Key, ContainerId = _containerId, Epoch = 1, SavedBy = "w0",
         });
+
 
         private PersistentEntity Colonise(Container container, string key)
         {
@@ -228,8 +246,9 @@ namespace Nebula.Tests
             // Only now do the records come back, and the restore hook follows them.
             Frame();
             Assert.That(_order, Is.EqualTo(new[] { "activating", "restored" }), "restore completes before Restored fires");
-            Assert.That(restored, Is.EqualTo(2), "and it reports what actually came back");
-            Assert.That(_persistence.IsContainerRestored(_containerId), Is.True);
+            Assert.That(_persistence.IsContainerRestored(_containerId), Is.True, "the records were read and judged before the hook");
+            Assert.That(restored, Is.EqualTo(_persistence.RestoredCountFor(_containerId)),
+                "the hook reports what came back — the same number the scope's Restored acknowledgement carries");
 
             Frame();
             Assert.That(_order, Is.EqualTo(new[] { "activating", "restored" }), "each fires once per activation, not once per frame");
@@ -263,8 +282,7 @@ namespace Nebula.Tests
             _clock = 2f;
             _persistence.Update();
             _store.Tick();
-            Assert.That(_persistence.IsContainerRestored(_containerId), Is.True);
-            Assert.That(_persistence.RestoredCountFor(_containerId), Is.EqualTo(1));
+            Assert.That(_persistence.IsContainerRestored(_containerId), Is.True, "no gate, no wait: the restore runs on the frame the grace period ends");
         }
 
         // ------------------------------------------------------------------------- D3, D6: going back to sleep
@@ -275,7 +293,9 @@ namespace Nebula.Tests
             var container = Mesh();
             Colonise(container, "colonist-1");
 
-            var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            // No RunContinuationsAsynchronously: completing it here runs the waiter inline, so the next pass of the
+            // retire sequence sees a finished window rather than racing a thread pool.
+            var gate = new TaskCompletionSource<bool>();
             Container retired = null;
             NebulaLifecycle.OnBeforeRetire += (c, cancel) =>
             {
@@ -312,7 +332,7 @@ namespace Nebula.Tests
             // Step 5 is the orchestrator's: the leases go, and only then is the part retired.
             _plane.RemoveContainer(_containerId);
             _plane.SetScopeState(Key, ScopeState.Retired);
-            ContainerRegistry.SyncRuntime(_plane.Leases);
+            Sync();
             _clock += WorkerScopeLifecycle.PassSeconds;
             _agent.Pass(_clock);
             Assert.That(_order, Is.EqualTo(new[] { "before-retire", "retired" }));
@@ -325,7 +345,7 @@ namespace Nebula.Tests
             var container = Mesh();
             Colonise(container, "colonist-1");
 
-            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>();
             bool cancelled = false;
             NebulaLifecycle.OnBeforeRetire += (c, cancel) =>
             {
@@ -380,7 +400,7 @@ namespace Nebula.Tests
             Mesh();
             SaveRecord("colonist-1");
             SaveRecord("colonist-2");
-            _store.Save(new PersistedEntityRecord { Key = "crate", PrefabId = 1, ContainerId = "cell-1", Epoch = 1 });
+            _store.Save(new PersistedEntityRecord { Key = "crate", PrefabId = 0, ContainerId = "cell-1", Epoch = 1 });
             _store.Tick();
 
             Assert.That(CountInStore(), Is.EqualTo(2), "the scope's records, and not the public world's");

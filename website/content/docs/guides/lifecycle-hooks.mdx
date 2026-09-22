@@ -1,0 +1,108 @@
+---
+title: Lifecycle hooks
+description: Run your own code at the moments the mesh brings a container or a scope to life, or puts it to sleep — with the ordering you need to seed from, or collapse into, your own state.
+---
+
+A [scope](/docs/guides/scopes) that nobody is in retires: its entities are checkpointed and its boxes are emptied. When somebody asks for the key again, it comes back. **Lifecycle hooks are the four moments in that cycle**, so your game can do its own work at each of them:
+
+| Hook | When | What it is for |
+| --- | --- | --- |
+| `OnScopeActivating(scope, hasRecords)` | a scope is coming to life on this worker, before any of its containers restores | decide whether to rebuild from your own summary or let the saved records come back |
+| `OnContainerRestored(container, restored)` | a container's saved records have been read and restored | spawn into the box, knowing what is already in it |
+| `OnBeforeRetire(container, cancel)` | a part of a retiring scope, before anything is saved | collapse the box into your own state, hand out rewards, close a session |
+| `OnRetired(container)` | the part has been checkpointed, emptied and let go | clean up, mark the region asleep |
+
+Nebula provides the moments, not the model. It never sees your summary: persistence saves [entities](/docs/guides/persistence), not worlds.
+
+## Register them
+
+```csharp
+void OnEnable()
+{
+    NebulaLifecycle.OnScopeActivating  += ScopeActivating;
+    NebulaLifecycle.OnContainerRestored += ContainerRestored;
+    NebulaLifecycle.OnBeforeRetire     += BeforeRetire;
+    NebulaLifecycle.OnRetired          += Retired;
+}
+```
+
+They are static, like `ScopeLifecycle.ShouldRetire` and `NebulaCost.EntityWeight`: register once at boot, from anywhere, before a worker exists. They are raised on the main thread, on the worker that owns the container. **A handler that throws is logged and ignored** — the retire or the restore carries on either way.
+
+## A worked example
+
+Forty NPC colonists live in a settlement. When the last player leaves and the region retires, the game collapses them into one row in its own database; when a player comes back, it rebuilds them from that row, advanced by the time that passed, instead of from forty stale entity checkpoints.
+
+```csharp
+// 1. Before the mesh checkpoints anything, write the summary.
+NebulaLifecycle.OnBeforeRetire += async (container, cancel) =>
+{
+    var colonists = MyGame.ColonistsIn(container);
+    await MyDatabase.WriteSettlementAsync(container.ScopeKey, Summarise(colonists), cancel);
+};
+
+// 2. On the way back, decide which source to trust.
+NebulaLifecycle.OnScopeActivating += (scope, hasRecords) => _seedFromSummary = !hasRecords;
+
+// 3. Only once the restore is finished, so nothing is spawned twice.
+NebulaLifecycle.OnContainerRestored += (container, restored) =>
+{
+    if (!_seedFromSummary) return;
+    var state = MyDatabase.ReadSettlement(container.ScopeKey);
+    MyGame.SpawnColonists(container, state.Advance(DateTime.UtcNow));
+};
+```
+
+`hasRecords` is `false` when the store holds no entity record under the scope's key: the scope has never run, or a previous retire's handler collapsed it into a summary and deleted the records itself. Nebula never deletes a record on its own.
+
+## What Nebula promises about the order
+
+1. **`OnScopeActivating` runs before any of that scope's containers restores on that worker.** The restore waits for it.
+2. **`OnContainerRestored` runs after the restore.** Everything that was saved in the box is already back, so spawning from it cannot make duplicates.
+3. **`OnBeforeRetire` completes before anything is saved.** The forced checkpoint is not issued, and nothing is despawned, until every handler's task has finished.
+4. **`OnRetired` runs after the lease is released** — after the checkpoint, after the store confirmed the writes, after the box was emptied.
+5. Each fires **once** per activation or per retire; `OnContainerRestored` fires once per lease, including for a container with nothing saved in it.
+
+The [scope guarantees](/docs/guides/scopes#retiring-and-re-activating-a-scope) hold underneath these: no admission during a retire, all parts retire together, all parts restore before the scope admits anybody.
+
+### The before-retire window is bounded
+
+`OnBeforeRetire` is asynchronous, and the retire waits for it — but only for **10 seconds**. Past that the token is cancelled, a warning is logged, and the retire proceeds: a hung task must never leave a scope nobody can enter. Do the long work elsewhere and write a small row here.
+
+```csharp
+NebulaLifecycle.OnBeforeRetire += async (container, cancel) =>
+{
+    try { await MyDatabase.WriteSettlementAsync(container.ScopeKey, summary, cancel); }
+    catch (OperationCanceledException) { /* the window closed; the retire is going ahead */ }
+};
+```
+
+The one other documented exception: if the store does not answer "are there records for this scope?" within 10 seconds, the restore goes ahead without `OnScopeActivating` having run, with a warning. Your handler still runs when the answer arrives.
+
+## Ask the store directly
+
+`hasRecords` is a count behind the scenes, and you can ask the same question yourself:
+
+```csharp
+worker.Persistence.Store.CountRecords(scopeKey, containerId: "", n => Debug.Log($"{n} saved"));
+```
+
+It counts in the database — `SELECT COUNT(*)` on SQLite or PostgreSQL, and only the number travels from the orchestrator to a worker. An empty container ID counts the whole scope; an empty scope key is the public world.
+
+## Offline reads
+
+The records of a scope nothing is simulating are ordinary records. **`IPersistenceStore.LoadWhere` is the offline read**, with `Load` for one key and `LoadContainer` for one box:
+
+```csharp
+store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records => { /* … */ });
+```
+
+A tool or a service outside the mesh reaches the same store through `RemotePersistenceStore` over the orchestrator's `/api/store` endpoints with the mesh token — no worker, and no activation of the scope. See [Persistence](/docs/guides/persistence#the-orchestrator-s-database).
+
+Two limits worth knowing: `LoadWhere` filters in the caller (only the count is pushed down to SQL), so it is for tools and directors rather than a hot path; and a record you write behind a worker that owns the entity loses to that worker's next checkpoint. Write to a scope that is retired, or go through the entity.
+
+## Limits
+
+- The hooks are raised on the worker that owns the container. A scope spread over several workers raises `OnScopeActivating` once per worker that holds a part of it, and `OnContainerRestored` once per part.
+- A worker that gains a part of a live scope after a rebalance is told the scope is activating there too. Write handlers that can run more than once for the same scope.
+- Nebula has no scheduler for sleeping regions: nothing ticks a scope that is retired. If a settlement should advance while nobody is there, advance it in your own code when it comes back (as above) or in your own service.
+- `OnBeforeRetire` runs while the worker still owns the box, so it can read entities. `OnRetired` runs after they are gone.

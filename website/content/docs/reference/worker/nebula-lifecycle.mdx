@@ -1,0 +1,69 @@
+---
+title: "NebulaLifecycle"
+description: "The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/NebulaLifecycle.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/NebulaLifecycle.cs)</div>
+
+```csharp
+public static class NebulaLifecycle
+```
+
+The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. Design of record: `docs/lifecycle-hooks.md`; the sequence they sit in is `docs/scope-lifecycle.md`.
+
+Nebula owns the moments, not what a game does with them. Only the mesh knows when a lease lands, when a restore finished and when a retire is about to checkpoint; a game that keeps its own summary of a sleeping region — an offline population, a settlement row, a world delta — needs exactly those four instants and the order between them. Nebula never sees the summary: persistence saves entities, not worlds.
+
+1. [`OnScopeActivating`](#onscopeactivating) — a scope is coming to life on this worker, and whether the store holds any record of it (`hasRecords`: summary or records).
+2. [`OnContainerRestored`](#oncontainerrestored) — a container's records have been read and restored; it is safe to spawn into it without making duplicates.
+3. [`OnBeforeRetire`](#onbeforeretire) — a part of a retiring scope, before anything is saved: the window in which a game may collapse it into its own state.
+4. [`OnRetired`](#onretired) — the part is gone: checkpointed, emptied and its lease released.
+
+Every hook is static, because a game registers them once at boot, before a [`NebulaWorker`](/docs/reference/worker/nebula-worker) exists, and there is one worker per process — the same reason [`ScopeLifecycle.ShouldRetire`](/docs/reference/control-plane/scope-lifecycle#shouldretire) and [`PhysicsIslands.IsCohesive`](/docs/reference/core/physics-islands#iscohesive) are static. All of them are raised on the main thread. A handler that throws is logged and ignored: a game's bug must never leave a scope half-retired or a restore unreported.
+
+## Events
+
+### OnScopeActivating [#onscopeactivating]
+
+```csharp
+public static event Action<ScopeInfo, bool> OnScopeActivating;
+```
+
+A scope this worker holds a part of is coming to life, before any of its containers has been restored here. `hasRecords` is whether the store holds any entity record under the scope's key ([`IPersistenceStore.CountRecords`](/docs/reference/persistence/i-persistence-store#countrecords)): false on a first activation, and the signal a game uses to choose between rebuilding from its own summary and letting the records come back. Raised once per scope per activation on this worker, and again after the scope has retired and been activated again.
+
+The restore of the scope's parts is held until this has been raised, so a handler may decide what to spawn before [`OnContainerRestored`](#oncontainerrestored) tells it what came back (`docs/lifecycle-hooks.md` D4).
+
+### OnContainerRestored [#oncontainerrestored]
+
+```csharp
+public static event Action<Container, int> OnContainerRestored;
+```
+
+Every persisted record of a container this worker has just gained has been read and dealt with, and this many entities came back (0 when there was nothing saved). Raised once per lease, for every container — a scope's part and an ordinary public-world container alike — and always *after* the restore, which is what makes spawning from it safe: whatever was saved is already here.
+
+The container is the live [`Container`](/docs/reference/containers/container), or null when the lease left again before the records came back.
+
+### OnBeforeRetire [#onbeforeretire]
+
+```csharp
+public static event Func<Container, CancellationToken, Task> OnBeforeRetire;
+```
+
+A part of a scope the orchestrator is retiring, **before anything is saved and before anything is despawned**: the window in which a game may write its own summary of what is in the box, hand out rewards or close a session. Every handler is started at once and the retire waits for all of them, for at most [`WorkerScopeLifecycle.BeforeRetireTimeoutSeconds`](/docs/reference/worker/worker-scope-lifecycle#beforeretiretimeoutseconds); a handler that overruns is cancelled through the token, and one that throws is logged. **In both cases the retire proceeds** — a scope must never be left half-retired because a game's task hung.
+
+### OnRetired [#onretired]
+
+```csharp
+public static event Action<Container> OnRetired;
+```
+
+The part has been checkpointed, emptied and let go: its lease is released and the scope holds it no more. Raised after the mesh has finished with the container, so nothing a handler does can disturb the retire.
+
+## Methods
+
+### Reset [#reset]
+
+```csharp
+public static void Reset();
+```
+
+Forget every handler. Called when a play session starts (`NebulaStatics`), because with "enter play mode without domain reload" a static event would otherwise still hold the previous session's subscribers, and by tests that register one.

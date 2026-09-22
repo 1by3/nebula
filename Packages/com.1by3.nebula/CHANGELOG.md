@@ -225,6 +225,17 @@ wire means "no opinion" and leaves the receiver's value alone. See `docs/cost-te
 
 ### Added
 
+#### Lifecycle hooks for materialization and dematerialization (NEB-242)
+
+Game callbacks at the moments the mesh brings a container or a scope to life, or puts it to sleep, with the ordering a game needs to seed from — or collapse into — its own state. Design record: `docs/lifecycle-hooks.md`; user page: [Lifecycle hooks](https://nebula.1by3.co/docs/guides/lifecycle-hooks). Conformance scenario 11.
+
+- `NebulaLifecycle`, a static hook set raised on the main thread on the worker that owns the container: `OnScopeActivating(ScopeInfo scope, bool hasRecords)`, `OnContainerRestored(Container container, int restored)`, `OnBeforeRetire(Container container, CancellationToken cancel)` (async, awaited) and `OnRetired(Container container)`. `NebulaLifecycle.Reset()` clears them and runs at the start of a play session. A handler that throws is logged and ignored; the retire or the restore carries on.
+- **Ordering guarantees**, each covered by a test: `OnScopeActivating` runs before any of that scope's containers restores on that worker (the restore is held for it); `OnContainerRestored` runs after the restore, once per lease, including for a container with nothing saved; `OnBeforeRetire` completes — or is cancelled on the existing 10 s window, with a warning — before the forced checkpoint is issued and before anything is despawned; `OnRetired` runs after the orchestrator has released the part's lease.
+- New store method `IPersistenceStore.CountRecords(scopeKey, containerId, onCounted)`: how many records a scope holds, without reading them. A `SELECT COUNT(*)` on SQLite and PostgreSQL (with a new `nebula_entity_scope` index), a walk in `LocalPersistenceStore`, and the new additive endpoint `GET /api/store/count?scope=&container=` for `RemotePersistenceStore` — only the number travels. **A custom `IPersistenceStore` implementation must add it.** No wire protocol change and no persisted-row change.
+- `IPersistenceStore.LoadWhere` is documented as the **offline read** for the records of a world nothing is simulating, with a new "Offline reads" section in the persistence guide. Nebula owns the moments, never the game's summary: persistence saves entities, not worlds.
+- New internal seam `NebulaPersistence.RestoreGate` (a predicate the worker points at `WorkerScopeLifecycle.MayRestore`), and `WorkerScopeLifecycle.ActivatingTimeoutSeconds` (10 s), after which a store that never answered the record count lets the restore proceed with a warning. With no handler subscribed nothing is asked of the store and the restore path is unchanged.
+- `Tests/EditMode/ConformanceLifecycleHooksTests.cs` (7 tests) and the store count in SQL and over HTTP in `Services~/Nebula.Services.Tests/StorageAndHostTests.cs`; ledger row 11 in `docs/conformance-suite.md` §4.
+
 #### Persistence durability window (NEB-224)
 
 Docs and a conformance test state and check the bound on how much a worker crash can lose between checkpoints.
