@@ -142,6 +142,9 @@ namespace Nebula
                 // on both engines; a row from before the column reads as the public world.
                 try { Execute(c, "ALTER TABLE nebula_entity ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''"); }
                 catch (DbException) { }
+                // Added with the column, so "has this scope anything saved?" (IPersistenceStore.CountRecords) is an
+                // index count rather than a table scan; it has to come after the ALTER on a database that predates it.
+                Execute(c, "CREATE INDEX IF NOT EXISTS nebula_entity_scope ON nebula_entity (scope_key)");
                 _schemaReady = true;
             }
         }

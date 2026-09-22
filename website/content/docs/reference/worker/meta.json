@@ -1,4 +1,4 @@
 {
   "title": "Worker",
-  "pages": ["authority-call-action", "authority-call-decision", "authority-call-id", "authority-call-ledger", "authority-call-outcome", "authority-call-result", "authority-call-router", "authority-call-target", "authority-call-tracker", "container-cost-meter", "entity-request-result", "entity-request-status", "entity-requests", "i-worker-messaging", "instance-transfer", "nebula-worker", "worker-query", "worker-scope-lifecycle", "worker-telemetry"]
+  "pages": ["authority-call-action", "authority-call-decision", "authority-call-id", "authority-call-ledger", "authority-call-outcome", "authority-call-result", "authority-call-router", "authority-call-target", "authority-call-tracker", "container-cost-meter", "entity-request-result", "entity-request-status", "entity-requests", "i-worker-messaging", "instance-transfer", "nebula-lifecycle", "nebula-worker", "worker-query", "worker-scope-lifecycle", "worker-telemetry"]
 }

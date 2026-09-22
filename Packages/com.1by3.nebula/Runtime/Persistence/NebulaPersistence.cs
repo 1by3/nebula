@@ -46,6 +46,14 @@ namespace Nebula
         /// </summary>
         internal Func<float> Now = () => UnityEngine.Time.unscaledTime;
 
+        /// <summary>
+        /// Asked before a leased container's records are read: false holds the restore for another frame. The worker
+        /// points this at <see cref="WorkerScopeLifecycle.MayRestore"/>, which keeps a scope's parts back until
+        /// <c>NebulaLifecycle.OnScopeActivating</c> has been raised for the scope (<c>docs/lifecycle-hooks.md</c>).
+        /// Null — the default — restores as soon as the grace period is over.
+        /// </summary>
+        internal Func<string, bool> RestoreGate;
+
         /// <summary>Every persistent entity alive in this process, authoritative or ghost, by key.</summary>
         private readonly Dictionary<string, NetworkIdentity> _byKey = new Dictionary<string, NetworkIdentity>();
         /// <summary>Checkpoint candidates, in spawn order; the cursor walks them across frames.</summary>
@@ -424,6 +432,9 @@ namespace Nebula
             foreach (var kv in _leasedSince)
             {
                 if (now - kv.Value < _config.PersistenceRestoreGraceSeconds) continue;
+                // The scope's activation hook comes first when there is one (docs/lifecycle-hooks.md D4). The gate
+                // is asked again every frame and opens on its own deadline, so nothing can wedge a restore here.
+                if (RestoreGate != null && !RestoreGate(kv.Key)) continue;
                 if (!_loadRequested.Add(kv.Key)) continue;
                 string containerId = kv.Key;
                 _store.LoadContainer(containerId, records => OnContainerRecords(containerId, records));
@@ -469,6 +480,9 @@ namespace Nebula
             _restoreComplete[containerId] = restored;
             try { ContainerRestored?.Invoke(containerId, restored); }
             catch (Exception e) { NebulaLog.Error($"ContainerRestored handler threw: {e}"); }
+            // The game's hook, raised from the same call: after the restore, and before the worker's next pass turns
+            // this into the scope's Restored acknowledgement (docs/lifecycle-hooks.md D2).
+            NebulaLifecycle.RaiseContainerRestored(ContainerRegistry.FindById(containerId), restored);
         }
 
         private RestorePlan Judge(PersistedEntityRecord record, float now)

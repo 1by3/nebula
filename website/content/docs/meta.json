@@ -37,6 +37,7 @@
     "guides/infinite-runtime-world",
     "guides/instancing",
     "guides/scopes",
+    "guides/lifecycle-hooks",
     "guides/cohesion",
     "---Running a mesh---",
     "guides/configuration",

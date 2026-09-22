@@ -195,6 +195,30 @@ namespace Nebula
         public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
             Query("all", $"SELECT {Columns} FROM nebula_entity", Array.Empty<(string, object)>(), predicate, onLoaded);
 
+        /// <summary>A <c>COUNT</c> on the scope key (and the container id when one is given): no row is read back.</summary>
+        public void CountRecords(string scopeKey, string containerId, Action<int> onCounted)
+        {
+            if (onCounted == null) return;
+            string scope = scopeKey ?? "";
+            string container = containerId ?? "";
+            string sql = container.Length == 0
+                ? "SELECT COUNT(*) FROM nebula_entity WHERE scope_key = @s"
+                : "SELECT COUNT(*) FROM nebula_entity WHERE scope_key = @s AND container_id = @c";
+            var args = container.Length == 0
+                ? new[] { ("@s", (object)scope) }
+                : new[] { ("@s", (object)scope), ("@c", (object)container) };
+            Enqueue("count " + scope, c =>
+            {
+                long n;
+                using (var cmd = NebulaDatabase.Command(c, sql, args))
+                {
+                    object scalar = cmd.ExecuteScalar();
+                    n = scalar == null || scalar is DBNull ? 0L : Convert.ToInt64(scalar);
+                }
+                Deliver(() => onCounted((int)n));
+            });
+        }
+
         private void Query(string name, string sql, (string, object)[] args, Func<PersistedEntityRecord, bool> filter, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
         {
             if (onLoaded == null) return;

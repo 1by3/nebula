@@ -127,8 +127,23 @@ namespace Nebula
         void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
         /// <summary>Every record whose <see cref="PersistedEntityRecord.CarrierKey"/> is <paramref name="carrierKey"/>.</summary>
         void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
-        /// <summary>Every record that matches <paramref name="predicate"/>. For tools and game directors, not for the per-lease restore path.</summary>
+        /// <summary>
+        /// Every record that matches <paramref name="predicate"/>. For tools and game directors, not for the
+        /// per-lease restore path. This is the <b>offline read</b>: the records of a scope nothing is simulating are
+        /// ordinary records and can be read, and written, without activating it (<c>docs/lifecycle-hooks.md</c> §5).
+        /// </summary>
         void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+
+        /// <summary>
+        /// How many records the store holds for a scope, <b>without reading them</b>. <paramref name="scopeKey"/> is
+        /// matched exactly (<see cref="EntityLocation.PublicScope"/>, the empty key, is the public world) and
+        /// <paramref name="containerId"/> narrows the count to one container when it is non-empty; records inside a
+        /// carrier are counted like any other. Cheap on purpose — a <c>COUNT</c> on the backend, never a list — so
+        /// that "is there anything saved here?" can be asked on the path that brings a scope to life. The answer
+        /// lands on the main thread like every other read. Behind
+        /// <c>NebulaLifecycle.OnScopeActivating</c>'s <c>hasRecords</c>.
+        /// </summary>
+        void CountRecords(string scopeKey, string containerId, Action<int> onCounted);
 
         /// <summary>Delete every record (dashboard / dev reset).</summary>
         void Clear();

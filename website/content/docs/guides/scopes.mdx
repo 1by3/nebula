@@ -195,11 +195,15 @@ A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula
 3. Each part despawns its contents — persistent entities keep their saved records, anything else is gone — and reports back.
 4. Only when **every** part has reported does the orchestrator release the lease rows and mark the scope `retired`.
 
+Your game can run its own code in step 2 — collapsing the box into a summary row of its own, for instance — through [`NebulaLifecycle.OnBeforeRetire`](/docs/guides/lifecycle-hooks), and is told when the part is finally let go through `OnRetired`.
+
 The scope's row is kept, so the key keeps its identity and a later activation is the same scope rather than a new one. Nothing deletes a persisted record: `RemoveScope` is still the explicit way to forget a scope, and even that removes rows, not records.
 
 ### What coming back does
 
 Activating a retired key puts the scope in `restoring` and brings its lease rows back with the same container IDs. Each worker that lands a part loads that part's persisted records in the ordinary way and reports the restore complete; only then does the scope become `active` and admit clients again.
+
+On the way back your game is told that the scope is coming to life, and whether anything is saved under its key, before any of its parts restores ([`OnScopeActivating`](/docs/guides/lifecycle-hooks)), and told again once each part's records are back (`OnContainerRestored`). That ordering is what lets a game rebuild a world from its own summary without racing the records.
 
 A client that asks for a scope which is not active is **held**, not refused: it stays welcomed and is placed with no reconnect the moment the scope admits again. Read why on the client:
 

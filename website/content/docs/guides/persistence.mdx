@@ -199,6 +199,8 @@ When a worker gains the lease of a static container, it does not restore that co
 
 If a handover arrives for a key that was already restored, the incoming entity wins and the restored copy is despawned **without** deleting the record.
 
+When the restore of a container finishes — including a container that had nothing saved in it — Nebula raises [`NebulaLifecycle.OnContainerRestored`](/docs/guides/lifecycle-hooks). It is the moment at which the box is as the store left it, so it is the safe place to spawn anything of your own into it.
+
 After a whole-mesh restart, the same path runs for every container as its first lease lands, so the world comes back container by container rather than all at once.
 
 ### Owned records and rejoining players
@@ -284,7 +286,7 @@ An unrecognized mode logs a warning and turns persistence off.
 
 ## The orchestrator's database
 
-Saved entities live in the `nebula_entity` table of the orchestrator's database, next to the control-plane document. `DatabaseUrl` names the engine: `sqlite:<file>` (the default for `nebula start`, at `Library/Nebula/nebula.db`) or `postgres://user:password@host:port/database` for a deployed mesh whose world must outlive its VMs. Both use the same statements; the orchestrator creates the table and its two indexes (`container_id`, `carrier_key`) when it starts.
+Saved entities live in the `nebula_entity` table of the orchestrator's database, next to the control-plane document. `DatabaseUrl` names the engine: `sqlite:<file>` (the default for `nebula start`, at `Library/Nebula/nebula.db`) or `postgres://user:password@host:port/database` for a deployed mesh whose world must outlive its VMs. Both use the same statements; the orchestrator creates the table and its indexes (`container_id`, `carrier_key`, `scope_key`) when it starts.
 
 The table's columns are the record fields: `entity_key`, prefab ID and name, scene ID, `container_id` and `carrier_key`, pose and velocity, `epoch`, `server_driven`, `owned`, `name`, the `state` blob, `version`, `saved_at`, and `saved_by`.
 
@@ -307,6 +309,7 @@ A worker's `remote` store talks to the orchestrator's dashboard address, the sam
 | `POST /api/store/save` `{"records":[...]}` | Save a batch. A worker gathers its checkpoints for a quarter of a second and coalesces them per key, so a checkpoint pass is one request. |
 | `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear` | Delete records. |
 | `GET /api/store/record?key=`, `.../container?id=`, `.../carried?key=`, `.../all` | Load one record, a container's records, a carrier's records, or everything. |
+| `GET /api/store/count?scope=&container=` | How many records a scope holds (optionally narrowed to one container), counted in the database — only the number travels. |
 | `GET /api/store/status` | Backend, whether it is connected, and how many records it holds. The worker probes it every five seconds for `IsConnected` and `KnownCount`. |
 
 Records travel as JSON with the state blob base64-encoded. A batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away; a load is retried until it succeeds.
@@ -340,6 +343,23 @@ The **Clear persistence** button deletes every saved entity through `POST /api/p
 <Callout type="warn" title="Clearing persistence cannot be undone">
 The running mesh keeps simulating what it is holding, and its next checkpoints write fresh records. Everything that was not alive at that moment is gone.
 </Callout>
+
+## Offline reads
+
+The records of a world nothing is simulating are ordinary records: you do not have to activate a [scope](/docs/guides/scopes) to read what is saved in it.
+
+**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load` and `LoadContainer` are the same read narrowed to one key or one container. `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
+
+```csharp
+store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records =>
+{
+    foreach (var r in records) Debug.Log($"{r.Key} at {r.LocalPosition} in {r.ContainerId}");
+});
+```
+
+A tool or a service outside the mesh reaches the same store through `RemotePersistenceStore` over the endpoints above, with the mesh token, and needs no worker.
+
+Two limits. `LoadWhere` filters in the caller for the local and remote stores (only `CountRecords` is pushed down to SQL), so it is meant for tools and game directors, not for a per-frame path. And a record written behind a worker that owns the entity loses to that worker's next checkpoint — the epoch rule doing its job. Write to a world that is not running, or go through the live entity.
 
 ## Current limitations
 

@@ -20,6 +20,7 @@ namespace Nebula
             DynamicContainer.ResetForNewSession();
             PhysicsIslands.ResetForNewSession();
             NebulaDiagnostics.ResetForNewSession();
+            NebulaLifecycle.Reset();
             NebulaWorld.ResetForNewSession();
             Nebula.World.NebulaChunks.ResetForNewSession();
             NebulaRuntime.IsServer = false;

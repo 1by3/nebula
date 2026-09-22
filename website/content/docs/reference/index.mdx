@@ -113,6 +113,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [EntityRequests](/docs/reference/worker/entity-requests) | Class. Asks whichever worker currently has authority over a PersistentEntity key, without needing a local ghost of it: a container query has neighbours to fall back to, but a persistent key has none, since the entity may be nowhere near this wo... |
 | [IWorkerMessaging](/docs/reference/worker/i-worker-messaging) | Interface. Defines the worker messaging operations used by WorkerQuery. |
 | [InstanceTransfer](/docs/reference/worker/instance-transfer) | Class. A prepared crossing. |
+| [NebulaLifecycle](/docs/reference/worker/nebula-lifecycle) | Static class. The moments at which the mesh brings a container or a scope to life, or puts it to sleep, as game hooks. |
 | [NebulaWorker](/docs/reference/worker/nebula-worker) | Class. Runs authoritative game simulation for the containers assigned to this worker. |
 | [WorkerQuery](/docs/reference/worker/worker-query) | Class. Sends one game-defined request to several workers and collects their replies. |
 | [WorkerScopeLifecycle](/docs/reference/worker/worker-scope-lifecycle) | Class. The worker's half of the scope lifecycle (docs/scope-lifecycle.md): it keeps the idle clock of the scope parts it owns honest, performs the retire sequence for a scope the orchestrator moved to ScopeState.Retiring, and reports a restore ... |

@@ -192,6 +192,18 @@ namespace Nebula
             });
         }
 
+        /// <summary>Counted on the orchestrator (<c>GET /api/store/count</c>): only the number travels, never the records.</summary>
+        public void CountRecords(string scopeKey, string containerId, Action<int> onCounted)
+        {
+            if (onCounted == null) return;
+            string path = $"{PersistenceHost.Prefix}/count?scope={Uri.EscapeDataString(scopeKey ?? "")}&container={Uri.EscapeDataString(containerId ?? "")}";
+            Fetch(path, body =>
+            {
+                int count = (int)ControlPlaneJson.Num(body, "count");
+                Deliver(() => onCounted(count));
+            });
+        }
+
         public void Dispose()
         {
             if (!_running) return;

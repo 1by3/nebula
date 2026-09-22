@@ -15,6 +15,7 @@ namespace Nebula
     /// <list type="bullet">
     /// <item><c>POST /api/store/save</c> <c>{"records":[...]}</c>, <c>POST /api/store/delete</c> <c>{"keys":[...]}</c>, <c>POST /api/store/clear</c></item>
     /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/container?id=</c>, <c>GET /api/store/carried?key=</c>, <c>GET /api/store/all</c></item>
+    /// <item><c>GET /api/store/count?scope=&amp;container=</c>: how many records a scope (optionally one of its containers) holds, without reading them</item>
     /// <item><c>GET /api/store/status</c>: backend, whether it is connected, how many records it holds</item>
     /// </list>
     /// Requests carry the mesh token in <c>X-Nebula-Token</c> when the mesh has one.
@@ -90,6 +91,13 @@ namespace Nebula
                     return true;
                 case "GET carried":
                     _store.LoadCarried(req.GetQuery("key"), rs => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs))));
+                    response = OrchestratorHttpServer.Response.Pending;
+                    return true;
+                case "GET count":
+                    // Only the number travels: this is the "is there anything saved for this scope?" question a
+                    // worker asks on the path that brings a scope to life (docs/lifecycle-hooks.md).
+                    _store.CountRecords(req.GetQuery("scope"), req.GetQuery("container"),
+                        n => req.Complete(OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"count\":{n.ToString(CultureInfo.InvariantCulture)}}}")));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET all":

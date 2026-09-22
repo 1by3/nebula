@@ -39,6 +39,14 @@ public const float BeforeRetireTimeoutSeconds = 10f;
 
 How long the before-retire window may run before it is cancelled and the retire carries on regardless. Kept below [`ScopeLifecycle.StepTimeoutSeconds`](/docs/reference/control-plane/scope-lifecycle#steptimeoutseconds) so the checkpoint still happens inside the orchestrator's deadline rather than being cut off by it.
 
+### ActivatingTimeoutSeconds [#activatingtimeoutseconds]
+
+```csharp
+public const float ActivatingTimeoutSeconds = 10f;
+```
+
+How long the restore of a scope's parts waits for the store to answer "has this scope any records?" before it goes ahead without `NebulaLifecycle.OnScopeActivating` having been raised. The safety valve of `docs/lifecycle-hooks.md` D4: a store that never answers must not stop a scope coming back.
+
 ## Properties
 
 ### RetiringParts [#retiringparts]

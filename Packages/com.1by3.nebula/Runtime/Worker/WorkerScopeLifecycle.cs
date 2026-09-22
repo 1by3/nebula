@@ -29,14 +29,20 @@ namespace Nebula
         /// orchestrator's deadline rather than being cut off by it.
         /// </summary>
         public const float BeforeRetireTimeoutSeconds = 10f;
+        /// <summary>
+        /// How long the restore of a scope's parts waits for the store to answer "has this scope any records?"
+        /// before it goes ahead without <c>NebulaLifecycle.OnScopeActivating</c> having been raised. The safety
+        /// valve of <c>docs/lifecycle-hooks.md</c> D4: a store that never answers must not stop a scope coming back.
+        /// </summary>
+        public const float ActivatingTimeoutSeconds = 10f;
 
         /// <summary>
         /// Game work that must happen before a scope's part is checkpointed and emptied — hand out rewards, write a
         /// summary row, close a session. Awaited (with <see cref="BeforeRetireTimeoutSeconds"/> and a cancellation
-        /// token) before anything is saved, once per part per retire. Internal until NEB-242 gives it its public
-        /// shape; the ordering and the window are settled here so that issue only has to expose them.
+        /// token) before anything is saved, once per part per retire. Defaults to the public hook set
+        /// (<see cref="NebulaLifecycle.OnBeforeRetire"/>); a test may replace it to drive the sequence directly.
         /// </summary>
-        internal Func<Container, CancellationToken, Task> BeforeRetire;
+        internal Func<Container, CancellationToken, Task> BeforeRetire = NebulaLifecycle.RaiseBeforeRetire;
 
         /// <summary>What this worker is doing about one part of one scope right now.</summary>
         private enum Step { Before, Checkpoint, Wait, Done }
@@ -45,6 +51,8 @@ namespace Nebula
         {
             public string ScopeKey = "";
             public string ContainerId = "";
+            /// <summary>The part itself, kept so <see cref="NebulaLifecycle.OnRetired"/> can name it after the lease has gone.</summary>
+            public Container Container;
             public Step Step;
             public int Saved;
             public Task Before;
@@ -53,8 +61,22 @@ namespace Nebula
             public bool Written;
         }
 
+        /// <summary>What this worker has done about one scope coming to life here (<see cref="NebulaLifecycle.OnScopeActivating"/>).</summary>
+        private sealed class Activation
+        {
+            /// <summary>The store has been asked how many records the scope holds.</summary>
+            public bool Asked;
+            /// <summary>The hook has been raised (or there was nothing to raise it to).</summary>
+            public bool Raised;
+            /// <summary>The scope's parts may restore: the hook was raised, or the store did not answer in time.</summary>
+            public bool Open;
+            public float Deadline;
+        }
+
         private readonly NebulaWorker _worker;
         private readonly Dictionary<string, PartWork> _retiring = new Dictionary<string, PartWork>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Activation> _activating = new Dictionary<string, Activation>(StringComparer.Ordinal);
+        private readonly HashSet<string> _here = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<string> _scratch = new List<string>();
         private float _next;
 
@@ -78,9 +100,10 @@ namespace Nebula
             var cp = _worker.ControlPlane;
             if (cp == null || !cp.IsConnected) return;
             var scopes = cp.Scopes;
-            if (scopes == null || scopes.Count == 0) { CancelAll(); return; }
+            if (scopes == null || scopes.Count == 0) { CancelAll(); _activating.Clear(); return; }
 
             _scratch.Clear();
+            _here.Clear();
             for (int i = 0; i < scopes.Count; i++)
             {
                 var scope = scopes[i];
@@ -90,6 +113,9 @@ namespace Nebula
                     string containerId = scope.ContainerIds[c];
                     var container = ContainerRegistry.FindById(containerId);
                     if (container == null || !container.IsOwnedBy(_worker.WorkerId)) continue;
+                    // This worker holds a part of the scope, so the scope is coming to life here (or already has):
+                    // raise the activation hook once, and keep the parts' restores behind it until it has been.
+                    if (_here.Add(scope.ScopeKey)) NoteActivating(scope, now);
                     switch (scope.State)
                     {
                         case ScopeState.Active:
@@ -108,12 +134,95 @@ namespace Nebula
                     }
                 }
             }
+            // A scope this worker holds no part of any more starts again from scratch the next time it lands here.
+            if (_activating.Count > 0)
+            {
+                var gone = new List<string>();
+                foreach (var kv in _activating) if (!_here.Contains(kv.Key)) gone.Add(kv.Key);
+                for (int i = 0; i < gone.Count; i++) _activating.Remove(gone[i]);
+            }
             // A part that is no longer retiring here (the scope moved on, or the lease left) drops its work and
             // cancels whatever the game was doing in the before-retire window.
             if (_retiring.Count == 0) return;
             var stale = new List<string>();
             foreach (var kv in _retiring) if (!_scratch.Contains(kv.Key)) stale.Add(kv.Key);
             for (int i = 0; i < stale.Count; i++) Drop(stale[i]);
+        }
+
+        /// <summary>
+        /// A scope is coming to life on this worker: ask the store whether it holds anything under the scope's key
+        /// and raise <see cref="NebulaLifecycle.OnScopeActivating"/> with the answer, once. While the answer is
+        /// outstanding the scope's parts do not restore (<see cref="MayRestore"/>), which is what puts the hook
+        /// before <see cref="NebulaLifecycle.OnContainerRestored"/>. Nothing listening means no query and no wait.
+        /// </summary>
+        private void NoteActivating(ScopeInfo scope, float now)
+        {
+            string key = scope.ScopeKey;
+            if (string.IsNullOrEmpty(key)) return;
+            if (scope.State == ScopeState.Retiring || scope.State == ScopeState.Retired)
+            {
+                // The scope is going, not coming: forget it, so the next activation raises the hook again.
+                _activating.Remove(key);
+                return;
+            }
+            if (!_activating.TryGetValue(key, out var state))
+            {
+                state = new Activation { Deadline = now + ActivatingTimeoutSeconds };
+                _activating[key] = state;
+            }
+            if (state.Raised) return;
+
+            if (!NebulaLifecycle.HasScopeActivating)
+            {
+                // Nobody is listening: there is nothing to hold a restore for, and no reason to ask the store.
+                state.Raised = true;
+                state.Open = true;
+                return;
+            }
+            var store = _worker.Persistence != null ? _worker.Persistence.Store : null;
+            if (store == null || !store.IsConnected)
+            {
+                // No store on this worker: nothing can have been saved, so the answer is "no records" and it is final.
+                state.Raised = true;
+                state.Open = true;
+                NebulaLifecycle.RaiseScopeActivating(scope, false);
+                return;
+            }
+            if (!state.Asked)
+            {
+                state.Asked = true;
+                store.CountRecords(key, "", count =>
+                {
+                    if (!_activating.TryGetValue(key, out var pending) || pending.Raised) return;
+                    pending.Raised = true;
+                    pending.Open = true;
+                    NebulaLifecycle.RaiseScopeActivating(scope, count > 0);
+                });
+                return;
+            }
+            if (!state.Open && now >= state.Deadline)
+            {
+                state.Open = true;
+                NebulaLog.Warn($"scope '{key}': the store did not answer whether it holds any records within {ActivatingTimeoutSeconds:0} s; restoring its parts before OnScopeActivating");
+            }
+        }
+
+        /// <summary>
+        /// Whether the records of <paramref name="containerId"/> may be read now. False only while the container is
+        /// part of a scope whose <see cref="NebulaLifecycle.OnScopeActivating"/> has not been raised yet. The
+        /// worker points <c>NebulaPersistence.RestoreGate</c> here.
+        /// </summary>
+        internal bool MayRestore(string containerId)
+        {
+            if (!NebulaLifecycle.HasScopeActivating || string.IsNullOrEmpty(containerId)) return true;
+            var container = ContainerRegistry.FindById(containerId);
+            string key = container != null ? container.ScopeKey : "";
+            if (string.IsNullOrEmpty(key)) return true;                       // the public world has no activation
+            if (_activating.TryGetValue(key, out var state)) return state.Open;
+            // Not noted yet: hold only while there is a scope row this worker's next pass will act on. A container
+            // carrying a key no scope row names (the row was removed) would otherwise never restore.
+            var cp = _worker.ControlPlane;
+            return cp == null || cp.FindScope(key) == null;
         }
 
         /// <summary>
@@ -157,7 +266,7 @@ namespace Nebula
             string containerId = container.ContainerId;
             if (!_retiring.TryGetValue(containerId, out var work))
             {
-                work = new PartWork { ScopeKey = scope.ScopeKey, ContainerId = containerId, Step = Step.Before, Deadline = now + BeforeRetireTimeoutSeconds };
+                work = new PartWork { ScopeKey = scope.ScopeKey, ContainerId = containerId, Container = container, Step = Step.Before, Deadline = now + BeforeRetireTimeoutSeconds };
                 _retiring[containerId] = work;
                 var hook = BeforeRetire;
                 if (hook != null)
@@ -236,6 +345,10 @@ namespace Nebula
             try { work.Cancel?.Cancel(); } catch { }
             work.Cancel?.Dispose();
             _retiring.Remove(containerId);
+            // The part finished its retire here and the scope has moved on: the orchestrator has released the lease
+            // and the mesh is done with the box, which is the moment OnRetired names (docs/lifecycle-hooks.md D6).
+            // A part dropped before it finished (the retire was abandoned) was never retired, so it says nothing.
+            if (work.Step == Step.Done) NebulaLifecycle.RaiseRetired(work.Container);
         }
 
         internal void CancelAll()
