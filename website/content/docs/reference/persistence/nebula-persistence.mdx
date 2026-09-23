@@ -167,7 +167,7 @@ How many entities that restore brought back; 0 when it has not finished or there
 public int CheckpointContainer(string containerId);
 ```
 
-Save every authoritative persistent entity in `containerId` right now, whatever the checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence: the saves are issued here and [`IPersistenceStore.WhenWritten`](/docs/reference/persistence/i-persistence-store#whenwritten) is the barrier that says they reached the store. Does not despawn anything.
+Save every authoritative persistent entity in `containerId` right now, whatever the checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence: the saves are issued here and [`IPersistenceStore.WhenWritten`](/docs/reference/persistence/i-persistence-store#whenwritten) is the barrier that says they reached the store. Does not despawn anything. An entity riding in a vehicle in the container, at any depth, is in it too: emptying the container takes it ([`NebulaWorker.EmptyContainer`](/docs/reference/worker/nebula-worker#emptycontainer)), so it is saved here with everything else, aboard its carrier.
 
 ### Find [#find]
 

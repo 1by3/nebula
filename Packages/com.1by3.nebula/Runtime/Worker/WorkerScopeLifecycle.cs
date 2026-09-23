@@ -244,22 +244,34 @@ namespace Nebula
             cp.TouchContainer(container.ContainerId);
         }
 
-        /// <summary>Whether emptying this container now would lose something. Pure over the container's contents.</summary>
+        /// <summary>
+        /// Whether emptying this container now would lose something. Pure over the container's contents, including
+        /// everything riding in a vehicle in it at any depth, because <see cref="NebulaWorker.EmptyContainer"/>
+        /// removes riders too. A client's pawn seated in a ship parked in the part keeps the part busy.
+        /// </summary>
         public static bool IsBusy(Container container)
         {
             if (container == null) return false;
-            var entities = container.Entities;
-            for (int i = 0; i < entities.Count; i++)
+            var entities = BusyScratch;
+            entities.Clear();
+            container.CollectContents(entities, throughAuthoritativeCarriersOnly: true);
+            try
             {
-                var e = entities[i];
-                if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
-                if (e.OwnerClientId != 0) return true;         // an interested client is standing in it
-                var pe = e.Persistent;
-                if (pe == null) return true;                   // transient state a retire would destroy
-                if (pe.IsDirty || PersistentStateCodec.HasDirtyVars(e)) return true; // changes not yet in the store
+                for (int i = 0; i < entities.Count; i++)
+                {
+                    var e = entities[i];
+                    if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
+                    if (e.OwnerClientId != 0) return true;         // an interested client is standing in it, or riding
+                    var pe = e.Persistent;
+                    if (pe == null) return true;                   // transient state a retire would destroy
+                    if (pe.IsDirty || PersistentStateCodec.HasDirtyVars(e)) return true; // changes not yet in the store
+                }
+                return false;
             }
-            return false;
+            finally { entities.Clear(); }
         }
+
+        private static readonly List<NetworkIdentity> BusyScratch = new List<NetworkIdentity>();
 
         private void StepRetire(IControlPlane cp, ScopeInfo scope, Container container, float now)
         {

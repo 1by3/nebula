@@ -404,6 +404,12 @@ Once the game supplies a `RuntimeWorld` and one content callback, Nebula handles
 
 Your game still owns terrain generation, asset streaming, placement rules, permissions, and player-facing gameplay.
 
+### When a chunk stays leased
+
+The allocator retires a chunk only when no player is in it. That includes players riding in a vehicle's [dynamic container](/docs/guides/dynamic-containers): a pilot in a ship parked in the chunk, or a passenger in a shuttle inside that ship, keeps the chunk leased.
+
+A fast vehicle can outrun chunk leasing. When no chunk exists yet where the vehicle is, it stays assigned to the last chunk it was in, however far away it has flown. The allocator keeps that chunk leased while the vehicle is in a cell that a worker has asked for. When the chunk under the vehicle is registered, the vehicle moves into it and the old chunk retires normally. A vehicle in space that no worker wants is unloaded with its old chunk, like any other content of a chunk nobody needs.
+
 ## More than one world
 
 Everything above builds the **public** world: the one a client that names no scope joins. A mesh can run several chunked worlds at once, each with its own cell size, chunks, leases and saved entities, by activating a [simulation scope](/docs/guides/scopes#a-scope-can-be-a-whole-world) whose definition is a grid:

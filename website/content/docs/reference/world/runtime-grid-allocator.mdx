@@ -11,6 +11,8 @@ public sealed class RuntimeGridAllocator
 
 Opt-in worker-side allocator for a game built on [`RuntimeGrid`](/docs/reference/world/runtime-grid): keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. the origin), re-touches them every tick so a neighbor's owner does not retire them, and retires cells this worker owns once nobody has wanted them for a while and nothing occupies them. This packages the allocation policy that procedural-world games otherwise implement themselves; a game adopting [`RuntimeGrid`](/docs/reference/world/runtime-grid) can use it instead of writing the same logic again.
 
+A cell counts as occupied while a client owns an entity anywhere inside it, including one riding in a vehicle's [`DynamicContainer`](/docs/reference/containers/dynamic-container) (a pilot in a ship parked in the cell, or a passenger in a shuttle inside that ship). A cell is also kept while an authoritative entity still assigned to it stands in another cell that this allocator wants, or whose lease row any worker touched within [`RetireAfterSeconds`](#retireafterseconds). This happens when a fast vehicle leaves every leased cell behind: the vehicle stays in the last cell it left until a cell is registered where it is.
+
 With `NebulaConfig.ChunkedWorld` enabled, [`NebulaChunkedWorld`](/docs/reference/world/nebula-chunked-world) constructs and updates the allocator. For a custom allocation workflow, construct this class and call [`Tick`](#tick) from your worker's update loop.
 
 ## Constructors
@@ -37,7 +39,7 @@ Ring radius (Chebyshev distance in cells) requested around every anchor and owne
 public float RetireAfterSeconds { get; set; } = 60f;
 ```
 
-How long an owned, unwanted, unoccupied cell sits idle before it is released.
+How long an owned, unwanted, unoccupied cell sits idle before it is released. Also how recently another cell's lease row must have been touched for an entity standing in that cell to keep its own cell leased.
 
 ### TickIntervalSeconds [#tickintervalseconds]
 

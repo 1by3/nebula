@@ -120,6 +120,34 @@ namespace Nebula
         /// <summary>Dynamic containers: the container the carrier itself is in (what encloses this one). Null for static containers and for a carrier in no container.</summary>
         public Container Enclosing => IsDynamic && Carrier != null ? Carrier.Container : null;
 
+        /// <summary>
+        /// Append everything inside this container on this process at every carrier depth to <paramref name="into"/>:
+        /// its own <see cref="Entities"/>, then what rides in each box one of them carries (the crew of a ship parked
+        /// here, the passengers of a shuttle in that ship's hangar), and so on down. Breadth first, so a carrier is
+        /// always listed before everything riding in it; walk the list backwards to visit riders before their
+        /// carriers. With <paramref name="throughAuthoritativeCarriersOnly"/>, only boxes whose carrier this process
+        /// is authoritative for are opened: what would leave with the carrier if this worker despawned it.
+        /// <para>
+        /// Bounded like every other carrier walk: a cycle cannot be built (see <see cref="IsCarriedBy"/>), and
+        /// opening more boxes than the registry holds could only mean one, so the walk stops there.
+        /// </para>
+        /// </summary>
+        internal void CollectContents(List<NetworkIdentity> into, bool throughAuthoritativeCarriersOnly)
+        {
+            int start = into.Count;
+            into.AddRange(Entities);
+            int opened = 0, bound = ContainerRegistry.Dynamic.Count;
+            for (int i = start; i < into.Count; i++)
+            {
+                var e = into[i];
+                if (e == null || (throughAuthoritativeCarriersOnly && !e.HasAuthority)) continue;
+                var carried = e.Carried;
+                if (carried == null || !carried.IsDynamic || carried == this || carried.Entities.Count == 0) continue;
+                if (++opened > bound) break;
+                into.AddRange(carried.Entities);
+            }
+        }
+
         private string _ownerWorkerId = "";
         private ushort _ownerWorkerIndex = ushort.MaxValue;
         private ulong _leaseEpoch;

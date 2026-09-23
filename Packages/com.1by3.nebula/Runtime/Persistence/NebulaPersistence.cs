@@ -165,7 +165,9 @@ namespace Nebula
         /// Save every authoritative persistent entity in <paramref name="containerId"/> right now, whatever the
         /// checkpoint schedule says, and return how many were saved. The forced checkpoint of the retire sequence:
         /// the saves are issued here and <see cref="IPersistenceStore.WhenWritten"/> is the barrier that says they
-        /// reached the store. Does not despawn anything.
+        /// reached the store. Does not despawn anything. An entity riding in a vehicle in the container, at any depth,
+        /// is in it too: emptying the container takes it (<see cref="NebulaWorker.EmptyContainer"/>), so it is
+        /// saved here with everything else, aboard its carrier.
         /// </summary>
         public int CheckpointContainer(string containerId)
         {
@@ -176,7 +178,7 @@ namespace Nebula
                 var pe = _tracked[i];
                 var identity = pe != null ? pe.Identity : null;
                 if (identity == null || !identity.IsSpawned || !identity.HasAuthority) continue;
-                var container = identity.Container;
+                var container = identity.Container != null ? identity.Container.ScopeRoot : null;
                 if (container == null || !string.Equals(container.ContainerId, containerId, StringComparison.Ordinal)) continue;
                 SaveNow(identity);
                 saved++;

@@ -72,7 +72,8 @@ standing in the cellar.
 **D5 The owning worker keeps a busy part hot, and "busy" means a retire would lose something.**
 `WorkerScopeLifecycle.KeepHot` re-stamps the lease of a scope part it owns, at most every
 `NebulaWorker.RuntimeTouchSeconds`, while `IsBusy(container)` holds. A part is busy when it holds an authoritative
-entity that is
+entity, directly or riding in a vehicle in it at any depth (a pilot in a ship parked in the part: emptying the part
+takes the riders too, see `docs/dynamic-worlds.md`, "Retiring a chunk under a carrier"), that is
 
 * owned by a client (`OwnerClientId != 0`) — an interested client is in it; or
 * not persistent at all — its state cannot be brought back, so retiring would destroy it; or
@@ -120,12 +121,14 @@ orchestrator's.
    owns the hook surface should decide how a game registers one. Its *position* and its *window* are settled now,
    which is what the rest of the sequence needed.
 3. **Force the checkpoint.** `NebulaPersistence.CheckpointContainer(containerId)` saves every authoritative
-   persistent entity in the part regardless of the checkpoint schedule, and `IPersistenceStore.WhenWritten` is then
+   persistent entity in the part, riders of its vehicles included (each saved aboard its carrier), regardless of
+   the checkpoint schedule, and `IPersistenceStore.WhenWritten` is then
    the barrier that says the saves reached the store. This is the one place in Nebula that waits on that barrier;
    everywhere else a save is fire and forget (`docs/persistence-durability.md` D3), which is right for a periodic
    checkpoint and wrong for the last one a container will ever get.
-4. **Empty the part and acknowledge.** `NebulaWorker.EmptyContainer` despawns the contents — persistent entities
-   with `keepPersisted` so their records stand, everything else for good — and the worker writes
+4. **Empty the part and acknowledge.** `NebulaWorker.EmptyContainer` despawns the contents, riders before their
+   carriers — persistent entities with `keepPersisted` so their records stand, everything else for good — and the
+   worker writes
    `AckScopePart(key, containerId, ScopePhase.Checkpointed, saved)`.
 5. **Release the leases and mark `Retired`**, once **every** container of the scope has acknowledged. Only then:
    the checkpoint in step 3 has to happen while the owner still holds the lease, so deleting the rows earlier

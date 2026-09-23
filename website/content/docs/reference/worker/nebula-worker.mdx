@@ -496,7 +496,7 @@ Seconds since anyone in the mesh last asked for or changed a runtime container: 
 public bool ReleaseRuntimeContainer(ulong id);
 ```
 
-Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box. Persistent entities still inside are checkpointed and despawned (they come back when the box is asked for again); anything else inside is despawned for good. Returns false when the container is not here or belongs to another worker.
+Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box. Persistent entities still inside are checkpointed and despawned (they come back when the box is asked for again); anything else inside is despawned for good. That includes everything riding in a vehicle in the box (see [`EmptyContainer`](#emptycontainer)). Returns false when the container is not here or belongs to another worker.
 
 ### EmptyContainer [#emptycontainer]
 
@@ -505,6 +505,8 @@ public void EmptyContainer(Container container);
 ```
 
 Despawn everything this worker is authoritative for inside `container`, keeping the records of persistent entities (they come back when the box is asked for again) and losing everything else. The contents half of [`ReleaseRuntimeContainer`](#releaseruntimecontainer), split out because the scope lifecycle empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every part has reported its checkpoint done (`docs/scope-lifecycle.md`).
+
+A vehicle's cargo leaves with the vehicle. Entities riding in a [`DynamicContainer`](/docs/reference/containers/dynamic-container) of an entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier.
 
 ### Spawn [#spawn]
 
