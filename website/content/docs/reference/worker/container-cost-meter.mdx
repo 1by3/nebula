@@ -15,6 +15,16 @@ The accumulators live on [`Container`](/docs/reference/containers/container) its
 
 Design record: docs/cost-telemetry.md. The attribution is exact for what it covers and covers *only* what a container's own entities caused: the rest of a tick (physics, the interest pass, the publish loop, the engine's own frame work) belongs to no container and is deliberately left out.
 
+## Fields
+
+### MinTicksPerSample [#mintickspersample]
+
+```csharp
+public const int MinTicksPerSample = 10;
+```
+
+The fewest simulated ticks a window must hold to be a reading. A window with fewer is not closed: its counts carry into the next one and [`Latest`](#latest) keeps the previous reading. The first telemetry beat after a worker starts can hold a single tick that spawned everything the worker was handed; read on its own, that one tick says the container costs more than a whole tick budget, which the orchestrator publishes as "at capacity" and the gateway refuses joins on (docs/cost-telemetry.md D13).
+
 ## Properties
 
 ### Latest [#latest]
@@ -73,7 +83,7 @@ Charge `bytes` of per-client relay traffic (owner state) to `container`.
 public void Sample(float now);
 ```
 
-Turn everything counted since the previous call into per-tick and per-second rates in [`Latest`](#latest), and start a new window. `now` is a monotonic clock in seconds; the first call only establishes the baseline. Main thread, outside the tick.
+Turn everything counted since the window opened into per-tick and per-second rates in [`Latest`](#latest), and start a new window. `now` is a monotonic clock in seconds; the first call only establishes the baseline. A window with fewer than [`MinTicksPerSample`](#mintickspersample) ticks stays open (see there). Main thread, outside the tick.
 
 ### Of [#of]
 
