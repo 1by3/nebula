@@ -83,7 +83,7 @@ Advance the entity by one tick. Must be a pure function of (current state, input
 protected virtual void WriteState(NetworkWriter writer);
 ```
 
-State the owner needs to reconcile. Default: position and rotation in the current container's local space, and velocity. Container-local because the worker and the owning client never see a moving container (a ship) at the same place at the same moment; a passenger's pose relative to the ship is what both agree on.
+State the owner needs to reconcile, and the next worker needs to carry on simulating after a handover (it travels with the pending inputs, and [`ReadState`](#readstate) applies it there). Include everything [`Simulate`](#simulate) keeps from one tick to the next. Default: position and rotation in the current container's local space, and velocity. Container-local because the worker and the owning client never see a moving container (a ship) at the same place at the same moment; a passenger's pose relative to the ship is what both agree on.
 
 ### ReadState [#readstate]
 

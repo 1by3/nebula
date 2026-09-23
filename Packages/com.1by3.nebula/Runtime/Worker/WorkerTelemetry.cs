@@ -294,6 +294,31 @@ namespace Nebula
             }
         }
 
+        private static void WriteFixedIn(JsonWriter w, Container parent, NetworkIdentity carrier, Vector3 position, Vector3 velocity, int depth)
+        {
+            if (depth > 16) return;
+            for (int i = 0; i < parent.FixedChildren.Count; i++)
+            {
+                var child = parent.FixedChildren[i];
+                if (child == null) continue;
+                w.BeginObject();
+                w.Prop("id", child.ContainerId);
+                w.Prop("carrier", carrier.NetId.ToString(CultureInfo.InvariantCulture));
+                w.Prop("enclosing", parent.ContainerId);
+                w.Prop("depth", child.NestingDepth);
+                w.Prop("fixed", true);
+                w.Prop("pinned", child.IsLeased);
+                w.Prop("frame", child.OwnPhysicsFrame);
+                w.Prop("contents", child.Entities.Count);
+                MeshTelemetry.WriteBox(w, child);
+                MeshTelemetry.ToAbsolute(position, out double px, out double py, out double pz);
+                MeshTelemetry.WriteVector(w, "position", px, py, pz);
+                MeshTelemetry.WriteVector(w, "velocity", velocity.x, velocity.y, velocity.z);
+                w.EndObject();
+                WriteFixedIn(w, child, carrier, position, velocity, depth + 1);
+            }
+        }
+
         /// <summary>
         /// Write one telemetry document for the entities a worker holds (authoritative and ghosts). The first property
         /// is always <c>"worker"</c>: <see cref="MeshTelemetry.Accept"/> reads the id from there without parsing.
@@ -392,19 +417,25 @@ namespace Nebula
             foreach (var carrier in _carriers)
             {
                 var box = carrier.Carried;
+                // Where the hull is in the scope: a carrier inside another's physics frame stands in that frame's coordinates.
+                var position = carrier.ToScope(carrier.transform.position);
+                var v = PhysicsFrames.ConvertVelocity(carrier.Motion.Velocity, carrier.transform.position, carrier.Space, null);
                 w.BeginObject();
                 w.Prop("id", box.ContainerId);
                 w.Prop("carrier", carrier.NetId.ToString(CultureInfo.InvariantCulture));
                 w.Prop("enclosing", carrier.Container != null ? carrier.Container.ContainerId : "");
                 w.Prop("depth", box.NestingDepth);
                 w.Prop("pinned", box.IsPinned);
+                w.Prop("frame", box.OwnPhysicsFrame);
                 w.Prop("contents", box.Entities.Count);
                 MeshTelemetry.WriteBox(w, box);
-                MeshTelemetry.ToAbsolute(carrier.transform.position, out double px, out double py, out double pz);
+                MeshTelemetry.ToAbsolute(position, out double px, out double py, out double pz);
                 MeshTelemetry.WriteVector(w, "position", px, py, pz);
-                var v = carrier.Motion.Velocity;
                 MeshTelemetry.WriteVector(w, "velocity", v.x, v.y, v.z);
                 w.EndObject();
+                // The containers fixed inside it (an engine room, a cargo hold) move with it, and only the worker that
+                // simulates the hull knows where they are now: report them the same way (docs/container-tree.md D9).
+                WriteFixedIn(w, box, carrier, position, v, 0);
             }
             w.EndArray();
 
@@ -418,7 +449,11 @@ namespace Nebula
                     if (written == MaxEntities) break;
                     written++;
                     var t = e.transform;
-                    MeshTelemetry.ToAbsolute(t.position, out double x, out double y, out double z);
+                    // Inside a physics frame the transform is in the frame's coordinates; the map draws the scope.
+                    var space = e.Space;
+                    var scopePosition = e.ToScope(t.position);
+                    float yaw = (space != null ? PhysicsFrames.Convert(t.rotation, space, null) : t.rotation).eulerAngles.y;
+                    MeshTelemetry.ToAbsolute(scopePosition, out double x, out double y, out double z);
                     string kind = KindOf(e);
                     // [net id, kind, x, y, z, yaw, container slot (index into "containers", -1 for none), name for players and bots]
                     w.BeginArray();
@@ -427,7 +462,7 @@ namespace Nebula
                     w.Value(Math.Round(x, 2));
                     w.Value(Math.Round(y, 2));
                     w.Value(Math.Round(z, 2));
-                    w.Value((long)Mathf.RoundToInt(t.eulerAngles.y));
+                    w.Value((long)Mathf.RoundToInt(yaw));
                     w.Value((long)(e.Container != null ? _slotById[e.Container.ContainerId] : -1));
                     if (kind == KindPlayer || kind == KindBot) w.Value(e.name);
                     w.EndArray();

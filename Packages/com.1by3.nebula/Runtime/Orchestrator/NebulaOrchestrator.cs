@@ -1142,13 +1142,27 @@ namespace Nebula
         /// (absolute coordinates), unassigned until the next pass deals it. The normal path is a worker asking for
         /// one next to its entities (<see cref="NebulaWorker.RequestRuntimeContainer"/>). Null on success, otherwise the reason.
         /// </summary>
-        public string EnsureRuntimeContainer(ulong id, Bounds bounds)
+        public string EnsureRuntimeContainer(ulong id, Bounds bounds) => EnsureRuntimeContainer(id, ContainerPlacement.Root(bounds));
+
+        /// <summary>
+        /// Create a runtime container anywhere in the container tree (<c>docs/container-tree.md</c>): a root at an absolute
+        /// centre, or a child of <see cref="ContainerPlacement.ParentId"/> with its centre local to that parent. Null on
+        /// success, otherwise the reason.
+        /// </summary>
+        public string EnsureRuntimeContainer(ulong id, ContainerPlacement placement)
         {
-            if (bounds.size.x <= 0f || bounds.size.y <= 0f || bounds.size.z <= 0f) return "size must be positive on every axis";
+            var size = placement.Size;
+            if (size.x <= 0f || size.y <= 0f || size.z <= 0f) return "size must be positive on every axis";
             string containerId = ContainerRegistry.RuntimeContainerId(id);
+            if (placement.ParentId == containerId) return "a container cannot be its own parent";
+            if (!string.IsNullOrEmpty(placement.ParentId) && ControlPlane.FindLease(placement.ParentId) == null && ContainerRegistry.FindById(placement.ParentId) == null)
+                return $"unknown parent '{placement.ParentId}'";
             if (ControlPlane.FindLease(containerId) != null) return null;
-            ControlPlane.EnsureRuntimeContainer(containerId, bounds, "");
-            Log("info", $"runtime container {containerId} created at {bounds.center} size {bounds.size}");
+            ControlPlane.EnsureRuntimeContainer(containerId, placement, "");
+            string sizeText = FormattableString.Invariant($"{size.x:0.##} x {size.y:0.##} x {size.z:0.##}");
+            Log("info", string.IsNullOrEmpty(placement.ParentId)
+                ? $"runtime container {containerId} created at {placement.Center} size {sizeText}"
+                : $"runtime container {containerId} created in {placement.ParentId} at {placement.Center} size {sizeText}");
             _nextPass = 0f;
             return null;
         }
@@ -1181,6 +1195,9 @@ namespace Nebula
             {
                 var l = leases[i];
                 if (!l.HasBounds || l.State == LeaseState.Inherited || l.Authority == ContainerAuthority.Inherited) continue;
+                // Demoted under a moving parent (docs/container-tree.md D7): the parent's owner simulates it.
+                var registered = ContainerRegistry.FindById(l.ContainerId);
+                if (registered != null && !registered.IsLeased) continue;
                 if (l.State == LeaseState.Active && load.ContainsKey(l.WorkerId)) load[l.WorkerId]++;
                 else orphans.Add(l.ContainerId);
             }
@@ -1509,7 +1526,23 @@ namespace Nebula
                     if (!body.TryGetValue("id", out var idValue) || !ulong.TryParse(PersistenceJson.AsString(idValue), out ulong id)) return OrchestratorHttpServer.Response.Error(400, "body must be {\"id\": <unsigned 64-bit>, \"center\": [x, y, z], \"size\": [x, y, z]}");
                     if (!body.TryGetValue("center", out var centerValue) || !PersistenceJson.TryNumbers(centerValue, 3, out var c)) return OrchestratorHttpServer.Response.Error(400, "\"center\" must be [x, y, z]");
                     if (!body.TryGetValue("size", out var sizeValue) || !PersistenceJson.TryNumbers(sizeValue, 3, out var s)) return OrchestratorHttpServer.Response.Error(400, "\"size\" must be [x, y, z]");
-                    string error = EnsureRuntimeContainer(id, new Bounds(new Vector3((float)c[0], (float)c[1], (float)c[2]), new Vector3((float)s[0], (float)s[1], (float)s[2])));
+                    // Optional (docs/container-tree.md): "parent" places the box inside that container, "center" then
+                    // local to it; "authority" is "leased" or "inherited"; "frame": true gives it a physics frame, with
+                    // "interest": "ownRegions" for regions in the frame's own coordinates.
+                    string parentId = body.TryGetValue("parent", out var parentValue) ? PersistenceJson.AsString(parentValue) ?? "" : "";
+                    string authorityName = body.TryGetValue("authority", out var authorityValue) ? PersistenceJson.AsString(authorityValue) ?? "" : "";
+                    if (authorityName != "" && authorityName != "auto" && authorityName != "leased" && authorityName != "inherited") return OrchestratorHttpServer.Response.Error(400, "\"authority\" must be \"auto\", \"leased\" or \"inherited\"");
+                    var authority = ControlPlaneJson.AuthorityOf(authorityName);
+                    var size = new Vector3((float)s[0], (float)s[1], (float)s[2]);
+                    var placement = string.IsNullOrEmpty(parentId)
+                        ? ContainerPlacement.Root(new Double3(c[0], c[1], c[2]), size, authority)
+                        : ContainerPlacement.Child(parentId, new Vector3((float)c[0], (float)c[1], (float)c[2]), size, authority);
+                    if (body.TryGetValue("frame", out var frameValue) && PersistenceJson.AsString(frameValue) == "true")
+                    {
+                        string interest = body.TryGetValue("interest", out var interestValue) ? PersistenceJson.AsString(interestValue) ?? "" : "";
+                        placement = placement.WithPhysicsFrame(interest == "ownRegions" ? FrameInterestMode.OwnRegions : FrameInterestMode.WithCarrier);
+                    }
+                    string error = EnsureRuntimeContainer(id, placement);
                     if (error != null) return OrchestratorHttpServer.Response.Error(400, error);
                     break;
                 }
@@ -1668,14 +1701,63 @@ namespace Nebula
             _http?.PublishState(BuildStateJson());
         }
 
-        private static void WriteContainerState(JsonWriter w, Container c, IReadOnlyList<LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers, IReadOnlyDictionary<string, ContainerHint> hints)
+        private static bool Holds(LeaseInfo l) => l != null && (LeaseState.IsOwning(l.State) || l.State == LeaseState.Assigning) && !string.IsNullOrEmpty(l.WorkerId);
+
+        /// <summary>
+        /// The worker that simulates container <paramref name="id"/>: its own lease's holder when it is leased, otherwise
+        /// that of the nearest ancestor that is (<c>docs/container-tree.md</c> D8), walking the registry's tree and, for
+        /// rows this process holds no box for (a room fixed in a ship), the lease rows' parents. <paramref name="from"/>
+        /// names the ancestor the owner came from, or "" when the container holds its own lease.
+        /// </summary>
+        /// <summary>How far up the tree the dashboard walks: a guard against a corrupt parent cycle in the rows.</summary>
+        private const int MaxTreeWalk = 64;
+
+        private static string EffectiveOwner(string id, Dictionary<string, LeaseInfo> byId, out string from)
         {
-            var l = leases.FirstOrDefault(x => x.ContainerId == c.ContainerId);
-            string owner = l != null && (l.State == LeaseState.Active || l.State == LeaseState.Draining || l.State == LeaseState.Assigning) ? l.WorkerId : "";
+            from = "";
+            for (int hops = 0; !string.IsNullOrEmpty(id) && hops <= MaxTreeWalk; hops++)
+            {
+                byId.TryGetValue(id, out var l);
+                var c = ContainerRegistry.FindById(id);
+                // A carried container's row holds its carrier's worker (or its pinned one); a fixed one inherits
+                // unless it is leased, and a leased one under a moving parent without a frame is demoted (D7), which
+                // its row says when this process cannot tell (the services never see a carrier).
+                bool inherits = c != null && c.IsDynamic ? false : (c != null && !c.IsLeased) || (l != null && l.State == LeaseState.Inherited);
+                if (!inherits)
+                {
+                    if (hops > 0) from = id;
+                    return Holds(l) ? l.WorkerId : "";
+                }
+                id = c != null && c.Parent != null ? c.Parent.ContainerId : l != null ? l.ParentId : "";
+            }
+            return "";
+        }
+
+        /// <summary>How a container is simulated right now: "leased", "inherited", or "demoted" (authored leased, simulated as inherited under a moving parent, D7).</summary>
+        private static string ModeOf(Container c, LeaseInfo l)
+        {
+            if (c != null && c.IsDynamic) return c.IsPinned ? "leased" : "inherited";
+            if (c != null && c.AuthorityDemoted) return "demoted";
+            bool rowInherits = l != null && l.State == LeaseState.Inherited;
+            if ((c != null && !c.IsLeased) || rowInherits)
+                return (c != null ? c.Authority : l.Authority) == ContainerAuthority.Leased ? "demoted" : "inherited";
+            return "leased";
+        }
+
+        private static string SourceName(ContainerSource s) => s == ContainerSource.Runtime ? "runtime" : s == ContainerSource.Prefab ? "prefab" : "baked";
+
+        private static string AuthorityLabel(ContainerAuthority a) => a == ContainerAuthority.Auto ? "auto" : ControlPlaneJson.AuthorityName(a);
+
+        private static void WriteContainerState(JsonWriter w, Container c, Dictionary<string, LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers, IReadOnlyDictionary<string, ContainerHint> hints)
+        {
+            leases.TryGetValue(c.ContainerId, out var l);
+            string owner = EffectiveOwner(c.ContainerId, leases, out string ownerFrom);
             var ownerRow = owner != "" ? workers.FirstOrDefault(r => r.WorkerId == owner) : null;
             w.BeginObject();
             w.Prop("id", c.ContainerId);
             w.Prop("worker", owner);
+            WriteTreeProps(w, c.Parent != null ? c.Parent.ContainerId : (l != null ? l.ParentId ?? "" : ""), c.Depth, SourceName(c.Source),
+                c.Authority, ModeOf(c, l), ownerFrom, c.OwnPhysicsFrame, c.FrameInterest, pending: false);
             w.Prop("workerIndex", ownerRow != null ? (int)ownerRow.WorkerIndex : -1);
             w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
             w.Prop("epoch", l != null ? l.Epoch : 0UL);
@@ -1696,12 +1778,66 @@ namespace Nebula
             w.EndObject();
         }
 
+        /// <summary>The container-tree fields every container row carries (<c>docs/container-tree.md</c>).</summary>
+        private static void WriteTreeProps(JsonWriter w, string parent, int depth, string source, ContainerAuthority authority, string mode, string ownerFrom, bool frame, FrameInterestMode interest, bool pending)
+        {
+            w.Prop("parent", parent ?? "");
+            w.Prop("depth", depth);
+            w.Prop("source", source);
+            // As authored ("auto" resolves to leased for a fixed box, inherited for a carried one) and as simulated.
+            w.Prop("authority", AuthorityLabel(authority));
+            w.Prop("mode", mode);
+            w.Prop("leased", mode == "leased");
+            // The ancestor whose lease decides the owner, when the container does not hold one itself.
+            w.Prop("ownerFrom", ownerFrom ?? "");
+            w.Prop("frame", frame);
+            if (interest == FrameInterestMode.OwnRegions) w.Prop("interest", "ownRegions");
+            // A runtime row whose parent this process holds no box for: a room fixed in a ship, known only by its row.
+            if (pending) w.Prop("pending", true);
+        }
+
+        /// <summary>
+        /// A runtime row the registry holds back until its parent arrives (<c>docs/container-tree.md</c> D4): on the
+        /// orchestrator, which never spawns carriers, that is every container fixed inside a ship. It is still a lease the
+        /// planner deals when it is leased, so it gets a row from its lease.
+        /// </summary>
+        private static void WritePendingContainerState(JsonWriter w, LeaseInfo l, Dictionary<string, LeaseInfo> leases, IReadOnlyList<WorkerInfo> workers)
+        {
+            string owner = EffectiveOwner(l.ContainerId, leases, out string ownerFrom);
+            var ownerRow = owner != "" ? workers.FirstOrDefault(r => r.WorkerId == owner) : null;
+            int depth = 0;
+            for (var p = l.ParentId; !string.IsNullOrEmpty(p) && depth <= MaxTreeWalk; )
+            {
+                depth++;
+                var pc = ContainerRegistry.FindById(p);
+                if (pc != null) { depth += pc.Depth; break; }
+                p = leases.TryGetValue(p, out var pl) ? pl.ParentId : "";
+            }
+            w.BeginObject();
+            w.Prop("id", l.ContainerId);
+            w.Prop("worker", owner);
+            WriteTreeProps(w, l.ParentId, depth, "runtime", l.Authority, ModeOf(null, l), ownerFrom, l.OwnPhysicsFrame, l.FrameInterest, pending: true);
+            w.Prop("workerIndex", ownerRow != null ? (int)ownerRow.WorkerIndex : -1);
+            w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
+            w.Prop("epoch", l.Epoch);
+            w.Prop("state", l.State);
+            w.Prop("hint", "");
+            w.Prop("hintMultiplier", 1.0);
+            w.Prop("hintGroup", "");
+            w.Prop("hintSeam", 1.0);
+            w.Prop("hintDedicated", false);
+            w.Prop("runtime", true);
+            w.EndObject();
+        }
+
         /// <summary>
         /// The cohesion block of the state document (<c>docs/cohesion-hints.md</c>): the containers under a hold
         /// with the seconds each has to run, the entity cohesion groups the workers report with the containers they
         /// span, and the groups the planner had to keep whole although they do not fit one worker. Read from the
         /// last pass's snapshots, so the dashboard shows what the planner actually saw.
         /// </summary>
+        private readonly Dictionary<string, LeaseInfo> _leaseById = new Dictionary<string, LeaseInfo>(StringComparer.Ordinal);
+
         private void WriteCohesionState(JsonWriter w)
         {
             w.Key("cohesion");
@@ -1835,7 +1971,7 @@ namespace Nebula
             w.Prop("policy", PolicyName);
             w.Prop("totalCost", TotalCost);
             w.Prop("autoScale", Config.AutoScale);
-            w.Prop("runtimeContainers", ContainerRegistry.Runtime.Count);
+            w.Prop("runtimeContainers", ContainerRegistry.Runtime.Count + ContainerRegistry.PendingRuntimeCount);
             w.Prop("rebalances", Rebalances);
             w.Prop("workerTimeoutSeconds", Config.WorkerTimeoutSeconds);
 
@@ -1971,8 +2107,12 @@ namespace Nebula
 
             w.Key("containers");
             w.BeginArray();
-            foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, leases, workers, _containerHints);
-            foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, leases, workers, _containerHints);
+            _leaseById.Clear();
+            foreach (var l in leases) if (l != null && !string.IsNullOrEmpty(l.ContainerId)) _leaseById[l.ContainerId] = l;
+            foreach (var c in ContainerRegistry.All) WriteContainerState(w, c, _leaseById, workers, _containerHints);
+            foreach (var c in ContainerRegistry.Runtime) WriteContainerState(w, c, _leaseById, workers, _containerHints);
+            foreach (var runtimeId in ContainerRegistry.PendingRuntimeIds)
+                if (_leaseById.TryGetValue(ContainerRegistry.RuntimeContainerId(runtimeId), out var pending)) WritePendingContainerState(w, pending, _leaseById, workers);
             w.EndArray();
 
             // Cost telemetry: one row per container the mesh has heard about lately, heaviest first
@@ -2008,7 +2148,14 @@ namespace Nebula
                 w.Prop("color", "#" + ColorUtility.ToHtmlStringRGB(NebulaDebugOverlay.ColorForWorker(ownerRow != null ? (ushort)ownerRow.WorkerIndex : ushort.MaxValue)));
                 w.Prop("epoch", l.Epoch);
                 w.Prop("pinned", pinned);
-                w.Prop("state", pinned ? "pinned" : (owner != "" ? "following carrier" : l.State));
+                // Authored leased (docs/container-tree.md D6): the worker pins it to itself when the carrier spawns and
+                // the orchestrator re-deals it, so unpinning it from the dashboard would only be undone.
+                bool authoredLeased = l.Authority == ContainerAuthority.Leased;
+                w.Prop("authority", AuthorityLabel(l.Authority));
+                w.Prop("leased", pinned);
+                w.Prop("frame", l.OwnPhysicsFrame);
+                if (l.FrameInterest == FrameInterestMode.OwnRegions) w.Prop("interest", "ownRegions");
+                w.Prop("state", pinned ? (authoredLeased ? "leased" : "pinned") : (owner != "" ? "following carrier" : l.State));
                 w.EndObject();
             }
             w.EndArray();
@@ -2079,7 +2226,7 @@ namespace Nebula
             w.Prop("serverDriven", totalServerDriven);
             w.Prop("entities", totalEntities);
             w.Prop("authoritative", totalAuth);
-            w.Prop("containers", ContainerRegistry.Count + ContainerRegistry.Runtime.Count);
+            w.Prop("containers", ContainerRegistry.Count + ContainerRegistry.Runtime.Count + ContainerRegistry.PendingRuntimeCount);
             w.EndObject();
 
             w.Key("persistence");

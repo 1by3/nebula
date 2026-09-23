@@ -115,8 +115,39 @@ namespace Nebula
         /// <summary>The container this one sits in, or null for a root (docs/container-tree.md D2).</summary>
         [System.Text.Json.Serialization.JsonIgnore] public Container Parent { get; internal set; }
         [System.Text.Json.Serialization.JsonIgnore] public List<Container> Children { get; } = new List<Container>();
-        /// <summary>The services never see a carrier move, so a container is leased unless it was made inherited.</summary>
-        public bool IsLeased => Authority != ContainerAuthority.Inherited;
+        /// <summary>
+        /// Leased unless it was made inherited, or sits in a carrier that has no physics frame of its own: then the
+        /// carrier's worker simulates it as inherited (docs/container-tree.md D7), and the services must not deal it.
+        /// </summary>
+        public bool IsLeased => Authority != ContainerAuthority.Inherited && !InMovingSpace;
+        /// <summary>It would be leased but is simulated as inherited under a moving parent without a frame (D7).</summary>
+        public bool AuthorityDemoted => Authority != ContainerAuthority.Inherited && InMovingSpace;
+        /// <summary>
+        /// The services never hold a carrier, but its lease row says whether it has a physics frame: a container fixed in
+        /// one without a frame, with no framed container in between, is somewhere only the carrier's worker knows exactly.
+        /// </summary>
+        public bool InMovingSpace
+        {
+            get
+            {
+                var top = this;
+                for (int hops = 0; top.Parent != null && hops < 64; hops++)
+                {
+                    if (top.Parent.OwnPhysicsFrame) return false;
+                    top = top.Parent;
+                }
+                return top.ParentUnheld && ContainerRegistry.IsFramelessCarrier(top.ParentId);
+            }
+        }
+        /// <summary>Carried containers are never registered here.</summary>
+        public bool IsPinned => false;
+        public ContainerSource Source => IsRuntime ? ContainerSource.Runtime : ContainerSource.Baked;
+        /// <summary>A child of a container the services never hold (fixed in a ship): registered in its parent's frame, placed nowhere.</summary>
+        public bool ParentUnheld => Parent == null && !string.IsNullOrEmpty(ParentId);
+        /// <summary>Somewhere up its chain is a container the services never hold, so it has no absolute place here.</summary>
+        public bool PlacedInUnheld { get { var top = this; for (int hops = 0; top.Parent != null && hops < 64; hops++) top = top.Parent; return top.ParentUnheld; } }
+        /// <summary>How many containers enclose this one; a child of an unheld parent counts that parent.</summary>
+        public int Depth { get { int d = 0; var top = this; while (top.Parent != null && d < 64) { d++; top = top.Parent; } return top.ParentUnheld ? d + 1 : d; } }
         public ContainerFrame transform = new ContainerFrame();
         public List<string> NeighborIds = new List<string>();
         public List<Container> Neighbors { get; } = new List<Container>();
@@ -172,6 +203,13 @@ namespace Nebula
         private static readonly Dictionary<ulong, Container> RuntimeById = new Dictionary<ulong, Container>();
         private static readonly Dictionary<Vector3Int, List<Container>> ByCell = new Dictionary<Vector3Int, List<Container>>();
         public static IReadOnlyList<Container> Runtime => RuntimeList;
+        /// <summary>The services register every runtime row at once (a child of an unheld parent in the parent's frame), so none waits.</summary>
+        public static int PendingRuntimeCount => 0;
+        /// <summary>Carried containers (<c>label#netId</c>) whose lease row says they have a physics frame of their own, from the last <see cref="SyncRuntime"/>.</summary>
+        private static readonly HashSet<string> FramedCarriers = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>Whether <paramref name="id"/> names a carried container without a physics frame of its own.</summary>
+        public static bool IsFramelessCarrier(string id) => IsDynamicId(id) && !FramedCarriers.Contains(id);
+        public static IEnumerable<ulong> PendingRuntimeIds => Array.Empty<ulong>();
         public static int Count => All.Count;
         public static bool IsGridded => World.WorldOrigin.Definition != null;
         public static event Action<Container> RuntimeRegistered, RuntimeUnregistering;
@@ -269,6 +307,8 @@ namespace Nebula
         }
         public static void SyncRuntime(IReadOnlyList<LeaseInfo> leases)
         {
+            FramedCarriers.Clear();
+            foreach (var l in leases) if (l.OwnPhysicsFrame && IsDynamicId(l.ContainerId)) FramedCarriers.Add(l.ContainerId);
             var keep = new HashSet<ulong>();
             // Roots before children, and a child only once its parent is here: rows may arrive in any order, so the
             // pass repeats until nothing more can be placed. A child of a container the services never hold (a

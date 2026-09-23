@@ -146,7 +146,7 @@ The cost policy also refuses to re-deal when the move would buy less than `Scale
 
 ## Tooling
 
-The dashboard's state lists runtime containers with the baked ones and shows the policy in use. The World map draws their boxes. `POST /api/containers/ensure` with `{"id": 5, "center": [x, y, z], "size": [x, y, z]}` creates a container from outside the game, and `POST /api/containers/remove` with `{"id": 5}` retires one.
+The dashboard's state lists runtime containers with the baked ones and shows the policy in use. The World map draws their boxes. `POST /api/containers/ensure` with `{"id": 5, "center": [x, y, z], "size": [x, y, z]}` creates a container from outside the game, and `POST /api/containers/remove` with `{"id": 5}` retires one. Add `"parent": "rt_4"` to place the new container inside another, with `center` local to it, and `"authority"` or `"frame"` as in a placement (see the [HTTP API](/docs/guides/orchestrator-and-dashboard#use-the-http-api)).
 
 ## Limits
 

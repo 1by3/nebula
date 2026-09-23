@@ -800,7 +800,15 @@ namespace Nebula
             w.Key("containers");
             w.BeginArray();
             foreach (var c in ContainerRegistry.All) WriteContainer(w, c, gridded);
-            foreach (var c in ContainerRegistry.Runtime) WriteContainer(w, c, gridded);
+            foreach (var c in ContainerRegistry.Runtime)
+            {
+#if NEBULA_SERVICE
+                // Fixed in a container the services never hold (a room in a ship): it has no place of its own here.
+                // The worker simulating the ship reports where it is, with the carried containers.
+                if (c.PlacedInUnheld) continue;
+#endif
+                WriteContainer(w, c, gridded);
+            }
             w.EndArray();
             w.EndObject();
             return sb.ToString();
@@ -867,15 +875,27 @@ namespace Nebula
             z = (double)originCell.z * cellSize.z + frame.z;
         }
 
-        /// <summary>A container's box: <c>center</c> (absolute), <c>size</c> (scaled) and <c>rotation</c> (quaternion x, y, z, w).</summary>
+        /// <summary>
+        /// A container's box: <c>center</c> (absolute), <c>size</c> (scaled) and <c>rotation</c> (quaternion x, y, z, w).
+        /// A box inside a physics frame (a room fixed in a ship, a base on a planet) is converted out of the frame's
+        /// coordinates, so the map draws it where it is in the scope (<c>docs/container-tree.md</c> §3).
+        /// </summary>
         internal static void WriteBox(JsonWriter w, Container c)
         {
             var center = c.ToWorld(c.Center);
+            var r = c.Rotation;
+#if !NEBULA_SERVICE
+            var space = c.Space;
+            if (PhysicsFrames.InSimulationPose(space))
+            {
+                center = PhysicsFrames.ToScope(center, space);
+                r = PhysicsFrames.Convert(r, space, null);
+            }
+#endif
             ToAbsolute(center, out double x, out double y, out double z);
             WriteVector(w, "center", x, y, z);
             var scale = c.transform.lossyScale;
             WriteVector(w, "size", Mathf.Abs(c.Size.x * scale.x), Mathf.Abs(c.Size.y * scale.y), Mathf.Abs(c.Size.z * scale.z));
-            var r = c.Rotation;
             w.Key("rotation");
             w.BeginArray();
             w.Value((double)r.x);

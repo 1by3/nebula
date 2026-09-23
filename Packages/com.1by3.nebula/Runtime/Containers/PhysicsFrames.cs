@@ -365,14 +365,31 @@ namespace Nebula
             {
                 var source = colliders[i];
                 if (source == null || source.isTrigger) continue;
-                var belongs = source.GetComponentInParent<NetworkIdentity>(true);
-                if (belongs != null && belongs != identity) continue; // another entity's collider: it moves itself
+                if (IsRider(source, identity)) continue; // another entity's collider: it moves itself
                 var clone = CloneCollider(source, frame.Root);
                 if (clone == null) continue;
                 frame.Clones.Add(new KeyValuePair<Collider, Collider>(source, clone));
                 CloneSources[clone] = source;
             }
             SyncContent(frame);
+        }
+
+        /// <summary>
+        /// Whether <paramref name="source"/> belongs to an entity of its own riding under the carrier, rather than to the
+        /// carrier's geometry. A <see cref="NetworkIdentity"/> nested in the carrier's prefab (one that a
+        /// <see cref="NetworkBehaviour"/> on a door or a seat pulled in) is never spawned: the carrier's identity owns
+        /// those behaviours, and their colliders are the carrier's.
+        /// </summary>
+        private static bool IsRider(Collider source, NetworkIdentity carrier)
+        {
+            for (var t = source.transform; t != null; t = t.parent)
+            {
+                var id = t.GetComponent<NetworkIdentity>();
+                if (id == null) continue;
+                if (id == carrier) return false;
+                if (id.IsSpawned || id.Container != null) return true;
+            }
+            return false;
         }
 
         private static Collider CloneCollider(Collider source, Transform root)
@@ -428,7 +445,10 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------ per tick
 
-        /// <summary>Worker: bring every frame's interior colliders in line with their sources, before anything simulates.</summary>
+        /// <summary>
+        /// Bring every frame's interior colliders in line with their sources: on a worker before anything simulates,
+        /// on a client every rendered frame, since a door animates there too and the pawn predicts against the copies.
+        /// </summary>
         internal static void SyncAllContent()
         {
             PruneDestroyed();
@@ -664,6 +684,8 @@ namespace Nebula
             for (int i = 0; i < PoseOrder.Count; i++)
                 if (PoseOrder[i] != _simulating) PoseForRender(PoseOrder[i]);
             PoseOrder.Clear();
+            // Queries made while rendering (the crosshair's interaction ray) must meet the frames where they are drawn.
+            Physics.SyncTransforms();
         }
 
         private static void PoseForRender(PhysicsFrame frame)

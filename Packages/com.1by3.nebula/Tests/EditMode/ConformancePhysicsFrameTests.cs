@@ -110,6 +110,36 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void PartsWithANestedIdentityAreTheCarriersGeometry()
+        {
+            // A door or a seat on the hull whose NetworkBehaviour pulled in a NetworkIdentity of its own (RequireComponent):
+            // that identity is never spawned, the carrier owns the behaviour, and the door must block and be hit in the frame.
+            MeshWith(1);
+            var prefab = ShipPrefab();
+            var door = new GameObject("door");
+            door.transform.SetParent(prefab.transform, false);
+            door.transform.localPosition = new Vector3(0f, 1.5f, 5f);
+            door.AddComponent<NetworkIdentity>();
+            door.AddComponent<BoxCollider>().size = new Vector3(2f, 3f, 0.2f);
+            var shipWithDoor = _mesh.RegisterPrefab(prefab);
+            var ship = W1.SpawnServerDriven(shipWithDoor, _yard, new Vector3(20f, 1f, 0f), Quaternion.identity);
+            var frame = ship.Carried.Frame;
+            Assert.AreEqual(3, frame.Clones.Count, "the floor, the wall and the door");
+            var source = ship.GetComponentsInChildren<BoxCollider>(true);
+            var shipDoor = System.Array.Find(source, c => c.name == "door");
+            var copy = frame.Clones.Find(p => p.Key == shipDoor).Value;
+            Assert.IsNotNull(copy);
+            Assert.AreSame(shipDoor, PhysicsFrames.SourceOf(copy), "a ray that meets the copy finds the door");
+
+            // The door slides open and is switched off: its copy follows.
+            shipDoor.transform.localPosition = new Vector3(2f, 1.5f, 5f);
+            shipDoor.enabled = false;
+            PhysicsFrames.SyncAllContent();
+            Assert.That(Vector3.Distance(new Vector3(2f, 1.5f, 5f), copy.transform.localPosition), Is.LessThan(1e-4f));
+            Assert.IsFalse(copy.enabled);
+        }
+
+        [Test]
         public void ARigidbodyInsideFallsTowardsTheContainersOwnFloor()
         {
             MeshWith(1);

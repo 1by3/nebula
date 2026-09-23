@@ -111,7 +111,9 @@ namespace Nebula
         protected abstract void Simulate(uint tick, in TInput input, float deltaTime);
 
         /// <summary>
-        /// State the owner needs to reconcile. Default: position and rotation in the current container's local
+        /// State the owner needs to reconcile, and the next worker needs to carry on simulating after a handover (it
+        /// travels with the pending inputs, and <see cref="ReadState"/> applies it there). Include everything
+        /// <see cref="Simulate"/> keeps from one tick to the next. Default: position and rotation in the current container's local
         /// space, and velocity. Container-local because the worker and the owning client never see a moving
         /// container (a ship) at the same place at the same moment; a passenger's pose relative to the ship is what
         /// both agree on.
@@ -213,6 +215,13 @@ namespace Nebula
             writer.PatchUShort(at, n);
             writer.WriteBool(_hasLastServerInput);
             if (_hasLastServerInput) _lastServerInput.Serialize(writer);
+            // The simulation state itself: WriteState is everything Simulate carries from one tick to the next, so
+            // the next worker continues exactly where this one stopped - a pawn mid-jump keeps its vertical speed and
+            // its air state across a seam instead of starting over from what the ghost happened to hold.
+            int stateAt = writer.ReserveUShort();
+            int stateStart = writer.Length;
+            WriteState(writer);
+            writer.PatchUShort(stateAt, (ushort)(writer.Length - stateStart));
         }
 
         internal sealed override void ReadPendingInputs(NetworkReader reader)
@@ -237,7 +246,16 @@ namespace Nebula
                 last.Deserialize(reader);
                 _lastServerInput = last;
             }
+            // A sender from before the state rode along writes nothing more.
+            if (reader.Remaining < 2) return;
+            var state = reader.ReadSegment(reader.ReadUShort());
+            if (state.Count == 0) return;
+            HandoverStateReader.Set(state);
+            try { ReadState(HandoverStateReader); }
+            catch (Exception ex) { NebulaLog.Error($"ReadState of {GetType().Name} on {Identity} threw during a handover: {ex.Message}"); }
         }
+
+        private static readonly NetworkReader HandoverStateReader = new NetworkReader();
 
         // ---- client ------------------------------------------------------------------------------------------
 

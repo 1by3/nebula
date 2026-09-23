@@ -556,6 +556,7 @@ namespace Nebula
             // Physics frames: sample their motion and put every frame root at its frame's world pose, now that the
             // carriers were interpolated, so everything that runs after this (cameras) sees one world (D11, D14).
             PhysicsFrames.UpdateStates(NetworkTime.Tick, Time.deltaTime);
+            PhysicsFrames.SyncAllContent();
             PhysicsFrames.PoseForRender();
         }
 

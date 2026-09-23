@@ -483,15 +483,17 @@
 
     const ids = new Set([...S.shipPose.keys(), ...S.carriedLease.keys()]);
     S.carried = [...ids].sort().map(id => {
-      const lease = S.carriedLease.get(id) || null;
       const pose = S.shipPose.get(id) || null;
       const rep = pose ? pose.report : null;
+      // A container fixed inside a ship (an engine room) moves with it but holds an ordinary lease row.
+      const fixed = !!(rep && rep.fixed);
+      const lease = S.carriedLease.get(id) || S.lease.get(id) || null;
       // Unpinned, the interior is by definition wherever the hull is simulated; the telemetry knows that sooner than
-      // the lease row the carrier's worker rewrites after a handover.
-      const pinned = !!(lease && lease.pinned && lease.worker);
-      const interior = pinned ? lease.worker : (pose ? pose.worker : (lease ? lease.worker : ''));
+      // the lease row the carrier's worker rewrites after a handover. A leased one has a worker of its own.
+      const own = !!(lease && (lease.pinned || (fixed && lease.leased)) && lease.worker);
+      const interior = own ? lease.worker : (pose ? pose.worker : (lease ? lease.worker : ''));
       return {
-        type: 'carried', id, lease, pose, report: rep, pinned: !!(lease && lease.pinned),
+        type: 'carried', id, lease, pose, report: rep, fixed, pinned: !!(lease && lease.pinned), own,
         hullWorker: pose ? pose.worker : '', interiorWorker: interior,
         carrier: rep ? rep.carrier : (lease ? String(lease.carrierNetId) : ''),
         enclosing: rep ? rep.enclosing : '', depth: rep ? rep.depth : 0,
@@ -1246,6 +1248,19 @@
 
   const insp = $('inspector');
   function sw(workerId) { return `<span class="sw" style="--wc:${esc(colorOf(workerId))}"></span>`; }
+  /** How a container is simulated (docs/container-tree.md D6-D8): its own lease, its parent's, or demoted under a moving parent. */
+  function modeText(l) {
+    if (l.mode === 'demoted') return '<span style="color:var(--warn)">as inherited</span> <span class="ihint">(authored as leased; its parent moves without a physics frame of its own)</span>';
+    if (l.mode === 'inherited') return `inherited${l.ownerFrom ? ' from ' + refChip(l.ownerFrom) : ''}`;
+    return 'own lease';
+  }
+  const refChip = (id) => chip(S.carriedById.has(id) ? 'carried' : 'static', id);
+  function frameText(l) {
+    const parts = [];
+    if (l.frame) parts.push('physics frame of its own');
+    if (l.interest === 'ownRegions') parts.push('own interest regions');
+    return parts.join(' · ');
+  }
   function workerLabel(id) { return id ? `${sw(id)}${esc(id)}` : '<span style="color:var(--ink-3)">unassigned</span>'; }
   function chip(type, id, text) { return `<span class="chip" data-type="${type}" data-id="${esc(id)}">${esc(text || id)}</span>`; }
   function metrics(k) {
@@ -1285,7 +1300,9 @@
       h += `<div class="ik"><span>${sel.isCell ? 'Cell container' : 'Container'}</span><span>#${sel.index}</span></div>`;
       h += `<div class="it">${esc(sel.id)}</div>`;
       h += `<p class="ip">${path.length ? path.map(id => chip('static', id)).join(' › ') : 'top level'}</p>`;
-      h += `<dl class="kv"><dt>Owner</dt><dd>${workerLabel(owner)}</dd><dt>Lease</dt><dd>${l ? esc(l.state) + ' · epoch ' + l.epoch : 'none'}</dd>`;
+      h += `<dl class="kv"><dt>Owner</dt><dd>${workerLabel(owner)}${l && l.ownerFrom ? ` <span class="ihint">via ${refChip(l.ownerFrom)}</span>` : ''}</dd><dt>Lease</dt><dd>${l ? esc(l.state) + ' · epoch ' + l.epoch : 'none'}</dd>`;
+      if (l && l.mode) h += `<dt>Simulated</dt><dd>${modeText(l)}</dd>`;
+      if (l && (l.frame || l.interest)) h += `<dt>Frame</dt><dd>${frameText(l)}</dd>`;
       h += `<dt>Size</dt><dd>${sel.size.map(n => fmt(n, 1)).join(' × ')} m</dd><dt>Centre</dt><dd>${vec(sel.center)}</dd>`;
       if (sel.cell) h += `<dt>Cell</dt><dd>${sel.cell.join(', ')}</dd>`;
       h += `</dl>`;
@@ -1302,11 +1319,12 @@
     } else if (sel.type === 'carried') {
       const v = sel.velocity ? Math.hypot(sel.velocity[0], sel.velocity[1], sel.velocity[2]) : null;
       const live = [...S.workers.values()].filter(w => w.alive && !w.retiring);
-      h += `<div class="ik"><span>Carried container</span><span>depth ${sel.depth}</span></div>`;
+      h += `<div class="ik"><span>${sel.fixed ? 'Container fixed in a carrier' : 'Carried container'}</span><span>depth ${sel.depth}</span></div>`;
       h += `<div class="it">${esc(sel.id)}</div>`;
       h += `<p class="ip">${sel.enclosing ? 'in ' + (S.carriedById.has(sel.enclosing) ? chip('carried', sel.enclosing) : chip('static', sel.enclosing)) : (sel.pose ? 'outside every container' : 'no telemetry for it yet')}</p>`;
       h += `<dl class="kv"><dt>Interior</dt><dd>${workerLabel(sel.interiorWorker)}</dd><dt>Hull simulated by</dt><dd>${workerLabel(sel.hullWorker)}</dd>`;
-      h += `<dt>Lease</dt><dd>${sel.lease ? (sel.pinned ? 'pinned' : 'follows carrier') + ' · epoch ' + sel.lease.epoch : 'none'}</dd>`;
+      h += `<dt>Lease</dt><dd>${sel.lease ? (sel.fixed ? esc(sel.lease.state) : sel.lease.authority === 'leased' ? 'leased' : sel.pinned ? 'pinned' : 'follows carrier') + ' · epoch ' + sel.lease.epoch : 'none'}</dd>`;
+      if (sel.lease && (sel.lease.frame || sel.lease.interest)) h += `<dt>Frame</dt><dd>${frameText(sel.lease)}</dd>`;
       h += `<dt>Carrier</dt><dd>#${esc(sel.carrier)}</dd>`;
       const drawn = carriedBox(sel, performance.now());
       if (drawn) h += `<dt>Heading</dt><dd>${fmt(yawOf(drawn.rotation), 0)}°</dd><dt>Centre</dt><dd>${vec(drawn.center)}</dd>`;
@@ -1317,13 +1335,14 @@
       h += `<div class="is">By worker</div>${byWorker(sel.counts)}`;
       h += `<div class="iactions">`;
       h += `<button class="small ${isFollowing('carried', sel.id) ? 'on' : ''}" data-act="follow" data-id="${esc(sel.id)}">${isFollowing('carried', sel.id) ? 'Stop following' : 'Follow'}</button>`;
-      if (sel.lease) {
+      // Only a carried container can be pinned by hand; one authored as leased, or fixed in the hull, is assigned by the orchestrator.
+      if (sel.lease && !sel.fixed && sel.lease.authority !== 'leased') {
         h += sel.pinned
           ? `<button class="small" data-act="unpin" data-id="${esc(sel.id)}" ${S.busy ? 'disabled' : ''} title="Let the interior follow its carrier's worker again">Unpin</button>`
           : `<select class="small" data-act="pin" data-id="${esc(sel.id)}" ${S.busy ? 'disabled' : ''} title="Give this interior a worker of its own"><option value="">Pin interior to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`;
       }
       h += `</div>`;
-      h += `<p class="ihint">${sel.pinned ? 'Pinned: its worker simulates everyone aboard against a ghost of the hull, while the hull flies on with its own worker.' : 'Follows its carrier: whoever simulates the hull simulates everyone aboard, and they cross seams together.'}</p>`;
+      h += `<p class="ihint">${sel.own ? 'A worker of its own simulates everyone inside against a ghost of the hull, while the hull flies on with its own worker.' : 'Follows its carrier: whoever simulates the hull simulates everyone aboard, and they cross seams together.'}</p>`;
     } else if (sel.type === 'entity') {
       const p = entityAt(S.entities.get(sel.id), performance.now());
       h += `<div class="ik"><span>${KIND_NAME[sel.kind] || 'Entity'}</span><span>#${esc(sel.id)}</span></div>`;

@@ -289,14 +289,14 @@ The dashboard and its HTTP API do not require authentication. When you expose th
 Use the overview to:
 
 - Check live and requested worker counts.
-- See which worker controls each container.
+- See which worker controls each container. The **Containers** table lists them as a tree, each under its parent. A container marked **inherited** has no lease of its own: the worker that owns its parent simulates it, and the **Owner** column names the ancestor it inherits from. **leased → inherited** marks a container authored as leased that sits in a moving carrier without a physics frame, so its carrier's worker simulates it. **frame** marks a container with its own [physics frame](/docs/guides/physics-frames).
 - Compare authoritative and ghost entity counts.
 - Review player, bot, and server-driven entity counts.
 - Check tick time and heartbeat age for each worker.
 - Add, retire, or stop a worker.
 - See every gateway's load and drain one (see [Run more than one gateway](#run-more-than-one-gateway)).
 - Edit game-defined mesh settings.
-- Pin a dynamic container to a worker or return it to its carrier's worker.
+- Pin a dynamic container to a worker or return it to its carrier's worker. A dynamic container authored as leased always has a worker of its own, so it has no pin controls.
 - Watch the [simulation scopes](/docs/guides/scopes) a mesh has been asked for: their lifecycle state, how many players and entities are in each, how long nothing has wanted one, and how old it is. The card appears once something activates a scope, and is read-only — retiring is decided by `ScopeIdleRetireSeconds` and `ScopeLifecycle.ShouldRetire`, not by hand.
 - Read recent orchestrator events.
 
@@ -308,8 +308,8 @@ Open `/map` from the dashboard to see the mesh in 3D. Every container is drawn a
 
 - Static and world-partition cell containers.
 - The worker that controls each container.
-- Dynamic containers and their carriers.
-- Authoritative entities and ghost copies, at their real height.
+- Dynamic containers and their carriers, and containers fixed inside a carrier, such as a ship's engine room, drawn where the carrier is now.
+- Authoritative entities and ghost copies, at their real height. An entity inside a physics frame is drawn where it is in the world, not at its coordinates in the frame.
 - Loaded world cells and container boundaries.
 
 Drag to orbit the camera, right-drag or **Shift**-drag to pan, and scroll to zoom toward the cursor. Select an item to inspect it. Press **F** to zoom to the selected item, or the one under the cursor. A player, bot, or carried container stays centred as it moves until you pan or press **Esc**. With nothing selected, **F** fits the containers. Press **T** to look straight down and **R** to return to the angled view. Use the side controls to switch between worker ownership and entity load or to hide individual layers.
@@ -364,6 +364,8 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `POST /api/containers/hint` | `{"containerId": "cell_3_0_1", "hint": "x2,seam=0.5,dedicated"}` | Sets one container's balancing hint. An empty hint clears it. |
 | `POST /api/containers/pin` | `{"containerId": "interior#…", "workerId": "w2"}` | Assigns a dynamic container to a live worker. |
 | `POST /api/containers/unpin` | `{"containerId": "interior#…"}` | Returns a dynamic container to its carrier's worker. |
+| `POST /api/containers/ensure` | `{"id": 5, "center": [x, y, z], "size": [x, y, z]}` | Creates [runtime container](/docs/guides/runtime-containers) `rt_5`. Optional fields: `"parent"` places it inside that container, with `center` local to the parent; `"authority"` is `"leased"` or `"inherited"`; `"frame": true` gives it a physics frame, and `"interest": "ownRegions"` lays out its interest regions in the frame's own coordinates. An unknown parent returns `400`. |
+| `POST /api/containers/remove` | `{"id": 5}` | Removes runtime container `rt_5`. |
 | `GET /api/persistence/records` | none | Returns every persisted record with its state decoded into named entries. |
 | `POST /api/persistence/record` | `{"key": "…", "position": [x, y, z], "entries": {"Box.Stack": "9"}}` | Saves one record. Send only the fields and entries you change. |
 | `POST /api/persistence/duplicate` | `{"key": "…", "newKey": "…"}` | Copies one record under a new key. |
@@ -372,6 +374,8 @@ Invoke-RestMethod -Method Post http://localhost:7080/api/workers/kill -ContentTy
 | `GET /api/map/geometry` | none | Returns static world and container geometry. |
 | `GET /api/map` | none | Returns the latest worker telemetry. |
 | `GET /api/cost` | none | Returns one [cost row](#container-cost) per container: weighted entity cost, measured tick time, bytes out, gateway relay, ghosts and the dominant component. |
+
+Each row of `containers` in `GET /api/state` names its `parent` and `depth` in the container tree, its `authority` as authored (`auto`, `leased`, or `inherited`), and its `mode`: `leased`, `inherited`, or `demoted` for a leased container simulated as inherited. `worker` is the worker that simulates it, and `ownerFrom` names the ancestor whose lease decides that when the container has none of its own. `frame` and `interest` describe its physics frame. Rows under `carried` carry `authority`, `frame`, and `interest` too.
 
 Successful changes return `{"ok":true}`. Invalid requests return an error message. An API write can return `503` when it cannot reach the orchestrator's main thread within three seconds.
 

@@ -329,6 +329,7 @@ Deal containers across live workers as evenly as possible, keeping existing assi
 
 ```csharp
 public string EnsureRuntimeContainer(ulong id, Bounds bounds);
+public string EnsureRuntimeContainer(ulong id, ContainerPlacement placement);
 ```
 
 Create a runtime container (dashboard, tests, tooling): a lease row carrying `bounds` (absolute coordinates), unassigned until the next pass deals it. The normal path is a worker asking for one next to its entities ([`NebulaWorker.RequestRuntimeContainer`](/docs/reference/worker/nebula-worker#requestruntimecontainer)). Null on success, otherwise the reason.

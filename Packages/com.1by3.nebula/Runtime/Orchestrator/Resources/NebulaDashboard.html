@@ -67,6 +67,9 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; margin: 6px 0 10px; }
   .chip { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 0; background: var(--panel-2); border: 1px solid var(--line); }
   .chip.empty { color: var(--ink-3); border-style: dashed; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 11px; line-height: 16px; padding: 0 6px; margin-left: 6px; color: var(--ink-2); border: 1px solid var(--line); background: var(--panel-2); white-space: nowrap; vertical-align: 1px; }
+  .tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .via { color: var(--ink-3); font-size: 12px; margin-left: 6px; }
   .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
   .metric .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
   .metric .l { color: var(--ink-3); font-size: 11px; }
@@ -224,14 +227,14 @@
       <h2>Containers</h2>
       <div class="warn" id="hintNote" style="display:none; font-size:12px; margin-bottom:8px"></div>
       <table>
-        <div class="muted" style="font-size:12px; margin-bottom:8px">Hints tell the planner what it cannot measure. Click one to edit it: <span class="mono">x2</span> heavier, <span class="mono">group=name</span> keep together, <span class="mono">seam=0.5</span> avoid cutting here, <span class="mono">dedicated</span> a worker of its own. Empty clears it.</div>
+        <div class="muted" style="font-size:12px; margin-bottom:8px">Containers form a tree: each row sits under its parent. A <b>leased</b> container is assigned to a worker of its own; an <b>inherited</b> one is simulated by the worker that owns its parent. Hints tell the planner what it cannot measure, so only leased containers take one. Click one to edit it: <span class="mono">x2</span> heavier, <span class="mono">group=name</span> keep together, <span class="mono">seam=0.5</span> avoid cutting here, <span class="mono">dedicated</span> a worker of its own. Empty clears it.</div>
         <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th><th>Hint</th></tr></thead>
         <tbody id="containers"></tbody>
       </table>
     </section>
     <section class="card">
       <h2>Carried containers</h2>
-      <div class="muted" style="font-size:12px; margin-bottom:8px">Interiors of ships and other vehicles. They follow their carrier's worker unless pinned to a worker of their own.</div>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">Interiors of ships and other vehicles. They follow their carrier's worker unless pinned to a worker of their own. One authored as leased always has a worker of its own.</div>
       <table>
         <thead><tr><th>Container</th><th>Owner</th><th>Epoch</th><th>Lease</th><th></th></tr></thead>
         <tbody id="carried"></tbody>
@@ -294,6 +297,79 @@
   let lastState = null;
 
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+
+  /** Container rows in tree order (docs/container-tree.md): each parent followed by its children, siblings in the order sent. */
+
+  function treeOrder(rows) {
+
+    const byId = new Map(rows.map(r => [r.id, r]));
+
+    const kids = new Map();
+
+    const roots = [];
+
+    for (const r of rows) {
+
+      if (r.parent && byId.has(r.parent) && r.parent !== r.id) { if (!kids.has(r.parent)) kids.set(r.parent, []); kids.get(r.parent).push(r); }
+
+      else roots.push(r);
+
+    }
+
+    const out = [], seen = new Set();
+
+    const walk = (r, indent, orphan) => {
+
+      if (seen.has(r.id)) return;
+
+      seen.add(r.id);
+
+      out.push({ row: r, indent, orphan });
+
+      for (const k of kids.get(r.id) || []) walk(k, indent + 1, false);
+
+    };
+
+    // A root whose parent is not listed is fixed inside a carrier (a room in a ship): indented under where the ship would be.
+
+    for (const r of roots) walk(r, r.parent ? 1 : 0, !!r.parent);
+
+    for (const r of rows) walk(r, 0, false); // a parent cycle in corrupt rows still shows every row once
+
+    return out;
+
+  }
+
+
+  function frameTags(c) {
+
+    let t = '';
+
+    if (c.frame) t += '<span class="tag" title="Has a physics frame of its own: what is inside simulates in the container\'s own coordinates, with its own down">frame</span>';
+
+    if (c.interest === 'ownRegions') t += '<span class="tag" title="Interest regions are laid out in the frame\'s own coordinates, so its rotation moves nothing between regions">own regions</span>';
+
+    return t;
+
+  }
+
+
+  function containerTags(c, orphan) {
+
+    let t = '';
+
+    if (orphan) t += `<span class="tag" title="Fixed inside ${esc(c.parent)}, which moves: the worker that simulates it knows where it is">in ${esc(c.parent)}</span>`;
+
+    if (c.runtime) t += '<span class="tag" title="Registered by the game while the mesh runs">runtime</span>';
+
+    if (c.mode === 'inherited') t += `<span class="tag" title="Inherited: simulated by the worker that owns its parent${c.ownerFrom ? ' (' + esc(c.ownerFrom) + ')' : ''}">inherited</span>`;
+
+    if (c.mode === 'demoted') t += '<span class="tag warn" title="Authored as leased, but its parent moves and has no physics frame of its own, so its carrier's worker simulates it">leased → inherited</span>';
+
+    return t + frameTags(c);
+
+  }
   function fmtAge(sec) { if (sec < 0) return '—'; return sec < 10 ? sec.toFixed(1) + 's' : Math.round(sec) + 's'; }
   function fmtRate(bytesPerSecond) { const b = bytesPerSecond * 8; return b >= 1e6 ? (b / 1e6).toFixed(1) + ' Mb/s' : b >= 1e3 ? (b / 1e3).toFixed(0) + ' kb/s' : Math.round(b) + ' b/s'; }
   // Interest management (design §12): how much of what this worker holds actually leaves it, and what the
@@ -486,18 +562,22 @@
     satNote.style.display = saturated.length ? '' : 'none';
     $('assignmentCard').style.display = (moves.length || saturated.length) ? '' : 'none';
 
-    $('containers').innerHTML = s.containers.map(c => `
-      <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
-          <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
+    $('containers').innerHTML = treeOrder(s.containers).map(({ row: c, indent, orphan }) => `
+      <tr><td class="mono"><span class="idcell" style="padding-left:${indent * 16}px"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}${containerTags(c, orphan)}</span></span></td>
+          <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}${c.ownerFrom ? `<span class="via" title="Inherited: simulated by the worker that owns ${esc(c.ownerFrom)}">via ${esc(c.ownerFrom)}</span>` : ''}</td>
           <td>${c.epoch}</td><td>${esc(c.state)}</td>
-          <td><span class="mono hintcell" data-act="hint" data-id="${esc(c.id)}" title="Click to edit this container's balancing hint">${c.hint ? esc(c.hint) : '<span class="muted">–</span>'}</span></td></tr>`).join('');
+          <td>${c.leased === false
+            ? '<span class="muted" title="Not assigned on its own: the worker that owns its parent simulates it, so a hint here would do nothing">–</span>'
+            : `<span class="mono hintcell" data-act="hint" data-id="${esc(c.id)}" title="Click to edit this container's balancing hint">${c.hint ? esc(c.hint) : '<span class="muted">–</span>'}</span>`}</td></tr>`).join('');
 
     const live = s.workers.filter(w => w.alive && !w.retiring);
     $('carried').innerHTML = s.carried.length ? s.carried.map(c => `
       <tr><td class="mono"><span class="idcell"><span class="sw" style="--wc:${esc(c.color)}"></span><span>${esc(c.id)}</span></span></td>
           <td class="mono">${c.worker ? esc(c.worker) : '<span class="muted">unassigned</span>'}</td>
-          <td>${c.epoch}</td><td>${esc(c.state)}</td>
-          <td>${c.pinned
+          <td>${c.epoch}</td><td>${esc(c.state)}${frameTags(c)}</td>
+          <td>${c.authority === 'leased'
+            ? '<span class="muted" title="Authored as leased: it always has a worker of its own, assigned by the orchestrator">leased</span>'
+            : c.pinned
             ? `<button class="small" data-act="unpin" data-id="${esc(c.id)}" title="Let it follow its carrier again">Unpin</button>`
             : `<select class="small" data-act="pin" data-id="${esc(c.id)}" title="Give this interior a worker of its own"><option value="">pin to…</option>${live.map(w => `<option value="${esc(w.id)}">${esc(w.id)}</option>`).join('')}</select>`}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">no carried containers (no vehicle spawned yet)</td></tr>';

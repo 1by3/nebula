@@ -338,6 +338,66 @@ public class ServiceTests
         socket.Start(); socket.Stop();
     }
     [Test]
+    public void TheDashboardShowsTheContainerTreeAndNothingDemotedIsDealt()
+    {
+        // docs/container-tree.md D6-D8: the services never hold a carrier, so a room fixed in one is known only by its row.
+        // In a carrier without a physics frame it is simulated as inherited (D7) and must not be dealt; in a framed one a
+        // leased room has a worker of its own, and an inherited room inside that follows it.
+        Load(new ServiceManifest());
+        using var plane = new LocalControlPlane(); plane.Connect();
+        plane.EnsureContainer("hopper#9");
+        plane.AssignContainer("hopper#9", "w1"); plane.SetLeaseState("hopper#9", LeaseState.Active);
+        plane.EnsureContainer("liner#10", ContainerAuthority.Auto, ownPhysicsFrame: true);
+        plane.AssignContainer("liner#10", "w1"); plane.SetLeaseState("liner#10", LeaseState.Active);
+        plane.EnsureRuntimeContainer("rt_5", ContainerPlacement.Child("hopper#9", new Vector3(0, 1, 0), new Vector3(4, 3, 4)), "");
+        plane.EnsureRuntimeContainer("rt_6", ContainerPlacement.Child("liner#10", new Vector3(0, 1, -8), new Vector3(6, 4, 6), ContainerAuthority.Leased), "");
+        plane.EnsureRuntimeContainer("rt_7", ContainerPlacement.Child("rt_6", new Vector3(0, 0, 1), new Vector3(2, 2, 2), ContainerAuthority.Inherited), "");
+        plane.AssignContainer("rt_6", "w2"); plane.SetLeaseState("rt_6", LeaseState.Active);
+        ContainerRegistry.SyncRuntime(plane.Leases);
+
+        var workers = new List<WorkerInfo> { new WorkerInfo { WorkerId = "w1", WorkerIndex = 1 }, new WorkerInfo { WorkerId = "w2", WorkerIndex = 2 } };
+        var dealt = NebulaOrchestrator.ComputeRuntimeAssignment(plane.Leases, workers).Select(kv => kv.Key).ToList();
+        Assert.That(dealt, Does.Not.Contain("rt_5"), "demoted: the carrier's worker simulates it");
+        Assert.That(dealt, Does.Not.Contain("rt_7"), "inherited");
+
+        var orch = new NebulaOrchestrator();
+        try
+        {
+            orch.Initialize(new NebulaConfig { UseLocalControlPlane = true, WorkerCount = 0, OrchestratorSpawnsGateway = false, DashboardPort = 0 }, plane);
+            var state = JsonDocument.Parse(orch.BuildStateJson()).RootElement;
+            var rows = state.GetProperty("containers").EnumerateArray().ToDictionary(r => r.GetProperty("id").GetString()!);
+
+            var demoted = rows["rt_5"];
+            Assert.That(demoted.GetProperty("mode").GetString(), Is.EqualTo("demoted"));
+            Assert.That(demoted.GetProperty("leased").GetBoolean(), Is.False);
+            Assert.That(demoted.GetProperty("worker").GetString(), Is.EqualTo("w1"), "simulated by the carrier's worker");
+            Assert.That(demoted.GetProperty("ownerFrom").GetString(), Is.EqualTo("hopper#9"));
+            Assert.That(demoted.GetProperty("parent").GetString(), Is.EqualTo("hopper#9"));
+            Assert.That(demoted.GetProperty("depth").GetInt32(), Is.EqualTo(1));
+
+            var engine = rows["rt_6"];
+            Assert.That(engine.GetProperty("mode").GetString(), Is.EqualTo("leased"));
+            Assert.That(engine.GetProperty("authority").GetString(), Is.EqualTo("leased"));
+            Assert.That(engine.GetProperty("worker").GetString(), Is.EqualTo("w2"));
+            Assert.That(engine.GetProperty("ownerFrom").GetString(), Is.Empty);
+
+            var closet = rows["rt_7"];
+            Assert.That(closet.GetProperty("mode").GetString(), Is.EqualTo("inherited"));
+            Assert.That(closet.GetProperty("worker").GetString(), Is.EqualTo("w2"), "follows the engine room, not the ship");
+            Assert.That(closet.GetProperty("ownerFrom").GetString(), Is.EqualTo("rt_6"));
+            Assert.That(closet.GetProperty("depth").GetInt32(), Is.EqualTo(2));
+
+            var carried = state.GetProperty("carried").EnumerateArray().ToDictionary(r => r.GetProperty("id").GetString()!);
+            Assert.That(carried["liner#10"].GetProperty("frame").GetBoolean(), Is.True);
+            Assert.That(carried["hopper#9"].GetProperty("frame").GetBoolean(), Is.False);
+
+            // The map places nothing it cannot: the rooms fixed in ships come from the workers' telemetry.
+            var geometry = JsonDocument.Parse(MeshTelemetry.BuildGeometryJson(null)).RootElement;
+            Assert.That(geometry.GetProperty("containers").EnumerateArray().Select(c => c.GetProperty("id").GetString()), Is.Empty);
+        }
+        finally { orch.Dispose(); }
+    }
+    [Test]
     public void ResumingAParkedWorkerAtTheCeilingIsRefusedInsteadOfRetiringItAgain()
     {
         // UnparkWorker raised the desired count and then clamped it, so at MaxWorkers the resumed worker came back

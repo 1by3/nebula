@@ -37,16 +37,17 @@ namespace Nebula.Tests
             return identity;
         }
 
-        private NetworkIdentity MakeCarrier(string name, ulong netId, Vector3 position, Vector3 size)
+        private NetworkIdentity MakeCarrier(string name, ulong netId, Vector3 position, Vector3 size, bool framed = false, float yaw = 0f)
         {
             var go = new GameObject(name);
-            go.transform.position = position;
+            go.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
             _objects.Add(go);
             var identity = go.AddComponent<NetworkIdentity>();
             var box = go.AddComponent<Container>();
             box.ContainerId = name;
             box.Size = size;
             box.Center = new Vector3(0, size.y * 0.5f, 0);
+            box.OwnPhysicsFrame = framed;
             go.AddComponent<DynamicContainer>();
             identity.Initialize();
             identity.NetId = netId;
@@ -72,6 +73,9 @@ namespace Nebula.Tests
             foreach (var go in _objects) Object.DestroyImmediate(go);
             _objects.Clear();
             ContainerRegistry.Rebuild();
+            PhysicsFrames.DrainPool();
+            PhysicsFrames.SceneFactory = null;
+            PhysicsFrames.SceneDisposer = null;
         }
 
         [Test]
@@ -179,6 +183,43 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void InsideAPhysicsFrameTheDocumentReportsWhereThingsAreInTheScope()
+        {
+            // docs/container-tree.md §3: a worker keeps what is inside a frame in the frame's coordinates. The map draws
+            // the scope, so the crew and a room fixed in the ship are reported where they are, not at frame-local numbers.
+            NebulaRuntime.IsServer = true; NebulaRuntime.IsClient = false; // a worker: frames stay in simulation space
+            PhysicsFrames.SceneFactory = () => UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
+            PhysicsFrames.SceneDisposer = s => UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(s);
+            var ship = MakeCarrier("ship", 42, new Vector3(-20, 0, 0), new Vector3(10, 6, 20), framed: true, yaw: 90f);
+            Assert.IsNotNull(ship.Carried.Frame);
+            var room = ContainerRegistry.RegisterRuntime(7, ContainerPlacement.Child("ship#42", new Vector3(0, 1, 4), new Vector3(4, 2, 4), ContainerAuthority.Leased));
+            Assert.AreSame(ship.Carried, room.Parent);
+
+            var go = new GameObject("crew");
+            _objects.Add(go);
+            var crew = go.AddComponent<NetworkIdentity>();
+            crew.Initialize();
+            crew.NetId = 5;
+            crew.HasAuthority = true;
+            crew.IsServerDriven = true;
+            crew.SetContainer(ship.Carried);
+            crew.transform.localPosition = new Vector3(0, 1, 2); // frame-local
+            crew.transform.localRotation = Quaternion.identity;
+
+            string doc = WorkerTelemetry.ForTests().Write("w1", 1, 7, new[] { ship, crew }, true, null);
+
+            // The ship faces +x: two metres forward of its origin is two metres east.
+            StringAssert.Contains("[\"5\",\"n\",-18,1,0,90,", doc);
+            var roomCenter = ship.transform.TransformPoint(room.ToWorld(room.Center));
+            StringAssert.Contains($"{{\"id\":\"rt_7\",\"carrier\":\"42\",\"enclosing\":\"ship#42\",", doc);
+            StringAssert.Contains("\"fixed\":true,\"pinned\":true,\"frame\":false,", doc);
+            StringAssert.Contains($"\"center\":[{R(roomCenter.x)},{R(roomCenter.y)},{R(roomCenter.z)}]", doc);
+            StringAssert.Contains("\"frame\":true,", doc, "the ship itself says it has a frame");
+        }
+
+        private static string R(float v) => System.Math.Round((double)v, 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        [Test]
         public void AWorkerDocumentCountsWhatItHoldsPerContainerAndReportsItsCarriers()
         {
             var ship = MakeCarrier("ship", 42, new Vector3(-20, 0, 0), new Vector3(10, 6, 20));
@@ -207,7 +248,7 @@ namespace Nebula.Tests
                 "{\"id\":\"outdoor\",\"owned\":1,\"players\":0,\"bots\":0,\"serverDriven\":2,\"other\":0,\"ghosts\":1,\"scope\":\"\",\"cost\":2,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
                 "{\"id\":\"hut\",\"owned\":1,\"players\":1,\"bots\":1,\"serverDriven\":0,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"cost\":6,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}," +
                 "{\"id\":\"ship#42\",\"owned\":1,\"players\":0,\"bots\":0,\"serverDriven\":1,\"other\":0,\"ghosts\":0,\"scope\":\"\",\"enclosing\":\"outdoor\",\"cost\":1,\"tickMs\":0,\"bytesOut\":0,\"gatewayBytes\":0}]", doc);
-            StringAssert.Contains("\"carried\":[{\"id\":\"ship#42\",\"carrier\":\"42\",\"enclosing\":\"outdoor\",\"depth\":1,\"pinned\":false,\"contents\":1,\"center\":[-20,3,0],\"size\":[10,6,20],\"rotation\":[0,0,0,1],\"position\":[-20,0,0]", doc);
+            StringAssert.Contains("\"carried\":[{\"id\":\"ship#42\",\"carrier\":\"42\",\"enclosing\":\"outdoor\",\"depth\":1,\"pinned\":false,\"frame\":false,\"contents\":1,\"center\":[-20,3,0],\"size\":[10,6,20],\"rotation\":[0,0,0,1],\"position\":[-20,0,0]", doc);
             StringAssert.Contains("[\"42\",\"v\",-20,0,0,0,0]", doc);
             StringAssert.Contains("[\"1\",\"p\",50,1,50,0,1,\"Player Jesse (3)\"]", doc);
             StringAssert.Contains("[\"2\",\"b\",51,1,50,0,1,\"Bot\"]", doc);
