@@ -544,9 +544,13 @@ namespace Nebula
             NetworkTime.RenderTick = _renderTick;
             foreach (var e in _entities.Values)
             {
+                // A replica whose object is gone without a despawn (destroyed by game code, or with a parent) has
+                // nothing left to present; it is dropped below instead of throwing here every frame.
+                if (e == null) { _destroyedScratch.Add(e); continue; }
                 // The local player too: its server-authoritative children (a NetworkTransform on a turret, say) interpolate.
                 e.RemoteTick(_renderTick);
             }
+            if (_destroyedScratch.Count > 0) DropDestroyed();
             TrackCarrier();
             FollowLocalScope();
         }
@@ -1085,11 +1089,54 @@ namespace Nebula
             if (msg.Epoch < e.Epoch) return;
             _entities.Remove(msg.NetId);
             if (LocalPlayer == e) LocalPlayer = null;
+            EvacuateCarried(e);
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
             if (e.IsSceneEntity) e.Unbind(); // the object belongs to its scene
             else if (Application.isPlaying) Destroy(e.gameObject);
             else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
+        }
+
+        /// <summary>
+        /// Put down everything riding in <paramref name="carrier"/>'s dynamic container before its object is
+        /// destroyed: into the container the carrier itself was in, the way the worker does
+        /// (<c>NebulaWorker.EvacuateCarried</c>). Riders are parented under the carrier, so without this a ship
+        /// leaving the client's view destroyed the passengers' replicas with it and left dead entries in the entity
+        /// table (the next frame's <see cref="NetworkIdentity.RemoteTick"/> and a later despawn threw on them). The
+        /// riders' own despawns or updates, if any, arrive separately.
+        /// </summary>
+        private void EvacuateCarried(NetworkIdentity carrier)
+        {
+            var box = carrier.Carried;
+            if (box == null || box.Entities.Count == 0) return;
+            _ridersScratch.Clear();
+            _ridersScratch.AddRange(box.Entities);
+            var replacement = carrier.Container;
+            foreach (var rider in _ridersScratch)
+            {
+                if (rider == null || rider == carrier) continue;
+                try { rider.SetContainer(replacement); }
+                catch (Exception ex) { NebulaLog.Error($"could not put {rider} down while {carrier} left this client's view: {ex.Message}"); }
+            }
+            _ridersScratch.Clear();
+        }
+
+        private readonly List<NetworkIdentity> _ridersScratch = new List<NetworkIdentity>();
+        private readonly List<NetworkIdentity> _destroyedScratch = new List<NetworkIdentity>();
+        private readonly List<ulong> _destroyedIds = new List<ulong>();
+
+        /// <summary>Forget replicas whose objects were destroyed without a despawn, once, with a warning.</summary>
+        private void DropDestroyed()
+        {
+            _destroyedIds.Clear();
+            foreach (var kv in _entities) if (kv.Value == null) _destroyedIds.Add(kv.Key);
+            foreach (ulong id in _destroyedIds)
+            {
+                _entities.Remove(id);
+                NebulaLog.Warn($"replica {id} was destroyed without a despawn; dropped from this client's entity table");
+            }
+            _destroyedScratch.Clear();
+            _destroyedIds.Clear();
         }
 
         private void OnEntityVars(EntityVarsMsg msg)
