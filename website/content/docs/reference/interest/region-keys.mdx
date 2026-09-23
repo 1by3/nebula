@@ -21,6 +21,7 @@ The salt is an XOR with a strong mix of the scope's isolation id, so it is **inv
 
 ```csharp
 public static ulong SaltOf(ulong instanceId);
+public static ulong SaltOf(ulong instanceId, ulong frameKey);
 ```
 
 SplitMix64 finalizer of the isolation id: the per-scope constant the region id is XORed with.
@@ -29,6 +30,7 @@ SplitMix64 finalizer of the isolation id: the per-scope constant the region id i
 
 ```csharp
 public static ulong Salt(ulong region, ulong instanceId);
+public static ulong Salt(ulong region, ulong instanceId, ulong frameKey);
 ```
 
 The key a region of `instanceId` is known by: the plain packing in the public world, and the packing XORed with the scope's salt everywhere else.
@@ -37,6 +39,15 @@ The key a region of `instanceId` is known by: the plain packing in the public wo
 
 ```csharp
 public static ulong Unsalt(ulong key, ulong instanceId);
+public static ulong Unsalt(ulong key, ulong instanceId, ulong frameKey);
 ```
 
 The inverse of [`Salt`](#salt): the plain packing the region arithmetic works on.
+
+### FrameKeyOf [#framekeyof]
+
+```csharp
+public static ulong FrameKeyOf(ContainerRef reference);
+```
+
+The key of a physics frame whose contents are bucketed in regions of its own ([`FrameInterestMode.OwnRegions`](/docs/reference/containers/frame-interest-mode#ownregions), `docs/container-tree.md` D18): a planet's surface is bucketed in the planet's coordinates, so its rotation never churns regions in system space. Made from the container's wire name, which the worker and the gateway both hold; 0 for no reference.

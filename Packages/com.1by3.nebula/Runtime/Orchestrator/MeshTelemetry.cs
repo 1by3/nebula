@@ -818,7 +818,8 @@ namespace Nebula
                 w.Prop("isCell", c.IsCell);
             }
             WriteBox(w, c);
-            var parent = EnclosingStatic(c);
+            // The container tree's parent (docs/container-tree.md D2); the geometric search stays for a mirror that has none.
+            var parent = c.Parent ?? EnclosingStatic(c);
             w.Prop("parent", parent != null ? parent.ContainerId : "");
             w.Key("neighbors");
             w.BeginArray();

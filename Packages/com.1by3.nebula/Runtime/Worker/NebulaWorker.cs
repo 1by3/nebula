@@ -81,6 +81,17 @@ namespace Nebula
         private readonly Dictionary<ulong, uint> _crossingHold = new Dictionary<ulong, uint>();
         /// <summary>The entity the transfer being written is a crossing for (D15); its contents travel as ordinary followers.</summary>
         private NetworkIdentity _crossingEntity;
+        private Action<PhysicsFrame, List<Vector3>> _frameOriginPositions;
+
+        /// <summary>The frame-local positions of the entities this worker simulates directly in <paramref name="frame"/>.</summary>
+        private void FrameOriginPositions(PhysicsFrame frame, List<Vector3> into)
+        {
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e != null && e.Space == frame.Owner) into.Add(frame.SimulationToLocal(e.transform.position));
+            }
+        }
         /// <summary>
         /// AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost
         /// copy of the target (see <see cref="NebulaDiagnostics.RejectedAuthorityRpcSends"/>). Reported as
@@ -418,7 +429,7 @@ namespace Nebula
                 bool leased = carried.Authority == ContainerAuthority.Leased;
                 if (lease == null)
                 {
-                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority);
+                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority, carried.OwnPhysicsFrame, carried.FrameInterest);
                     if (leased) ControlPlane.PinContainer(carried.ContainerId, WorkerId);
                     else ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
                     continue;
@@ -1062,6 +1073,8 @@ namespace Nebula
             // once the carriers have moved this tick (docs/container-tree.md D14).
             PhysicsFrames.Simulate(dt);
             PhysicsFrames.UpdateStates(tick, dt);
+            // Each frame's floating origin stays near what this worker simulates in it (docs/container-tree.md D19).
+            PhysicsFrames.AutoShift(_frameOriginPositions ??= FrameOriginPositions);
 
             // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
             // validation (docs/state-history.md). Ghosts record themselves when the owner's stream is applied, with

@@ -178,6 +178,14 @@ public PhysicsScene PhysicsScene { get; }
 
 Use this scene for raycasts and overlap tests to exclude entities in other instances.
 
+### Space [#space]
+
+```csharp
+public Container Space { get; }
+```
+
+The physics frame this entity lives in (`Nebula.Container.InnerSpace` of its container), or null in its scope's own space. Inside a frame its transform reads frame-local coordinates in simulation space (`docs/container-tree.md` D11).
+
 ### ContainerIndex [#containerindex]
 
 ```csharp
@@ -376,6 +384,30 @@ public void LeaveCohesionGroup();
 ```
 
 Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.
+
+### ToScope [#toscope]
+
+```csharp
+public Vector3 ToScope(Vector3 position);
+```
+
+A position in this entity's space as a position in its scope's own space ([`PhysicsFrames.ToScope`](/docs/reference/containers/physics-frames#toscope)).
+
+### FromScope [#fromscope]
+
+```csharp
+public Vector3 FromScope(Vector3 position);
+```
+
+A position in the scope's own space (a part of a ship, a door, a quest giver) in this entity's space.
+
+### PlaceInScope [#placeinscope]
+
+```csharp
+public void PlaceInScope(Vector3 position, Quaternion rotation);
+```
+
+Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a frame would put it at those numbers in the frame's coordinates. Outside frames this is a plain assignment; the next tick resolves the container as usual.
 
 ### StateAt [#stateat]
 

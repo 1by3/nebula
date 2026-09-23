@@ -83,6 +83,14 @@ Raised after this scope's containers were moved: the delta to add to any other f
 
 ## Methods
 
+### OriginOffsetPrecise [#originoffsetprecise]
+
+```csharp
+public void OriginOffsetPrecise(out double x, out double y, out double z);
+```
+
+[`OriginOffset`](#originoffset) in double, per axis: what an absolute position kept in double is shifted by before it is narrowed to float, so a placement far from the origin keeps its precision.
+
 ### ShiftDelta [#shiftdelta]
 
 ```csharp

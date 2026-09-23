@@ -93,6 +93,7 @@ public static DateTime FromUnixMs(double ms);
 
 ```csharp
 public static void Num(JsonWriter w, float f);
+public static void Num(JsonWriter w, double d);
 public static double Num(Dictionary<string, object> o, string key);
 ```
 
@@ -102,8 +103,45 @@ A float at full precision ([`JsonWriter.Value`](/docs/reference/orchestrator/jso
 
 ```csharp
 public static void Vec(JsonWriter w, Vector3 v);
+public static void Vec(JsonWriter w, Double3 v);
 public static Vector3 Vec(Dictionary<string, object> o, string key);
 ```
+
+### Vec3D [#vec3d]
+
+```csharp
+public static Double3 Vec3D(Dictionary<string, object> o, string key);
+```
+
+### AuthorityName [#authorityname]
+
+```csharp
+public static string AuthorityName(ContainerAuthority a);
+```
+
+The wire name of an authority mode ("leased", "inherited"; "" for auto).
+
+### AuthorityOf [#authorityof]
+
+```csharp
+public static ContainerAuthority AuthorityOf(string name);
+```
+
+### PlacementOf [#placementof]
+
+```csharp
+public static ContainerPlacement PlacementOf(Dictionary<string, object> o);
+```
+
+The placement an `EnsureRuntimeContainer` op carries (an op written before placements existed reads as a root).
+
+### Placement [#placement]
+
+```csharp
+public static OpWriter Placement(OpWriter op, in ContainerPlacement p);
+```
+
+Write a placement as the arguments of an `EnsureRuntimeContainer` op.
 
 ### Str [#str]
 
@@ -209,6 +247,7 @@ public OpWriter Arg(string name, uint value);
 public OpWriter Arg(string name, bool value);
 public OpWriter Arg(string name, float value);
 public OpWriter Arg(string name, Vector3 value);
+public OpWriter Arg(string name, Double3 value);
 ```
 
 ##### End [#end]

@@ -21,6 +21,14 @@ public const int StateBatchBytes = WorldStateMsg.BatchBytes;
 
 Byte budget for one Sequenced world/ghost-state packet. Sequenced delivery cannot fragment, and a peer's MTU starts at LiteNetLib's floor (508 bytes) until discovery finishes, so batches are cut by size rather than by entry count. Entry size depends on the transform's selected axes and precision.
 
+### CrossingHoldTicks [#crossingholdticks]
+
+```csharp
+public const int CrossingHoldTicks = 30;
+```
+
+How long an entity handed over for a crossing stays with the pose owner before it may be handed back (ticks).
+
 ### RuntimeTouchSeconds [#runtimetouchseconds]
 
 ```csharp
@@ -150,6 +158,22 @@ public int HandoversIn { get; }
 ```csharp
 public int LocalHandovers { get; }
 ```
+
+### FrameCrossings [#framecrossings]
+
+```csharp
+public int FrameCrossings { get; }
+```
+
+Entities this worker moved across a physics frame's boundary as the frame's pose owner (`docs/container-tree.md` D15).
+
+### CrossingHandoffs [#crossinghandoffs]
+
+```csharp
+public int CrossingHandoffs { get; }
+```
+
+Entities this worker handed to a frame's pose owner so it could cross them (D15).
 
 ### RejectedAuthorityRpcSends [#rejectedauthorityrpcsends]
 
@@ -467,6 +491,7 @@ Start the worker with a persistence store: entities carrying a [`PersistentEntit
 
 ```csharp
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds);
+public void RequestRuntimeContainer(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null);
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance);
 public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint);
 ```

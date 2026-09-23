@@ -1,0 +1,131 @@
+---
+title: "ContainerPlacement"
+description: "Where a runtime container goes and what kind of container it is: its parent, its box, its authority and whether it gets its own physics frame."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+public struct ContainerPlacement
+```
+
+Where a runtime container goes and what kind of container it is: its parent, its box, its authority and whether it gets its own physics frame. This is what a lease row carries ([`LeaseInfo.Placement`](/docs/reference/control-plane/lease-info#placement)) and what [`NebulaWorker.RequestRuntimeContainer`](/docs/reference/worker/nebula-worker#requestruntimecontainer) and [`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime) take.
+
+A **root** (no [`ParentId`](#parentid)) is placed in its scope: [`Center`](#center) is absolute and kept in double, so a root far from the origin is placed exactly. A **child** is placed in its parent's frame: [`Center`](#center) is local to the parent's origin and the box is axis-aligned in the parent's frame, so it moves and turns with the parent. See `docs/container-tree.md`.
+
+A `Bounds` converts to a root placement, so every call that took an absolute box still compiles.
+
+## Fields
+
+### ParentId [#parentid]
+
+```csharp
+public string ParentId;
+```
+
+The parent container's id, or empty for a root of its scope.
+
+### Center [#center]
+
+```csharp
+public Double3 Center;
+```
+
+Box centre: absolute for a root, parent-local for a child.
+
+### Size [#size]
+
+```csharp
+public Vector3 Size;
+```
+
+Box size, in the parent's frame.
+
+### Authority [#authority]
+
+```csharp
+public ContainerAuthority Authority;
+```
+
+Who simulates what is inside ([`ContainerAuthority`](/docs/reference/containers/container-authority)); [`ContainerAuthority.Auto`](/docs/reference/containers/container-authority#auto) is leased.
+
+### OwnPhysicsFrame [#ownphysicsframe]
+
+```csharp
+public bool OwnPhysicsFrame;
+```
+
+The container gets a physics frame of its own (`docs/container-tree.md` §3).
+
+### FrameInterest [#frameinterest]
+
+```csharp
+public FrameInterestMode FrameInterest;
+```
+
+How a framed container's contents are bucketed for interest ([`FrameInterestMode`](/docs/reference/containers/frame-interest-mode)).
+
+## Properties
+
+### IsRoot [#isroot]
+
+```csharp
+public bool IsRoot { get; }
+```
+
+No parent: the box is placed in its scope.
+
+### IsInherited [#isinherited]
+
+```csharp
+public bool IsInherited { get; }
+```
+
+Whether what is inside is simulated by the parent's owner rather than by a lease of its own.
+
+### Bounds [#bounds]
+
+```csharp
+public Bounds Bounds { get; }
+```
+
+The box with its centre narrowed to float, as given (absolute for a root, local for a child).
+
+## Methods
+
+### Root [#root]
+
+```csharp
+public static ContainerPlacement Root(Double3 center, Vector3 size, ContainerAuthority authority = ContainerAuthority.Auto);
+public static ContainerPlacement Root(Bounds absolute);
+```
+
+A root box at an absolute centre.
+
+### Child [#child]
+
+```csharp
+public static ContainerPlacement Child(string parentId, Vector3 localCenter, Vector3 size, ContainerAuthority authority = ContainerAuthority.Auto);
+```
+
+A child box, centred at `localCenter` in `parentId`'s frame.
+
+### WithPhysicsFrame [#withphysicsframe]
+
+```csharp
+public ContainerPlacement WithPhysicsFrame(FrameInterestMode interest = FrameInterestMode.WithCarrier);
+```
+
+The same placement with its own physics frame.
+
+### implicit operator ContainerPlacement [#implicit-operator-containerplacement]
+
+```csharp
+public static implicit operator ContainerPlacement(Bounds absolute);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

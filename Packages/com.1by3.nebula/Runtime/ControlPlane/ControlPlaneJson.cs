@@ -416,7 +416,7 @@ namespace Nebula
                 case SetGatewayDraining: cp.SetGatewayDraining(Str(o, "gatewayId"), Bool(o, "draining")); return null;
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
-                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId"), AuthorityOf(Str(o, "authority"))); return null;
+                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId"), AuthorityOf(Str(o, "authority")), Bool(o, "frame"), (FrameInterestMode)(byte)Num(o, "interest")); return null;
                 case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), PlacementOf(o), Str(o, "workerId"), InstanceContainerInfo.Decode(Str(o, "instance"))); return null;
                 case TouchContainer: cp.TouchContainer(Str(o, "containerId")); return null;
                 case AssignContainer: cp.AssignContainer(Str(o, "containerId"), Str(o, "workerId")); return null;

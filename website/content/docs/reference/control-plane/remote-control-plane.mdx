@@ -225,13 +225,13 @@ public void SetSetting(string key, string value);
 ### EnsureContainer [#ensurecontainer]
 
 ```csharp
-public void EnsureContainer(string containerId);
+public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier);
 ```
 
 ### EnsureRuntimeContainer [#ensureruntimecontainer]
 
 ```csharp
-public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null);
+public void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null);
 ```
 
 ### TouchContainer [#touchcontainer]

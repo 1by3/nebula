@@ -1,0 +1,20 @@
+---
+title: "ContainerSource"
+description: "Where a container comes from (docs/container-tree.md D1)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+public enum ContainerSource : byte
+```
+
+Where a container comes from (`docs/container-tree.md` D1).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="baked"></span>`Baked` | `0` | Authored into a scene or baked into the world manifest. |
+| <span id="runtime"></span>`Runtime` | `1` | Registered while the mesh runs (a lease row that carries a box). |
+| <span id="prefab"></span>`Prefab` | `2` | Part of a prefab: carried by an entity. |

@@ -466,10 +466,13 @@ namespace Nebula
         /// <see cref="SignedDistance"/> for a point already in this container's local coordinates: the inner face of a
         /// container with a physics frame of its own, whose contents are in exactly those coordinates (<c>docs/container-tree.md</c> §3).
         /// </summary>
-        public float SignedDistanceInner(Vector3 local) => BoxDistance(local - Center, Size);
+        public float SignedDistanceInner(Vector3 local) => BoxDistance(InnerLocal(local) - Center, Size);
 
         /// <summary><see cref="Contains"/> for a point in this container's local coordinates (the inner face of its frame).</summary>
-        public bool ContainsInner(Vector3 local) => BoxDistance(local - Center, Size) <= 0f;
+        public bool ContainsInner(Vector3 local) => BoxDistance(InnerLocal(local) - Center, Size) <= 0f;
+
+        /// <summary>A simulation-space point of this container's frame as a container-local one: the frame's origin (D19) comes off.</summary>
+        private Vector3 InnerLocal(Vector3 position) => Frame != null ? Frame.SimulationToLocal(position) : position;
 
         /// <summary>Whether a point of <paramref name="space"/> is in this box: its inner face when the box owns the space.</summary>
         internal bool ContainsIn(Vector3 point, Container space) => space == this ? ContainsInner(point) : Contains(point);

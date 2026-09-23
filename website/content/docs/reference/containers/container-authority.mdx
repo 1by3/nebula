@@ -1,0 +1,20 @@
+---
+title: "ContainerAuthority"
+description: "Who simulates what is inside a container (docs/container-tree.md D6)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+public enum ContainerAuthority : byte
+```
+
+Who simulates what is inside a container (`docs/container-tree.md` D6).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="auto"></span>`Auto` | `0` | Leased when the container's frame is fixed, inherited when an entity drives it: what baked, runtime and carried containers always did. The default. |
+| <span id="leased"></span>`Leased` | `1` | The container has its own lease row and owner, is dealt by the planner, and has cost telemetry and capacity. |
+| <span id="inherited"></span>`Inherited` | `2` | Whoever owns the parent simulates what is inside (for a carried container: the carrier's authority). |

@@ -53,6 +53,14 @@ public double PawnX, PawnY, PawnZ;
 
 Absolute position of the pawn, resolved through any carrier. Meaningless when [`HasPawn`](#haspawn) is false.
 
+### PawnSpace [#pawnspace]
+
+```csharp
+public ulong PawnSpace;
+```
+
+The region space [`PawnX`](#pawnx), [`PawnY`](#pawny) and [`PawnZ`](#pawnz) are in (see [`InterestFocus.Space`](/docs/reference/interest/interest-focus#space)): 0 unless the pawn stands in a physics frame with regions of its own (a planet). A policy that adds a focus at the pawn gives it this space.
+
 ### PawnCarrierNetId [#pawncarriernetid]
 
 ```csharp

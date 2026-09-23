@@ -1,0 +1,19 @@
+---
+title: "FrameInterestMode"
+description: "How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+public enum FrameInterestMode : byte
+```
+
+How the contents of a container with its own physics frame are bucketed for interest management (`docs/container-tree.md` D18).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="withcarrier"></span>`WithCarrier` | `0` | Everything inside is published with the carrier, wherever the carrier is: a client sees the crew of a ship exactly when it sees the ship. Right for ships, vehicles and anything a client takes in at a glance. |
+| <span id="ownregions"></span>`OwnRegions` | `1` | Everything inside is bucketed in regions of the frame itself, keyed from frame-local positions: a client inside (or in a frame nested inside) sees what is near it in this frame. Right for a planet, whose surface must not be one region, and whose rotation must not churn regions in system space. |

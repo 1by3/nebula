@@ -132,10 +132,17 @@ namespace Nebula
         /// (<see cref="RegionKeys"/>), so unsalting with this entity's scope is what turns the foci of <i>its</i>
         /// scope back into coordinates — and what makes a focus in another world land nowhere near it.
         /// </summary>
-        public ulong WideMask(in InterestGrid grid, ulong instanceId, double x, double y, double z, double radius)
+        public ulong WideMask(in InterestGrid grid, ulong instanceId, double x, double y, double z, double radius) =>
+            WideMaskSalted(grid, RegionKeys.SaltOf(instanceId), x, y, z, radius);
+
+        /// <summary>
+        /// <see cref="WideMask(in InterestGrid,ulong,double,double,double,double)"/> for an entity whose region space is
+        /// given by its salt (<see cref="RegionKeys.SaltOf(ulong,ulong)"/>): a scope, or a physics frame with regions of
+        /// its own inside one. Only foci of the same space come out near it.
+        /// </summary>
+        public ulong WideMaskSalted(in InterestGrid grid, ulong salt, double x, double y, double z, double radius)
         {
             ulong mask = 0;
-            ulong salt = RegionKeys.SaltOf(instanceId);
             double r2 = radius * radius;
             for (int bit = 0; bit < MaxGateways; bit++)
             {

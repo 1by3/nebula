@@ -40,7 +40,7 @@ Nebula's runtime applies these conventions:
 - Static container IDs come from the authored or baked manifest.
 - A carried dynamic container ID contains `#` and normally ends with its carrier entity's network ID.
 - A runtime container ID is `rt_` followed by an invariant-culture `u64` decimal value.
-- Bounds are in absolute world coordinates. Only leases with `hasBounds = true` define a runtime-container box.
+- Only leases with `hasBounds = true` define a runtime-container box. A root box (no `parent`) is in absolute coordinates; a child box is in its parent container's local space.
 
 ## The document
 
@@ -89,7 +89,10 @@ Nebula's runtime applies these conventions:
 | `epoch` | Monotonic assignment generation. Only assignment and pin writes increment it. |
 | `state` | Lease state. Any supplied string is stored. |
 | `updatedAt` | Newest write that touched or changed the lease. |
-| `hasBounds`, `center`, `size` | Whether `center` and `size` define a runtime-container box, in absolute coordinates. Absent when `hasBounds` is false. |
+| `hasBounds`, `center`, `size` | Whether `center` and `size` define a runtime-container box. Absent when `hasBounds` is false. `center` is written at full double precision. |
+| `parent` | Optional. The ID of the container this runtime container sits in. When present, `center` is in the parent's local space and the box is axis-aligned there; when absent, the box is a root of its scope and `center` is absolute. |
+| `authority` | Optional. `leased` or `inherited`; absent means the default. An `inherited` runtime row is in state `inherited`, has no `workerId`, and is never assigned. A carried container's row with `leased` is assigned by the orchestrator instead of following its carrier. |
+| `frame`, `interest` | Optional. `frame` is `true` when the container has a [physics frame](/docs/guides/physics-frames) of its own; `interest` is `1` when its contents are bucketed in regions of the frame (`OwnRegions`). |
 | `instance` | Optional Base64-encoded `InstanceContainerInfo` from the [wire specification](/docs/specifications/wire-protocol#instance-preparation). Includes the private scope, content resource, and outward observation bounds. |
 
 The lease epoch is not an entity authority epoch. The wire protocol represents this lease epoch as a `u64` in `ContainerOwnership`, while per-entity messages carry a separate `u32` epoch.
@@ -136,7 +139,7 @@ A request body is `{"ops":[op, op, ...]}`. Each op is an object with an `"op"` n
 | `HeartbeatOrchestrator` | `orchestratorId`, `desiredWorkers` | Accepted; the host is the orchestrator and keeps nothing. |
 | `SetSetting` | `key`, `value` | Insert or update. No-op when unchanged. |
 | `EnsureContainer` | `containerId` | Insert an unassigned `orphaned` lease at epoch 0 if missing. |
-| `EnsureRuntimeContainer` | `containerId`, `workerId`, `center`, `size`, optional `instance` | Insert a bounded lease if missing: owned and `active` at epoch 1 when `workerId` is nonempty, else unassigned and `orphaned` at epoch 0. `instance` uses the same Base64 metadata encoding as the lease row. Existing rows remain unchanged. |
+| `EnsureRuntimeContainer` | `containerId`, `workerId`, `center`, `size`, optional `instance`, `parent`, `authority`, `frame`, `interest` | Insert a bounded lease if missing: owned and `active` at epoch 1 when `workerId` is nonempty, else unassigned and `orphaned` at epoch 0. An `inherited` row is always unassigned in state `inherited`. `instance` uses the same Base64 metadata encoding as the lease row. The optional fields have the meanings of the lease-row fields of the same name. Existing rows remain unchanged. |
 | `TouchContainer` | `containerId` | Refresh `updatedAt`. |
 | `AssignContainer` | `containerId`, `workerId` | See the transition table. |
 | `PinContainer` | `containerId`, `workerId` | See the transition table. |

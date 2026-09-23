@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// Conformance scenarios 19 and 21 (<c>docs/container-tree.md</c> §7): one container concept in a tree. Baked
+    /// Conformance scenarios 20 and 22 (<c>docs/container-tree.md</c> §7): one container concept in a tree. Baked
     /// boxes build their tree from nesting; runtime boxes name their parent and carry a parent-local box; resolution
     /// prefers the deepest box; inherited containers take their owner from their parent; a leased box under a moving
     /// parent without a frame of its own is demoted; nothing is placed inside its own subtree; and a root far from

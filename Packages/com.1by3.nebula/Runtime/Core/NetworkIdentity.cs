@@ -437,6 +437,16 @@ namespace Nebula
                 if (e != null && Nebula.World.ScopeFrames.FrameIdOf(e.InstanceId) == frameId) e.ShiftFrame(delta);
         }
 
+        /// <summary>
+        /// A physics frame's floating origin moved (<c>docs/container-tree.md</c> D19): the entities in that frame were
+        /// moved with its root; their cached simulation-space positions follow here.
+        /// </summary>
+        internal static void ShiftFrameIn(Container frame, Vector3 delta)
+        {
+            foreach (var e in Live)
+                if (e != null && e.Space == frame) e.ShiftFrame(delta);
+        }
+
         internal void ShiftFrame(Vector3 delta)
         {
             // A scene entity was moved with its scene's roots by the streamer, a contained one with its container.

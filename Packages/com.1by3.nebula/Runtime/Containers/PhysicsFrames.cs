@@ -89,6 +89,30 @@ namespace Nebula
         /// <summary>The frame's pose is driven by an entity (its carrier), so only that entity's authority knows it exactly (D15).</summary>
         public bool HasPoseOwner => Owner != null && Owner.IsDynamic;
 
+        /// <summary>
+        /// The frame's floating origin (<c>docs/container-tree.md</c> D19): the frame-local point that sits at Unity's
+        /// origin in simulation space. Zero until the worker moves it with <see cref="PhysicsFrames.ShiftOrigin"/>; a
+        /// planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise.
+        /// </summary>
+        public Vector3 Origin { get; internal set; }
+
+        /// <summary>
+        /// Raised after this frame's origin moved: the delta every cached simulation-space position of this frame gets
+        /// (pose history, interpolation buffers and game caches are moved by Nebula for its own entities).
+        /// </summary>
+        public event Action<Vector3> Shifted;
+
+        internal void RaiseShifted(Vector3 delta) => Shifted?.Invoke(delta);
+
+        /// <summary>A frame-local position (container-local) where it sits in simulation space right now.</summary>
+        public Vector3 LocalToSimulation(Vector3 local) => local + RootOffset;
+
+        /// <summary>A simulation-space position inside this frame as a frame-local (container-local) one.</summary>
+        public Vector3 SimulationToLocal(Vector3 position) => position - RootOffset;
+
+        /// <summary>Where the root is while the frame simulates: minus its origin on a worker, the render pose on a client outside prediction.</summary>
+        internal Vector3 RootOffset => Root != null && PhysicsFrames.InSimulationPose(Owner) ? Root.position : Vector3.zero;
+
         internal PhysicsFrameState _state;
         private Vector3 _lastVelocity;
         private int _samples;
@@ -96,9 +120,9 @@ namespace Nebula
         internal GameObject Content;
         internal bool OwnsScene;
 
-        /// <summary>A frame-local point in the space around the frame, from the owner's current transform (simulation space).</summary>
+        /// <summary>A frame-local point in the space around the frame, from the owner's current transform.</summary>
         public Vector3 ToParent(Vector3 local) => Owner.transform.TransformPoint(local);
-        /// <summary>A point of the space around the frame in frame-local coordinates (simulation space).</summary>
+        /// <summary>A point of the space around the frame in frame-local coordinates.</summary>
         public Vector3 FromParent(Vector3 parent) => Owner.transform.InverseTransformPoint(parent);
         public Quaternion ToParent(Quaternion local) => Owner.transform.rotation * local;
         public Quaternion FromParent(Quaternion parent) => Quaternion.Inverse(Owner.transform.rotation) * parent;
@@ -441,11 +465,14 @@ namespace Nebula
         {
             if (from == to) return point;
             var common = CommonSpace(from, to);
-            for (var s = from; s != common && s != null; s = s.Space) point = s.transform.TransformPoint(point);
+            for (var s = from; s != common && s != null; s = s.Space) point = s.transform.TransformPoint(point - OffsetOf(s));
             if (to == common) return point;
             Descend(ref point, to, common);
             return point;
         }
+
+        /// <summary>Where a space's frame root sits in simulation space (its floating origin, D19), zero in render space.</summary>
+        private static Vector3 OffsetOf(Container space) => space != null && space.Frame != null ? space.Frame.RootOffset : Vector3.zero;
 
         /// <summary>A rotation in space <paramref name="from"/> expressed in space <paramref name="to"/>.</summary>
         public static Quaternion Convert(Quaternion rotation, Container from, Container to)
@@ -473,6 +500,7 @@ namespace Nebula
             for (var s = from; s != common && s != null; s = s.Space)
             {
                 var state = s.Frame != null ? s.Frame.State : default;
+                point -= OffsetOf(s);
                 velocity = s.transform.rotation * velocity;
                 if (s.Frame != null && state.HasRates) velocity += state.Velocity + Vector3.Cross(state.AngularVelocity, s.transform.rotation * point);
                 point = s.transform.TransformPoint(point);
@@ -486,7 +514,7 @@ namespace Nebula
                 var state = s.Frame != null ? s.Frame.State : default;
                 if (s.Frame != null && state.HasRates) velocity -= state.Velocity + Vector3.Cross(state.AngularVelocity, point - s.transform.position);
                 velocity = Quaternion.Inverse(s.transform.rotation) * velocity;
-                point = s.transform.InverseTransformPoint(point);
+                point = s.transform.InverseTransformPoint(point) + OffsetOf(s);
             }
             _chain.Clear();
             return velocity;
@@ -498,9 +526,68 @@ namespace Nebula
         {
             _chain.Clear();
             for (var s = to; s != common && s != null; s = s.Space) _chain.Add(s);
-            for (int i = _chain.Count - 1; i >= 0; i--) point = _chain[i].transform.InverseTransformPoint(point);
+            for (int i = _chain.Count - 1; i >= 0; i--) point = _chain[i].transform.InverseTransformPoint(point) + OffsetOf(_chain[i]);
             _chain.Clear();
         }
+
+        // ------------------------------------------------------------------------------------ floating origin (D19)
+
+        /// <summary>
+        /// How far, in metres, the entities a worker simulates in a frame may drift from the frame's origin before
+        /// <see cref="AutoShift"/> moves the origin to them. Physics keeps millimetre precision well past this.
+        /// </summary>
+        public static float OriginShiftThreshold = 2048f;
+
+        /// <summary>The grid a moved origin snaps to, in metres, so two workers that shift for the same crowd agree.</summary>
+        public static float OriginShiftStep = 1024f;
+
+        /// <summary>
+        /// Move <paramref name="frame"/>'s floating origin to the frame-local point <paramref name="origin"/> (D19): its
+        /// root, and with it everything in the frame, moves in simulation space so that point sits at Unity's origin.
+        /// Frame-local coordinates do not change, so nothing on the wire does. The pose history and interpolation
+        /// buffers of the entities in the frame are moved with it, and <see cref="PhysicsFrame.Shifted"/> reports the
+        /// delta for anything else. Worker only: a client renders every frame at its world pose.
+        /// </summary>
+        public static void ShiftOrigin(PhysicsFrame frame, Vector3 origin)
+        {
+            if (frame == null || frame.Root == null || RendersFrames) return;
+            var delta = frame.Origin - origin;
+            if (delta == Vector3.zero) return;
+            frame.Origin = origin;
+            frame.Root.position += delta;
+            NetworkIdentity.ShiftFrameIn(frame.Owner, delta);
+            ContainerRegistry.RefreshCaches();
+            Physics.SyncTransforms();
+            frame.RaiseShifted(delta);
+        }
+
+        /// <summary>
+        /// Worker: keep each frame's origin near what this worker simulates in it. <paramref name="positions"/> is
+        /// called for every frame and appends the frame-local positions of the entities simulated here; when their mean
+        /// is more than <see cref="OriginShiftThreshold"/> from the origin, the origin moves to it, snapped to
+        /// <see cref="OriginShiftStep"/>.
+        /// </summary>
+        internal static void AutoShift(Action<PhysicsFrame, List<Vector3>> positions)
+        {
+            if (RendersFrames || Frames.Count == 0 || positions == null) return;
+            for (int i = 0; i < Frames.Count; i++)
+            {
+                var frame = Frames[i];
+                _points.Clear();
+                positions(frame, _points);
+                if (_points.Count == 0) continue;
+                var mean = Vector3.zero;
+                for (int p = 0; p < _points.Count; p++) mean += _points[p];
+                mean /= _points.Count;
+                if ((mean - frame.Origin).magnitude <= OriginShiftThreshold) continue;
+                float step = Mathf.Max(1f, OriginShiftStep);
+                var snapped = new Vector3(Mathf.Round(mean.x / step) * step, Mathf.Round(mean.y / step) * step, Mathf.Round(mean.z / step) * step);
+                ShiftOrigin(frame, snapped);
+            }
+            _points.Clear();
+        }
+
+        private static readonly List<Vector3> _points = new List<Vector3>();
 
         /// <summary>The innermost space both lie in (null: the scope's own space).</summary>
         public static Container CommonSpace(Container a, Container b)

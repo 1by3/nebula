@@ -185,6 +185,12 @@ namespace Nebula
             /// </summary>
             public double AbsX, AbsY, AbsZ;
             /// <summary>
+            /// The region space <see cref="AbsX"/>, <see cref="AbsY"/> and <see cref="AbsZ"/> are in: 0 for the scope's
+            /// own space, or the key of a physics frame with regions of its own the record stands in
+            /// (<see cref="RegionKeys.FrameKeyOf"/>, <c>docs/container-tree.md</c> D18).
+            /// </summary>
+            public ulong FrameKey;
+            /// <summary>
             /// The region this record is bucketed in (0 when it is wide or global). A cache of
             /// <c>InterestIndex.TryGetPlacement</c>, so for a carried entity it is the <b>root carrier's</b>
             /// region and not one derived from the entity's own prefab settings.
@@ -321,14 +327,18 @@ namespace Nebula
         {
             offset = Vector3.zero;
             carrierNetId = 0;
-            if (reference.IsDynamic) { carrierNetId = reference.NetId; return true; }
+            // A frame with regions of its own (a planet) carries nothing for interest: what is on it is bucketed in
+            // its own regions (docs/container-tree.md D18).
+            if (reference.IsDynamic) { carrierNetId = reference.NetId; return !_ownRegionCarriers.Contains(reference.NetId); }
             if (!reference.IsRuntime || _ownershipById.Count == 0) return false;
             string id = ContainerRegistry.RuntimeContainerId(reference.RuntimeId);
+            if (_ownRegionFrames.Contains(id)) return false;
             for (int hops = 0; hops <= _ownershipById.Count; hops++)
             {
                 if (!_ownershipById.TryGetValue(id, out var entry) || !entry.HasPlacement || entry.Placement.IsRoot) return false;
                 offset += entry.Placement.Center.ToVector3();
                 string parent = entry.Placement.ParentId;
+                if (_ownRegionFrames.Contains(parent)) return false;
                 if (ContainerRegistry.IsDynamicId(parent))
                 {
                     carrierNetId = ContainerRegistry.CarrierNetIdOf(parent);
@@ -337,6 +347,140 @@ namespace Nebula
                 id = parent;
             }
             return false;
+        }
+
+        /// <summary>Container ids of the physics frames with regions of their own the lease rows name (carried and runtime).</summary>
+        private readonly HashSet<string> _ownRegionFrames = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>Carrier net ids whose box is a physics frame with regions of its own (a planet).</summary>
+        private readonly HashSet<ulong> _ownRegionCarriers = new HashSet<ulong>();
+
+        /// <summary>Whether a reference names a physics frame with regions of its own (<see cref="FrameInterestMode.OwnRegions"/>).</summary>
+        internal bool IsOwnRegionsFrame(ContainerRef reference)
+        {
+            if (reference.IsDynamic) return _ownRegionCarriers.Contains(reference.NetId);
+            if (reference.IsRuntime) return _ownRegionFrames.Contains(ContainerRegistry.RuntimeContainerId(reference.RuntimeId));
+            var c = ContainerRegistry.Resolve(reference);
+            return c != null && c.OwnPhysicsFrame && c.FrameInterest == FrameInterestMode.OwnRegions;
+        }
+
+        /// <summary>The wire reference of a container named by its id (<c>label#netId</c>, <c>rt_…</c>, or a baked id).</summary>
+        private static ContainerRef RefOfId(string id)
+        {
+            if (ContainerRegistry.IsDynamicId(id)) return ContainerRef.Dynamic(ContainerRegistry.CarrierNetIdOf(id));
+            if (id != null && id.StartsWith("rt_", StringComparison.Ordinal) && ulong.TryParse(id.Substring(3), out ulong runtimeId)) return ContainerRef.Runtime(runtimeId);
+            var c = ContainerRegistry.FindById(id);
+            return c != null ? ContainerRef.Of(c) : ContainerRef.None;
+        }
+
+        /// <summary>
+        /// Whether a runtime container is fixed inside a physics frame with regions of its own (an octant of a planet),
+        /// and where <paramref name="local"/> is in that frame: the placements' centres up to the frame are added.
+        /// </summary>
+        private bool TryOwnRegionsAncestor(ContainerRef reference, ref Vector3 local, out ContainerRef frame)
+        {
+            frame = ContainerRef.None;
+            if (!reference.IsRuntime || _ownRegionFrames.Count == 0) return false;
+            string id = ContainerRegistry.RuntimeContainerId(reference.RuntimeId);
+            var offset = Vector3.zero;
+            for (int hops = 0; hops <= _ownershipById.Count; hops++)
+            {
+                if (!_ownershipById.TryGetValue(id, out var entry) || !entry.HasPlacement || entry.Placement.IsRoot) return false;
+                offset += entry.Placement.Center.ToVector3();
+                string parent = entry.Placement.ParentId;
+                if (_ownRegionFrames.Contains(parent))
+                {
+                    frame = RefOfId(parent);
+                    local += offset;
+                    return !frame.IsNone;
+                }
+                if (ContainerRegistry.IsDynamicId(parent)) return false;
+                id = parent;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Where a position of <paramref name="container"/> is for interest management, and in which region space: the
+        /// innermost physics frame with regions of its own it stands in (frame-local coordinates, its key in
+        /// <paramref name="frameKey"/>), or its scope (absolute coordinates, key 0). Carriers on the way out are
+        /// composed as <see cref="WorldPosition"/> composes them.
+        /// </summary>
+        internal Vector3 RegionSpaceOf(ContainerRef container, Vector3 local, out ulong frameKey)
+        {
+            frameKey = 0;
+            for (int hops = 0; hops <= _entities.Count + _ownershipById.Count; hops++)
+            {
+                if (IsOwnRegionsFrame(container)) { frameKey = RegionKeys.FrameKeyOf(container); return local; }
+                if (TryOwnRegionsAncestor(container, ref local, out var frame)) { frameKey = RegionKeys.FrameKeyOf(frame); return local; }
+                if (!TryCarrierOf(container, out ulong carrierNetId, out var offset)) break;
+                if (!_entities.TryGetValue(carrierNetId, out var carrier)) return local;
+                local += offset;
+                local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
+                container = carrier.Container;
+            }
+            var c = ContainerRegistry.Resolve(container);
+            return c != null ? c.ToWorld(local) : local;
+        }
+
+        /// <summary>
+        /// The same point one region space further out: from a frame with regions of its own to the space around it,
+        /// through the carrier that drives it (or the fixed frame's own placement). False in the scope's own space.
+        /// </summary>
+        private bool TryLiftOut(ref ContainerRef frame, ref Vector3 position, ref ulong frameKey)
+        {
+            if (frameKey == 0) return false;
+            if (frame.IsDynamic)
+            {
+                if (!_entities.TryGetValue(frame.NetId, out var carrier)) return false;
+                var local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, position);
+                position = RegionSpaceOf(carrier.Container, local, out frameKey);
+                frame = FrameOfRecordSpace(carrier.Container, frameKey);
+                return true;
+            }
+            var c = ContainerRegistry.Resolve(frame);
+            if (c == null) return false;
+            position = c.ToWorld(position);
+            frameKey = 0;
+            frame = ContainerRef.None;
+            return true;
+        }
+
+        /// <summary>The frame a region space key names, found along <paramref name="container"/>'s chain (None for the scope).</summary>
+        private ContainerRef FrameOfRecordSpace(ContainerRef container, ulong frameKey)
+        {
+            if (frameKey == 0) return ContainerRef.None;
+            for (int hops = 0; hops <= _entities.Count + _ownershipById.Count; hops++)
+            {
+                if (RegionKeys.FrameKeyOf(container) == frameKey) return container;
+                var probe = Vector3.zero;
+                if (TryOwnRegionsAncestor(container, ref probe, out var frame) && RegionKeys.FrameKeyOf(frame) == frameKey) return frame;
+                if (!TryCarrierOf(container, out ulong carrierNetId, out _) || !_entities.TryGetValue(carrierNetId, out var carrier)) break;
+                container = carrier.Container;
+            }
+            return ContainerRef.None;
+        }
+
+        /// <summary>
+        /// The workers that could hold an entity bucketed in a region of a frame with regions of its own: the owners of
+        /// every container fixed in the frame, and the frame's own (its carrier's worker for a carried frame).
+        /// </summary>
+        private void FrameOwners(ulong frameKey, List<string> owners)
+        {
+            foreach (var kv in _ownershipById)
+            {
+                var entry = kv.Value;
+                string owner = entry.WorkerId;
+                if (string.IsNullOrEmpty(owner) || owners.Contains(owner)) continue;
+                if (RegionKeys.FrameKeyOf(RefOfId(kv.Key)) == frameKey) { owners.Add(owner); continue; }
+                var probe = Vector3.zero;
+                if (TryOwnRegionsAncestor(RefOfId(kv.Key), ref probe, out var frame) && RegionKeys.FrameKeyOf(frame) == frameKey) owners.Add(owner);
+            }
+            foreach (ulong carrierNetId in _ownRegionCarriers)
+            {
+                if (RegionKeys.FrameKeyOf(ContainerRef.Dynamic(carrierNetId)) != frameKey || !_entities.TryGetValue(carrierNetId, out var carrier)) continue;
+                string owner = WorkerIdOfIndex(carrier.OwnerWorkerIndex);
+                if (!string.IsNullOrEmpty(owner) && !owners.Contains(owner)) owners.Add(owner);
+            }
         }
 
         /// <summary>The carrier <paramref name="reference"/> rides in (see <see cref="TryCarrierOf"/>), or 0.</summary>
@@ -737,6 +881,8 @@ namespace Nebula
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             _ownership.Clear();
             _ownershipById.Clear();
+            _ownRegionFrames.Clear();
+            _ownRegionCarriers.Clear();
             foreach (var lease in ControlPlane.Leases)
             {
                 // Dynamic containers have no registry entry here (the gateway holds no entities); their leases are
@@ -750,6 +896,11 @@ namespace Nebula
                 if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
                 var entry = ContainerOwnershipEntry.Of(lease, c != null ? c.Index : ContainerRef.DynamicIndex, idx);
                 entry.WorkerId = owner;
+                if (lease.OwnPhysicsFrame && lease.FrameInterest == FrameInterestMode.OwnRegions)
+                {
+                    _ownRegionFrames.Add(lease.ContainerId);
+                    if (dynamic) _ownRegionCarriers.Add(ContainerRegistry.CarrierNetIdOf(lease.ContainerId));
+                }
                 _ownership.Add(entry);
                 if (!string.IsNullOrEmpty(entry.ContainerId)) _ownershipById[entry.ContainerId] = entry;
             }
@@ -1025,6 +1176,7 @@ namespace Nebula
                     var c = rec.Observers[i];
                     if (!c.Welcomed || c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var pawn)) continue;
                     var root = RootOf(pawn);
+                    if (root.FrameKey != rec.FrameKey) continue; // positions of different region spaces are not comparable
                     double dx = root.AbsX - rec.AbsX, dy = root.AbsY - rec.AbsY, dz = root.AbsZ - rec.AbsZ;
                     if (dx * dx + dy * dy + dz * dz <= r2) AppendReliable(c, seg);
                 }
@@ -1217,6 +1369,7 @@ namespace Nebula
             if (foci != null)
                 for (int i = 0; i < foci.Count; i++)
                 {
+                    if (foci[i].Space != rec.FrameKey) continue;
                     double d2 = foci[i].SqrDistanceTo(rec.AbsX, rec.AbsY, rec.AbsZ);
                     if (d2 < best) best = d2;
                 }
@@ -1233,7 +1386,8 @@ namespace Nebula
             position = default;
             if (c.PawnNetId == 0 || !_entities.TryGetValue(c.PawnNetId, out var rec)) return false;
             var root = RootOf(rec);
-            position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
+            // In the scope's own space: a pawn on a planet with regions of its own has planet-local Abs coordinates.
+            position = root.FrameKey == 0 ? new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ) : WorldPosition(root.Container, root.LastSpawn.LocalPosition);
             return true;
         }
 
@@ -1257,6 +1411,22 @@ namespace Nebula
                 local += offset;
                 local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
                 container = carrier.Container;
+            }
+            // A frame with regions of its own is not a carrier for interest, but a world position still goes through it.
+            for (int hops = 0; hops <= _entities.Count && (container.IsDynamic || container.IsRuntime); hops++)
+            {
+                if (container.IsDynamic && _entities.TryGetValue(container.NetId, out var planet))
+                {
+                    local = planet.LastSpawn.LocalPosition + planet.LastSpawn.LocalRotation * Vector3.Scale(planet.LastSpawn.LocalScale, local);
+                    container = planet.Container;
+                    continue;
+                }
+                if (container.IsRuntime && TryOwnRegionsAncestor(container, ref local, out var frame) && frame.IsDynamic)
+                {
+                    container = frame;
+                    continue;
+                }
+                break;
             }
             var c = ContainerRegistry.Resolve(container);
             return c != null ? c.ToWorld(local) : local;

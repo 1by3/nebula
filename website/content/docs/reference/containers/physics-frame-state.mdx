@@ -1,0 +1,114 @@
+---
+title: "PhysicsFrameState"
+description: "The motion of a physics frame in the space around it, once per tick, on every process that holds the frame (docs/container-tree.md D14): its pose, linear and angular velocity, and linear acceleration."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs)</div>
+
+```csharp
+public struct PhysicsFrameState
+```
+
+The motion of a physics frame in the space around it, once per tick, on every process that holds the frame (`docs/container-tree.md` D14): its pose, linear and angular velocity, and linear acceleration. The frame's owner computes it from the carrier it simulates; everyone else from the replicated stream, so a leased interior reads it one replication delay late. Nebula applies no fictitious forces: whether crates slide when the ship brakes is the game's call, made from [`LocalAcceleration`](#localacceleration) and [`LocalAngularVelocity`](#localangularvelocity).
+
+## Fields
+
+### Position [#position]
+
+```csharp
+public Vector3 Position;
+```
+
+The frame's origin in the space around it.
+
+### Rotation [#rotation]
+
+```csharp
+public Quaternion Rotation;
+```
+
+The frame's orientation in the space around it.
+
+### Velocity [#velocity]
+
+```csharp
+public Vector3 Velocity;
+```
+
+Linear velocity of the frame's origin, in the space around it (m/s).
+
+### AngularVelocity [#angularvelocity]
+
+```csharp
+public Vector3 AngularVelocity;
+```
+
+Angular velocity, in the space around it (radians per second, axis times rate).
+
+### Acceleration [#acceleration]
+
+```csharp
+public Vector3 Acceleration;
+```
+
+Linear acceleration of the frame's origin, in the space around it (m/s²).
+
+### Tick [#tick]
+
+```csharp
+public uint Tick;
+```
+
+The tick this state was taken at.
+
+### HasRates [#hasrates]
+
+```csharp
+public bool HasRates;
+```
+
+At least two samples have been taken, so the rates mean something.
+
+## Properties
+
+### LocalAcceleration [#localacceleration]
+
+```csharp
+public Vector3 LocalAcceleration { get; }
+```
+
+[`Acceleration`](#acceleration) expressed in the frame's own axes: what an accelerometer bolted to the deck reads.
+
+### LocalAngularVelocity [#localangularvelocity]
+
+```csharp
+public Vector3 LocalAngularVelocity { get; }
+```
+
+[`AngularVelocity`](#angularvelocity) in the frame's own axes.
+
+## Methods
+
+### ToParent [#toparent]
+
+```csharp
+public Vector3 ToParent(Vector3 local);
+```
+
+A frame-local point in the space around the frame.
+
+### ToLocal [#tolocal]
+
+```csharp
+public Vector3 ToLocal(Vector3 parent);
+```
+
+A point in the space around the frame, in frame-local coordinates.
+
+### PointVelocity [#pointvelocity]
+
+```csharp
+public Vector3 PointVelocity(Vector3 local);
+```
+
+How fast a point fixed in the frame moves in the space around it: v + ω × r.

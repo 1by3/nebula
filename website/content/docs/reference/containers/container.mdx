@@ -38,6 +38,38 @@ Box size in local space, centred on Center.
 public Vector3 Center = new Vector3(0f, 5f, 0f);
 ```
 
+### Authority [#authority]
+
+```csharp
+public ContainerAuthority Authority = ContainerAuthority.Auto;
+```
+
+Who simulates what is inside. Auto: leased for a fixed box, inherited for a box an entity carries (what baked, runtime and carried containers always did). Leased: its own lease and owner, dealt by the planner. Inherited: whoever owns the parent container.
+
+### OwnPhysicsFrame [#ownphysicsframe]
+
+```csharp
+public bool OwnPhysicsFrame;
+```
+
+Give this container a physics scene of its own in which it stands still: everything inside is simulated in container-local coordinates, with the container's own up as gravity. Use it for ships, stations and planets; a small vehicle is cheaper without one.
+
+### FrameContent [#framecontent]
+
+```csharp
+public GameObject FrameContent;
+```
+
+Frame only: the interior geometry (colliders, visuals; no NetworkIdentity) instantiated into the frame's physics scene. Empty: the carrier's static colliders are cloned into the frame.
+
+### FrameInterest [#frameinterest]
+
+```csharp
+public FrameInterestMode FrameInterest = FrameInterestMode.WithCarrier;
+```
+
+Frame only: WithCarrier publishes everything inside with the carrier (ships); OwnRegions buckets it in regions of the frame itself (planets).
+
 ### Hint [#hint]
 
 ```csharp
@@ -86,7 +118,111 @@ Static adjacency: containers whose boxes touch or overlap this one, computed whe
 public bool IsDynamic { get; }
 ```
 
-Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): created and destroyed with it, moves with it, owned by its authority.
+Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): created and destroyed with it, moves with it. Shorthand for [`FrameMode`](#framemode) == [`ContainerFrameMode.Entity`](/docs/reference/containers/container-frame-mode#entity).
+
+### FrameMode [#framemode]
+
+```csharp
+public ContainerFrameMode FrameMode { get; }
+```
+
+Where the box is: fixed relative to its parent, or driven by a carrier entity (`docs/container-tree.md` D1).
+
+### Source [#source]
+
+```csharp
+public ContainerSource Source { get; }
+```
+
+Where the container comes from: baked, registered at runtime, or part of a prefab.
+
+### ResolvedAuthority [#resolvedauthority]
+
+```csharp
+public ContainerAuthority ResolvedAuthority { get; }
+```
+
+[`Authority`](#authority) with [`ContainerAuthority.Auto`](/docs/reference/containers/container-authority#auto) resolved: leased for a fixed frame, inherited for an entity frame.
+
+### IsLeased [#isleased]
+
+```csharp
+public bool IsLeased { get; }
+```
+
+Whether this container is simulated under a lease of its own right now. A fixed container that resolves to leased always is; a carried container is once its row is pinned to a worker (an authored-leased one pins itself when its carrier spawns). Either way it is not while [`AuthorityDemoted`](#authoritydemoted): a leased container under a moving parent without a physics frame of its own is simulated as inherited (`docs/container-tree.md` D7).
+
+### AuthorityDemoted [#authoritydemoted]
+
+```csharp
+public bool AuthorityDemoted { get; }
+```
+
+The container would be leased, but sits under a moving parent that has no physics frame of its own, so its owner would simulate against a pose one replication delay old: it is simulated as inherited instead until it leaves (`docs/container-tree.md` D7).
+
+### InMovingSpace [#inmovingspace]
+
+```csharp
+public bool InMovingSpace { get; }
+```
+
+Some ancestor moves (it is carried by an entity) and no container between here and it has a physics frame of its own: the box is somewhere whose pose only the moving ancestor's authority knows exactly.
+
+### Parent [#parent]
+
+```csharp
+public Container Parent { get; }
+```
+
+The container this one sits in, or null for a root of its scope (`docs/container-tree.md` D2). A baked container's parent is the smallest baked box of its scope enclosing it, a runtime container's is named on its lease row, and a carried container's is wherever its carrier stands, so it changes as the carrier moves.
+
+### Children [#children]
+
+```csharp
+public IReadOnlyList<Container> Children { get; }
+```
+
+The fixed containers whose parent this is (baked and runtime). Carried containers are not listed: they come and go with the entities standing in [`Entities`](#entities), whose [`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried) they are.
+
+### Depth [#depth]
+
+```csharp
+public int Depth { get; }
+```
+
+How many containers are above this one: 0 for a root of its scope. Resolution prefers the deepest box (D3).
+
+### Space [#space]
+
+```csharp
+public Container Space { get; }
+```
+
+The container whose physics frame this box lives in: the nearest ancestor with [`OwnPhysicsFrame`](#ownphysicsframe), or null when the box is in its scope's own space (`docs/container-tree.md` §3). A framed container's own box lives in its parent's space; what it holds lives in its frame.
+
+### InnerSpace [#innerspace]
+
+```csharp
+public Container InnerSpace { get; }
+```
+
+The space what this container holds lives in: its own frame when it has one, otherwise its [`Space`](#space).
+
+### ContentRoot [#contentroot]
+
+```csharp
+public Transform ContentRoot { get; }
+```
+
+The transform what this container holds is parented under: the root of its physics frame when it has one ([`PhysicsFrame.Root`](/docs/reference/containers/physics-frame#root)), otherwise its own transform. Entities and fixed child containers hang here, so their local pose is their container-local pose either way.
+
+### Frame [#frame]
+
+```csharp
+public PhysicsFrame Frame { get; }
+```
+
+The physics frame this container owns ([`OwnPhysicsFrame`](#ownphysicsframe)) on this process, or null while it has none.
 
 ### IsRuntime [#isruntime]
 
@@ -196,7 +332,7 @@ Runtime: id of the worker currently authoritative for this container ("" if none
 public ushort OwnerWorkerIndex { get; }
 ```
 
-Index of the owning worker (`ushort.MaxValue` when unowned). Dynamic containers: the pinned worker's, or the carrier's [`NetworkIdentity.OwnerWorkerIndex`](/docs/reference/core/network-identity#ownerworkerindex).
+Index of the owning worker (`ushort.MaxValue` when unowned), derived as [`OwnerWorkerId`](#ownerworkerid) is.
 
 ### LeaseEpoch [#leaseepoch]
 
@@ -204,7 +340,7 @@ Index of the owning worker (`ushort.MaxValue` when unowned). Dynamic containers:
 public ulong LeaseEpoch { get; }
 ```
 
-Lease epoch from the control plane. Dynamic containers following their carrier: the carrier's authority epoch.
+Lease epoch from the control plane; derived as [`OwnerWorkerId`](#ownerworkerid) is (a carried container following its carrier: the carrier's authority epoch).
 
 ### WorldBounds [#worldbounds]
 
@@ -273,6 +409,22 @@ public float SignedDistance(Vector3 worldPosition);
 ```
 
 Signed distance to the box surface: positive outside (how far, in any direction), negative inside (how deep, measured to the nearest *wall* only). The floor and ceiling do not count as depth: pawns stand on the floor, which is the bottom face of the box, and treating it as a seam would keep every entity in a room permanently "about to leave" for the ghost band and never past the handover hysteresis.
+
+### SignedDistanceInner [#signeddistanceinner]
+
+```csharp
+public float SignedDistanceInner(Vector3 local);
+```
+
+[`SignedDistance`](#signeddistance) for a point already in this container's local coordinates: the inner face of a container with a physics frame of its own, whose contents are in exactly those coordinates (`docs/container-tree.md` §3).
+
+### ContainsInner [#containsinner]
+
+```csharp
+public bool ContainsInner(Vector3 local);
+```
+
+[`Contains`](#contains) for a point in this container's local coordinates (the inner face of its frame).
 
 ### DistanceToSeam [#distancetoseam]
 

@@ -1,0 +1,28 @@
+---
+title: "IFrameCrossingPolicy"
+description: "The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals."
+---
+
+<div className="text-sm text-fd-muted-foreground">Interface in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs)</div>
+
+```csharp
+public interface IFrameCrossingPolicy
+```
+
+The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals. Asked on the worker that performs the crossing (the frame's pose owner, D15), once per tick while the entity wants to cross. Install one on [`PhysicsFrames.CrossingPolicy`](/docs/reference/containers/physics-frames#crossingpolicy).
+
+## Methods
+
+### Decide [#decide]
+
+```csharp
+FrameCrossing Decide(NetworkIdentity entity, PhysicsFrame frame, bool leaving, Container from, Container to);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `entity` | The entity that wants to cross. |
+| `frame` | The frame whose boundary it crosses. |
+| `leaving` | True when it leaves the frame for the space around it, false when it enters. |
+| `from` | The container it is in. |
+| `to` | The container it would be in after the crossing. |

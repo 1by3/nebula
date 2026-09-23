@@ -142,6 +142,14 @@ public ulong WideMask(in InterestGrid grid, ulong instanceId, double x, double y
 
 Which gateways a wide entity (one whose own radius exceeds a region scan) reaches: the ones with a focus region within its radius. Matched at the evaluation rate, not per tick.
 
+### WideMaskSalted [#widemasksalted]
+
+```csharp
+public ulong WideMaskSalted(in InterestGrid grid, ulong salt, double x, double y, double z, double radius);
+```
+
+[`WideMask`](#widemask) for an entity whose region space is given by its salt ([`RegionKeys.SaltOf`](/docs/reference/interest/region-keys#saltof)): a scope, or a physics frame with regions of its own inside one. Only foci of the same space come out near it.
+
 ### ExplicitMask [#explicitmask]
 
 ```csharp

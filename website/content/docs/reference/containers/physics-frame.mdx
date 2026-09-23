@@ -1,0 +1,122 @@
+---
+title: "PhysicsFrame"
+description: "A container's own physics frame: a local physics scene in which the container stands still (docs/container-tree.md §3)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs)</div>
+
+```csharp
+public sealed class PhysicsFrame
+```
+
+A container's own physics frame: a local physics scene in which the container stands still (`docs/container-tree.md` §3). Everything the container holds is parented under [`Root`](#root), so in simulation space (every worker, and a client while it predicts) positions inside the frame are container-local and "down" is the container's own down.
+
+## Properties
+
+### Owner [#owner]
+
+```csharp
+public Container Owner { get; }
+```
+
+The container that owns this frame.
+
+### Root [#root]
+
+```csharp
+public Transform Root { get; }
+```
+
+The frame root: every entity and fixed child container inside the frame hangs under it.
+
+### Scene [#scene]
+
+```csharp
+public Scene Scene { get; }
+```
+
+The Unity scene the frame simulates in; invalid in the Editor outside play mode without a test scene factory.
+
+### PhysicsScene [#physicsscene]
+
+```csharp
+public PhysicsScene PhysicsScene { get; }
+```
+
+The frame's physics scene: where queries about anything inside the frame belong.
+
+### State [#state]
+
+```csharp
+public PhysicsFrameState State { get; }
+```
+
+The frame's motion this tick (D14).
+
+### HasPoseOwner [#hasposeowner]
+
+```csharp
+public bool HasPoseOwner { get; }
+```
+
+The frame's pose is driven by an entity (its carrier), so only that entity's authority knows it exactly (D15).
+
+### Origin [#origin]
+
+```csharp
+public Vector3 Origin { get; }
+```
+
+The frame's floating origin (`docs/container-tree.md` D19): the frame-local point that sits at Unity's origin in simulation space. Zero until the worker moves it with [`PhysicsFrames.ShiftOrigin`](/docs/reference/containers/physics-frames#shiftorigin); a planet's frame is large, and physics a few thousand kilometres from Unity's origin would be imprecise.
+
+## Events
+
+### Shifted [#shifted]
+
+```csharp
+public event Action<Vector3> Shifted;
+```
+
+Raised after this frame's origin moved: the delta every cached simulation-space position of this frame gets (pose history, interpolation buffers and game caches are moved by Nebula for its own entities).
+
+## Methods
+
+### LocalToSimulation [#localtosimulation]
+
+```csharp
+public Vector3 LocalToSimulation(Vector3 local);
+```
+
+A frame-local position (container-local) where it sits in simulation space right now.
+
+### SimulationToLocal [#simulationtolocal]
+
+```csharp
+public Vector3 SimulationToLocal(Vector3 position);
+```
+
+A simulation-space position inside this frame as a frame-local (container-local) one.
+
+### ToParent [#toparent]
+
+```csharp
+public Vector3 ToParent(Vector3 local);
+public Quaternion ToParent(Quaternion local);
+```
+
+A frame-local point in the space around the frame, from the owner's current transform.
+
+### FromParent [#fromparent]
+
+```csharp
+public Vector3 FromParent(Vector3 parent);
+public Quaternion FromParent(Quaternion parent);
+```
+
+A point of the space around the frame in frame-local coordinates.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

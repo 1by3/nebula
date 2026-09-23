@@ -86,6 +86,8 @@ namespace Nebula.Editor
                                 Size = c.Size, Center = c.Center,
                                 Hint = hints.TryGetValue(c.ContainerId, out var hint) ? hint : c.Hint,
                                 Authority = c.Authority,
+                                OwnPhysicsFrame = c.OwnPhysicsFrame,
+                                FrameInterest = c.FrameInterest,
                             });
                             report.Containers++;
                         }

@@ -4,6 +4,30 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **One container concept, in a tree.** A `Container` is now described by three independent properties: where its box is (`FrameMode`: fixed, or driven by a carrier entity), who simulates what is inside (`Authority`: `Leased`, `Inherited`, or `Auto`, the old behavior), and where it comes from (`Source`: baked, runtime, or prefab). Any combination works. Containers form a tree whose root is the scope: `Parent`, `Children`, `Depth`. Design of record: `docs/container-tree.md`. (NEB-264)
+  - Baked containers take their parent from nesting. A runtime container can be placed inside any other container with `ContainerPlacement.Child(parentId, localCenter, size, authority)` and the new `NebulaWorker.RequestRuntimeContainer(id, ContainerPlacement)`; a row whose parent is not here yet waits for it.
+  - An inherited container takes its owner from its parent, so re-dealing a parent moves everything in its inherited children. The orchestrator never deals an inherited container; its runtime row is in the new lease state `inherited`.
+  - A carried container authored `Leased` gets a lease of its own from the start and is re-dealt, not unpinned, when its worker leaves.
+  - A leased container under a moving parent without a physics frame is simulated as inherited until it is somewhere allowed (`Container.AuthorityDemoted`).
+  - Root containers are placed in double precision (`Double3`, `ContainerRegistry.ToFrame(Double3, ulong)`, `ToAbsolutePrecise`): a root 10,000 km from the origin lands within a centimetre.
+- **Physics frames.** `Container.OwnPhysicsFrame` gives a container a physics scene of its own in which it stands still. Everything inside simulates in container-local coordinates with the container's own down as gravity, and a frame's inside can be leased to another worker than the one that moves it. Guide: [Physics frames](https://nebula.1by3.co/docs/guides/physics-frames). (NEB-264)
+  - Nebula copies the carrier's colliders into the frame and keeps them in step, or instantiates `Container.FrameContent`. `PhysicsFrames.SourceOf` maps a copy back to its original.
+  - Only the worker that simulates the frame's carrier moves entities across its boundary, converting pose and velocity at that tick; another worker hands the entity to it first. `IFrameCrossingPolicy` (`PhysicsFrames.CrossingPolicy`) can veto or defer a crossing.
+  - `PhysicsFrame.State` reports the frame's position, rotation, velocity, angular velocity, and acceleration on every process.
+  - Clients render frames at their world pose and predict the local player in its frame's own coordinates. `NetworkIdentity.Space`, `ToScope`, `FromScope`, `PlaceInScope`, and `PhysicsFrames.Convert` convert between spaces.
+  - A frame with `FrameInterest = OwnRegions` (a planet) buckets its contents in regions of its own coordinates, so its rotation churns nothing, and a client on it also looks at the space around it. `InterestFocus.Space`, `InterestEntity.Space`, and `InterestClient.PawnSpace` name a focus's or an entity's space.
+  - Each worker keeps a floating origin per frame near what it simulates there (`PhysicsFrame.Origin`, `PhysicsFrames.ShiftOrigin`, `OriginShiftThreshold`, `PhysicsFrame.Shifted`).
+- Conformance scenarios 20 to 23: `ConformanceContainerTreeTests`, `ConformancePhysicsFrameTests`, `ConformanceFramedWorldTests` and `FrameRegionSpaceTests`.
+
+### Changed
+
+- `ContainerRegistry.Find` returns the deepest container that holds the point, and the smallest one only among equally deep ones. For properly nested boxes nothing changes.
+- `Container.IsCarriedBy` covers the carrier's whole subtree (a room fixed inside a ship, too) and matches the carrier by network ID.
+- **Breaking (API):** `IControlPlane.EnsureRuntimeContainer` takes a `ContainerPlacement` (a `Bounds` still converts to a root placement), and `IControlPlane.EnsureContainer` takes optional authority and frame flags. Custom `IControlPlane` implementations must update their signatures.
+- Wire, protocol 18, additive only: lease rows gain `parent`, `authority`, `frame`, and `interest` and write `center` in double precision; `ContainerOwnership` gains a trailing placement section; `AuthorityTransfer` gains a trailing `crossing` byte.
+
 ### Fixed
 
 - **A worker declared dead while it was still running could leave two live copies of its persistent entities.** A worker that only missed heartbeats, for example because of a network partition or a stall, was declared dead. Its containers were dealt to another worker, which restored their entities from the last checkpoint while the old copies were still simulating. For a moment each entity had two authoritative copies, and the restored one was up to a checkpoint interval stale. The old worker's late saves could also overwrite the restored state. Nebula now keeps at most one copy (design: `docs/persistence-durability.md` D7–D12):

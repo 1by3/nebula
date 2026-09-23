@@ -43,6 +43,14 @@ public ulong SourceNetId;
 
 The entity this focus follows, when it follows one (the pawn, an owned unit). 0 otherwise.
 
+### Space [#space]
+
+```csharp
+public ulong Space;
+```
+
+The region space the focus is in ([`RegionKeys.FrameKeyOf`](/docs/reference/interest/region-keys#framekeyof)): 0 for the scope's own space, or a physics frame with regions of its own, whose coordinates [`X`](#x), [`Y`](#y) and [`Z`](#z) are then in. A focus only sees entities of its own space (`docs/container-tree.md` D18).
+
 ## Properties
 
 ### IsBox [#isbox]
@@ -56,7 +64,7 @@ public bool IsBox { get; }
 ### Point [#point]
 
 ```csharp
-public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0);
+public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0, ulong space = 0);
 ```
 
 ### Box [#box]

@@ -35,6 +35,10 @@ namespace Nebula
             public ContainerHint Hint = ContainerHint.Default;
             [Tooltip("Who simulates what is inside (Container.Authority): Auto and Leased give the container its own lease; Inherited leaves it to the enclosing container's owner.")]
             public ContainerAuthority Authority = ContainerAuthority.Auto;
+            [Tooltip("The container has a physics frame of its own (Container.OwnPhysicsFrame).")]
+            public bool OwnPhysicsFrame;
+            [Tooltip("How a framed container's contents are bucketed for interest (Container.FrameInterest).")]
+            public FrameInterestMode FrameInterest;
         }
 
         public WorldDefinition World;

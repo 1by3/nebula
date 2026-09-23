@@ -44,6 +44,42 @@ ContainerRegistry.RuntimeUnregistering += container => UnloadTerrain(Chunks.Coor
 
 Entities inside a runtime container are spawned, handed over and ghosted exactly like in a baked one. Adjacency is computed when the box registers, against baked and runtime containers whose boxes touch it, so the ghost band and handover across a chunk seam work without any extra setup.
 
+## Place a container inside another
+
+A runtime container can sit inside any other container: an octant of a planet, a base inside an octant, a room inside a ship. Describe where it goes with a `ContainerPlacement`:
+
+```csharp
+// A base inside an octant, 40 m below the octant's centre, leased on its own.
+var placement = ContainerPlacement.Child(
+    octant.ContainerId,
+    new Vector3(0f, -40f, 0f),      // centre in the parent's local space
+    new Vector3(200f, 100f, 200f),  // size, axis-aligned in the parent
+    ContainerAuthority.Leased);
+worker.RequestRuntimeContainer(baseId, placement);
+```
+
+The box is axis-aligned in its parent's local space, so it moves and turns with the parent. Every process registers it once the parent is there; a process that gets the lease row first holds it until the parent arrives.
+
+Choose the authority:
+
+| Authority | Effect |
+| --- | --- |
+| `Leased` (the default for a runtime container) | The container has its own lease. The orchestrator can assign it to a different worker than its parent. |
+| `Inherited` | Whoever simulates the parent simulates this container. Its lease row only carries the box and is never assigned. When the parent moves to another worker, everything inside the child moves with it. |
+
+A leased child of a moving parent needs a parent with a [physics frame](/docs/guides/physics-frames) of its own. See [Lease part of the inside to another worker](/docs/guides/physics-frames#lease-part-of-the-inside-to-another-worker).
+
+A container with no parent is a root of its scope. Give a root's centre in double precision so it lands exactly, even far from the world's origin:
+
+```csharp
+var root = ContainerPlacement.Root(new Double3(12_000_000.25, 0, -3_500_000.5), new Vector3(2000, 2000, 2000));
+worker.RequestRuntimeContainer(planetId, root);
+```
+
+Each process takes its floating origin off in double before it narrows the centre to a float, so a root 10,000 km from the origin is placed to well under a centimetre. The `Bounds` overloads of `RequestRuntimeContainer` still work and describe a root.
+
+When a container retires, its inherited children retire with it. A leased child keeps its lease row and waits for the parent to come back.
+
 ## Balancing hints
 
 The orchestrator measures how busy each worker is, but it cannot know what a container *means*. A hint tells it what the game knows. Every field is optional and the default says nothing:
@@ -114,6 +150,6 @@ The dashboard's state lists runtime containers with the baked ones and shows the
 
 ## Limits
 
-- Boxes are axis-aligned in absolute world coordinates. With a partitioned world's floating origin active they are brought into each process's frame and shifted with it.
+- A root box is axis-aligned in its scope's coordinates, and a child box in its parent's. With a partitioned world's floating origin active, roots are brought into each process's frame and shifted with it; children move with their parents.
 - The lease table gained columns for the box. Publish the control-plane module again after upgrading (`nebula start` does; `nebula deploy --reset-control-plane` for a cloud mesh).
 - A world with no baked containers has nowhere to put the first player until a worker asks for a container. Allocate the chunks around the spawn point from `NebulaGameMode.OnWorkerStarted`.

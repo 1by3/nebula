@@ -33,6 +33,7 @@
     "guides/interest-management",
     "guides/world-partition",
     "guides/dynamic-containers",
+    "guides/physics-frames",
     "guides/runtime-containers",
     "guides/infinite-runtime-world",
     "guides/instancing",

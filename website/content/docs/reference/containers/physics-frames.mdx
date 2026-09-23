@@ -1,0 +1,197 @@
+---
+title: "PhysicsFrames"
+description: "The physics frames this process holds, one per container with Container.OwnPhysicsFrame (docs/container-tree.md §3): scene lifetime and pooling, interior colliders, frame state, conversion between spaces, the crossing policy, and — on a ..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs)</div>
+
+```csharp
+public static class PhysicsFrames
+```
+
+The physics frames this process holds, one per container with [`Container.OwnPhysicsFrame`](/docs/reference/containers/container#ownphysicsframe) (`docs/container-tree.md` §3): scene lifetime and pooling, interior colliders, frame state, conversion between spaces, the crossing policy, and — on a client — composing the frames into one rendered world.
+
+## Fields
+
+### PoolSize [#poolsize]
+
+```csharp
+public static int PoolSize = 8;
+```
+
+How many emptied frame scenes are kept for reuse, so a carrier spawning and despawning does not create and unload a scene each time (D13).
+
+### OriginShiftThreshold [#originshiftthreshold]
+
+```csharp
+public static float OriginShiftThreshold = 2048f;
+```
+
+How far, in metres, the entities a worker simulates in a frame may drift from the frame's origin before [`AutoShift`](#autoshift) moves the origin to them. Physics keeps millimetre precision well past this.
+
+### OriginShiftStep [#originshiftstep]
+
+```csharp
+public static float OriginShiftStep = 1024f;
+```
+
+The grid a moved origin snaps to, in metres, so two workers that shift for the same crowd agree.
+
+## Properties
+
+### All [#all]
+
+```csharp
+public static IReadOnlyList<PhysicsFrame> All { get; }
+```
+
+Every frame this process holds.
+
+### CrossingPolicy [#crossingpolicy]
+
+```csharp
+public static IFrameCrossingPolicy CrossingPolicy { get; set; }
+```
+
+The game's say over crossings (D16). Null allows every crossing.
+
+### RendersFrames [#rendersframes]
+
+```csharp
+public static bool RendersFrames { get; }
+```
+
+This process renders frames: a client, whose frame roots are posed at each frame's world pose outside its prediction step (D11). A worker never does, and converts poses itself when an entity changes space.
+
+## Events
+
+### Created [#created]
+
+```csharp
+public static event Action<PhysicsFrame> Created;
+```
+
+A frame was created (its container registered here). The game may add content to [`PhysicsFrame.Root`](/docs/reference/containers/physics-frame#root).
+
+### Releasing [#releasing]
+
+```csharp
+public static event Action<PhysicsFrame> Releasing;
+```
+
+A frame is about to be released (its container is leaving this process).
+
+## Methods
+
+### DrainPool [#drainpool]
+
+```csharp
+public static void DrainPool();
+```
+
+Unload every pooled scene (a world unloaded, a test tearing down).
+
+### Convert [#convert]
+
+```csharp
+public static Vector3 Convert(Vector3 point, Container from, Container to);
+public static Quaternion Convert(Quaternion rotation, Container from, Container to);
+```
+
+A point in space `from` expressed in space `to`. A space is a framed container (its frame's local coordinates) or null (the scope's own space). Walks up from `from` to the space both share and down into `to` through each frame owner's transform, so it is exact at this instant in simulation space — which is where a worker is, always.
+
+### ConvertVelocity [#convertvelocity]
+
+```csharp
+public static Vector3 ConvertVelocity(Vector3 velocity, Vector3 point, Container from, Container to);
+```
+
+A velocity of a body at `point` (in space `from`) expressed in space `to`: rotated, plus the motion of every frame left (its velocity and ω × r), minus the motion of every frame entered, from each frame's [`PhysicsFrame.State`](/docs/reference/containers/physics-frame#state).
+
+### ShiftOrigin [#shiftorigin]
+
+```csharp
+public static void ShiftOrigin(PhysicsFrame frame, Vector3 origin);
+```
+
+Move `frame`'s floating origin to the frame-local point `origin` (D19): its root, and with it everything in the frame, moves in simulation space so that point sits at Unity's origin. Frame-local coordinates do not change, so nothing on the wire does. The pose history and interpolation buffers of the entities in the frame are moved with it, and [`PhysicsFrame.Shifted`](/docs/reference/containers/physics-frame#shifted) reports the delta for anything else. Worker only: a client renders every frame at its world pose.
+
+### CommonSpace [#commonspace]
+
+```csharp
+public static Container CommonSpace(Container a, Container b);
+```
+
+The innermost space both lie in (null: the scope's own space).
+
+### ToScope [#toscope]
+
+```csharp
+public static Vector3 ToScope(Vector3 position, Container space);
+```
+
+A position given in space `space` as a position in the scope's own space: what a game uses to relate something inside a frame to something outside it (a shot fired out through a window, a distance for a sound). Simulation space; on a client in render space every position is already a scope position.
+
+### FromScope [#fromscope]
+
+```csharp
+public static Vector3 FromScope(Vector3 position, Container space);
+```
+
+The inverse of [`ToScope`](#toscope).
+
+### DirectionToScope [#directiontoscope]
+
+```csharp
+public static Vector3 DirectionToScope(Vector3 direction, Container space);
+```
+
+[`ToScope`](#toscope) for a direction (rotated only).
+
+### DirectionFromScope [#directionfromscope]
+
+```csharp
+public static Vector3 DirectionFromScope(Vector3 direction, Container space);
+```
+
+[`FromScope`](#fromscope) for a direction (rotated only).
+
+### SourceOf [#sourceof]
+
+```csharp
+public static Collider SourceOf(Collider hit);
+```
+
+The collider a frame's interior copy was made from (D12): a raycast inside a frame hits the copies, and game code that looks for components on what it hit (a seat, a door button) wants the original on the carrier. Returns `hit` itself when it is not a copy.
+
+### InSimulationPose [#insimulationpose]
+
+```csharp
+public static bool InSimulationPose(Container space);
+```
+
+Whether `space`'s frame root is at the identity pose right now, so a position read from a transform inside it is frame-local: always on a worker, and on a client during a prediction step ([`BeginSimulation`](#beginsimulation)). False for the scope's own space.
+
+### PoseForRender [#poseforrender]
+
+```csharp
+public static void PoseForRender();
+```
+
+Client: put every frame root at its frame's world pose, outermost frames first, so the camera sees one world. Called by [`NebulaClient`](/docs/reference/client/nebula-client) every rendered frame after remote entities were interpolated.
+
+### BeginSimulation [#beginsimulation]
+
+```csharp
+public static void BeginSimulation(Container space);
+```
+
+Client: put `space`'s frame root back at the identity pose for a prediction step, so the predicted pawn simulates exactly as its worker does (D11). Pair with [`EndSimulation`](#endsimulation).
+
+### EndSimulation [#endsimulation]
+
+```csharp
+public static void EndSimulation();
+```
+
+Client: the prediction step is over; the frame goes back to its render pose.

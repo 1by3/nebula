@@ -1,0 +1,19 @@
+---
+title: "ContainerFrameMode"
+description: "Where a container's box is (docs/container-tree.md D1)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+public enum ContainerFrameMode : byte
+```
+
+Where a container's box is (`docs/container-tree.md` D1).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="fixed"></span>`Fixed` | `0` | Placed relative to its parent (or the scope, for a root) and never moves on its own. |
+| <span id="entity"></span>`Entity` | `1` | Driven by a carrier entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): moves with it. |

@@ -186,22 +186,64 @@ namespace Nebula
         /// read live rather than cached: a scope's origin only moves in <c>NebulaChunkedWorld.Update</c>, which runs
         /// at execution order −500, before any tick work.
         /// </summary>
-        private void ToAbsolute(NetworkIdentity e, out double x, out double y, out double z)
+        private void ToAbsolute(NetworkIdentity e, out double x, out double y, out double z) => ToAbsolute(e, out x, out y, out z, out _);
+
+        /// <summary>
+        /// The same, and the region space the position is in (<see cref="RegionSpaceOf"/>): inside a physics frame with
+        /// regions of its own the position is frame-local (the frame's own origin taken off, D19), elsewhere it is
+        /// absolute in the entity's scope.
+        /// </summary>
+        private void ToAbsolute(NetworkIdentity e, out double x, out double y, out double z, out ulong frameKey)
         {
+            var position = RegionSpaceOf(e, out var space);
+            frameKey = space != null ? RegionKeys.FrameKeyOf(space.Ref) : 0UL;
+            if (space != null)
+            {
+                var origin = space.Frame != null && space.Frame.Root != null ? space.Frame.Root.position : Vector3.zero;
+                x = (double)position.x - origin.x; y = (double)position.y - origin.y; z = (double)position.z - origin.z;
+                return;
+            }
             var frame = Nebula.World.ScopeFrames.Of(e.InstanceId);
-            if (frame.IsPublic) { ToAbsolute(e.transform.position, out x, out y, out z); return; }
-            ToAbsolute(frame.Cell, frame.CellSize, e.transform.position, out x, out y, out z);
+            if (frame.IsPublic) { ToAbsolute(position, out x, out y, out z); return; }
+            ToAbsolute(frame.Cell, frame.CellSize, position, out x, out y, out z);
+        }
+
+        /// <summary>
+        /// Where an entity is for interest management and in which region space: the innermost physics frame with
+        /// regions of its own (<see cref="FrameInterestMode.OwnRegions"/>) that it is in, or its scope. Frames in
+        /// between that publish with their carrier are converted out of, so a crate on the deck of a ship with a frame
+        /// of its own is bucketed where the ship is (<c>docs/container-tree.md</c> D18).
+        /// </summary>
+        internal static Vector3 RegionSpaceOf(NetworkIdentity e, out Container space)
+        {
+            var position = e.transform.position;
+            space = e.Space;
+            int hops = 0;
+            while (space != null && space.FrameInterest != FrameInterestMode.OwnRegions && hops++ <= ContainerRegistry.ChainBound)
+            {
+                position = PhysicsFrames.Convert(position, space, space.Space);
+                space = space.Space;
+            }
+            return position;
         }
 
         /// <summary>
         /// The region an entity belongs in: its absolute position in its own scope's frame, packed, and salted with
         /// that scope (<see cref="RegionKeys"/>) so two scopes standing on the same ground are two sets of regions.
-        /// Origin-shift invariant by construction.
+        /// Origin-shift invariant by construction. Inside a physics frame with regions of its own, the frame's local
+        /// position and the frame's salt (docs/container-tree.md D18).
         /// </summary>
         private ulong RegionOf(NetworkIdentity e)
         {
-            ToAbsolute(e, out double x, out double y, out double z);
-            return RegionKeys.Salt(_interestGrid.RegionOf(x, y, z), e.InstanceId);
+            ToAbsolute(e, out double x, out double y, out double z, out ulong frameKey);
+            return RegionKeys.Salt(_interestGrid.RegionOf(x, y, z), e.InstanceId, frameKey);
+        }
+
+        /// <summary>The salt an entity's wide-match foci are unsalted with: its scope's, and its frame's when it is in one with regions of its own.</summary>
+        private static ulong RegionSaltOf(NetworkIdentity e)
+        {
+            RegionSpaceOf(e, out var space);
+            return RegionKeys.SaltOf(e.InstanceId, space != null ? RegionKeys.FrameKeyOf(space.Ref) : 0UL);
         }
 
         /// <summary>
@@ -318,21 +360,35 @@ namespace Nebula
             return result;
         }
 
-        /// <summary>Whether this entity is itself a dynamic container other entities can ride in (a ship, a lift).</summary>
+        /// <summary>
+        /// Whether this entity is itself a dynamic container other entities ride in for interest (a ship, a lift). A
+        /// carrier whose frame has regions of its own (a planet) is not one: what is on it is bucketed in its regions.
+        /// </summary>
         private static bool IsCarrier(NetworkIdentity e)
         {
             var box = e.GetComponent<Container>();
-            return box != null && box.IsDynamic;
+            return box != null && box.IsDynamic && !OwnsRegions(box);
         }
+
+        private static bool OwnsRegions(Container c) => c.OwnPhysicsFrame && c.FrameInterest == FrameInterestMode.OwnRegions;
 
         /// <summary>Prefab ids already reported for an impossible carrier placement, so the warning is said once.</summary>
         private readonly HashSet<ushort> _carrierPlacementWarned = new HashSet<ushort>();
 
-        /// <summary>The net id of the entity carrying this one (0 when it is not inside a dynamic container).</summary>
-        private static ulong CarrierOf(NetworkIdentity e)
+        /// <summary>
+        /// The net id of the entity carrying this one for interest: the carrier of its box, or of the box a room it is in
+        /// is fixed in. 0 when it rides in nothing, and 0 inside a frame with regions of its own, whose contents are
+        /// bucketed by their own position in the frame (<c>docs/container-tree.md</c> D18).
+        /// </summary>
+        internal static ulong CarrierOf(NetworkIdentity e)
         {
-            var c = e.Container;
-            return c != null && c.IsDynamic && c.Carrier != null ? c.Carrier.NetId : 0;
+            int hops = 0;
+            for (var c = e.Container; c != null && hops <= ContainerRegistry.ChainBound; c = c.FixedParent, hops++)
+            {
+                if (OwnsRegions(c)) return 0;
+                if (c.IsDynamic) return c.Carrier != null ? c.Carrier.NetId : c.CarrierNetId;
+            }
+            return 0;
         }
 
         /// <summary>
@@ -742,10 +798,10 @@ namespace Nebula
                 var subject = WideSubjectOf(entry.Id, e);
                 PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
                 ToAbsolute(subject, out double x, out double y, out double z);
-                ulong scope = subject.InstanceId;
+                ulong salt = RegionSaltOf(subject);
                 _wideMask.TryGetValue(entry.Id, out ulong before);
-                ulong enter = _publisher.WideMask(_interestGrid, scope, x, y, z, radius);
-                ulong stay = before == 0 ? 0 : _publisher.WideMask(_interestGrid, scope, x, y, z, radius + _interest.ExitMargin);
+                ulong enter = _publisher.WideMaskSalted(_interestGrid, salt, x, y, z, radius);
+                ulong stay = before == 0 ? 0 : _publisher.WideMaskSalted(_interestGrid, salt, x, y, z, radius + _interest.ExitMargin);
                 ulong after = enter | (before & stay);
                 if (after == before) continue;
                 _wideMask[entry.Id] = after;
@@ -781,7 +837,7 @@ namespace Nebula
             var subject = WideSubjectOf(netId, e);
             PlacementOf(subject.AlwaysRelevant, subject.RelevanceRadius, _interest, out float radius);
             ToAbsolute(subject, out double x, out double y, out double z);
-            ulong mask = _publisher.WideMask(_interestGrid, subject.InstanceId, x, y, z, radius);
+            ulong mask = _publisher.WideMaskSalted(_interestGrid, RegionSaltOf(subject), x, y, z, radius);
             _wideMask[netId] = mask;
             return mask;
         }

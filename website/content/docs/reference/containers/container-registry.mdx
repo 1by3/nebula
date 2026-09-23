@@ -33,6 +33,22 @@ Prefix of a runtime container's string id (`rt_<id>`), the form leases and persi
 
 ## Properties
 
+### PendingRuntimeCount [#pendingruntimecount]
+
+```csharp
+public static int PendingRuntimeCount { get; }
+```
+
+Runtime rows waiting for their parent to become resolvable on this process.
+
+### PendingRuntimeIds [#pendingruntimeids]
+
+```csharp
+public static IEnumerable<ulong> PendingRuntimeIds { get; }
+```
+
+The ids of the runtime rows waiting for their parent (see [`PendingRuntimeCount`](#pendingruntimecount)).
+
 ### All [#all]
 
 ```csharp
@@ -278,9 +294,18 @@ The runtime container registered as `id` on this process, or null.
 
 ```csharp
 public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null);
+public static Container RegisterRuntime(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null);
 ```
 
 Register a static box that is not in the baked set, named by a 64-bit id the game chose (a chunk coordinate hash, a plot number) and axis-aligned in this process's frame. Legal at any time after boot, on any role; every process that should resolve the container has to register it under the same id with the same box, which is what [`SyncRuntime`](#syncruntime) does from the control-plane leases. Registering an id that is already here returns the existing container (its box is updated if it changed). Adjacency to baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the seam work like between baked containers.
+
+### PlacementOf [#placementof]
+
+```csharp
+public static ContainerPlacement PlacementOf(Container c);
+```
+
+The placement a runtime container was registered with, as its lease row carries it: a root's absolute centre in double, a child's parent id and parent-local centre. What a worker writes when it re-creates a row it lost.
 
 ### UnregisterRuntime [#unregisterruntime]
 
@@ -311,9 +336,18 @@ Forget every runtime container whose id is not in `keep`.
 ```csharp
 public static Bounds ToFrame(Bounds absolute);
 public static Bounds ToFrame(Bounds absolute, ulong instanceId);
+public static Vector3 ToFrame(Double3 absolute, ulong instanceId);
 ```
 
 An absolute box (as leases and telemetry carry it) in the public world's frame.
+
+### ToAbsolutePrecise [#toabsoluteprecise]
+
+```csharp
+public static Double3 ToAbsolutePrecise(Vector3 frame, ulong instanceId);
+```
+
+The inverse of [`ToFrame`](#toframe): a frame position as an absolute one, in double.
 
 ### ToAbsolute [#toabsolute]
 
@@ -350,6 +384,14 @@ public static Container Find(Vector3 worldPosition, Container exclude = null, ul
 The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees. `exclude` leaves one container out of the search.
 
 `subject` is the entity being placed, when there is one. The containers it carries, directly or through any chain of carriers ([`Container.IsCarriedBy`](/docs/reference/containers/container#iscarriedby)), are skipped: its own box (its origin is inside it), and the box of a ship whose interior overlaps its own and which already rides inside it. The next smallest box holding the point wins instead, so two carriers whose interiors overlap end up one inside the other at most, never each inside the other.
+
+### FindInSpace [#findinspace]
+
+```csharp
+public static Container FindInSpace(Vector3 position, Container exclude, ulong instanceId, NetworkIdentity subject, Container space);
+```
+
+The deepest container of space `space` holding the point (a space is a framed container, whose frame-local coordinates the point is in, or null for the scope's own space), or null when none holds it: no nearest-box fallback. A framed container's own box is in the space around it, so it is a candidate there and never in its own space (see [`Container.SignedDistanceInner`](/docs/reference/containers/container#signeddistanceinner) for that face).
 
 ### Along [#along]
 

@@ -56,16 +56,27 @@ Define container volumes and look up their current worker assignments.
 | Type | Summary |
 | --- | --- |
 | [Container](/docs/reference/containers/container) | Class. Defines a box-shaped authority area with its own local coordinate space. |
+| [ContainerAuthority](/docs/reference/containers/container-authority) | Enum. Who simulates what is inside a container (docs/container-tree.md D6). |
+| [ContainerFrameMode](/docs/reference/containers/container-frame-mode) | Enum. Where a container's box is (docs/container-tree.md D1). |
 | [ContainerHint](/docs/reference/containers/container-hint) | Struct. What the game knows about a container that the orchestrator cannot measure: how expensive it really is, what it belongs with, how much a worker boundary beside it hurts, and whether it wants a machine to itself. |
+| [ContainerPlacement](/docs/reference/containers/container-placement) | Struct. Where a runtime container goes and what kind of container it is: its parent, its box, its authority and whether it gets its own physics frame. |
 | [ContainerRef](/docs/reference/containers/container-ref) | Struct. How a container is named on the wire. |
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
+| [ContainerSource](/docs/reference/containers/container-source) | Enum. Where a container comes from (docs/container-tree.md D1). |
+| [Double3](/docs/reference/containers/double3) | Struct. A 64-bit-per-axis position. |
 | [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
 | [EntityLocation](/docs/reference/containers/entity-location) | Struct. Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. |
+| [FrameCrossing](/docs/reference/containers/frame-crossing) | Enum. What a crossing policy says about one entity crossing a frame boundary (docs/container-tree.md D16). |
+| [FrameInterestMode](/docs/reference/containers/frame-interest-mode) | Enum. How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18). |
+| [IFrameCrossingPolicy](/docs/reference/containers/i-frame-crossing-policy) | Interface. The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals. |
 | [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their world pose. |
 | [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
 | [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
 | [LocationContainerKind](/docs/reference/containers/location-container-kind) | Enum. Which kind of container an EntityLocation.ContainerId names. |
 | [NebulaContainerHelpers](/docs/reference/containers/nebula-container-helpers) | Static class. Geometry helpers for placing things inside a Container. |
+| [PhysicsFrame](/docs/reference/containers/physics-frame) | Class. A container's own physics frame: a local physics scene in which the container stands still (docs/container-tree.md §3). |
+| [PhysicsFrameState](/docs/reference/containers/physics-frame-state) | Struct. The motion of a physics frame in the space around it, once per tick, on every process that holds the frame (docs/container-tree.md D14): its pose, linear and angular velocity, and linear acceleration. |
+| [PhysicsFrames](/docs/reference/containers/physics-frames) | Static class. The physics frames this process holds, one per container with Container.OwnPhysicsFrame (docs/container-tree.md §3): scene lifetime and pooling, interior colliders, frame state, conversion between spaces, the crossing policy, and — on a ... |
 
 ## World partition
 

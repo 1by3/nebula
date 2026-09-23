@@ -55,19 +55,53 @@ public DateTime UpdatedAt;
 public bool HasBounds;
 ```
 
-Runtime containers ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)) carry their box on the lease row, in absolute world coordinates, so every process can register the same box from the row alone. False for a baked or carried container.
+Runtime containers ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)) carry their box on the lease row, so every process can register the same box from the row alone. False for a baked or carried container.
 
-### BoundsCenter [#boundscenter]
+### ParentId [#parentid]
 
 ```csharp
-public Vector3 BoundsCenter;
+public string ParentId = "";
 ```
+
+The parent container's id, or empty for a root of its scope (`docs/container-tree.md` D5). A child's [`Center`](#center) is local to its parent's frame.
+
+### Center [#center]
+
+```csharp
+public Double3 Center;
+```
+
+Box centre, in double: absolute for a root, local to the parent's frame for a child.
 
 ### BoundsSize [#boundssize]
 
 ```csharp
 public Vector3 BoundsSize;
 ```
+
+### Authority [#authority]
+
+```csharp
+public ContainerAuthority Authority;
+```
+
+Who simulates what is inside. On a runtime row [`ContainerAuthority.Inherited`](/docs/reference/containers/container-authority#inherited) means the row only carries the box: the orchestrator never deals it and nobody reads an owner from it. On a carried container's row (`label#netId`) [`ContainerAuthority.Leased`](/docs/reference/containers/container-authority#leased) means the container was authored leased: the orchestrator re-deals it instead of letting it follow its carrier.
+
+### OwnPhysicsFrame [#ownphysicsframe]
+
+```csharp
+public bool OwnPhysicsFrame;
+```
+
+The container has its own physics frame (`docs/container-tree.md` §3).
+
+### FrameInterest [#frameinterest]
+
+```csharp
+public FrameInterestMode FrameInterest;
+```
+
+How a framed container's contents are bucketed for interest.
 
 ### HasHint [#hashint]
 
@@ -127,10 +161,34 @@ Why the planner cannot relieve it by moving anything ([`SaturationReport.Cause`]
 
 ## Properties
 
+### BoundsCenter [#boundscenter]
+
+```csharp
+public Vector3 BoundsCenter { get; set; }
+```
+
+[`Center`](#center) narrowed to float, for callers that only ever held small boxes.
+
 ### Bounds [#bounds]
 
 ```csharp
 public Bounds Bounds { get; }
 ```
 
-The row's box, when [`HasBounds`](#hasbounds).
+The row's box as stored (absolute for a root, parent-local for a child), when [`HasBounds`](#hasbounds).
+
+### IsRoot [#isroot]
+
+```csharp
+public bool IsRoot { get; }
+```
+
+Whether the row's box is a root of its scope.
+
+### Placement [#placement]
+
+```csharp
+public ContainerPlacement Placement { get; }
+```
+
+The row's placement, when [`HasBounds`](#hasbounds).

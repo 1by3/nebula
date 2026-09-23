@@ -75,6 +75,7 @@ namespace Nebula
                     // The decision is made on the root carrier: a ship and everything riding in it enter and
                     // leave as one unit (design D3).
                     X = root.AbsX, Y = root.AbsY, Z = root.AbsZ,
+                    Space = root.FrameKey,
                     // Radius and always-relevance come from the root carrier too, not just the position: design
                     // D3 says a carrier and its contents enter and leave as one unit, and a passenger judged at
                     // its own (smaller or larger) radius would cross the boundary on its own tick instead.
@@ -119,7 +120,7 @@ namespace Nebula
         /// is recorded where the key is made (<c>docs/scope-frames.md</c> D7). Entries are never removed: the map
         /// is bounded by the regions this gateway's clients have covered, exactly like <see cref="_regionWorkers"/>.
         /// </summary>
-        private readonly Dictionary<ulong, ulong> _regionScope = new Dictionary<ulong, ulong>();
+        private readonly Dictionary<ulong, (ulong Instance, ulong Frame)> _regionScope = new Dictionary<ulong, (ulong, ulong)>();
         /// <summary>Regions at least one link subscribes; a record outside every one of them is evicted.</summary>
         private readonly HashSet<ulong> _subscribedRegions = new HashSet<ulong>();
         private readonly Dictionary<string, ContainerOwnershipEntry> _ownershipById = new Dictionary<string, ContainerOwnershipEntry>();
@@ -515,10 +516,12 @@ namespace Nebula
         /// </summary>
         private void RefreshAbsolute(EntityRecord rec)
         {
-            var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition);
-            rec.AbsX = world.x;
-            rec.AbsY = world.y;
-            rec.AbsZ = world.z;
+            // In its region space: absolute in the scope, or frame-local on a planet with regions of its own (D18).
+            var position = RegionSpaceOf(rec.Container, rec.LastSpawn.LocalPosition, out ulong frameKey);
+            rec.AbsX = position.x;
+            rec.AbsY = position.y;
+            rec.AbsZ = position.z;
+            rec.FrameKey = frameKey;
         }
 
         /// <summary>
@@ -550,7 +553,7 @@ namespace Nebula
         private ulong RegionOf(EntityRecord rec)
         {
             var root = RootOf(rec);
-            return RegionKeys.Salt(_interestGrid.RegionOf(root.AbsX, root.AbsY, root.AbsZ), InstanceOf(root));
+            return RegionKeys.Salt(_interestGrid.RegionOf(root.AbsX, root.AbsY, root.AbsZ), InstanceOf(root), root.FrameKey);
         }
 
         /// <summary>The isolation id an entity's carrier chain resolves to; 0 for the public world.</summary>
@@ -844,6 +847,7 @@ namespace Nebula
             client.Query.Reset(_interest);
             _policy.Collect(snapshot, client.Query);
             AddObservationWindows(client, snapshot, client.Query);
+            AddEnclosingSpaceFoci(client, snapshot, client.Query);
             if (client.Query.Overflowed) WarnOnce(client, $"its policy asked for more than {_interest.MaxFoci} foci or {_interest.MaxExplicitPerClient} explicit entities; the rest are dropped.");
             if (client.Query.BoxesClamped) WarnOnce(client, $"a box focus was wider than InterestMaxRadius ({_interest.MaxRadius} m) and was shrunk to it about its center.");
 
@@ -891,6 +895,7 @@ namespace Nebula
                 var root = RootOf(pawn);
                 snapshot.HasPawn = true;
                 snapshot.PawnX = root.AbsX; snapshot.PawnY = root.AbsY; snapshot.PawnZ = root.AbsZ;
+                snapshot.PawnSpace = root.FrameKey;
                 // The scope comes from the pawn's own container chain, not from the root it resolved to: they
                 // are the same container by construction, and asking the pawn keeps this line and CanObserve's
                 // reading the same thing.
@@ -903,6 +908,22 @@ namespace Nebula
                 snapshot.HintX = client.HintX; snapshot.HintY = client.HintY; snapshot.HintZ = client.HintZ;
             }
             return snapshot;
+        }
+
+        /// <summary>
+        /// A pawn on a planet with regions of its own (<c>docs/container-tree.md</c> D18) is looked at in the planet's
+        /// regions by the policy's focus; this adds a focus at the same place in every space around it, out to the
+        /// scope's own, so the ships overhead and the planet next door stay in view.
+        /// </summary>
+        private void AddEnclosingSpaceFoci(ClientConn client, in InterestClient snapshot, InterestQuery query)
+        {
+            if (!snapshot.HasPawn || snapshot.PawnSpace == 0 || !_entities.TryGetValue(client.PawnNetId, out var pawn)) return;
+            var root = RootOf(pawn);
+            ulong key = root.FrameKey;
+            var frame = FrameOfRecordSpace(root.Container, key);
+            var position = new Vector3((float)root.AbsX, (float)root.AbsY, (float)root.AbsZ);
+            for (int hops = 0; hops < 8 && TryLiftOut(ref frame, ref position, ref key); hops++)
+                query.AddFocus(InterestFocus.Point(position.x, position.y, position.z, 1f, client.PawnNetId, key));
         }
 
         /// <summary>
@@ -940,9 +961,9 @@ namespace Nebula
         /// the key of the region → clients map that makes an arriving entity cheap.
         /// </summary>
         /// <summary>One region key this client wants this pass, remembering which scope resolves it.</summary>
-        private void Want(ClientConn client, ulong region, ulong instanceId, ref bool changed)
+        private void Want(ClientConn client, ulong region, ulong instanceId, ref bool changed, ulong frameKey = 0)
         {
-            _regionScope[region] = instanceId;
+            _regionScope[region] = (instanceId, frameKey);
             if (!client.NextRegions.Add(region)) return;
             if (client.Regions.Contains(region)) return;
             changed = true;
@@ -950,18 +971,26 @@ namespace Nebula
             list.Add(client);
         }
 
+        /// <summary>The region space of each entry of <see cref="_regionScratch"/> (0: the scope's own).</summary>
+        private readonly List<ulong> _regionSpaceScratch = new List<ulong>();
+        private readonly List<string> _ownerScratch = new List<string>();
+
         private void UpdateClientRegions(ClientConn client)
         {
             _regionScratch.Clear();
+            _regionSpaceScratch.Clear();
             var foci = client.Interest.Foci;
             for (int i = 0; i < foci.Count; i++)
             {
                 var focus = foci[i];
                 double reach = focus.Scaled(_interest.SubscribeRadius);
+                int from = _regionScratch.Count;
                 if (focus.IsBox)
                     _interestGrid.CollectBox(focus.X - focus.HalfX - reach, focus.Y - focus.HalfY - reach, focus.Z - focus.HalfZ - reach,
                         focus.X + focus.HalfX + reach, focus.Y + focus.HalfY + reach, focus.Z + focus.HalfZ + reach, _regionScratch);
                 else _interestGrid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regionScratch);
+                // Which region space each collected region is in: a focus on a planet collects the planet's (D18).
+                for (int r = from; r < _regionScratch.Count; r++) _regionSpaceScratch.Add(focus.Space);
             }
             bool changed = false;
             // A client is in one scope, so its window is salted with that scope: it asks its workers for the regions
@@ -974,6 +1003,8 @@ namespace Nebula
             client.NextRegions.Clear();
             for (int i = 0; i < _regionScratch.Count; i++)
             {
+                ulong frameKey = _regionSpaceScratch[i];
+                if (frameKey != 0) { Want(client, RegionKeys.Salt(_regionScratch[i], instance, frameKey), instance, ref changed, frameKey); continue; }
                 Want(client, _regionScratch[i] ^ salt, instance, ref changed);
                 if (alsoPublic) Want(client, _regionScratch[i], 0UL, ref changed);
             }
@@ -1159,7 +1190,7 @@ namespace Nebula
                     var foci = client.Interest.Foci;
                     for (int i = 0; i < foci.Count; i++)
                     {
-                        ulong key = RegionKeys.Salt(_interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z), instance);
+                        ulong key = RegionKeys.Salt(_interestGrid.RegionOf(foci[i].X, foci[i].Y, foci[i].Z), instance, foci[i].Space);
                         if (!_fociRegions.Contains(key)) _fociRegions.Add(key);
                         LinkNearbyOwners(foci[i]);
                     }
@@ -1286,7 +1317,15 @@ namespace Nebula
         {
             if (_regionWorkers.TryGetValue(region, out var cached)) return cached;
             var owners = new List<string>(2);
-            _regionScope.TryGetValue(region, out ulong instanceId);
+            _regionScope.TryGetValue(region, out var space);
+            ulong instanceId = space.Instance;
+            if (space.Frame != 0)
+            {
+                // A region of a frame with regions of its own: whoever holds any part of that frame (D18).
+                FrameOwners(space.Frame, owners);
+                _regionWorkers[region] = owners;
+                return owners;
+            }
             // The key is per scope; the arithmetic is on the plain packing, and the container query is asked in
             // the same scope, so a region of one world never resolves to the owner of another's box.
             _interestGrid.BoundsOf(RegionKeys.Unsalt(region, instanceId), out double minX, out double minY, out double minZ, out double maxX, out double maxY, out double maxZ);
@@ -1325,6 +1364,14 @@ namespace Nebula
         /// </summary>
         private void LinkNearbyOwners(in InterestFocus focus)
         {
+            if (focus.Space != 0)
+            {
+                // A focus in a frame with regions of its own: the frame's owners are the ones whose wide entities could reach it.
+                _ownerScratch.Clear();
+                FrameOwners(focus.Space, _ownerScratch);
+                for (int i = 0; i < _ownerScratch.Count; i++) Reason(_ownerScratch[i], InterestLinkReason.Foci);
+                return;
+            }
             float reach = _interest.MaxRadius;
             var box = new Bounds(new Vector3((float)focus.X, (float)focus.Y, (float)focus.Z), new Vector3(2 * reach, 2 * reach, 2 * reach));
             ContainerRegistry.Overlapping(box, _containerScratch);
@@ -1592,8 +1639,14 @@ namespace Nebula
                 scopeInstance = ScopeOfClient(client);
                 observePublic = scopeInstance == 0 || (scope != null && scope.Instance != null && scope.Instance.ObservePublic);
                 // The pawn's own window first: whatever a camera is doing, the player's body must be able to
-                // stand on the ground, and this is the one focus that exists before any evaluation has run.
-                AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
+                // stand on the ground, and this is the one focus that exists before any evaluation has run. The
+                // window is in the scope's own space, which a pawn on a planet with regions of its own is not.
+                if (root.FrameKey == 0) AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
+                else
+                {
+                    var world = WorldPosition(root.Container, root.LastSpawn.LocalPosition);
+                    AddWindow(world.x, world.y, world.z, 0, 0, 0, reach);
+                }
                 if (scope != null) Add(scope.ContainerId);
             }
             var foci = client.Interest?.Foci;
@@ -1662,27 +1715,34 @@ namespace Nebula
                 // which a chain can only exceed by revisiting one.
                 for (int hops = 0; hops <= _entities.Count; hops++)
                 {
-                    if (TryCarrierOf(rec.Container, out ulong carrierNetId, out _))
+                    // The container tree as it is, whatever interest buckets by (D18): a runtime box, its parents up to
+                    // a root or a carrier's box, then that carrier's own row and on outwards from the carrier.
+                    var at = rec.Container;
+                    ulong carrierNetId = at.IsDynamic ? at.NetId : 0;
+                    if (at.IsRuntime)
                     {
-                        if (!_entities.TryGetValue(carrierNetId, out var carrier)) return;
-                        // A room fixed in the carrier: its row and its parents' up to the carrier's box.
-                        if (rec.Container.IsRuntime)
+                        string id = ContainerRegistry.RuntimeContainerId(at.RuntimeId);
+                        for (int up = 0; up <= _ownershipById.Count && _ownershipById.TryGetValue(id, out var row); up++)
                         {
-                            string id = ContainerRegistry.RuntimeContainerId(rec.Container.RuntimeId);
-                            for (int up = 0; up <= _ownershipById.Count && _ownershipById.TryGetValue(id, out var row); up++)
-                            {
-                                Add(id);
-                                if (!row.HasPlacement || row.Placement.IsRoot || ContainerRegistry.IsDynamicId(row.Placement.ParentId)) break;
-                                id = row.Placement.ParentId;
-                            }
+                            Add(id);
+                            if (!row.HasPlacement || row.Placement.IsRoot) break;
+                            if (ContainerRegistry.IsDynamicId(row.Placement.ParentId)) { carrierNetId = ContainerRegistry.CarrierNetIdOf(row.Placement.ParentId); break; }
+                            id = row.Placement.ParentId;
                         }
+                    }
+                    if (carrierNetId != 0)
+                    {
                         foreach (var kv in _ownershipById)
                             if (ContainerRegistry.CarrierNetIdOf(kv.Key) == carrierNetId) Add(kv.Key);
+                        if (!_entities.TryGetValue(carrierNetId, out var carrier)) return;
                         rec = carrier;
                         continue;
                     }
-                    var c = ContainerRegistry.Resolve(rec.Container);
-                    if (c != null) Add(c.ContainerId);
+                    if (!at.IsRuntime)
+                    {
+                        var c = ContainerRegistry.Resolve(at);
+                        if (c != null) Add(c.ContainerId);
+                    }
                     return;
                 }
             }

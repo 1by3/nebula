@@ -194,16 +194,18 @@ Drop a scope's row, its durable claim and the lease rows of its containers. The 
 ### EnsureContainer [#ensurecontainer]
 
 ```csharp
-void EnsureContainer(string containerId);
+void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier);
 ```
+
+Make sure a lease row exists for a container, unassigned. `authority` is recorded on a new row only: a carried container authored [`ContainerAuthority.Leased`](/docs/reference/containers/container-authority#leased) says so here, so the orchestrator re-deals it rather than letting it follow its carrier (`docs/container-tree.md` D6). The frame flags tell every gateway that a carried container has a physics frame of its own and how its contents are bucketed for interest (D18).
 
 ### EnsureRuntimeContainer [#ensureruntimecontainer]
 
 ```csharp
-void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null);
+void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null);
 ```
 
-Make sure a lease row exists for a runtime container, carrying its box (absolute coordinates) and, when `workerId` is given, already assigned to that worker (epoch 1, active), so the worker that asked for the container owns it from the first change anyone sees. A no-op when the row exists: whoever asked first wins, and the second caller sees the row on the next change.
+Make sure a lease row exists for a runtime container, carrying its placement (a root's absolute box, or a child's parent id and parent-local box; a `Bounds` converts to a root) and, when `workerId` is given and the container is leased, already assigned to that worker (epoch 1, active), so the worker that asked for the container owns it from the first change anyone sees. An inherited container's row is never assigned. A no-op when the row exists: whoever asked first wins, and the second caller sees the row on the next change.
 
 ### TouchContainer [#touchcontainer]
 

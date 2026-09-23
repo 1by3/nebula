@@ -172,10 +172,10 @@ namespace Nebula
             Touch();
         }
 
-        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto)
+        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier)
         {
             if (this.FindLease(containerId) != null) return;
-            _leases.Add(new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now, Authority = authority });
+            _leases.Add(new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now, Authority = authority, OwnPhysicsFrame = ownPhysicsFrame, FrameInterest = frameInterest });
             Touch();
         }
 

@@ -1,0 +1,170 @@
+---
+title: Physics frames
+description: Give a ship, station, or planet a physics scene of its own in which it stands still, so what is inside simulates in the container's own coordinates and can be simulated by a different worker than the hull.
+---
+
+Use a **physics frame** when entities move around inside something that moves: the crew and cargo of a ship, the people in a station, the bases on a rotating planet. A [container](/docs/concepts/containers-and-handover) with a physics frame of its own gets a separate physics scene in which the container stands still. Everything inside simulates in the container's local coordinates, with the container's own down as gravity, whatever the container does in the world.
+
+A frame also makes it safe for another worker to simulate part of the inside. The worker that simulates an engine room works in the ship's still coordinates, so it never needs the ship's pose, which another worker owns.
+
+## Choose when to use a frame
+
+Give a container a frame when:
+
+- entities walk, fall, or collide inside it while it moves, pitches, or rolls;
+- rigidbodies inside it must stay at rest while it accelerates or turns;
+- part of the inside should be [leased to another worker](#lease-part-of-the-inside-to-another-worker) than the one that moves the container; or
+- it is a planet-sized area whose contents need [regions of their own](#make-a-planet-a-frame).
+
+Leave it out for small vehicles such as a car or a lift. Each frame is a Unity scene with its own physics on every process that holds the container, so a [dynamic container](/docs/guides/dynamic-containers) without a frame is cheaper.
+
+## Give a container its own frame
+
+On a carrier prefab, select the `Container` and turn on **Own Physics Frame**. Nebula creates the frame when the carrier spawns on a process and releases it when the carrier despawns there. Released frame scenes are kept for reuse (`PhysicsFrames.PoolSize`, 8 by default).
+
+For a [runtime container](/docs/guides/runtime-containers), ask for one in its placement:
+
+```csharp
+var placement = ContainerPlacement.Root(stationCenter, new Vector3(400, 200, 400))
+    .WithPhysicsFrame();
+worker.RequestRuntimeContainer(stationId, placement);
+```
+
+`stationCenter` is a `Double3` in absolute coordinates, and `stationId` is the 64-bit id your game chose for the container.
+
+### Interior geometry
+
+A frame needs the container's interior colliders inside its own scene. By default Nebula copies the carrier's colliders into the frame: every non-trigger collider under the carrier that does not belong to another networked entity. It keeps each copy where its original is relative to the carrier and enabled when the original is, every tick, so a ramp that lowers or a door that opens works inside the frame too. The originals stay in the world scene for everything outside.
+
+To use your own geometry instead, set **Frame Content** on the `Container` to a prefab of colliders (and visuals, if you want them). The prefab must not contain a `NetworkIdentity`.
+
+## Understand what your code sees
+
+A frame is simulated at the identity pose and rendered at its world pose:
+
+| Where the code runs | What an entity inside the frame reports |
+| --- | --- |
+| `NetworkTick` on a worker | Container-local coordinates. `Vector3.up` is the container's up. |
+| `NetworkTick` for the local player's predicted pawn on a client | Container-local coordinates, exactly as on the worker. |
+| `Update`, `LateUpdate`, cameras, and rendering on a client | World coordinates. The frame is posed at the carrier's interpolated pose. |
+
+Movement code that uses `Vector3.up`, `transform.position`, and physics queries therefore works inside a frame without changes. Query through `Identity.PhysicsScene`, which is the frame's physics scene while the entity is inside it.
+
+When code relates something inside a frame to something outside it, convert the position first:
+
+| Call | Result |
+| --- | --- |
+| `NetworkIdentity.Space` | The framed container whose coordinates the entity is in, or `null` outside frames. |
+| `identity.FromScope(worldPosition)` | A world position, such as a door on the hull, in the entity's coordinates. |
+| `identity.ToScope(position)` | A position in the entity's coordinates as a world position. |
+| `identity.PlaceInScope(position, rotation)` | Moves the entity to a world pose, leaving its frame first. Use it for respawns and teleports. |
+| `PhysicsFrames.Convert(position, fromSpace, toSpace)` | Converts between any two spaces. `null` is the world. |
+| `PhysicsFrames.SourceOf(collider)` | The carrier's original collider for a copy inside a frame. |
+
+For example, a reach check on the worker compares the player's eyes with a button on the hull:
+
+```csharp
+var button = Identity.FromScope(doorButton.transform.position);
+if ((EyePosition - button).sqrMagnitude > reach * reach) return;
+```
+
+A raycast inside the frame hits the frame's copies of the hull colliders. To find a component on what you hit, look at the original:
+
+```csharp
+if (Identity.PhysicsScene.Raycast(EyePosition, AimDirection, out var hit, range))
+{
+    var target = PhysicsFrames.SourceOf(hit.collider).GetComponentInParent<DoorButton>();
+}
+```
+
+`DoorButton` stands for any component your game puts on the carrier.
+
+Do not write a world position straight onto the transform of an entity inside a frame. The frame reads it as container-local coordinates. Call `PlaceInScope` instead.
+
+## Cross the frame's boundary
+
+An entity enters a frame when the worker resolves it into the framed container's box, and leaves when it is farther than `HandoverHysteresis` outside the inside of that box. Nebula converts its position, rotation, and velocity at the frame's pose for that tick. A leaving entity gains the frame's velocity, including the part that comes from the frame turning, so a crate that falls out of a moving ship keeps moving with the ship.
+
+Only the worker that simulates the carrier knows its pose exactly. That worker, the **pose owner**, performs every crossing. Any other worker that would cross an entity hands it to the pose owner first, unconverted. The pose owner crosses it, then hands it on if the destination belongs to another worker. A crossing costs at most one extra handover and never a position error.
+
+To limit where entities may cross, install a crossing policy. This one lets entities leave only through an airlock at the stern of a ship:
+
+```csharp
+public sealed class AirlockPolicy : IFrameCrossingPolicy
+{
+    public FrameCrossing Decide(NetworkIdentity entity, PhysicsFrame frame, bool leaving, Container from, Container to)
+    {
+        if (!leaving) return FrameCrossing.Allow;
+        var local = frame.SimulationToLocal(entity.transform.position);
+        return local.z < -9f && Mathf.Abs(local.x) < 1.5f ? FrameCrossing.Allow : FrameCrossing.Veto;
+    }
+}
+
+PhysicsFrames.CrossingPolicy = new AirlockPolicy();
+```
+
+`Veto` keeps the entity where it is. Keep it inside with your own collision, such as the hull's walls. `Defer` asks again on the next tick, for example while an airlock cycles. The policy runs on the pose owner.
+
+An entity belongs to one frame at a time. A ship half inside a hangar, or a crane that reaches out of a hull, is on one side or the other and switches at the hysteresis threshold.
+
+## Read the frame's motion
+
+`container.Frame.State` is a `PhysicsFrameState`. It holds the frame's position, rotation, velocity, angular velocity, and acceleration in the space around it, updated once per tick on every process that holds the frame. On the worker that simulates the carrier it is exact. Elsewhere it comes from the replicated carrier pose, one replication delay late.
+
+Nebula does not apply fictitious forces. Apply them yourself if your game wants crates to slide when a ship brakes:
+
+```csharp
+var frame = Identity.Space?.Frame;
+if (frame != null && frame.State.HasRates)
+    body.AddForce(-frame.State.LocalAcceleration, ForceMode.Acceleration);
+```
+
+`body` is the crate's `Rigidbody`, inside the frame.
+
+## Lease part of the inside to another worker
+
+A leased container sits under a moving parent only when that parent has a physics frame. To let a second worker simulate a ship's engine room, register the room as a runtime container inside the ship and lease it:
+
+```csharp
+var engineRoom = ContainerPlacement.Child(
+    ship.Carried.ContainerId,          // the ship's container, e.g. "interior#281474976710657"
+    new Vector3(0f, 3f, -6f),          // centre in the ship's local space
+    new Vector3(10f, 6f, 8f),
+    ContainerAuthority.Leased);
+worker.RequestRuntimeContainer(engineRoomId, engineRoom);
+```
+
+The orchestrator deals the room like any other leased container. The ship's worker keeps simulating the hull and the rest of the inside. Crew walking between the two parts are handed over like between two containers on the ground, in the ship's still coordinates, with no error from the ship's speed.
+
+Without a frame on the ship, Nebula logs a warning, and the room is simulated by the ship's worker until it is under a frame (`Container.AuthorityDemoted`). An owner of a leased room under a moving parent would otherwise simulate against a pose that arrives one replication delay late.
+
+A change in one part that affects the other, such as an engineer cutting power to the engines, is an ordinary cross-worker call. Use `[AuthorityRpc]` on a behavior of the ship.
+
+## Make a planet a frame
+
+A planet is a carrier with a physics frame of its own. It can rotate, orbit, or stay still. Give it:
+
+- **Own Physics Frame** on its `Container`;
+- **Frame Interest** set to `OwnRegions`; and
+- leased runtime children for the areas that different workers simulate, such as eight octants, with bases inside them leased or inherited as your game needs.
+
+With `OwnRegions`, [interest management](/docs/guides/interest-management) buckets what is on the planet by its position in the planet's coordinates. The planet's rotation therefore never moves anything between regions. A client standing on the planet looks at the planet's regions around it and at the space around the planet from the same point, so ships overhead stay in view. A client outside the planet's box sees the planet itself, but not what is on its surface.
+
+If you replace the interest policy, give a focus at the player the space the player is in: `InterestFocus.Point(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId, client.PawnSpace)`.
+
+A frame's coordinates can be large. Each worker keeps a floating origin per frame near the entities it simulates in it: when their average position is farther than `PhysicsFrames.OriginShiftThreshold` (2,048 m) from the frame's origin, the worker moves the origin to them, in steps of `PhysicsFrames.OriginShiftStep` (1,024 m). Container-local coordinates, and so everything on the wire and every region key, do not change. Subscribe to `PhysicsFrame.Shifted` to move positions your game caches in simulation space.
+
+## Limits
+
+- Every process that holds a framed container also holds its frame scene.
+- Raycasts do not pass from one frame into another. A shot fired out of a ship's open ramp hits nothing outside the ship's frame unless your game casts again in the space around it.
+- A client predicts in the frame of its own player only. Other entities in other frames are shown at their replicated poses.
+- Leased containers inside a frame are found by a linear scan. Keep their number in the hundreds per frame, not the thousands.
+
+## Related pages
+
+<Cards>
+  <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="The container tree, authority, and how handover works." />
+  <Card title="Dynamic containers" href="/docs/guides/dynamic-containers" description="Containers carried by an entity." />
+  <Card title="Runtime containers" href="/docs/guides/runtime-containers" description="Register containers while the mesh runs, inside other containers too." />
+</Cards>

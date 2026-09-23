@@ -368,9 +368,11 @@ namespace Nebula
         /// <summary>
         /// Make sure a lease row exists for a container, unassigned. <paramref name="authority"/> is recorded on a new
         /// row only: a carried container authored <see cref="ContainerAuthority.Leased"/> says so here, so the
-        /// orchestrator re-deals it rather than letting it follow its carrier (<c>docs/container-tree.md</c> D6).
+        /// orchestrator re-deals it rather than letting it follow its carrier (<c>docs/container-tree.md</c> D6). The
+        /// frame flags tell every gateway that a carried container has a physics frame of its own and how its contents
+        /// are bucketed for interest (D18).
         /// </summary>
-        void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto);
+        void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier);
         /// <summary>
         /// Make sure a lease row exists for a runtime container, carrying its placement (a root's absolute box, or a
         /// child's parent id and parent-local box; a <c>Bounds</c> converts to a root) and, when

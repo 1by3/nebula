@@ -1,0 +1,20 @@
+---
+title: "FrameCrossing"
+description: "What a crossing policy says about one entity crossing a frame boundary (docs/container-tree.md D16)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/PhysicsFrames.cs)</div>
+
+```csharp
+public enum FrameCrossing
+```
+
+What a crossing policy says about one entity crossing a frame boundary (`docs/container-tree.md` D16).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="allow"></span>`Allow` |  | Cross now. |
+| <span id="veto"></span>`Veto` |  | Do not cross: the entity stays in the container it is in. The game keeps it on its side (a hull wall). |
+| <span id="defer"></span>`Defer` |  | Not yet: ask again next tick (the airlock is cycling). |

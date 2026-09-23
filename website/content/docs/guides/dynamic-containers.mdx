@@ -36,9 +36,11 @@ var identity = NetworkPrefabs.Instantiate(
 worker.SpawnServerDriven(identity, enclosingContainer);
 ```
 
-After `OnNetworkSpawn`, the dynamic container participates in container lookups on that process. `ContainerRegistry.Find` returns the smallest matching container. `Resolve` applies handover hysteresis, and `Along` includes a dynamic container crossed by a line segment.
+After `OnNetworkSpawn`, the dynamic container participates in container lookups on that process. `ContainerRegistry.Find` returns the deepest container that holds a position, and the smaller one when two are equally deep. `Resolve` applies handover hysteresis, and `Along` includes a dynamic container crossed by a line segment.
 
-Use `ContainerRegistry.Dynamic` to enumerate registered dynamic containers. Read `Container.IsDynamic`, `Carrier`, `Enclosing`, and `Entities` to inspect one.
+To give the carrier's inside a physics scene of its own, so the crew walk and crates rest in the carrier's own coordinates whatever it does, turn on **Own Physics Frame** on its `Container`. See [Physics frames](/docs/guides/physics-frames).
+
+Use `ContainerRegistry.Dynamic` to enumerate registered dynamic containers. Read `Container.IsDynamic`, `Carrier`, `Parent`, and `Entities` to inspect one. `Parent` is the container the carrier is in.
 
 The carrier itself is not inside its own container. Nebula excludes the carried box when it resolves the carrier's position. This also allows nested carriers, such as a vehicle inside a larger vehicle.
 
@@ -64,9 +66,15 @@ When the carrier moves to another worker, Nebula transfers it first. It then tra
 
 Nebula also sends the contents to each worker that holds a ghost of the carrier. This prepares the carrier and its contents for a later handover.
 
+## Lease a dynamic container
+
+Set `Authority` on the carrier's `Container` to `Leased` to give the dynamic container a lease of its own from the start. The worker that spawns the carrier holds the lease first, and the orchestrator assigns it like any other leased container. When that worker stops, the orchestrator gives the lease to another worker instead of returning the container to the carrier's worker.
+
+Use it for a structure whose inside can get busy, such as a base built on a planet: the base can move to a worker of its own while the ground around it stays where it is. A leased dynamic container must sit in a container that does not move, or in a moving one that has a [physics frame](/docs/guides/physics-frames) of its own. Anywhere else, Nebula follows the carrier's worker until the container is somewhere allowed.
+
 ## Pin a dynamic container
 
-Pin a busy dynamic container when you want another worker to simulate its contents separately from the carrier.
+Pin a busy dynamic container when you want another worker to simulate its contents separately from the carrier. For a carrier that moves, give it a [physics frame](/docs/guides/physics-frames) first: without one, the pinned worker simulates the inside against the carrier pose it receives, one replication delay late.
 
 Use the **Carried containers** section in the dashboard, or send:
 

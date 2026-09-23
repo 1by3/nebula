@@ -45,6 +45,14 @@ public const string Pinned = "pinned";
 
 Dynamic containers only: the orchestrator (or the dashboard) assigned this carried container to a worker of its own, so it no longer follows its carrier. Anything else means "follows the carrier" for such a lease.
 
+### Inherited [#inherited]
+
+```csharp
+public const string Inherited = "inherited";
+```
+
+The row belongs to an inherited container ([`ContainerAuthority.Inherited`](/docs/reference/containers/container-authority#inherited)): it carries a box and a parent, and whoever owns the parent simulates what is inside. Never dealt, never owned.
+
 ## Methods
 
 ### IsOwning [#isowning]

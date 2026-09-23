@@ -275,10 +275,12 @@ namespace Nebula
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatOrchestrator).Arg("orchestratorId", orchestratorId).Arg("desiredWorkers", desiredWorkers).End());
         public void SetSetting(string key, string value) => Enqueue(_op.Op(ControlPlaneJson.SetSetting).Arg("key", key).Arg("value", value ?? "").End());
-        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto)
+        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto, bool ownPhysicsFrame = false, FrameInterestMode frameInterest = FrameInterestMode.WithCarrier)
         {
             var op = _op.Op(ControlPlaneJson.EnsureContainer).Arg("containerId", containerId);
             if (authority != ContainerAuthority.Auto) op.Arg("authority", ControlPlaneJson.AuthorityName(authority));
+            if (ownPhysicsFrame) op.Arg("frame", true);
+            if (frameInterest != FrameInterestMode.WithCarrier) op.Arg("interest", (long)frameInterest);
             Enqueue(op.End());
         }
         public void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null) =>

@@ -61,7 +61,7 @@ public string State;
 public bool HasBounds;
 ```
 
-Runtime containers: the box (absolute coordinates) a client registers the container with. See [`LeaseInfo.HasBounds`](/docs/reference/control-plane/lease-info#hasbounds).
+Runtime containers: the box a client registers the container with. See [`LeaseInfo.HasBounds`](/docs/reference/control-plane/lease-info#hasbounds).
 
 ### BoundsCenter [#boundscenter]
 
@@ -74,3 +74,37 @@ public Vector3 BoundsCenter;
 ```csharp
 public Vector3 BoundsSize;
 ```
+
+### HasPlacement [#hasplacement]
+
+```csharp
+public bool HasPlacement;
+```
+
+Runtime containers: where the box goes (parent, centre in double, authority, physics frame), carried in the message's trailing placement section so a protocol-18 reader that predates it still reads the float box. [`HasPlacement`](#hasplacement) is false when the sender wrote none (a root with no frame, whose float box is all there is).
+
+### Placement [#placement]
+
+```csharp
+public ContainerPlacement Placement;
+```
+
+## Properties
+
+### PlacementOrRoot [#placementorroot]
+
+```csharp
+public ContainerPlacement PlacementOrRoot { get; }
+```
+
+The placement to register with: the trailing one when present, otherwise a root at the float box.
+
+## Methods
+
+### Of [#of]
+
+```csharp
+public static ContainerOwnershipEntry Of(LeaseInfo lease, ushort containerIndex, ushort workerIndex);
+```
+
+An entry for a lease row, box and placement included.

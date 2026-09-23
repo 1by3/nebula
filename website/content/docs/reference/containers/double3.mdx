@@ -1,0 +1,98 @@
+---
+title: "Double3"
+description: "A 64-bit-per-axis position."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/ContainerPlacement.cs)</div>
+
+```csharp
+[Serializable]
+public struct Double3 : IEquatable<Double3>
+```
+
+A 64-bit-per-axis position. Container placements that are absolute (a root container 10,000 km out) are kept in this form end to end and narrowed to `float` only after the process's origin has been taken off, which is what makes a far placement exact (`docs/container-tree.md` D5).
+
+## Constructors
+
+### Double3 [#double3]
+
+```csharp
+public Double3(double x, double y, double z);
+```
+
+## Fields
+
+### X, Y, Z [#x-y-z]
+
+```csharp
+public double X, Y, Z;
+```
+
+### Zero [#zero]
+
+```csharp
+public static readonly Double3 Zero = new Double3(0, 0, 0);
+```
+
+## Methods
+
+### From [#from]
+
+```csharp
+public static Double3 From(Vector3 v);
+```
+
+Widen a float vector.
+
+### ToVector3 [#tovector3]
+
+```csharp
+public Vector3 ToVector3();
+```
+
+Narrow to a float vector. Take any origin off first.
+
+### operator + [#operator]
+
+```csharp
+public static Double3 operator +(Double3 a, Double3 b);
+public static Double3 operator +(Double3 a, Vector3 b);
+```
+
+### operator - [#operator]
+
+```csharp
+public static Double3 operator -(Double3 a, Double3 b);
+public static Double3 operator -(Double3 a, Vector3 b);
+```
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(Double3 other);
+public override bool Equals(object obj);
+```
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### operator == [#operator]
+
+```csharp
+public static bool operator ==(Double3 a, Double3 b);
+```
+
+### operator != [#operator]
+
+```csharp
+public static bool operator !=(Double3 a, Double3 b);
+```
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

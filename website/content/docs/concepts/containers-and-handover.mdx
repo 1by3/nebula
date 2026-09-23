@@ -11,11 +11,35 @@ Add the `Container` MonoBehaviour to a scene object to create a box volume. The 
 
 Nebula parents contained entities under the container transform and sends positions in that local space. Moving the container therefore does not change the local coordinates of its contents.
 
-A container authored in a scene is **static** and assigned to a worker. A container created with an entity is **dynamic**. It moves with that entity and normally follows the entity's worker. This page focuses on static containers. See [Dynamic containers](/docs/guides/dynamic-containers) for moving containers.
+Every container is described by three independent properties:
+
+| Property | Read it from | Values |
+| --- | --- | --- |
+| Where the box is | `FrameMode` | `Fixed`: placed relative to the container it is in. `Entity`: carried by an entity and moves with it (a [dynamic container](/docs/guides/dynamic-containers)). |
+| Who simulates what is inside | `Authority` (what you set), `IsLeased` (what applies now) | `Leased`: the container has its own [lease](#leases-and-epochs) and worker. `Inherited`: whoever simulates the container it is in simulates this one too. `Auto`, the default: leased for a fixed box, inherited for a carried one. |
+| Where it comes from | `Source` | `Baked`: authored in a scene or baked into a world manifest. `Runtime`: registered while the mesh runs (a [runtime container](/docs/guides/runtime-containers)). `Prefab`: part of a carrier prefab. |
+
+Any combination is allowed. For example, a building on a planet can be part of a prefab and leased, so a busy base moves to a worker of its own. `IsDynamic` and `IsRuntime` are shorthands for an `Entity` frame and a `Runtime` source.
+
+A container can also have a [physics frame](/docs/guides/physics-frames) of its own: a separate physics scene in which it stands still, so what is inside simulates in its local coordinates.
+
+### The container tree
+
+Containers form a tree. The root of the tree is the [scope](/docs/guides/scopes), and every container has a `Parent`:
+
+- A baked container's parent is the smallest baked container of the same scope that encloses it. Nebula computes it when it loads the scene or manifest, so every process builds the same tree.
+- A runtime container names its parent when it is registered, and its box is given in the parent's local space.
+- A carried container's parent is the container its carrier is in, so it changes as the carrier moves.
+
+`Children` lists a container's baked and runtime children, and `Depth` counts the containers above it. An inherited container takes its owner from its parent, so when the orchestrator assigns the parent to another worker, everything in the inherited child goes with it.
+
+A leased container may only sit under a parent that does not move, or under a moving parent that has a physics frame of its own. Under a moving parent without a frame, the leased container's worker would simulate against a pose that arrives one replication delay late. Nebula logs a warning and simulates it as inherited until it is somewhere else (`AuthorityDemoted`).
+
+When an entity moves, Nebula places it in the deepest container that holds its position, and uses the smaller one when two are equally deep. An entity is never placed inside a container that it carries, directly or through anything that rides inside it.
 
 At startup, `ContainerRegistry.Rebuild()` collects the containers in the loaded scene. It sorts them by ID and assigns each one an `Index`. Nebula uses the ID for control-plane assignments and the smaller index in network messages.
 
-`ContainerRef` identifies a static container by its index. It identifies a dynamic container by the network ID of its carrier.
+`ContainerRef` identifies a baked container by its index. It identifies a carried container by the network ID of its carrier and a runtime container by the 64-bit ID the game gave it.
 
 Nebula treats two containers as neighbors when their bounds touch or overlap. The registry records static neighbors in `Neighbors`. Call `ContainerRegistry.NeighborsOf` when you also need dynamic containers that currently touch the volume.
 
@@ -33,7 +57,7 @@ You do not need to create separate boundary or transition objects.
 
 ## Leases and epochs
 
-The orchestrator writes one `container_lease` row for each static container. This row records the container ID, worker ID, epoch, and state. Every 500 milliseconds, the orchestrator distributes containers across active workers. It keeps current assignments when possible so a rebalance moves fewer containers.
+The orchestrator writes one lease row for each leased container. This row records the container ID, worker ID, epoch, and state. Every 500 milliseconds, the orchestrator distributes containers across active workers. It keeps current assignments when possible so a rebalance moves fewer containers. It never assigns an inherited container: that container has no worker of its own.
 
 When the orchestrator assigns a container to a different worker, it increments the assignment's **lease epoch**. An epoch is a number used to order ownership changes.
 
@@ -87,6 +111,8 @@ Both workers report the change to the gateway. The gateway then accepts the new 
 If the two containers are owned by the same worker, none of this leaves the process: the entity is reparented, `OnContainerChanged` fires and `LocalHandovers` ticks up.
 
 When the entity that crosses carries a container of its own, everything inside that container is transferred right after it, in the same tick and on the same ordered channel: a ship crossing a seam takes its crew along, and their container-local poses never change.
+
+Moving into or out of a container with a [physics frame](/docs/guides/physics-frames) of its own is a crossing: the worker that simulates the frame's carrier converts the entity's pose at that tick, and any other worker hands the entity to that worker first. See [Cross the frame's boundary](/docs/guides/physics-frames#cross-the-frames-boundary).
 
 The client's copy keeps the same network ID during a handover. New snapshots include the updated epoch and worker index. The owning client can continue prediction because the transfer includes pending input.
 

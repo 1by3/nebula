@@ -396,7 +396,11 @@ OwnerState :=
 
 ```text
 ContainerOwnership := u8 flags, u16 entry_count, OwnershipEntry[entry_count],
-                      u16 remove_count, string removed_container_id[remove_count]
+                      u16 remove_count, string removed_container_id[remove_count],
+                      [u16 placement_count, Placement[placement_count]]
+Placement := u16 entry_index, string parent_id,
+             f64 center_x, f64 center_y, f64 center_z,
+             u8 authority, u8 placement_flags
 OwnershipEntry :=
   u16 container_index,
   string container_id,
@@ -412,7 +416,9 @@ OwnershipEntry :=
 
 Message flag bit 0 (`Full`) means the entries are the complete set of containers this client should know about: the client forgets every container the message does not name. Without it the message is a change to what the client already has, and `removed_container_id` names the containers to forget. A gateway sends the removes after the entities in those containers have been despawned, and sends the upserts before the spawns that need them, so an entity never arrives before its container.
 
-Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box in absolute world coordinates. Other bits are reserved. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
+Entry flag bit 0 (`Bounds`) marks a runtime container and appends its axis-aligned box. Other bits are reserved.
+
+The trailing placement section is optional; a reader stops when the message ends before it. Each `Placement` completes the runtime entry at `entry_index` in this message: `parent_id` names the container it sits in (empty for a root), and the double-precision centre is local to that parent, or absolute for a root. For such an entry the float `bounds_center` is the same value narrowed and a reader that knows the placement section MUST use the placement instead. `authority` is `0` (default), `1` (leased), or `2` (inherited). `placement_flags` bit 0 means the container has a physics frame of its own and bit 1 that its contents are bucketed in the frame's own regions. A sender writes a placement only for an entry that needs one: a child, a framed container, a non-default authority, or a centre a float cannot hold. An empty `worker_id` represents an unassigned lease. Lease states and transitions are defined by the [control-plane contract](/docs/specifications/control-plane).
 
 ### Instance preparation
 
@@ -468,8 +474,11 @@ AuthorityTransfer :=
   u64 session_generation,
   string session_gateway,
   u16 interest_gateway_count,
-  string interest_gateway_key[interest_gateway_count]
+  string interest_gateway_key[interest_gateway_count],
+  [u8 crossing]
 ```
+
+`crossing` is an optional trailing byte, written only when it is `1`. It means the sender is handing the entity over for a [physics frame](/docs/guides/physics-frames) crossing that it may not perform itself, because the receiver simulates the frame's carrier. The entity's pose is still in the sender's coordinates. The receiver crosses it on its next tick and does not hand it back for a short hold (30 ticks), so a lagging copy of the frame on the sender cannot return it at once.
 
 `interest_gateway_key` lists the gateways that were following the entity on the old owner without subscribing its region — an explicit per-entity subscription, or the session the gateway speaks for. The old owner also sends each of them an `EntityRedirect`; the new owner announces the entity's spawn to them in addition to the gateways its own subscribed regions cover, so a followed entity is not lost when it changes worker.
 

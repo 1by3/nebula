@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Nebula.Tests
 {
     /// <summary>
-    /// Conformance scenario 20 (<c>docs/container-tree.md</c> §3): a container with a physics frame of its own. The frame
+    /// Conformance scenario 21 (<c>docs/container-tree.md</c> §3): a container with a physics frame of its own. The frame
     /// is a local physics scene in which the container stands still, holding a static copy of the carrier's colliders;
     /// what is inside simulates in container-local coordinates with the container's own "down"; entities cross into and
     /// out of the frame through the frame's pose owner, converted at its pose; a worker that is not the pose owner hands
