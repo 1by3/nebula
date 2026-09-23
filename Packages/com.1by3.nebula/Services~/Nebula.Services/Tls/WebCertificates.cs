@@ -92,7 +92,19 @@ namespace Nebula.Tls
             for (int i = 1; i < certificates.Count; i++) intermediates.Add(certificates[i]);
             _notAfter = leaf.NotAfter.ToUniversalTime();
             _renewAt = leaf.NotBefore.ToUniversalTime() + (leaf.NotAfter - leaf.NotBefore) / 2;
-            _current = SslStreamCertificateContext.Create(leaf, intermediates, offline: true);
+            _current = CreateContext(leaf, intermediates);
+        }
+
+        private static SslStreamCertificateContext CreateContext(X509Certificate2 leaf, X509Certificate2Collection intermediates)
+        {
+            try { return SslStreamCertificateContext.Create(leaf, intermediates, offline: true); }
+            catch (CryptographicException) when (OperatingSystem.IsWindows())
+            {
+                // Windows' chain engine can refuse an offline build outright ("An unknown chain building error
+                // occurred") when the root is not in the machine's store, as with a private ACME CA. An online build
+                // accepts the same chain; it only reaches the network for a certificate that names an AIA location.
+                return SslStreamCertificateContext.Create(leaf, intermediates, offline: false);
+            }
         }
 
         private async Task KeepCurrentAsync(CancellationToken ct)

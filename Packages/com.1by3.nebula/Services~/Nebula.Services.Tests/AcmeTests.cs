@@ -242,7 +242,20 @@ public sealed class AcmeTests
                 Assert.That(acme.RequestedValue, Is.EqualTo("127.0.0.1"));
                 Assert.That(acme.RequestedProfile, Is.EqualTo("shortlived"));
 
-                using var handler = new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, certificate, _, _) => certificate != null && TrustedByTestCa(certificate, acme.Ca) };
+                // Trust the test CA inside the TLS handshake's own chain build. Leaving it to a validation callback is not
+                // enough on Windows: its chain engine can throw for a chain whose root is not in the machine's store
+                // before the callback ever runs.
+                var trust = new X509ChainPolicy { TrustMode = X509ChainTrustMode.CustomRootTrust, RevocationMode = X509RevocationMode.NoCheck };
+                trust.CustomTrustStore.Add(acme.Ca);
+                using var handler = new SocketsHttpHandler
+                {
+                    SslOptions =
+                    {
+                        CertificateChainPolicy = trust,
+                        RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
+                            errors == System.Net.Security.SslPolicyErrors.None && certificate is X509Certificate2 leaf && TrustedByTestCa(leaf, acme.Ca),
+                    },
+                };
                 using var client = new HttpClient(handler);
                 var preflight = new HttpRequestMessage(HttpMethod.Options, $"https://127.0.0.1:{webPort}{GatewayHttpServer.SignalingPath}");
                 Assert.That((await client.SendAsync(preflight)).StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
