@@ -166,7 +166,7 @@ public class StorageAndHostTests
         Assert.That(a.Version, Is.EqualTo(2));
 
         IReadOnlyList<PersistedEntityRecord>? inC1 = null, carried = null, all = null;
-        store.LoadContainer("c1", r => inC1 = r);
+        store.LoadContainers(new[] { "c1" }, r => inC1 = r["c1"]);
         store.LoadCarried("truck", r => carried = r);
         store.LoadWhere(r => r.ContainerId == "c2", r => all = r);
         WaitUntil(() => inC1 != null && carried != null && all != null, store.Tick);
@@ -380,7 +380,7 @@ public class StorageAndHostTests
             AssertSame(newer, a!);
 
             IReadOnlyList<PersistedEntityRecord>? inC1 = null, carried = null, filtered = null;
-            remote.LoadContainer("c1", r => inC1 = r);
+            remote.LoadContainers(new[] { "c1" }, r => inC1 = r["c1"]);
             remote.LoadCarried("truck", r => carried = r);
             remote.LoadWhere(r => r.Key == "b", r => filtered = r);
             WaitUntil(() => inC1 != null && carried != null && filtered != null, Pump);

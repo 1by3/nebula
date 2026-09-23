@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Nebula
 {
@@ -14,9 +13,13 @@ namespace Nebula
     /// <para>
     /// Saves are coalesced per key and posted in batches from a sender thread a fraction of a second after they are
     /// issued; a batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away.
-    /// Loads run one request each on the thread pool, retried until they succeed, and their answers are handed back
-    /// from <see cref="Tick"/> on the main thread like every other store. <see cref="IsConnected"/> and
-    /// <see cref="KnownCount"/> come from a status probe every few seconds.
+    /// Reads wait in one queue and <see cref="MaxConcurrentReads"/> reader threads send them, one request at a time
+    /// each, retried until they succeed; their answers are handed back from <see cref="Tick"/> on the main thread
+    /// like every other store. However many reads are asked for at once, the store never has more than
+    /// <see cref="MaxConcurrentReads"/> of them in flight, so a burst of reads cannot swamp the process's thread pool
+    /// or its connections to the orchestrator, which the control plane's heartbeat shares.
+    /// <see cref="LoadContainers"/> asks for up to <see cref="PersistenceHost.MaxContainersPerLoad"/> containers per
+    /// request. <see cref="IsConnected"/> and <see cref="KnownCount"/> come from a status probe every few seconds.
     /// </para>
     /// </summary>
     public sealed class RemotePersistenceStore : IPersistenceStore
@@ -25,7 +28,17 @@ namespace Nebula
         public const float FlushIntervalSeconds = 0.25f;
         public const float StatusIntervalSeconds = 5f;
         public const float RetrySeconds = 1f;
+        /// <summary>Reader threads, and so the most read requests this store has in flight at once.</summary>
+        public const int MaxConcurrentReads = 2;
         private const int MaxBatch = 256;
+
+        /// <summary>One read waiting for a reader thread: a GET, or a POST when <see cref="Body"/> is set.</summary>
+        private sealed class PendingRead
+        {
+            public string Path;
+            public string Body;
+            public Action<Dictionary<string, object>> OnBody;
+        }
 
         private readonly string _baseUrl;
         private readonly string _token;
@@ -40,7 +53,12 @@ namespace Nebula
         private readonly List<(long Seq, Action Done)> _barriers = new List<(long, Action)>();
         private readonly List<Action> _callbacks = new List<Action>();
         private readonly List<Action> _draining = new List<Action>();
+        private readonly Queue<PendingRead> _reads = new Queue<PendingRead>();
+        private int _readsInFlight;
+        /// <summary>Set by <see cref="Dispose"/>: ends the retry waits, which write traffic must not cut short.</summary>
+        private readonly ManualResetEventSlim _stopped = new ManualResetEventSlim(false);
         private Thread _sender;
+        private Thread[] _readers;
         private volatile bool _running;
         private volatile bool _connected;
         private volatile int _knownCount = -1;
@@ -61,6 +79,8 @@ namespace Nebula
         public int KnownCount => _knownCount;
         /// <summary>Saves and deletes waiting for the next batch.</summary>
         public int PendingWrites { get { lock (_gate) return _pendingSaves.Count + _pendingDeletes.Count; } }
+        /// <summary>Read requests queued or in flight.</summary>
+        public int PendingReads { get { lock (_gate) return _reads.Count + _readsInFlight; } }
 
         public void Connect()
         {
@@ -73,6 +93,12 @@ namespace Nebula
             _running = true;
             _sender = new Thread(SendLoop) { IsBackground = true, Name = "nebula-persistence-sender" };
             _sender.Start();
+            _readers = new Thread[MaxConcurrentReads];
+            for (int i = 0; i < _readers.Length; i++)
+            {
+                _readers[i] = new Thread(ReadLoop) { IsBackground = true, Name = "nebula-persistence-reader-" + i };
+                _readers[i].Start();
+            }
             NebulaLog.Info($"persistence: remote store at {_baseUrl}{PersistenceHost.Prefix}");
         }
 
@@ -152,27 +178,49 @@ namespace Nebula
         public void Load(string key, Action<PersistedEntityRecord> onLoaded)
         {
             if (onLoaded == null) return;
-            Fetch($"{PersistenceHost.Prefix}/record?key={Uri.EscapeDataString(key ?? "")}", body =>
+            EnqueueRead($"{PersistenceHost.Prefix}/record?key={Uri.EscapeDataString(key ?? "")}", null, body =>
             {
                 var record = PersistedRecordJson.ParseOne(body);
                 Deliver(() => onLoaded(record));
             });
         }
 
-        public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
+        /// <summary>
+        /// <c>POST /api/store/containers</c>, <see cref="PersistenceHost.MaxContainersPerLoad"/> ids per request; a
+        /// longer list becomes several requests in the read queue and is still answered once, when all are back.
+        /// </summary>
+        public void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded)
         {
             if (onLoaded == null) return;
-            Fetch($"{PersistenceHost.Prefix}/container?id={Uri.EscapeDataString(containerId ?? "")}", body =>
+            var result = ContainerRecords.For(containerIds, out var ids);
+            if (ids.Count == 0) { Deliver(() => onLoaded(result)); return; }
+            int chunkSize = PersistenceHost.MaxContainersPerLoad;
+            int remaining = (ids.Count + chunkSize - 1) / chunkSize;
+            for (int start = 0; start < ids.Count; start += chunkSize)
             {
-                var records = PersistedRecordJson.ParseList(body);
-                Deliver(() => onLoaded(records));
-            });
+                var sb = new StringBuilder("{\"ids\":[");
+                for (int i = start; i < ids.Count && i < start + chunkSize; i++)
+                {
+                    if (i > start) sb.Append(',');
+                    sb.Append(JsonWriter.Quote(ids[i]));
+                }
+                sb.Append("]}");
+                EnqueueRead(PersistenceHost.Prefix + "/containers", sb.ToString(), body =>
+                {
+                    var records = PersistedRecordJson.ParseList(body);
+                    lock (result)
+                    {
+                        for (int i = 0; i < records.Count; i++) ContainerRecords.Add(result, records[i]);
+                        if (--remaining == 0) Deliver(() => onLoaded(result));
+                    }
+                });
+            }
         }
 
         public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
         {
             if (onLoaded == null) return;
-            Fetch($"{PersistenceHost.Prefix}/carried?key={Uri.EscapeDataString(carrierKey ?? "")}", body =>
+            EnqueueRead($"{PersistenceHost.Prefix}/carried?key={Uri.EscapeDataString(carrierKey ?? "")}", null, body =>
             {
                 var records = PersistedRecordJson.ParseList(body);
                 Deliver(() => onLoaded(records));
@@ -183,7 +231,7 @@ namespace Nebula
         public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
         {
             if (onLoaded == null) return;
-            Fetch($"{PersistenceHost.Prefix}/all", body =>
+            EnqueueRead($"{PersistenceHost.Prefix}/all", null, body =>
             {
                 var all = PersistedRecordJson.ParseList(body);
                 var hits = new List<PersistedEntityRecord>();
@@ -197,7 +245,7 @@ namespace Nebula
         {
             if (onCounted == null) return;
             string path = $"{PersistenceHost.Prefix}/count?scope={Uri.EscapeDataString(scopeKey ?? "")}&container={Uri.EscapeDataString(containerId ?? "")}";
-            Fetch(path, body =>
+            EnqueueRead(path, null, body =>
             {
                 int count = (int)ControlPlaneJson.Num(body, "count");
                 Deliver(() => onCounted(count));
@@ -209,11 +257,17 @@ namespace Nebula
             if (!_running) return;
             _running = false;
             lock (_gate) Monitor.PulseAll(_gate);
+            _stopped.Set();
             // Let the sender post the last checkpoints of a shutting-down worker.
             _sender?.Join(2000);
             try { _http.CancelPendingRequests(); } catch { }
+            if (_readers != null) foreach (var reader in _readers) reader.Join(500);
             _http.Dispose();
-            lock (_gate) _callbacks.Clear();
+            lock (_gate)
+            {
+                _callbacks.Clear();
+                _reads.Clear();
+            }
         }
 
         // ---------------------------------------------------------------------------------------- threads
@@ -223,37 +277,63 @@ namespace Nebula
             lock (_gate) _callbacks.Add(callback);
         }
 
-        /// <summary>GET <paramref name="path"/> on the thread pool, retrying until it succeeds, then parse and hand back.</summary>
-        private void Fetch(string path, Action<Dictionary<string, object>> onBody)
+        /// <summary>Queue a read for the reader threads: GET <paramref name="path"/>, or POST <paramref name="body"/> to it.</summary>
+        private void EnqueueRead(string path, string body, Action<Dictionary<string, object>> onBody)
         {
-            Task.Run(async () =>
+            lock (_gate)
             {
-                while (_running)
+                _reads.Enqueue(new PendingRead { Path = path, Body = body, OnBody = onBody });
+                Monitor.PulseAll(_gate);
+            }
+        }
+
+        /// <summary>One reader thread: take the next read, send it until it succeeds, parse it and hand it back.</summary>
+        private void ReadLoop()
+        {
+            while (true)
+            {
+                PendingRead read;
+                lock (_gate)
                 {
-                    try
+                    while (_reads.Count == 0 && _running) Monitor.Wait(_gate);
+                    if (!_running) return;
+                    read = _reads.Dequeue();
+                    _readsInFlight++;
+                }
+                try
+                {
+                    while (_running && !TryRead(read)) Sleep(RetrySeconds);
+                }
+                finally
+                {
+                    lock (_gate) _readsInFlight--;
+                }
+            }
+        }
+
+        private bool TryRead(PendingRead read)
+        {
+            try
+            {
+                using (var req = NebulaHttp.Request(read.Body == null ? HttpMethod.Get : HttpMethod.Post, _baseUrl + read.Path, _token))
+                {
+                    if (read.Body != null) req.Content = new StringContent(read.Body, Encoding.UTF8, "application/json");
+                    using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
                     {
-                        using (var req = new HttpRequestMessage(HttpMethod.Get, _baseUrl + path))
-                        {
-                            if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
-                            using (var resp = await _http.SendAsync(req).ConfigureAwait(false))
-                            {
-                                string text = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}: {Trim(text)}");
-                                if (!PersistenceJson.TryParseObject(text, out var body, out string error)) throw new FormatException(error);
-                                onBody(body);
-                                _error = null;
-                                return;
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        if (!_running) return;
-                        _error = $"load {path}: {e.Message}";
-                        await Task.Delay(TimeSpan.FromSeconds(RetrySeconds)).ConfigureAwait(false);
+                        string text = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}: {Trim(text)}");
+                        if (!PersistenceJson.TryParseObject(text, out var body, out string error)) throw new FormatException(error);
+                        read.OnBody(body);
+                        _error = null;
+                        return true;
                     }
                 }
-            });
+            }
+            catch (Exception e)
+            {
+                if (_running) _error = $"load {read.Path}: {e.Message}";
+                return false;
+            }
         }
 
         private void SendLoop()
@@ -344,9 +424,8 @@ namespace Nebula
         {
             try
             {
-                using (var req = new HttpRequestMessage(HttpMethod.Post, _baseUrl + path))
+                using (var req = NebulaHttp.Request(HttpMethod.Post, _baseUrl + path, _token))
                 {
-                    if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
                     req.Content = new StringContent(body, Encoding.UTF8, "application/json");
                     using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
                     {
@@ -369,9 +448,8 @@ namespace Nebula
         {
             try
             {
-                using (var req = new HttpRequestMessage(HttpMethod.Get, _baseUrl + PersistenceHost.Prefix + "/status"))
+                using (var req = NebulaHttp.Request(HttpMethod.Get, _baseUrl + PersistenceHost.Prefix + "/status", _token))
                 {
-                    if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
                     using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
                     {
                         string text = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -390,9 +468,10 @@ namespace Nebula
             }
         }
 
+        /// <summary>Wait before a retry. Only <see cref="Dispose"/> cuts it short: new saves and reads pulse <c>_gate</c> all the time.</summary>
         private void Sleep(float seconds)
         {
-            lock (_gate) { if (_running) Monitor.Wait(_gate, TimeSpan.FromSeconds(seconds)); }
+            if (_running) _stopped.Wait(TimeSpan.FromSeconds(seconds));
         }
 
         private static string Trim(string s) => string.IsNullOrEmpty(s) ? "" : s.Length > 200 ? s.Substring(0, 200) + "..." : s;

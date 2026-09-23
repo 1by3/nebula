@@ -113,11 +113,13 @@ public void Clear();
 public void Load(string key, Action<PersistedEntityRecord> onLoaded);
 ```
 
-### LoadContainer [#loadcontainer]
+### LoadContainers [#loadcontainers]
 
 ```csharp
-public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+One job on the writer thread, one `SELECT ... WHERE container_id IN (...)` per [`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) ids (the `nebula_entity_container` index answers it), answered once when every chunk has been read.
 
 ### LoadCarried [#loadcarried]
 

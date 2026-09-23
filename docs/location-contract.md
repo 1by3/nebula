@@ -177,7 +177,8 @@ the strictness only bites callers who ask the contract the question it exists to
 - SQL (`SqlPersistenceStore`): `scope_key TEXT NOT NULL DEFAULT ''`, added with an `ALTER TABLE` whose failure is
   taken as "already there" (SQLite has no `ADD COLUMN IF NOT EXISTS`).
 
-`LoadContainer(containerId)` is unchanged and still keyed by id alone: a container id is unique across the mesh, so the
+The container read (`LoadContainer(containerId)` then, `LoadContainers(containerIds)` since the restore-burst fix) is
+keyed by id alone: a container id is unique across the mesh, so the
 scope key on the record is information, not a second lookup key. **D10** No store query by scope key in this
 milestone; scope activation (NEB-233) decides what it needs.
 

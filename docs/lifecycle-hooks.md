@@ -161,8 +161,8 @@ that wants one runs it in its own service and reads the store (§5). No relation
 ## 5. Offline reads
 
 The records of a scope nothing is simulating are ordinary records. **`IPersistenceStore.LoadWhere` is the offline
-read** — a predicate over every record, answered on the main thread — with `Load` for one key and `LoadContainer`
-for one box; `CountRecords` (D5) answers the cheap "is there anything there?" without moving any of them. A tool, a
+read** — a predicate over every record, answered on the main thread — with `Load` for one key and `LoadContainers`
+for a list of boxes; `CountRecords` (D5) answers the cheap "is there anything there?" without moving any of them. A tool, a
 game director or a web service reaches the same store through `RemotePersistenceStore` over the orchestrator's
 `/api/store` endpoints, with the mesh token, and needs no worker and no activation.
 

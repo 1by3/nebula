@@ -193,7 +193,7 @@ A restored entity comes back at `record.Epoch + 1`. Anything still holding the o
 When a worker gains the lease of a static container, it does not restore that container's records straight away. Restoring an entity that is still alive somewhere else would create a second copy, so the service is deliberately cautious:
 
 1. **Grace period.** The worker waits `NebulaConfig.PersistenceRestoreGraceSeconds` (default 3 s) after the lease appears. A graceful handover from the previous owner arrives inside that window and wins.
-2. **Load the container.** The worker reads every record whose `ContainerId` is this container and that is not inside a carrier.
+2. **Load the container.** The worker reads every record whose `ContainerId` is this container and that is not inside a carrier. Containers that are due together are read together: one request asks for up to 256 containers, and a worker has at most two of these requests waiting at a time. A worker that gains hundreds of containers at once, for example after another worker fails, therefore sends a few requests rather than one per container. Containers beyond that wait a frame or two longer.
 3. **Judge each record.** A record is skipped when a client owned it, when an entity with that key is already alive in this process, or when it belongs inside a carrier. A record whose saving worker is still alive on the control plane and that is newer than twice the checkpoint interval waits one more grace period, in case that worker is about to hand the entity over.
 4. **Restore what is left.** The entity is instantiated from its prefab (by ID, falling back to the prefab name if the prefab list was reordered), placed in the container at its saved pose, given its saved state, and spawned with authority at the saved epoch plus one. The worker logs one line per container: `persistence: restored N persisted entities into <containerId>`.
 
@@ -308,11 +308,14 @@ A worker's `remote` store talks to the orchestrator's dashboard address, the sam
 | --- | --- |
 | `POST /api/store/save` `{"records":[...]}` | Save a batch. A worker gathers its checkpoints for a quarter of a second and coalesces them per key, so a checkpoint pass is one request. |
 | `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear` | Delete records. |
-| `GET /api/store/record?key=`, `.../container?id=`, `.../carried?key=`, `.../all` | Load one record, a container's records, a carrier's records, or everything. |
+| `POST /api/store/containers` `{"ids":[...]}` | Load the records of up to 256 containers in one request, as one `{"records":[...]}` list. A request that names more containers is refused with HTTP 400. |
+| `GET /api/store/record?key=`, `.../carried?key=`, `.../all` | Load one record, a carrier's records, or everything. |
 | `GET /api/store/count?scope=&container=` | How many records a scope holds (optionally narrowed to one container), counted in the database — only the number travels. |
 | `GET /api/store/status` | Backend, whether it is connected, and how many records it holds. The worker probes it every five seconds for `IsConnected` and `KnownCount`. |
 
 Records travel as JSON with the state blob base64-encoded. A batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away; a load is retried until it succeeds.
+
+A worker sends at most two loads at a time, however many it has been asked for; the rest wait in a queue inside the worker. Saves go out one batch at a time. This keeps a burst of loads from delaying the worker's control-plane heartbeat, which goes to the same orchestrator address. A worker whose heartbeat stops is declared dead after `WorkerTimeoutSeconds`.
 
 ### Running and resetting it
 
@@ -348,7 +351,7 @@ The running mesh keeps simulating what it is holding, and its next checkpoints w
 
 The records of a world nothing is simulating are ordinary records: you do not have to activate a [scope](/docs/guides/scopes) to read what is saved in it.
 
-**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load` and `LoadContainer` are the same read narrowed to one key or one container. `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
+**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load` and `LoadContainers` are the same read narrowed to one key or to a list of containers (pass one ID to read one container). `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
 
 ```csharp
 store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records =>

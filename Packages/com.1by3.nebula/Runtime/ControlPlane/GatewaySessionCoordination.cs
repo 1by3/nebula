@@ -458,9 +458,8 @@ namespace Nebula
                 try
                 {
                     using (var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-                    using (var req = new HttpRequestMessage(HttpMethod.Post, _baseUrl + GatewaySessionDirectory.Path))
+                    using (var req = NebulaHttp.Request(HttpMethod.Post, _baseUrl + GatewaySessionDirectory.Path, _token))
                     {
-                        if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
                         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
                         using (var response = await _http.SendAsync(req, cancel.Token))
                         {

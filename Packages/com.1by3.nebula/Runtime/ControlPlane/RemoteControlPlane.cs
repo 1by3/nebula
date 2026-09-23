@@ -222,9 +222,8 @@ namespace Nebula
                 try
                 {
                     string url = $"{_baseUrl}{ControlPlaneHost.Path}?since={since.ToString(CultureInfo.InvariantCulture)}&wait={LongPollSeconds}";
-                    using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                    using (var req = NebulaHttp.Request(HttpMethod.Get, url, _token))
                     {
-                        if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
                         using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
                         {
                             string body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -263,9 +262,8 @@ namespace Nebula
                 {
                     try
                     {
-                        using (var req = new HttpRequestMessage(HttpMethod.Post, _baseUrl + ControlPlaneHost.Path))
+                        using (var req = NebulaHttp.Request(HttpMethod.Post, _baseUrl + ControlPlaneHost.Path, _token))
                         {
-                            if (_token != null) req.Headers.TryAddWithoutValidation(ControlPlaneHost.TokenHeader, _token);
                             req.Content = new StringContent(body, Encoding.UTF8, "application/json");
                             using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
                             {

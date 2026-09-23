@@ -11,7 +11,7 @@ public sealed class RemotePersistenceStore : IPersistenceStore
 
 [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) for a worker: every save and load goes to the orchestrator, which owns the real store ([`PersistenceHost`](/docs/reference/persistence/persistence-host) over the dashboard address, the same one the control plane uses).
 
-Saves are coalesced per key and posted in batches from a sender thread a fraction of a second after they are issued; a batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away. Loads run one request each on the thread pool, retried until they succeed, and their answers are handed back from [`Tick`](#tick) on the main thread like every other store. [`IsConnected`](#isconnected) and [`KnownCount`](#knowncount) come from a status probe every few seconds.
+Saves are coalesced per key and posted in batches from a sender thread a fraction of a second after they are issued; a batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away. Reads wait in one queue and [`MaxConcurrentReads`](#maxconcurrentreads) reader threads send them, one request at a time each, retried until they succeed; their answers are handed back from [`Tick`](#tick) on the main thread like every other store. However many reads are asked for at once, the store never has more than [`MaxConcurrentReads`](#maxconcurrentreads) of them in flight, so a burst of reads cannot swamp the process's thread pool or its connections to the orchestrator, which the control plane's heartbeat shares. [`LoadContainers`](#loadcontainers) asks for up to [`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) containers per request. [`IsConnected`](#isconnected) and [`KnownCount`](#knowncount) come from a status probe every few seconds.
 
 ## Constructors
 
@@ -42,6 +42,14 @@ public const float StatusIntervalSeconds = 5f;
 ```csharp
 public const float RetrySeconds = 1f;
 ```
+
+### MaxConcurrentReads [#maxconcurrentreads]
+
+```csharp
+public const int MaxConcurrentReads = 2;
+```
+
+Reader threads, and so the most read requests this store has in flight at once.
 
 ## Properties
 
@@ -76,6 +84,14 @@ public int PendingWrites { get; }
 ```
 
 Saves and deletes waiting for the next batch.
+
+### PendingReads [#pendingreads]
+
+```csharp
+public int PendingReads { get; }
+```
+
+Read requests queued or in flight.
 
 ## Methods
 
@@ -121,11 +137,13 @@ public void WhenWritten(Action onWritten);
 public void Load(string key, Action<PersistedEntityRecord> onLoaded);
 ```
 
-### LoadContainer [#loadcontainer]
+### LoadContainers [#loadcontainers]
 
 ```csharp
-public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+`POST /api/store/containers`, [`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) ids per request; a longer list becomes several requests in the read queue and is still answered once, when all are back.
 
 ### LoadCarried [#loadcarried]
 

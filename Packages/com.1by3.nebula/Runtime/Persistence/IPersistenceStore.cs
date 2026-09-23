@@ -85,7 +85,7 @@ namespace Nebula
     /// <summary>
     /// Long-term storage for entities that opted into persistence (<see cref="PersistentEntity"/>). One store per
     /// process; the worker's <see cref="NebulaPersistence"/> writes checkpoints through it and reads containers back
-    /// when it gains a lease. In a mesh the orchestrator owns the store (SQLite or PostgreSQL through the standalone
+    /// when it gains leases. In a mesh the orchestrator owns the store (SQLite or PostgreSQL through the standalone
     /// services' <c>SqlPersistenceStore</c>, next to the control plane in the same database) and workers reach it
     /// through <see cref="RemotePersistenceStore"/>; <see cref="LocalPersistenceStore"/> serves single-process runs
     /// and tests.
@@ -123,8 +123,21 @@ namespace Nebula
 
         /// <summary>The record for <paramref name="key"/> (null when there is none).</summary>
         void Load(string key, Action<PersistedEntityRecord> onLoaded);
-        /// <summary>Every record whose <see cref="PersistedEntityRecord.ContainerId"/> is <paramref name="containerId"/> and that is not inside a carrier.</summary>
-        void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+        /// <summary>
+        /// The records of several containers in one read: for each id in <paramref name="containerIds"/>, every
+        /// record whose <see cref="PersistedEntityRecord.ContainerId"/> is that id and that is not inside a carrier.
+        /// <paramref name="onLoaded"/> runs once, on the main thread, with an entry for every distinct id asked for
+        /// (an empty list when nothing is saved there).
+        /// <para>
+        /// This is how a worker restores the containers it gains: however many leases arrive at once,
+        /// <see cref="NebulaPersistence"/> asks for them in a few bounded reads
+        /// (<see cref="NebulaPersistence.MaxContainersPerRestoreLoad"/> ids each, at most
+        /// <see cref="NebulaPersistence.MaxRestoreLoadsInFlight"/> at a time) instead of one read per container. Ask
+        /// for one id to read one box. A store may split a longer list into several backend queries
+        /// (<see cref="PersistenceHost.MaxContainersPerLoad"/> ids each) and still answers once.
+        /// </para>
+        /// </summary>
+        void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
         /// <summary>Every record whose <see cref="PersistedEntityRecord.CarrierKey"/> is <paramref name="carrierKey"/>.</summary>
         void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
         /// <summary>
@@ -147,5 +160,32 @@ namespace Nebula
 
         /// <summary>Delete every record (dashboard / dev reset).</summary>
         void Clear();
+    }
+
+    /// <summary>The answer of <see cref="IPersistenceStore.LoadContainers"/> as the stores build it.</summary>
+    internal static class ContainerRecords
+    {
+        /// <summary>An entry, empty for now, for every distinct non-null id in <paramref name="containerIds"/>; <paramref name="distinct"/> lists them once each, in order.</summary>
+        public static Dictionary<string, IReadOnlyList<PersistedEntityRecord>> For(IReadOnlyList<string> containerIds, out List<string> distinct)
+        {
+            var result = new Dictionary<string, IReadOnlyList<PersistedEntityRecord>>(StringComparer.Ordinal);
+            distinct = new List<string>(containerIds != null ? containerIds.Count : 0);
+            if (containerIds == null) return result;
+            for (int i = 0; i < containerIds.Count; i++)
+            {
+                string id = containerIds[i];
+                if (id == null || result.ContainsKey(id)) continue;
+                result[id] = new List<PersistedEntityRecord>();
+                distinct.Add(id);
+            }
+            return result;
+        }
+
+        /// <summary>File <paramref name="record"/> under its container when that container was asked for and the record is not inside a carrier.</summary>
+        public static void Add(Dictionary<string, IReadOnlyList<PersistedEntityRecord>> result, PersistedEntityRecord record)
+        {
+            if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return;
+            if (result.TryGetValue(record.ContainerId ?? "", out var list)) ((List<PersistedEntityRecord>)list).Add(record);
+        }
     }
 }

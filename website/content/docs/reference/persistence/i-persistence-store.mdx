@@ -9,7 +9,7 @@ description: "Long-term storage for entities that opted into persistence (Persis
 public interface IPersistenceStore : IDisposable
 ```
 
-Long-term storage for entities that opted into persistence ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)). One store per process; the worker's [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) writes checkpoints through it and reads containers back when it gains a lease. In a mesh the orchestrator owns the store (SQLite or PostgreSQL through the standalone services' `SqlPersistenceStore`, next to the control plane in the same database) and workers reach it through [`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store); [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) serves single-process runs and tests.
+Long-term storage for entities that opted into persistence ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)). One store per process; the worker's [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) writes checkpoints through it and reads containers back when it gains leases. In a mesh the orchestrator owns the store (SQLite or PostgreSQL through the standalone services' `SqlPersistenceStore`, next to the control plane in the same database) and workers reach it through [`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store); [`LocalPersistenceStore`](/docs/reference/persistence/local-persistence-store) serves single-process runs and tests.
 
 The contract is request/response on purpose (no subscriptions), so a relational backend fits behind it. Every callback lands on the main thread from [`Tick`](#tick). Writes are fire-and-forget ([`WhenWritten`](#whenwritten) is the barrier for the few callers that must wait): a save is accepted by the backend when its epoch is not older than the stored one, otherwise dropped, and the caller never waits. The store is never on the per-tick path: if it is unreachable the mesh keeps simulating and saves are retried on the next checkpoint.
 
@@ -87,13 +87,15 @@ void Load(string key, Action<PersistedEntityRecord> onLoaded);
 
 The record for `key` (null when there is none).
 
-### LoadContainer [#loadcontainer]
+### LoadContainers [#loadcontainers]
 
 ```csharp
-void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
 
-Every record whose [`PersistedEntityRecord.ContainerId`](/docs/reference/persistence/persisted-entity-record#containerid) is `containerId` and that is not inside a carrier.
+The records of several containers in one read: for each id in `containerIds`, every record whose [`PersistedEntityRecord.ContainerId`](/docs/reference/persistence/persisted-entity-record#containerid) is that id and that is not inside a carrier. `onLoaded` runs once, on the main thread, with an entry for every distinct id asked for (an empty list when nothing is saved there).
+
+This is how a worker restores the containers it gains: however many leases arrive at once, [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) asks for them in a few bounded reads ([`NebulaPersistence.MaxContainersPerRestoreLoad`](/docs/reference/persistence/nebula-persistence#maxcontainersperrestoreload) ids each, at most [`NebulaPersistence.MaxRestoreLoadsInFlight`](/docs/reference/persistence/nebula-persistence#maxrestoreloadsinflight) at a time) instead of one read per container. Ask for one id to read one box. A store may split a longer list into several backend queries ([`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) ids each) and still answers once.
 
 ### LoadCarried [#loadcarried]
 

@@ -62,7 +62,7 @@ namespace Nebula.Tests
         private static IReadOnlyList<PersistedEntityRecord> LoadedContainer(LocalPersistenceStore store, string containerId)
         {
             IReadOnlyList<PersistedEntityRecord> result = null;
-            store.LoadContainer(containerId, r => result = r);
+            store.LoadContainers(new[] { containerId }, r => result = r[containerId]);
             store.Tick();
             return result;
         }

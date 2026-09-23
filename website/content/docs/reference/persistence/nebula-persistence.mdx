@@ -15,6 +15,8 @@ It is never on the per-tick path. Checkpoints run from the worker's `Update`, at
 
 Restores are deliberately timid, because a persisted entity coming back must never become a second copy of one that is still alive somewhere. A freshly leased container waits [`NebulaConfig.PersistenceRestoreGraceSeconds`](/docs/reference/core/nebula-config#persistencerestoregraceseconds) so the previous owner's handover wins; a record whose key is already alive here is skipped; a record written moments ago by a worker that is still alive waits another grace period, in case that worker is about to hand the entity over; and if a handover arrives after a restore anyway, the incoming entity wins and the restored duplicate is despawned *without* deleting the record.
 
+Restores are also bounded in how hard they ask. A worker can gain hundreds of containers at once (a re-deal after another worker died, a rebalance, a burst of runtime chunks), and each frame the containers that are due are read in batches of at most [`MaxContainersPerRestoreLoad`](#maxcontainersperrestoreload) through [`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers), with at most [`MaxRestoreLoadsInFlight`](#maxrestoreloadsinflight) of those batches waiting on the store at a time. The rest wait for a later frame. Nothing about a lease change can make the worker send an unbounded burst of requests to the orchestrator, which serves the control plane's heartbeats from the same address.
+
 ## Fields
 
 ### MaxSavesPerFrame [#maxsavesperframe]
@@ -48,6 +50,22 @@ public const float PoseTurnThresholdDegrees = 5f;
 ```
 
 Degrees an entity must turn since its last save before the turn alone is worth a checkpoint.
+
+### MaxContainersPerRestoreLoad [#maxcontainersperrestoreload]
+
+```csharp
+public const int MaxContainersPerRestoreLoad = PersistenceHost.MaxContainersPerLoad;
+```
+
+Most containers one restore read asks the store for ([`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers)).
+
+### MaxRestoreLoadsInFlight [#maxrestoreloadsinflight]
+
+```csharp
+public const int MaxRestoreLoadsInFlight = 2;
+```
+
+Most restore reads waiting on the store at once. Containers that are due beyond that wait for a later frame.
 
 ## Properties
 
@@ -90,6 +108,14 @@ public int RestoredCount { get; }
 ```
 
 Entities this service has brought back since the process started.
+
+### RestoreLoadsInFlight [#restoreloadsinflight]
+
+```csharp
+public int RestoreLoadsInFlight { get; }
+```
+
+Restore reads ([`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers)) waiting on the store right now.
 
 ### OldestDirtyAgeSeconds [#oldestdirtyageseconds]
 

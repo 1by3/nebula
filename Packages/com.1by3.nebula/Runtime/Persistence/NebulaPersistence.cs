@@ -21,6 +21,14 @@ namespace Nebula
     /// another grace period, in case that worker is about to hand the entity over; and if a handover arrives after a
     /// restore anyway, the incoming entity wins and the restored duplicate is despawned <i>without</i> deleting the
     /// record.
+    /// </para><para>
+    /// Restores are also bounded in how hard they ask. A worker can gain hundreds of containers at once (a re-deal
+    /// after another worker died, a rebalance, a burst of runtime chunks), and each frame the containers that are due
+    /// are read in batches of at most <see cref="MaxContainersPerRestoreLoad"/> through
+    /// <see cref="IPersistenceStore.LoadContainers"/>, with at most <see cref="MaxRestoreLoadsInFlight"/> of those
+    /// batches waiting on the store at a time. The rest wait for a later frame. Nothing about a lease change can make
+    /// the worker send an unbounded burst of requests to the orchestrator, which serves the control plane's
+    /// heartbeats from the same address.
     /// </para>
     /// </summary>
     public sealed class NebulaPersistence
@@ -33,6 +41,10 @@ namespace Nebula
         public const float PoseMoveThreshold = 0.25f;
         /// <summary>Degrees an entity must turn since its last save before the turn alone is worth a checkpoint.</summary>
         public const float PoseTurnThresholdDegrees = 5f;
+        /// <summary>Most containers one restore read asks the store for (<see cref="IPersistenceStore.LoadContainers"/>).</summary>
+        public const int MaxContainersPerRestoreLoad = PersistenceHost.MaxContainersPerLoad;
+        /// <summary>Most restore reads waiting on the store at once. Containers that are due beyond that wait for a later frame.</summary>
+        public const int MaxRestoreLoadsInFlight = 2;
 
         private readonly NebulaWorker _worker;
         private readonly NebulaConfig _config;
@@ -62,8 +74,14 @@ namespace Nebula
         private readonly HashSet<PersistentEntity> _restored = new HashSet<PersistentEntity>();
         /// <summary>Static containers this worker leases, and when the lease appeared.</summary>
         private readonly Dictionary<string, float> _leasedSince = new Dictionary<string, float>();
-        /// <summary>Containers whose records have been asked for, so a lease that stays put is loaded once.</summary>
+        /// <summary>
+        /// Containers whose records have been asked for, so a lease that stays put is loaded once, and the batch that
+        /// asked: an answer is used only when its batch is still the one on record (the lease did not move on and come
+        /// back meanwhile).
+        /// </summary>
         private readonly Dictionary<string, object> _loadRequested = new Dictionary<string, object>();
+        /// <summary>Restore reads issued and not answered yet (at most <see cref="MaxRestoreLoadsInFlight"/>).</summary>
+        private int _restoreLoadsInFlight;
         /// <summary>Containers whose load came back and was judged, and how many entities each one brought back (see <see cref="ContainerRestored"/>).</summary>
         private readonly Dictionary<string, int> _restoreComplete = new Dictionary<string, int>();
         /// <summary>Records held back because their saver may still hand the entity over; re-judged after another grace.</summary>
@@ -98,6 +116,8 @@ namespace Nebula
         public int SavedCount { get; private set; }
         /// <summary>Entities this service has brought back since the process started.</summary>
         public int RestoredCount { get; private set; }
+        /// <summary>Restore reads (<see cref="IPersistenceStore.LoadContainers"/>) waiting on the store right now.</summary>
+        public int RestoreLoadsInFlight => _restoreLoadsInFlight;
 
         /// <summary>
         /// How long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, in seconds;
@@ -440,21 +460,40 @@ namespace Nebula
         private void PumpRestores(float now)
         {
             if (!_store.IsConnected) return;
-            foreach (var kv in _leasedSince)
+            while (_restoreLoadsInFlight < MaxRestoreLoadsInFlight)
             {
-                if (now - kv.Value < _config.PersistenceRestoreGraceSeconds) continue;
-                // The scope's activation hook comes first when there is one (docs/lifecycle-hooks.md D4). The gate
-                // is asked again every frame and opens on its own deadline, so nothing can wedge a restore here.
-                if (RestoreGate != null && !RestoreGate(kv.Key)) continue;
-                if (_loadRequested.ContainsKey(kv.Key)) continue;
-                string containerId = kv.Key;
-                var request = new object();
-                _loadRequested[containerId] = request;
-                _store.LoadContainer(containerId, records =>
+                List<string> batch = null;
+                foreach (var kv in _leasedSince)
                 {
-                    if (!_loadRequested.TryGetValue(containerId, out var current) || !ReferenceEquals(current, request)) return;
-                    OnContainerRecords(containerId, records);
-                });
+                    if (now - kv.Value < _config.PersistenceRestoreGraceSeconds) continue;
+                    if (_loadRequested.ContainsKey(kv.Key)) continue;
+                    // The scope's activation hook comes first when there is one (docs/lifecycle-hooks.md D4). The gate
+                    // is asked again every frame and opens on its own deadline, so nothing can wedge a restore here.
+                    if (RestoreGate != null && !RestoreGate(kv.Key)) continue;
+                    (batch ?? (batch = new List<string>())).Add(kv.Key);
+                    if (batch.Count >= MaxContainersPerRestoreLoad) break;
+                }
+                if (batch == null) return;
+                var request = new object();
+                for (int i = 0; i < batch.Count; i++) _loadRequested[batch[i]] = request;
+                _restoreLoadsInFlight++;
+                _store.LoadContainers(batch, loaded => OnRestoreLoaded(batch, request, loaded));
+            }
+        }
+
+        /// <summary>A restore read came back: judge each container it asked for whose lease is still the one that asked.</summary>
+        private void OnRestoreLoaded(List<string> batch, object request, IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>> loaded)
+        {
+            _restoreLoadsInFlight--;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                string containerId = batch[i];
+                if (!_loadRequested.TryGetValue(containerId, out var current) || !ReferenceEquals(current, request)) continue;
+                IReadOnlyList<PersistedEntityRecord> records = null;
+                loaded?.TryGetValue(containerId, out records);
+                // One container's trouble (a prefab that throws on spawn, a hook) must not cost the rest of the batch.
+                try { OnContainerRecords(containerId, records); }
+                catch (Exception e) { NebulaLog.Error($"persistence: restoring {containerId} failed: {e}"); }
             }
         }
 

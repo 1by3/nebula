@@ -144,8 +144,9 @@ wired in automatically, and the underlying primitives (`ContainerRegistry.Regist
 - A gridded baked world plus runtime containers has not been exercised together beyond unit tests.
 - The cost policy's Morton quantum is 8 m; containers smaller than that in one axis still order
   correctly but may interleave with neighbours.
-- The persistence store's `LoadContainer` is asked once per lease; a chunk that is retired and
-  re-requested within `PersistenceRestoreGraceSeconds` waits the grace period before its props return.
+- The persistence store is asked for each lease's records once (`LoadContainers`, batched with every other
+  container that is due); a chunk that is retired and re-requested within `PersistenceRestoreGraceSeconds` waits
+  the grace period before its props return.
 
 ## Configure runtime chunks
 
