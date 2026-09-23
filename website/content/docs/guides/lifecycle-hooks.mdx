@@ -90,7 +90,7 @@ It counts in the database — `SELECT COUNT(*)` on SQLite or PostgreSQL, and onl
 
 ## Offline reads
 
-The records of a scope nothing is simulating are ordinary records. **`IPersistenceStore.LoadWhere` is the offline read**, with `Load` for one key and `LoadContainer` for one box:
+The records of a scope nothing is simulating are ordinary records. **`IPersistenceStore.LoadWhere` is the offline read**, with `Load` for one key and `LoadContainers` for a list of containers:
 
 ```csharp
 store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records => { /* … */ });

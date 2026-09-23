@@ -159,7 +159,7 @@ namespace Nebula.Tests
             // "Comes back identical": every record is there, in the right place, and applying it to a fresh entity
             // reproduces the state the retire took away.
             IReadOnlyList<PersistedEntityRecord> records = null;
-            _store.LoadContainer(containerId, r => records = r);
+            _store.LoadContainers(new[] { containerId }, r => records = r[containerId]);
             _store.Tick();
             Assert.That(records, Is.Not.Null);
             Assert.That(records.Count, Is.EqualTo(count), "the part's records, and not the outsider's");

@@ -132,11 +132,13 @@ public void WhenWritten(Action onWritten);
 public void Load(string key, Action<PersistedEntityRecord> onLoaded);
 ```
 
-### LoadContainer [#loadcontainer]
+### LoadContainers [#loadcontainers]
 
 ```csharp
-public void LoadContainer(string containerId, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+One pass over the records, however many containers are asked for.
 
 ### LoadCarried [#loadcarried]
 

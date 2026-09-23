@@ -261,18 +261,23 @@ namespace Nebula
         {
             try
             {
-                using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
-                using (var response = await _http.PostAsync(_url, content).ConfigureAwait(false))
+                // One document in flight at a time (_inFlight), through the orchestrator address's raised connection
+                // limit, so telemetry never queues in front of the control plane's heartbeat (NebulaHttp).
+                using (var request = NebulaHttp.Request(HttpMethod.Post, _url, null))
                 {
-                    string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    if (response.IsSuccessStatusCode)
+                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    using (var response = await _http.SendAsync(request).ConfigureAwait(false))
                     {
-                        _detail = body.IndexOf("\"detail\":true", StringComparison.Ordinal) >= 0;
-                    }
-                    else
-                    {
-                        _detail = false;
-                        _error = $"HTTP {(int)response.StatusCode} {body}";
+                        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            _detail = body.IndexOf("\"detail\":true", StringComparison.Ordinal) >= 0;
+                        }
+                        else
+                        {
+                            _detail = false;
+                            _error = $"HTTP {(int)response.StatusCode} {body}";
+                        }
                     }
                 }
             }

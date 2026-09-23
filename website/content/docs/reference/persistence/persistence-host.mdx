@@ -12,7 +12,8 @@ public sealed class PersistenceHost
 Serves the orchestrator's [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) to workers over the orchestrator's HTTP server, so a worker needs no database driver of its own ([`RemotePersistenceStore`](/docs/reference/persistence/remote-persistence-store) is its client). Every request is handled on the main thread from the orchestrator's command pump, which is where the store's callbacks land: a read returns [`OrchestratorHttpServer.Response.Pending`](/docs/reference/orchestrator/orchestrator-http-server#pending) and completes when the store answers, usually on the next tick. A write answers the same way, once the store's [`IPersistenceStore.WhenWritten`](/docs/reference/persistence/i-persistence-store#whenwritten) barrier says the backend has it, so a worker's [`RemotePersistenceStore.WhenWritten`](/docs/reference/persistence/remote-persistence-store#whenwritten) is a real durability barrier and not just proof of delivery.
 
 - `POST /api/store/save` `{"records":[...]}`, `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear`
-- `GET /api/store/record?key=`, `GET /api/store/container?id=`, `GET /api/store/carried?key=`, `GET /api/store/all`
+- `GET /api/store/record?key=`, `GET /api/store/carried?key=`, `GET /api/store/all`
+- `POST /api/store/containers` `{"ids":[...]}`: the records of up to [`MaxContainersPerLoad`](#maxcontainersperload) containers, as one `{"records":[...]}` list
 - `GET /api/store/count?scope=&container=`: how many records a scope (optionally one of its containers) holds, without reading them
 - `GET /api/store/status`: backend, whether it is connected, how many records it holds
 
@@ -33,6 +34,14 @@ public PersistenceHost(IPersistenceStore store, string token);
 ```csharp
 public const string Prefix = "/api/store";
 ```
+
+### MaxContainersPerLoad [#maxcontainersperload]
+
+```csharp
+public const int MaxContainersPerLoad = 256;
+```
+
+Most container ids one `POST /api/store/containers` request may name. A larger request is refused with HTTP 400; [`RemotePersistenceStore.LoadContainers`](/docs/reference/persistence/remote-persistence-store#loadcontainers) splits a longer list into requests of this size, and `SqlPersistenceStore` queries the database in chunks of this size.
 
 ## Properties
 

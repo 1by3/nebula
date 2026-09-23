@@ -14,7 +14,8 @@ namespace Nebula
     /// <see cref="RemotePersistenceStore.WhenWritten"/> is a real durability barrier and not just proof of delivery.
     /// <list type="bullet">
     /// <item><c>POST /api/store/save</c> <c>{"records":[...]}</c>, <c>POST /api/store/delete</c> <c>{"keys":[...]}</c>, <c>POST /api/store/clear</c></item>
-    /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/container?id=</c>, <c>GET /api/store/carried?key=</c>, <c>GET /api/store/all</c></item>
+    /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/carried?key=</c>, <c>GET /api/store/all</c></item>
+    /// <item><c>POST /api/store/containers</c> <c>{"ids":[...]}</c>: the records of up to <see cref="MaxContainersPerLoad"/> containers, as one <c>{"records":[...]}</c> list</item>
     /// <item><c>GET /api/store/count?scope=&amp;container=</c>: how many records a scope (optionally one of its containers) holds, without reading them</item>
     /// <item><c>GET /api/store/status</c>: backend, whether it is connected, how many records it holds</item>
     /// </list>
@@ -23,6 +24,12 @@ namespace Nebula
     public sealed class PersistenceHost
     {
         public const string Prefix = "/api/store";
+        /// <summary>
+        /// Most container ids one <c>POST /api/store/containers</c> request may name. A larger request is refused
+        /// with HTTP 400; <see cref="RemotePersistenceStore.LoadContainers"/> splits a longer list into requests of
+        /// this size, and <c>SqlPersistenceStore</c> queries the database in chunks of this size.
+        /// </summary>
+        public const int MaxContainersPerLoad = 256;
 
         private readonly IPersistenceStore _store;
         private readonly string _token;
@@ -85,10 +92,30 @@ namespace Nebula
                     _store.Load(req.GetQuery("key"), r => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteOne(r))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
-                case "GET container":
-                    _store.LoadContainer(req.GetQuery("id"), rs => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs))));
+                case "POST containers":
+                {
+                    // Several containers in one request: a worker that gains hundreds of leases at once restores
+                    // them in a few of these rather than one request per container.
+                    if (!PersistenceJson.TryParseObject(req.Body, out var body, out string error)) { response = OrchestratorHttpServer.Response.Error(400, error); return true; }
+                    var ids = new List<string>();
+                    if (body.TryGetValue("ids", out var v) && v is List<object> list)
+                    {
+                        foreach (var item in list)
+                        {
+                            if (!(item is string id)) { response = OrchestratorHttpServer.Response.Error(400, "container ids must be strings"); return true; }
+                            ids.Add(id);
+                        }
+                    }
+                    if (ids.Count > MaxContainersPerLoad) { response = OrchestratorHttpServer.Response.Error(400, $"at most {MaxContainersPerLoad} container ids per request, got {ids.Count}"); return true; }
+                    _store.LoadContainers(ids, loaded =>
+                    {
+                        var records = new List<PersistedEntityRecord>();
+                        foreach (var kv in loaded) records.AddRange(kv.Value);
+                        req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(records)));
+                    });
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
+                }
                 case "GET carried":
                     _store.LoadCarried(req.GetQuery("key"), rs => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs))));
                     response = OrchestratorHttpServer.Response.Pending;
