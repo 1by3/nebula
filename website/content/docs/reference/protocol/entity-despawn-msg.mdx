@@ -33,6 +33,22 @@ public ushort ViewSeq;
 
 Gateway -\> client: the view this despawn ends (see [`EntitySpawnMsg.ViewSeq`](/docs/reference/protocol/entity-spawn-msg#viewseq)). A client drops a despawn older than the view it currently holds, so a late leave cannot kill a re-entered replica. Workers send 0.
 
+### TakesRiders [#takesriders]
+
+```csharp
+public bool TakesRiders;
+```
+
+Worker -\> worker ([`MsgId.GhostDespawn`](/docs/reference/protocol/msg-id#ghostdespawn)): the entity is a carrier that left the world together with what rides in it, because the container it was in was emptied ([`NebulaWorker.EmptyContainer`](/docs/reference/worker/nebula-worker#emptycontainer)). A worker holding the carrier as a ghost despawns the riders it owns aboard it the same way, instead of putting them down in the box around it (protocol 18, trailing and optional; written only when true; `docs/dynamic-worlds.md` D5). False everywhere else, which keeps the riders.
+
+### CarrierKey [#carrierkey]
+
+```csharp
+public string CarrierKey;
+```
+
+With [`TakesRiders`](#takesriders): the carrier's [`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key), empty when it is not persistent. A ghost does not know its entity's key, and a rider saved aboard it must name the carrier's real record so that it is restored with the carrier.
+
 ## Methods
 
 ### Write [#write]

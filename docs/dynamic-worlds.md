@@ -230,6 +230,45 @@ entities in a runtime box another worker released logs a warning naming both (`N
 `ContainerRegistry.RuntimeUnregistering`), so the path is visible if it is ever taken some other way.
 `ConformanceChunkReleaseTests`.
 
+**D5 Riders owned by another worker follow the carrier's owner's choice (NEB-258, 2026-09-23).** D3 despawns only
+what the emptying worker owns. A rider can be owned by a worker that holds the carrier as a ghost: the carrier's
+interior is pinned to that worker, or the rider boarded and its handover has not run yet (a rider aboard a carrier
+owned elsewhere is normally handed to the carrier's owner in the tick it boards, and a carrier's handover takes the
+riders it owns with it). When the ghost was removed, that worker put its riders down in the box around the carrier,
+so after a chunk retire they outlived the ship in a box that was itself being unloaded. What the ghost's worker
+should do depends on why the carrier left, and only the owner knows why:
+
+- *The owner emptied the box the carrier was in* (`EmptyContainer`: a chunk retired, a scope part checkpointed).
+  The owner's own riders were despawned and saved aboard (D3), so the carrier comes back with them. The ghost's
+  worker does the same with its riders: it runs `EmptyContainer` on the ghost's box, riders before their carriers,
+  a persistent rider checkpointed aboard and a transient one lost, exactly as on the owner. The riders' records
+  name the carrier, so they come back with it wherever it is restored.
+- *The owner despawned the carrier any other way* (`Despawn`: destroyed for good, a player's vehicle leaving with its
+  player, a scene object unloaded with its cell). The owner puts its own riders down in the container the carrier
+  was in (`EvacuateCarried`), and so does the ghost's worker. That container is in the carrier's scope (NEB-255),
+  and the next tick hands each rider to its owner.
+- *The carrier left this worker's ghost band, or its owner's process was lost.* These arrive as a plain ghost
+  despawn, and the riders are put down as in the previous case.
+- *The carrier was handed to another worker.* Not a despawn here: the new owner inherits the ghost holders
+  (`GhostWorkers`) and the ghost stays.
+
+The owner says which case it is in the ghost despawn: `EntityDespawnMsg.TakesRiders`, and `CarrierKey`, the
+carrier's `PersistentEntity` key. A ghost is not told its entity's key (the key travels in handover state only), so
+without it the rider's record would name a key minted on the ghost, and the carrier's restore would never bring the
+rider back. The two fields trail the message and are written only when `TakesRiders` is true: protocol 18, and
+every other despawn, including every one a gateway or client sees, keeps its bytes.
+
+Two alternatives were rejected:
+
+- *Hand the riders to the carrier's owner before the carrier leaves.* The owner would have to ask the riders'
+  workers for them, wait for the handovers to land, and only then empty the box. That is a new round trip in the
+  middle of a release, and it fails when the riders' worker is slow or gone. It also cannot work for a pinned
+  interior, whose riders the owner must not simulate. Saving the riders aboard gives the same result: they come
+  back with the carrier.
+- *Infer the case from `keepPersisted`.* A player's vehicle leaving with its player is despawned with
+  `keepPersisted`, and there the owner puts its riders down. The flag has to say what the owner did with its own
+  riders, not whether the carrier is saved.
+
 Not changed:
 
 - Lease creation falling behind fast movers (NEB-251). This fix keeps the world consistent while leases lag, and
@@ -239,5 +278,16 @@ Not changed:
   riders into the scope part their vehicle is in.
 - A client-owned rider in a box the scope lifecycle retires is despawned with its carrier, as a client's pawn
   standing directly in the box is. The allocator never retires such a chunk (D1).
+- The ghost band does not keep a carrier ghosted to the worker its pinned interior is leased to. When such a carrier
+  leaves that worker's band, the worker loses the ghost and puts the interior's riders down (the third case of D5).
+  A pinned interior on a carrier that moves needs the band to follow the pin, which is not done here.
+- A periodic checkpoint of a rider aboard a ghost carrier still names a key minted on the ghost: `BuildRecord` asks
+  the ghost's `PersistentEntity` for its key, and the ghost does not know the real one. The final checkpoint of D5
+  replaces it with the owner's key. If the rider's worker is lost before that, its record names no carrier that
+  exists, and nothing restores it.
+- The scope lifecycle's checkpoint barrier (`docs/scope-lifecycle.md`, step 3) covers the saves of the worker that
+  empties the part. Riders another worker saves aboard (D5) are written when that worker hears the despawn, which
+  can be after the part has acknowledged. A scope activated again within that window could restore the carrier
+  without them.
 
-Conformance scenario 18, `ConformanceCrewedCarrierRetireTests`.
+Conformance scenario 18, `ConformanceCrewedCarrierRetireTests` `ConformanceChunkReleaseTests` (D4) and `ConformanceGhostCarrierRidersTests` (D5).

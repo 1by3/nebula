@@ -688,6 +688,20 @@ namespace Nebula
         /// replica. Workers send 0.
         /// </summary>
         public ushort ViewSeq;
+        /// <summary>
+        /// Worker -> worker (<see cref="MsgId.GhostDespawn"/>): the entity is a carrier that left the world together
+        /// with what rides in it, because the container it was in was emptied (<see cref="NebulaWorker.EmptyContainer"/>).
+        /// A worker holding the carrier as a ghost despawns the riders it owns aboard it the same way, instead of
+        /// putting them down in the box around it (protocol 18, trailing and optional; written only when true;
+        /// <c>docs/dynamic-worlds.md</c> D5). False everywhere else, which keeps the riders.
+        /// </summary>
+        public bool TakesRiders;
+        /// <summary>
+        /// With <see cref="TakesRiders"/>: the carrier's <see cref="PersistentEntity.Key"/>, empty when it is not
+        /// persistent. A ghost does not know its entity's key, and a rider saved aboard it must name the carrier's
+        /// real record so that it is restored with the carrier.
+        /// </summary>
+        public string CarrierKey;
 
         public void Write(NetworkWriter w, MsgId id)
         {
@@ -695,9 +709,18 @@ namespace Nebula
             w.WriteULong(NetId);
             w.WriteUInt(Epoch);
             w.WriteUShort(ViewSeq);
+            if (!TakesRiders) return;
+            w.WriteBool(true);
+            w.WriteString(CarrierKey ?? "");
         }
 
-        public static EntityDespawnMsg Read(NetworkReader r) => new EntityDespawnMsg { NetId = r.ReadULong(), Epoch = r.ReadUInt(), ViewSeq = r.ReadUShort() };
+        public static EntityDespawnMsg Read(NetworkReader r)
+        {
+            var m = new EntityDespawnMsg { NetId = r.ReadULong(), Epoch = r.ReadUInt(), ViewSeq = r.ReadUShort(), CarrierKey = "" };
+            if (r.Remaining > 0) m.TakesRiders = r.ReadBool();
+            if (m.TakesRiders && r.Remaining > 0) m.CarrierKey = r.ReadString() ?? "";
+            return m;
+        }
     }
 
     public struct EntityVarsMsg

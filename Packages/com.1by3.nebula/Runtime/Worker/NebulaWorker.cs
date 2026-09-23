@@ -542,6 +542,9 @@ namespace Nebula
         /// A vehicle's cargo leaves with the vehicle. Entities riding in a <see cref="DynamicContainer"/> of an
         /// entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is
         /// checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier.
+        /// Riders another worker owns (an interior pinned to it, a rider whose handover has not happened yet) are
+        /// taken too: that worker despawns and saves them aboard the same way when it hears that the carrier left
+        /// (<c>docs/dynamic-worlds.md</c>, "Retiring a chunk under a carrier", D5).
         /// </para>
         /// </summary>
         public void EmptyContainer(Container container)
@@ -555,7 +558,7 @@ namespace Nebula
             {
                 var e = _contentsScratch[i];
                 if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
-                Despawn(e, keepPersisted: e.Persistent != null);
+                Despawn(e, keepPersisted: e.Persistent != null, takesRiders: true);
             }
             _contentsScratch.Clear();
         }
@@ -1109,8 +1112,20 @@ namespace Nebula
         /// the store: this is the entity ceasing to exist, not merely leaving this process. Pass
         /// <paramref name="keepPersisted"/> true when the world should keep it (a player disconnecting, a cell
         /// unloading): its record is checkpointed one last time and left in place.
+        /// <para>
+        /// Whatever still rides in the entity's <see cref="DynamicContainer"/> is put down in the container the entity
+        /// was in, here and on every worker that holds a ghost of it. To take the cargo along, despawn the riders
+        /// first, or empty the box around the vehicle with <see cref="EmptyContainer"/>.
+        /// </para>
         /// </summary>
-        public void Despawn(NetworkIdentity identity, bool keepPersisted = false)
+        public void Despawn(NetworkIdentity identity, bool keepPersisted = false) => Despawn(identity, keepPersisted, takesRiders: false);
+
+        /// <summary>
+        /// <see cref="Despawn(NetworkIdentity, bool)"/>, telling the workers that hold a ghost of a carrier whether
+        /// its riders leave with it (<see cref="EntityDespawnMsg.TakesRiders"/>): true when this worker is emptying
+        /// the box the carrier is in and has already despawned its own riders aboard it.
+        /// </summary>
+        private void Despawn(NetworkIdentity identity, bool keepPersisted, bool takesRiders)
         {
             if (identity == null || !_entities.ContainsKey(identity.NetId)) return;
             if (!identity.HasAuthority)
@@ -1130,9 +1145,17 @@ namespace Nebula
             if (carried != null && carried.IsDynamic && _registered && ControlPlane.IsConnected) ControlPlane.RemoveContainer(carried.ContainerId);
             if (_ghostTargets.TryGetValue(identity.NetId, out var targets))
             {
+                // A carrier leaving with its cargo tells the ghosts so, with the key its riders' records must name
+                // (read after OnDespawning, whose checkpoint gives a never-saved entity its key).
+                var ghostDespawn = despawn;
+                if (takesRiders && carried != null)
+                {
+                    ghostDespawn.TakesRiders = true;
+                    ghostDespawn.CarrierKey = identity.Persistent != null ? identity.Persistent.Key : "";
+                }
                 foreach (var workerId in targets.Keys)
                 {
-                    if (_workerPeersById.TryGetValue(workerId, out var p)) { _writer.Reset(); despawn.Write(_writer, MsgId.GhostDespawn); Send(p, Delivery.ReliableOrdered); }
+                    if (_workerPeersById.TryGetValue(workerId, out var p)) { _writer.Reset(); ghostDespawn.Write(_writer, MsgId.GhostDespawn); Send(p, Delivery.ReliableOrdered); }
                 }
                 _ghostTargets.Remove(identity.NetId);
             }
@@ -1911,7 +1934,26 @@ namespace Nebula
             var e = Find(msg.NetId);
             if (e == null) { DropPendingScene(msg.NetId); return; }
             if (e.HasAuthority || msg.Epoch < e.Epoch) return;
+            if (msg.TakesRiders) TakeRidersWith(e, msg.CarrierKey);
             RemoveLocal(e);
+        }
+
+        /// <summary>
+        /// A carrier this worker holds as a ghost left the world with its cargo: its owner emptied the box the
+        /// carrier was in (a chunk retired, a scope part checkpointed) and despawned its own riders first. The
+        /// riders this worker owns aboard go the same way, at every depth, riders before their carriers, so none
+        /// is set down in a box that is being unloaded, and each persistent one is saved aboard the carrier
+        /// (<c>docs/dynamic-worlds.md</c>, "Retiring a chunk under a carrier", D5).
+        /// </summary>
+        private void TakeRidersWith(NetworkIdentity carrier, string carrierKey)
+        {
+            var box = carrier.Carried;
+            if (box == null || box.Entities.Count == 0) return;
+            // A ghost does not know its entity's key. Without the owner's, a rider's record would name a key made up
+            // here, and the carrier's restore would never bring the rider back.
+            var pe = carrier.Persistent;
+            if (pe != null && !string.IsNullOrEmpty(carrierKey) && !pe.HasBeenSaved) pe.Key = carrierKey;
+            EmptyContainer(box);
         }
 
         // ---------------------------------------------------------------------------------------- gateway traffic
