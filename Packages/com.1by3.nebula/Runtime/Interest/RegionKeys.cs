@@ -41,7 +41,46 @@ namespace Nebula
         /// </summary>
         public static ulong Salt(ulong region, ulong instanceId) => region ^ SaltOf(instanceId);
 
-        /// <summary>The inverse of <see cref="Salt"/>: the plain packing the region arithmetic works on.</summary>
+        /// <summary>The inverse of <see cref="Salt(ulong, ulong)"/>: the plain packing the region arithmetic works on.</summary>
         public static ulong Unsalt(ulong key, ulong instanceId) => key ^ SaltOf(instanceId);
+
+        // ------------------------------------------------------------------------------------ frame region spaces
+
+        /// <summary>
+        /// The key of a physics frame whose contents are bucketed in regions of its own
+        /// (<see cref="FrameInterestMode.OwnRegions"/>, <c>docs/container-tree.md</c> D18): a planet's surface is
+        /// bucketed in the planet's coordinates, so its rotation never churns regions in system space. Made from the
+        /// container's wire name, which the worker and the gateway both hold; 0 for no reference.
+        /// </summary>
+        public static ulong FrameKeyOf(ContainerRef reference)
+        {
+            if (reference.IsNone) return 0;
+            ulong kind = reference.IsDynamic ? 1UL : reference.IsRuntime ? 2UL : 3UL;
+            ulong id = reference.IsStatic ? reference.Index : reference.NetId;
+            ulong key = (id + kind * 0x9E3779B97F4A7C15UL) * 0xBF58476D1CE4E5B9UL;
+            return key == 0 ? kind : key;
+        }
+
+        /// <summary>
+        /// The salt of a region space: a scope (<paramref name="instanceId"/>, 0 for the public world) and, inside it,
+        /// optionally a frame with regions of its own (<paramref name="frameKey"/>, 0 for the scope's own space). Both
+        /// ends know which space an entity, a focus or a subscription is in, so the XOR stays invertible.
+        /// </summary>
+        public static ulong SaltOf(ulong instanceId, ulong frameKey) => frameKey == 0 ? SaltOf(instanceId) : SaltOf(instanceId) ^ FrameSalt(frameKey);
+
+        /// <summary>A region of a scope, or of a frame inside it.</summary>
+        public static ulong Salt(ulong region, ulong instanceId, ulong frameKey) => region ^ SaltOf(instanceId, frameKey);
+
+        /// <summary>The inverse of <see cref="Salt(ulong, ulong, ulong)"/>.</summary>
+        public static ulong Unsalt(ulong key, ulong instanceId, ulong frameKey) => key ^ SaltOf(instanceId, frameKey);
+
+        private static ulong FrameSalt(ulong frameKey)
+        {
+            ulong z = frameKey ^ 0xD1B54A32D192ED03UL;
+            z = (z ^ (z >> 33)) * 0xFF51AFD7ED558CCDUL;
+            z = (z ^ (z >> 33)) * 0xC4CEB9FE1A85EC53UL;
+            z ^= z >> 33;
+            return z == 0 ? 3UL : z;
+        }
     }
 }

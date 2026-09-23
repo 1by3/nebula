@@ -87,9 +87,14 @@ namespace Nebula
                 if (l.Instance != null) w.Prop("instance", InstanceContainerInfo.Encode(l.Instance));
                 if (l.HasBounds)
                 {
-                    w.Key("center"); Vec(w, l.BoundsCenter);
+                    // The centre in double: a root far from the origin must come back exactly (docs/container-tree.md D5).
+                    w.Key("center"); Vec(w, l.Center);
                     w.Key("size"); Vec(w, l.BoundsSize);
+                    if (!string.IsNullOrEmpty(l.ParentId)) w.Prop("parent", l.ParentId);
                 }
+                if (l.Authority != ContainerAuthority.Auto) w.Prop("authority", AuthorityName(l.Authority));
+                if (l.OwnPhysicsFrame) w.Prop("frame", true);
+                if (l.FrameInterest != FrameInterestMode.WithCarrier) w.Prop("interest", (long)l.FrameInterest);
                 // The hint travels beside the lease in its compact string form, so a row costs a handful of bytes
                 // when nothing was hinted and stays readable in the stored document when something was.
                 if (l.HasHint) w.Prop("hint", l.Hint.ToString());
@@ -194,9 +199,13 @@ namespace Nebula
                     };
                     if (l.HasBounds)
                     {
-                        l.BoundsCenter = Vec(o, "center");
+                        l.Center = Vec3D(o, "center");
                         l.BoundsSize = Vec(o, "size");
+                        l.ParentId = Str(o, "parent") ?? "";
                     }
+                    l.Authority = AuthorityOf(Str(o, "authority"));
+                    l.OwnPhysicsFrame = Bool(o, "frame");
+                    l.FrameInterest = (FrameInterestMode)(byte)Num(o, "interest");
                     string hint = Str(o, "hint");
                     if (!string.IsNullOrEmpty(hint)) { l.HasHint = true; l.Hint = ContainerHint.Parse(hint); }
                     string dominant = Str(o, "dominant");
@@ -336,6 +345,7 @@ namespace Nebula
             public OpWriter Arg(string name, bool value) { _w.Prop(name, value); return this; }
             public OpWriter Arg(string name, float value) { _w.Key(name); Num(_w, value); return this; }
             public OpWriter Arg(string name, Vector3 value) { _w.Key(name); Vec(_w, value); return this; }
+            public OpWriter Arg(string name, Double3 value) { _w.Key(name); Vec(_w, value); return this; }
             public string End() { _w.EndObject(); return _sb.ToString(); }
         }
 
@@ -406,8 +416,8 @@ namespace Nebula
                 case SetGatewayDraining: cp.SetGatewayDraining(Str(o, "gatewayId"), Bool(o, "draining")); return null;
                 case HeartbeatOrchestrator: cp.HeartbeatOrchestrator(Str(o, "orchestratorId"), (uint)Num(o, "desiredWorkers")); return null;
                 case SetSetting: cp.SetSetting(Str(o, "key"), Str(o, "value")); return null;
-                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId")); return null;
-                case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), new Bounds(Vec(o, "center"), Vec(o, "size")), Str(o, "workerId"), InstanceContainerInfo.Decode(Str(o, "instance"))); return null;
+                case EnsureContainer: cp.EnsureContainer(Str(o, "containerId"), AuthorityOf(Str(o, "authority"))); return null;
+                case EnsureRuntimeContainer: cp.EnsureRuntimeContainer(Str(o, "containerId"), PlacementOf(o), Str(o, "workerId"), InstanceContainerInfo.Decode(Str(o, "instance"))); return null;
                 case TouchContainer: cp.TouchContainer(Str(o, "containerId")); return null;
                 case AssignContainer: cp.AssignContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
                 case PinContainer: cp.PinContainer(Str(o, "containerId"), Str(o, "workerId")); return null;
@@ -473,6 +483,53 @@ namespace Nebula
             w.BeginArray();
             Num(w, v.x); Num(w, v.y); Num(w, v.z);
             w.EndArray();
+        }
+
+        /// <summary>A double at full precision.</summary>
+        public static void Num(JsonWriter w, double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d)) w.Raw("null");
+            else w.Raw(d.ToString("R", CultureInfo.InvariantCulture));
+        }
+
+        public static void Vec(JsonWriter w, Double3 v)
+        {
+            w.BeginArray();
+            Num(w, v.X); Num(w, v.Y); Num(w, v.Z);
+            w.EndArray();
+        }
+
+        public static Double3 Vec3D(Dictionary<string, object> o, string key)
+        {
+            if (o != null && o.TryGetValue(key, out var v) && PersistenceJson.TryNumbers(v, 3, out var n)) return new Double3(n[0], n[1], n[2]);
+            return Double3.Zero;
+        }
+
+        /// <summary>The wire name of an authority mode ("leased", "inherited"; "" for auto).</summary>
+        public static string AuthorityName(ContainerAuthority a) => a == ContainerAuthority.Leased ? "leased" : a == ContainerAuthority.Inherited ? "inherited" : "";
+
+        public static ContainerAuthority AuthorityOf(string name) => name == "leased" ? ContainerAuthority.Leased : name == "inherited" ? ContainerAuthority.Inherited : ContainerAuthority.Auto;
+
+        /// <summary>The placement an <c>EnsureRuntimeContainer</c> op carries (an op written before placements existed reads as a root).</summary>
+        public static ContainerPlacement PlacementOf(Dictionary<string, object> o) => new ContainerPlacement
+        {
+            ParentId = Str(o, "parent") ?? "",
+            Center = Vec3D(o, "center"),
+            Size = Vec(o, "size"),
+            Authority = AuthorityOf(Str(o, "authority")),
+            OwnPhysicsFrame = Bool(o, "frame"),
+            FrameInterest = (FrameInterestMode)(byte)Num(o, "interest"),
+        };
+
+        /// <summary>Write a placement as the arguments of an <c>EnsureRuntimeContainer</c> op.</summary>
+        public static OpWriter Placement(OpWriter op, in ContainerPlacement p)
+        {
+            op.Arg("center", p.Center).Arg("size", p.Size);
+            if (!p.IsRoot) op.Arg("parent", p.ParentId);
+            if (p.Authority != ContainerAuthority.Auto) op.Arg("authority", AuthorityName(p.Authority));
+            if (p.OwnPhysicsFrame) op.Arg("frame", true);
+            if (p.FrameInterest != FrameInterestMode.WithCarrier) op.Arg("interest", (long)p.FrameInterest);
+            return op;
         }
 
         public static string Str(Dictionary<string, object> o, string key) => PersistenceJson.GetString(o, key);

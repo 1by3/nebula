@@ -24,6 +24,15 @@ namespace Nebula
         public Vector3 Size = new Vector3(20f, 10f, 20f);
         public Vector3 Center = new Vector3(0f, 5f, 0f);
 
+        [Tooltip("Who simulates what is inside. Auto: leased for a fixed box, inherited for a box an entity carries (what baked, runtime and carried containers always did). Leased: its own lease and owner, dealt by the planner. Inherited: whoever owns the parent container.")]
+        public ContainerAuthority Authority = ContainerAuthority.Auto;
+        [Tooltip("Give this container a physics scene of its own in which it stands still: everything inside is simulated in container-local coordinates, with the container's own up as gravity. Use it for ships, stations and planets; a small vehicle is cheaper without one.")]
+        public bool OwnPhysicsFrame;
+        [Tooltip("Frame only: the interior geometry (colliders, visuals; no NetworkIdentity) instantiated into the frame's physics scene. Empty: the carrier's static colliders are cloned into the frame.")]
+        public GameObject FrameContent;
+        [Tooltip("Frame only: WithCarrier publishes everything inside with the carrier (ships); OwnRegions buckets it in regions of the frame itself (planets).")]
+        public FrameInterestMode FrameInterest = FrameInterestMode.WithCarrier;
+
         /// <summary>
         /// Dense index assigned by <see cref="ContainerRegistry"/> (sorted by id, or manifest order in a partitioned
         /// world). Used on the wire. A dynamic container has <see cref="ContainerRef.DynamicIndex"/> and is named
@@ -44,8 +53,115 @@ namespace Nebula
         /// </summary>
         public ContainerHint Hint = ContainerHint.Default;
 
-        /// <summary>Carried by an entity (<see cref="DynamicContainer"/>): created and destroyed with it, moves with it, owned by its authority.</summary>
+        /// <summary>
+        /// Carried by an entity (<see cref="DynamicContainer"/>): created and destroyed with it, moves with it. Shorthand
+        /// for <see cref="FrameMode"/> == <see cref="ContainerFrameMode.Entity"/>.
+        /// </summary>
         public bool IsDynamic { get; internal set; }
+
+        /// <summary>Where the box is: fixed relative to its parent, or driven by a carrier entity (<c>docs/container-tree.md</c> D1).</summary>
+        public ContainerFrameMode FrameMode => IsDynamic ? ContainerFrameMode.Entity : ContainerFrameMode.Fixed;
+
+        /// <summary>Where the container comes from: baked, registered at runtime, or part of a prefab.</summary>
+        public ContainerSource Source => IsDynamic ? ContainerSource.Prefab : IsRuntime ? ContainerSource.Runtime : ContainerSource.Baked;
+
+        /// <summary><see cref="Authority"/> with <see cref="ContainerAuthority.Auto"/> resolved: leased for a fixed frame, inherited for an entity frame.</summary>
+        public ContainerAuthority ResolvedAuthority =>
+            Authority != ContainerAuthority.Auto ? Authority : IsDynamic ? ContainerAuthority.Inherited : ContainerAuthority.Leased;
+
+        /// <summary>
+        /// Whether this container is simulated under a lease of its own right now. A fixed container that resolves to
+        /// leased always is; a carried container is once its row is pinned to a worker (an authored-leased one pins
+        /// itself when its carrier spawns). Either way it is not while <see cref="AuthorityDemoted"/>: a leased
+        /// container under a moving parent without a physics frame of its own is simulated as inherited
+        /// (<c>docs/container-tree.md</c> D7).
+        /// </summary>
+        public bool IsLeased => UsesOwnLease && !InMovingSpace;
+
+        private bool UsesOwnLease => IsDynamic ? IsPinned : ResolvedAuthority == ContainerAuthority.Leased;
+
+        /// <summary>
+        /// The container would be leased, but sits under a moving parent that has no physics frame of its own, so
+        /// its owner would simulate against a pose one replication delay old: it is simulated as inherited instead
+        /// until it leaves (<c>docs/container-tree.md</c> D7).
+        /// </summary>
+        public bool AuthorityDemoted => UsesOwnLease && InMovingSpace;
+
+        /// <summary>
+        /// Some ancestor moves (it is carried by an entity) and no container between here and it has a physics frame
+        /// of its own: the box is somewhere whose pose only the moving ancestor's authority knows exactly.
+        /// </summary>
+        public bool InMovingSpace
+        {
+            get
+            {
+                int hops = 0;
+                for (var p = Parent; p != null; p = p.Parent)
+                {
+                    if (p.OwnPhysicsFrame) return false;
+                    if (p.IsDynamic) return true;
+                    if (++hops > ContainerRegistry.ChainBound) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The container this one sits in, or null for a root of its scope (<c>docs/container-tree.md</c> D2). A baked
+        /// container's parent is the smallest baked box of its scope enclosing it, a runtime container's is named on
+        /// its lease row, and a carried container's is wherever its carrier stands, so it changes as the carrier moves.
+        /// </summary>
+        public Container Parent => IsDynamic ? (Carrier != null ? Carrier.Container : null) : FixedParent;
+
+        /// <summary>Baked and runtime containers: the parent assigned at registration.</summary>
+        internal Container FixedParent;
+        internal readonly List<Container> FixedChildren = new List<Container>();
+
+        /// <summary>
+        /// The fixed containers whose parent this is (baked and runtime). Carried containers are not listed: they come
+        /// and go with the entities standing in <see cref="Entities"/>, whose <see cref="NetworkIdentity.Carried"/> they are.
+        /// </summary>
+        public IReadOnlyList<Container> Children => FixedChildren;
+
+        /// <summary>How many containers are above this one: 0 for a root of its scope. Resolution prefers the deepest box (D3).</summary>
+        public int Depth
+        {
+            get
+            {
+                int depth = 0;
+                for (var p = Parent; p != null && depth <= ContainerRegistry.ChainBound; p = p.Parent) depth++;
+                return depth;
+            }
+        }
+
+        /// <summary>
+        /// The container whose physics frame this box lives in: the nearest ancestor with <see cref="OwnPhysicsFrame"/>,
+        /// or null when the box is in its scope's own space (<c>docs/container-tree.md</c> §3). A framed container's own
+        /// box lives in its parent's space; what it holds lives in its frame.
+        /// </summary>
+        public Container Space
+        {
+            get
+            {
+                int hops = 0;
+                for (var p = Parent; p != null && hops <= ContainerRegistry.ChainBound; p = p.Parent, hops++)
+                    if (p.OwnPhysicsFrame) return p;
+                return null;
+            }
+        }
+
+        /// <summary>The space what this container holds lives in: its own frame when it has one, otherwise its <see cref="Space"/>.</summary>
+        public Container InnerSpace => OwnPhysicsFrame ? this : Space;
+
+        /// <summary>
+        /// The transform what this container holds is parented under: the root of its physics frame when it has one
+        /// (<see cref="PhysicsFrame.Root"/>), otherwise its own transform. Entities and fixed child containers hang
+        /// here, so their local pose is their container-local pose either way.
+        /// </summary>
+        public Transform ContentRoot => Frame != null && Frame.Root != null ? Frame.Root : transform;
+
+        /// <summary>The physics frame this container owns (<see cref="OwnPhysicsFrame"/>) on this process, or null while it has none.</summary>
+        public PhysicsFrame Frame { get; internal set; }
         /// <summary>
         /// Registered by the game while the mesh runs (<see cref="ContainerRegistry.RegisterRuntime"/>): a static box
         /// that is not in the baked set. Leased and owned like a baked container; named on the wire by
@@ -79,13 +195,18 @@ namespace Nebula
             get
             {
                 var c = this;
-                for (int hops = 0; c.IsDynamic && c.Carrier != null; hops++)
+                for (int hops = 0; ; hops++)
                 {
-                    if (hops > ContainerRegistry.Dynamic.Count) return null;
-                    c = c.Carrier.Container;
-                    if (c == null) return null;
+                    if (hops > ContainerRegistry.ChainBound) return null;
+                    if (c.IsDynamic)
+                    {
+                        if (c.Carrier == null) return c;
+                        c = c.Carrier.Container;
+                        if (c == null) return null;
+                    }
+                    else if (c.FixedParent != null) c = c.FixedParent;
+                    else return c;
                 }
-                return c;
             }
         }
 
@@ -100,11 +221,16 @@ namespace Nebula
         public bool IsCarriedBy(NetworkIdentity entity)
         {
             if (entity == null) return false;
+            // The whole subtree of the entity's box, not only carriers inside carriers: a fixed room registered in a
+            // ship's frame is as much the ship's as a shuttle in its hangar (docs/container-tree.md D4).
             int hops = 0;
-            for (var c = this; c != null && c.IsDynamic; c = c.Enclosing)
+            ulong netId = entity.NetId;
+            for (var c = this; c != null; c = c.Parent)
             {
-                if (c.Carrier == entity) return true;
-                if (++hops > ContainerRegistry.Dynamic.Count) return true;
+                // The same entity, not only the same object: another process's copy of it (a test mesh holds several
+                // in one process) carries the same box.
+                if (c.IsDynamic && (c.Carrier == entity || (netId != 0 && c.CarrierNetId == netId))) return true;
+                if (++hops > ContainerRegistry.ChainBound) return true;
             }
             return false;
         }
@@ -135,16 +261,32 @@ namespace Nebula
         internal void CollectContents(List<NetworkIdentity> into, bool throughAuthoritativeCarriersOnly)
         {
             int start = into.Count;
-            into.AddRange(Entities);
-            int opened = 0, bound = ContainerRegistry.Dynamic.Count;
+            int opened = 0, bound = ContainerRegistry.ChainBound;
+            AddBox(this, into, ref opened, bound);
             for (int i = start; i < into.Count; i++)
             {
                 var e = into[i];
                 if (e == null || (throughAuthoritativeCarriersOnly && !e.HasAuthority)) continue;
                 var carried = e.Carried;
-                if (carried == null || !carried.IsDynamic || carried == this || carried.Entities.Count == 0) continue;
+                if (carried == null || !carried.IsDynamic || carried == this) continue;
                 if (++opened > bound) break;
-                into.AddRange(carried.Entities);
+                AddBox(carried, into, ref opened, bound);
+            }
+        }
+
+        /// <summary>
+        /// A box's own entities, then those of its inherited fixed children at any depth: they are simulated by
+        /// whoever simulates the box. A leased child is somebody else's and is not opened (docs/container-tree.md D6).
+        /// </summary>
+        private static void AddBox(Container box, List<NetworkIdentity> into, ref int opened, int bound)
+        {
+            into.AddRange(box.Entities);
+            for (int c = 0; c < box.FixedChildren.Count; c++)
+            {
+                var child = box.FixedChildren[c];
+                if (child == null || child.IsLeased) continue;
+                if (++opened > bound) return;
+                AddBox(child, into, ref opened, bound);
             }
         }
 
@@ -180,25 +322,42 @@ namespace Nebula
         {
             get
             {
-                if (!IsDynamic || IsPinned) return _ownerWorkerId;
-                if (Carrier == null) return "";
-                var resolve = ContainerRegistry.WorkerIdByIndex;
-                return resolve != null ? resolve(Carrier.OwnerWorkerIndex) ?? "" : "";
+                if (IsLeased) return _ownerWorkerId;
+                if (IsDynamic)
+                {
+                    if (Carrier == null) return "";
+                    var resolve = ContainerRegistry.WorkerIdByIndex;
+                    return resolve != null ? resolve(Carrier.OwnerWorkerIndex) ?? "" : "";
+                }
+                var parent = FixedParent;
+                return parent != null ? parent.OwnerWorkerId : _ownerWorkerId;
             }
             internal set => _ownerWorkerId = value ?? "";
         }
 
-        /// <summary>Index of the owning worker (<see cref="ushort.MaxValue"/> when unowned). Dynamic containers: the pinned worker's, or the carrier's <see cref="NetworkIdentity.OwnerWorkerIndex"/>.</summary>
+        /// <summary>Index of the owning worker (<see cref="ushort.MaxValue"/> when unowned), derived as <see cref="OwnerWorkerId"/> is.</summary>
         public ushort OwnerWorkerIndex
         {
-            get => IsDynamic && !IsPinned ? (Carrier != null ? Carrier.OwnerWorkerIndex : ushort.MaxValue) : _ownerWorkerIndex;
+            get
+            {
+                if (IsLeased) return _ownerWorkerIndex;
+                if (IsDynamic) return Carrier != null ? Carrier.OwnerWorkerIndex : ushort.MaxValue;
+                var parent = FixedParent;
+                return parent != null ? parent.OwnerWorkerIndex : _ownerWorkerIndex;
+            }
             internal set => _ownerWorkerIndex = value;
         }
 
-        /// <summary>Lease epoch from the control plane. Dynamic containers following their carrier: the carrier's authority epoch.</summary>
+        /// <summary>Lease epoch from the control plane; derived as <see cref="OwnerWorkerId"/> is (a carried container following its carrier: the carrier's authority epoch).</summary>
         public ulong LeaseEpoch
         {
-            get => IsDynamic && !IsPinned ? (Carrier != null ? Carrier.Epoch : 0) : _leaseEpoch;
+            get
+            {
+                if (IsLeased) return _leaseEpoch;
+                if (IsDynamic) return Carrier != null ? Carrier.Epoch : 0;
+                var parent = FixedParent;
+                return parent != null ? parent.LeaseEpoch : _leaseEpoch;
+            }
             internal set => _leaseEpoch = value;
         }
 
@@ -238,7 +397,7 @@ namespace Nebula
 
         private void EnsureCached()
         {
-            if (!_cached || (IsDynamic && (_cacheFrame != Time.frameCount || FrameMoved))) RefreshCache();
+            if (!_cached || (MayMove && (_cacheFrame != Time.frameCount || FrameMoved))) RefreshCache();
         }
 
         /// <summary>
@@ -252,8 +411,24 @@ namespace Nebula
             get
             {
                 int hops = 0;
-                for (var c = this; c != null && c.IsDynamic && hops <= ContainerRegistry.Dynamic.Count; c = c.Enclosing, hops++)
-                    if (c.transform.hasChanged) return true;
+                for (var c = this; c != null && hops <= ContainerRegistry.ChainBound; c = c.Parent, hops++)
+                    if (c.IsDynamic && c.transform.hasChanged) return true;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The box can move without being re-registered: it is carried, or some container above it is (a room fixed
+        /// in a ship), or it lives inside a physics frame (whose root a client poses for rendering, D11).
+        /// </summary>
+        internal bool MayMove
+        {
+            get
+            {
+                if (IsDynamic) return true;
+                int hops = 0;
+                for (var p = FixedParent; p != null && hops <= ContainerRegistry.ChainBound; p = p.Parent, hops++)
+                    if (p.IsDynamic || p.OwnPhysicsFrame) return true;
                 return false;
             }
         }
@@ -284,8 +459,24 @@ namespace Nebula
         public float SignedDistance(Vector3 worldPosition)
         {
             EnsureCached();
-            var local = _worldToLocal.MultiplyPoint3x4(worldPosition) - Center;
-            var h = Size * 0.5f;
+            return BoxDistance(_worldToLocal.MultiplyPoint3x4(worldPosition) - Center, Size);
+        }
+
+        /// <summary>
+        /// <see cref="SignedDistance"/> for a point already in this container's local coordinates: the inner face of a
+        /// container with a physics frame of its own, whose contents are in exactly those coordinates (<c>docs/container-tree.md</c> §3).
+        /// </summary>
+        public float SignedDistanceInner(Vector3 local) => BoxDistance(local - Center, Size);
+
+        /// <summary><see cref="Contains"/> for a point in this container's local coordinates (the inner face of its frame).</summary>
+        public bool ContainsInner(Vector3 local) => BoxDistance(local - Center, Size) <= 0f;
+
+        /// <summary>Whether a point of <paramref name="space"/> is in this box: its inner face when the box owns the space.</summary>
+        internal bool ContainsIn(Vector3 point, Container space) => space == this ? ContainsInner(point) : Contains(point);
+
+        private static float BoxDistance(Vector3 local, Vector3 size)
+        {
+            var h = size * 0.5f;
             var d = new Vector3(Mathf.Abs(local.x) - h.x, Mathf.Abs(local.y) - h.y, Mathf.Abs(local.z) - h.z);
             if (d.x > 0f || d.y > 0f || d.z > 0f)
                 return new Vector3(Mathf.Max(d.x, 0f), Mathf.Max(d.y, 0f), Mathf.Max(d.z, 0f)).magnitude;
@@ -309,7 +500,7 @@ namespace Nebula
         public bool Encloses(Container other)
         {
             if (other == this) return false;
-            if (other.IsDynamic && other.Enclosing == this) return true;
+            if (other.Parent == this) return true;
             var a = WorldBounds;
             a.Expand(0.5f); // authored boxes are allowed to touch the enclosing box's faces
             var b = other.WorldBounds;
@@ -369,9 +560,11 @@ namespace Nebula
         {
             get
             {
-                int depth = 0;
-                int bound = ContainerRegistry.Dynamic.Count + 1;
-                for (var c = this; c != null && c.IsDynamic && depth <= bound; c = c.Enclosing) depth++;
+                // Carriers along the whole parent chain: a room fixed inside a ship ticks after the ship, like a
+                // shuttle in its hangar does.
+                int depth = 0, hops = 0, bound = ContainerRegistry.Dynamic.Count + 1;
+                for (var c = this; c != null && hops <= ContainerRegistry.ChainBound && depth <= bound; c = c.Parent, hops++)
+                    if (c.IsDynamic) depth++;
                 return depth;
             }
         }

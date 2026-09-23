@@ -59,6 +59,7 @@ namespace Nebula.Editor
             public Vector3Int Cell;
             public bool IsCell;
             public ContainerHint Hint = ContainerHint.Default;
+            public ContainerAuthority Authority = ContainerAuthority.Auto;
             public Frame transform = new Frame();
             public List<string> NeighborIds = new List<string>();
             public Bounds Bounds => new Bounds(transform.position + transform.rotation * Vector3.Scale(transform.lossyScale, Center), Vector3.Scale(Size, new Vector3(Mathf.Abs(transform.lossyScale.x), Mathf.Abs(transform.lossyScale.y), Mathf.Abs(transform.lossyScale.z))));
@@ -106,7 +107,7 @@ namespace Nebula.Editor
                         var position = Vector3.Scale((Vector3)e.Cell, world.CellSize) + (e.IsCell ? Vector3.zero : e.LocalPosition);
                         var rotation = e.IsCell ? Quaternion.identity : e.LocalRotation;
                         var scale = e.IsCell ? Vector3.one : e.LocalScale;
-                        manifest.Containers.Add(new Box { ContainerId = e.Id, Center = e.Center, Size = e.Size, Cell = e.Cell, IsCell = e.IsCell, Hint = e.Hint, transform = ExportFrame(Matrix4x4.TRS(position, rotation, scale), position, rotation, scale) });
+                        manifest.Containers.Add(new Box { ContainerId = e.Id, Center = e.Center, Size = e.Size, Cell = e.Cell, IsCell = e.IsCell, Hint = e.Hint, Authority = e.Authority, transform = ExportFrame(Matrix4x4.TRS(position, rotation, scale), position, rotation, scale) });
                     }
                 }
                 else if (config.RuntimeWorld == null)
@@ -114,7 +115,7 @@ namespace Nebula.Editor
                     foreach (var c in scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<Container>(false)).Where(c => c.gameObject.activeInHierarchy && c.GetComponent<DynamicContainer>() == null && !c.IsRuntime).OrderBy(c => c.ContainerId, StringComparer.Ordinal))
                     {
                         var t = c.transform;
-                        manifest.Containers.Add(new Box { ContainerId = c.ContainerId, Center = c.Center, Size = c.Size, Hint = c.Hint, transform = ExportFrame(t.localToWorldMatrix, t.position, t.rotation, t.lossyScale) });
+                        manifest.Containers.Add(new Box { ContainerId = c.ContainerId, Center = c.Center, Size = c.Size, Hint = c.Hint, Authority = c.Authority, transform = ExportFrame(t.localToWorldMatrix, t.position, t.rotation, t.lossyScale) });
                     }
                 }
                 var ids = new HashSet<string>(StringComparer.Ordinal);

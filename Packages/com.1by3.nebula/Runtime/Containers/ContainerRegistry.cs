@@ -56,6 +56,26 @@ namespace Nebula
         private static readonly HashSet<ulong> RuntimeKeep = new HashSet<ulong>();
         private static readonly List<ulong> RuntimeScratchIds = new List<ulong>();
         private static Transform _runtimeRoot;
+        // Runtime containers that move without being re-registered (fixed children of a carried container, and
+        // anything inside a physics frame) cannot live in the spatial hash: their boxes change every tick. They
+        // are few, and scanned linearly like carried containers.
+        private static readonly List<Container> MovingRuntime = new List<Container>();
+        private struct PendingChild { public ContainerPlacement Placement; public InstanceContainerInfo Instance; }
+        /// <summary>Runtime rows whose parent is not resolvable here yet, by runtime id; registered when it arrives (D2).</summary>
+        private static readonly Dictionary<ulong, PendingChild> PendingChildren = new Dictionary<ulong, PendingChild>();
+        private static readonly List<ulong> PendingScratch = new List<ulong>();
+
+        /// <summary>
+        /// Upper bound on the length of any legitimate container chain (parents, carriers): every link is a registered
+        /// container, so a chain longer than the registry holds has revisited one. What every chain walk is bounded by.
+        /// </summary>
+        internal static int ChainBound => Containers.Count + RuntimeList.Count + DynamicList.Count + 1;
+
+        /// <summary>Runtime rows waiting for their parent to become resolvable on this process.</summary>
+        public static int PendingRuntimeCount => PendingChildren.Count;
+
+        /// <summary>The ids of the runtime rows waiting for their parent (see <see cref="PendingRuntimeCount"/>).</summary>
+        public static IEnumerable<ulong> PendingRuntimeIds => PendingChildren.Keys;
 
         /// <summary>The static containers, in wire order.</summary>
         public static IReadOnlyList<Container> All => Containers;
@@ -120,6 +140,8 @@ namespace Nebula
             RuntimeList.Clear();
             RuntimeById.Clear();
             RuntimeHash.Clear();
+            MovingRuntime.Clear();
+            PendingChildren.Clear();
             _runtimeRoot = null;
             Rebuilt = null;
             LeasesChanged = null;
@@ -150,6 +172,10 @@ namespace Nebula
         public static void Load(IList<Container> ordered, bool gridded)
         {
             UnregisterAllRuntime();
+            for (int i = 0; i < Containers.Count; i++) if (Containers[i] != null && Containers[i].Frame != null) PhysicsFrames.Release(Containers[i]);
+            PendingChildren.Clear(); // children detached above wait for parents that are not coming back
+            MovingRuntime.Clear();
+            for (int i = 0; i < DynamicList.Count; i++) PhysicsFrames.Release(DynamicList[i]);
             Containers.Clear();
             ById.Clear();
             DynamicList.Clear();
@@ -168,6 +194,8 @@ namespace Nebula
                 c.IsRuntime = false;
                 c.RuntimeId = 0;
                 c.Carrier = null;
+                c.FixedParent = null;
+                c.FixedChildren.Clear();
                 c.RefreshCache();
                 c.Neighbors.Clear();
                 Containers.Add(c);
@@ -202,7 +230,64 @@ namespace Nebula
                     }
                 }
             }
+            AssignBakedParents();
+            CreateBakedFrames();
             Rebuilt?.Invoke();
+        }
+
+        /// <summary>
+        /// A baked container with a physics frame of its own gets it now, and its baked children move under the frame
+        /// root keeping their pose relative to it: from here on they live in its frame (docs/container-tree.md §3).
+        /// </summary>
+        private static void CreateBakedFrames()
+        {
+            for (int i = 0; i < Containers.Count; i++)
+            {
+                var c = Containers[i];
+                if (!c.OwnPhysicsFrame) continue;
+                var frame = PhysicsFrames.Create(c);
+                if (frame == null) continue;
+                foreach (var child in c.FixedChildren)
+                {
+                    var local = c.transform.InverseTransformPoint(child.transform.position);
+                    var rotation = Quaternion.Inverse(c.transform.rotation) * child.transform.rotation;
+                    child.transform.SetParent(null, true);
+                    if (child.gameObject.scene != frame.Root.gameObject.scene) UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(child.gameObject, frame.Root.gameObject.scene);
+                    child.transform.SetParent(frame.Root, false);
+                    child.transform.localPosition = local;
+                    child.transform.localRotation = rotation;
+                    child.RefreshCache();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The baked tree (docs/container-tree.md D2): every baked container's parent is the smallest baked box of its
+        /// own scope that encloses it. Enclosing boxes always touch, so the candidates are the neighbours computed
+        /// above. The boxes are identical on every process, so every process builds the same tree.
+        /// </summary>
+        private static void AssignBakedParents()
+        {
+            // Scopes first, while every box is still a root: a scope is read through the parent chain afterwards.
+            var scopes = new ulong[Containers.Count];
+            for (int i = 0; i < Containers.Count; i++) scopes[i] = Containers[i].Instance?.InstanceId ?? 0UL;
+            var indexOf = new Dictionary<Container, int>(Containers.Count);
+            for (int i = 0; i < Containers.Count; i++) indexOf[Containers[i]] = i;
+            for (int i = 0; i < Containers.Count; i++)
+            {
+                var c = Containers[i];
+                Container best = null;
+                float bestVolume = float.MaxValue;
+                foreach (var n in c.Neighbors)
+                {
+                    if (!indexOf.TryGetValue(n, out int j) || scopes[j] != scopes[i]) continue;
+                    if (!n.Encloses(c) || n.Volume >= bestVolume) continue;
+                    best = n;
+                    bestVolume = n.Volume;
+                }
+                c.FixedParent = best;
+            }
+            foreach (var c in Containers) if (c.FixedParent != null) c.FixedParent.FixedChildren.Add(c);
         }
 
         /// <summary>Containers of <paramref name="cell"/> and the 26 cells around it.</summary>
@@ -332,12 +417,14 @@ namespace Nebula
             DynamicList.Add(container);
             DynamicByNetId[carrier.NetId] = container;
             _dynamicHashDirty = true;
+            if (container.OwnPhysicsFrame) PhysicsFrames.Create(container);
             if (PendingLeases.TryGetValue(container.ContainerId, out var lease))
             {
                 PendingLeases.Remove(container.ContainerId);
                 ApplyLease(container.ContainerId, lease.WorkerId, lease.WorkerIndex, lease.Epoch, lease.State);
             }
             DynamicRegistered?.Invoke(container);
+            RegisterPendingChildrenOf(container.ContainerId);
         }
 
         /// <summary>
@@ -357,7 +444,9 @@ namespace Nebula
             _dynamicHashDirty = true;
             if (netId != 0 && DynamicByNetId.TryGetValue(netId, out var same) && same == container) DynamicByNetId.Remove(netId);
             DynamicUnregistering?.Invoke(container);
+            DetachChildren(container);
             EvacuateEntities(container, scope);
+            PhysicsFrames.Release(container);
             PendingLeases.Remove(container.ContainerId);
             container.IsDynamic = false;
             container.Carrier = null;
@@ -381,7 +470,13 @@ namespace Nebula
             foreach (var e in EntityScratch)
             {
                 if (e == null) continue;
-                var outer = Find(e.transform.position, container, scope, e);
+                // Looked up in the space the box itself lives in: an entity inside a frame is in frame-local
+                // coordinates, and leaves them for the space around the frame (SetContainer converts the pose).
+                var position = e.transform.position;
+                var space = container.InnerSpace;
+                // (A box destroyed without being unregistered has no transform left to convert through.)
+                if (space != container.Space && !PhysicsFrames.RendersFrames && container != null) position = PhysicsFrames.Convert(position, space, container.Space);
+                var outer = FindInSpace(position, container, scope, e, container.Space) ?? Find(position, container, scope, e);
                 if (outer == container) outer = null;
                 e.SetContainer(outer);
             }
@@ -427,10 +522,58 @@ namespace Nebula
         /// baked and runtime containers whose boxes touch is computed at once, so ghosting and handover across the
         /// seam work like between baked containers.
         /// </summary>
-        public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null)
+        public static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance = null) =>
+            RegisterRuntime(id, frameBounds, instance, default, fromPlacement: false);
+
+        /// <summary>
+        /// Register a runtime container from its placement (<see cref="ContainerPlacement"/>, what a lease row carries):
+        /// a root is brought into this process's frame from its absolute centre in double, so a root far from the
+        /// origin is placed exactly; a child is placed in its parent's frame and moves with the parent. A child whose
+        /// parent is not resolvable here yet is held and registered as soon as the parent is (null is returned until
+        /// then). Authority, physics frame and interest mode come from the placement.
+        /// <para>
+        /// A leased child of a moving parent that has no physics frame of its own breaks the rule of
+        /// <c>docs/container-tree.md</c> D7; it is registered, logged, and simulated as inherited
+        /// (<see cref="Container.AuthorityDemoted"/>).
+        /// </para>
+        /// </summary>
+        public static Container RegisterRuntime(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null)
         {
-            if (instance == null && RuntimeBoundsInFrame != null) frameBounds = RuntimeBoundsInFrame(id, frameBounds);
-            if (RuntimeById.TryGetValue(id, out var existing))
+            if (placement.IsRoot)
+                return RegisterRuntime(id, new Bounds(ToFrame(placement.Center, instance?.InstanceId ?? 0UL), placement.Size), instance, placement, fromPlacement: true);
+            var parent = FindById(placement.ParentId);
+            if (parent == null)
+            {
+                PendingChildren[id] = new PendingChild { Placement = placement, Instance = instance?.Copy() };
+                return null;
+            }
+            PendingChildren.Remove(id);
+            return RegisterRuntime(id, new Bounds(placement.Center.ToVector3(), placement.Size), instance, placement, fromPlacement: true, parent);
+        }
+
+        private static Container RegisterRuntime(ulong id, Bounds frameBounds, InstanceContainerInfo instance, ContainerPlacement placement, bool fromPlacement, Container parent = null)
+        {
+            if (parent == null && instance == null && RuntimeBoundsInFrame != null) frameBounds = RuntimeBoundsInFrame(id, frameBounds);
+            if (RuntimeById.TryGetValue(id, out var existing) && existing != null && existing.FixedParent != parent)
+            {
+                // Re-parented (the row changed): register it afresh under the new parent.
+                UnregisterRuntime(id);
+                existing = null;
+            }
+            if (existing != null && parent != null)
+            {
+                if (existing.transform.localPosition != frameBounds.center || existing.Size != frameBounds.size)
+                {
+                    RemoveFromHash(existing);
+                    existing.transform.localPosition = frameBounds.center;
+                    existing.Size = frameBounds.size;
+                    existing.RefreshCache();
+                    AddToHash(existing);
+                    RelinkRuntimeNeighbors(existing);
+                }
+                return existing;
+            }
+            if (existing != null)
             {
                 if (existing.WorldBounds != frameBounds)
                 {
@@ -450,8 +593,19 @@ namespace Nebula
                 _runtimeRoot = root.transform;
             }
             var go = new GameObject(RuntimeContainerId(id));
-            go.transform.SetParent(_runtimeRoot, false);
-            go.transform.position = frameBounds.center;
+            if (parent != null)
+            {
+                // In the parent's frame: the box is axis-aligned there and moves and turns with it.
+                go.transform.SetParent(parent.ContentRoot, false);
+                if (go.scene != parent.ContentRoot.gameObject.scene) UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, parent.ContentRoot.gameObject.scene);
+                go.transform.localPosition = frameBounds.center;
+                go.transform.localRotation = Quaternion.identity;
+            }
+            else
+            {
+                go.transform.SetParent(_runtimeRoot, false);
+                go.transform.position = frameBounds.center;
+            }
             var c = go.AddComponent<Container>();
             c.ContainerId = RuntimeContainerId(id);
             c.Size = frameBounds.size;
@@ -460,7 +614,21 @@ namespace Nebula
             c.RuntimeId = id;
             c.Instance = instance?.Copy();
             c.Index = ContainerRef.RuntimeIndex;
+            if (fromPlacement)
+            {
+                c.Authority = placement.Authority;
+                c.OwnPhysicsFrame = placement.OwnPhysicsFrame;
+                c.FrameInterest = placement.FrameInterest;
+            }
+            if (parent != null)
+            {
+                c.FixedParent = parent;
+                parent.FixedChildren.Add(c);
+                if (c.AuthorityDemoted)
+                    NebulaLog.Warn($"runtime container {c.ContainerId} is leased but its parent {parent.ContainerId} moves and has no physics frame of its own; it is simulated as inherited (docs/container-tree.md D7)");
+            }
             c.RefreshCache();
+            if (c.OwnPhysicsFrame) PhysicsFrames.Create(c);
             RuntimeList.Add(c);
             RuntimeById[id] = c;
             ById[c.ContainerId] = c;
@@ -472,7 +640,68 @@ namespace Nebula
                 ApplyLease(c.ContainerId, lease.WorkerId, lease.WorkerIndex, lease.Epoch, lease.State);
             }
             RuntimeRegistered?.Invoke(c);
+            RegisterPendingChildrenOf(c.ContainerId);
             return c;
+        }
+
+        /// <summary>
+        /// The placement a runtime container was registered with, as its lease row carries it: a root's absolute centre
+        /// in double, a child's parent id and parent-local centre. What a worker writes when it re-creates a row it lost.
+        /// </summary>
+        public static ContainerPlacement PlacementOf(Container c)
+        {
+            var parent = c.FixedParent;
+            return new ContainerPlacement
+            {
+                ParentId = parent != null ? parent.ContainerId : "",
+                Center = parent != null ? Double3.From(c.transform.localPosition) : ToAbsolutePrecise(c.WorldBounds.center, c.InstanceId),
+                Size = c.Size,
+                Authority = c.Authority,
+                OwnPhysicsFrame = c.OwnPhysicsFrame,
+                FrameInterest = c.FrameInterest,
+            };
+        }
+
+        /// <summary>Register every held runtime row whose parent is <paramref name="parentId"/>, now that it is here.</summary>
+        private static void RegisterPendingChildrenOf(string parentId)
+        {
+            if (PendingChildren.Count == 0) return;
+            PendingScratch.Clear();
+            foreach (var kv in PendingChildren) if (kv.Value.Placement.ParentId == parentId) PendingScratch.Add(kv.Key);
+            if (PendingScratch.Count == 0) return;
+            var ids = PendingScratch.ToArray();
+            PendingScratch.Clear();
+            foreach (var id in ids)
+                if (PendingChildren.TryGetValue(id, out var p)) RegisterRuntime(id, p.Placement, p.Instance);
+        }
+
+        /// <summary>
+        /// A container is leaving this process: its runtime children go back to waiting for it (their rows still name
+        /// it), so they are registered again the moment it returns. Their contents are evacuated like any runtime box's.
+        /// </summary>
+        private static void DetachChildren(Container parent)
+        {
+            if (parent.FixedChildren.Count == 0) return;
+            // A copy per call: detaching a child detaches its own children first, which re-enters here.
+            var children = parent.FixedChildren.ToArray();
+            foreach (var child in children)
+            {
+                if (child == null || !child.IsRuntime) continue;
+                var placement = new ContainerPlacement
+                {
+                    ParentId = parent.ContainerId,
+                    Center = Double3.From(child.transform.localPosition),
+                    Size = child.Size,
+                    Authority = child.Authority,
+                    OwnPhysicsFrame = child.OwnPhysicsFrame,
+                    FrameInterest = child.FrameInterest,
+                };
+                ulong id = child.RuntimeId;
+                var instance = child.Instance?.Copy();
+                UnregisterRuntime(id, force: true);
+                PendingChildren[id] = new PendingChild { Placement = placement, Instance = instance };
+            }
+            parent.FixedChildren.Clear();
         }
 
         /// <summary>
@@ -480,22 +709,28 @@ namespace Nebula
         /// around it first; the game normally retires a container only once it is empty, and persists or despawns
         /// the rest before calling this. Neighbours drop their adjacency to it.
         /// </summary>
-        public static bool UnregisterRuntime(ulong id)
+        public static bool UnregisterRuntime(ulong id) => UnregisterRuntime(id, force: false);
+
+        private static bool UnregisterRuntime(ulong id, bool force)
         {
+            PendingChildren.Remove(id);
             if (!RuntimeById.TryGetValue(id, out var c)) return false;
             // A removed lease cannot silently move private occupants into the public world. An entity whose object was
             // destroyed without a despawn is no occupant: counting it would keep the box registered forever.
             if (c != null) c.Entities.RemoveAll(e => e == null);
-            if (c != null && c.InstanceId != 0 && c.Entities.Count > 0) return false;
+            if (!force && c != null && c.InstanceId != 0 && c.Entities.Count > 0) return false;
             if (c == null)
             {
-                // Its object is already gone (a scene unload took it): just forget it.
+                // Its object is already gone (a scene unload took it, or its parent's): just forget it.
                 RuntimeById.Remove(id);
-                RuntimeList.Remove(c);
+                RuntimeList.RemoveAll(x => x == null);
+                MovingRuntime.RemoveAll(x => x == null);
                 RehashRuntime();
                 return true;
             }
             RuntimeUnregistering?.Invoke(c);
+            DetachChildren(c);
+            if (c.FixedParent != null) c.FixedParent.FixedChildren.Remove(c);
             InstanceScenes.Release(c);
             RuntimeById.Remove(id);
             RuntimeList.Remove(c);
@@ -504,6 +739,7 @@ namespace Nebula
             foreach (var n in c.Neighbors) n.Neighbors.Remove(c);
             c.Neighbors.Clear();
             EvacuateEntities(c, c.InstanceId);
+            PhysicsFrames.Release(c);
             // Nothing networked may go down with the box: an entity that is still parented here (a ghost, a scene
             // object moved by hand) would be destroyed with it and leave a dead reference in every list that holds it.
             EntityScratch.Clear();
@@ -513,6 +749,7 @@ namespace Nebula
             PendingLeases.Remove(c.ContainerId);
             c.IsRuntime = false;
             c.Index = ushort.MaxValue;
+            c.FixedParent = null;
             if (c.gameObject != null)
             {
                 if (Application.isPlaying) UnityEngine.Object.Destroy(c.gameObject);
@@ -543,7 +780,7 @@ namespace Nebula
                 var l = leases[i];
                 if (!l.HasBounds || !TryParseRuntimeId(l.ContainerId, out ulong id)) continue;
                 RuntimeKeep.Add(id);
-                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, ToFrame(new Bounds(l.BoundsCenter, l.BoundsSize), l.Instance?.InstanceId ?? 0UL), l.Instance);
+                if (!RuntimeById.ContainsKey(id)) RegisterRuntime(id, l.Placement, l.Instance);
             }
             PruneRuntime(RuntimeKeep);
             RuntimeKeep.Clear();
@@ -554,6 +791,7 @@ namespace Nebula
         {
             RuntimeScratchIds.Clear();
             foreach (var id in RuntimeById.Keys) if (!keep.Contains(id)) RuntimeScratchIds.Add(id);
+            foreach (var id in PendingChildren.Keys) if (!keep.Contains(id)) RuntimeScratchIds.Add(id);
             foreach (var id in RuntimeScratchIds) UnregisterRuntime(id);
             RuntimeScratchIds.Clear();
         }
@@ -573,6 +811,39 @@ namespace Nebula
             if (world == null) return absolute;
             var origin = world.FrameOrigin(Vector3Int.zero, WorldOrigin.Cell); // where absolute (0,0,0) sits in this frame
             return new Bounds(absolute.center + origin, absolute.size);
+        }
+
+        /// <summary>
+        /// An absolute position, kept in double, in the frame of the scope that owns it: the origin is taken off in
+        /// double and only the small remainder is narrowed to float, so a root container 10,000 km out lands exactly
+        /// where it belongs in this process's frame (<c>docs/container-tree.md</c> D5).
+        /// </summary>
+        public static Vector3 ToFrame(Double3 absolute, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Vector3((float)(absolute.X + origin.X), (float)(absolute.Y + origin.Y), (float)(absolute.Z + origin.Z));
+        }
+
+        /// <summary>The inverse of <see cref="ToFrame(Double3, ulong)"/>: a frame position as an absolute one, in double.</summary>
+        public static Double3 ToAbsolutePrecise(Vector3 frame, ulong instanceId)
+        {
+            var origin = OriginOf(instanceId);
+            return new Double3(frame.x - origin.X, frame.y - origin.Y, frame.z - origin.Z);
+        }
+
+        /// <summary>Where absolute (0,0,0) sits in a scope's frame, in double.</summary>
+        private static Double3 OriginOf(ulong instanceId)
+        {
+            if (ScopeFrames.HasFrame(instanceId))
+            {
+                ScopeFrames.Of(instanceId).OriginOffsetPrecise(out double x, out double y, out double z);
+                return new Double3(x, y, z);
+            }
+            var world = WorldOrigin.Definition;
+            if (world == null) return Double3.Zero;
+            var cell = WorldOrigin.Cell;
+            var size = world.CellSize;
+            return new Double3(-(long)cell.x * (double)size.x, -(long)cell.y * (double)size.y, -(long)cell.z * (double)size.z);
         }
 
         /// <summary>A box in the public world's frame as an absolute box: the inverse of <see cref="ToFrame(Bounds)"/>.</summary>
@@ -604,7 +875,7 @@ namespace Nebula
             for (int i = 0; i < RuntimeList.Count; i++)
             {
                 var c = RuntimeList[i];
-                if (c == null || ScopeFrames.FrameIdOf(c.InstanceId) != frameId) continue;
+                if (c == null || c.FixedParent != null || ScopeFrames.FrameIdOf(c.InstanceId) != frameId) continue;
                 // Resolve scoped grids from the container's isolation id: the public grid can unpack any id,
                 // including an ordinary instance interior's hash. Custom public bounds hooks still apply.
                 var shifted = new Bounds(c.transform.position + delta, c.WorldBounds.size);
@@ -627,6 +898,11 @@ namespace Nebula
 
         private static void AddToHash(Container c)
         {
+            if (c.MayMove)
+            {
+                if (!MovingRuntime.Contains(c)) MovingRuntime.Add(c);
+                return;
+            }
             var b = c.WorldBounds;
             var min = BucketOf(b.min);
             var max = BucketOf(b.max);
@@ -642,6 +918,7 @@ namespace Nebula
 
         private static void RemoveFromHash(Container c)
         {
+            if (MovingRuntime.Remove(c)) return;
             var b = c.WorldBounds;
             var min = BucketOf(b.min);
             var max = BucketOf(b.max);
@@ -659,7 +936,8 @@ namespace Nebula
         private static void RehashRuntime()
         {
             RuntimeHash.Clear();
-            for (int i = 0; i < RuntimeList.Count; i++) AddToHash(RuntimeList[i]);
+            MovingRuntime.Clear();
+            for (int i = 0; i < RuntimeList.Count; i++) if (RuntimeList[i] != null) AddToHash(RuntimeList[i]);
         }
 
         /// <summary>
@@ -717,6 +995,7 @@ namespace Nebula
         private static void CollectRuntimeIn(Bounds bounds, List<Container> result)
         {
             result.Clear();
+            for (int i = 0; i < MovingRuntime.Count; i++) if (MovingRuntime[i] != null) result.Add(MovingRuntime[i]);
             if (RuntimeHash.Count == 0) return;
             RuntimeSeen.Clear();
             var min = BucketOf(bounds.min);
@@ -771,7 +1050,7 @@ namespace Nebula
 
         private static void Link(Container a, Container b)
         {
-            if (a.InstanceId != b.InstanceId) return;
+            if (a.InstanceId != b.InstanceId || a.Space != b.Space) return;
             if (!a.Neighbors.Contains(b)) a.Neighbors.Add(b);
             if (!b.Neighbors.Contains(a)) b.Neighbors.Add(a);
         }
@@ -789,7 +1068,7 @@ namespace Nebula
             if (container == null) return;
             var bounds = container.WorldBounds;
             bounds.Expand(0.05f);
-            if (!container.IsDynamic)
+            if (!container.MayMove)
             {
                 result.AddRange(container.Neighbors);
                 // Only the carriers whose broad-phase buckets reach this box: a world with hundreds of vehicles
@@ -802,19 +1081,20 @@ namespace Nebula
                 }
                 return;
             }
-            var enclosing = container.Enclosing;
+            var enclosing = container.Parent;
             if (enclosing != null) result.Add(enclosing);
+            var space = container.Space;
             if (_grid != null)
             {
                 CollectAround(WorldOrigin.CellOf(bounds.center), Candidates);
-                foreach (var c in Candidates) if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                foreach (var c in Candidates) if (c != enclosing && c.InstanceId == container.InstanceId && c.Space == space && bounds.Intersects(c.WorldBounds)) result.Add(c);
             }
             else
             {
                 for (int i = 0; i < Containers.Count; i++)
                 {
                     var c = Containers[i];
-                    if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                    if (c != enclosing && c.InstanceId == container.InstanceId && c.Space == space && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
             if (RuntimeList.Count > 0)
@@ -823,14 +1103,14 @@ namespace Nebula
                 for (int i = 0; i < RuntimeCandidates.Count; i++)
                 {
                     var c = RuntimeCandidates[i];
-                    if (c != enclosing && c.InstanceId == container.InstanceId && bounds.Intersects(c.WorldBounds)) result.Add(c);
+                    if (c != enclosing && c != container && c.InstanceId == container.InstanceId && c.Space == space && bounds.Intersects(c.WorldBounds)) result.Add(c);
                 }
             }
             CollectDynamicIn(bounds, DynamicCandidates);
             for (int i = 0; i < DynamicCandidates.Count; i++)
             {
                 var d = DynamicCandidates[i];
-                if (d == container || d == enclosing || d.InstanceId != container.InstanceId) continue;
+                if (d == container || d == enclosing || d.InstanceId != container.InstanceId || d.Space != space) continue;
                 if (bounds.Intersects(d.WorldBounds)) result.Add(d);
             }
         }
@@ -850,44 +1130,67 @@ namespace Nebula
         /// overlap end up one inside the other at most, never each inside the other.
         /// </para>
         /// </summary>
-        public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0, NetworkIdentity subject = null)
+        public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0, NetworkIdentity subject = null) =>
+            Find(worldPosition, exclude, instanceId, subject, null, nearestFallback: true);
+
+        /// <summary>
+        /// The deepest container of space <paramref name="space"/> holding the point (a space is a framed container,
+        /// whose frame-local coordinates the point is in, or null for the scope's own space), or null when none holds
+        /// it: no nearest-box fallback. A framed container's own box is in the space around it, so it is a candidate
+        /// there and never in its own space (see <see cref="Container.SignedDistanceInner"/> for that face).
+        /// </summary>
+        public static Container FindInSpace(Vector3 position, Container exclude, ulong instanceId, NetworkIdentity subject, Container space) =>
+            Find(position, exclude, instanceId, subject, space, nearestFallback: false);
+
+        private static Container Find(Vector3 worldPosition, Container exclude, ulong instanceId, NetworkIdentity subject, Container space, bool nearestFallback)
         {
             Container inside = null, nearest = null;
             float insideVolume = float.MaxValue, nearestDist = float.MaxValue;
-            if (_grid != null)
+            if (_grid != null && space == null)
             {
                 CollectAround(WorldOrigin.CellOf(worldPosition), Candidates);
-                FindAmong(Candidates, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                FindAmong(Candidates, worldPosition, exclude, instanceId, null, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            else FindAmong(Containers, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            else FindAmong(Containers, worldPosition, exclude, instanceId, null, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (RuntimeList.Count > 0)
             {
                 CollectRuntimeAround(worldPosition, RuntimeCandidates);
-                FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                // A runtime box can be in the subject's subtree too (a room fixed in a ship): same check.
+                FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, subject, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            // Only a dynamic container can be carried by the subject, so only this list pays for the check.
-            FindAmong(DynamicList, worldPosition, exclude, instanceId, subject, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            FindAmong(DynamicList, worldPosition, exclude, instanceId, subject, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            if (!nearestFallback) return inside;
             if (inside == null && nearest == null)
             {
                 // Nothing near the point: fall back to the whole set so a far-away point still gets its nearest box.
-                if (_grid != null) FindAmong(Containers, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (_grid != null) FindAmong(Containers, worldPosition, exclude, instanceId, null, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, instanceId, subject, space, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
             return inside ?? nearest;
         }
 
-        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ulong instanceId, NetworkIdentity subject, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
+        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ulong instanceId, NetworkIdentity subject, Container space, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
         {
             for (int i = 0; i < list.Count; i++)
             {
                 var c = list[i];
-                if (c == exclude || c.InstanceId != instanceId) continue;
+                if (c == null || c == exclude || c.InstanceId != instanceId) continue;
+                // Boxes inside a physics frame are in that frame's coordinates, which overlap everybody else's.
+                if (c.Space != space) continue;
                 float d = c.SignedDistance(worldPosition);
                 if (d <= 0f)
                 {
+                    // The deepest box on the branch wins, the smaller one breaking ties (docs/container-tree.md D3).
+                    // For properly nested boxes that is the old smallest-volume answer; a ship parked across the
+                    // corner of a smaller room is where it differs, and the tree is right there.
                     float volume = c.Volume;
-                    // The chain walk only for a box that would win: most candidates lose on volume first.
-                    if (volume < insideVolume && (subject == null || !c.IsCarriedBy(subject)))
+                    if (inside != null)
+                    {
+                        int depth = c.Depth, best = inside.Depth;
+                        if (depth < best || (depth == best && volume >= insideVolume)) continue;
+                    }
+                    // The chain walk only for a box that would win: most candidates lose first.
+                    if (subject == null || !c.IsCarriedBy(subject))
                     {
                         insideVolume = volume;
                         inside = c;
@@ -909,25 +1212,76 @@ namespace Nebula
         /// directly or through a chain of carriers, is ever the answer. A current container that is one (only
         /// possible from corrupt state) is left at once, with no hysteresis.
         /// </summary>
+        /// <para>
+        /// Physics frames (<c>docs/container-tree.md</c> §3): <paramref name="worldPosition"/> is in the space the
+        /// entity lives in (<paramref name="current"/>'s <see cref="Container.InnerSpace"/>: frame-local coordinates
+        /// inside a frame, the scope's own space otherwise), which is what its transform reads in simulation space.
+        /// Past the frame's inner box by the hysteresis the answer is a container of the space around the frame (the
+        /// entity is leaving it); a framed box in this space that takes the entity yields the deepest container of
+        /// that frame (it is entering). Either way <see cref="NetworkIdentity.SetContainer"/> converts the pose, and
+        /// the worker only lets the frame's pose owner do it (D15).
+        /// </para>
+        /// </summary>
         public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, NetworkIdentity subject = null)
         {
-            if (current != null && subject != null && current.IsDynamic && current.IsCarriedBy(subject))
-                return Find(worldPosition, current, current.InstanceId, subject);
-            if (current == null) return Find(worldPosition, null, 0, subject);
-            var candidate = Find(worldPosition, null, current.InstanceId, subject);
+            if (current != null && subject != null && current.IsCarriedBy(subject))
+                return Find(worldPosition, current, current.InstanceId, subject, current.Space, nearestFallback: true);
+            if (current == null) return EnterFrames(Find(worldPosition, null, 0, subject), null, worldPosition, 0, subject);
+            ulong instanceId = current.InstanceId;
+            var space = current.InnerSpace;
+            if (space != null && space.SignedDistanceInner(worldPosition) > hysteresis)
+            {
+                // Leaving the frame: resolve at the same point seen from the space around it.
+                var outerSpace = space.Space;
+                var outer = PhysicsFrames.Convert(worldPosition, space, outerSpace);
+                var found = outerSpace == null
+                    ? Find(outer, space, instanceId, subject, null, nearestFallback: true)
+                    : FindInSpace(outer, space, instanceId, subject, outerSpace) ?? outerSpace;
+                return found ?? current;
+            }
+            var candidate = space == null
+                ? Find(worldPosition, null, instanceId, subject, null, nearestFallback: true)
+                : FindInSpace(worldPosition, null, instanceId, subject, space) ?? space;
+            var resolved = ResolveAmong(worldPosition, current, candidate, hysteresis, space);
+            return resolved == current ? current : EnterFrames(resolved, space, worldPosition, instanceId, subject);
+        }
+
+        /// <summary>The hysteresis rule between the current box and the best candidate, both measured in <paramref name="space"/>.</summary>
+        private static Container ResolveAmong(Vector3 p, Container current, Container candidate, float hysteresis, Container space)
+        {
             if (candidate == null || candidate == current) return current;
-            if (current.Contains(worldPosition))
+            if (current.ContainsIn(p, space))
             {
                 // Still inside the current box but a nested (smaller) container now claims the point: enter it once
                 // we are past the hysteresis band.
-                return candidate.SignedDistance(worldPosition) <= -hysteresis ? candidate : current;
+                return DistanceIn(candidate, p, space) <= -hysteresis ? candidate : current;
             }
             // Outside the current box: stay until clearly out of it, through any face. Depth inside a box ignores the
             // floor (see Container.SignedDistance), so entering a nested box through its floor - a pawn at the top of
             // a ship's ramp - has no band on that side; without this one on the way out, an entity standing at the
             // floor would flip every tick, and every flip is a handover when the box belongs to another worker.
-            if (current.SignedDistance(worldPosition) <= hysteresis) return current;
-            return candidate.SignedDistance(worldPosition) <= -hysteresis ? candidate : current;
+            if (DistanceIn(current, p, space) <= hysteresis) return current;
+            return DistanceIn(candidate, p, space) <= -hysteresis ? candidate : current;
+        }
+
+        /// <summary>A box's signed distance to a point of <paramref name="space"/>: the frame's own inner face when the box owns that space.</summary>
+        private static float DistanceIn(Container c, Vector3 p, Container space) => c == space ? c.SignedDistanceInner(p) : c.SignedDistance(p);
+
+        /// <summary>
+        /// The answer took the entity into a framed box: it is entering that frame, so the deepest container of the
+        /// frame holding the converted point is the real answer (the frame itself when none does). Repeats for a
+        /// frame inside a frame; bounded by the chain bound like every other walk.
+        /// </summary>
+        private static Container EnterFrames(Container resolved, Container space, Vector3 p, ulong instanceId, NetworkIdentity subject)
+        {
+            for (int hops = 0; resolved != null && resolved.OwnPhysicsFrame && resolved.Space == space && hops <= ChainBound; hops++)
+            {
+                if (subject != null && resolved.IsCarriedBy(subject)) return resolved;
+                p = PhysicsFrames.Convert(p, space, resolved);
+                space = resolved;
+                resolved = FindInSpace(p, null, instanceId, subject, space) ?? space;
+            }
+            return resolved;
         }
 
         /// <summary>

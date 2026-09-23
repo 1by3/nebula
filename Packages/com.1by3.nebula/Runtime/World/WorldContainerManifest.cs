@@ -33,6 +33,8 @@ namespace Nebula
             public Vector3 Center;
             [Tooltip("What the planner should know about this container beyond what it can measure (Nebula > World, Balancing hints).")]
             public ContainerHint Hint = ContainerHint.Default;
+            [Tooltip("Who simulates what is inside (Container.Authority): Auto and Leased give the container its own lease; Inherited leaves it to the enclosing container's owner.")]
+            public ContainerAuthority Authority = ContainerAuthority.Auto;
         }
 
         public WorldDefinition World;

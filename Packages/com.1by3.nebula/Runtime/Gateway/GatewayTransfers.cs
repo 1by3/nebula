@@ -386,10 +386,10 @@ namespace Nebula
         {
             var at = pawn.Container;
             EntityRecord outermost = null;
-            for (int hops = 0; at.IsDynamic && hops <= _entities.Count; hops++)
+            for (int hops = 0; TryCarrierOf(at, out ulong carrierNetId, out _) && hops <= _entities.Count; hops++)
             {
-                AddExplicit(at.NetId);
-                if (!_entities.TryGetValue(at.NetId, out var carrier)) break;
+                AddExplicit(carrierNetId);
+                if (!_entities.TryGetValue(carrierNetId, out var carrier)) break;
                 outermost = carrier;
                 string owner = WorkerIdOfIndex(carrier.OwnerWorkerIndex);
                 if (!string.IsNullOrEmpty(owner) && EnsureLink(owner) != null) Reason(owner, InterestLinkReason.Owned);

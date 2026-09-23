@@ -172,27 +172,32 @@ namespace Nebula
             Touch();
         }
 
-        public void EnsureContainer(string containerId)
+        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto)
         {
             if (this.FindLease(containerId) != null) return;
-            _leases.Add(new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now });
+            _leases.Add(new LeaseInfo { ContainerId = containerId, WorkerId = "", Epoch = 0, State = LeaseState.Orphaned, UpdatedAt = Now, Authority = authority });
             Touch();
         }
 
-        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null)
+        public void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null)
         {
             if (this.FindLease(containerId) != null) return;
-            bool owned = !string.IsNullOrEmpty(workerId);
+            // An inherited container is simulated by its parent's owner: its row only carries the box.
+            bool owned = !string.IsNullOrEmpty(workerId) && !placement.IsInherited;
             _leases.Add(new LeaseInfo
             {
                 ContainerId = containerId,
                 WorkerId = owned ? workerId : "",
                 Epoch = owned ? 1UL : 0UL,
-                State = owned ? LeaseState.Active : LeaseState.Orphaned,
+                State = placement.IsInherited ? LeaseState.Inherited : owned ? LeaseState.Active : LeaseState.Orphaned,
                 UpdatedAt = Now,
                 HasBounds = true,
-                BoundsCenter = bounds.center,
-                BoundsSize = bounds.size,
+                ParentId = placement.ParentId ?? "",
+                Center = placement.Center,
+                BoundsSize = placement.Size,
+                Authority = placement.Authority,
+                OwnPhysicsFrame = placement.OwnPhysicsFrame,
+                FrameInterest = placement.FrameInterest,
                 Instance = instance?.Copy(),
             });
             Touch();

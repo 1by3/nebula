@@ -952,6 +952,9 @@ namespace Nebula
             return changes;
         }
 
+        private readonly List<Container> _leasedBaked = new List<Container>();
+        private readonly List<Container> _leasedRuntime = new List<Container>();
+
         private AssignmentInput BuildAssignmentInput(IList<WorkerInfo> eligible)
         {
             Telemetry.CopyOccupancy(_occupancy);
@@ -959,8 +962,14 @@ namespace Nebula
             Loads.CopyUtilization(eligible, _utilization);
             WorkerLoadTracker.Attribute(_utilization, ControlPlane.Leases, _occupancy, Config.CostWeights, _containerUtilization);
             _assignmentInput.Utilization = _containerUtilization;
-            _assignmentInput.Baked = ContainerRegistry.All;
-            _assignmentInput.Runtime = ContainerRegistry.Runtime;
+            // Only leased containers are dealt: an inherited one is simulated by its parent's owner and moves with the
+            // parent's lease (docs/container-tree.md D8).
+            _leasedBaked.Clear();
+            for (int i = 0; i < ContainerRegistry.All.Count; i++) if (ContainerRegistry.All[i].IsLeased) _leasedBaked.Add(ContainerRegistry.All[i]);
+            _leasedRuntime.Clear();
+            for (int i = 0; i < ContainerRegistry.Runtime.Count; i++) if (ContainerRegistry.Runtime[i].IsLeased) _leasedRuntime.Add(ContainerRegistry.Runtime[i]);
+            _assignmentInput.Baked = _leasedBaked;
+            _assignmentInput.Runtime = _leasedRuntime;
             _assignmentInput.Eligible = eligible;
             _assignmentInput.Leases = ControlPlane.Leases;
             _assignmentInput.Occupancy = _occupancy;
@@ -1171,7 +1180,7 @@ namespace Nebula
             for (int i = 0; i < leases.Count; i++)
             {
                 var l = leases[i];
-                if (!l.HasBounds) continue;
+                if (!l.HasBounds || l.State == LeaseState.Inherited || l.Authority == ContainerAuthority.Inherited) continue;
                 if (l.State == LeaseState.Active && load.ContainsKey(l.WorkerId)) load[l.WorkerId]++;
                 else orphans.Add(l.ContainerId);
             }
@@ -1220,10 +1229,19 @@ namespace Nebula
             }
             // Carried containers (dynamic, id 'label#netId') follow their carrier by default and are not dealt. One
             // that was pinned to a worker that is gone or retiring falls back to following its carrier.
+            // A carried container authored leased (docs/container-tree.md D6) is re-dealt to the least loaded eligible
+            // worker instead: it was never meant to follow its carrier.
             foreach (var l in ControlPlane.Leases.ToList())
             {
                 if (!ContainerRegistry.IsDynamicId(l.ContainerId) || l.State != LeaseState.Pinned) continue;
                 if (eligible.Any(w => w.WorkerId == l.WorkerId)) continue;
+                if (l.Authority == ContainerAuthority.Leased && eligible.Count > 0)
+                {
+                    var target = eligible.OrderBy(w => ControlPlane.Leases.Count(x => x.WorkerId == w.WorkerId && LeaseState.IsOwning(x.State))).ThenBy(w => w.WorkerIndex).First();
+                    Log("info", $"re-dealing leased carried container {l.ContainerId} from {l.WorkerId} (not eligible) to {target.WorkerId}");
+                    ControlPlane.PinContainer(l.ContainerId, target.WorkerId);
+                    continue;
+                }
                 Log("info", $"unpinning {l.ContainerId} from {l.WorkerId} (not eligible); it follows its carrier again");
                 ControlPlane.SetLeaseState(l.ContainerId, LeaseState.Active);
             }

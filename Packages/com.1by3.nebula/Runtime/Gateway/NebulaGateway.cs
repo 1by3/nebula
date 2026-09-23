@@ -300,13 +300,47 @@ namespace Nebula
         /// </summary>
         private Container ScopeContainer(ContainerRef reference)
         {
-            for (int hops = 0; reference.IsDynamic; hops++)
+            for (int hops = 0; TryCarrierOf(reference, out ulong carrierNetId, out _); hops++)
             {
-                if (hops > _entities.Count || !_entities.TryGetValue(reference.NetId, out var carrier)) return null;
+                if (hops > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) return null;
                 reference = carrier.Container;
             }
             return ContainerRegistry.Resolve(reference);
         }
+
+        /// <summary>
+        /// Whether <paramref name="reference"/> rides in a carrier, and which: a dynamic reference is its carrier's box,
+        /// and a runtime container fixed inside a carrier's box (a room of a ship's frame, <c>docs/container-tree.md</c>
+        /// D2) rides in the carrier its branch of the tree hangs from. <paramref name="offset"/> is where the
+        /// container's origin sits in the carrier's local space (zero for the carrier's own box): runtime children are
+        /// axis-aligned in their parents, so a local position in the container plus the offset is a position in the
+        /// carrier. Read from the lease rows' placements, which every gateway mirrors, so it needs no entity or
+        /// registry entry for the carrier's box.
+        /// </summary>
+        internal bool TryCarrierOf(ContainerRef reference, out ulong carrierNetId, out Vector3 offset)
+        {
+            offset = Vector3.zero;
+            carrierNetId = 0;
+            if (reference.IsDynamic) { carrierNetId = reference.NetId; return true; }
+            if (!reference.IsRuntime || _ownershipById.Count == 0) return false;
+            string id = ContainerRegistry.RuntimeContainerId(reference.RuntimeId);
+            for (int hops = 0; hops <= _ownershipById.Count; hops++)
+            {
+                if (!_ownershipById.TryGetValue(id, out var entry) || !entry.HasPlacement || entry.Placement.IsRoot) return false;
+                offset += entry.Placement.Center.ToVector3();
+                string parent = entry.Placement.ParentId;
+                if (ContainerRegistry.IsDynamicId(parent))
+                {
+                    carrierNetId = ContainerRegistry.CarrierNetIdOf(parent);
+                    return carrierNetId != 0;
+                }
+                id = parent;
+            }
+            return false;
+        }
+
+        /// <summary>The carrier <paramref name="reference"/> rides in (see <see cref="TryCarrierOf"/>), or 0.</summary>
+        internal ulong CarrierOf(ContainerRef reference) => TryCarrierOf(reference, out ulong carrier, out _) ? carrier : 0UL;
 
         private bool CanObserve(ClientConn client, EntityRecord entity)
         {
@@ -714,19 +748,8 @@ namespace Nebula
                 ushort idx = w != null ? (ushort)w.WorkerIndex : ushort.MaxValue;
                 string owner = LeaseState.IsOwning(lease.State) ? lease.WorkerId : "";
                 if (c != null) ContainerRegistry.ApplyLease(lease.ContainerId, owner, idx, lease.Epoch, lease.State);
-                var entry = new ContainerOwnershipEntry
-                {
-                    ContainerIndex = c != null ? c.Index : ContainerRef.DynamicIndex,
-                    ContainerId = lease.ContainerId,
-                    WorkerIndex = idx,
-                    WorkerId = owner,
-                    Epoch = lease.Epoch,
-                    State = lease.State,
-                    HasBounds = lease.HasBounds,
-                    BoundsCenter = lease.BoundsCenter,
-                    BoundsSize = lease.BoundsSize,
-                    Instance = lease.Instance,
-                };
+                var entry = ContainerOwnershipEntry.Of(lease, c != null ? c.Index : ContainerRef.DynamicIndex, idx);
+                entry.WorkerId = owner;
                 _ownership.Add(entry);
                 if (!string.IsNullOrEmpty(entry.ContainerId)) _ownershipById[entry.ContainerId] = entry;
             }
@@ -1097,7 +1120,7 @@ namespace Nebula
                 rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity)) * rotation;
             }
             bool changedScope = ScopeIdOf(rec.Container) != ScopeIdOf(entry.Container);
-            bool changedCarrier = rec.Container.IsDynamic != entry.Container.IsDynamic || rec.Container.NetId != entry.Container.NetId;
+            bool changedCarrier = CarrierOf(rec.Container) != CarrierOf(entry.Container);
             bool changedContainer = rec.Container != entry.Container;
             rec.Container = entry.Container;
             rec.LastSpawn.Container = entry.Container;
@@ -1228,9 +1251,10 @@ namespace Nebula
         /// </summary>
         private Vector3 WorldPosition(ContainerRef container, Vector3 local)
         {
-            for (int hops = 0; container.IsDynamic; hops++)
+            for (int hops = 0; TryCarrierOf(container, out ulong carrierNetId, out var offset); hops++)
             {
-                if (hops > _entities.Count || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                if (hops > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) return local;
+                local += offset;
                 local = carrier.LastSpawn.LocalPosition + carrier.LastSpawn.LocalRotation * Vector3.Scale(carrier.LastSpawn.LocalScale, local);
                 container = carrier.Container;
             }
@@ -1241,9 +1265,9 @@ namespace Nebula
         /// <inheritdoc cref="WorldPosition"/>
         private Quaternion WorldRotation(ContainerRef container, Quaternion local)
         {
-            for (int hops = 0; container.IsDynamic; hops++)
+            for (int hops = 0; TryCarrierOf(container, out ulong carrierNetId, out _); hops++)
             {
-                if (hops > _entities.Count || !_entities.TryGetValue(container.NetId, out var carrier)) return local;
+                if (hops > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) return local;
                 local = carrier.LastSpawn.LocalRotation * local;
                 container = carrier.Container;
             }
@@ -1259,15 +1283,18 @@ namespace Nebula
         private Vector3 ContainerPosition(ContainerRef container, Vector3 world)
         {
             _carrierChain.Clear();
+            _carrierOffsets.Clear();
             var at = container;
-            while (at.IsDynamic)
+            bool broken = false;
+            while (TryCarrierOf(at, out ulong carrierNetId, out var offset))
             {
-                if (_carrierChain.Count > _entities.Count || !_entities.TryGetValue(at.NetId, out var carrier)) break;
+                if (_carrierChain.Count > _entities.Count || !_entities.TryGetValue(carrierNetId, out var carrier)) { broken = true; break; }
                 _carrierChain.Add(carrier);
+                _carrierOffsets.Add(offset);
                 at = carrier.Container;
             }
             Vector3 local = world;
-            if (!at.IsDynamic)
+            if (!broken)
             {
                 var c = ContainerRegistry.Resolve(at);
                 if (c != null) local = c.ToLocal(world);
@@ -1278,13 +1305,17 @@ namespace Nebula
                 var relative = Quaternion.Inverse(carrier.LastSpawn.LocalRotation) * (local - carrier.LastSpawn.LocalPosition);
                 var scale = carrier.LastSpawn.LocalScale;
                 local = new Vector3(scale.x != 0 ? relative.x / scale.x : 0, scale.y != 0 ? relative.y / scale.y : 0, scale.z != 0 ? relative.z / scale.z : 0);
+                local -= _carrierOffsets[i];
             }
             _carrierChain.Clear();
+            _carrierOffsets.Clear();
             return local;
         }
 
         /// <summary>Carriers between a reference and the static container it sits in; reused by <see cref="ContainerPosition"/>.</summary>
         private readonly List<EntityRecord> _carrierChain = new List<EntityRecord>();
+        /// <summary>Where each container of <see cref="_carrierChain"/>'s steps sits in its carrier (see <see cref="TryCarrierOf"/>).</summary>
+        private readonly List<Vector3> _carrierOffsets = new List<Vector3>();
 
         private void OnOwnerState(WorkerConn w, NetworkReader r)
         {

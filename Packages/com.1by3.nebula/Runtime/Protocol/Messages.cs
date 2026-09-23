@@ -1110,10 +1110,47 @@ namespace Nebula
         public string WorkerId;
         public ulong Epoch;
         public string State;
-        /// <summary>Runtime containers: the box (absolute coordinates) a client registers the container with. See <see cref="LeaseInfo.HasBounds"/>.</summary>
+        /// <summary>Runtime containers: the box a client registers the container with. See <see cref="LeaseInfo.HasBounds"/>.</summary>
         public bool HasBounds;
         public Vector3 BoundsCenter;
         public Vector3 BoundsSize;
+        /// <summary>
+        /// Runtime containers: where the box goes (parent, centre in double, authority, physics frame), carried in the
+        /// message's trailing placement section so a protocol-18 reader that predates it still reads the float box.
+        /// <see cref="HasPlacement"/> is false when the sender wrote none (a root with no frame, whose float box is all there is).
+        /// </summary>
+        public bool HasPlacement;
+        public ContainerPlacement Placement;
+
+        /// <summary>The placement to register with: the trailing one when present, otherwise a root at the float box.</summary>
+        public ContainerPlacement PlacementOrRoot => HasPlacement ? Placement : ContainerPlacement.Root(new Bounds(BoundsCenter, BoundsSize));
+
+        /// <summary>An entry for a lease row, box and placement included.</summary>
+        public static ContainerOwnershipEntry Of(LeaseInfo lease, ushort containerIndex, ushort workerIndex)
+        {
+            var e = new ContainerOwnershipEntry
+            {
+                Instance = lease.Instance,
+                ContainerIndex = containerIndex,
+                ContainerId = lease.ContainerId,
+                WorkerIndex = workerIndex,
+                WorkerId = lease.WorkerId,
+                Epoch = lease.Epoch,
+                State = lease.State,
+                HasBounds = lease.HasBounds,
+                BoundsCenter = lease.BoundsCenter,
+                BoundsSize = lease.BoundsSize,
+            };
+            if (lease.HasBounds && (!lease.IsRoot || lease.OwnPhysicsFrame || lease.Authority != ContainerAuthority.Auto || lease.FrameInterest != FrameInterestMode.WithCarrier || NeedsDouble(lease.Center)))
+            {
+                e.HasPlacement = true;
+                e.Placement = lease.Placement;
+            }
+            return e;
+        }
+
+        /// <summary>A centre a float cannot carry exactly (far from the origin, or with a fraction a float would lose).</summary>
+        private static bool NeedsDouble(Double3 c) => (double)(float)c.X != c.X || (double)(float)c.Y != c.Y || (double)(float)c.Z != c.Z;
     }
 
     /// <summary>
@@ -1168,7 +1205,28 @@ namespace Nebula
             }
             w.WriteUShort((ushort)(removes?.Count ?? 0));
             if (removes != null) foreach (var id in removes) w.WriteString(id ?? "");
+            // Trailing placement section (docs/container-tree.md §6): parent, centre in double, authority and frame of
+            // each runtime entry that has more to say than its float box. A reader that predates it stops before it.
+            int placed = 0;
+            if (entries != null) foreach (var e in entries) if (e.HasPlacement) placed++;
+            if (placed == 0) return;
+            w.WriteUShort((ushort)placed);
+            for (int i = 0; entries != null && i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (!e.HasPlacement) continue;
+                w.WriteUShort((ushort)i);
+                w.WriteString(e.Placement.ParentId ?? "");
+                w.WriteDouble(e.Placement.Center.X);
+                w.WriteDouble(e.Placement.Center.Y);
+                w.WriteDouble(e.Placement.Center.Z);
+                w.WriteByte((byte)e.Placement.Authority);
+                w.WriteByte((byte)((e.Placement.OwnPhysicsFrame ? FlagFrame : 0) | (e.Placement.FrameInterest == FrameInterestMode.OwnRegions ? FlagOwnRegions : 0)));
+            }
         }
+
+        private const byte FlagFrame = 1;
+        private const byte FlagOwnRegions = 2;
 
         public static ContainerOwnershipUpdate Read(NetworkReader r)
         {
@@ -1200,6 +1258,29 @@ namespace Nebula
             int removed = r.ReadUShort();
             update.Removes = new List<string>(removed);
             for (int i = 0; i < removed; i++) update.Removes.Add(r.ReadString() ?? "");
+            if (r.Remaining >= 2)
+            {
+                int placed = r.ReadUShort();
+                for (int p = 0; p < placed; p++)
+                {
+                    int index = r.ReadUShort();
+                    var placement = new ContainerPlacement
+                    {
+                        ParentId = r.ReadString() ?? "",
+                        Center = new Double3(r.ReadDouble(), r.ReadDouble(), r.ReadDouble()),
+                        Authority = (ContainerAuthority)r.ReadByte(),
+                    };
+                    byte flags = r.ReadByte();
+                    placement.OwnPhysicsFrame = (flags & FlagFrame) != 0;
+                    placement.FrameInterest = (flags & FlagOwnRegions) != 0 ? FrameInterestMode.OwnRegions : FrameInterestMode.WithCarrier;
+                    if (index >= list.Count) continue;
+                    var e = list[index];
+                    placement.Size = e.BoundsSize;
+                    e.HasPlacement = true;
+                    e.Placement = placement;
+                    list[index] = e;
+                }
+            }
             return update;
         }
     }
@@ -1340,6 +1421,12 @@ namespace Nebula
         /// so a followed entity is not lost the moment it changes worker.
         /// </summary>
         public string[] InterestGateways;
+        /// <summary>
+        /// The entity is crossing a physics frame's boundary and the sender is not the frame's pose owner, so it hands
+        /// the entity over unconverted for the pose owner to cross it at its exact pose (<c>docs/container-tree.md</c>
+        /// D15). A trailing optional byte: an older reader stops before it.
+        /// </summary>
+        public bool Crossing;
 
         public void Write(NetworkWriter w)
         {
@@ -1354,19 +1441,25 @@ namespace Nebula
             w.WriteString(SessionGateway ?? "");
             w.WriteUShort((ushort)(InterestGateways?.Length ?? 0));
             if (InterestGateways != null) foreach (var key in InterestGateways) w.WriteString(key);
+            if (Crossing) w.WriteByte(1);
         }
 
-        public static AuthorityTransferMsg Read(NetworkReader r) => new AuthorityTransferMsg
+        public static AuthorityTransferMsg Read(NetworkReader r)
         {
-            Entity = EntitySpawnMsg.Read(r),
-            NewEpoch = r.ReadUInt(),
-            PendingInputs = r.ReadBytes(),
-            HandoverState = r.ReadBytes(),
-            GhostWorkers = ReadStrings(r),
-            SessionGeneration = r.ReadULong(),
-            SessionGateway = r.ReadString() ?? "",
-            InterestGateways = ReadStrings(r),
-        };
+            var msg = new AuthorityTransferMsg
+            {
+                Entity = EntitySpawnMsg.Read(r),
+                NewEpoch = r.ReadUInt(),
+                PendingInputs = r.ReadBytes(),
+                HandoverState = r.ReadBytes(),
+                GhostWorkers = ReadStrings(r),
+                SessionGeneration = r.ReadULong(),
+                SessionGateway = r.ReadString() ?? "",
+                InterestGateways = ReadStrings(r),
+            };
+            msg.Crossing = r.Remaining > 0 && r.ReadByte() != 0;
+            return msg;
+        }
 
         private static string[] ReadStrings(NetworkReader r)
         {

@@ -189,7 +189,8 @@ namespace Nebula.Tests
             private void Invoke(MethodInfo method, params object[] args)
             {
                 try { method.Invoke(Instance, args); }
-                catch (TargetInvocationException ex) when (ex.InnerException != null) { throw ex.InnerException; }
+                // Rethrown with its own stack, so a failure inside the worker points at the line that threw.
+                catch (TargetInvocationException ex) when (ex.InnerException != null) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw(); }
             }
 
             private void SetField(string name, object value) => typeof(NebulaWorker).GetField(name, Flags).SetValue(Instance, value);

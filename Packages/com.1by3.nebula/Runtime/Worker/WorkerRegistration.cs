@@ -140,11 +140,13 @@ namespace Nebula
             foreach (var c in ContainerRegistry.Runtime)
             {
                 if (c == null || !_claimed.Contains(c.ContainerId) || controlPlane.FindLease(c.ContainerId) != null) continue;
-                var bounds = ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId);
+                var placement = ContainerRegistry.PlacementOf(c);
                 leases.Add(new LeaseInfo
                 {
                     ContainerId = c.ContainerId, HasBounds = true,
-                    BoundsCenter = bounds.center, BoundsSize = bounds.size, Instance = c.Instance,
+                    ParentId = placement.ParentId, Center = placement.Center, BoundsSize = placement.Size,
+                    Authority = placement.Authority, OwnPhysicsFrame = placement.OwnPhysicsFrame, FrameInterest = placement.FrameInterest,
+                    Instance = c.Instance,
                 });
             }
             ContainerRegistry.SyncRuntime(leases);
@@ -162,7 +164,7 @@ namespace Nebula
                 if (controlPlane.FindLease(c.ContainerId) != null) continue;
                 if (!_claimed.Add(c.ContainerId)) continue; // asked already; the write is in flight
                 if (c.IsRuntime)
-                    controlPlane.EnsureRuntimeContainer(c.ContainerId, ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId), WorkerId, c.Instance);
+                    controlPlane.EnsureRuntimeContainer(c.ContainerId, ContainerRegistry.PlacementOf(c), WorkerId, c.Instance);
                 else
                 {
                     controlPlane.EnsureContainer(c.ContainerId);

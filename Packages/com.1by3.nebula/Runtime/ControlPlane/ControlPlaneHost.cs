@@ -160,8 +160,8 @@ namespace Nebula
         public void SetGatewayDraining(string gatewayId, bool draining) => _plane.SetGatewayDraining(gatewayId, draining);
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) => _plane.HeartbeatOrchestrator(orchestratorId, desiredWorkers);
         public void SetSetting(string key, string value) => _plane.SetSetting(key, value);
-        public void EnsureContainer(string containerId) => _plane.EnsureContainer(containerId);
-        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null) => _plane.EnsureRuntimeContainer(containerId, bounds, workerId, instance);
+        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto) => _plane.EnsureContainer(containerId, authority);
+        public void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null) => _plane.EnsureRuntimeContainer(containerId, placement, workerId, instance);
         public void TouchContainer(string containerId) => _plane.TouchContainer(containerId);
         public void AssignContainer(string containerId, string workerId) => _plane.AssignContainer(containerId, workerId);
         public void PinContainer(string containerId, string workerId) => _plane.PinContainer(containerId, workerId);

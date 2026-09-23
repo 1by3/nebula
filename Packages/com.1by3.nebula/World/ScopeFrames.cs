@@ -69,6 +69,17 @@ namespace Nebula.World
             (float)(-(long)Cell.y * (double)CellSize.y),
             (float)(-(long)Cell.z * (double)CellSize.z));
 
+        /// <summary>
+        /// <see cref="OriginOffset"/> in double, per axis: what an absolute position kept in double is shifted by before
+        /// it is narrowed to float, so a placement far from the origin keeps its precision.
+        /// </summary>
+        public void OriginOffsetPrecise(out double x, out double y, out double z)
+        {
+            x = -(long)Cell.x * (double)CellSize.x;
+            y = -(long)Cell.y * (double)CellSize.y;
+            z = -(long)Cell.z * (double)CellSize.z;
+        }
+
         /// <summary>Delta every frame position of this scope gets when its origin moves from <paramref name="from"/> to <paramref name="to"/>.</summary>
         public Vector3 ShiftDelta(Vector3Int from, Vector3Int to) => ShiftDelta(CellSize, from, to);
 

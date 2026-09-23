@@ -275,9 +275,14 @@ namespace Nebula
         public void HeartbeatOrchestrator(string orchestratorId, uint desiredWorkers) =>
             Enqueue(_op.Op(ControlPlaneJson.HeartbeatOrchestrator).Arg("orchestratorId", orchestratorId).Arg("desiredWorkers", desiredWorkers).End());
         public void SetSetting(string key, string value) => Enqueue(_op.Op(ControlPlaneJson.SetSetting).Arg("key", key).Arg("value", value ?? "").End());
-        public void EnsureContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.EnsureContainer).Arg("containerId", containerId).End());
-        public void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null) =>
-            Enqueue(_op.Op(ControlPlaneJson.EnsureRuntimeContainer).Arg("containerId", containerId).Arg("workerId", workerId ?? "").Arg("center", bounds.center).Arg("size", bounds.size).Arg("instance", InstanceContainerInfo.Encode(instance)).End());
+        public void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto)
+        {
+            var op = _op.Op(ControlPlaneJson.EnsureContainer).Arg("containerId", containerId);
+            if (authority != ContainerAuthority.Auto) op.Arg("authority", ControlPlaneJson.AuthorityName(authority));
+            Enqueue(op.End());
+        }
+        public void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null) =>
+            Enqueue(ControlPlaneJson.Placement(_op.Op(ControlPlaneJson.EnsureRuntimeContainer).Arg("containerId", containerId).Arg("workerId", workerId ?? ""), placement).Arg("instance", InstanceContainerInfo.Encode(instance)).End());
         public void TouchContainer(string containerId) => Enqueue(_op.Op(ControlPlaneJson.TouchContainer).Arg("containerId", containerId).End());
         public void AssignContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.AssignContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());
         public void PinContainer(string containerId, string workerId) => Enqueue(_op.Op(ControlPlaneJson.PinContainer).Arg("containerId", containerId).Arg("workerId", workerId).End());

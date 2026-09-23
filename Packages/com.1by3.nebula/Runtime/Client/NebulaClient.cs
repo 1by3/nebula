@@ -553,6 +553,10 @@ namespace Nebula
             if (_destroyedScratch.Count > 0) DropDestroyed();
             TrackCarrier();
             FollowLocalScope();
+            // Physics frames: sample their motion and put every frame root at its frame's world pose, now that the
+            // carriers were interpolated, so everything that runs after this (cameras) sees one world (D11, D14).
+            PhysicsFrames.UpdateStates(NetworkTime.Tick, Time.deltaTime);
+            PhysicsFrames.PoseForRender();
         }
 
         /// <summary>The scope whose instance content this client last showed.</summary>
@@ -632,15 +636,22 @@ namespace Nebula
             // worker does between a carrier's tick and its contents', or the deck is a frame behind under the pawn.
             if (ContainerRegistry.Dynamic.Count > 0) Physics.SyncTransforms();
 
-            for (int i = 0; i < steps; i++)
+            // A pawn inside a physics frame predicts in the frame's own coordinates, exactly as its worker simulates
+            // it: the frame root goes back to the identity pose for the step (docs/container-tree.md D11).
+            PhysicsFrames.BeginSimulation(LocalPlayer.Container != null ? LocalPlayer.Container.InnerSpace : null);
+            try
             {
-                _predictTick = first + (uint)i;
-                NetworkTime.Tick = _predictTick;
-                _inputWriter.Reset();
-                LocalPlayer.Predicted.ClientPredictTick(_predictTick, _inputWriter);
-                _recentInputs.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
-                while (_recentInputs.Count > 3) _recentInputs.RemoveAt(0);
+                for (int i = 0; i < steps; i++)
+                {
+                    _predictTick = first + (uint)i;
+                    NetworkTime.Tick = _predictTick;
+                    _inputWriter.Reset();
+                    LocalPlayer.Predicted.ClientPredictTick(_predictTick, _inputWriter);
+                    _recentInputs.Add(new ClientInputMsg.Frame { Tick = _predictTick, Payload = _inputWriter.ToArray() });
+                    while (_recentInputs.Count > 3) _recentInputs.RemoveAt(0);
+                }
             }
+            finally { PhysicsFrames.EndSimulation(); }
 
             _inputMsg.ClientId = ClientId;
             _inputMsg.Frames.Clear();
@@ -903,6 +914,7 @@ namespace Nebula
             {
                 // A delta says nothing about the containers it leaves out, so they stay.
                 foreach (var c in ContainerRegistry.Runtime) _runtimeKeep.Add(c.RuntimeId);
+                foreach (var id in ContainerRegistry.PendingRuntimeIds) _runtimeKeep.Add(id);
                 if (update.Removes != null)
                     foreach (var id in update.Removes)
                         if (ContainerRegistry.TryParseRuntimeId(id, out ulong retired)) _runtimeKeep.Remove(retired);
@@ -912,7 +924,7 @@ namespace Nebula
                 if (!e.HasBounds || !ContainerRegistry.TryParseRuntimeId(e.ContainerId, out ulong runtimeId)) continue;
                 _runtimeKeep.Add(runtimeId);
                 if (ContainerRegistry.GetRuntime(runtimeId) == null)
-                    ContainerRegistry.RegisterRuntime(runtimeId, ContainerRegistry.ToFrame(new Bounds(e.BoundsCenter, e.BoundsSize), e.Instance?.InstanceId ?? 0UL), e.Instance);
+                    ContainerRegistry.RegisterRuntime(runtimeId, e.PlacementOrRoot, e.Instance);
             }
 
             // Capture occupants before PruneRuntime evacuates them into a neighbouring box. Runtime retirement
@@ -1299,7 +1311,10 @@ namespace Nebula
             if (container == null && msg.Container.MayArriveLater) return; // the container is not here yet; the next report will do
             if (container != LocalPlayer.Container) LocalPlayer.SetContainer(container);
             _reader.Set(new ArraySegment<byte>(msg.State));
-            LocalPlayer.Predicted.ClientReconcile(msg.Tick, _reader);
+            // A correction replays inputs, which is simulation: in the pawn's frame at the identity pose (D11).
+            PhysicsFrames.BeginSimulation(container != null ? container.InnerSpace : null);
+            try { LocalPlayer.Predicted.ClientReconcile(msg.Tick, _reader); }
+            finally { PhysicsFrames.EndSimulation(); }
         }
 
         /// <summary>

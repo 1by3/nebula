@@ -71,6 +71,16 @@ namespace Nebula
         public int HandoversOut { get; private set; }
         public int HandoversIn { get; private set; }
         public int LocalHandovers { get; private set; }
+        /// <summary>Entities this worker moved across a physics frame's boundary as the frame's pose owner (<c>docs/container-tree.md</c> D15).</summary>
+        public int FrameCrossings { get; private set; }
+        /// <summary>Entities this worker handed to a frame's pose owner so it could cross them (D15).</summary>
+        public int CrossingHandoffs { get; private set; }
+        /// <summary>How long an entity handed over for a crossing stays with the pose owner before it may be handed back (ticks).</summary>
+        public const int CrossingHoldTicks = 30;
+        /// <summary>Entities received for a crossing, by net id: the tick until which they are not handed back.</summary>
+        private readonly Dictionary<ulong, uint> _crossingHold = new Dictionary<ulong, uint>();
+        /// <summary>The entity the transfer being written is a crossing for (D15); its contents travel as ordinary followers.</summary>
+        private NetworkIdentity _crossingEntity;
         /// <summary>
         /// AuthorityRpc sends this process discarded because the caller held neither an authoritative nor a ghost
         /// copy of the target (see <see cref="NebulaDiagnostics.RejectedAuthorityRpcSends"/>). Reported as
@@ -155,7 +165,7 @@ namespace Nebula
         private readonly HashSet<string> _seenLeases = new HashSet<string>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         /// <summary>Runtime containers asked for before this worker was registered (a game mode's OnWorkerStarted); sent once it is.</summary>
-        private readonly Dictionary<ulong, (Bounds Bounds, ContainerHint Hint, bool WriteHint, InstanceContainerInfo Instance)> _pendingRuntimeRequests = new Dictionary<ulong, (Bounds, ContainerHint, bool, InstanceContainerInfo)>();
+        private readonly Dictionary<ulong, (ContainerPlacement Placement, ContainerHint Hint, bool WriteHint, InstanceContainerInfo Instance)> _pendingRuntimeRequests = new Dictionary<ulong, (ContainerPlacement, ContainerHint, bool, InstanceContainerInfo)>();
 
         /// <summary>netId -> the entities ghosted to each worker this tick, rebuilt in <see cref="UpdateGhostBand"/>; lists are pooled.</summary>
         private readonly Dictionary<string, List<NetworkIdentity>> _ghostByWorker = new Dictionary<string, List<NetworkIdentity>>();
@@ -403,8 +413,18 @@ namespace Nebula
                 var carried = _authoritative[i].Carried;
                 if (carried == null || !carried.IsDynamic) continue;
                 var lease = ControlPlane.FindLease(carried.ContainerId);
-                if (lease == null) { ControlPlane.EnsureContainer(carried.ContainerId); ControlPlane.AssignContainer(carried.ContainerId, WorkerId); continue; }
+                // A carried container authored leased has a lease of its own from the start: pinned to the worker
+                // that holds its carrier when it appears, then dealt by the orchestrator (docs/container-tree.md D6).
+                bool leased = carried.Authority == ContainerAuthority.Leased;
+                if (lease == null)
+                {
+                    ControlPlane.EnsureContainer(carried.ContainerId, carried.Authority);
+                    if (leased) ControlPlane.PinContainer(carried.ContainerId, WorkerId);
+                    else ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
+                    continue;
+                }
                 if (lease.State == LeaseState.Pinned) continue;
+                if (leased) { ControlPlane.PinContainer(carried.ContainerId, WorkerId); continue; }
                 if (lease.WorkerId != WorkerId || lease.State != LeaseState.Active) ControlPlane.AssignContainer(carried.ContainerId, WorkerId);
             }
         }
@@ -424,7 +444,23 @@ namespace Nebula
         /// the three-argument overload survives every later approach. Use that overload to change it.
         /// </para>
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: null);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds) => Request(id, RootPlacement(frameBounds, null), ContainerHint.Default, writeHint: false, instance: null);
+
+        /// <summary>
+        /// Ask the mesh for a runtime container described by a <see cref="ContainerPlacement"/>: a root placed exactly
+        /// in its scope (its centre in double), or a child placed in a parent container's frame (an octant of a
+        /// planet, a base inside an octant, a room inside a ship), with its authority (leased or inherited) and
+        /// whether it gets a physics frame of its own. The rest is exactly <see cref="RequestRuntimeContainer(ulong, Bounds)"/>:
+        /// the row is created assigned to this worker when the container is leased (an inherited one is simulated by
+        /// its parent's owner and never assigned), every process registers the box from the row, and the call is
+        /// idempotent. See <c>docs/container-tree.md</c>.
+        /// </summary>
+        public void RequestRuntimeContainer(ulong id, ContainerPlacement placement, InstanceContainerInfo instance = null) =>
+            Request(id, placement, ContainerHint.Default, writeHint: false, instance: instance);
+
+        /// <summary>A root placement from a box in this process's frame: the origin comes off in double.</summary>
+        private static ContainerPlacement RootPlacement(Bounds frameBounds, InstanceContainerInfo instance) =>
+            ContainerPlacement.Root(ContainerRegistry.ToAbsolutePrecise(frameBounds.center, instance?.InstanceId ?? 0UL), frameBounds.size);
 
         /// <summary>
         /// Ask for a runtime container that belongs to a scope rather than to the public world: a chunk of a scoped
@@ -435,7 +471,7 @@ namespace Nebula
         /// born with.
         /// </summary>
         public void RequestRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
-            Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: instance);
+            Request(id, RootPlacement(frameBounds, instance), ContainerHint.Default, writeHint: false, instance: instance);
 
         /// <summary>
         /// Ask for a runtime container and tell the planner what kind of box it is in the same breath
@@ -444,7 +480,7 @@ namespace Nebula
         /// restart does not lose it. A default hint writes nothing. Idempotent like the two-argument overload; the
         /// hint is re-applied when it differs from the row, so a game may raise and lower it as the box heats up.
         /// </summary>
-        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, frameBounds, hint, writeHint: true, instance: null);
+        public void RequestRuntimeContainer(ulong id, Bounds frameBounds, in ContainerHint hint) => Request(id, RootPlacement(frameBounds, null), hint, writeHint: true, instance: null);
 
         /// <summary>
         /// Should this approach write the hint row? Only a caller that actually named a hint may, and only when what
@@ -472,22 +508,22 @@ namespace Nebula
         /// the scope's idle clock at zero for as long as two workers knew the scope.
         /// </summary>
         internal void EnsureRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
-            Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: instance, touch: false);
+            Request(id, RootPlacement(frameBounds, instance), ContainerHint.Default, writeHint: false, instance: instance, touch: false);
 
-        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance, bool touch = true)
+        private void Request(ulong id, ContainerPlacement placement, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance, bool touch = true)
         {
             if (!_registered || !ControlPlane.IsConnected)
             {
-                _pendingRuntimeRequests[id] = (frameBounds, hint, writeHint, instance); // OnWorkerStarted runs before registration; ask as soon as we can
+                _pendingRuntimeRequests[id] = (placement, hint, writeHint, instance); // OnWorkerStarted runs before registration; ask as soon as we can
                 return;
             }
             string containerId = ContainerRegistry.RuntimeContainerId(id);
             var lease = ControlPlane.FindLease(containerId);
             if (lease == null)
             {
-                // The box on the lease row is absolute, and a scope with an origin frame of its own converts
-                // through that frame, not through the public world's (docs/scope-frames.md D4).
-                ControlPlane.EnsureRuntimeContainer(containerId, ContainerRegistry.ToAbsolute(frameBounds, instance?.InstanceId ?? 0UL), WorkerId, instance);
+                // A root's box on the lease row is absolute, converted in double through the frame of its scope
+                // (docs/scope-frames.md D4, docs/container-tree.md D5); a child's is local to its parent.
+                ControlPlane.EnsureRuntimeContainer(containerId, placement, WorkerId, instance);
                 if (writeHint && !hint.IsDefault) ControlPlane.SetContainerHint(containerId, hint);
                 return;
             }
@@ -518,7 +554,7 @@ namespace Nebula
         private void FlushRuntimeRequests()
         {
             if (_pendingRuntimeRequests.Count == 0 || !_registered || !ControlPlane.IsConnected) return;
-            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Bounds, kv.Value.Hint, kv.Value.WriteHint, kv.Value.Instance);
+            foreach (var kv in _pendingRuntimeRequests) Request(kv.Key, kv.Value.Placement, kv.Value.Hint, kv.Value.WriteHint, kv.Value.Instance);
             _pendingRuntimeRequests.Clear();
         }
 
@@ -536,8 +572,22 @@ namespace Nebula
             if (!_registered || !ControlPlane.IsConnected) return false;
             if (IsFenced) return false; // nothing could be saved on the way out (docs/persistence-durability.md D8)
             EmptyContainer(c);
+            // Inherited children are simulated here and go with their parent (EmptyContainer opened them); their rows
+            // would otherwise wait for a parent that is never coming back. A leased child is its owner's to retire.
+            RemoveInheritedChildRows(c);
             ControlPlane.RemoveContainer(c.ContainerId);
             return true;
+        }
+
+        private void RemoveInheritedChildRows(Container parent)
+        {
+            for (int i = 0; i < parent.Children.Count; i++)
+            {
+                var child = parent.Children[i];
+                if (child == null || !child.IsRuntime || child.IsLeased) continue;
+                RemoveInheritedChildRows(child);
+                ControlPlane.RemoveContainer(child.ContainerId);
+            }
         }
 
         /// <summary>
@@ -569,6 +619,54 @@ namespace Nebula
                 Despawn(e, keepPersisted: e.Persistent != null, takesRiders: true);
             }
             _contentsScratch.Clear();
+        }
+
+        /// <summary>
+        /// The physics frame whose boundary a move from <paramref name="from"/> to <paramref name="to"/> crosses, or null
+        /// when both are in one space. Leaving when the entity goes out to the space around the frame, entering otherwise.
+        /// </summary>
+        internal static Container CrossedFrame(Container from, Container to, out bool leaving)
+        {
+            leaving = false;
+            var a = from != null ? from.InnerSpace : null;
+            var b = to != null ? to.InnerSpace : null;
+            if (a == b) return null;
+            // Entering when the destination's space lies inside the one the entity is in; leaving otherwise.
+            for (var s = b; s != null; s = s.Space)
+            {
+                if (s.Space == a) return s;
+                if (s == a) break;
+            }
+            leaving = true;
+            return a ?? b;
+        }
+
+        /// <summary>
+        /// Whether this worker knows <paramref name="frame"/>'s pose exactly this tick: a fixed frame's pose is known
+        /// everywhere, a carried one's only by the carrier's authority.
+        /// </summary>
+        private bool IsPoseOwner(Container frame)
+        {
+            if (frame == null || !frame.IsDynamic) return true;
+            // This worker's own copy of the carrier, by net id: the one it simulates if anyone here does.
+            return frame.CarrierNetId != 0 && _entities.TryGetValue(frame.CarrierNetId, out var carrier) && carrier != null && carrier.HasAuthority;
+        }
+
+        /// <summary>
+        /// Hand <paramref name="e"/> to the worker simulating <paramref name="frame"/>'s carrier, flagged as a crossing,
+        /// in the coordinates it has now: the pose owner crosses it at its exact pose and hands it on if the
+        /// destination is leased elsewhere. One extra handover, no error (D15).
+        /// </summary>
+        private void HandToPoseOwner(NetworkIdentity e, Container frame)
+        {
+            var carrier = frame.CarrierNetId != 0 && _entities.TryGetValue(frame.CarrierNetId, out var mine) ? mine : frame.Carrier;
+            string ownerId = carrier != null ? ResolveWorkerId(carrier.OwnerWorkerIndex) : "";
+            if (string.IsNullOrEmpty(ownerId) || ownerId == WorkerId) return;
+            if (!_workerPeersById.TryGetValue(ownerId, out var peer) || !peer.HelloReceived) return;
+            _crossingEntity = e;
+            try { TransferAuthority(e, peer); }
+            finally { _crossingEntity = null; }
+            CrossingHandoffs++;
         }
 
         /// <summary>Worker id for a worker index: this worker, or a connected peer. Dynamic containers derive their owner through this.</summary>
@@ -902,6 +1000,8 @@ namespace Nebula
             float dt = NetworkTime.TickInterval;
             UpdateInstancePreparations();
             ContainerRegistry.RefreshCaches();
+            // Interior colliders of every physics frame follow their sources (a ramp lowering, a door opening).
+            PhysicsFrames.SyncAllContent();
 
             // 1. Ghosts follow the stream they are driven by (kinematic: no solve of their own).
             ProfGhosts.Begin();
@@ -958,6 +1058,10 @@ namespace Nebula
             }
             ProfSimulate.End();
             InstanceScenes.Simulate(dt);
+            // Every physics frame is its own scene, still in its own coordinates; and every frame's motion is sampled
+            // once the carriers have moved this tick (docs/container-tree.md D14).
+            PhysicsFrames.Simulate(dt);
+            PhysicsFrames.UpdateStates(tick, dt);
 
             // Remember where what we simulate ended up this tick, for lag-compensated hit tests and time-sensitive
             // validation (docs/state-history.md). Ghosts record themselves when the owner's stream is applied, with
@@ -993,14 +1097,38 @@ namespace Nebula
                 if (resolved != e.Container)
                 {
                     var previous = e.Container;
-                    e.SetContainer(resolved);
-                    if (resolved != null && (resolved.OwnerWorkerId == WorkerId))
+                    // Crossing a physics frame's boundary needs the frame's pose at this tick, which only its pose
+                    // owner knows exactly: anyone else hands the entity to it, unconverted (docs/container-tree.md D15).
+                    var frame = CrossedFrame(previous, resolved, out bool leaving);
+                    if (frame != null && !IsPoseOwner(frame))
                     {
-                        LocalHandovers++;
-                        NebulaLog.Debugf($"local handover {e} {previous?.ContainerId} -> {resolved.ContainerId}");
+                        if (!fenced) HandToPoseOwner(e, frame);
+                        continue;
+                    }
+                    if (frame != null && PhysicsFrames.Ask(e, frame.Frame, leaving, previous, resolved) != FrameCrossing.Allow) resolved = previous;
+                    if (resolved != previous)
+                    {
+                        e.SetContainer(resolved);
+                        if (frame != null)
+                        {
+                            FrameCrossings++;
+                            NebulaLog.Debugf($"frame crossing {e} {(leaving ? "out of" : "into")} {frame.ContainerId} ({previous?.ContainerId} -> {resolved?.ContainerId})");
+                        }
+                        if (resolved != null && (resolved.OwnerWorkerId == WorkerId))
+                        {
+                            LocalHandovers++;
+                            NebulaLog.Debugf($"local handover {e} {previous?.ContainerId} -> {resolved.ContainerId}");
+                        }
                     }
                 }
                 var owner = e.Container != null ? e.Container.OwnerWorkerId : "";
+                if (_crossingHold.Count > 0 && _crossingHold.TryGetValue(e.NetId, out uint holdUntil))
+                {
+                    // Just received for a crossing: the pose owner keeps it for a moment even if its own reading says
+                    // the entity is still on the other side, so a lagging ghost pose cannot bounce it straight back.
+                    if (tick < holdUntil && owner != WorkerId) continue;
+                    _crossingHold.Remove(e.NetId);
+                }
                 if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
                 if (fenced) continue;
                 if (_workerPeersById.TryGetValue(owner, out var peer) && peer.HelloReceived)
@@ -1310,11 +1438,12 @@ namespace Nebula
                     {
                         var owner = n.OwnerWorkerId;
                         if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
-                        if (c.DistanceToSeam(pos, n) > margin) continue;
+                        if (SeamDistance(c, pos, n) > margin) continue;
                         Ghost(e, owner, ref targets, now);
                     }
-                    // Inside a carrier: follow the carrier's ghosts.
-                    if (c.IsDynamic && c.Carrier != null && _ghostTargets.TryGetValue(c.Carrier.NetId, out var carrierTargets))
+                    // Inside a carrier (or a room fixed in one): follow the carrier's ghosts.
+                    var carrierBox = CarrierBoxOf(c);
+                    if (carrierBox != null && carrierBox.Carrier != null && carrierBox.CarrierNetId != e.NetId && _ghostTargets.TryGetValue(carrierBox.Carrier.NetId, out var carrierTargets))
                     {
                         foreach (var kv in carrierTargets) Ghost(e, kv.Key, ref targets, now);
                     }
@@ -1430,6 +1559,29 @@ namespace Nebula
                 }
                 list.Add(entity);
             }
+        }
+
+        /// <summary>
+        /// How far an entity at <paramref name="pos"/> (in the space it lives in) is from the seam between its container
+        /// <paramref name="c"/> and <paramref name="n"/>, measured in the space <paramref name="c"/>'s box lives in: an
+        /// entity inside a frame is converted out of it first, the frame around a box is a seam at the box's own surface,
+        /// and a box of another space has no seam with this one (docs/container-tree.md §3).
+        /// </summary>
+        internal static float SeamDistance(Container c, Vector3 pos, Container n)
+        {
+            if (c.OwnPhysicsFrame && c.InnerSpace == c) pos = PhysicsFrames.Convert(pos, c, c.Space);
+            if (n == c.Space) return -c.SignedDistance(pos);
+            if (n.Space != c.Space) return float.MaxValue;
+            return c.DistanceToSeam(pos, n);
+        }
+
+        /// <summary>The nearest carried box at or above <paramref name="c"/> through fixed parents: the ship a room is fixed in.</summary>
+        internal static Container CarrierBoxOf(Container c)
+        {
+            int hops = 0;
+            for (var x = c; x != null && hops <= ContainerRegistry.ChainBound; x = x.FixedParent, hops++)
+                if (x.IsDynamic) return x;
+            return null;
         }
 
         /// <summary>
@@ -1641,6 +1793,7 @@ namespace Nebula
                 HandoverState = handoverState,
                 GhostWorkers = ghostWorkers.ToArray(),
                 InterestGateways = InterestGatewayKeys(followMask),
+                Crossing = e == _crossingEntity,
             };
             if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session)) { transfer.SessionGeneration = session.Generation; transfer.SessionGateway = session.Gateway; }
             _writer.Reset();
@@ -1718,6 +1871,7 @@ namespace Nebula
             e.Interpolator?.Clear();
             SetGhostPhysics(e, false);
             _handedOff.Remove(e.NetId);
+            if (msg.Crossing) _crossingHold[e.NetId] = CurrentTick + CrossingHoldTicks;
             if (!_authoritative.Contains(e)) _authoritative.Add(e);
             if (e.OwnerClientId != 0)
             {

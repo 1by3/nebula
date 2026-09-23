@@ -15,6 +15,7 @@ namespace Nebula
         {
             ContainerRegistry.ResetForNewSession();
             InstanceScenes.Reset();
+            PhysicsFrames.ResetForNewSession();
             SceneEntities.ResetForNewSession();
             NetworkIdentity.Live.Clear();
             DynamicContainer.ResetForNewSession();

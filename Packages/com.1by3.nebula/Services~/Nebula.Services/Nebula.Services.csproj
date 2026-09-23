@@ -18,7 +18,7 @@
     <Compile Include="../../Runtime/Transport/**/*.cs" />
     <Compile Include="../../Runtime/Serialization/**/*.cs" />
     <Compile Include="../../Runtime/Core/CommandLine.cs;../../Runtime/Core/NetworkTime.cs;../../Runtime/Core/SyncState.cs;../../Runtime/Core/DatabaseUrl.cs" />
-    <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs;../../Runtime/Containers/EntityLocation.cs" />
+    <Compile Include="../../Runtime/Containers/ContainerRef.cs;../../Runtime/Containers/ContainerHint.cs;../../Runtime/Containers/EntityLocation.cs;../../Runtime/Containers/ContainerPlacement.cs" />
     <!-- The cross-worker call contract is pure C#: the same rules decide a call on a Unity worker and in the tests here. -->
     <Compile Include="../../Runtime/Worker/AuthorityCallContract.cs" />
     <!-- A worker keeping its control-plane registration true, and re-claiming what only it knows, after a control

@@ -150,6 +150,35 @@ namespace Nebula
         public EntityLocation Location => EntityLocation.Of(Container, LocalPosition, LocalRotation);
         /// <summary>Use this scene for raycasts and overlap tests to exclude entities in other instances.</summary>
         public PhysicsScene PhysicsScene => gameObject.scene.GetPhysicsScene();
+
+        /// <summary>
+        /// The physics frame this entity lives in (<see cref="Nebula.Container.InnerSpace"/> of its container), or null in
+        /// its scope's own space. Inside a frame its transform reads frame-local coordinates in simulation space
+        /// (<c>docs/container-tree.md</c> D11).
+        /// </summary>
+        public Container Space => Container != null ? Container.InnerSpace : null;
+
+        /// <summary>A position in this entity's space as a position in its scope's own space (<see cref="PhysicsFrames.ToScope"/>).</summary>
+        public Vector3 ToScope(Vector3 position) => PhysicsFrames.ToScope(position, Space);
+
+        /// <summary>A position in the scope's own space (a part of a ship, a door, a quest giver) in this entity's space.</summary>
+        public Vector3 FromScope(Vector3 position) => PhysicsFrames.FromScope(position, Space);
+
+        /// <summary>
+        /// Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving
+        /// any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a
+        /// frame would put it at those numbers in the frame's coordinates. Outside frames this is a plain assignment;
+        /// the next tick resolves the container as usual.
+        /// </summary>
+        public void PlaceInScope(Vector3 position, Quaternion rotation)
+        {
+            if (Space != null && !PhysicsFrames.RendersFrames)
+            {
+                var target = ContainerRegistry.Find(position, null, InstanceId, this);
+                SetContainer(target);
+            }
+            transform.SetPositionAndRotation(position, rotation);
+        }
         /// <summary>Wire index of the current container (<see cref="ContainerRef.DynamicIndex"/> inside a dynamic one, <see cref="ushort.MaxValue"/> in none). Prefer <see cref="ContainerRef"/>.</summary>
         public ushort ContainerIndex => Container != null ? Container.Index : ushort.MaxValue;
         /// <summary>How the current container is named on the wire (see <see cref="Nebula.ContainerRef"/>).</summary>
@@ -721,19 +750,50 @@ namespace Nebula
             _carrierCycleWarned = false;
             if (container != null && container.InstanceId != 0 && !InstanceScenes.Prepare(container))
                 throw new InvalidOperationException("Instance content is unavailable: " + container.ContainerId);
+            // Changing space (into or out of a physics frame, docs/container-tree.md §3): the pose and velocity are
+            // converted through the frames' current poses. Only where frames are simulated at the identity pose (a
+            // worker); a client renders every frame at its world pose, so a world pose there needs no conversion.
+            var fromSpace = previous != null ? previous.InnerSpace : null;
+            var toSpace = container != null ? container.InnerSpace : null;
+            // A first placement (a spawn) takes the pose as given, in the space of the container it is placed in.
+            bool convert = reparent && !IsSceneEntity && previous != null && fromSpace != toSpace && !PhysicsFrames.RendersFrames;
+            Vector3 position = default;
+            Quaternion rotation = default;
+            if (convert)
+            {
+                var p = transform.position;
+                position = PhysicsFrames.Convert(p, fromSpace, toSpace);
+                rotation = PhysicsFrames.Convert(transform.rotation, fromSpace, toSpace);
+                Motion.Velocity = PhysicsFrames.ConvertVelocity(Motion.Velocity, p, fromSpace, toSpace);
+                var body = GetComponent<Rigidbody>();
+                if (body != null && !body.isKinematic)
+                {
+                    body.linearVelocity = PhysicsFrames.ConvertVelocity(body.linearVelocity, p, fromSpace, toSpace);
+                    body.angularVelocity = PhysicsFrames.Convert(Quaternion.identity, fromSpace, toSpace) * body.angularVelocity;
+                }
+            }
             Container = container;
             if (previous != null) previous.Entities.Remove(this);
             if (container != null) container.Entities.Add(this);
             // A scene object stays in its scene's hierarchy (the streamer moves the scene, not the container).
             if (reparent && !IsSceneEntity)
             {
-                if (container != null && gameObject.scene != container.gameObject.scene)
+                // Under the container's content root: its physics frame's root when it has one, its transform otherwise.
+                var root = container != null ? container.ContentRoot : null;
+                if (root != null && gameObject.scene != root.gameObject.scene)
                 {
                     transform.SetParent(null, true);
-                    SceneManager.MoveGameObjectToScene(gameObject, container.gameObject.scene);
+                    SceneManager.MoveGameObjectToScene(gameObject, root.gameObject.scene);
                 }
-                if (container != null) transform.SetParent(container.transform, true);
-                else if (previous != null && (previous.IsDynamic || previous.IsRuntime)) transform.SetParent(null, true); // out of a departing carrier or a retiring runtime box, whose object is about to be destroyed
+                if (root != null) transform.SetParent(root, true);
+                else if (previous != null && (previous.IsDynamic || previous.IsRuntime || fromSpace != null))
+                {
+                    // Out of a departing carrier, a retiring runtime box or a frame's scene, whose objects are about to go.
+                    transform.SetParent(null, true);
+                    var home = fromSpace != null ? fromSpace.gameObject.scene : default;
+                    if (home.IsValid() && gameObject.scene != home) SceneManager.MoveGameObjectToScene(gameObject, home);
+                }
+                if (convert) transform.SetPositionAndRotation(position, rotation);
             }
             foreach (var b in Behaviours) b.OnContainerChanged(previous, container);
             ContainerChanged?.Invoke(previous, container);
@@ -771,7 +831,11 @@ namespace Nebula
             get
             {
                 if (Container == null) return transform.position;
-                return transform.parent == Container.transform ? transform.localPosition : Container.ToLocal(transform.position);
+                var root = Container.ContentRoot;
+                if (transform.parent == root) return transform.localPosition;
+                // Not parented (a scene entity): a framed container's contents are already in its local coordinates
+                // in simulation space; anything else goes through the box's transform.
+                return root != Container.transform ? root.InverseTransformPoint(transform.position) : Container.ToLocal(transform.position);
             }
         }
 
@@ -780,7 +844,9 @@ namespace Nebula
             get
             {
                 if (Container == null) return transform.rotation;
-                return transform.parent == Container.transform ? transform.localRotation : Container.InverseRotation * transform.rotation;
+                var root = Container.ContentRoot;
+                if (transform.parent == root) return transform.localRotation;
+                return root != Container.transform ? Quaternion.Inverse(root.rotation) * transform.rotation : Container.InverseRotation * transform.rotation;
             }
         }
 
@@ -795,11 +861,13 @@ namespace Nebula
             if (container != null)
             {
                 var t = transform;
-                if (t.parent == container.transform)
+                var root = container.ContentRoot;
+                if (t.parent == root)
                 {
                     t.localPosition = localPosition;
                     t.localRotation = localRotation;
                 }
+                else if (root != container.transform) t.SetPositionAndRotation(root.TransformPoint(localPosition), root.rotation * localRotation);
                 else t.SetPositionAndRotation(container.ToWorld(localPosition), container.Rotation * localRotation);
             }
             else

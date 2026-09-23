@@ -28,6 +28,8 @@ namespace Nebula
         {
             if (container == null || container.InstanceId == 0) return true;
             if (container.IsDynamic) return Prepare(container.Enclosing);
+            // A child box lives in its parent's scene, under its parent's transform: preparing the parent is enough.
+            if (container.FixedParent != null) return Prepare(container.FixedParent);
             if (Content.ContainsKey(container.RuntimeId)) return true;
             var info = container.Instance;
             GameObject prefab = string.IsNullOrEmpty(info.ContentResource) ? null : Resources.Load<GameObject>(info.ContentResource);

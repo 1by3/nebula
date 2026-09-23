@@ -83,7 +83,8 @@ namespace Nebula
         private void OnDestroy()
         {
             // Destroyed without a despawn (scene torn down, play mode stopped): leave nothing behind in the registry.
-            if (_volume != null && _volume.IsDynamic) ContainerRegistry.UnregisterDynamic(_volume);
+            // The Container on the same object may be destroyed first, so it is tested as a managed reference.
+            if (!ReferenceEquals(_volume, null) && _volume.IsDynamic) ContainerRegistry.UnregisterDynamic(_volume);
             var body = GetComponent<Rigidbody>();
             if (body != null) ByBody.Remove(body);
         }

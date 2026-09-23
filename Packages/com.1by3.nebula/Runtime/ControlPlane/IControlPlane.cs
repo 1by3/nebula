@@ -71,15 +71,46 @@ namespace Nebula
         public string State;
         public DateTime UpdatedAt;
         /// <summary>
-        /// Runtime containers (<see cref="ContainerRegistry.RegisterRuntime"/>) carry their box on the lease row, in
-        /// absolute world coordinates, so every process can register the same box from the row alone. False for a
-        /// baked or carried container.
+        /// Runtime containers (<see cref="ContainerRegistry.RegisterRuntime(ulong, ContainerPlacement, InstanceContainerInfo)"/>)
+        /// carry their box on the lease row, so every process can register the same box from the row alone. False
+        /// for a baked or carried container.
         /// </summary>
         public bool HasBounds;
-        public Vector3 BoundsCenter;
+        /// <summary>
+        /// The parent container's id, or empty for a root of its scope (<c>docs/container-tree.md</c> D5). A child's
+        /// <see cref="Center"/> is local to its parent's frame.
+        /// </summary>
+        public string ParentId = "";
+        /// <summary>Box centre, in double: absolute for a root, local to the parent's frame for a child.</summary>
+        public Double3 Center;
         public Vector3 BoundsSize;
-        /// <summary>The row's box, when <see cref="HasBounds"/>.</summary>
+        /// <summary>
+        /// Who simulates what is inside. On a runtime row <see cref="ContainerAuthority.Inherited"/> means the row only
+        /// carries the box: the orchestrator never deals it and nobody reads an owner from it. On a carried
+        /// container's row (<c>label#netId</c>) <see cref="ContainerAuthority.Leased"/> means the container was
+        /// authored leased: the orchestrator re-deals it instead of letting it follow its carrier.
+        /// </summary>
+        public ContainerAuthority Authority;
+        /// <summary>The container has its own physics frame (<c>docs/container-tree.md</c> §3).</summary>
+        public bool OwnPhysicsFrame;
+        /// <summary>How a framed container's contents are bucketed for interest.</summary>
+        public FrameInterestMode FrameInterest;
+        /// <summary><see cref="Center"/> narrowed to float, for callers that only ever held small boxes.</summary>
+        public Vector3 BoundsCenter
+        {
+            get => Center.ToVector3();
+            set => Center = Double3.From(value);
+        }
+        /// <summary>The row's box as stored (absolute for a root, parent-local for a child), when <see cref="HasBounds"/>.</summary>
         public Bounds Bounds => new Bounds(BoundsCenter, BoundsSize);
+        /// <summary>Whether the row's box is a root of its scope.</summary>
+        public bool IsRoot => string.IsNullOrEmpty(ParentId);
+        /// <summary>The row's placement, when <see cref="HasBounds"/>.</summary>
+        public ContainerPlacement Placement => new ContainerPlacement
+        {
+            ParentId = ParentId ?? "", Center = Center, Size = BoundsSize, Authority = Authority,
+            OwnPhysicsFrame = OwnPhysicsFrame, FrameInterest = FrameInterest,
+        };
         /// <summary>
         /// A balancing hint was set for this container while the mesh runs (<see cref="IControlPlane.SetContainerHint"/>).
         /// It travels beside the lease and is stored with it, so an orchestrator that restarts sees it again; when
@@ -209,6 +240,11 @@ namespace Nebula
         /// its own, so it no longer follows its carrier. Anything else means "follows the carrier" for such a lease.
         /// </summary>
         public const string Pinned = "pinned";
+        /// <summary>
+        /// The row belongs to an inherited container (<see cref="ContainerAuthority.Inherited"/>): it carries a box and
+        /// a parent, and whoever owns the parent simulates what is inside. Never dealt, never owned.
+        /// </summary>
+        public const string Inherited = "inherited";
 
         /// <summary>The lease names a worker that currently simulates the container.</summary>
         public static bool IsOwning(string state) => state == Active || state == Draining || state == Pinned;
@@ -329,14 +365,21 @@ namespace Nebula
         /// </summary>
         void RemoveScope(string scopeKey);
 
-        void EnsureContainer(string containerId);
         /// <summary>
-        /// Make sure a lease row exists for a runtime container, carrying its box (absolute coordinates) and, when
-        /// <paramref name="workerId"/> is given, already assigned to that worker (epoch 1, active), so the worker
-        /// that asked for the container owns it from the first change anyone sees. A no-op when the row exists:
-        /// whoever asked first wins, and the second caller sees the row on the next change.
+        /// Make sure a lease row exists for a container, unassigned. <paramref name="authority"/> is recorded on a new
+        /// row only: a carried container authored <see cref="ContainerAuthority.Leased"/> says so here, so the
+        /// orchestrator re-deals it rather than letting it follow its carrier (<c>docs/container-tree.md</c> D6).
         /// </summary>
-        void EnsureRuntimeContainer(string containerId, Bounds bounds, string workerId, InstanceContainerInfo instance = null);
+        void EnsureContainer(string containerId, ContainerAuthority authority = ContainerAuthority.Auto);
+        /// <summary>
+        /// Make sure a lease row exists for a runtime container, carrying its placement (a root's absolute box, or a
+        /// child's parent id and parent-local box; a <c>Bounds</c> converts to a root) and, when
+        /// <paramref name="workerId"/> is given and the container is leased, already assigned to that worker (epoch
+        /// 1, active), so the worker that asked for the container owns it from the first change anyone sees. An
+        /// inherited container's row is never assigned. A no-op when the row exists: whoever asked first wins, and
+        /// the second caller sees the row on the next change.
+        /// </summary>
+        void EnsureRuntimeContainer(string containerId, ContainerPlacement placement, string workerId, InstanceContainerInfo instance = null);
         /// <summary>
         /// Stamp a lease row's <see cref="LeaseInfo.UpdatedAt"/> without changing anything else: a worker that still
         /// wants a runtime container it does not own says so, and the owner reads the age before retiring the box.
@@ -412,6 +455,7 @@ namespace Nebula
             foreach (var containerId in scope.ContainerIds)
             {
                 var lease = cp.FindLease(containerId);
+                if (lease != null && lease.State == LeaseState.Inherited) continue; // ready when its parent is
                 if (lease == null || !LeaseState.IsOwning(lease.State) || string.IsNullOrEmpty(lease.WorkerId)) return false;
                 if (!cp.IsWorkerAlive(cp.FindWorker(lease.WorkerId), workerTimeoutSeconds)) return false;
             }

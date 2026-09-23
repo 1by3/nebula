@@ -81,7 +81,7 @@ namespace Nebula
                     RelevanceRadius = root.RelevanceRadius,
                     AlwaysRelevant = root.AlwaysRelevant,
                     InterestGroup = value.InterestGroup,
-                    CarrierNetId = value.Container.IsDynamic ? value.Container.NetId : 0,
+                    CarrierNetId = _gateway.CarrierOf(value.Container),
                     // The scope is resolved through the whole carrier chain, exactly as CanObserve resolves it:
                     // a crate in a ship in a private instance is in that instance, and a policy that filtered on
                     // a zero here would have been filtering on "the public world" for everything carried.
@@ -533,9 +533,9 @@ namespace Nebula
         /// </summary>
         private EntityRecord RootOf(EntityRecord rec)
         {
-            for (int hops = 0; hops <= _entities.Count && rec.Container.IsDynamic; hops++)
+            for (int hops = 0; hops <= _entities.Count && TryCarrierOf(rec.Container, out ulong carrierNetId, out _); hops++)
             {
-                if (!_entities.TryGetValue(rec.Container.NetId, out var carrier) || carrier == rec) break;
+                if (!_entities.TryGetValue(carrierNetId, out var carrier) || carrier == rec) break;
                 rec = carrier;
             }
             return rec;
@@ -605,7 +605,7 @@ namespace Nebula
         /// </summary>
         private CarrierLink LinkCarrier(EntityRecord rec)
         {
-            ulong carrier = rec.Container.IsDynamic ? rec.Container.NetId : 0;
+            ulong carrier = CarrierOf(rec.Container);
             var result = _index.SetCarrier(rec.NetId, carrier);
             if (result == CarrierLink.Cycle)
             {
@@ -1662,11 +1662,22 @@ namespace Nebula
                 // which a chain can only exceed by revisiting one.
                 for (int hops = 0; hops <= _entities.Count; hops++)
                 {
-                    if (rec.Container.IsDynamic)
+                    if (TryCarrierOf(rec.Container, out ulong carrierNetId, out _))
                     {
-                        if (!_entities.TryGetValue(rec.Container.NetId, out var carrier)) return;
+                        if (!_entities.TryGetValue(carrierNetId, out var carrier)) return;
+                        // A room fixed in the carrier: its row and its parents' up to the carrier's box.
+                        if (rec.Container.IsRuntime)
+                        {
+                            string id = ContainerRegistry.RuntimeContainerId(rec.Container.RuntimeId);
+                            for (int up = 0; up <= _ownershipById.Count && _ownershipById.TryGetValue(id, out var row); up++)
+                            {
+                                Add(id);
+                                if (!row.HasPlacement || row.Placement.IsRoot || ContainerRegistry.IsDynamicId(row.Placement.ParentId)) break;
+                                id = row.Placement.ParentId;
+                            }
+                        }
                         foreach (var kv in _ownershipById)
-                            if (ContainerRegistry.CarrierNetIdOf(kv.Key) == rec.Container.NetId) Add(kv.Key);
+                            if (ContainerRegistry.CarrierNetIdOf(kv.Key) == carrierNetId) Add(kv.Key);
                         rec = carrier;
                         continue;
                     }

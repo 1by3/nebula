@@ -213,10 +213,12 @@ namespace Nebula
                     Grid.CollectBox(focus.X - focus.HalfX - reach, focus.Y - focus.HalfY - reach, focus.Z - focus.HalfZ - reach,
                         focus.X + focus.HalfX + reach, focus.Y + focus.HalfY + reach, focus.Z + focus.HalfZ + reach, _regions);
                 else Grid.CollectDisc(focus.X, focus.Y, focus.Z, reach, _regions);
+                // A focus in a frame with regions of its own scans that frame's buckets (docs/container-tree.md D18).
+                ulong salt = focus.Space == 0 ? ScopeSalt : ScopeSalt ^ RegionKeys.SaltOf(0, focus.Space);
                 for (int r = 0; r < _regions.Count; r++)
                 {
-                    ScanRegion(index, _regions[r] ^ ScopeSalt, now, entered, left);
-                    if (ScanPublicToo && ScopeSalt != 0) ScanRegion(index, _regions[r], now, entered, left);
+                    ScanRegion(index, _regions[r] ^ salt, now, entered, left);
+                    if (ScanPublicToo && ScopeSalt != 0 && focus.Space == 0) ScanRegion(index, _regions[r], now, entered, left);
                 }
             }
 
@@ -297,6 +299,7 @@ namespace Nebula
             for (int i = 0; i < _foci.Count && !inside; i++)
             {
                 var focus = _foci[i];
+                if (focus.Space != entity.Space) continue; // coordinates of different spaces are not comparable
                 double d2 = focus.SqrDistanceTo(entity.X, entity.Y, entity.Z);
                 double enterAt = focus.Scaled(radius);
                 double exitAt = focus.Scaled(radius + Settings.ExitMargin);

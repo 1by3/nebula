@@ -104,6 +104,19 @@ namespace Nebula
         public ulong RuntimeId;
         /// <summary>The baked balancing hint, exported with the container (<see cref="ContainerHint"/>).</summary>
         public ContainerHint Hint = ContainerHint.Default;
+        /// <summary>Who simulates what is inside (docs/container-tree.md D6), exported with the container.</summary>
+        public ContainerAuthority Authority = ContainerAuthority.Auto;
+        /// <summary>Runtime containers: the parent named on the lease row ("" for a root).</summary>
+        public string ParentId = "";
+        /// <summary>Runtime containers: the box centre local to the parent's frame (the row's centre for a child).</summary>
+        public Vector3 LocalCenter;
+        public bool OwnPhysicsFrame;
+        public FrameInterestMode FrameInterest;
+        /// <summary>The container this one sits in, or null for a root (docs/container-tree.md D2).</summary>
+        [System.Text.Json.Serialization.JsonIgnore] public Container Parent { get; internal set; }
+        [System.Text.Json.Serialization.JsonIgnore] public List<Container> Children { get; } = new List<Container>();
+        /// <summary>The services never see a carrier move, so a container is leased unless it was made inherited.</summary>
+        public bool IsLeased => Authority != ContainerAuthority.Inherited;
         public ContainerFrame transform = new ContainerFrame();
         public List<string> NeighborIds = new List<string>();
         public List<Container> Neighbors { get; } = new List<Container>();
@@ -113,9 +126,13 @@ namespace Nebula
         public ulong InstanceId => Instance?.InstanceId ?? 0;
         /// <summary>The opaque scope key of the container's scope (<see cref="EntityLocation.ScopeKey"/>); empty for the public world.</summary>
         public string ScopeKey => Instance?.ScopeKey ?? EntityLocation.PublicScope;
-        public string OwnerWorkerId { get; set; } = "";
-        public ushort OwnerWorkerIndex { get; set; } = ushort.MaxValue;
-        public ulong LeaseEpoch { get; set; }
+        private string _owner = "";
+        private ushort _ownerIndex = ushort.MaxValue;
+        private ulong _epoch;
+        /// <summary>The lease's worker; an inherited container's is its parent's (docs/container-tree.md D6).</summary>
+        public string OwnerWorkerId { get => !IsLeased && Parent != null ? Parent.OwnerWorkerId : _owner; set => _owner = value ?? ""; }
+        public ushort OwnerWorkerIndex { get => !IsLeased && Parent != null ? Parent.OwnerWorkerIndex : _ownerIndex; set => _ownerIndex = value; }
+        public ulong LeaseEpoch { get => !IsLeased && Parent != null ? Parent.LeaseEpoch : _epoch; set => _epoch = value; }
         public string LeaseState { get; set; } = "";
         public ContainerRef Ref => ContainerRef.Of(this);
         public Quaternion Rotation => transform.rotation;
@@ -173,8 +190,29 @@ namespace Nebula
                 cell.Add(c);
             }
             foreach (var c in All) { c.Neighbors.Clear(); foreach (var id in c.NeighborIds) { var n = FindById(id); if (n != null) c.Neighbors.Add(n); } }
+            // The baked tree, exactly as the Unity registry builds it: the smallest enclosing box of the same scope.
+            foreach (var c in All) { c.Parent = null; c.Children.Clear(); }
+            foreach (var c in All)
+            {
+                Container best = null;
+                foreach (var n in c.Neighbors)
+                    if (n.InstanceId == c.InstanceId && n.Encloses(c) && (best == null || n.Volume < best.Volume)) best = n;
+                c.Parent = best;
+                best?.Children.Add(c);
+            }
         }
         public static Container FindById(string id) => id != null && ById.TryGetValue(id, out var c) ? c : null;
+
+        /// <summary>The placement a runtime container carries on its row (see the Unity registry's method of the same name).</summary>
+        public static ContainerPlacement PlacementOf(Container c) => new ContainerPlacement
+        {
+            ParentId = c.ParentId ?? "",
+            Center = Double3.From(string.IsNullOrEmpty(c.ParentId) ? c.transform.position : c.LocalCenter),
+            Size = c.Size,
+            Authority = c.Authority,
+            OwnPhysicsFrame = c.OwnPhysicsFrame,
+            FrameInterest = c.FrameInterest,
+        };
 
         /// <summary>
         /// Every container whose box overlaps <paramref name="box"/> (the Unity registry's query, which interest
@@ -232,12 +270,61 @@ namespace Nebula
         public static void SyncRuntime(IReadOnlyList<LeaseInfo> leases)
         {
             var keep = new HashSet<ulong>();
+            // Roots before children, and a child only once its parent is here: rows may arrive in any order, so the
+            // pass repeats until nothing more can be placed. A child of a container the services never hold (a
+            // carrier's box) is registered in its parent's local frame, which is all a region lookup in that frame needs.
+            var waiting = new List<(LeaseInfo Lease, ulong Id)>();
             foreach (var l in leases)
             {
                 if (!l.HasBounds || !l.ContainerId.StartsWith("rt_", StringComparison.Ordinal) || !ulong.TryParse(l.ContainerId.Substring(3), out var id)) continue;
                 keep.Add(id);
                 if (RuntimeById.ContainsKey(id)) continue;
-                var c = new Container { ContainerId = l.ContainerId, Index = ContainerRef.RuntimeIndex, IsRuntime = true, RuntimeId = id, Size = l.BoundsSize, Instance = l.Instance, transform = new ContainerFrame { position = l.BoundsCenter } };
+                waiting.Add((l, id));
+            }
+            for (bool progress = true; progress && waiting.Count > 0;)
+            {
+                progress = false;
+                for (int i = waiting.Count - 1; i >= 0; i--)
+                {
+                    var (l, id) = waiting[i];
+                    Container parent = null;
+                    if (!l.IsRoot)
+                    {
+                        parent = FindById(l.ParentId);
+                        if (parent == null && waiting.Any(w => w.Lease.ContainerId == l.ParentId)) continue;
+                    }
+                    waiting.RemoveAt(i);
+                    progress = true;
+                    AddRuntime(l, id, parent);
+                }
+            }
+            foreach (var c in RuntimeList.Where(c => !keep.Contains(c.RuntimeId)).ToArray())
+            {
+                RuntimeUnregistering?.Invoke(c);
+                foreach (var neighbor in c.Neighbors) neighbor.Neighbors.Remove(c);
+                c.Parent?.Children.Remove(c);
+                RuntimeList.Remove(c);
+                RuntimeById.Remove(c.RuntimeId);
+                ById.Remove(c.ContainerId);
+            }
+        }
+
+        private static void AddRuntime(LeaseInfo l, ulong id, Container parent)
+        {
+            {
+                var frame = new ContainerFrame { position = l.BoundsCenter };
+                if (parent != null)
+                {
+                    frame.position = parent.ToWorld(parent.Center + l.BoundsCenter);
+                    frame.rotation = parent.Rotation;
+                }
+                var c = new Container
+                {
+                    ContainerId = l.ContainerId, Index = ContainerRef.RuntimeIndex, IsRuntime = true, RuntimeId = id, Size = l.BoundsSize, Instance = l.Instance,
+                    Authority = l.Authority, ParentId = l.ParentId ?? "", LocalCenter = l.BoundsCenter, OwnPhysicsFrame = l.OwnPhysicsFrame, FrameInterest = l.FrameInterest,
+                    Parent = parent, transform = frame,
+                };
+                parent?.Children.Add(c);
                 var bounds = c.WorldBounds;
                 bounds.Expand(0.05f);
                 foreach (var neighbor in All.Concat(RuntimeList))
@@ -250,14 +337,6 @@ namespace Nebula
                 RuntimeById.Add(id, c);
                 ById.Add(c.ContainerId, c);
                 RuntimeRegistered?.Invoke(c);
-            }
-            foreach (var c in RuntimeList.Where(c => !keep.Contains(c.RuntimeId)).ToArray())
-            {
-                RuntimeUnregistering?.Invoke(c);
-                foreach (var neighbor in c.Neighbors) neighbor.Neighbors.Remove(c);
-                RuntimeList.Remove(c);
-                RuntimeById.Remove(c.RuntimeId);
-                ById.Remove(c.ContainerId);
             }
         }
     }

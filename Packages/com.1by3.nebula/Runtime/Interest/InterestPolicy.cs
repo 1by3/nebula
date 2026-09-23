@@ -17,11 +17,17 @@ namespace Nebula
         public float RadiusScale;
         /// <summary>The entity this focus follows, when it follows one (the pawn, an owned unit). 0 otherwise.</summary>
         public ulong SourceNetId;
+        /// <summary>
+        /// The region space the focus is in (<see cref="RegionKeys.FrameKeyOf"/>): 0 for the scope's own space, or a
+        /// physics frame with regions of its own, whose coordinates <see cref="X"/>, <see cref="Y"/> and <see cref="Z"/>
+        /// are then in. A focus only sees entities of its own space (<c>docs/container-tree.md</c> D18).
+        /// </summary>
+        public ulong Space;
 
         public bool IsBox => HalfX > 0 || HalfY > 0 || HalfZ > 0;
 
-        public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0) =>
-            new InterestFocus { X = x, Y = y, Z = z, RadiusScale = radiusScale <= 0 ? 1f : radiusScale, SourceNetId = sourceNetId };
+        public static InterestFocus Point(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0, ulong space = 0) =>
+            new InterestFocus { X = x, Y = y, Z = z, RadiusScale = radiusScale <= 0 ? 1f : radiusScale, SourceNetId = sourceNetId, Space = space };
 
         /// <summary>A box focus, from its center and full size.</summary>
         public static InterestFocus Box(double centerX, double centerY, double centerZ, double sizeX, double sizeY, double sizeZ, float radiusScale = 1f) =>
@@ -128,6 +134,12 @@ namespace Nebula
         public bool HasPawn;
         /// <summary>Absolute position of the pawn, resolved through any carrier. Meaningless when <see cref="HasPawn"/> is false.</summary>
         public double PawnX, PawnY, PawnZ;
+        /// <summary>
+        /// The region space <see cref="PawnX"/>, <see cref="PawnY"/> and <see cref="PawnZ"/> are in (see
+        /// <see cref="InterestFocus.Space"/>): 0 unless the pawn stands in a physics frame with regions of its own (a
+        /// planet). A policy that adds a focus at the pawn gives it this space.
+        /// </summary>
+        public ulong PawnSpace;
         /// <summary>The outermost entity the pawn is riding in (a ship, a lift), or 0 when it stands in the world.</summary>
         public ulong PawnCarrierNetId;
         /// <summary>
@@ -178,6 +190,8 @@ namespace Nebula
         public ulong InstanceId;
         /// <summary>The entity immediately carrying this one (0 = none); the interest decision is made on the root carrier.</summary>
         public ulong CarrierNetId;
+        /// <summary>The region space <see cref="X"/>, <see cref="Y"/> and <see cref="Z"/> are in (see <see cref="InterestFocus.Space"/>).</summary>
+        public ulong Space;
     }
 
     /// <summary>
@@ -242,8 +256,8 @@ namespace Nebula
             return true;
         }
 
-        public bool AddFocus(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0) =>
-            AddFocus(InterestFocus.Point(x, y, z, radiusScale, sourceNetId));
+        public bool AddFocus(double x, double y, double z, float radiusScale = 1f, ulong sourceNetId = 0, ulong space = 0) =>
+            AddFocus(InterestFocus.Point(x, y, z, radiusScale, sourceNetId, space));
 
         /// <summary>Always send this entity to the client (a party member, a quest target), wherever it is.</summary>
         public bool AddEntity(ulong netId)
@@ -284,7 +298,7 @@ namespace Nebula
 
         public void Collect(in InterestClient client, InterestQuery query)
         {
-            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId);
+            if (client.HasPawn) query.AddFocus(client.PawnX, client.PawnY, client.PawnZ, 1f, client.PawnNetId, client.PawnSpace);
             if (client.HasHint) query.AddFocus(client.HintX, client.HintY, client.HintZ);
         }
 

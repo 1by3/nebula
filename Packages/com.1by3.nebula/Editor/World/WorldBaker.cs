@@ -85,6 +85,7 @@ namespace Nebula.Editor
                                 LocalPosition = local, LocalRotation = t.rotation, LocalScale = t.lossyScale,
                                 Size = c.Size, Center = c.Center,
                                 Hint = hints.TryGetValue(c.ContainerId, out var hint) ? hint : c.Hint,
+                                Authority = c.Authority,
                             });
                             report.Containers++;
                         }
