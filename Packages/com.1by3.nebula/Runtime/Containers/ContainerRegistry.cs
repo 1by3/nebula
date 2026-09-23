@@ -342,19 +342,22 @@ namespace Nebula
 
         /// <summary>
         /// Forget a dynamic container. Whatever is still inside it is moved to the container around it (resolved
-        /// from each entity's world position, ignoring the departing box) and re-parented, so a client destroying a
-        /// despawned ship does not take the passengers' objects with it. The authority decides what actually happens
-        /// to them on the next tick; despawn the contents first if they should not survive the carrier.
+        /// from each entity's world position, ignoring the departing box, among the boxes of the box's own scope) and
+        /// re-parented, so a client destroying a despawned ship does not take the passengers' objects with it. The
+        /// authority decides what actually happens to them on the next tick; despawn the contents first if they
+        /// should not survive the carrier.
         /// </summary>
         public static void UnregisterDynamic(Container container)
         {
             if (container == null || !container.IsDynamic) return;
+            // Read while the box is still registered: its scope is found through the carrier chain.
+            ulong scope = container.InstanceId;
             ulong netId = container.CarrierNetId;
             if (!DynamicList.Remove(container)) return;
             _dynamicHashDirty = true;
             if (netId != 0 && DynamicByNetId.TryGetValue(netId, out var same) && same == container) DynamicByNetId.Remove(netId);
             DynamicUnregistering?.Invoke(container);
-            EvacuateEntities(container);
+            EvacuateEntities(container, scope);
             PendingLeases.Remove(container.ContainerId);
             container.IsDynamic = false;
             container.Carrier = null;
@@ -364,15 +367,21 @@ namespace Nebula
             container.OwnerWorkerIndex = ushort.MaxValue;
         }
 
-        /// <summary>Move every entity still inside <paramref name="container"/> to the container around it (ignoring the departing box).</summary>
-        private static void EvacuateEntities(Container container)
+        /// <summary>
+        /// Move every entity still inside <paramref name="container"/> to the container around it, ignoring the
+        /// departing box and looking only among the boxes of <paramref name="scope"/>, the departing box's own: the
+        /// smallest one holding the entity, or the scope's nearest box when none does. An entity in an instance or a
+        /// scoped grid never lands in a public container this way, however close one is; crossing a scope is
+        /// <see cref="InstanceBoundary"/>'s job.
+        /// </summary>
+        private static void EvacuateEntities(Container container, ulong scope)
         {
             EntityScratch.Clear();
             EntityScratch.AddRange(container.Entities);
             foreach (var e in EntityScratch)
             {
                 if (e == null) continue;
-                var outer = Find(e.transform.position, container, 0, e);
+                var outer = Find(e.transform.position, container, scope, e);
                 if (outer == container) outer = null;
                 e.SetContainer(outer);
             }
@@ -494,7 +503,7 @@ namespace Nebula
             RemoveFromHash(c);
             foreach (var n in c.Neighbors) n.Neighbors.Remove(c);
             c.Neighbors.Clear();
-            EvacuateEntities(c);
+            EvacuateEntities(c, c.InstanceId);
             // Nothing networked may go down with the box: an entity that is still parented here (a ghost, a scene
             // object moved by hand) would be destroyed with it and leave a dead reference in every list that holds it.
             EntityScratch.Clear();

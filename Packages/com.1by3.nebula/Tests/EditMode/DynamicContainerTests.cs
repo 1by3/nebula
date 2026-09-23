@@ -167,6 +167,50 @@ namespace Nebula.Tests
             Assert.Less((pawn.transform.position - worldBefore).magnitude, 1e-4f, "evacuation keeps the world pose");
         }
 
+        /// <summary>
+        /// NEB-255: a carrier in a scoped chunk leaves with passengers aboard. They are put down in the carrier's own
+        /// scope, in the scope's box that holds them or else the scope's nearest box, never in the public container
+        /// around the same point nor in another scope's box that holds it.
+        /// </summary>
+        [Test]
+        public void UnregisteringInAScopedChunkEvacuatesTheContentsWithinTheScope()
+        {
+            const ulong scope = 501, otherScope = 502;
+            var chunk = ContainerRegistry.RegisterRuntime(9001, new Bounds(new Vector3(-20, 10, 0), new Vector3(40, 20, 40)),
+                new InstanceContainerInfo { InstanceId = scope, ScopeKey = "scope/a" });
+            // Another scope's copy of the space just past the chunk, where the ship's nose pokes out.
+            var elsewhere = ContainerRegistry.RegisterRuntime(9002, new Bounds(new Vector3(10, 10, 0), new Vector3(20, 20, 40)),
+                new InstanceContainerInfo { InstanceId = otherScope, ScopeKey = "scope/b" });
+            NetworkIdentity ship = null, inside = null, outside = null;
+            try
+            {
+                // A 20 m box from x = -15 to 5: the chunk ends at x = 0, the public "outdoor" box holds all of it.
+                ship = MakeCarrier("ship", 42, new Vector3(-5, 0, 0), new Vector3(20, 6, 20));
+                ship.SetContainer(chunk);
+                Assume.That(ship.Carried.InstanceId, Is.EqualTo(scope), "the ship's box is in the chunk's scope");
+                inside = MakeEntity("pawn", 43, new Vector3(-10, 1, 0));
+                outside = MakeEntity("crate", 44, new Vector3(3, 1, 0));
+                inside.SetContainer(ship.Carried);
+                outside.SetContainer(ship.Carried);
+                Assume.That(outside.InstanceId, Is.EqualTo(scope));
+
+                ship.InvokeDespawn(); // DynamicContainer.OnNetworkDespawn unregisters and evacuates
+
+                Assert.AreSame(chunk, inside.Container, "the scope's box that holds the passenger, not the public box around the same point");
+                Assert.AreSame(chunk, outside.Container, "no box of the scope holds this one: the scope's nearest box, not the other scope's box that does");
+                Assert.AreEqual(scope, inside.InstanceId);
+                Assert.AreEqual(scope, outside.InstanceId);
+                CollectionAssert.IsEmpty(elsewhere.Entities);
+            }
+            finally
+            {
+                // A scoped box that still lists an entity refuses to be forgotten.
+                foreach (var e in new[] { inside, outside, ship }) e?.SetContainer(null);
+                ContainerRegistry.UnregisterRuntime(9001);
+                ContainerRegistry.UnregisterRuntime(9002);
+            }
+        }
+
         [Test]
         public void NestedCarriersResolveInnermostAndReportDepth()
         {

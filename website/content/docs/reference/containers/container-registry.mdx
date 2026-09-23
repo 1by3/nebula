@@ -240,7 +240,7 @@ Make `container` the dynamic container carried by `carrier`, resolvable by the c
 public static void UnregisterDynamic(Container container);
 ```
 
-Forget a dynamic container. Whatever is still inside it is moved to the container around it (resolved from each entity's world position, ignoring the departing box) and re-parented, so a client destroying a despawned ship does not take the passengers' objects with it. The authority decides what actually happens to them on the next tick; despawn the contents first if they should not survive the carrier.
+Forget a dynamic container. Whatever is still inside it is moved to the container around it (resolved from each entity's world position, ignoring the departing box, among the boxes of the box's own scope) and re-parented, so a client destroying a despawned ship does not take the passengers' objects with it. The authority decides what actually happens to them on the next tick; despawn the contents first if they should not survive the carrier.
 
 ### RuntimeContainerId [#runtimecontainerid]
 
