@@ -57,6 +57,14 @@ public const double HoldSeconds = 10;
 
 The longest an entity's updates wait for a container row this gateway does not have. The control plane delivers a new lease in one long-poll round; past this bound the updates are applied anyway and the entity fails closed exactly as an unknown container always did.
 
+### MaxFollowedPassengers [#maxfollowedpassengers]
+
+```csharp
+public const int MaxFollowedPassengers = 4096;
+```
+
+Most passengers named by [`FollowPassengers`](#followpassengers) in one subscription pass, across all the carriers this gateway follows. It keeps the explicit list of an [`InterestSubscribeMsg`](/docs/reference/protocol/interest-subscribe-msg) well inside its count field; cargo past it is served as before, by region, and may flicker on a scope change.
+
 ## Properties
 
 ### Config [#config]

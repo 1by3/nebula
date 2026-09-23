@@ -1195,6 +1195,8 @@ namespace Nebula
                 // ask for a spawn, and a first join into an empty mesh could never complete.
                 if (client.PawnNetId == 0 && client.DisconnectAt == 0) LinkSpawnCandidates();
             }
+            // Whatever rides in those carriers is followed with them (docs/scope-activation.md D21).
+            FollowPassengers();
 
             // An explicit id we cannot place yet: link every live worker until one of them answers (design D5).
             bool unresolved = unreachablePawn;
@@ -1427,8 +1429,9 @@ namespace Nebula
                 if (rec.Placement != InterestPlacement.Region) continue;
                 if (rec.OwnerClientId != 0 && _clientsById.ContainsKey(rec.OwnerClientId)) continue;
                 if (_subscribedRegions.Contains(rec.Region)) continue;
-                // Followed by name (a policy's explicit entity, a pawn's carrier): the worker keeps publishing it
-                // wherever it is, so its region being unsubscribed says nothing about whether we still want it.
+                // Followed by name (a policy's explicit entity, a pawn's carrier, what rides in that carrier): the
+                // worker keeps publishing it wherever it is, so its region being unsubscribed says nothing about
+                // whether we still want it.
                 if (_explicitSet.Contains(rec.NetId)) continue;
                 _evictScratch.Add(rec.NetId);
             }

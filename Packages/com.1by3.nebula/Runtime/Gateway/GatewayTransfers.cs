@@ -10,13 +10,15 @@ namespace Nebula
 {
     /// <summary>
     /// Crossings, seen from the gateway: an entity, or a whole crewed carrier, moving into a container of another
-    /// scope. Four rules, each a decision in <c>docs/scope-activation.md</c> §11:
+    /// scope. Five rules, each a decision in <c>docs/scope-activation.md</c> §11:
     /// <list type="bullet">
     /// <item>a preparation brings its destination row with it, because the client that must prepare the destination
     /// has never been told it exists (D14);</item>
     /// <item>an update naming a runtime container this gateway has no row for yet waits for the row (D15);</item>
     /// <item>a client follows its pawn's carriers by name, so a ship that leaves the client's scope is still heard
     /// about (D12);</item>
+    /// <item>everything aboard those carriers is followed by name too, so it crosses with them and is never
+    /// despawned for a client riding in them (D21);</item>
     /// <item>an entity that changes scope is revoked from the observers that may no longer see it before anything
     /// about the destination is sent (D13).</item>
     /// </list>
@@ -383,14 +385,65 @@ namespace Nebula
         private void FollowCarriers(EntityRecord pawn)
         {
             var at = pawn.Container;
+            EntityRecord outermost = null;
             for (int hops = 0; at.IsDynamic && hops <= _entities.Count; hops++)
             {
                 AddExplicit(at.NetId);
-                if (!_entities.TryGetValue(at.NetId, out var carrier)) return;
+                if (!_entities.TryGetValue(at.NetId, out var carrier)) break;
+                outermost = carrier;
                 string owner = WorkerIdOfIndex(carrier.OwnerWorkerIndex);
                 if (!string.IsNullOrEmpty(owner) && EnsureLink(owner) != null) Reason(owner, InterestLinkReason.Owned);
                 at = carrier.Container;
             }
+            if (outermost != null && !_followedCarriers.Contains(outermost.NetId)) _followedCarriers.Add(outermost.NetId);
+        }
+
+        /// <summary>The outermost carrier of every pawn chain followed this subscription pass, in the order first met.</summary>
+        private readonly List<ulong> _followedCarriers = new List<ulong>();
+        private readonly List<ulong> _passengerScratch = new List<ulong>();
+
+        /// <summary>
+        /// Most passengers named by <see cref="FollowPassengers"/> in one subscription pass, across all the carriers
+        /// this gateway follows. It keeps the explicit list of an <see cref="InterestSubscribeMsg"/> well inside its
+        /// count field; cargo past it is served as before, by region, and may flicker on a scope change.
+        /// </summary>
+        public const int MaxFollowedPassengers = 4096;
+
+        /// <summary>
+        /// Follow everything aboard a followed carrier by name too, at any depth: loose cargo, a shuttle in the bay
+        /// and what is in it, another gateway's rider. A worker publishes a carrier's contents under the carrier's
+        /// region key, and a crossing into another scope rebuckets them all under a key of that scope. The carrier
+        /// itself is sticky for this gateway because it is named (D12); its contents were not, so the worker told
+        /// this gateway to forget each of them, and the riders' clients despawned the cargo, and were sent it again
+        /// once their subscriptions caught up with the new scope. Named, the contents are carried across with the
+        /// carrier: never forgotten by the worker, never evicted here, and never despawned for a client that rides
+        /// in the carrier, whose scope follows it. Naming grants no visibility: an onlooker left in the old scope is
+        /// still revoked from the carrier and everything in it before anything about the destination is sent (D13).
+        /// Named after every carrier, so the carriers themselves are never the ones <see cref="MaxFollowedPassengers"/>
+        /// leaves out (D21).
+        /// </summary>
+        private void FollowPassengers()
+        {
+            int named = 0;
+            for (int i = 0; i < _followedCarriers.Count && named < MaxFollowedPassengers; i++)
+            {
+                ulong carrier = _followedCarriers[i];
+                if (!_index.HasCarried(carrier)) continue;
+                _passengerScratch.Clear();
+                int count = _index.CollectCarried(carrier, _passengerScratch);
+                for (int p = 0; p < count && named < MaxFollowedPassengers; p++)
+                {
+                    ulong id = _passengerScratch[p];
+                    if (_explicitSet.Contains(id) || !_entities.TryGetValue(id, out var passenger)) continue;
+                    // Owned by a client of this gateway (a rider's own pawn): already sticky here as its owner's,
+                    // and a worker announces a newly named entity, which for an owned one would read as a new pawn.
+                    if (passenger.OwnerClientId != 0 && _clientsById.ContainsKey(passenger.OwnerClientId)) continue;
+                    AddExplicit(id);
+                    named++;
+                }
+            }
+            _passengerScratch.Clear();
+            _followedCarriers.Clear();
         }
     }
 }

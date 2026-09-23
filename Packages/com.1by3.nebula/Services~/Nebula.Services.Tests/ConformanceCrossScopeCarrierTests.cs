@@ -21,7 +21,7 @@ public class ConformanceCrossScopeCarrierTests
 {
     private const string Planet = "world/planet";
     private const string Space = "world/space";
-    private const ulong Hull = 500, OnPlanet = 700, InSpace = 600;
+    private const ulong Hull = 500, OnPlanet = 700, InSpace = 600, Crate = 510, Parcel = 511;
 
     private string directory = "";
 
@@ -190,6 +190,38 @@ public class ConformanceCrossScopeCarrierTests
         Assert.That(v.Onlooker.UnresolvableNames, Is.Empty);
         Assert.That(v.Rider.Despawned, Does.Not.Contain(Hull));
         Assert.That(v.Onlooker.Despawned, Does.Not.Contain(Hull), "the ship never left the onlooker's world, so it was never taken away");
+    }
+
+    /// <summary>
+    /// NEB-261: loose cargo in the ship — a crate in its bay and a parcel inside that crate, neither of them anybody's
+    /// pawn — crosses with the ship. The rider's client keeps both without a despawn at any moment, while the
+    /// onlooker left on the planet still loses them, and is still never told where they went (D13).
+    /// </summary>
+    [Test]
+    public void CargoAboardACrossingShipStaysWithItsRiderAndLeavesTheOnlooker()
+    {
+        using var v = new Voyage();
+        v.Worker.Spawn(Crate, new Vector3(1, 0, -1), ContainerRef.Dynamic(Hull));
+        v.Worker.Spawn(Parcel, new Vector3(0, 0.5f, 0), ContainerRef.Dynamic(Crate));
+        Assert.That(v.Fleet.Run(() => v.Rider.Replicas.IsSupersetOf(new[] { Crate, Parcel }) && v.Onlooker.Replicas.IsSupersetOf(new[] { Crate, Parcel })), Is.True,
+            "on the planet both clients see the cargo");
+
+        v.Worker.MoveTo(Hull, Anchor(Space), new Vector3(0, 2, 0));
+
+        Assert.That(v.Fleet.Run(() => v.Rider.Replicas.Contains(InSpace)), Is.True, "the rider's client followed the ship into space");
+        v.Fleet.RunFor(1.5);
+        Assert.That(v.Rider.Despawned, Does.Not.Contain(Crate).And.Not.Contain(Parcel),
+            "the cargo was carried across with the ship, not taken away and sent again");
+        Assert.That(v.Rider.Replicas, Does.Contain(Crate).And.Contain(Parcel));
+        Assert.That(v.Rider.ContainerOf[Crate], Is.EqualTo(ContainerRef.Dynamic(Hull)), "still in the ship's bay");
+        Assert.That(v.Rider.ContainerOf[Parcel], Is.EqualTo(ContainerRef.Dynamic(Crate)), "still in its crate");
+        Assert.That(v.Rider.UnresolvableNames, Is.Empty);
+
+        Assert.That(v.Fleet.Run(() => !v.Onlooker.Replicas.Contains(Crate) && !v.Onlooker.Replicas.Contains(Parcel)), Is.True,
+            "the onlooker on the planet loses the cargo with the ship");
+        Assert.That(v.Onlooker.ContainerOf[Hull], Is.EqualTo(Anchor(Planet)), "revoked before anything placed the ship in space");
+        Assert.That(v.Onlooker.Wire, Does.Not.Contain("container+ " + AnchorId(Space)), "and it is never told which chunk of space it went to");
+        Assert.That(v.Onlooker.HeardAbout, Does.Not.Contain(InSpace));
     }
 
     /// <summary>

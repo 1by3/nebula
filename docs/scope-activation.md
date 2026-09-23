@@ -312,7 +312,7 @@ not in the group, or have the worker drag them in. It was rejected because it fi
 `TryCommitTransfers`. A carrier changes scope in other ways too — a handover into another worker's chunk, a game
 that moves a ship itself — and a client that lost its ship's record for any reason (a reconnect, an eviction) would
 still be stuck. Following by name repairs the client whatever moved the ship, with a mechanism the worker already
-implements, and costs one id per carrier in a subscription message.
+implements, and costs one id per carrier in a subscription message (and, since D21, one per passenger aboard).
 
 **D13 An entity that changes scope is revoked before anything about the destination is sent.** When a state entry
 or a spawn moves an entity into another scope, every client that holds it is re-authorized on the spot
@@ -379,6 +379,28 @@ destination as before.
 
 **D20 No wire change.** Every rule above is a gateway, client or worker decision over messages that already existed:
 `InterestSubscribe.Entities`, `ContainerOwnership` deltas, `WorldState` on the reliable stream. Protocol stays 18.
+
+**D21 What rides in a followed carrier is followed with it (NEB-261).** D12 named the carriers in a rider's chain, but
+not what else was aboard. A worker publishes a carrier's contents under the carrier's region key, and a crossing
+rebuckets the whole subtree under a key of the new scope. The carrier was sticky for the rider's gateway because it
+was named; a loose crate in its bay was not, so the worker told that gateway to forget the crate the moment the ship
+crossed. The rider's client despawned the crate and was sent it again once its subscriptions had followed the ship.
+A cargo bay flickered on every scope change, and so did a rider served by another gateway.
+
+The gateway now also names everything aboard the outermost carrier of each rider's chain, at any depth, on the same
+subscription pass, after the carriers themselves. Named, the contents are sticky on their worker exactly as the
+carrier is, the eviction sweep keeps them as it keeps the carrier, and a rider's client, whose scope follows the
+carrier, is never told to despawn them. Entities owned by this gateway's own clients are not named: they are sticky
+here already as their owner's, and a newly named entity is announced, which for an owned one would read as a new
+pawn. Naming grants no visibility, so D13 still holds: an onlooker left in the old scope is revoked from the ship
+and everything in it before anything about the destination is sent. At most `NebulaGateway.MaxFollowedPassengers`
+(4096) passengers are named per pass across all followed carriers. Cargo past that is served by region as before
+and can still flicker.
+
+The alternative was a worker rule: a carried entity is sticky for every gateway that is sticky for one of its
+carriers. That needs no ids on the wire, but it changes publication on every worker for every carrier a gateway
+names for any reason, and the eviction sweep here would still have needed the same rule. The gateway-side naming
+uses the mechanism both sides already implement (D12), is bounded, and is limited to carriers somebody rides in.
 
 ### 11.3 What a game does
 
