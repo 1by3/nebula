@@ -927,8 +927,10 @@ namespace Nebula
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
                 _gameMode?.PrepareSpatialFrame(e);
                 InstanceBoundary.Tick(this, e);
-                // A carrier never resolves into the container it carries (its origin is inside its own box).
-                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e.Carried);
+                // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
+                // the box of another carrier riding inside it, which is how two overlapping ships would each end up
+                // inside the other.
+                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
                 if (resolved != e.Container)
                 {
                     var previous = e.Container;
@@ -1049,7 +1051,7 @@ namespace Nebula
             identity.OwnerWorkerIndex = WorkerIndex;
             identity.RecomputeCostWeight(); // once, here: never per tick (see NebulaCost)
             identity.HasAuthority = true;
-            identity.SetContainer(container ?? ContainerRegistry.Find(identity.transform.position));
+            identity.SetContainer(container ?? ContainerRegistry.Find(identity.transform.position, subject: identity));
             _entities[identity.NetId] = identity;
             _authoritative.Add(identity);
             if (ownerClientId != 0) _players[ownerClientId] = identity;

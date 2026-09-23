@@ -16,8 +16,9 @@ namespace Nebula.Tests
     /// applier a live mesh runs, deterministically and in one Editor process.
     /// <para>
     /// What it does not have: a gateway, a control plane, leases, or a tick loop. Handovers are triggered directly
-    /// (<see cref="Worker.Transfer"/>) instead of by the tick's container resolution, and nothing announces anything
-    /// to a gateway because no gateway link is registered. Scenarios that need those belong in the service tests
+    /// (<see cref="Worker.Transfer"/>), or by one whole tick the scenario asks for (<see cref="Worker.Tick"/>)
+    /// against the owners <see cref="SetOwner"/> handed out, and nothing announces anything to a gateway because
+    /// no gateway link is registered. Scenarios that need those belong in the service tests
     /// (tier A, <c>Nebula.Services.Tests/Fixtures/MeshFixtures.cs</c>) or in the later multi-process tier.
     /// </para>
     /// <para>
@@ -33,6 +34,7 @@ namespace Nebula.Tests
         private static readonly MethodInfo DispatchMethod = typeof(NebulaWorker).GetMethod("Dispatch", Flags);
         private static readonly MethodInfo TransferMethod = typeof(NebulaWorker).GetMethod("TransferAuthority", Flags);
         private static readonly MethodInfo GhostBandMethod = typeof(NebulaWorker).GetMethod("UpdateGhostBand", Flags);
+        private static readonly MethodInfo TickMethod = typeof(NebulaWorker).GetMethod("Tick", Flags);
         /// <summary>Peer ids are global across the mesh: worker index <c>i</c> is peer <c>100 + i</c> on every other worker.</summary>
         private const int PeerIdBase = 100;
         private const int MaxPumpRounds = 64;
@@ -167,6 +169,14 @@ namespace Nebula.Tests
                     Invoke(GhostBandMethod, tick);
                 });
             }
+
+            /// <summary>
+            /// Run one whole tick of the worker, exactly as its frame loop would: ghosts, simulation by nesting depth,
+            /// container membership against the owners <see cref="SetOwner"/> gave out (handing an entity to the
+            /// owner of the container it resolved into), the ghost band and the interest pass. The scenario still
+            /// decides when a tick happens; the bytes wait in the outbox until <see cref="Pump"/>.
+            /// </summary>
+            public void Tick(uint tick) => Act(() => Invoke(TickMethod, tick));
 
             /// <summary>The entity this worker holds under <paramref name="netId"/> (authoritative or ghost), or null.</summary>
             public NetworkIdentity Find(ulong netId) => Instance.Find(netId);

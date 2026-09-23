@@ -4,6 +4,15 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two carriers with overlapping interiors could end up inside each other and kill the worker.** The worker placed each entity in the smallest box that held its origin, leaving out only the entity's own box. When two ships' interiors overlapped, the first ship was placed in the second ship's box, and then the second ship was placed in the first ship's box. The next `Container.InstanceId` or `ScopeKey` read then recursed until the process threw a `StackOverflowException`. In a live mesh this happened on every tick: the worker missed its heartbeats and was declared dead. Twenty ships spawned into one 64 m chunk were enough to cause it. Now the rule is that an entity is never placed in a container it carries at any depth: its own box, or the box of a carrier riding inside it.
+  - `ContainerRegistry.Find` and `ContainerRegistry.Resolve` take the entity being placed (`subject`) and skip every container it carries. They then choose the next smallest box that holds the point. Overlapping ships nest one inside the other at most. `Resolve`'s last parameter changed from `Container exclude` to `NetworkIdentity subject`.
+  - `NetworkIdentity` refuses a placement that would make an entity ride inside itself, at any chain length (previously only its own box was refused). It logs a warning once per entity. This covers a placement that arrives from another worker that decided differently.
+  - New `Container.IsCarriedBy(NetworkIdentity)`: whether an entity carries a container, directly or through a chain of carriers.
+  - Every walk up a carrier chain is now bounded: `InstanceId`, `ScopeKey`, the moved-frame check behind `WorldBounds`, and `NestingDepth`. A corrupt chain reads as the public scope instead of overflowing the stack or looping forever. On the next tick, the worker moves an entity out of a container that it carries.
+  - Conformance scenario 15, `ConformanceCarrierCycleTests` (tier B), covers the fix. `ConformanceMesh.Worker.Tick` runs one whole worker tick.
+
 ## [0.1.0-alpha.30] - 2026-09-22
 
 ### NEB-228: deployment and protocol compatibility policy

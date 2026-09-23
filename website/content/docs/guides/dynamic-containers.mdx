@@ -42,6 +42,16 @@ Use `ContainerRegistry.Dynamic` to enumerate registered dynamic containers. Read
 
 The carrier itself is not inside its own container. Nebula excludes the carried box when it resolves the carrier's position. This also allows nested carriers, such as a vehicle inside a larger vehicle.
 
+### Overlapping carriers
+
+Two carriers never ride inside each other. When Nebula resolves an entity's position, it skips every dynamic container that the entity carries, at any depth: its own box, and the box of any carrier that rides inside it. It uses the next smallest container that holds the position instead.
+
+For example, when two ships spawn with overlapping interiors, one ship moves into the other ship's container. The other ship stays in the surrounding container, because the first ship's box now rides inside it. When more ships overlap, each one nests inside the next, and one ship stays in the surrounding container. If your carriers should not board each other, spawn them far enough apart that no box holds another carrier's origin.
+
+Nebula ignores a placement that would make an entity ride inside itself. The entity stays in its current container, and Nebula logs a warning once for that entity. This can happen when two workers place overlapping carriers during the same tick. On its next tick, the authoritative worker resolves the entity's position again.
+
+To check a placement in your own code, call `container.IsCarriedBy(entity)`. It returns `true` when `entity` carries `container`, directly or through a chain of carriers.
+
 ## Let ownership follow the carrier
 
 By default, a dynamic container follows the carrier's authoritative worker. Its `OwnerWorkerIndex` matches the carrier, and its `LeaseEpoch` uses the carrier's authority epoch.

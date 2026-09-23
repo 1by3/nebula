@@ -58,7 +58,7 @@ namespace Nebula
             Container destination = null;
             if (allowed)
             {
-                if (privateSide) destination = ContainerRegistry.Find(entity.transform.position);
+                if (privateSide) destination = ContainerRegistry.Find(entity.transform.position, subject: entity);
                 else
                 {
                     var parts = worker.PrepareInstance(Template, key, transform.position);

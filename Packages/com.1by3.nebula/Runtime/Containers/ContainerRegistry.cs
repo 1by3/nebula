@@ -372,7 +372,7 @@ namespace Nebula
             foreach (var e in EntityScratch)
             {
                 if (e == null) continue;
-                var outer = Find(e.transform.position, container);
+                var outer = Find(e.transform.position, container, 0, e);
                 if (outer == container) outer = null;
                 e.SetContainer(outer);
             }
@@ -830,35 +830,42 @@ namespace Nebula
         /// The container whose volume holds the point; if none does, the nearest one. Containers may nest (an
         /// "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point
         /// the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process
-        /// agrees. <paramref name="exclude"/> leaves one container out of the search: an entity carrying a container
-        /// resolves its own position without it, or it would be found inside itself.
+        /// agrees. <paramref name="exclude"/> leaves one container out of the search.
+        /// <para>
+        /// <paramref name="subject"/> is the entity being placed, when there is one. The containers it carries,
+        /// directly or through any chain of carriers (<see cref="Container.IsCarriedBy"/>), are skipped: its own
+        /// box (its origin is inside it), and the box of a ship whose interior overlaps its own and which already
+        /// rides inside it. The next smallest box holding the point wins instead, so two carriers whose interiors
+        /// overlap end up one inside the other at most, never each inside the other.
+        /// </para>
         /// </summary>
-        public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0)
+        public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0, NetworkIdentity subject = null)
         {
             Container inside = null, nearest = null;
             float insideVolume = float.MaxValue, nearestDist = float.MaxValue;
             if (_grid != null)
             {
                 CollectAround(WorldOrigin.CellOf(worldPosition), Candidates);
-                FindAmong(Candidates, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                FindAmong(Candidates, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            else FindAmong(Containers, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            else FindAmong(Containers, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (RuntimeList.Count > 0)
             {
                 CollectRuntimeAround(worldPosition, RuntimeCandidates);
-                FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                FindAmong(RuntimeCandidates, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
-            FindAmong(DynamicList, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+            // Only a dynamic container can be carried by the subject, so only this list pays for the check.
+            FindAmong(DynamicList, worldPosition, exclude, instanceId, subject, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             if (inside == null && nearest == null)
             {
                 // Nothing near the point: fall back to the whole set so a far-away point still gets its nearest box.
-                if (_grid != null) FindAmong(Containers, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
-                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, instanceId, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (_grid != null) FindAmong(Containers, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
+                if (RuntimeList.Count > 0) FindAmong(RuntimeList, worldPosition, exclude, instanceId, null, ref inside, ref insideVolume, ref nearest, ref nearestDist);
             }
             return inside ?? nearest;
         }
 
-        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ulong instanceId, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
+        private static void FindAmong(List<Container> list, Vector3 worldPosition, Container exclude, ulong instanceId, NetworkIdentity subject, ref Container inside, ref float insideVolume, ref Container nearest, ref float nearestDist)
         {
             for (int i = 0; i < list.Count; i++)
             {
@@ -868,13 +875,14 @@ namespace Nebula
                 if (d <= 0f)
                 {
                     float volume = c.Volume;
-                    if (volume < insideVolume)
+                    // The chain walk only for a box that would win: most candidates lose on volume first.
+                    if (volume < insideVolume && (subject == null || !c.IsCarriedBy(subject)))
                     {
                         insideVolume = volume;
                         inside = c;
                     }
                 }
-                else if (d < nearestDist)
+                else if (d < nearestDist && (subject == null || !c.IsCarriedBy(subject)))
                 {
                     nearestDist = d;
                     nearest = c;
@@ -886,12 +894,16 @@ namespace Nebula
         /// The container the entity should belong to after applying hysteresis: it must be at least
         /// <paramref name="hysteresis"/> meters inside a different container, and more than
         /// <paramref name="hysteresis"/> meters outside its current one, before we consider it moved.
-        /// <paramref name="exclude"/> as in <see cref="Find"/>.
+        /// <paramref name="subject"/> is the entity being placed, as in <see cref="Find"/>: no container it carries,
+        /// directly or through a chain of carriers, is ever the answer. A current container that is one (only
+        /// possible from corrupt state) is left at once, with no hysteresis.
         /// </summary>
-        public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null)
+        public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, NetworkIdentity subject = null)
         {
-            if (current == null) return Find(worldPosition, exclude);
-            var candidate = Find(worldPosition, exclude, current.InstanceId);
+            if (current != null && subject != null && current.IsDynamic && current.IsCarriedBy(subject))
+                return Find(worldPosition, current, current.InstanceId, subject);
+            if (current == null) return Find(worldPosition, null, 0, subject);
+            var candidate = Find(worldPosition, null, current.InstanceId, subject);
             if (candidate == null || candidate == current) return current;
             if (current.Contains(worldPosition))
             {

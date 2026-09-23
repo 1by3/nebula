@@ -181,7 +181,7 @@ The static container with this wire index, or null (also null for [`ContainerRef
 
 ```csharp
 public static Container Resolve(ContainerRef r);
-public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, Container exclude = null);
+public static Container Resolve(Vector3 worldPosition, Container current, float hysteresis, NetworkIdentity subject = null);
 ```
 
 The container a wire reference names, static, dynamic or runtime, or null when it is not known on this process (a dynamic container whose carrier has not arrived yet, a runtime container whose lease has not).
@@ -344,10 +344,12 @@ Every container adjacent to `container` right now, into `result` (cleared first)
 ### Find [#find]
 
 ```csharp
-public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0);
+public static Container Find(Vector3 worldPosition, Container exclude = null, ulong instanceId = 0, NetworkIdentity subject = null);
 ```
 
-The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees. `exclude` leaves one container out of the search: an entity carrying a container resolves its own position without it, or it would be found inside itself.
+The container whose volume holds the point; if none does, the nearest one. Containers may nest (an "outdoor" box enclosing per-building boxes, a ship inside the outdoor box): when several hold the point the smallest volume wins, so the most specific container is chosen. Pure geometry, so every process agrees. `exclude` leaves one container out of the search.
+
+`subject` is the entity being placed, when there is one. The containers it carries, directly or through any chain of carriers ([`Container.IsCarriedBy`](/docs/reference/containers/container#iscarriedby)), are skipped: its own box (its origin is inside it), and the box of a ship whose interior overlaps its own and which already rides inside it. The next smallest box holding the point wins instead, so two carriers whose interiors overlap end up one inside the other at most, never each inside the other.
 
 ### Along [#along]
 

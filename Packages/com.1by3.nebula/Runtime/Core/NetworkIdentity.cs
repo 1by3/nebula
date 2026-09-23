@@ -693,15 +693,32 @@ namespace Nebula
             }
         }
 
+        /// <summary>A refused carrier cycle was already reported for this entity (cleared by the next placement that succeeds).</summary>
+        private bool _carrierCycleWarned;
+
+        /// <summary>
+        /// Move the entity into <paramref name="container"/>. A dynamic container this entity carries, directly or
+        /// through any chain of carriers (<see cref="Nebula.Container.IsCarriedBy"/>), is refused and the entity
+        /// stays where it was: two ships whose interiors overlap may not each end up inside the other, and a ship
+        /// may not sit in the hangar of a shuttle it is itself carrying. The resolver never proposes such a
+        /// container; a refusal here means a placement came off the wire from a peer that decided differently.
+        /// </summary>
         internal void SetContainer(Container container, bool reparent = true)
         {
             var previous = Container;
             if (previous == container) return;
-            if (container != null && container.Carrier == this)
+            if (container != null && container.IsCarriedBy(this))
             {
-                NebulaLog.Warn($"{this} cannot be inside the container it carries; ignored");
+                if (!_carrierCycleWarned)
+                {
+                    _carrierCycleWarned = true;
+                    NebulaLog.Warn(container.Carrier == this
+                        ? $"{this} cannot be inside the container it carries; ignored"
+                        : $"{this} cannot be inside {container.ContainerId}: that container rides inside {this} itself, so the carriers would contain each other; ignored");
+                }
                 return;
             }
+            _carrierCycleWarned = false;
             if (container != null && container.InstanceId != 0 && !InstanceScenes.Prepare(container))
                 throw new InvalidOperationException("Instance content is unavailable: " + container.ContainerId);
             Container = container;

@@ -54,14 +54,60 @@ namespace Nebula
         public bool IsRuntime { get; internal set; }
         /// <summary>Runtime containers: the 64-bit id the game registered this container under. 0 otherwise.</summary>
         public ulong RuntimeId { get; internal set; }
-        /// <summary>Private simulation scope, or zero for the public world. Carried containers follow their carrier.</summary>
-        public ulong InstanceId => IsDynamic && Carrier != null ? Carrier.InstanceId : Instance?.InstanceId ?? 0;
+        /// <summary>
+        /// Private simulation scope, or zero for the public world. Carried containers follow their carrier, through
+        /// every carrier above it. A carrier chain that loops back on itself has no scope and reads as zero.
+        /// </summary>
+        public ulong InstanceId => ScopeRoot?.Instance?.InstanceId ?? 0;
         /// <summary>
         /// The opaque scope key of the scope this container belongs to (<see cref="EntityLocation.ScopeKey"/>):
         /// <see cref="EntityLocation.PublicScope"/> (empty) for the public world, the instance key for an instance
-        /// container. Carried containers follow their carrier. Never null.
+        /// container. Carried containers follow their carrier, through every carrier above it. Never null.
         /// </summary>
-        public string ScopeKey => IsDynamic && Carrier != null ? Carrier.ScopeKey : Instance?.ScopeKey ?? EntityLocation.PublicScope;
+        public string ScopeKey => ScopeRoot?.Instance?.ScopeKey ?? EntityLocation.PublicScope;
+
+        /// <summary>
+        /// The container this one's scope is read from: itself for a static or runtime container, and for a
+        /// dynamic one the container at the bottom of its carrier chain (the ship's hangar, then the ship, then the
+        /// static box the ship is in). Null when a carrier in the chain is in no container, or when the chain loops
+        /// back on itself. A loop cannot be built through <see cref="NetworkIdentity"/>, which refuses it, so the
+        /// bound only turns corrupt state into "no scope" instead of an endless walk: every link of a chain is a
+        /// registered dynamic container, so a chain longer than the registry holds has revisited one.
+        /// </summary>
+        internal Container ScopeRoot
+        {
+            get
+            {
+                var c = this;
+                for (int hops = 0; c.IsDynamic && c.Carrier != null; hops++)
+                {
+                    if (hops > ContainerRegistry.Dynamic.Count) return null;
+                    c = c.Carrier.Container;
+                    if (c == null) return null;
+                }
+                return c;
+            }
+        }
+
+        /// <summary>
+        /// Whether <paramref name="entity"/> carries this container, directly or through a chain of carriers: this
+        /// is <paramref name="entity"/>'s own box, or a box riding somewhere inside it (a shuttle parked in its
+        /// hangar, a crate's box in that shuttle). Putting <paramref name="entity"/> in such a container would make
+        /// it ride inside itself; <see cref="ContainerRegistry.Find"/> skips these containers for the entity and
+        /// the entity refuses to be placed in one. A chain longer than the registry holds has already looped and
+        /// also answers true, so nothing is ever added to it.
+        /// </summary>
+        public bool IsCarriedBy(NetworkIdentity entity)
+        {
+            if (entity == null) return false;
+            int hops = 0;
+            for (var c = this; c != null && c.IsDynamic; c = c.Enclosing)
+            {
+                if (c.Carrier == entity) return true;
+                if (++hops > ContainerRegistry.Dynamic.Count) return true;
+            }
+            return false;
+        }
         public InstanceContainerInfo Instance { get; internal set; }
         /// <summary>Dynamic containers: the entity carrying this container. Null for static ones.</summary>
         public NetworkIdentity Carrier { get; internal set; }
@@ -177,7 +223,8 @@ namespace Nebula
         {
             get
             {
-                for (var c = this; c != null && c.IsDynamic; c = c.Enclosing)
+                int hops = 0;
+                for (var c = this; c != null && c.IsDynamic && hops <= ContainerRegistry.Dynamic.Count; c = c.Enclosing, hops++)
                     if (c.transform.hasChanged) return true;
                 return false;
             }
@@ -288,8 +335,7 @@ namespace Nebula
         /// depth limit. This is what orders simulation and the ghost band, and two containers at
         /// different depths reported as equal would let a passenger tick before the ship it stands in. The walk
         /// cannot run away: every dynamic container is registered, so a chain longer than the registry has closed
-        /// a cycle. That is the only bound, and the cycle itself is reported where it is created — the interest
-        /// index refuses the link and the worker logs it once per entity.
+        /// a cycle. That is the only bound; a cycle cannot be built in the first place (see <see cref="IsCarriedBy"/>).
         /// </summary>
         public int NestingDepth
         {

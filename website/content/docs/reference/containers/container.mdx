@@ -110,7 +110,7 @@ Runtime containers: the 64-bit id the game registered this container under. 0 ot
 public ulong InstanceId { get; }
 ```
 
-Private simulation scope, or zero for the public world. Carried containers follow their carrier.
+Private simulation scope, or zero for the public world. Carried containers follow their carrier, through every carrier above it. A carrier chain that loops back on itself has no scope and reads as zero.
 
 ### ScopeKey [#scopekey]
 
@@ -118,7 +118,7 @@ Private simulation scope, or zero for the public world. Carried containers follo
 public string ScopeKey { get; }
 ```
 
-The opaque scope key of the scope this container belongs to ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) for the public world, the instance key for an instance container. Carried containers follow their carrier. Never null.
+The opaque scope key of the scope this container belongs to ([`EntityLocation.ScopeKey`](/docs/reference/containers/entity-location#scopekey)): [`EntityLocation.PublicScope`](/docs/reference/containers/entity-location#publicscope) (empty) for the public world, the instance key for an instance container. Carried containers follow their carrier, through every carrier above it. Never null.
 
 ### Instance [#instance]
 
@@ -240,9 +240,17 @@ public Quaternion InverseRotation { get; }
 public int NestingDepth { get; }
 ```
 
-How many carriers this container sits inside, walking up through [`Enclosing`](#enclosing): 0 for a static container, 1 for a ship in a static container, 2 for a shuttle inside that ship. There is no depth limit. This is what orders simulation and the ghost band, and two containers at different depths reported as equal would let a passenger tick before the ship it stands in. The walk cannot run away: every dynamic container is registered, so a chain longer than the registry has closed a cycle. That is the only bound, and the cycle itself is reported where it is created — the interest index refuses the link and the worker logs it once per entity.
+How many carriers this container sits inside, walking up through [`Enclosing`](#enclosing): 0 for a static container, 1 for a ship in a static container, 2 for a shuttle inside that ship. There is no depth limit. This is what orders simulation and the ghost band, and two containers at different depths reported as equal would let a passenger tick before the ship it stands in. The walk cannot run away: every dynamic container is registered, so a chain longer than the registry has closed a cycle. That is the only bound; a cycle cannot be built in the first place (see [`IsCarriedBy`](#iscarriedby)).
 
 ## Methods
+
+### IsCarriedBy [#iscarriedby]
+
+```csharp
+public bool IsCarriedBy(NetworkIdentity entity);
+```
+
+Whether `entity` carries this container, directly or through a chain of carriers: this is `entity`'s own box, or a box riding somewhere inside it (a shuttle parked in its hangar, a crate's box in that shuttle). Putting `entity` in such a container would make it ride inside itself; [`ContainerRegistry.Find`](/docs/reference/containers/container-registry#find) skips these containers for the entity and the entity refuses to be placed in one. A chain longer than the registry holds has already looped and also answers true, so nothing is ever added to it.
 
 ### RefreshCache [#refreshcache]
 

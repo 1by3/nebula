@@ -99,8 +99,8 @@ namespace Nebula.Tests
             // Walking in through the side: 0.2 m inside is not enough, 0.5 m is.
             Assert.AreSame(outdoor, ContainerRegistry.Resolve(new Vector3(-24.8f, 1, 0), outdoor, 0.35f));
             Assert.AreSame(box, ContainerRegistry.Resolve(new Vector3(-24.5f, 1, 0), outdoor, 0.35f));
-            // The carrier's own position is excluded from its own box.
-            Assert.AreSame(outdoor, ContainerRegistry.Resolve(ship.transform.position, outdoor, 0.35f, box));
+            // The carrier's own position is excluded from its own box: it is the subject being placed.
+            Assert.AreSame(outdoor, ContainerRegistry.Resolve(ship.transform.position, outdoor, 0.35f, ship));
         }
 
         [Test]
