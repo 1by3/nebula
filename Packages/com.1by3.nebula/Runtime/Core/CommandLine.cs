@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Nebula
 {
     /// <summary>
-    /// Tiny "-key value" / "-flag" parser over <see cref="Environment.GetCommandLineArgs"/>. A web build has no command
+    /// Tiny "-key value" / "-key=value" / "-flag" parser over <see cref="Environment.GetCommandLineArgs"/>. A web build has no command
     /// line and reads the same switches from the page's query string instead: <c>?nebula-name=Jesse&amp;nebula-connect</c>.
     /// </summary>
     public static class CommandLine
@@ -21,21 +21,38 @@ namespace Nebula
                 ParseQuery(UnityEngine.Application.absoluteURL, _args);
                 return _args;
 #else
-                var raw = Environment.GetCommandLineArgs();
-                for (int i = 1; i < raw.Length; i++)
-                {
-                    if (!raw[i].StartsWith("-")) continue;
-                    string key = raw[i].TrimStart('-');
-                    string value = "";
-                    if (i + 1 < raw.Length && !raw[i + 1].StartsWith("-"))
-                    {
-                        value = raw[i + 1];
-                        i++;
-                    }
-                    _args[key] = value;
-                }
+                ParseArgs(Environment.GetCommandLineArgs(), 1, _args);
                 return _args;
 #endif
+            }
+        }
+
+        /// <summary>
+        /// Adds switches from an argument vector to <paramref name="into"/>, starting at <paramref name="start"/>
+        /// (1 skips the executable). Both spellings work: <c>-key value</c> and <c>-key=value</c>; the second is the
+        /// only way to pass a value that itself starts with a dash (<c>-heading=-30</c>). A switch with no value
+        /// maps to the empty string.
+        /// </summary>
+        public static void ParseArgs(IReadOnlyList<string> raw, int start, IDictionary<string, string> into)
+        {
+            for (int i = start; i < raw.Count; i++)
+            {
+                string arg = raw[i];
+                if (arg == null || !arg.StartsWith("-")) continue;
+                string key = arg.TrimStart('-');
+                string value = "";
+                int eq = key.IndexOf('=');
+                if (eq >= 0)
+                {
+                    value = key.Substring(eq + 1);
+                    key = key.Substring(0, eq);
+                }
+                else if (i + 1 < raw.Count && raw[i + 1] != null && !raw[i + 1].StartsWith("-"))
+                {
+                    value = raw[i + 1];
+                    i++;
+                }
+                if (key.Length > 0) into[key] = value;
             }
         }
 

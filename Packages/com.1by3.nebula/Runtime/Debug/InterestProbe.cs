@@ -162,6 +162,9 @@ namespace Nebula
             int replicas = 0, beyond = 0, orphans = 0, carrierless = 0;
             float min = float.PositiveInfinity, max = 0f;
             bool chunked = NebulaChunks.IsActive;
+            // Every replica is judged in its own scope's grid: a scoped world's positions are expressed in that
+            // scope's frame, which the public grid cannot place (docs/scope-frames.md).
+            string pawnScope = pawn != null ? pawn.ScopeKey : EntityLocation.PublicScope;
             var c0 = CultureInfo.InvariantCulture;
             _offenders.Clear();
             _orphanNames.Clear();
@@ -191,7 +194,8 @@ namespace Nebula
                 // Content must exist before the entity standing on it arrives (design §8). A replica whose chunk
                 // is not resident means ownership and spawn traffic arrived out of order, or the client's
                 // container window is narrower than its interest set.
-                if (chunked && NebulaChunks.At(e.transform.position) == null)
+                string scope = e.ScopeKey;
+                if (chunked && NebulaChunks.IsActiveFor(scope) && NebulaChunks.At(e.transform.position, scope) == null)
                 {
                     orphans++;
                     if (_orphanNames.Length < 120)
@@ -203,7 +207,7 @@ namespace Nebula
             Orphans = orphans;
             Carrierless = carrierless;
 
-            var cell = chunked ? NebulaChunks.CoordOf(origin) : WorldOrigin.Cell;
+            var cell = chunked && NebulaChunks.IsActiveFor(pawnScope) ? NebulaChunks.CoordOf(origin, pawnScope) : WorldOrigin.Cell;
             var c = CultureInfo.InvariantCulture;
             _line.Clear();
             _line.Append("[nebula-probe] t=").Append(Time.unscaledTime.ToString("0.0", c))
