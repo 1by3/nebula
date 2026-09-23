@@ -1,6 +1,6 @@
 ---
 title: "CommandLine"
-description: "Tiny \"-key value\" / \"-flag\" parser over Environment.GetCommandLineArgs."
+description: "Tiny \"-key value\" / \"-key=value\" / \"-flag\" parser over Environment.GetCommandLineArgs."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/CommandLine.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/CommandLine.cs)</div>
@@ -9,7 +9,7 @@ description: "Tiny \"-key value\" / \"-flag\" parser over Environment.GetCommand
 public static class CommandLine
 ```
 
-Tiny "-key value" / "-flag" parser over `Environment.GetCommandLineArgs`. A web build has no command line and reads the same switches from the page's query string instead: `?nebula-name=Jesse&nebula-connect`.
+Tiny "-key value" / "-key=value" / "-flag" parser over `Environment.GetCommandLineArgs`. A web build has no command line and reads the same switches from the page's query string instead: `?nebula-name=Jesse&nebula-connect`.
 
 ## Properties
 
@@ -22,6 +22,14 @@ public static IReadOnlyCollection<string> Keys { get; }
 Every switch that was parsed, for a service that forwards a whole family of them (`-nebula-ext-*`) to a process it launches.
 
 ## Methods
+
+### ParseArgs [#parseargs]
+
+```csharp
+public static void ParseArgs(IReadOnlyList<string> raw, int start, IDictionary<string, string> into);
+```
+
+Adds switches from an argument vector to `into`, starting at `start` (1 skips the executable). Both spellings work: `-key value` and `-key=value`; the second is the only way to pass a value that itself starts with a dash (`-heading=-30`). A switch with no value maps to the empty string.
 
 ### ParseQuery [#parsequery]
 

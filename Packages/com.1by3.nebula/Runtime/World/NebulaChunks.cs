@@ -229,11 +229,18 @@ namespace Nebula.World
         /// <summary>The public-world chunk holding <paramref name="framePosition"/> if it is resident in this process, else null.</summary>
         public static Container At(Vector3 framePosition) => At(framePosition, "");
 
-        /// <summary>The chunk of <paramref name="scopeKey"/>'s grid holding <paramref name="framePosition"/>, or null.</summary>
+        /// <summary>
+        /// The chunk of <paramref name="scopeKey"/>'s grid holding <paramref name="framePosition"/>, or null. A
+        /// position whose cell the grid cannot name (beyond the public grid's packed id range, as a position
+        /// expressed in a distant scope's frame is) holds no chunk of it either, so that is null too.
+        /// </summary>
         public static Container At(Vector3 framePosition, string scopeKey)
         {
             var grid = GridFor(scopeKey);
-            return grid == null ? null : ContainerRegistry.GetRuntime(grid.IdOf(grid.CoordOf(framePosition)));
+            if (grid == null) return null;
+            var coord = grid.CoordOf(framePosition);
+            if (grid.IsPublic && !RuntimeGrid.IsValid(grid.Normalize(coord))) return null;
+            return ContainerRegistry.GetRuntime(grid.IdOf(coord));
         }
 
         /// <summary>Whether the public-world chunk holding <paramref name="framePosition"/> is resident in this process.</summary>

@@ -12,6 +12,8 @@ All notable changes to this package are documented here. The format follows [Kee
   - New `Container.IsCarriedBy(NetworkIdentity)`: whether an entity carries a container, directly or through a chain of carriers.
   - Every walk up a carrier chain is now bounded: `InstanceId`, `ScopeKey`, the moved-frame check behind `WorldBounds`, and `NestingDepth`. A corrupt chain reads as the public scope instead of overflowing the stack or looping forever. On the next tick, the worker moves an entity out of a container that it carries.
   - Conformance scenario 15, `ConformanceCarrierCycleTests` (tier B), covers the fix. `ConformanceMesh.Worker.Tick` runs one whole worker tick.
+- **The interest probe threw every sample in a world with scoped grids.** `InterestProbe` looked up each replica's chunk in the public grid. A scope's positions are expressed in that scope's frame, which can sit far outside the public grid's packed id range, so `RuntimeGrid.PackId` threw `ArgumentOutOfRangeException` from `Update`. The probe now judges each replica, and the pawn's `cell=`, in the replica's own scope's grid. `NebulaChunks.At` (and `IsLoadedAt`) return null for a position the public grid cannot name, as documented, instead of throwing.
+- **`-key=value` on the command line was read as a switch named `key=value`.** `CommandLine` now accepts both `-key value` and `-key=value`. The second spelling is the only way to pass a value that starts with a dash (`-heading=-30`). New `CommandLine.ParseArgs` parses an argument vector the same way.
 
 ### Crewed carriers crossing between scopes
 

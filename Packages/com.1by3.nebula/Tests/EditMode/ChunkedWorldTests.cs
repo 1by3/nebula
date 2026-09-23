@@ -464,6 +464,19 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void APositionBeyondThePublicGridsRangeHoldsNoChunkInsteadOfThrowing()
+        {
+            // A scope's frame can sit far from the public world's (docs/scope-frames.md), so a position read in it
+            // may fall in a cell the public grid cannot name. Asking the public grid about it is a miss, not a crash.
+            var pub = PlanarGrid();
+            NebulaChunks.Activate(pub, NebulaRoles.Client, headless: true, allocator: null);
+            Register(pub, 0, 0);
+            var far = new Vector3(Size * (RuntimeGrid.MaxCoordinate + 10f), 0f, 0f);
+            Assert.IsNull(NebulaChunks.At(far));
+            Assert.IsFalse(NebulaChunks.IsLoadedAt(far));
+        }
+
+        [Test]
         public void TheBoundsHookPlacesEachScopesChunkWithItsOwnGrid()
         {
             var alpha = new RuntimeGrid(new Vector3(Size, Height, Size), planar: true, scopeKey: "world/alpha");

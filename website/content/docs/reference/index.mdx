@@ -15,7 +15,7 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [AuthorityRpcAttribute](/docs/reference/core/authority-rpc-attribute) | Class. Runs on the worker that has authority over the entity. |
 | [ClientRpcAttribute](/docs/reference/core/client-rpc-attribute) | Class. Runs on every client that knows the entity (or only its owner when sent with OwnerRpc). |
 | [CohesionGroups](/docs/reference/core/cohesion-groups) | Static class. Which entities belong to which NetworkIdentity.CohesionGroup, in this process. |
-| [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-flag" parser over Environment.GetCommandLineArgs. |
+| [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-key=value" / "-flag" parser over Environment.GetCommandLineArgs. |
 | [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
 | [HistoricalState](/docs/reference/core/historical-state) | Struct. What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt. |
