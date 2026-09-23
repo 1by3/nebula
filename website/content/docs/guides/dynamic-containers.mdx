@@ -110,6 +110,8 @@ On the authoritative worker, an entity that now belongs to another worker follow
 
 Destroy or despawn the carrier through Nebula's entity lifecycle. Avoid destroying only the `Container` component while contents still depend on it.
 
+Despawning a carrier on its own sets its riders down in the surrounding container, as described above. When Nebula empties the container the carrier is in, for example when a [runtime chunk retires](/docs/guides/runtime-containers#retire-a-container), the riders leave with the carrier instead. Nebula despawns them before the carrier, at every depth, and saves each persistent rider aboard its carrier, so the rider is restored with the carrier.
+
 ## Understand network references
 
 Nebula identifies containers in messages with `ContainerRef`:

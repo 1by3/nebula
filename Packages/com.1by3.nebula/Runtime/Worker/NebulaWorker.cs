@@ -502,8 +502,9 @@ namespace Nebula
         /// <summary>
         /// Retire a runtime container this worker owns: its lease row is deleted, so every process forgets the box.
         /// Persistent entities still inside are checkpointed and despawned (they come back when the box is asked
-        /// for again); anything else inside is despawned for good. Returns false when the container is not here or
-        /// belongs to another worker.
+        /// for again); anything else inside is despawned for good. That includes everything riding in a vehicle in
+        /// the box (see <see cref="EmptyContainer"/>). Returns false when the container is not here or belongs to
+        /// another worker.
         /// </summary>
         public bool ReleaseRuntimeContainer(ulong id)
         {
@@ -521,15 +522,23 @@ namespace Nebula
         /// else. The contents half of <see cref="ReleaseRuntimeContainer"/>, split out because the scope lifecycle
         /// empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every
         /// part has reported its checkpoint done (<c>docs/scope-lifecycle.md</c>).
+        /// <para>
+        /// A vehicle's cargo leaves with the vehicle. Entities riding in a <see cref="DynamicContainer"/> of an
+        /// entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is
+        /// checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier.
+        /// </para>
         /// </summary>
         public void EmptyContainer(Container container)
         {
             if (container == null) return;
             _contentsScratch.Clear();
-            _contentsScratch.AddRange(container.Entities);
-            foreach (var e in _contentsScratch)
+            container.CollectContents(_contentsScratch, throughAuthoritativeCarriersOnly: true);
+            // Backwards: the walk lists every carrier before what rides in it, so riders go first and each is saved
+            // aboard its carrier rather than set down in the box by the carrier's own despawn.
+            for (int i = _contentsScratch.Count - 1; i >= 0; i--)
             {
-                if (e == null || !e.HasAuthority) continue;
+                var e = _contentsScratch[i];
+                if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
                 Despawn(e, keepPersisted: e.Persistent != null);
             }
             _contentsScratch.Clear();
@@ -1170,8 +1179,13 @@ namespace Nebula
             if (identity.OwnerClientId != 0 && _players.TryGetValue(identity.OwnerClientId, out var p) && p == identity) _players.Remove(identity.OwnerClientId);
             identity.InvokeDespawn();
             EntityDespawned?.Invoke(identity);
+            // Out of its box's list now, not whenever the object is destroyed: a carrier despawned in the same pass
+            // would otherwise set a dead rider down in the box around it, and a scope's box that still lists a
+            // departed entity cannot be forgotten (ContainerRegistry.UnregisterRuntime).
+            identity.SetContainer(null, reparent: false);
             if (identity.IsSceneEntity) identity.Unbind(); // the object belongs to its scene
-            else Destroy(identity.gameObject);
+            else if (Application.isPlaying) Destroy(identity.gameObject);
+            else DestroyImmediate(identity.gameObject); // a worker driven from edit mode (tools, tests)
         }
 
         public NetworkIdentity Find(ulong netId) => _entities.TryGetValue(netId, out var e) ? e : null;

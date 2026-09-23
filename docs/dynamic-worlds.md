@@ -173,3 +173,61 @@ stay as they were in the public scope and are derived from the key and the coord
 persisted was rewritten and nobody's coordinate range narrowed.
 
 Decisions, the id-layout choice and the seams left for per-scope origin frames: `docs/scoped-chunk-grids.md`.
+
+## Retiring a chunk under a carrier (2026-09-23)
+
+A sample with fast ships (twenty player-piloted ships at 500 m/s over a planar 64 m grid) lost every ship. Lease
+creation fell behind the ships, so each ship ended up kilometres past the last leased chunk. Container resolution
+keeps an entity in the nearest box when no box holds it, so every ship stayed filed under a chunk it had left long
+ago. The allocator's ring follows where the pilots actually are, so that chunk was no longer wanted, and after
+`RetireAfterSeconds` the allocator checked it for occupancy. It looked only at the chunk's own `Entities`. The pilots
+are one level down, in the ship's dynamic container, so the chunk read as empty. `ReleaseRuntimeContainer`
+checkpointed and despawned the ships, and the pilots were left seated in carriers that no longer existed.
+
+**D1 Occupancy counts riders at every depth.** `RuntimeGridAllocator` treats a chunk as occupied while a client owns
+an entity anywhere inside it: in the chunk itself, in a vehicle's box in the chunk, or in a shuttle in that vehicle's
+hangar. `Container.CollectContents` is the one walk (breadth first, bounded like every other carrier walk), and every
+place that asks "what would emptying this box take" uses it: the allocator, `NebulaWorker.EmptyContainer`,
+`WorkerScopeLifecycle.IsBusy` and `NebulaPersistence.CheckpointContainer`.
+
+**D2 Where an entity stands decides, not which chunk it is filed under.** D1 fixes the crewed case, but an uncrewed
+vehicle in the same place (a cargo ship flying escort) would still be unloaded from the middle of the loaded world.
+Three designs were considered:
+
+- *Re-resolve stale entities before emptying.* `EmptyContainer` or `ReleaseRuntimeContainer` would first move each
+  authoritative entity standing outside the box into the box that holds it. Rejected: the entity is stale precisely
+  because no box holds it yet, so the nearest-box fallback only files it under another stale chunk, possibly
+  another worker's, with a handover in the middle of a release. It would also make a primitive second-guess the
+  policy that called it.
+- *Keep every chunk holding an entity outside its box.* Rejected: an NPC drifting into space nobody wants would pin
+  its last chunk forever.
+- *Chosen: keep a chunk while an authoritative entity filed under it stands in live space.* Live space is a cell this
+  allocator wants, or one whose lease row somebody touched within `RetireAfterSeconds` (another worker wants it). The
+  entity moves into that cell as soon as it is registered, and the old chunk then drains by the ordinary rule.
+  Content standing in space nobody wants is unloaded with its chunk, as before. The hold cannot become mutual: the
+  chunk being judged has an idle row by definition, so an entity standing in it never keeps another stale chunk.
+  An entity inside its own chunk's box stands in that chunk, which nobody wants, so this rule never keeps it.
+
+`ReleaseRuntimeContainer` keeps its contract (it empties what is in the box); the allocator decides when to call it.
+
+**D3 Emptying a box takes a vehicle's cargo with the vehicle.** `EmptyContainer` despawns riders before their
+carriers, deepest first. A persistent rider is checkpointed while still aboard, so its record carries the carrier's
+key and `NebulaPersistence` restores it with the carrier (`LoadCarried`); a client-owned rider's record is left for
+the game, like any client-owned record. Before, the snapshot held only the box's own entities, and despawning a
+vehicle set its riders down in the box after the snapshot was taken, so they outlived the box. A despawned entity
+now also leaves its container's `Entities` list when it is despawned rather than when its object is destroyed.
+Otherwise a carrier despawned in the same pass would set a dead rider down, and a scoped box that still listed a
+departed entity could never be unregistered.
+
+Not changed:
+
+- Lease creation falling behind fast movers (NEB-251). This fix keeps the world consistent while leases lag, and
+  does not make them faster.
+- Telemetry counts a rider in its carrier's box, which is right for cost (the box follows its carrier's worker).
+  `ScopeLifecycle.Occupancy` sums a scope's parts only, so a custom retire policy that reads `Players` sees 0 for a
+  scope whose players are all aboard vehicles. The default policy is not affected, because the vehicle itself is an
+  authoritative entity in the part and the worker keeps a busy part's row fresh (D1).
+- A client-owned rider in a box the scope lifecycle retires is despawned with its carrier, as a client's pawn
+  standing directly in the box is. The allocator never retires such a chunk (D1).
+
+Conformance scenario 18, `ConformanceCrewedCarrierRetireTests`.

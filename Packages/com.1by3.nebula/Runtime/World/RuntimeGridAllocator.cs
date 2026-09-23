@@ -12,6 +12,14 @@ namespace Nebula.World
     /// procedural-world games otherwise implement themselves; a game adopting <see cref="RuntimeGrid"/> can use it
     /// instead of writing the same logic again.
     /// <para>
+    /// A cell counts as occupied while a client owns an entity anywhere inside it, including one riding in a
+    /// vehicle's <see cref="DynamicContainer"/> (a pilot in a ship parked in the cell, or a passenger in a shuttle
+    /// inside that ship). A cell is also kept while an authoritative entity still assigned to it stands in another
+    /// cell that this allocator wants, or whose lease row any worker touched within
+    /// <see cref="RetireAfterSeconds"/>. This happens when a fast vehicle leaves every leased cell behind: the
+    /// vehicle stays in the last cell it left until a cell is registered where it is.
+    /// </para>
+    /// <para>
     /// With <c>NebulaConfig.ChunkedWorld</c> enabled, <see cref="NebulaChunkedWorld"/> constructs and updates
     /// the allocator. For a custom allocation workflow, construct this class and call <see cref="Tick"/>
     /// from your worker's update loop.
@@ -27,6 +35,7 @@ namespace Nebula.World
         private readonly Dictionary<ulong, float> lastWanted = new Dictionary<ulong, float>();
         private readonly List<ulong> scratch = new List<ulong>();
         private readonly List<Vector3Int> ring = new List<Vector3Int>();
+        private readonly List<NetworkIdentity> contents = new List<NetworkIdentity>();
         /// <summary>The scope blob each chunk's lease row is born with; null (and never built) for the public world.</summary>
         private readonly Dictionary<ulong, InstanceContainerInfo> instances;
         private float next;
@@ -37,7 +46,10 @@ namespace Nebula.World
 
         /// <summary>Ring radius (Chebyshev distance in cells) requested around every anchor and owned entity.</summary>
         public int Ring { get; set; } = 1;
-        /// <summary>How long an owned, unwanted, unoccupied cell sits idle before it is released.</summary>
+        /// <summary>
+        /// How long an owned, unwanted, unoccupied cell sits idle before it is released. Also how recently another
+        /// cell's lease row must have been touched for an entity standing in that cell to keep its own cell leased.
+        /// </summary>
         public float RetireAfterSeconds { get; set; } = 60f;
         /// <summary>How often <see cref="Tick"/> actually recomputes interest; calls between are no-ops.</summary>
         public float TickIntervalSeconds { get; set; } = 0.25f;
@@ -144,15 +156,54 @@ namespace Nebula.World
                 if (!c.IsOwnedBy(worker.WorkerId) || wanted.Contains(c.RuntimeId)) continue;
                 if (!lastWanted.TryGetValue(c.RuntimeId, out var last)) { lastWanted[c.RuntimeId] = unscaledTime; continue; }
                 if (unscaledTime - last < RetireAfterSeconds || worker.RuntimeContainerIdleSeconds(c.RuntimeId) < RetireAfterSeconds) continue;
-                bool occupied = false;
-                foreach (var entity in c.Entities) if (entity != null && entity.OwnerClientId != 0) { occupied = true; break; }
-                if (!occupied) scratch.Add(c.RuntimeId);
+                if (!MustKeep(c)) scratch.Add(c.RuntimeId);
             }
             foreach (var id in scratch) if (worker.ReleaseRuntimeContainer(id)) { lastWanted.Remove(id); instances?.Remove(id); }
 
             scratch.Clear();
             foreach (var entry in lastWanted) if (!wanted.Contains(entry.Key) && ContainerRegistry.GetRuntime(entry.Key) == null) scratch.Add(entry.Key);
             foreach (var id in scratch) { lastWanted.Remove(id); instances?.Remove(id); }
+        }
+
+        /// <summary>
+        /// Whether releasing <paramref name="chunk"/>, an owned chunk nobody has wanted for long enough, would still
+        /// unload something that must stay (<c>docs/dynamic-worlds.md</c>, "Retiring a chunk under a carrier"):
+        /// <list type="bullet">
+        /// <item>A client owns something in it at any carrier depth: a player standing in it, or the pilot of a ship
+        /// parked in it, or a passenger of a shuttle in that ship's hangar. A rider is not in the chunk's own
+        /// <see cref="Container.Entities"/>, so looking only there retired the ship under its crew.</item>
+        /// <item>An authoritative entity filed under it stands in live space somewhere else. Container resolution
+        /// keeps an entity in the nearest box when no box holds it yet, so a ship that outran the leased chunks is
+        /// still filed under a chunk it left kilometres ago. Where it actually is decides: a cell this allocator wants,
+        /// or one whose lease row somebody touched within <see cref="RetireAfterSeconds"/>, is being loaded, and the
+        /// entity moves into it as soon as it is registered; releasing the old chunk first would unload it from the
+        /// middle of the loaded world. Content standing in space nobody wants is unloaded with the chunk as usual.</item>
+        /// </list>
+        /// </summary>
+        private bool MustKeep(Container chunk)
+        {
+            contents.Clear();
+            chunk.CollectContents(contents, throughAuthoritativeCarriersOnly: false);
+            bool keep = false;
+            for (int i = 0; i < contents.Count && !keep; i++)
+            {
+                var e = contents[i];
+                if (e == null) continue;
+                if (e.OwnerClientId != 0) keep = true;
+                else if (e.HasAuthority && e.Container == chunk && StandsInLiveSpaceOutside(e, chunk)) keep = true;
+            }
+            contents.Clear();
+            return keep;
+        }
+
+        private bool StandsInLiveSpaceOutside(NetworkIdentity entity, Container chunk)
+        {
+            if (!grid.TryCoordOf(chunk.RuntimeId, out var own)) return false;
+            var at = grid.Normalize(grid.CoordOf(entity));
+            // Inside its own box it stands in this chunk, which nobody wants: that is ordinary unloading.
+            if (at == grid.Normalize(own) || !RuntimeGrid.IsValid(at)) return false;
+            ulong id = grid.IdOf(at);
+            return wanted.Contains(id) || worker.RuntimeContainerIdleSeconds(id) < RetireAfterSeconds;
         }
 
         private void AddRing(Vector3Int center)

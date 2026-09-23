@@ -86,6 +86,8 @@ worker.ReleaseRuntimeContainer(id);
 
 Persistent entities still inside are checkpointed and despawned; anything else inside is despawned for good. The lease row is deleted and every process forgets the box. When the container is asked for again, Nebula's persistence restores the entities that were saved in it: a persisted entity's record names its container by id (`rt_<id>`), so the props of a chunk come back with the chunk.
 
+Entities riding in a vehicle in the container, at any depth, leave with the vehicle. Nebula despawns them before the vehicle and saves each persistent one aboard it, so it comes back with the vehicle. See [Dynamic containers](/docs/guides/dynamic-containers#handle-container-removal).
+
 Only the owner can release. Before retiring, read `worker.RuntimeContainerIdleSeconds(id)`: every worker that still wants the box re-stamps its lease row while an entity of its is near it, so the row's age is the mesh-wide idle time. A clock of the owner's own would retire a chunk the neighbor's pawn is about to enter, and its props would blink out and back.
 
 Entities inside a container that goes away are detached from it, never destroyed with it: ghosts on a worker and every remote entity on a client stay alive and pick up the next container from the following state update.
