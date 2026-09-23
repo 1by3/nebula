@@ -14,7 +14,7 @@ namespace Nebula
     /// <list type="bullet">
     /// <item>for every container with anything in it on this worker, how many players, bots, server-driven and other
     /// authoritative entities it holds there, and how many ghosts;</item>
-    /// <item>the box, pose and velocity of every carried container (<see cref="DynamicContainer"/>) whose carrier this
+    /// <item>the box, pose and velocity of every carried container (<see cref="NetworkIdentity.Carried"/>) whose carrier this
     /// worker simulates, with the container the carrier sits in;</item>
     /// <item>the cells it has loaded, in a partitioned world;</item>
     /// <item>and, only while somebody has the map open, one point per authoritative entity.</item>

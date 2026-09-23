@@ -608,7 +608,7 @@ namespace Nebula
         /// empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every
         /// part has reported its checkpoint done (<c>docs/scope-lifecycle.md</c>).
         /// <para>
-        /// A vehicle's cargo leaves with the vehicle. Entities riding in a <see cref="DynamicContainer"/> of an
+        /// A vehicle's cargo leaves with the vehicle. Entities riding in the carried container (<see cref="NetworkIdentity.Carried"/>) of an
         /// entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is
         /// checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier.
         /// Riders another worker owns (an interior pinned to it, a rider whose handover has not happened yet) are
@@ -1285,7 +1285,7 @@ namespace Nebula
         /// <paramref name="keepPersisted"/> true when the world should keep it (a player disconnecting, a cell
         /// unloading): its record is checkpointed one last time and left in place.
         /// <para>
-        /// Whatever still rides in the entity's <see cref="DynamicContainer"/> is put down in the container the entity
+        /// Whatever still rides in the entity's carried container (<see cref="NetworkIdentity.Carried"/>) is put down in the container the entity
         /// was in, here and on every worker that holds a ghost of it. To take the cargo along, despawn the riders
         /// first, or empty the box around the vehicle with <see cref="EmptyContainer"/>.
         /// </para>

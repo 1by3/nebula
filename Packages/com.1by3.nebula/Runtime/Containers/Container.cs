@@ -7,8 +7,15 @@ namespace Nebula
     /// <summary>
     /// Defines a box-shaped authority area with its own local coordinate space. Nebula parents contained entities
     /// under its transform and replicates their local positions. The orchestrator assigns a static container from a
-    /// scene or world manifest to a worker. A dynamic container created by <see cref="DynamicContainer"/> moves with
-    /// its carrier and normally follows that entity's authoritative worker.
+    /// scene or world manifest to a worker.
+    /// <para>
+    /// A container on the root of an entity (next to its <see cref="NetworkIdentity"/>) is carried by that entity:
+    /// a ship's interior, a lift, a train car (<see cref="FrameMode"/> is <see cref="ContainerFrameMode.Entity"/>).
+    /// It registers when the entity spawns on a process and unregisters when it despawns there, moves with the
+    /// entity's root transform, and normally follows the entity's authoritative worker. Reach it through
+    /// <see cref="NetworkIdentity.Carried"/>. The entity needs a <see cref="NetworkTransform"/> on its root; a
+    /// container on a child object of an entity is not supported.
+    /// </para>
     /// <para>
     /// Nebula uses <see cref="NebulaConfig.GhostBandMargin"/> to send nearby entities to a neighboring worker
     /// before they cross the boundary. It uses <see cref="NebulaConfig.HandoverHysteresis"/> to prevent an entity
@@ -18,7 +25,7 @@ namespace Nebula
     [DisallowMultipleComponent]
     public sealed class Container : MonoBehaviour
     {
-        [Tooltip("Stable id used by the control plane. Must be unique in the scene. On a DynamicContainer prefab it is a label: the runtime id is '<label>#<carrier net id>'.")]
+        [Tooltip("Stable id used by the control plane. Must be unique in the scene. On an entity's root it is a label: the runtime id is '<label>#<carrier net id>'.")]
         public string ContainerId = "container";
         [Tooltip("Box size in local space, centred on Center.")]
         public Vector3 Size = new Vector3(20f, 10f, 20f);
@@ -54,20 +61,72 @@ namespace Nebula
         public ContainerHint Hint = ContainerHint.Default;
 
         /// <summary>
-        /// Carried by an entity (<see cref="DynamicContainer"/>): created and destroyed with it, moves with it. Shorthand
-        /// for <see cref="FrameMode"/> == <see cref="ContainerFrameMode.Entity"/>.
+        /// Registered as a carried container on this process: its entity has spawned here, and the box is named on the
+        /// wire by the entity's net id. A container on an entity's root that has not spawned (a prefab asset, a copy not
+        /// yet spawned) is <see cref="FrameMode"/> <see cref="ContainerFrameMode.Entity"/> but not yet dynamic.
         /// </summary>
         public bool IsDynamic { get; internal set; }
 
-        /// <summary>Where the box is: fixed relative to its parent, or driven by a carrier entity (<c>docs/container-tree.md</c> D1).</summary>
-        public ContainerFrameMode FrameMode => IsDynamic ? ContainerFrameMode.Entity : ContainerFrameMode.Fixed;
+        /// <summary>
+        /// Where the box is (<c>docs/container-tree.md</c> D1): <see cref="ContainerFrameMode.Entity"/> when the container
+        /// sits on an entity's root, next to its <see cref="NetworkIdentity"/>, which then carries it; otherwise
+        /// <see cref="ContainerFrameMode.Fixed"/>. It is read from the object, never authored: an entity's own box
+        /// cannot be fixed.
+        /// </summary>
+        public ContainerFrameMode FrameMode => IsDynamic || IsOnEntity ? ContainerFrameMode.Entity : ContainerFrameMode.Fixed;
 
         /// <summary>Where the container comes from: baked, registered at runtime, or part of a prefab.</summary>
-        public ContainerSource Source => IsDynamic ? ContainerSource.Prefab : IsRuntime ? ContainerSource.Runtime : ContainerSource.Baked;
+        public ContainerSource Source => FrameMode == ContainerFrameMode.Entity ? ContainerSource.Prefab : IsRuntime ? ContainerSource.Runtime : ContainerSource.Baked;
 
         /// <summary><see cref="Authority"/> with <see cref="ContainerAuthority.Auto"/> resolved: leased for a fixed frame, inherited for an entity frame.</summary>
         public ContainerAuthority ResolvedAuthority =>
-            Authority != ContainerAuthority.Auto ? Authority : IsDynamic ? ContainerAuthority.Inherited : ContainerAuthority.Leased;
+            Authority != ContainerAuthority.Auto ? Authority : FrameMode == ContainerFrameMode.Entity ? ContainerAuthority.Inherited : ContainerAuthority.Leased;
+
+        /// <summary>
+        /// Whether a <see cref="NetworkIdentity"/> sits on this object. Looked up once while playing (components do not
+        /// come and go on a spawned entity), every time in the Editor, where they do.
+        /// </summary>
+        internal bool IsOnEntity
+        {
+            get
+            {
+                if (_entityKnown) return _onEntity;
+                bool on = GetComponent<NetworkIdentity>() != null;
+                if (Application.isPlaying) { _onEntity = on; _entityKnown = true; }
+                return on;
+            }
+        }
+
+        /// <summary>Whether a container on <paramref name="go"/> would be carried by an entity: the same rule as <see cref="FrameMode"/>, for code that has only the object (baking, export).</summary>
+        public static bool IsEntityObject(GameObject go) => go != null && go.GetComponent<NetworkIdentity>() != null;
+
+        [NonSerialized] private bool _entityKnown, _onEntity;
+
+        // ---------------------------------------------------------------------------------- carriers' bodies
+
+        private static readonly Dictionary<Rigidbody, Container> ByBody = new Dictionary<Rigidbody, Container>();
+
+        internal static void ResetForNewSession() => ByBody.Clear();
+
+        /// <summary>
+        /// The container carried by the entity that owns <paramref name="body"/>, or null. Game movement code that
+        /// treats colliders without a Rigidbody as the level can use this to walk on a vehicle's floor as well.
+        /// </summary>
+        public static Container OfRigidbody(Rigidbody body) => body != null && ByBody.TryGetValue(body, out var c) ? c : null;
+
+        /// <summary>Whether <paramref name="collider"/> belongs to the carrier of a registered container (the hull of a vehicle, the floor of a lift).</summary>
+        public static bool IsCarrierGeometry(Collider collider) =>
+            collider != null && collider.attachedRigidbody != null && ByBody.ContainsKey(collider.attachedRigidbody);
+
+        internal static void RegisterBody(Rigidbody body, Container carried)
+        {
+            if (body != null && carried != null) ByBody[body] = carried;
+        }
+
+        internal static void UnregisterBody(Rigidbody body)
+        {
+            if (!ReferenceEquals(body, null)) ByBody.Remove(body);
+        }
 
         /// <summary>
         /// Whether this container is simulated under a lease of its own right now. A fixed container that resolves to
@@ -626,8 +685,62 @@ namespace Nebula
         private void OnDrawGizmos()
         {
             Gizmos.matrix = transform.localToWorldMatrix;
-            Gizmos.color = GetComponent<DynamicContainer>() != null ? new Color(1f, 0.7f, 0.2f, 0.35f) : IsRuntime ? new Color(0.5f, 1f, 0.4f, 0.35f) : new Color(0.2f, 0.8f, 1f, 0.35f);
+            Gizmos.color = FrameMode == ContainerFrameMode.Entity ? new Color(1f, 0.7f, 0.2f, 0.35f) : IsRuntime ? new Color(0.5f, 1f, 0.4f, 0.35f) : new Color(0.2f, 0.8f, 1f, 0.35f);
             Gizmos.DrawWireCube(Center, Size);
         }
+
+        /// <summary>
+        /// Where a container sits decides what it is (<see cref="FrameMode"/>); say so when the placement cannot work. A
+        /// box on a child object of an entity is baked as a fixed container, so it would never move with the entity; a
+        /// box on an entity's root needs a root <see cref="NetworkTransform"/>, because every process positions the
+        /// contents from the carrier's replicated pose. The Nebula validator reports the same.
+        /// </summary>
+        /// <returns>Null when the placement works; otherwise the problem, with <paramref name="error"/> set when the container cannot work at all.</returns>
+        public static string PlacementProblem(Container c, out bool error)
+        {
+            error = false;
+            if (c == null) return null;
+            if (c.GetComponent<NetworkIdentity>() != null)
+            {
+                if (c.GetComponent<NetworkTransform>() != null) return null;
+                error = true;
+                return $"Container '{c.ContainerId}' on entity '{c.name}' needs a NetworkTransform on the same object: every process positions what the entity carries from its replicated pose";
+            }
+            var entity = c.transform.parent != null ? c.transform.parent.GetComponentInParent<NetworkIdentity>(true) : null;
+            if (entity == null) return null;
+            return $"Container '{c.ContainerId}' sits on '{c.name}', a child of entity '{entity.name}': it is baked as a fixed container and will not move with the entity. Put it on the entity's root to have the entity carry it";
+        }
+
+#if UNITY_EDITOR
+        [NonSerialized] private string _reportedProblem;
+
+        private void OnValidate()
+        {
+            _entityKnown = false;
+            _cached = false;
+            // After the edit that triggered this is complete: adding a Container and then a NetworkTransform to an
+            // entity (by hand or from a setup script) is one change, not an error followed by a fix.
+            UnityEditor.EditorApplication.delayCall -= ReportPlacement;
+            UnityEditor.EditorApplication.delayCall += ReportPlacement;
+        }
+
+        private void ReportPlacement()
+        {
+            if (this == null || Application.isPlaying || !IsAuthored()) return;
+            string problem = PlacementProblem(this, out bool error);
+            if (problem == _reportedProblem) return; // once per change, not on every edit
+            _reportedProblem = problem;
+            if (problem == null) return;
+            if (error) Debug.LogError(problem, this);
+            else Debug.LogWarning(problem, this);
+        }
+
+        // Something a person edits: a prefab asset, an object in the prefab editor, or one in a saved scene. Objects that
+        // code builds in an unsaved scene (tests, tools) are checked by the validator when it runs, not on every change.
+        private bool IsAuthored() =>
+            UnityEditor.EditorUtility.IsPersistent(this)
+            || UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(gameObject) != null
+            || (gameObject.scene.IsValid() && !string.IsNullOrEmpty(gameObject.scene.path));
+#endif
     }
 }

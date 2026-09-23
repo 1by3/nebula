@@ -69,6 +69,8 @@ namespace Nebula.Editor
                     {
                         foreach (var c in go.GetComponentsInChildren<Container>(true))
                         {
+                            // A container on an entity's root is carried by the entity, not baked into the world.
+                            if (Container.IsEntityObject(c.gameObject)) continue;
                             if (!ids.Add(c.ContainerId))
                             {
                                 report.Warnings.Add($"cell {cell.Coord}: duplicate container id '{c.ContainerId}' (skipped)");

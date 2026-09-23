@@ -16,11 +16,16 @@ Add these components to the root of a spawnable prefab:
 | `NetworkIdentity` | Makes the carrier a networked entity that workers can spawn and transfer. |
 | `NetworkTransform` | Replicates the carrier's root pose to clients and ghost workers. |
 | `Container` | Defines the box in the carrier's local space with `Center` and `Size`. |
-| `DynamicContainer` | Registers the box as a container carried by the entity. |
 
-Keep all four components on the root. Nebula reconstructs positions from the carrier's root pose, so a container frame on a child transform is not supported.
+A `Container` next to a `NetworkIdentity` is carried by that entity: Nebula registers the box when the entity spawns on a process and removes it when the entity despawns there. You don't set anything to make this happen. `NetworkIdentity.Carried` returns the box.
 
-Keep `NetworkTransform` enabled, use `Authority = Server`, and enable every position and rotation axis. Enable scale synchronization if the carrier changes scale. Adding `DynamicContainer` adds the required transform component to a new object, but existing assets need to be checked. Run **Nebula > Validate Project** before building. Add `NetworkRigidbody` too when PhysX simulates the carrier; scripted movement does not require it.
+Keep all three components on the root. Nebula reconstructs positions from the carrier's root pose, so a `Container` on a child object of an entity does not move with the entity: Nebula treats it as a fixed container, and the Editor warns about it.
+
+Keep `NetworkTransform` enabled, use `Authority = Server`, and enable every position and rotation axis. Enable scale synchronization if the carrier changes scale. The Editor reports an error for a `Container` on an entity's root without a `NetworkTransform`. Run **Nebula > Validate Project** before building. Add `NetworkRigidbody` too when PhysX simulates the carrier; scripted movement does not require it.
+
+<Callout type="warn" title="Upgrading from DynamicContainer">
+Earlier versions needed a `DynamicContainer` component on the carrier. It is now obsolete and does nothing. Choose **Nebula > Migrate > Remove DynamicContainer** to remove it from every prefab and open scene. If one of your scripts has `[RequireComponent(typeof(DynamicContainer))]`, remove that attribute first; the migration names any object it could not change. Replace `DynamicContainer.IsCarrierGeometry` and `DynamicContainer.OfRigidbody` with `Container.IsCarrierGeometry` and `Container.OfRigidbody`, and `DynamicContainer.Contents` with `Container.Entities`. Removing the component changes the numbering of the carrier's network behaviors, so this release uses wire protocol 19 and does not admit clients built with an earlier version.
+</Callout>
 
 Set `ContainerId` to a readable label. At runtime, Nebula appends the carrier's network ID and produces an ID such as `interior#281474976710657`.
 
@@ -108,7 +113,7 @@ Prediction also records positions relative to the container. The client and work
 
 If your input includes a direction relative to the carrier, define how it changes when the player enters or leaves the dynamic container. Input already in transit still uses the previous frame of reference. One approach is to add a small frame version to the input and convert values with the previous carrier rotation until input with the new version arrives.
 
-For custom movement based on physics casts, use `DynamicContainer.IsCarrierGeometry(collider)` to identify colliders that belong to the carrier. This can help you treat a moving floor as the entity's current platform.
+For custom movement based on physics casts, use `Container.IsCarrierGeometry(collider)` to identify colliders that belong to the carrier, and `Container.OfRigidbody(body)` to find the box a carrier's `Rigidbody` carries. This can help you treat a moving floor as the entity's current platform.
 
 ## Handle container removal
 

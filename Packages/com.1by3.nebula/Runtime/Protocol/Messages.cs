@@ -154,13 +154,15 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 18;
+        public const ushort ProtocolVersion = 19;
         /// <summary>
         /// The oldest client protocol the gateway accepts. Both this limit and <see cref="ProtocolVersion"/>
-        /// are 18, so only protocol-18 clients can join. Gateway-to-worker and worker-to-worker connections
-        /// require <see cref="ProtocolVersion"/> exactly.
+        /// are 19, so only protocol-19 clients can join: protocol 19 removed a behaviour from every carrier prefab
+        /// (the obsolete <c>DynamicContainer</c>), which renumbers the behaviour indices that RPCs, variables and sync
+        /// state are addressed by, and a protocol-18 client would address the wrong behaviour without noticing.
+        /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 18;
+        public const ushort MinProtocolVersion = 19;
         public PeerRole Role;
         public string Id;
         public uint Index;

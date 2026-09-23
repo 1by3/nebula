@@ -13,9 +13,9 @@ Add [`NetworkTransform`](/docs/reference/core/network-transform) to replicate a 
 | Scripted movement | Identity and `NetworkTransform` |
 | Worker-simulated physics prop | `NetworkIdentity`, `Rigidbody`, `NetworkRigidbody`, and `NetworkTransform` |
 | Predicted character | `NetworkIdentity`, prediction behavior, and `NetworkTransform` |
-| Moving container | `NetworkIdentity`, `DynamicContainer`, and `NetworkTransform` |
+| Moving container | `NetworkIdentity`, `Container`, and `NetworkTransform` on the root |
 
-Add `NetworkTransform` to each root or child that needs ongoing movement replication. A child component can animate a turret or other articulated part independently. `NetworkRigidbody`, `PredictedBehaviour`, and `DynamicContainer` require a visible `NetworkTransform` component.
+Add `NetworkTransform` to each root or child that needs ongoing movement replication. A child component can animate a turret or other articulated part independently. `NetworkRigidbody`, `PredictedBehaviour`, and a `Container` on an entity's root require a visible `NetworkTransform` component.
 
 An identity without `NetworkTransform` sends its initial placement and reliable container changes, but no ongoing movement. Spawn and worker-handover snapshots remain complete even when ongoing replication omits position, rotation, or scale. Turning off an axis reduces recurring bandwidth; it does not remove that value from simulation handover state.
 

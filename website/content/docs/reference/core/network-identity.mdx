@@ -208,7 +208,7 @@ How the current container is named on the wire (see `Nebula.ContainerRef`).
 public Container Carried { get; }
 ```
 
-The dynamic container this entity carries (a [`DynamicContainer`](/docs/reference/containers/dynamic-container) on its root), or null.
+The container this entity carries: the `Nebula.Container` on its root, which registers when the entity spawns on this process and unregisters when it despawns (a ship's interior, a lift). Null when the root has none. Not to be confused with [`Container`](/docs/reference/containers/container), the container this entity is in.
 
 ### IsSpawned [#isspawned]
 

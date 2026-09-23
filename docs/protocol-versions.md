@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`. Both values are currently 18; protocol 17 is not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`. Both values are currently 19; protocol 18 is not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -34,11 +34,19 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.26 – alpha.28 | 16 | 15 was never released under a tag |
 | v0.1.0-alpha.29 | 17 | interest management |
 | v0.1.0-alpha.30 | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
+| unreleased | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
 with. Nothing before 18 can be admitted by a gateway of this build, and the table records that rather than
 implying compatibility that never existed.
+
+19 is the first bump under the policy, and it is not additive either: removing the `DynamicContainer` behaviour
+from every carrier prefab renumbered the carrier's other behaviours, and RPCs, variables and sync state are
+addressed by that index. A protocol-18 client would talk to the wrong behaviour without noticing, so
+`MinProtocolVersion` moved to 19 with `ProtocolVersion` (step 2 below, the refusal case). The protocol-18 recording
+is kept, and `ConformanceProtocolCompatibilityTests.ARecordedProtocol18ClientIsRefusedWithTheGatewaysRange` replays
+it to prove the refusal.
 
 ## Bumping the protocol
 

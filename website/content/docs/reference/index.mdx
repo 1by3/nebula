@@ -64,7 +64,7 @@ Define container volumes and look up their current worker assignments.
 | [ContainerRegistry](/docs/reference/containers/container-registry) | Static class. The container graph of the loaded level: every static Container, indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities ... |
 | [ContainerSource](/docs/reference/containers/container-source) | Enum. Where a container comes from (docs/container-tree.md D1). |
 | [Double3](/docs/reference/containers/double3) | Struct. A 64-bit-per-axis position. |
-| [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Makes the entity this sits on carry a Container of its own: a ship with an interior, a train car, a lift, a space station that drifts. |
+| [DynamicContainer](/docs/reference/containers/dynamic-container) | Class. Obsolete, and does nothing. |
 | [EntityLocation](/docs/reference/containers/entity-location) | Struct. Where an entity durably is, independent of which worker holds it: an opaque scope key, a container id and a pose in that container's local space. |
 | [FrameCrossing](/docs/reference/containers/frame-crossing) | Enum. What a crossing policy says about one entity crossing a frame boundary (docs/container-tree.md D16). |
 | [FrameInterestMode](/docs/reference/containers/frame-interest-mode) | Enum. How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18). |
@@ -366,6 +366,7 @@ Build players, start a local mesh, validate a project, and author partitioned wo
 | [ContainerEditor](/docs/reference/editor/container-editor) | Class. Inspector for Container: the default fields plus a button that refits the box to the object's bounds. |
 | [NebulaBuild](/docs/reference/editor/nebula-build) | Static class. Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it. |
 | [NebulaMesh](/docs/reference/editor/nebula-mesh) | Static class. Developer loop: launch a local mesh from the last build (the standalone orchestrator, which hosts the control plane and starts the gateway and N workers), then press Play in the Editor as a client. |
+| [NebulaMigrate](/docs/reference/editor/nebula-migrate) | Static class. One-off upgrades of a project's assets to the current package. |
 | [NebulaSetup](/docs/reference/editor/nebula-setup) | Static class. Adds the components and settings required to use Nebula in the active scene. |
 | [NebulaValidator](/docs/reference/editor/nebula-validator) | Static class. Nebula \> Validate Project: checks the things that otherwise only show up as a broken build or a silent mesh. |
 | [SceneEntityIds](/docs/reference/editor/scene-entity-ids) | Static class. Gives every NetworkIdentity authored into a scene its NetworkIdentity.SceneId when the scene is saved: a random non-zero id, unique within the scene, that then stays with the object for good. |

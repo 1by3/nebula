@@ -4,8 +4,8 @@ namespace Nebula
 {
     /// <summary>
     /// How a container is named on the wire. A static container (authored into the scene or baked into the world
-    /// manifest) is its dense registry <see cref="Index"/>, identical in every process. A dynamic container (one a
-    /// <see cref="DynamicContainer"/> entity carries: a ship, a train, a moving station) has no stable index, since it
+    /// manifest) is its dense registry <see cref="Index"/>, identical in every process. A dynamic container (one an
+    /// entity carries on its root: a ship, a train, a moving station) has no stable index, since it
     /// is created and destroyed at runtime by whichever worker spawns its carrier; it is named by the carrier's
     /// <see cref="NetId"/>, which is already mesh-unique and follows the entity through every handover. A runtime
     /// container (one the game registered while the mesh runs, see <see cref="ContainerRegistry.RegisterRuntime"/>)

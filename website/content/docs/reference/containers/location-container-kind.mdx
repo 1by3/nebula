@@ -18,4 +18,4 @@ Which kind of container an [`EntityLocation.ContainerId`](/docs/reference/contai
 | <span id="none"></span>`None` |  | The id is empty: the entity is in no container and its pose is in world space. |
 | <span id="static"></span>`Static` |  | A container authored into a scene or baked into the world manifest, named by its authored [`Container.ContainerId`](/docs/reference/containers/container#containerid). |
 | <span id="runtime"></span>`Runtime` |  | A container the game registered while the mesh runs ([`ContainerRegistry.RegisterRuntime`](/docs/reference/containers/container-registry#registerruntime)), named `rt_<id>`. |
-| <span id="dynamic"></span>`Dynamic` |  | A container carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)), named `label#netId`. |
+| <span id="dynamic"></span>`Dynamic` |  | A container carried by an entity (on the entity's root, [`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)), named `label#netId`. |

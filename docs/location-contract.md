@@ -60,7 +60,7 @@ can still tell what kind of place a triple names.
 |---|---|---|---|---|
 | **Static** (authored in a scene or baked in the world manifest) | the authored id (`"plaza"`, `"cell_3_7"`) | `""` | in the container's transform frame | as stable as the authored id (the reader is told to keep it stable once the scene is in use) |
 | **Runtime** (`ContainerRegistry.RegisterRuntime`) | `rt_<ulong>` in decimal | `""` for a public runtime box; the instance key for an instance part | in the lease row's absolute box frame | as stable as the id the game derived (`RuntimeGrid.PackId`, `NebulaWorker.InstanceKey(prefix + "/" + partId)`) |
-| **Dynamic** (carried by a `DynamicContainer` entity) | `<label>#<carrierNetId>` | the carrier's scope key | in the carrier's frame | **one mesh run**: the carrier's net id is reassigned when the mesh restarts (§4) |
+| **Dynamic** (a `Container` on an entity's root, carried by the entity) | `<label>#<carrierNetId>` | the carrier's scope key | in the carrier's frame | **one mesh run**: the carrier's net id is reassigned when the mesh restarts (§4) |
 | **None** | `""` | `""` | world frame | n/a |
 
 **D4** A dynamic container's id is honestly reported as `label#netId` and honestly documented as living only as long

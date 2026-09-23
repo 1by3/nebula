@@ -114,7 +114,7 @@ namespace Nebula.Editor
                 }
                 else if (config.RuntimeWorld == null)
                 {
-                    foreach (var c in scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<Container>(false)).Where(c => c.gameObject.activeInHierarchy && c.GetComponent<DynamicContainer>() == null && !c.IsRuntime).OrderBy(c => c.ContainerId, StringComparer.Ordinal))
+                    foreach (var c in scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<Container>(false)).Where(c => c.gameObject.activeInHierarchy && !Container.IsEntityObject(c.gameObject) && !c.IsRuntime).OrderBy(c => c.ContainerId, StringComparer.Ordinal))
                     {
                         var t = c.transform;
                         manifest.Containers.Add(new Box { ContainerId = c.ContainerId, Center = c.Center, Size = c.Size, Hint = c.Hint, Authority = c.Authority, OwnPhysicsFrame = c.OwnPhysicsFrame, FrameInterest = c.FrameInterest, transform = ExportFrame(t.localToWorldMatrix, t.position, t.rotation, t.lossyScale) });

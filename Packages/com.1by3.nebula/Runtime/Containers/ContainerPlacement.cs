@@ -29,7 +29,7 @@ namespace Nebula
     {
         /// <summary>Placed relative to its parent (or the scope, for a root) and never moves on its own.</summary>
         Fixed = 0,
-        /// <summary>Driven by a carrier entity (<see cref="DynamicContainer"/>): moves with it.</summary>
+        /// <summary>Driven by a carrier entity (the container sits on the entity's root): moves with it.</summary>
         Entity = 1,
     }
 

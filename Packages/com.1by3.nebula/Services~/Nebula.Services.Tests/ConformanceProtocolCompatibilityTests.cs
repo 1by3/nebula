@@ -12,13 +12,13 @@ namespace Nebula.ServiceTests;
 /// real <see cref="NebulaGateway"/> on a real socket over an in-process <see cref="LocalControlPlane"/>, with a
 /// <see cref="FakeWorker"/> to be spawned into.
 /// <para>
-/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-18-handshake.json</c> holds the exact
+/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-19-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
-/// gateway built from today's source. Protocol 18 is both ends of the window today
-/// (<see cref="HelloMsg.MinProtocolVersion"/> == <see cref="HelloMsg.ProtocolVersion"/>), so the recording is an
-/// N recording; when the protocol is bumped to 19 the same file becomes the N-1 recording and the same test
-/// can exercise N-1 with the frozen protocol-18 response decoder. Today this proves only N compatibility;
-/// supporting a later protocol also requires a recording and frozen decoder for that protocol.
+/// gateway built from today's source. Protocol 19 is both ends of the window today
+/// (<see cref="HelloMsg.MinProtocolVersion"/> == <see cref="HelloMsg.ProtocolVersion"/>): the step from 18 was not
+/// additive (it renumbered carrier behaviours), so the protocol-18 recording is kept to prove that such a client is
+/// refused with the gateway's range rather than admitted. Today this proves only N compatibility; supporting a later
+/// protocol also requires a recording and frozen decoder for that protocol.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -180,13 +180,13 @@ public class ConformanceProtocolCompatibilityTests
     /// <b>The conformance scenario.</b> A recorded client stream is pushed, byte for byte, at a gateway built
     /// from today's source: it is welcomed, the gateway records the version it announced and echoes it back as
     /// the negotiated version, and the client goes on to join and receive its pawn. Then the recorded gateway
-    /// stream and the newly generated replies are parsed by an independent, frozen protocol-18 decoder.
+    /// stream and the newly generated replies are parsed by an independent, frozen protocol-19 decoder.
     /// This covers public-container handshake, spawn and transform framing, not every game message or payload.
     /// </summary>
     [Test]
     public void ARecordedClientStreamIsAdmittedAndAnsweredByAGatewayOfThisBuild()
     {
-        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(18));
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(19));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.True,
             $"the checked-in recording is protocol {fixture.ProtocolVersion}, outside this build's window " +
             $"{ProtocolCompatibility.WindowText()}; record a fresh one with RecordTheHandshakeFixture");
@@ -209,28 +209,54 @@ public class ConformanceProtocolCompatibilityTests
         fleet.OnPump = () => fleet.Worker.PublishStates();
         Assert.That(fleet.Run(() => replayed.StatesReceived > 0, seconds: 10), Is.True);
 
-        void AssertHandshake(Protocol18GatewayDecoder decoded)
+        void AssertHandshake(Protocol19GatewayDecoder decoded)
         {
             Assert.That(decoded.Welcomes, Is.EqualTo(1));
             Assert.That(decoded.Joined, Is.True);
-            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(18));
+            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(19));
             Assert.That(decoded.Containers, Does.Contain("c0"));
             Assert.That(decoded.Spawns, Contains.Key(1000ul));
             Assert.That(decoded.Spawns[1000], Is.EqualTo((decoded.ClientId, decoded.Identity)),
                 "the frozen reader must recover the pawn's owner and identity, not merely consume its bytes");
         }
 
-        var recorded = new Protocol18GatewayDecoder();
+        var recorded = new Protocol19GatewayDecoder();
         foreach (var frame in fixture.GatewayFrames()) recorded.Read(frame);
         AssertHandshake(recorded);
 
-        var current = new Protocol18GatewayDecoder();
+        var current = new Protocol19GatewayDecoder();
         foreach (var (outbound, bytes) in replayed.Record)
             if (!outbound) current.Read(bytes);
         AssertHandshake(current);
-        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-18 layout");
+        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-19 layout");
         Assert.That(current.Positions[1000], Is.EqualTo((1.25f, 2.5f, 3.75f)),
             "the frozen reader must recover distinct position axes from the new gateway's snapshot");
+    }
+
+    /// <summary>
+    /// Protocol 19 was not additive: removing the obsolete DynamicContainer behaviour renumbered every carrier prefab's
+    /// behaviours, so a protocol-18 client would address RPCs, variables and sync state to the wrong behaviour. The
+    /// recorded protocol-18 client is refused before it reaches a worker, with the range the gateway accepts.
+    /// </summary>
+    [Test]
+    public void ARecordedProtocol18ClientIsRefusedWithTheGatewaysRange()
+    {
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(18));
+        Assert.That(fixture.ProtocolVersion, Is.EqualTo((ushort)18));
+        Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.False);
+
+        using var world = new ScaleWorld(1);
+        using var fleet = new Fleet(gateways: 1);
+        fleet.Worker.SpawnIntoRequestedContainer = true;
+        var replayed = fleet.Connect(0, "recorded-18");
+        replayed.Replay = fixture.ClientFrames();
+        Assert.That(fleet.Run(() => replayed.Rejected != null, seconds: 20), Is.True, "a protocol-18 client was not refused");
+        var rejected = replayed.Rejected!.Value;
+        Assert.That(rejected.Code, Is.EqualTo(JoinRejectReason.ProtocolUnsupported));
+        Assert.That(rejected.SupportedMinVersion, Is.EqualTo(HelloMsg.MinProtocolVersion));
+        Assert.That(rejected.SupportedMaxVersion, Is.EqualTo(HelloMsg.ProtocolVersion));
+        Assert.That(replayed.Welcome, Is.Null);
+        Assert.That(fleet.Worker.Claims, Is.Empty, "a refused client never reaches a worker");
     }
 
     [Test]

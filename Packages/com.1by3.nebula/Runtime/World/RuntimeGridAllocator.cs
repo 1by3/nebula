@@ -13,7 +13,7 @@ namespace Nebula.World
     /// instead of writing the same logic again.
     /// <para>
     /// A cell counts as occupied while a client owns an entity anywhere inside it, including one riding in a
-    /// vehicle's <see cref="DynamicContainer"/> (a pilot in a ship parked in the cell, or a passenger in a shuttle
+    /// vehicle's carried container (a pilot in a ship parked in the cell, or a passenger in a shuttle
     /// inside that ship). A cell is also kept while an authoritative entity still assigned to it stands in another
     /// cell that this allocator wants, or whose lease row any worker touched within
     /// <see cref="RetireAfterSeconds"/>. This happens when a fast vehicle leaves every leased cell behind: the

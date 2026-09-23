@@ -11,13 +11,13 @@ A **mesh** is the group of processes running one game world. Its **gateway** acc
 
 | Connection | Current requirement |
 | --- | --- |
-| Native or browser client to gateway | Protocol `18`; both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `18`. |
+| Native or browser client to gateway | Protocol `19`; both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `19`. |
 | Gateway to worker, worker to worker | Exact protocol match. |
 
 The gateway records the client's accepted protocol version and returns it in `Welcome.negotiated_version`. A client outside the supported range receives `ProtocolUnsupported`.
 
 <Callout type="warn" title="Protocol changes need a separate rollout plan">
-Only protocol 18 is currently accepted. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
+Only protocol 19 is currently accepted. Protocol 19 changed which network behavior an index names on every entity that carries a container, so a gateway of this version refuses clients built with protocol 18: rebuild and ship your clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
 </Callout>
 
 ### Configure game content compatibility

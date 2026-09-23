@@ -183,9 +183,15 @@ namespace Nebula
         public ushort ContainerIndex => Container != null ? Container.Index : ushort.MaxValue;
         /// <summary>How the current container is named on the wire (see <see cref="Nebula.ContainerRef"/>).</summary>
         public ContainerRef ContainerRef => ContainerRef.Of(Container);
-        /// <summary>The dynamic container this entity carries (a <see cref="DynamicContainer"/> on its root), or null.</summary>
-        public Container Carried => _carried != null ? _carried.Volume : null;
-        private DynamicContainer _carried;
+        /// <summary>
+        /// The container this entity carries: the <see cref="Nebula.Container"/> on its root, which registers when the
+        /// entity spawns on this process and unregisters when it despawns (a ship's interior, a lift). Null when the root
+        /// has none. Not to be confused with <see cref="Container"/>, the container this entity is in.
+        /// </summary>
+        public Container Carried => _carried;
+        private Container _carried;
+        // The carrier's Rigidbody while its box is registered, so Container.OfRigidbody finds the box from a hit collider.
+        private Rigidbody _carriedBody;
         public bool IsSpawned { get; internal set; }
         /// <summary>Worker side: this process is authoritative. Client side: always false.</summary>
         public bool HasAuthority { get; internal set; }
@@ -472,6 +478,11 @@ namespace Nebula
 
         private void OnDestroy()
         {
+            // Destroyed without a despawn (scene torn down, play mode stopped): leave nothing of the carried box behind in
+            // the registry. The Container on the same object may be destroyed first, so it is tested as a managed reference.
+            if (!ReferenceEquals(_carried, null) && _carried.IsDynamic && _carried.Carrier == this) ContainerRegistry.UnregisterDynamic(_carried);
+            Container.UnregisterBody(_carriedBody);
+            _carriedBody = null;
             if (IsSceneEntity) SceneEntities.Unregister(this);
             CohesionGroups.Unregister(this, _cohesionGroup);
             Live.Remove(this);
@@ -520,7 +531,7 @@ namespace Nebula
             // Deterministic order on every process: the same prefab yields the same component order.
             Behaviours = found;
             RootTransform = GetComponent<NetworkTransform>();
-            _carried = GetComponent<DynamicContainer>();
+            _carried = GetComponent<Container>();
             var vars = new List<NetworkVariableBase>();
             for (int i = 0; i < Behaviours.Length; i++)
             {
@@ -813,13 +824,36 @@ namespace Nebula
         internal void InvokeSpawn()
         {
             IsSpawned = true;
+            // The carried box registers once the entity is placed in the container around it (SetContainer runs before
+            // the spawn), and before any behaviour hears of the spawn, so a behaviour's OnNetworkSpawn finds it.
+            RegisterCarried();
             foreach (var b in Behaviours) b.OnNetworkSpawn();
         }
 
         internal void InvokeDespawn()
         {
+            // The carried box goes first, putting whatever rides in it down in the container around the entity, while
+            // the entity is still here to be evacuated from.
+            UnregisterCarried();
             foreach (var b in Behaviours) b.OnNetworkDespawn();
             IsSpawned = false;
+        }
+
+        private void RegisterCarried()
+        {
+            if (_carried == null) _carried = GetComponent<Container>();
+            if (_carried == null) return;
+            ContainerRegistry.RegisterDynamic(_carried, this);
+            if (!_carried.IsDynamic) return; // refused (no net id yet)
+            _carriedBody = GetComponent<Rigidbody>();
+            Container.RegisterBody(_carriedBody, _carried);
+        }
+
+        private void UnregisterCarried()
+        {
+            Container.UnregisterBody(_carriedBody);
+            _carriedBody = null;
+            if (_carried != null && _carried.IsDynamic && _carried.Carrier == this) ContainerRegistry.UnregisterDynamic(_carried);
         }
 
         internal void SetAuthority(bool authority)

@@ -21,7 +21,7 @@ namespace Nebula
         Static,
         /// <summary>A container the game registered while the mesh runs (<see cref="ContainerRegistry.RegisterRuntime"/>), named <c>rt_&lt;id&gt;</c>.</summary>
         Runtime,
-        /// <summary>A container carried by an entity (<see cref="DynamicContainer"/>), named <c>label#netId</c>.</summary>
+        /// <summary>A container carried by an entity (on the entity's root, <see cref="NetworkIdentity.Carried"/>), named <c>label#netId</c>.</summary>
         Dynamic,
     }
 

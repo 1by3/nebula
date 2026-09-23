@@ -10,7 +10,9 @@ description: "Defines a box-shaped authority area with its own local coordinate 
 public sealed class Container : MonoBehaviour
 ```
 
-Defines a box-shaped authority area with its own local coordinate space. Nebula parents contained entities under its transform and replicates their local positions. The orchestrator assigns a static container from a scene or world manifest to a worker. A dynamic container created by [`DynamicContainer`](/docs/reference/containers/dynamic-container) moves with its carrier and normally follows that entity's authoritative worker.
+Defines a box-shaped authority area with its own local coordinate space. Nebula parents contained entities under its transform and replicates their local positions. The orchestrator assigns a static container from a scene or world manifest to a worker.
+
+A container on the root of an entity (next to its [`NetworkIdentity`](/docs/reference/core/network-identity)) is carried by that entity: a ship's interior, a lift, a train car ([`FrameMode`](#framemode) is [`ContainerFrameMode.Entity`](/docs/reference/containers/container-frame-mode#entity)). It registers when the entity spawns on a process and unregisters when it despawns there, moves with the entity's root transform, and normally follows the entity's authoritative worker. Reach it through [`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried). The entity needs a [`NetworkTransform`](/docs/reference/core/network-transform) on its root; a container on a child object of an entity is not supported.
 
 Nebula uses [`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin) to send nearby entities to a neighboring worker before they cross the boundary. It uses [`NebulaConfig.HandoverHysteresis`](/docs/reference/core/nebula-config#handoverhysteresis) to prevent an entity near a boundary from repeatedly changing workers.
 
@@ -22,7 +24,7 @@ Nebula uses [`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#
 public string ContainerId = "container";
 ```
 
-Stable id used by the control plane. Must be unique in the scene. On a DynamicContainer prefab it is a label: the runtime id is '\<label\>#\<carrier net id\>'.
+Stable id used by the control plane. Must be unique in the scene. On an entity's root it is a label: the runtime id is '\<label\>#\<carrier net id\>'.
 
 ### Size [#size]
 
@@ -118,7 +120,7 @@ Static adjacency: containers whose boxes touch or overlap this one, computed whe
 public bool IsDynamic { get; }
 ```
 
-Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-container)): created and destroyed with it, moves with it. Shorthand for [`FrameMode`](#framemode) == [`ContainerFrameMode.Entity`](/docs/reference/containers/container-frame-mode#entity).
+Registered as a carried container on this process: its entity has spawned here, and the box is named on the wire by the entity's net id. A container on an entity's root that has not spawned (a prefab asset, a copy not yet spawned) is [`FrameMode`](#framemode) [`ContainerFrameMode.Entity`](/docs/reference/containers/container-frame-mode#entity) but not yet dynamic.
 
 ### FrameMode [#framemode]
 
@@ -126,7 +128,7 @@ Carried by an entity ([`DynamicContainer`](/docs/reference/containers/dynamic-co
 public ContainerFrameMode FrameMode { get; }
 ```
 
-Where the box is: fixed relative to its parent, or driven by a carrier entity (`docs/container-tree.md` D1).
+Where the box is (`docs/container-tree.md` D1): [`ContainerFrameMode.Entity`](/docs/reference/containers/container-frame-mode#entity) when the container sits on an entity's root, next to its [`NetworkIdentity`](/docs/reference/core/network-identity), which then carries it; otherwise [`ContainerFrameMode.Fixed`](/docs/reference/containers/container-frame-mode#fixed). It is read from the object, never authored: an entity's own box cannot be fixed.
 
 ### Source [#source]
 
@@ -380,6 +382,30 @@ How many carriers this container sits inside, walking up through [`Enclosing`](#
 
 ## Methods
 
+### IsEntityObject [#isentityobject]
+
+```csharp
+public static bool IsEntityObject(GameObject go);
+```
+
+Whether a container on `go` would be carried by an entity: the same rule as [`FrameMode`](#framemode), for code that has only the object (baking, export).
+
+### OfRigidbody [#ofrigidbody]
+
+```csharp
+public static Container OfRigidbody(Rigidbody body);
+```
+
+The container carried by the entity that owns `body`, or null. Game movement code that treats colliders without a Rigidbody as the level can use this to walk on a vehicle's floor as well.
+
+### IsCarrierGeometry [#iscarriergeometry]
+
+```csharp
+public static bool IsCarrierGeometry(Collider collider);
+```
+
+Whether `collider` belongs to the carrier of a registered container (the hull of a vehicle, the floor of a lift).
+
 ### IsCarriedBy [#iscarriedby]
 
 ```csharp
@@ -489,3 +515,13 @@ public bool FitToBounds();
 ```
 
 Set [`Size`](#size) and [`Center`](#center) to the local-space box around this object's enabled renderers and those of its children, falling back to their colliders when there are no renderers. Returns false and leaves the box unchanged when neither is found (an empty object keeps its authored box).
+
+### PlacementProblem [#placementproblem]
+
+```csharp
+public static string PlacementProblem(Container c, out bool error);
+```
+
+Where a container sits decides what it is ([`FrameMode`](#framemode)); say so when the placement cannot work. A box on a child object of an entity is baked as a fixed container, so it would never move with the entity; a box on an entity's root needs a root [`NetworkTransform`](/docs/reference/core/network-transform), because every process positions the contents from the carrier's replicated pose. The Nebula validator reports the same.
+
+**Returns:** Null when the placement works; otherwise the problem, with `error` set when the container cannot work at all.

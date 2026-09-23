@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 18, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 19, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 18. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 19. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `18`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `19`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts protocol-18 clients only: both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `18`. Gateway-to-worker and worker-to-worker connections MUST also match protocol `18` exactly.
+A gateway accepts protocol-19 clients only: both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `19`. Gateway-to-worker and worker-to-worker connections MUST also match protocol `19` exactly.
+
+Protocol 19 changed no byte layout. It changed what a behavior index names: an entity carrying a container no longer has a behavior for it, so the indices of its other network behaviors, which address RPCs, network variables, and sync state, moved down by one. A protocol-18 peer would address the wrong behavior on such an entity, which is why protocol 18 is outside the window.
 
 - A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
 - A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
@@ -120,7 +122,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 18 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 19 sender MUST write them as zero.
 
 ## Message registry
 
@@ -168,7 +170,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 
-IDs not listed in this table are reserved. A version 18 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 19 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -484,18 +486,19 @@ AuthorityTransfer :=
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 18. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 19. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,
                  u16 input_count,
                  PendingInput[input_count],
                  bool has_last_input,
-                 [GameInput last_input when has_last_input is true]
+                 [GameInput last_input when has_last_input is true],
+                 [u16 state_length, raw state[state_length]]
 PendingInput  := u32 tick, GameInput input
 ```
 
-The stock predicted behavior sends at most 128 pending inputs. `GameInput` is the exact output of the game's `INetworkInput.Serialize` method.
+The stock predicted behavior sends at most 128 pending inputs. `GameInput` is the exact output of the game's `INetworkInput.Serialize` method. The optional trailing `state` is the output of the predicted behavior's `WriteState`: what `Simulate` carries from one tick to the next. The receiving worker applies it with `ReadState`, so the entity continues from the sender's simulation state. A receiver MUST accept `pending_inputs` that end after `last_input`.
 
 `handover_state` has this envelope:
 

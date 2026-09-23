@@ -1,0 +1,63 @@
+---
+title: "NebulaMigrate"
+description: "One-off upgrades of a project's assets to the current package."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/NebulaMigrate.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/NebulaMigrate.cs)</div>
+
+```csharp
+public static class NebulaMigrate
+```
+
+One-off upgrades of a project's assets to the current package. Each item says what it changed in the Console.
+
+## Methods
+
+### RemoveDynamicContainerMenu [#removedynamiccontainermenu]
+
+```csharp
+[MenuItem("Nebula/Migrate/Remove DynamicContainer", priority = 200)]
+public static void RemoveDynamicContainerMenu();
+```
+
+Strip the obsolete [`DynamicContainer`](/docs/reference/containers/dynamic-container) from every prefab in the project and every open scene. A [`Container`](/docs/reference/containers/container) on an entity's root is carried by the entity without it (docs/container-tree.md D1). Removing it renumbers the entity's behaviours, so rebuild every client and server afterwards. A component that another script requires (`[RequireComponent(typeof(DynamicContainer))]`) cannot be removed: take that attribute off the script first; the report names the object.
+
+### RemoveDynamicContainerEverywhere [#removedynamiccontainereverywhere]
+
+```csharp
+public static Report RemoveDynamicContainerEverywhere(string[] folders = null);
+```
+
+Remove the component from the prefab assets under `folders` (the whole project when null), then from the open scenes. Prefabs come first, so a scene instance loses the component with its prefab; only a component added on the instance itself is removed in the scene.
+
+### RemoveFrom [#removefrom]
+
+```csharp
+public static int RemoveFrom(GameObject root, string where, List<string> blocked, bool inPrefabAsset);
+```
+
+Remove every [`DynamicContainer`](/docs/reference/containers/dynamic-container) under `root` that can be removed here, and return how many were. In a scene, a component that comes from a prefab asset is left to the asset.
+
+## Nested types
+
+### Report [#report]
+
+```csharp
+public sealed class Report
+```
+
+What [`RemoveDynamicContainerEverywhere`](#removedynamiccontainereverywhere) did.
+
+#### Fields
+
+##### Removed, Prefabs, Scenes [#removed-prefabs-scenes]
+
+```csharp
+public int Removed, Prefabs, Scenes;
+```
+
+##### Blocked [#blocked]
+
+```csharp
+public readonly List<string> Blocked = new List<string>();
+```

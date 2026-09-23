@@ -40,7 +40,7 @@ namespace Nebula.Tests
             box.ContainerId = name;
             box.Size = size;
             box.Center = new Vector3(0, size.y * 0.5f, 0);
-            go.AddComponent<DynamicContainer>();
+            go.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             identity.Initialize();
             identity.NetId = netId;
             identity.OwnerWorkerIndex = ownerIndex;

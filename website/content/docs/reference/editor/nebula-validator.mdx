@@ -34,6 +34,14 @@ public static void CheckPhysicsIslands(NebulaConfig config, List<Issue> issues);
 
 Warns about every `Joint` or child `ArticulationBody` in the open scenes and the network prefabs whose two bodies belong to entities in different containers (or one in a container and one in none). Such a constraint has each side simulated by whichever worker owns that entity, against a kinematic ghost of the other, and Nebula does not make it symmetric. At edit time an entity's container is the [`Container`](/docs/reference/containers/container) above it in the hierarchy, else the smallest scene container holding its position, else none ([`PhysicsIslands`](/docs/reference/core/physics-islands)). Exposed so tests and tools can run it alone.
 
+### CheckContainerPlacement [#checkcontainerplacement]
+
+```csharp
+public static void CheckContainerPlacement(Container container, List<Issue> issues);
+```
+
+A container on a child object of an entity is baked as a fixed container and never moves with the entity (a warning). One on an entity's root without a NetworkTransform is reported by [`CheckMotion`](#checkmotion) as an error.
+
 ### CheckMotion [#checkmotion]
 
 ```csharp

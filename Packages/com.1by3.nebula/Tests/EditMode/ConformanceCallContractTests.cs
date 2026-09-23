@@ -391,9 +391,9 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void TheProtocolVersionIsEighteenAndTheIdsArePinned()
+        public void TheContractIsInTheProtocolSinceEighteenAndTheIdsArePinned()
         {
-            Assert.AreEqual(18, HelloMsg.ProtocolVersion);
+            Assert.GreaterOrEqual(HelloMsg.ProtocolVersion, 18, "the contract messages arrived in protocol 18");
             Assert.AreEqual(46, (byte)MsgId.AuthorityRpc);
             Assert.AreEqual(49, (byte)MsgId.AuthorityRpcReply);
             Assert.AreEqual(1, (byte)AuthorityCallFlags.WantsReply);

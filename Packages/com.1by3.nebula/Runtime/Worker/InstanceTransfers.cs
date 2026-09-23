@@ -98,7 +98,7 @@ namespace Nebula
         /// <summary>
         /// Commit a group only when every member is ready. Each member must have its own preparation and admission check.
         /// <para>
-        /// A member riding in another member's <see cref="DynamicContainer"/>, at any depth (the crew of a ship that is
+        /// A member riding in another member's carried container (<see cref="NetworkIdentity.Carried"/>), at any depth (the crew of a ship that is
         /// itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the
         /// destination scope through the carrier instead of being put down in the destination container. Its
         /// preparation is still what readies its owner's client for the destination.

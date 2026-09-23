@@ -42,7 +42,8 @@ namespace Nebula.Tests
         [Test] public void CarrierValidationReportsDisabledAxesAndOwnerPhysics()
         {
             var go = new GameObject("carrier-validation"); _objects.Add(go);
-            go.AddComponent<DynamicContainer>();
+            go.AddComponent<Container>();
+            go.AddComponent<NetworkTransform>(); // a container on an entity's root: the entity carries it
             var id = go.GetComponent<NetworkIdentity>();
             id.GetComponent<NetworkTransform>().SyncPositionX = false;
             var issues = new List<Nebula.Editor.NebulaValidator.Issue>();

@@ -51,7 +51,7 @@ namespace Nebula.Tests
             hull.ContainerId = "hull";
             hull.Size = new Vector3(20f, 6f, 20f);
             hull.Center = new Vector3(0f, 2f, 0f); // the origin is well inside its own box, clear of the floor face
-            ship.AddComponent<DynamicContainer>();
+            ship.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             ship.AddComponent<PersistentEntity>();
             _shipPrefab = _mesh.RegisterPrefab(ship);
             var crate = new GameObject("crate-prefab");
@@ -186,7 +186,7 @@ namespace Nebula.Tests
 
         /// <summary>
         /// The wire form: the two trailing fields are written only when the riders leave, so every other despawn,
-        /// and every despawn a gateway or client sees, keeps its bytes (protocol 18).
+        /// and every despawn a gateway or client sees, keeps its bytes (no wire change).
         /// </summary>
         [Test]
         public void TheRidersFlagIsATrailingFieldWrittenOnlyWhenSet()

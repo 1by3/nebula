@@ -1394,7 +1394,7 @@ namespace Nebula
         /// <summary>
         /// A container-local position as a world position. The gateway holds no entities, so a dynamic container's
         /// frame is rebuilt from its carrier's newest pose (itself container-local, hence the walk): a
-        /// DynamicContainer's frame is its carrier's root transform, which is what makes this possible here.
+        /// carried container's frame is its carrier's root transform, which is what makes this possible here.
         /// <para>
         /// Every carrier in the chain is folded in, however deep. A coordinate that stopped partway
         /// out would be in some intermediate ship's frame while being used as a world position, which is a

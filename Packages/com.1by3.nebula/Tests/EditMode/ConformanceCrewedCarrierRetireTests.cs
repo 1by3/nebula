@@ -82,7 +82,7 @@ namespace Nebula.Tests
             box.ContainerId = label;
             box.Size = size;
             box.Center = center; // the origin is well inside its own box, clear of the floor face
-            go.AddComponent<DynamicContainer>();
+            go.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             go.AddComponent<PersistentEntity>();
             return go;
         }

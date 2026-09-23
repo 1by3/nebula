@@ -52,7 +52,7 @@ namespace Nebula.Tests
             box.Center = Vector3.zero;
             box.OwnPhysicsFrame = true;
             box.FrameInterest = FrameInterestMode.OwnRegions;
-            planet.AddComponent<DynamicContainer>();
+            planet.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             _planetPrefab = _mesh.RegisterPrefab(planet);
 
             var ship = new GameObject("ship-prefab");
@@ -62,7 +62,7 @@ namespace Nebula.Tests
             hull.Size = new Vector3(10f, 6f, 20f);
             hull.Center = new Vector3(0f, 3f, 0f);
             hull.OwnPhysicsFrame = true;
-            ship.AddComponent<DynamicContainer>();
+            ship.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             _shipPrefab = _mesh.RegisterPrefab(ship);
 
             var crate = new GameObject("crate-prefab");

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Nebula.Tests
 {
     /// <summary>Leases on carried containers: they follow the carrier unless pinned, and a lease that arrives before the carrier waits for it.</summary>
-    public class DynamicContainerLeaseTests
+    public class CarriedContainerLeaseTests
     {
         private readonly List<GameObject> _objects = new List<GameObject>();
 
@@ -18,7 +18,7 @@ namespace Nebula.Tests
             box.ContainerId = name;
             box.Size = new Vector3(10, 6, 20);
             box.Center = new Vector3(0, 3, 0);
-            go.AddComponent<DynamicContainer>();
+            go.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             identity.Initialize();
             identity.NetId = netId;
             identity.OwnerWorkerIndex = ownerIndex;

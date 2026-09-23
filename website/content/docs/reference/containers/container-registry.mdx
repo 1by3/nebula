@@ -11,7 +11,7 @@ public static class ContainerRegistry
 
 The container graph of the loaded level: every static [`Container`](/docs/reference/containers/container), indexed deterministically so all processes agree on indices, plus adjacency (adjacent = bounds touch or overlap), plus the dynamic containers currently carried by entities on this process, resolved by their carrier's net id, plus the runtime containers the game registered while the mesh runs, resolved by the id the game gave them.
 
-Two ways to populate the static part: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan. Dynamic containers come and go with their carriers ([`RegisterDynamic`](#registerdynamic) / [`UnregisterDynamic`](#unregisterdynamic), called by [`DynamicContainer`](/docs/reference/containers/dynamic-container)). Runtime containers come and go with their control-plane lease ([`RegisterRuntime`](#registerruntime) / [`UnregisterRuntime`](#unregisterruntime), called by every role from [`SyncRuntime`](#syncruntime)); a world whose shape is decided at runtime (a chunked landscape) has no baked set at all and lives entirely in them.
+Two ways to populate the static part: [`Rebuild`](#rebuild) scans the loaded scene and sorts by id (single-scene games), or [`Load`](#load) takes an already ordered list built from a [`WorldContainerManifest`](/docs/reference/world/world-container-manifest) (partitioned worlds), in which case lookups go through a grid of cells instead of a linear scan. Dynamic containers come and go with their carriers ([`RegisterDynamic`](#registerdynamic) / [`UnregisterDynamic`](#unregisterdynamic), called by [`NetworkIdentity`](/docs/reference/core/network-identity) when an entity with a container on its root spawns and despawns). Runtime containers come and go with their control-plane lease ([`RegisterRuntime`](#registerruntime) / [`UnregisterRuntime`](#unregisterruntime), called by every role from [`SyncRuntime`](#syncruntime)); a world whose shape is decided at runtime (a chunked landscape) has no baked set at all and lives entirely in them.
 
 ## Fields
 
@@ -159,7 +159,7 @@ A runtime container is about to go. The game unloads its content; entities still
 public static void Rebuild();
 ```
 
-Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities ([`DynamicContainer`](/docs/reference/containers/dynamic-container)) and runtime containers are skipped.
+Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities (on an entity's root, [`Container.IsEntityObject`](/docs/reference/containers/container#isentityobject)) and runtime containers are skipped.
 
 ### Load [#load]
 
@@ -248,7 +248,7 @@ The carrier net id a dynamic container id names, or 0.
 public static void RegisterDynamic(Container container, NetworkIdentity carrier);
 ```
 
-Make `container` the dynamic container carried by `carrier`, resolvable by the carrier's net id from now on. [`DynamicContainer`](/docs/reference/containers/dynamic-container) calls this when its entity spawns on any process; game code does not normally need to. The authored [`Container.ContainerId`](/docs/reference/containers/container#containerid) becomes a label: the runtime id is `label#netId`, unique across the mesh.
+Make `container` the dynamic container carried by `carrier`, resolvable by the carrier's net id from now on. [`NetworkIdentity`](/docs/reference/core/network-identity) calls this when an entity with a container on its root spawns on any process; game code does not normally need to. The authored [`Container.ContainerId`](/docs/reference/containers/container#containerid) becomes a label: the runtime id is `label#netId`, unique across the mesh.
 
 ### UnregisterDynamic [#unregisterdynamic]
 

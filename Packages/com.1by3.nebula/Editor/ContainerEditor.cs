@@ -9,6 +9,16 @@ namespace Nebula.Editor
     {
         public override void OnInspectorGUI()
         {
+            if (targets.Length == 1)
+            {
+                var container = (Container)target;
+                string kind = container.FrameMode == ContainerFrameMode.Entity
+                    ? "Carried by the entity on this object: it registers when the entity spawns and moves with it."
+                    : "Fixed: baked with the scene or registered at runtime.";
+                EditorGUILayout.HelpBox(kind, MessageType.None);
+                string problem = Container.PlacementProblem(container, out bool error);
+                if (problem != null) EditorGUILayout.HelpBox(problem, error ? MessageType.Error : MessageType.Warning);
+            }
             DrawDefaultInspector();
             EditorGUILayout.Space();
             if (GUILayout.Button(new GUIContent("Fit Size and Center to Bounds", "Wrap the box around the enabled renderers (or colliders) on this object and its children.")))

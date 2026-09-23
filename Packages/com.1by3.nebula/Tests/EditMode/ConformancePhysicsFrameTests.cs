@@ -60,7 +60,7 @@ namespace Nebula.Tests
             box.Size = new Vector3(10f, 6f, 20f);
             box.Center = new Vector3(0f, 3f, 0f);
             box.OwnPhysicsFrame = true;
-            ship.AddComponent<DynamicContainer>();
+            ship.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             var floor = new GameObject("floor");
             floor.transform.SetParent(ship.transform, false);
             floor.transform.localPosition = new Vector3(0f, -0.1f, 0f);

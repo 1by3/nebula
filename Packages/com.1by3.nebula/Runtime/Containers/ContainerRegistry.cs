@@ -16,7 +16,7 @@ namespace Nebula
     /// (single-scene games), or <see cref="Load"/> takes an already ordered list built from a
     /// <see cref="WorldContainerManifest"/> (partitioned worlds), in which case lookups go through a grid of cells
     /// instead of a linear scan. Dynamic containers come and go with their carriers
-    /// (<see cref="RegisterDynamic"/> / <see cref="UnregisterDynamic"/>, called by <see cref="DynamicContainer"/>).
+    /// (<see cref="RegisterDynamic"/> / <see cref="UnregisterDynamic"/>, called by <see cref="NetworkIdentity"/> when an entity with a container on its root spawns and despawns).
     /// Runtime containers come and go with their control-plane lease (<see cref="RegisterRuntime"/> /
     /// <see cref="UnregisterRuntime"/>, called by every role from <see cref="SyncRuntime"/>); a world whose shape
     /// is decided at runtime (a chunked landscape) has no baked set at all and lives entirely in them.</para>
@@ -153,11 +153,11 @@ namespace Nebula
             WorkerIdByIndex = index => NebulaRuntime.IsServer && index == NebulaRuntime.LocalWorkerIndex ? NebulaRuntime.LocalWorkerId : "";
         }
 
-        /// <summary>Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities (<see cref="DynamicContainer"/>) and runtime containers are skipped.</summary>
+        /// <summary>Scan the loaded scene(s) for static containers and index them by id. Containers carried by entities (on an entity's root, <see cref="Container.IsEntityObject"/>) and runtime containers are skipped.</summary>
         public static void Rebuild()
         {
             var found = UnityEngine.Object.FindObjectsByType<Container>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
-                .Where(c => c.GetComponent<DynamicContainer>() == null && !c.IsRuntime)
+                .Where(c => !Container.IsEntityObject(c.gameObject) && !c.IsRuntime)
                 .OrderBy(c => c.ContainerId, StringComparer.Ordinal)
                 .ToList();
             Load(found, gridded: false);
@@ -391,8 +391,8 @@ namespace Nebula
 
         /// <summary>
         /// Make <paramref name="container"/> the dynamic container carried by <paramref name="carrier"/>, resolvable
-        /// by the carrier's net id from now on. <see cref="DynamicContainer"/> calls this when its entity spawns on
-        /// any process; game code does not normally need to. The authored <see cref="Container.ContainerId"/> becomes
+        /// by the carrier's net id from now on. <see cref="NetworkIdentity"/> calls this when an entity with a container
+        /// on its root spawns on any process; game code does not normally need to. The authored <see cref="Container.ContainerId"/> becomes
         /// a label: the runtime id is <c>label#netId</c>, unique across the mesh.
         /// </summary>
         public static void RegisterDynamic(Container container, NetworkIdentity carrier)

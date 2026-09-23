@@ -208,7 +208,10 @@ namespace Nebula.Editor
             foreach (var dup in list.Where(p => p != null).GroupBy(p => p).Where(g => g.Count() > 1))
                 issues.Add(new Issue(Severity.Warning, $"'{dup.Key.name}' is listed {dup.Count()} times in NetworkPrefabs; it spawns with the last id", dup.Key));
             foreach (var prefab in list.Where(p => p != null))
+            {
                 foreach (var identity in prefab.GetComponentsInChildren<NetworkIdentity>(true)) CheckMotion(identity, issues);
+                foreach (var container in prefab.GetComponentsInChildren<Container>(true)) CheckContainerPlacement(container, issues);
+            }
             var listed = new HashSet<GameObject>(list.Where(p => p != null));
             var missing = NebulaSetup.NetworkPrefabCandidates().Where(p => !listed.Contains(p)).ToList();
             if (missing.Count > 0)
@@ -275,10 +278,21 @@ namespace Nebula.Editor
             {
                 var scene = SceneManager.GetSceneAt(i);
                 foreach (var identity in NebulaSetup.FindInScene<NetworkIdentity>(scene)) CheckMotion(identity, issues);
+                foreach (var container in NebulaSetup.FindInScene<Container>(scene)) CheckContainerPlacement(container, issues);
                 var unassigned = NebulaSetup.FindInScene<NetworkIdentity>(scene).Where(id => id.SceneId == 0).ToList();
                 if (unassigned.Count > 0)
                     issues.Add(new Issue(Severity.Warning, $"'{scene.name}': {unassigned.Count} scene entit(ies) have no SceneId yet; save the scene to assign them", unassigned[0]));
             }
+        }
+
+        /// <summary>
+        /// A container on a child object of an entity is baked as a fixed container and never moves with the entity
+        /// (a warning). One on an entity's root without a NetworkTransform is reported by <see cref="CheckMotion"/> as an error.
+        /// </summary>
+        public static void CheckContainerPlacement(Container container, List<Issue> issues)
+        {
+            string problem = Container.PlacementProblem(container, out bool error);
+            if (problem != null && !error) issues.Add(new Issue(Severity.Warning, problem, container));
         }
 
         public static void CheckMotion(NetworkIdentity identity, List<Issue> issues)
@@ -286,7 +300,7 @@ namespace Nebula.Editor
             var nt = identity.GetComponent<NetworkTransform>();
             var rb = identity.GetComponent<NetworkRigidbody>();
             var predicted = identity.GetComponent<PredictedBehaviourBase>();
-            var carrier = identity.GetComponent<DynamicContainer>();
+            var carrier = identity.GetComponent<Container>(); // a container on the root: the entity carries it
             if (rb == null && predicted == null && carrier == null) return;
             if (nt == null || !nt.enabled)
             {

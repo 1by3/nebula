@@ -53,7 +53,7 @@ namespace Nebula.Tests
                 hull.ContainerId = "hull" + netId;
                 hull.Size = new Vector3(20f, 6f, 20f);
                 hull.Center = new Vector3(0f, 2f, 0f);
-                go.AddComponent<DynamicContainer>();
+                go.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             }
             entity.Initialize();
             entity.NetId = netId;

@@ -29,12 +29,14 @@ than the hull's simulated against a pose that arrived one replication delay late
 
 | Property | API | Values |
 | --- | --- | --- |
-| Frame: where the box is | `Container.FrameMode` | `Fixed` (placed relative to its parent) · `Entity` (driven by a carrier entity, what `DynamicContainer` makes) |
+| Frame: where the box is | `Container.FrameMode` | `Fixed` (placed relative to its parent) · `Entity` (the container sits on an entity's root, next to its `NetworkIdentity`, which carries it; D21) |
 | Authority: who simulates what is inside | `Container.Authority` (authored), `ResolvedAuthority`, `IsLeased` (effective) | `Leased` (its own lease row and owner) · `Inherited` (whoever owns the parent) · `Auto` (the default: leased for a fixed frame, inherited for an entity frame, which is what the three kinds did) |
 | Source: where it comes from | `Container.Source` | `Baked` · `Runtime` · `Prefab` |
 
-A fourth, orthogonal switch is `Container.OwnPhysicsFrame` (§3). `IsDynamic` and `IsRuntime` remain as shorthands
-for `FrameMode == Entity` and `Source == Runtime`, because hundreds of call sites read them. Wire naming
+A fourth, orthogonal switch is `Container.OwnPhysicsFrame` (§3). The frame mode is read from the object, never
+authored (D21): an entity's own box cannot be fixed. `IsDynamic` now means "registered as carried on this process"
+(the entity has spawned here), and `IsRuntime` remains the shorthand for `Source == Runtime`, because hundreds of call
+sites read them. Wire naming
 (`ContainerRef`) still follows the source: it is what makes a container nameable on a process before it exists
 there. `Auto` exists because the field is serialized: existing prefabs and scenes have no value for it and must
 keep today's behaviour.
@@ -200,6 +202,40 @@ leased child simulates it in the parent's frame, where nothing moves; the parent
 interest and leased octants (runtime containers whose `ParentId` is the planet's container); a capital ship is a
 carrier whose frame holds a leased engine room. The gateway positions and buckets a runtime container fixed inside a
 carrier through that carrier (`TryCarrierOf` reads the placements on the lease rows it mirrors).
+
+## 5a. One component: `DynamicContainer` folded into `Container`
+
+**D21 A container on an entity's root is carried by that entity; nothing else makes a container carried.** A
+`Container` whose GameObject also has a `NetworkIdentity` is `FrameMode.Entity`; every other container is fixed. The
+rule is read from the object (`Container.IsEntityObject`), so there is no switch to author and no way to fix an
+entity's own box. What `DynamicContainer` did moved to where its entity lives:
+
+- `NetworkIdentity.Initialize` caches the root's `Container` (`Carried`). `InvokeSpawn` registers it
+  (`ContainerRegistry.RegisterDynamic`) after the entity was placed in the container around it and before any
+  behaviour's `OnNetworkSpawn`; `InvokeDespawn` unregisters it first, evacuating the riders while the entity is still
+  there; `OnDestroy` cleans up after an entity destroyed without a despawn. The same order as before for a carrier
+  whose `DynamicContainer` sat before its other behaviours, which is where the component menu and every setup
+  script put it.
+- The Rigidbody-to-carrier map is `Container.OfRigidbody` / `Container.IsCarrierGeometry`, reset by `NebulaStatics`.
+- `ContainerRegistry.Rebuild`, `ServiceExport` and `WorldBaker` skip containers on an entity's root. (`WorldBaker`
+  used to bake every container in a cell scene, carriers included.)
+- Placement is validated rather than required: `Container.PlacementProblem`, reported by `OnValidate` (after the
+  edit, on authored objects only), the `Container` inspector and `NebulaValidator`. A container on a child object of
+  an entity is a warning (it is baked as a fixed box and never moves with the entity); one on an entity's root without
+  a `NetworkTransform` is an error.
+- `NetworkIdentity.Carried` stays the way to reach an entity's box; `Container.Entities` replaces
+  `DynamicContainer.Contents`.
+
+`DynamicContainer` stays for one release as an `[Obsolete]` `MonoBehaviour` that does nothing. It is no longer a
+`NetworkBehaviour`, so it takes no behaviour slot. **Nebula > Migrate > Remove DynamicContainer**
+(`NebulaMigrate`) strips it from every prefab and open scene and names any object a script's
+`[RequireComponent(typeof(DynamicContainer))]` keeps it on.
+
+**Protocol 19, not additive.** Removing a `NetworkBehaviour` from a prefab renumbers the prefab's `Behaviours` array,
+and RPCs, network variables and sync state are addressed by `BehaviourIndex`. A protocol-18 client would address the
+wrong behaviour on every carrier without noticing, and there is no trailing field that could tell it. So
+`HelloMsg.ProtocolVersion` and `HelloMsg.MinProtocolVersion` both moved to 19 (`docs/protocol-versions.md`): an older
+client is refused with its range instead of being admitted into a world it would misread.
 
 ## 6. Wire and storage
 

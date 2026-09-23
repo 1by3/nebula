@@ -43,7 +43,7 @@ namespace Nebula.Tests
             box.ContainerId = "hold";
             box.Size = new Vector3(10, 6, 10);
             box.Center = new Vector3(0, 3, 0);
-            carrier.AddComponent<DynamicContainer>();
+            carrier.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             _carrierPrefabId = _mesh.RegisterPrefab(carrier);
             _splitsBefore = NebulaDiagnostics.SplitCohesionGroups;
         }

@@ -47,7 +47,7 @@ namespace Nebula.Tests
             hull.ContainerId = "hull";
             hull.Size = HullSize;
             hull.Center = new Vector3(0f, 2f, 0f); // the origin is well inside its own box, clear of the floor face
-            ship.AddComponent<DynamicContainer>();
+            ship.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             _shipPrefab = _mesh.RegisterPrefab(ship);
         }
 

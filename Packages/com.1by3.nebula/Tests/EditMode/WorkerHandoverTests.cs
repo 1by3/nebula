@@ -145,13 +145,13 @@ namespace Nebula.Tests
             box.ContainerId = name;
             box.Size = new Vector3(10, 6, 20);
             box.Center = new Vector3(0, 3, 0);
-            go.AddComponent<DynamicContainer>();
+            go.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             identity.SceneId = (uint)netId;
             identity.Initialize();
             identity.NetId = netId;
             identity.Epoch = 1;
             identity.SetContainer(inside ?? ContainerRegistry.Find(position, box));
-            identity.InvokeSpawn(); // DynamicContainer.OnNetworkSpawn registers the box
+            identity.InvokeSpawn(); // NetworkIdentity registers the box it carries
             return Own(identity);
         }
 

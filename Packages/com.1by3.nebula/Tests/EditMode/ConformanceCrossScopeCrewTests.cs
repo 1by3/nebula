@@ -9,7 +9,7 @@ namespace Nebula.Tests
     /// The worker half of conformance scenario 16 (<c>docs/conformance-suite.md</c>, design
     /// <c>docs/scope-activation.md</c> §11): a ship and its crew are committed into a chunk of another grid scope as
     /// one group, and the crew arrive in their seats. Tier B — one real <see cref="NebulaWorker"/> on the
-    /// <see cref="ConformanceMesh"/> with a real <see cref="DynamicContainer"/>, because what is asserted is what
+    /// <see cref="ConformanceMesh"/> with a real carried <see cref="Container"/>, because what is asserted is what
     /// <see cref="NebulaWorker.TryCommitTransfers"/> does to live containers and entities, which no fixture has.
     /// The gateway and client half — the crossing becomes ready, and the crew's clients follow the ship — is
     /// <c>Services~/Nebula.Services.Tests/ConformanceCrossScopeCarrierTests.cs</c> (tier A).
@@ -54,7 +54,7 @@ namespace Nebula.Tests
             interior.ContainerId = "interior";
             interior.Size = new Vector3(10, 6, 20);
             interior.Center = new Vector3(0, 3, 0);
-            ship.AddComponent<DynamicContainer>();
+            ship.AddComponent<NetworkTransform>(); // with the Container on its root, the entity carries the box
             _shipPrefab = _mesh.RegisterPrefab(ship);
         }
 

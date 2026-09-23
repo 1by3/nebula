@@ -24,9 +24,9 @@ a CLI command for upgrades; asset or save-data migration; downgrade.
 ## D1. The window: N and N-1 for clients, exact for infrastructure
 
 `HelloMsg.MinProtocolVersion` is the oldest protocol a gateway admits from a **client**, and
-`HelloMsg.ProtocolVersion` is the newest. A gateway accepts the closed range between them. Today both are 18: the
-policy starts now, and 17 is outside the window because everything before 18 was written with no window to be
-additive inside (see `docs/protocol-versions.md`).
+`HelloMsg.ProtocolVersion` is the newest. A gateway accepts the closed range between them. Today both are 19: the
+step from 18 renumbered carrier behaviours and could not be additive, so 18 is outside the window, as 17 was before
+it (see `docs/protocol-versions.md`).
 
 Gateway-to-worker and worker-to-worker links require `HelloMsg.ProtocolVersion` **exactly**, in both
 `NebulaGateway.DispatchClient` (for a peer that dials in) and `NebulaWorker.Dispatch`. Two reasons. These
@@ -122,17 +122,20 @@ scenario running a mesh for seconds carries `Soak` too; these two take about 10 
 they cover are exactly the kind that rot quietly, so they are worth running in the default `dotnet test` pass.
 The deviation is deliberate and recorded here rather than left to be noticed.
 
-**The recorded fixture.** `Services~/Nebula.Services.Tests/Fixtures/protocol-18-handshake.json` holds the exact
+**The recorded fixture.** `Services~/Nebula.Services.Tests/Fixtures/protocol-19-handshake.json` holds the exact
 frames a client sent and a gateway answered, as hex, recorded from the mesh fixtures by the explicit test
 `RecordTheHandshakeFixture`. The replay pushes the client frames byte for byte at a gateway built from today's
 source and asserts it is welcomed, negotiated at the recorded version and sent a world it can parse; it then
-decodes both recorded replies and newly generated replies with an independent, frozen protocol-18 reader.
+decodes both recorded replies and newly generated replies with an independent, frozen protocol-19 reader
+(`Protocol19GatewayDecoder`; protocol 19 changed no frame layout, so it is the protocol-18 reader with its version
+literals raised).
 The reader checks the public-container handshake, pawn ownership, spawn framing, and transform values. It
-accepts optional trailing fields and unknown message IDs as the protocol-18 client does. Truncated fields and
+accepts optional trailing fields and unknown message IDs as the protocol-19 client does. Truncated fields and
 malformed nested snapshots have negative tests. Game-defined payloads and private-instance messages are outside
 this recording's coverage.
-Because the window is one version wide today, this proves N compatibility only. At protocol 19 the protocol-18
-recording and reader can exercise N-1. Later versions need their own recorded bytes and frozen reader; updating
+Because the window is one version wide today, this proves N compatibility only. The protocol-18 recording is
+kept and replayed to prove that such a client is refused with the gateway's range. At an additive protocol 20 the
+protocol-19 recording and reader can exercise N-1. Later versions need their own recorded bytes and frozen reader; updating
 both production readers and writers must not silently update the compatibility oracle.
 
 ## D7. Measured on this machine
@@ -157,7 +160,7 @@ drained and replaced with no entity lost, no orphaned container and no client di
 Not verified:
 
 - **A genuine N-1 client.** There is no build that speaks 17 and can be run against this one, and 17 is outside
-  the window by design. The recorded stream and frozen reader exercise protocol 18 against 18 today. They
+  the window by design. The recorded stream and frozen reader exercise protocol 19 against 19 today. They
   prepare future N-1 coverage but do not establish current support for protocol 17 or every game payload.
 - **Processes.** The drain-and-replace tests replace objects in one process, not operating-system processes on
   separate machines behind a load balancer. The gateway half was measured this way; a fleet with a real load

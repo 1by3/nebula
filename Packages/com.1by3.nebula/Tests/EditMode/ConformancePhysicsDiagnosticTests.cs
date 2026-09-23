@@ -163,7 +163,7 @@ namespace Nebula.Tests
             var interior = ship.gameObject.AddComponent<Container>();
             interior.ContainerId = Tag + "-interior";
             interior.Size = Vector3.one * 10f;
-            // At edit time the carried box is the Container on the ship; DynamicContainer only registers it at runtime.
+            // At edit time the carried box is the Container on the ship; NetworkIdentity only registers it when the ship spawns.
             var crate = MakeBody("crate", ship.transform);
             crate.gameObject.AddComponent<FixedJoint>().connectedBody = ship.GetComponent<Rigidbody>();
 

@@ -179,7 +179,7 @@ foreach (var rider in shipInterior.Contents)
 worker.TryCommitTransfers(group, translation);
 ```
 
-`shipInterior` is the ship's `DynamicContainer`. Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
+`shipInterior` is the container the ship carries (`ship.Carried`). Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
 
 You can also commit only the ship. Each rider's client follows the ship into the new scope without reconnecting: it keeps the ship, its own pawn, and everything else aboard, such as cargo or other players, with no despawn. It starts receiving the destination's entities and stops receiving the scope it left. Clients that were watching the ship from the old scope lose it and everything aboard, and are not told where it went. A rider that reconnects after the crossing finds the ship in its new scope.
 

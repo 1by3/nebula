@@ -38,7 +38,7 @@ The form of the id tells the kind. `EntityLocation.ContainerKind` classifies it 
 | --- | --- | --- |
 | Static (a scene `Container` or a baked world cell) | The authored `ContainerId`. | As long as you keep the authored id. |
 | Runtime (registered while the mesh runs) | `rt_` followed by the decimal 64-bit id the game registered. | As long as the game derives the same id from the same input. |
-| Dynamic (carried by a `DynamicContainer` entity) | `label#netId`, with the carrier's network id. | One mesh run. The carrier gets a new network id when the mesh restarts. |
+| Dynamic (a `Container` on an entity's root, carried by the entity) | `label#netId`, with the carrier's network id. | One mesh run. The carrier gets a new network id when the mesh restarts. |
 | None | `""`. | Not applicable. |
 
 <Callout type="warn">

@@ -182,10 +182,10 @@ public class ScaleOperationsTests
     /// (<c>docs/compatibility-policy.md</c>). The scenario walks all four edges: the minimum, the current
     /// version, one below the minimum and one above the current.
     /// <para>
-    /// Today <c>MinProtocolVersion == ProtocolVersion == 18</c>, because 18 is the floor the policy starts from:
-    /// the two admitted cases are the same version and "one below the minimum" is 17. The test is written
-    /// against the constants, so bumping the protocol to 19 (min 18) turns the first row into a genuine N-1
-    /// admission with nothing to edit here. The recorded-stream half of that guarantee is the conformance test
+    /// Today <c>MinProtocolVersion == ProtocolVersion == 19</c>: the step from 18 renumbered carrier behaviours and
+    /// could not be additive, so the two admitted cases are the same version and "one below the minimum" is 18. The
+    /// test is written against the constants, so an additive bump to 20 (min 19) turns the first row into a genuine
+    /// N-1 admission with nothing to edit here. The recorded-stream half of that guarantee is the conformance test
     /// <c>ConformanceProtocolCompatibilityTests</c>.
     /// </para>
     /// <para>

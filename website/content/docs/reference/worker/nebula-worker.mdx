@@ -539,7 +539,7 @@ public void EmptyContainer(Container container);
 
 Despawn everything this worker is authoritative for inside `container`, keeping the records of persistent entities (they come back when the box is asked for again) and losing everything else. The contents half of [`ReleaseRuntimeContainer`](#releaseruntimecontainer), split out because the scope lifecycle empties a part without deleting its lease row — the orchestrator deletes the rows, and only once every part has reported its checkpoint done (`docs/scope-lifecycle.md`).
 
-A vehicle's cargo leaves with the vehicle. Entities riding in a [`DynamicContainer`](/docs/reference/containers/dynamic-container) of an entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier. Riders another worker owns (an interior pinned to it, a rider whose handover has not happened yet) are taken too: that worker despawns and saves them aboard the same way when it hears that the carrier left (`docs/dynamic-worlds.md`, "Retiring a chunk under a carrier", D5).
+A vehicle's cargo leaves with the vehicle. Entities riding in the carried container ([`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)) of an entity in the box, at any depth, are despawned too, riders before their carrier. A persistent rider is checkpointed while it is still aboard, so its record names the carrier and it is restored with the carrier. Riders another worker owns (an interior pinned to it, a rider whose handover has not happened yet) are taken too: that worker despawns and saves them aboard the same way when it hears that the carrier left (`docs/dynamic-worlds.md`, "Retiring a chunk under a carrier", D5).
 
 ### Spawn [#spawn]
 
@@ -571,7 +571,7 @@ public void Despawn(NetworkIdentity identity, bool keepPersisted = false);
 
 Remove an entity from the mesh. A persistent entity ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)) is also forgotten by the store: this is the entity ceasing to exist, not merely leaving this process. Pass `keepPersisted` true when the world should keep it (a player disconnecting, a cell unloading): its record is checkpointed one last time and left in place.
 
-Whatever still rides in the entity's [`DynamicContainer`](/docs/reference/containers/dynamic-container) is put down in the container the entity was in, here and on every worker that holds a ghost of it. To take the cargo along, despawn the riders first, or empty the box around the vehicle with [`EmptyContainer`](#emptycontainer).
+Whatever still rides in the entity's carried container ([`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)) is put down in the container the entity was in, here and on every worker that holds a ghost of it. To take the cargo along, despawn the riders first, or empty the box around the vehicle with [`EmptyContainer`](#emptycontainer).
 
 ### Find [#find]
 
@@ -625,7 +625,7 @@ public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector
 
 Commit a group only when every member is ready. Each member must have its own preparation and admission check.
 
-A member riding in another member's [`DynamicContainer`](/docs/reference/containers/dynamic-container), at any depth (the crew of a ship that is itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the destination container. Its preparation is still what readies its owner's client for the destination.
+A member riding in another member's carried container ([`NetworkIdentity.Carried`](/docs/reference/core/network-identity#carried)), at any depth (the crew of a ship that is itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the destination container. Its preparation is still what readies its owner's client for the destination.
 
 | Parameter | Description |
 | --- | --- |

@@ -14,7 +14,7 @@ Create containers around areas that make sense for your game, such as rooms, bui
 Nebula supports two kinds of container:
 
 - Create a **static container** in a scene. The orchestrator assigns it to a worker through the control plane.
-- Add `DynamicContainer` to a networked entity to create a **dynamic container** that moves with that entity. Use this for a ship interior, train car, or lift. By default, the worker that controls the carrier also controls its dynamic container. You can pin the dynamic container to a different worker from the dashboard or API.
+- Add a `Container` to the root of a networked entity to create a **dynamic container** that moves with that entity. Use this for a ship interior, train car, or lift. By default, the worker that controls the carrier also controls its dynamic container. You can pin the dynamic container to a different worker from the dashboard or API.
 
 Nebula parents an entity under its current container and sends its position in container-local coordinates. This lets a moving container carry its contents without changing their local positions.
 
