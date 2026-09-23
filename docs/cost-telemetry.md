@@ -182,6 +182,17 @@ point of the whole exercise: the cost policy, the utilization attribution
 (`WorkerLoadTracker.Attribute`) and the scaler's dry runs all go through `Of`, so weighting a boss
 changes where it is placed and when the mesh grows, not only what the dashboard prints.
 
+### D13. A reading needs enough ticks behind it
+
+A window is closed into a reading only once it holds `ContainerCostMeter.MinTicksPerSample` (10)
+simulated ticks; a shorter one stays open and carries into the next telemetry beat, and the
+document repeats the previous reading meanwhile. Found in a sample: a worker's first beat held a
+single tick, the one that spawned every pawn and ship it had just been handed, and that tick alone
+read as 144 % of the tick budget. The orchestrator published the anchor chunk as at capacity and the
+gateway refused the next joins with `AtCapacity` until the following beat cleared it. At 60 Hz and
+a 0.5–1 s beat every steady-state window is far above the floor, so only a worker that has barely
+ticked is affected.
+
 ## Configuration
 
 | Field | Default | Meaning |
@@ -199,6 +210,8 @@ changes where it is placed and when the mesh grows, not only what the dashboard 
   out of a document, a document without them, `CostWeights.Of` with and without a reported sum, the
   dominant component against its budget, `TickShare` over one worker's rows, row lifetime in
   `MeshTelemetry`, and the `/api/cost` JSON.
+- `Tests/EditMode/ContainerCostMeterTests.cs` — a one-tick window is not a reading and is averaged
+  into the next, a short window keeps the previous reading, the first call only opens the window (D13).
 - `Tests/EditMode/WorkerScalerTests.NamesWhatTheUnsplittableContainerIsActuallyExpensiveIn` — the
   reason string and `BlockedComponent` for a simulation-bound and a replication-bound container, and
   the unchanged sentence when no row has arrived.

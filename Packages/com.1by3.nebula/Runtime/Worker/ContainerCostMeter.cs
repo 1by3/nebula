@@ -83,13 +83,24 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Turn everything counted since the previous call into per-tick and per-second rates in
+        /// The fewest simulated ticks a window must hold to be a reading. A window with fewer is not closed: its
+        /// counts carry into the next one and <see cref="Latest"/> keeps the previous reading. The first
+        /// telemetry beat after a worker starts can hold a single tick that spawned everything the worker was
+        /// handed; read on its own, that one tick says the container costs more than a whole tick budget, which
+        /// the orchestrator publishes as "at capacity" and the gateway refuses joins on (docs/cost-telemetry.md D13).
+        /// </summary>
+        public const int MinTicksPerSample = 10;
+
+        /// <summary>
+        /// Turn everything counted since the window opened into per-tick and per-second rates in
         /// <see cref="Latest"/>, and start a new window. <paramref name="now"/> is a monotonic clock in seconds;
-        /// the first call only establishes the baseline. Main thread, outside the tick.
+        /// the first call only establishes the baseline. A window with fewer than <see cref="MinTicksPerSample"/>
+        /// ticks stays open (see there). Main thread, outside the tick.
         /// </summary>
         public void Sample(float now)
         {
             float dt = now - _sampledAt;
+            if (_sampledAt > 0f && _ticks < MinTicksPerSample) return;
             bool usable = _sampledAt > 0f && dt > 0.001f && _ticks > 0;
             _samples.Clear();
             if (usable)
