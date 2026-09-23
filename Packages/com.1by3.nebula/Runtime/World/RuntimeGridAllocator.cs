@@ -190,6 +190,10 @@ namespace Nebula.World
         /// or one whose lease row somebody touched within <see cref="RetireAfterSeconds"/>, is being loaded, and the
         /// entity moves into it as soon as it is registered; releasing the old chunk first would unload it from the
         /// middle of the loaded world. Content standing in space nobody wants is unloaded with the chunk as usual.</item>
+        /// <item>Another worker still simulates an entity filed under it: a ghost here whose container is this chunk.
+        /// Its authority is on its way to this worker (a handover in flight, or a peer not yet connected). Releasing
+        /// now would empty the chunk without it, and the other worker would move the live entity into another box
+        /// instead of it being checkpointed with this one. The chunk is kept until the entity arrives.</item>
         /// </list>
         /// </summary>
         private bool MustKeep(Container chunk)
@@ -202,6 +206,7 @@ namespace Nebula.World
                 var e = contents[i];
                 if (e == null) continue;
                 if (e.OwnerClientId != 0) keep = true;
+                else if (!e.HasAuthority && e.Container == chunk) keep = true;
                 else if (e.HasAuthority && e.Container == chunk && StandsInLiveSpaceOutside(e, chunk)) keep = true;
             }
             contents.Clear();

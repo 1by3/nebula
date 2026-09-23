@@ -219,14 +219,24 @@ now also leaves its container's `Entities` list when it is despawned rather than
 Otherwise a carrier despawned in the same pass would set a dead rider down, and a scoped box that still listed a
 departed entity could never be unregistered.
 
+**D4 A chunk is kept while another worker simulates something filed under it** (NEB-262). The owner judges a chunk
+from what it holds, and an entity filed under the chunk whose authority is still on another worker (a handover in
+flight, or a peer that has not connected yet) is only a ghost here. Releasing then empties the chunk without it;
+on the other worker the box disappears from under a live authoritative entity, which is moved into the nearest box
+and lives on, never checkpointed with the chunk, while the chunk's record for it is left behind for the next
+restore. `RuntimeGridAllocator` therefore keeps a chunk while a ghost is filed directly in it, until the authority
+arrives and the entity can go with the chunk. A worker that nevertheless finds one of its authoritative persistent
+entities in a runtime box another worker released logs a warning naming both (`NebulaWorker`, on
+`ContainerRegistry.RuntimeUnregistering`), so the path is visible if it is ever taken some other way.
+`ConformanceChunkReleaseTests`.
+
 Not changed:
 
 - Lease creation falling behind fast movers (NEB-251). This fix keeps the world consistent while leases lag, and
   does not make them faster.
 - Telemetry counts a rider in its carrier's box, which is right for cost (the box follows its carrier's worker).
-  `ScopeLifecycle.Occupancy` sums a scope's parts only, so a custom retire policy that reads `Players` sees 0 for a
-  scope whose players are all aboard vehicles. The default policy is not affected, because the vehicle itself is an
-  authoritative entity in the part and the worker keeps a busy part's row fresh (D1).
+  Since NEB-259 each carried box's row also names the box its vehicle is in, and `ScopeLifecycle.Occupancy` folds
+  riders into the scope part their vehicle is in.
 - A client-owned rider in a box the scope lifecycle retires is despawned with its carrier, as a client's pawn
   standing directly in the box is. The allocator never retires such a chunk (D1).
 

@@ -363,6 +363,7 @@ namespace Nebula
             ContainerRegistry.LeasesChanged += OnLeasesChanged;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
+            ContainerRegistry.RuntimeUnregistering += OnRuntimeUnregistering;
             ContainerRegistry.WorkerIdByIndex = ResolveWorkerId;
             SceneEntities.Registered += OnSceneEntityRegistered;
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
@@ -575,6 +576,7 @@ namespace Nebula
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
             ContainerRegistry.DynamicRegistered -= OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered -= OnLateContainerRegistered;
+            ContainerRegistry.RuntimeUnregistering -= OnRuntimeUnregistering;
             SceneEntities.Registered -= OnSceneEntityRegistered;
             SceneEntities.Unregistering -= OnSceneEntityUnregistering;
             if (ControlPlane != null)
@@ -1722,6 +1724,25 @@ namespace Nebula
         }
 
         /// <summary>A carrier's or a runtime container is resolvable now: apply the ghosts and handovers that were waiting for it.</summary>
+        /// <summary>
+        /// A runtime container's lease row is gone and the box is about to be forgotten here. Its owner emptied it
+        /// first (<see cref="ReleaseRuntimeContainer"/>), so a persistent entity this worker is still authoritative
+        /// for inside it was never checkpointed with the box: it is about to be moved into whatever box is nearest and
+        /// live on. That is only possible when the owner released the box while the entity's authority was on
+        /// another worker (a handover in flight, or a peer that never connected). Said loudly, because it is the
+        /// one way an entity survives its box's release, and a later restore of that box would find its old record.
+        /// </summary>
+        private void OnRuntimeUnregistering(Container container)
+        {
+            if (container == null || container.OwnerWorkerId == WorkerId) return;
+            for (int i = 0; i < container.Entities.Count; i++)
+            {
+                var e = container.Entities[i];
+                if (e == null || !e.IsSpawned || !e.HasAuthority || e.Persistent == null) continue;
+                NebulaLog.Warn($"{e} ({e.Persistent.Key}) is authoritative here but filed in {container.ContainerId}, which {container.OwnerWorkerId} released; it was not checkpointed with the box and moves to the nearest container instead");
+            }
+        }
+
         private void OnLateContainerRegistered(Container container)
         {
             var key = container.Ref;
