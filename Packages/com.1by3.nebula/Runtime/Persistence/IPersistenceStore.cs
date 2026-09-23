@@ -144,8 +144,21 @@ namespace Nebula
         /// </para>
         /// </summary>
         void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
-        /// <summary>Every record whose <see cref="PersistedEntityRecord.CarrierKey"/> is <paramref name="carrierKey"/>.</summary>
-        void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+        /// <summary>
+        /// What several carriers hold, in one read: for each key in <paramref name="carrierKeys"/>, every record
+        /// whose <see cref="PersistedEntityRecord.CarrierKey"/> is that key. <paramref name="onLoaded"/> runs once, on
+        /// the main thread, with an entry for every distinct key asked for (an empty list when nothing is saved
+        /// aboard; always empty for the empty key, which is no carrier).
+        /// <para>
+        /// This is how a worker brings back what rode in the carriers it spawns: however many carriers spawn at once
+        /// (a container restore that brings back a hangar full of vehicles, a re-deal), <see cref="NebulaPersistence"/>
+        /// asks for them in a few bounded reads (<see cref="NebulaPersistence.MaxCarriersPerRestoreLoad"/> keys each,
+        /// at most <see cref="NebulaPersistence.MaxRestoreLoadsInFlight"/> at a time) instead of one read per
+        /// carrier. Ask for one key to read one carrier. A store may split a longer list into several backend
+        /// queries (<see cref="PersistenceHost.MaxCarriersPerLoad"/> keys each) and still answers once.
+        /// </para>
+        /// </summary>
+        void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
         /// <summary>
         /// Every record that matches <paramref name="predicate"/>. For tools and game directors, not for the
         /// per-lease restore path. This is the <b>offline read</b>: the records of a scope nothing is simulating are
@@ -221,6 +234,35 @@ namespace Nebula
         {
             if (record == null || !string.IsNullOrEmpty(record.CarrierKey)) return;
             if (result.TryGetValue(record.ContainerId ?? "", out var list)) ((List<PersistedEntityRecord>)list).Add(record);
+        }
+
+        /// <summary>Empty every entry again: a store that retries a read starts over.</summary>
+        public static void Reset(Dictionary<string, IReadOnlyList<PersistedEntityRecord>> result)
+        {
+            foreach (var list in result.Values) ((List<PersistedEntityRecord>)list).Clear();
+        }
+    }
+
+    /// <summary>The answer of <see cref="IPersistenceStore.LoadCarried"/> as the stores build it.</summary>
+    internal static class CarriedRecords
+    {
+        /// <summary>
+        /// An entry, empty for now, for every distinct non-null key in <paramref name="carrierKeys"/>;
+        /// <paramref name="distinct"/> lists the ones worth reading once each, in order. The empty key gets its
+        /// (always empty) entry but is never read: it is what every record outside a carrier has.
+        /// </summary>
+        public static Dictionary<string, IReadOnlyList<PersistedEntityRecord>> For(IReadOnlyList<string> carrierKeys, out List<string> distinct)
+        {
+            var result = ContainerRecords.For(carrierKeys, out distinct);
+            distinct.Remove("");
+            return result;
+        }
+
+        /// <summary>File <paramref name="record"/> under its carrier when that carrier was asked for.</summary>
+        public static void Add(Dictionary<string, IReadOnlyList<PersistedEntityRecord>> result, PersistedEntityRecord record)
+        {
+            if (record == null || string.IsNullOrEmpty(record.CarrierKey)) return;
+            if (result.TryGetValue(record.CarrierKey, out var list)) ((List<PersistedEntityRecord>)list).Add(record);
         }
     }
 }

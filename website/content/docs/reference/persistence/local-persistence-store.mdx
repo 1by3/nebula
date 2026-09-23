@@ -143,8 +143,10 @@ One pass over the records, however many containers are asked for.
 ### LoadCarried [#loadcarried]
 
 ```csharp
-public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+One pass over the records, however many carriers are asked for.
 
 ### LoadWhere [#loadwhere]
 

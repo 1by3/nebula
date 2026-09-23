@@ -90,7 +90,7 @@ namespace Nebula.Tests
             Assert.AreEqual(2, inContainer.Count, "the carried record belongs to its carrier, not to a container");
 
             IReadOnlyList<PersistedEntityRecord> carried = null;
-            store.LoadCarried("ship-1", r => carried = r);
+            store.LoadCarried(new[] { "ship-1" }, r => carried = r["ship-1"]);
             store.Tick();
             Assert.AreEqual(1, carried.Count);
             Assert.AreEqual("cargo-1", carried[0].Key);

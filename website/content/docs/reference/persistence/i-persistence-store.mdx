@@ -102,10 +102,12 @@ This is how a worker restores the containers it gains: however many leases arriv
 ### LoadCarried [#loadcarried]
 
 ```csharp
-void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
 
-Every record whose [`PersistedEntityRecord.CarrierKey`](/docs/reference/persistence/persisted-entity-record#carrierkey) is `carrierKey`.
+What several carriers hold, in one read: for each key in `carrierKeys`, every record whose [`PersistedEntityRecord.CarrierKey`](/docs/reference/persistence/persisted-entity-record#carrierkey) is that key. `onLoaded` runs once, on the main thread, with an entry for every distinct key asked for (an empty list when nothing is saved aboard; always empty for the empty key, which is no carrier).
+
+This is how a worker brings back what rode in the carriers it spawns: however many carriers spawn at once (a container restore that brings back a hangar full of vehicles, a re-deal), [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence) asks for them in a few bounded reads ([`NebulaPersistence.MaxCarriersPerRestoreLoad`](/docs/reference/persistence/nebula-persistence#maxcarriersperrestoreload) keys each, at most [`NebulaPersistence.MaxRestoreLoadsInFlight`](/docs/reference/persistence/nebula-persistence#maxrestoreloadsinflight) at a time) instead of one read per carrier. Ask for one key to read one carrier. A store may split a longer list into several backend queries ([`PersistenceHost.MaxCarriersPerLoad`](/docs/reference/persistence/persistence-host#maxcarriersperload) keys each) and still answers once.
 
 ### LoadWhere [#loadwhere]
 

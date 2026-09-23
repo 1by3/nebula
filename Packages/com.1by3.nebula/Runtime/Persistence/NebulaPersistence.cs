@@ -29,6 +29,12 @@ namespace Nebula
     /// batches waiting on the store at a time. The rest wait for a later frame. Nothing about a lease change can make
     /// the worker send an unbounded burst of requests to the orchestrator, which serves the control plane's
     /// heartbeats from the same address.
+    /// </para><para>
+    /// What rode in a carrier comes back with the carrier, and those reads are batched the same way. A carrier that
+    /// spawns with authority is marked due; each frame the due carriers are read together through
+    /// <see cref="IPersistenceStore.LoadCarried"/>, at most <see cref="MaxCarriersPerRestoreLoad"/> per read and at
+    /// most <see cref="MaxRestoreLoadsInFlight"/> of those reads waiting at a time, so a restore that brings back a
+    /// hangar full of vehicles costs one read rather than one per vehicle.
     /// </para>
     /// </summary>
     public sealed class NebulaPersistence
@@ -43,8 +49,13 @@ namespace Nebula
         public const float PoseTurnThresholdDegrees = 5f;
         /// <summary>Most containers one restore read asks the store for (<see cref="IPersistenceStore.LoadContainers"/>).</summary>
         public const int MaxContainersPerRestoreLoad = PersistenceHost.MaxContainersPerLoad;
-        /// <summary>Most restore reads waiting on the store at once. Containers that are due beyond that wait for a later frame.</summary>
+        /// <summary>
+        /// Most restore reads waiting on the store at once, counted separately for container reads and carrier reads.
+        /// Containers or carriers that are due beyond that wait for a later frame.
+        /// </summary>
         public const int MaxRestoreLoadsInFlight = 2;
+        /// <summary>Most carriers one read of their cargo asks the store for (<see cref="IPersistenceStore.LoadCarried"/>).</summary>
+        public const int MaxCarriersPerRestoreLoad = PersistenceHost.MaxCarriersPerLoad;
 
         private readonly NebulaWorker _worker;
         private readonly NebulaConfig _config;
@@ -82,6 +93,15 @@ namespace Nebula
         private readonly Dictionary<string, object> _loadRequested = new Dictionary<string, object>();
         /// <summary>Restore reads issued and not answered yet (at most <see cref="MaxRestoreLoadsInFlight"/>).</summary>
         private int _restoreLoadsInFlight;
+        /// <summary>Carriers spawned with authority whose cargo is still to be asked for, in spawn order (<see cref="PumpCarried"/>).</summary>
+        private readonly List<string> _carriersDue = new List<string>();
+        /// <summary>
+        /// Carriers whose cargo is due (null) or has been asked for (the batch that asked). An answer is used only
+        /// when its batch is still the one on record: the carrier did not despawn, or spawn again, meanwhile.
+        /// </summary>
+        private readonly Dictionary<string, object> _carriedRequested = new Dictionary<string, object>();
+        /// <summary>Carrier reads issued and not answered yet (at most <see cref="MaxRestoreLoadsInFlight"/>).</summary>
+        private int _carriedLoadsInFlight;
         /// <summary>Containers whose load came back and was judged, and how many entities each one brought back (see <see cref="ContainerRestored"/>).</summary>
         private readonly Dictionary<string, int> _restoreComplete = new Dictionary<string, int>();
         /// <summary>Records held back because their saver may still hand the entity over; re-judged after another grace.</summary>
@@ -118,6 +138,8 @@ namespace Nebula
         public int RestoredCount { get; private set; }
         /// <summary>Restore reads (<see cref="IPersistenceStore.LoadContainers"/>) waiting on the store right now.</summary>
         public int RestoreLoadsInFlight => _restoreLoadsInFlight;
+        /// <summary>Reads of what carriers hold (<see cref="IPersistenceStore.LoadCarried"/>) waiting on the store right now.</summary>
+        public int CarriedLoadsInFlight => _carriedLoadsInFlight;
 
         /// <summary>
         /// How long the oldest currently-dirty tracked entity has been waiting for its next checkpoint, in seconds;
@@ -455,6 +477,7 @@ namespace Nebula
         {
             float now = Now();
             PumpRestores(now);
+            PumpCarried();
             PumpWaiting(now);
             PumpCheckpoints(now);
         }
@@ -496,6 +519,52 @@ namespace Nebula
                 // One container's trouble (a prefab that throws on spawn, a hook) must not cost the rest of the batch.
                 try { OnContainerRecords(containerId, records); }
                 catch (Exception e) { NebulaLog.Error($"persistence: restoring {containerId} failed: {e}"); }
+            }
+        }
+
+        /// <summary>
+        /// Read what the carriers that are due hold: together, at most <see cref="MaxCarriersPerRestoreLoad"/> per
+        /// read and at most <see cref="MaxRestoreLoadsInFlight"/> reads waiting. The rest wait for a later frame.
+        /// </summary>
+        private void PumpCarried()
+        {
+            if (_carriersDue.Count == 0 || !_store.IsConnected) return;
+            while (_carriedLoadsInFlight < MaxRestoreLoadsInFlight && _carriersDue.Count > 0)
+            {
+                List<string> batch = null;
+                int taken = 0;
+                while (taken < _carriersDue.Count && (batch == null || batch.Count < MaxCarriersPerRestoreLoad))
+                {
+                    string key = _carriersDue[taken++];
+                    // Despawned, or already asked for since (a stale entry left behind by a despawn and respawn).
+                    if (!_carriedRequested.TryGetValue(key, out var asked) || asked != null) continue;
+                    var carrier = Find(key);
+                    if (carrier == null || !carrier.HasAuthority || carrier.Carried == null) { _carriedRequested.Remove(key); continue; }
+                    (batch ?? (batch = new List<string>())).Add(key);
+                }
+                _carriersDue.RemoveRange(0, taken);
+                if (batch == null) continue;
+                var request = new object();
+                for (int i = 0; i < batch.Count; i++) _carriedRequested[batch[i]] = request;
+                _carriedLoadsInFlight++;
+                _store.LoadCarried(batch, loaded => OnCarriedLoaded(batch, request, loaded));
+            }
+        }
+
+        /// <summary>A carrier read came back: bring back the cargo of each carrier it asked for that is still the one that asked.</summary>
+        private void OnCarriedLoaded(List<string> batch, object request, IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>> loaded)
+        {
+            _carriedLoadsInFlight--;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                string key = batch[i];
+                if (!_carriedRequested.TryGetValue(key, out var current) || !ReferenceEquals(current, request)) continue;
+                _carriedRequested.Remove(key);
+                IReadOnlyList<PersistedEntityRecord> records = null;
+                loaded?.TryGetValue(key, out records);
+                // One carrier's trouble must not cost the rest of the batch.
+                try { OnCarriedRecords(key, records); }
+                catch (Exception e) { NebulaLog.Error($"persistence: restoring what {key} carries failed: {e}"); }
             }
         }
 
@@ -689,10 +758,15 @@ namespace Nebula
             _waiting.Remove(key);
             _waitingUntil.Remove(key);
 
-            // A carrier brings its cargo back with it.
-            if (identity.HasAuthority && identity.Carried != null && _store.IsConnected)
+            // A carrier brings its cargo back with it: read with the other carriers due (PumpCarried). A carrier
+            // that spawns again while its read is out is asked for again, and the older answer is dropped.
+            if (identity.HasAuthority && identity.Carried != null)
             {
-                _store.LoadCarried(key, records => OnCarriedRecords(key, records));
+                if (!_carriedRequested.TryGetValue(key, out var asked) || asked != null)
+                {
+                    _carriedRequested[key] = null;
+                    _carriersDue.Add(key);
+                }
             }
         }
 
@@ -719,7 +793,11 @@ namespace Nebula
             _tracked.Remove(pe);
             _restored.Remove(pe);
             string key = pe.Key;
-            if (!string.IsNullOrEmpty(key) && _byKey.TryGetValue(key, out var held) && held == identity) _byKey.Remove(key);
+            if (!string.IsNullOrEmpty(key) && _byKey.TryGetValue(key, out var held) && held == identity)
+            {
+                _byKey.Remove(key);
+                _carriedRequested.Remove(key); // its cargo is no longer wanted here, whether it was due or asked for
+            }
         }
 
         /// <summary>
@@ -788,6 +866,9 @@ namespace Nebula
             _worker.EntityDespawned -= OnEntityDespawned;
             _worker.AuthorityReceived -= OnAuthorityReceived;
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
+            // Cargo still due or on its way is not brought back into a worker that is going away.
+            _carriersDue.Clear();
+            _carriedRequested.Clear();
 
             int saved = 0;
             for (int i = 0; i < _tracked.Count; i++)

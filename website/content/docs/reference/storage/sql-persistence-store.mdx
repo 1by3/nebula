@@ -124,8 +124,10 @@ One job on the writer thread, one `SELECT ... WHERE container_id IN (...)` per [
 ### LoadCarried [#loadcarried]
 
 ```csharp
-public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+One job on the writer thread, one `SELECT ... WHERE carrier_key IN (...)` per [`PersistenceHost.MaxCarriersPerLoad`](/docs/reference/persistence/persistence-host#maxcarriersperload) keys (the `nebula_entity_carrier` index answers it), answered once when every chunk has been read.
 
 ### LoadWhere [#loadwhere]
 

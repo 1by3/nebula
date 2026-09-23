@@ -11,7 +11,7 @@ public sealed class RemotePersistenceStore : IPersistenceStore
 
 [`IPersistenceStore`](/docs/reference/persistence/i-persistence-store) for a worker: every save and load goes to the orchestrator, which owns the real store ([`PersistenceHost`](/docs/reference/persistence/persistence-host) over the dashboard address, the same one the control plane uses).
 
-Saves are coalesced per key and posted in batches from a sender thread a fraction of a second after they are issued; a batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away. Reads wait in one queue and [`MaxConcurrentReads`](#maxconcurrentreads) reader threads send them, one request at a time each, retried until they succeed; their answers are handed back from [`Tick`](#tick) on the main thread like every other store. However many reads are asked for at once, the store never has more than [`MaxConcurrentReads`](#maxconcurrentreads) of them in flight, so a burst of reads cannot swamp the process's thread pool or its connections to the orchestrator, which the control plane's heartbeat shares. [`LoadContainers`](#loadcontainers) asks for up to [`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) containers per request. [`IsConnected`](#isconnected) and [`KnownCount`](#knowncount) come from a status probe every few seconds.
+Saves are coalesced per key and posted in batches from a sender thread a fraction of a second after they are issued; a batch the orchestrator cannot take is kept and retried, so nothing is lost while it is away. Reads wait in one queue and [`MaxConcurrentReads`](#maxconcurrentreads) reader threads send them, one request at a time each, retried until they succeed; their answers are handed back from [`Tick`](#tick) on the main thread like every other store. However many reads are asked for at once, the store never has more than [`MaxConcurrentReads`](#maxconcurrentreads) of them in flight, so a burst of reads cannot swamp the process's thread pool or its connections to the orchestrator, which the control plane's heartbeat shares. [`LoadContainers`](#loadcontainers) asks for up to [`PersistenceHost.MaxContainersPerLoad`](/docs/reference/persistence/persistence-host#maxcontainersperload) containers per request and [`LoadCarried`](#loadcarried) for up to [`PersistenceHost.MaxCarriersPerLoad`](/docs/reference/persistence/persistence-host#maxcarriersperload) carriers. [`IsConnected`](#isconnected) and [`KnownCount`](#knowncount) come from a status probe every few seconds.
 
 ## Constructors
 
@@ -148,8 +148,10 @@ public void LoadContainers(IReadOnlyList<string> containerIds, Action<IReadOnlyD
 ### LoadCarried [#loadcarried]
 
 ```csharp
-public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded);
+public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded);
 ```
+
+`POST /api/store/carried`, [`PersistenceHost.MaxCarriersPerLoad`](/docs/reference/persistence/persistence-host#maxcarriersperload) keys per request; a longer list becomes several requests in the read queue and is still answered once, when all are back.
 
 ### LoadWhere [#loadwhere]
 

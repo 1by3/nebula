@@ -168,7 +168,7 @@ public class StorageAndHostTests
 
         IReadOnlyList<PersistedEntityRecord>? inC1 = null, carried = null, all = null;
         store.LoadContainers(new[] { "c1" }, r => inC1 = r["c1"]);
-        store.LoadCarried("truck", r => carried = r);
+        store.LoadCarried(new[] { "truck" }, r => carried = r["truck"]);
         store.LoadWhere(r => r.ContainerId == "c2", r => all = r);
         WaitUntil(() => inC1 != null && carried != null && all != null, store.Tick);
         Assert.That(inC1!.Select(r => r.Key), Is.EquivalentTo(new[] { "a" }));
@@ -231,13 +231,14 @@ public class StorageAndHostTests
         var failed = new Dictionary<string, bool>();
         PersistedEntityRecord? loaded = Record("sentinel", "x");
         IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>? containers = null;
-        IReadOnlyList<PersistedEntityRecord>? carried = null, where = null;
+        IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>? carried = null;
+        IReadOnlyList<PersistedEntityRecord>? where = null;
         int count = -1;
         store.Save(Record("a", "c1"));
         store.WhenWritten(() => failed["barrier"] = PersistenceAnswer.Failed);
         store.Load("a", r => { loaded = r; failed["load"] = PersistenceAnswer.Failed; });
         store.LoadContainers(new[] { "c1", "c2" }, r => { containers = r; failed["containers"] = PersistenceAnswer.Failed; });
-        store.LoadCarried("truck", r => { carried = r; failed["carried"] = PersistenceAnswer.Failed; });
+        store.LoadCarried(new[] { "truck" }, r => { carried = r; failed["carried"] = PersistenceAnswer.Failed; });
         store.LoadWhere(_ => true, r => { where = r; failed["where"] = PersistenceAnswer.Failed; });
         store.CountRecords("", "", n => { count = n; failed["count"] = PersistenceAnswer.Failed; });
         try
@@ -248,7 +249,8 @@ public class StorageAndHostTests
             Assert.That(loaded, Is.Null);
             Assert.That(containers!.Keys, Is.EquivalentTo(new[] { "c1", "c2" }));
             Assert.That(containers.Values.All(list => list.Count == 0));
-            Assert.That(carried, Is.Empty);
+            Assert.That(carried!.Keys, Is.EquivalentTo(new[] { "truck" }));
+            Assert.That(carried["truck"], Is.Empty);
             Assert.That(where, Is.Empty);
             Assert.That(count, Is.EqualTo(0));
             Assert.That(store.PendingJobs, Is.EqualTo(0));
@@ -547,7 +549,7 @@ public class StorageAndHostTests
 
             IReadOnlyList<PersistedEntityRecord>? inC1 = null, carried = null, filtered = null;
             remote.LoadContainers(new[] { "c1" }, r => inC1 = r["c1"]);
-            remote.LoadCarried("truck", r => carried = r);
+            remote.LoadCarried(new[] { "truck" }, r => carried = r["truck"]);
             remote.LoadWhere(r => r.Key == "b", r => filtered = r);
             WaitUntil(() => inC1 != null && carried != null && filtered != null, Pump);
             Assert.That(inC1!.Select(r => r.Key), Is.EquivalentTo(new[] { "a" }));

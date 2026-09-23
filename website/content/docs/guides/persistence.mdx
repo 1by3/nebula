@@ -61,6 +61,8 @@ An entity inside a [dynamic container](/docs/guides/dynamic-containers) is saved
 
 For this to work the carrier itself must carry a `PersistentEntity`. When it does, the pair comes back together: restoring or spawning the carrier on a worker with authority loads everything saved inside it. When it does not, Nebula logs a debug line and saves only the carried entity's pose, and the container's records are never restored automatically.
 
+Carriers that spawn in the same frame are read together, the same way containers are: one request asks for what up to 256 carriers hold, and a worker has at most two of these requests waiting at a time. A container restore that brings back a hangar full of vehicles therefore costs one request for their cargo rather than one per vehicle. The cargo comes back a frame after its carrier spawns. If the carrier despawns before the answer arrives, its cargo is not restored from that answer.
+
 ### Where a record says the entity is
 
 A record stores the entity's location as three values: `ScopeKey` (the empty string for the public world, or the instance key inside an instance), `ContainerId`, and the local pose. `PersistedEntityRecord.Location` returns them as one `EntityLocation`, the same value `NetworkIdentity.Location` reports on a live entity, and it does not change across a handover or a restart. The [entity location contract](/docs/specifications/entity-location) defines the three values and what stays stable. A record saved before Nebula recorded scope keys reads as the public world.
@@ -309,7 +311,8 @@ A worker's `remote` store talks to the orchestrator's dashboard address, the sam
 | `POST /api/store/save` `{"records":[...]}` | Save a batch. A worker gathers its checkpoints for a quarter of a second and coalesces them per key, so a checkpoint pass is one request. |
 | `POST /api/store/delete` `{"keys":[...]}`, `POST /api/store/clear` | Delete records. |
 | `POST /api/store/containers` `{"ids":[...]}` | Load the records of up to 256 containers in one request, as one `{"records":[...]}` list. A request that names more containers is refused with HTTP 400. |
-| `GET /api/store/record?key=`, `.../carried?key=`, `.../all` | Load one record, a carrier's records, or everything. |
+| `POST /api/store/carried` `{"keys":[...]}` | Load what up to 256 carriers hold in one request, as one `{"records":[...]}` list. A request that names more carriers is refused with HTTP 400. |
+| `GET /api/store/record?key=`, `.../all` | Load one record, or everything. |
 | `GET /api/store/count?scope=&container=` | How many records a scope holds (optionally narrowed to one container), counted in the database — only the number travels. |
 | `GET /api/store/status` | Backend, whether it is connected, and how many records it holds. The worker probes it every five seconds for `IsConnected` and `KnownCount`. |
 
@@ -351,7 +354,7 @@ The running mesh keeps simulating what it is holding, and its next checkpoints w
 
 The records of a world nothing is simulating are ordinary records: you do not have to activate a [scope](/docs/guides/scopes) to read what is saved in it.
 
-**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load` and `LoadContainers` are the same read narrowed to one key or to a list of containers (pass one ID to read one container). `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
+**`IPersistenceStore.LoadWhere` is the offline read.** It answers with every record that matches a predicate, on the main thread, and `Load`, `LoadContainers`, and `LoadCarried` are the same read narrowed to one key, to a list of containers, or to a list of carriers (pass one ID or key to read one). `CountRecords(scopeKey, containerId, …)` answers the cheap "is there anything saved here at all?" without moving any records — it is a `COUNT` in the database, and it is what [`OnScopeActivating`](/docs/guides/lifecycle-hooks)'s `hasRecords` is.
 
 ```csharp
 store.LoadWhere(r => r.ScopeKey == "settlement/frontier-3", records =>

@@ -19,7 +19,8 @@ namespace Nebula
     /// <see cref="MaxConcurrentReads"/> of them in flight, so a burst of reads cannot swamp the process's thread pool
     /// or its connections to the orchestrator, which the control plane's heartbeat shares.
     /// <see cref="LoadContainers"/> asks for up to <see cref="PersistenceHost.MaxContainersPerLoad"/> containers per
-    /// request. <see cref="IsConnected"/> and <see cref="KnownCount"/> come from a status probe every few seconds.
+    /// request and <see cref="LoadCarried"/> for up to <see cref="PersistenceHost.MaxCarriersPerLoad"/> carriers.
+    /// <see cref="IsConnected"/> and <see cref="KnownCount"/> come from a status probe every few seconds.
     /// </para>
     /// </summary>
     public sealed class RemotePersistenceStore : IPersistenceStore
@@ -193,38 +194,18 @@ namespace Nebula
         {
             if (onLoaded == null) return;
             var result = ContainerRecords.For(containerIds, out var ids);
-            if (ids.Count == 0) { Deliver(() => onLoaded(result)); return; }
-            int chunkSize = PersistenceHost.MaxContainersPerLoad;
-            int remaining = (ids.Count + chunkSize - 1) / chunkSize;
-            for (int start = 0; start < ids.Count; start += chunkSize)
-            {
-                var sb = new StringBuilder("{\"ids\":[");
-                for (int i = start; i < ids.Count && i < start + chunkSize; i++)
-                {
-                    if (i > start) sb.Append(',');
-                    sb.Append(JsonWriter.Quote(ids[i]));
-                }
-                sb.Append("]}");
-                EnqueueRead(PersistenceHost.Prefix + "/containers", sb.ToString(), body =>
-                {
-                    var records = PersistedRecordJson.ParseList(body);
-                    lock (result)
-                    {
-                        for (int i = 0; i < records.Count; i++) ContainerRecords.Add(result, records[i]);
-                        if (--remaining == 0) Deliver(() => onLoaded(result));
-                    }
-                });
-            }
+            EnqueueKeyedReads("/containers", "ids", ids, PersistenceHost.MaxContainersPerLoad, result, ContainerRecords.Add, onLoaded);
         }
 
-        public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
+        /// <summary>
+        /// <c>POST /api/store/carried</c>, <see cref="PersistenceHost.MaxCarriersPerLoad"/> keys per request; a longer
+        /// list becomes several requests in the read queue and is still answered once, when all are back.
+        /// </summary>
+        public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded)
         {
             if (onLoaded == null) return;
-            EnqueueRead($"{PersistenceHost.Prefix}/carried?key={Uri.EscapeDataString(carrierKey ?? "")}", null, body =>
-            {
-                var records = PersistedRecordJson.ParseList(body);
-                Deliver(() => onLoaded(records));
-            });
+            var result = CarriedRecords.For(carrierKeys, out var keys);
+            EnqueueKeyedReads("/carried", "keys", keys, PersistenceHost.MaxCarriersPerLoad, result, CarriedRecords.Add, onLoaded);
         }
 
         /// <summary>Fetches every record and filters here: the predicate cannot travel. For tools, not the restore path.</summary>
@@ -275,6 +256,39 @@ namespace Nebula
         private void Deliver(Action callback)
         {
             lock (_gate) _callbacks.Add(callback);
+        }
+
+        /// <summary>
+        /// Queue the POSTs of a keyed read: <paramref name="values"/> as the JSON list <paramref name="field"/>, at most
+        /// <paramref name="chunkSize"/> per request. Each answer's records are filed into <paramref name="result"/> by
+        /// <paramref name="file"/>, and <paramref name="onLoaded"/> is handed back once, when every request is back.
+        /// </summary>
+        private void EnqueueKeyedReads(string op, string field, List<string> values, int chunkSize,
+            Dictionary<string, IReadOnlyList<PersistedEntityRecord>> result,
+            Action<Dictionary<string, IReadOnlyList<PersistedEntityRecord>>, PersistedEntityRecord> file,
+            Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded)
+        {
+            if (values.Count == 0) { Deliver(() => onLoaded(result)); return; }
+            int remaining = (values.Count + chunkSize - 1) / chunkSize;
+            for (int start = 0; start < values.Count; start += chunkSize)
+            {
+                var sb = new StringBuilder("{").Append(JsonWriter.Quote(field)).Append(":[");
+                for (int i = start; i < values.Count && i < start + chunkSize; i++)
+                {
+                    if (i > start) sb.Append(',');
+                    sb.Append(JsonWriter.Quote(values[i]));
+                }
+                sb.Append("]}");
+                EnqueueRead(PersistenceHost.Prefix + op, sb.ToString(), body =>
+                {
+                    var records = PersistedRecordJson.ParseList(body);
+                    lock (result)
+                    {
+                        for (int i = 0; i < records.Count; i++) file(result, records[i]);
+                        if (--remaining == 0) Deliver(() => onLoaded(result));
+                    }
+                });
+            }
         }
 
         /// <summary>Queue a read for the reader threads: GET <paramref name="path"/>, or POST <paramref name="body"/> to it.</summary>

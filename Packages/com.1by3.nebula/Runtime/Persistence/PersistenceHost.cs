@@ -14,8 +14,9 @@ namespace Nebula
     /// <see cref="RemotePersistenceStore.WhenWritten"/> is a real durability barrier and not just proof of delivery.
     /// <list type="bullet">
     /// <item><c>POST /api/store/save</c> <c>{"records":[...]}</c>, <c>POST /api/store/delete</c> <c>{"keys":[...]}</c>, <c>POST /api/store/clear</c></item>
-    /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/carried?key=</c>, <c>GET /api/store/all</c></item>
+    /// <item><c>GET /api/store/record?key=</c>, <c>GET /api/store/all</c></item>
     /// <item><c>POST /api/store/containers</c> <c>{"ids":[...]}</c>: the records of up to <see cref="MaxContainersPerLoad"/> containers, as one <c>{"records":[...]}</c> list</item>
+    /// <item><c>POST /api/store/carried</c> <c>{"keys":[...]}</c>: what up to <see cref="MaxCarriersPerLoad"/> carriers hold, as one <c>{"records":[...]}</c> list</item>
     /// <item><c>GET /api/store/count?scope=&amp;container=</c>: how many records a scope (optionally one of its containers) holds, without reading them</item>
     /// <item><c>GET /api/store/status</c>: backend, whether it is connected, how many records it holds</item>
     /// </list>
@@ -30,6 +31,12 @@ namespace Nebula
         /// this size, and <c>SqlPersistenceStore</c> queries the database in chunks of this size.
         /// </summary>
         public const int MaxContainersPerLoad = 256;
+        /// <summary>
+        /// Most carrier keys one <c>POST /api/store/carried</c> request may name. A larger request is refused with
+        /// HTTP 400; <see cref="RemotePersistenceStore.LoadCarried"/> splits a longer list into requests of this size,
+        /// and <c>SqlPersistenceStore</c> queries the database in chunks of this size.
+        /// </summary>
+        public const int MaxCarriersPerLoad = 256;
 
         private readonly IPersistenceStore _store;
         private readonly string _token;
@@ -96,30 +103,20 @@ namespace Nebula
                 {
                     // Several containers in one request: a worker that gains hundreds of leases at once restores
                     // them in a few of these rather than one request per container.
-                    if (!PersistenceJson.TryParseObject(req.Body, out var body, out string error)) { response = OrchestratorHttpServer.Response.Error(400, error); return true; }
-                    var ids = new List<string>();
-                    if (body.TryGetValue("ids", out var v) && v is List<object> list)
-                    {
-                        foreach (var item in list)
-                        {
-                            if (!(item is string id)) { response = OrchestratorHttpServer.Response.Error(400, "container ids must be strings"); return true; }
-                            ids.Add(id);
-                        }
-                    }
-                    if (ids.Count > MaxContainersPerLoad) { response = OrchestratorHttpServer.Response.Error(400, $"at most {MaxContainersPerLoad} container ids per request, got {ids.Count}"); return true; }
-                    _store.LoadContainers(ids, loaded => req.Complete(Answer(() =>
-                    {
-                        var records = new List<PersistedEntityRecord>();
-                        foreach (var kv in loaded) records.AddRange(kv.Value);
-                        return OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(records));
-                    })));
+                    if (!TryReadList(req, "ids", "container ids", MaxContainersPerLoad, out var ids, out response)) return true;
+                    _store.LoadContainers(ids, loaded => req.Complete(Answer(() => RecordList(loaded))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
-                case "GET carried":
-                    _store.LoadCarried(req.GetQuery("key"), rs => req.Complete(Answer(() => OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs)))));
+                case "POST carried":
+                {
+                    // Several carriers in one request, for the same reason: a restore that brings back a hangar full
+                    // of vehicles reads what rode in them in a few of these rather than one request per vehicle.
+                    if (!TryReadList(req, "keys", "carrier keys", MaxCarriersPerLoad, out var keys, out response)) return true;
+                    _store.LoadCarried(keys, loaded => req.Complete(Answer(() => RecordList(loaded))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
+                }
                 case "GET count":
                     // Only the number travels: this is the "is there anything saved for this scope?" question a
                     // worker asks on the path that brings a scope to life (docs/lifecycle-hooks.md).
@@ -135,6 +132,35 @@ namespace Nebula
                     response = OrchestratorHttpServer.Response.Error(404, $"no store endpoint '{req.Method} {op}'");
                     return true;
             }
+        }
+
+        /// <summary>
+        /// The string list <paramref name="field"/> of a JSON request body, at most <paramref name="max"/> long. False
+        /// with a 400 in <paramref name="refusal"/> when the body is malformed, an item is not a string, or the list is too long.
+        /// </summary>
+        private static bool TryReadList(OrchestratorHttpServer.Request req, string field, string what, int max, out List<string> values, out OrchestratorHttpServer.Response refusal)
+        {
+            values = new List<string>();
+            refusal = default;
+            if (!PersistenceJson.TryParseObject(req.Body, out var body, out string error)) { refusal = OrchestratorHttpServer.Response.Error(400, error); return false; }
+            if (body.TryGetValue(field, out var v) && v is List<object> list)
+            {
+                foreach (var item in list)
+                {
+                    if (!(item is string value)) { refusal = OrchestratorHttpServer.Response.Error(400, what + " must be strings"); return false; }
+                    values.Add(value);
+                }
+            }
+            if (values.Count > max) { refusal = OrchestratorHttpServer.Response.Error(400, $"at most {max} {what} per request, got {values.Count}"); return false; }
+            return true;
+        }
+
+        /// <summary>A keyed answer flattened into one <c>{"records":[...]}</c> list: every record says which container or carrier it belongs to.</summary>
+        private static OrchestratorHttpServer.Response RecordList(IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>> loaded)
+        {
+            var records = new List<PersistedEntityRecord>();
+            foreach (var kv in loaded) records.AddRange(kv.Value);
+            return OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(records));
         }
 
         private void CompleteWhenWritten(OrchestratorHttpServer.Request request, OrchestratorHttpServer.Response response)

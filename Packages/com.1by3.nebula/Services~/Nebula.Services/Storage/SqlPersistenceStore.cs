@@ -219,38 +219,66 @@ namespace Nebula
             Enqueue($"containers ({ids.Count})", c =>
             {
                 // A retried job starts over: drop what a failed attempt had already filed.
-                foreach (var list in result.Values) ((List<PersistedEntityRecord>)list).Clear();
-                int chunkSize = PersistenceHost.MaxContainersPerLoad;
-                var sql = new StringBuilder();
-                for (int start = 0; start < ids.Count; start += chunkSize)
-                {
-                    int count = Math.Min(chunkSize, ids.Count - start);
-                    var args = new (string, object)[count];
-                    sql.Clear().Append("SELECT ").Append(Columns).Append(" FROM nebula_entity WHERE carrier_key = '' AND container_id IN (");
-                    for (int i = 0; i < count; i++)
-                    {
-                        if (i > 0) sql.Append(", ");
-                        string name = "@c" + i.ToString(CultureInfo.InvariantCulture);
-                        sql.Append(name);
-                        args[i] = (name, ids[start + i]);
-                    }
-                    sql.Append(')');
-                    using (var cmd = NebulaDatabase.Command(c, sql.ToString(), args))
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read()) ContainerRecords.Add(result, Read(reader));
-                    }
-                }
+                ContainerRecords.Reset(result);
+                ReadChunked(c, "carrier_key = '' AND container_id IN", ids, PersistenceHost.MaxContainersPerLoad, r => ContainerRecords.Add(result, r));
                 Deliver(() => onLoaded(result));
             }, giveUp: () =>
             {
-                foreach (var list in result.Values) ((List<PersistedEntityRecord>)list).Clear();
+                ContainerRecords.Reset(result);
                 Deliver(() => onLoaded(result), true);
             });
         }
 
-        public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
-            Query("carried " + carrierKey, $"SELECT {Columns} FROM nebula_entity WHERE carrier_key = @k", new[] { ("@k", (object)(carrierKey ?? "")) }, null, onLoaded);
+        /// <summary>
+        /// Writer thread: <c>SELECT ... WHERE {where} (@c0, @c1, ...)</c> for <paramref name="values"/>, at most
+        /// <paramref name="chunkSize"/> parameters per statement, handing every row to <paramref name="onRow"/>.
+        /// </summary>
+        private static void ReadChunked(DbConnection c, string where, IReadOnlyList<string> values, int chunkSize, Action<PersistedEntityRecord> onRow)
+        {
+            var sql = new StringBuilder();
+            for (int start = 0; start < values.Count; start += chunkSize)
+            {
+                int count = Math.Min(chunkSize, values.Count - start);
+                var args = new (string, object)[count];
+                sql.Clear().Append("SELECT ").Append(Columns).Append(" FROM nebula_entity WHERE ").Append(where).Append(" (");
+                for (int i = 0; i < count; i++)
+                {
+                    if (i > 0) sql.Append(", ");
+                    string name = "@c" + i.ToString(CultureInfo.InvariantCulture);
+                    sql.Append(name);
+                    args[i] = (name, values[start + i]);
+                }
+                sql.Append(')');
+                using (var cmd = NebulaDatabase.Command(c, sql.ToString(), args))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read()) onRow(Read(reader));
+                }
+            }
+        }
+
+        /// <summary>
+        /// One job on the writer thread, one <c>SELECT ... WHERE carrier_key IN (...)</c> per
+        /// <see cref="PersistenceHost.MaxCarriersPerLoad"/> keys (the <c>nebula_entity_carrier</c> index answers it),
+        /// answered once when every chunk has been read.
+        /// </summary>
+        public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded)
+        {
+            if (onLoaded == null) return;
+            var result = CarriedRecords.For(carrierKeys, out var keys);
+            if (keys.Count == 0) { Deliver(() => onLoaded(result)); return; }
+            Enqueue($"carried ({keys.Count})", c =>
+            {
+                // A retried job starts over: drop what a failed attempt had already filed.
+                ContainerRecords.Reset(result);
+                ReadChunked(c, "carrier_key IN", keys, PersistenceHost.MaxCarriersPerLoad, r => CarriedRecords.Add(result, r));
+                Deliver(() => onLoaded(result));
+            }, giveUp: () =>
+            {
+                ContainerRecords.Reset(result);
+                Deliver(() => onLoaded(result), true);
+            });
+        }
 
         public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded) =>
             Query("all", $"SELECT {Columns} FROM nebula_entity", Array.Empty<(string, object)>(), predicate, onLoaded);

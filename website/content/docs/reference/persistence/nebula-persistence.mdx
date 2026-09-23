@@ -17,6 +17,8 @@ Restores are deliberately timid, because a persisted entity coming back must nev
 
 Restores are also bounded in how hard they ask. A worker can gain hundreds of containers at once (a re-deal after another worker died, a rebalance, a burst of runtime chunks), and each frame the containers that are due are read in batches of at most [`MaxContainersPerRestoreLoad`](#maxcontainersperrestoreload) through [`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers), with at most [`MaxRestoreLoadsInFlight`](#maxrestoreloadsinflight) of those batches waiting on the store at a time. The rest wait for a later frame. Nothing about a lease change can make the worker send an unbounded burst of requests to the orchestrator, which serves the control plane's heartbeats from the same address.
 
+What rode in a carrier comes back with the carrier, and those reads are batched the same way. A carrier that spawns with authority is marked due; each frame the due carriers are read together through [`IPersistenceStore.LoadCarried`](/docs/reference/persistence/i-persistence-store#loadcarried), at most [`MaxCarriersPerRestoreLoad`](#maxcarriersperrestoreload) per read and at most [`MaxRestoreLoadsInFlight`](#maxrestoreloadsinflight) of those reads waiting at a time, so a restore that brings back a hangar full of vehicles costs one read rather than one per vehicle.
+
 ## Fields
 
 ### MaxSavesPerFrame [#maxsavesperframe]
@@ -65,7 +67,15 @@ Most containers one restore read asks the store for ([`IPersistenceStore.LoadCon
 public const int MaxRestoreLoadsInFlight = 2;
 ```
 
-Most restore reads waiting on the store at once. Containers that are due beyond that wait for a later frame.
+Most restore reads waiting on the store at once, counted separately for container reads and carrier reads. Containers or carriers that are due beyond that wait for a later frame.
+
+### MaxCarriersPerRestoreLoad [#maxcarriersperrestoreload]
+
+```csharp
+public const int MaxCarriersPerRestoreLoad = PersistenceHost.MaxCarriersPerLoad;
+```
+
+Most carriers one read of their cargo asks the store for ([`IPersistenceStore.LoadCarried`](/docs/reference/persistence/i-persistence-store#loadcarried)).
 
 ## Properties
 
@@ -116,6 +126,14 @@ public int RestoreLoadsInFlight { get; }
 ```
 
 Restore reads ([`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers)) waiting on the store right now.
+
+### CarriedLoadsInFlight [#carriedloadsinflight]
+
+```csharp
+public int CarriedLoadsInFlight { get; }
+```
+
+Reads of what carriers hold ([`IPersistenceStore.LoadCarried`](/docs/reference/persistence/i-persistence-store#loadcarried)) waiting on the store right now.
 
 ### OldestDirtyAgeSeconds [#oldestdirtyageseconds]
 

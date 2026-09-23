@@ -155,9 +155,20 @@ namespace Nebula
             _callbacks.Enqueue(() => onLoaded(result));
         }
 
-        public void LoadCarried(string carrierKey, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
+        /// <summary>One pass over the records, however many carriers are asked for.</summary>
+        public void LoadCarried(IReadOnlyList<string> carrierKeys, Action<IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>> onLoaded)
         {
-            LoadWhere(r => r.CarrierKey == (carrierKey ?? ""), onLoaded);
+            if (onLoaded == null) return;
+            var result = CarriedRecords.For(carrierKeys, out var distinct);
+            if (distinct.Count > 0)
+            {
+                foreach (var kv in _records)
+                {
+                    var r = kv.Value;
+                    if (!string.IsNullOrEmpty(r.CarrierKey) && result.ContainsKey(r.CarrierKey)) CarriedRecords.Add(result, r.Clone());
+                }
+            }
+            _callbacks.Enqueue(() => onLoaded(result));
         }
 
         public void LoadWhere(Func<PersistedEntityRecord, bool> predicate, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
