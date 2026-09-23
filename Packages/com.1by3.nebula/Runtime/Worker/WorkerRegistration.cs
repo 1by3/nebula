@@ -56,7 +56,49 @@ namespace Nebula
         }
 
         /// <summary>Clears the local registration flag without unregistering the worker on the control plane.</summary>
-        public void Forget() => IsRegistered = false;
+        public void Forget()
+        {
+            IsRegistered = false;
+            _listedInDocument = null;
+        }
+
+        /// <summary>The document this worker last saw its own row in (<see cref="IControlPlane.DocumentId"/>), or null before it has.</summary>
+        private string _listedInDocument;
+
+        /// <summary>
+        /// Whether the control plane has declared this worker dead: a document this worker has been listed in no
+        /// longer lists it. The orchestrator removes the row of a worker whose heartbeats stopped and deals its
+        /// containers to someone else, so the leases this worker still simulates may be restored elsewhere from their
+        /// last checkpoint (<c>docs/persistence-durability.md</c> D10). A row missing from a <i>replacement</i>
+        /// document is a control plane that came back empty, not a verdict: that is <see cref="ReclaimContainers"/>'
+        /// case (<c>docs/control-plane-availability.md</c> D1b). Call before <see cref="RegisterAgainIfForgotten"/>,
+        /// which can put the row straight back on an in-process control plane.
+        /// </summary>
+        public bool IsDeclaredDead(IControlPlane controlPlane)
+        {
+            if (!IsRegistered || controlPlane == null) return false;
+            string document = controlPlane.DocumentId ?? "";
+            if (controlPlane.FindWorker(WorkerId) != null) { _listedInDocument = document; return false; }
+            return _listedInDocument == document;
+        }
+
+        /// <summary>
+        /// Whether this worker must stop acting as the owner of its leases: it has been declared dead
+        /// (<see cref="IsDeclaredDead"/>), or its own row, as its mirror of the control plane shows it, has not had a
+        /// heartbeat for more than <paramref name="timeoutSeconds"/> — the same test, on the same clock, the
+        /// orchestrator applies before it declares a worker dead. A fenced worker writes nothing to the persistence
+        /// store, reads nothing back and hands nothing over; it keeps simulating, and it is unfenced by its next
+        /// heartbeat landing (<c>docs/persistence-durability.md</c> D8). False before the worker has seen its own row
+        /// in the current document: nothing is leased to it there yet.
+        /// </summary>
+        public bool IsFenced(IControlPlane controlPlane, float timeoutSeconds)
+        {
+            if (!IsRegistered || controlPlane == null) return false;
+            var row = controlPlane.FindWorker(WorkerId);
+            if (row == null) return IsDeclaredDead(controlPlane);
+            _listedInDocument = controlPlane.DocumentId ?? "";
+            return !controlPlane.IsWorkerAlive(row, timeoutSeconds);
+        }
 
         /// <summary>
         /// Requests missing leases, which assign containers to workers, for containers this worker still owns.

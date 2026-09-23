@@ -199,6 +199,13 @@ namespace Nebula
         /// </summary>
         private readonly WorkerRegistration _registration = new WorkerRegistration();
         private bool _registered => _registration.IsRegistered;
+        /// <summary>What <see cref="IsFenced"/> said on the last frame, so the change is logged once.</summary>
+        private bool _wasFenced;
+        /// <summary>Set while this worker drops what it lost to a death verdict: those despawns write nothing to the store.</summary>
+        private bool _abandoning;
+        /// <summary>Which peers the orchestrator has declared dead (docs/persistence-durability.md D11).</summary>
+        private readonly WorkerRoster _roster = new WorkerRoster();
+        private readonly List<string> _declaredDead = new List<string>();
         private float _nextHeartbeat;
         private float _nextUnownedWarning;
         private NebulaGameMode _gameMode;
@@ -527,6 +534,7 @@ namespace Nebula
             var c = ContainerRegistry.GetRuntime(id);
             if (c == null || !c.IsOwnedBy(WorkerId)) return false;
             if (!_registered || !ControlPlane.IsConnected) return false;
+            if (IsFenced) return false; // nothing could be saved on the way out (docs/persistence-durability.md D8)
             EmptyContainer(c);
             ControlPlane.RemoveContainer(c.ContainerId);
             return true;
@@ -618,10 +626,18 @@ namespace Nebula
                 _nextHeartbeat = Time.unscaledTime + Config.WorkerHeartbeatSeconds;
                 ControlPlane.HeartbeatWorker(WorkerId, WorkerStatus.Ready, CollectStats());
             }
+            bool fenced = IsFenced;
+            if (fenced != _wasFenced)
+            {
+                _wasFenced = fenced;
+                if (fenced) NebulaLog.Warn($"worker {WorkerId} is fenced: no control-plane heartbeat for over {Config.WorkerTimeoutSeconds:0.#} s, so its containers may be dealt elsewhere; not saving, restoring or handing over until one lands");
+                else NebulaLog.Info($"worker {WorkerId} is no longer fenced: its control-plane heartbeat landed");
+            }
             if (_registered) _telemetry?.Update(this);
             if (_registered) ScopeLifecycleAgent.Update();
             ExpireSessions();
-            if (_registered && Time.unscaledTime >= _nextScenePass)
+            // A fenced worker spawns no scene entities either: the container may be spawning them elsewhere (D8).
+            if (_registered && !fenced && Time.unscaledTime >= _nextScenePass)
             {
                 _nextScenePass = Time.unscaledTime + ScenePassSeconds;
                 SpawnSceneEntities();
@@ -765,6 +781,17 @@ namespace Nebula
 
         /// <summary>Registered with the control plane; the mesh knows about this worker.</summary>
         public bool IsRegistered => _registered;
+
+        /// <summary>
+        /// This worker cannot currently prove it is alive to the control plane: its own row, as its mirror shows it,
+        /// has had no heartbeat for more than <see cref="NebulaConfig.WorkerTimeoutSeconds"/>, or the row is gone
+        /// because the orchestrator declared it dead. The orchestrator applies the same test before it deals a
+        /// worker's containers to someone else, so while this is true those containers may already be restored on
+        /// another worker. A fenced worker keeps simulating, but it saves nothing, restores nothing and hands no
+        /// entity over, so it cannot overwrite or duplicate the new owner's copy; it is unfenced when its next
+        /// heartbeat lands. See <c>docs/persistence-durability.md</c> D8.
+        /// </summary>
+        public bool IsFenced => _registration.IsFenced(ControlPlane, Config != null ? Config.WorkerTimeoutSeconds : 5f);
 
         private WorkerStats CollectStats()
         {
@@ -951,6 +978,9 @@ namespace Nebula
             ProfContainers.Begin();
             _scratchEntities.Clear();
             _scratchEntities.AddRange(_authoritative);
+            // A fenced worker hands nothing over: its view of who owns what may be stale, and the receiver would hold
+            // a copy of something that is being restored elsewhere (docs/persistence-durability.md D8).
+            bool fenced = IsFenced;
             foreach (var e in _scratchEntities)
             {
                 if (!e.HasAuthority) continue; // handed over as the contents of a carrier earlier in this pass
@@ -972,6 +1002,7 @@ namespace Nebula
                 }
                 var owner = e.Container != null ? e.Container.OwnerWorkerId : "";
                 if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
+                if (fenced) continue;
                 if (_workerPeersById.TryGetValue(owner, out var peer) && peer.HelloReceived)
                 {
                     TransferAuthority(e, peer);
@@ -1133,7 +1164,8 @@ namespace Nebula
                 NebulaLog.Warn($"Despawn({identity}) called on a ghost; only the authority can despawn");
                 return;
             }
-            Persistence?.OnDespawning(identity, keepPersisted);
+            // An abandoned entity neither saves nor deletes: its record belongs to the worker the container went to.
+            if (!_abandoning) Persistence?.OnDespawning(identity, keepPersisted);
             var despawn = new EntityDespawnMsg { NetId = identity.NetId, Epoch = identity.Epoch };
             // Everyone who could know it: its region's subscribers, its owner's gateway, explicit subscribers, and
             // every link when it is global. A gateway that never heard of it simply ignores the despawn.
@@ -2386,6 +2418,10 @@ namespace Nebula
 
         private void OnControlPlaneChanged()
         {
+            // Read before anything below can put the row back: a document this worker was listed in no longer lists
+            // it, so the orchestrator declared it dead and may already have dealt its containers to someone else
+            // (docs/persistence-durability.md D10). What it lost is dropped once the new leases are applied.
+            bool declaredDead = _registration.IsDeclaredDead(ControlPlane);
             // The control plane came back without this worker (a restarted orchestrator with no document, a
             // database restored from a backup taken before this mesh, a failover to a replica that never had it).
             // Nothing else in the mesh knows this process exists or what it simulates, so say both again — before
@@ -2416,7 +2452,13 @@ namespace Nebula
             }
             foreach (var c in ContainerRegistry.Dynamic) if (!_seenLeases.Contains(c.ContainerId)) ContainerRegistry.ForgetLease(c.ContainerId);
             ContainerRegistry.NotifyLeasesChanged();
+            if (declaredDead) AbandonLostContainers();
             SyncCarriedLeases();
+            // A peer the orchestrator declared dead is dropped even if its link is still up: its containers are being
+            // restored here or elsewhere, and its ghosts would stand in for entities that are coming back (D11).
+            _declaredDead.Clear();
+            _roster.Observe(ControlPlane, _declaredDead);
+            for (int i = 0; i < _declaredDead.Count; i++) if (_declaredDead[i] != WorkerId) DropDeclaredDeadPeer(_declaredDead[i]);
             // Peers: the lower index dials the higher one so each pair has exactly one link.
             foreach (var w in ControlPlane.Workers)
             {
@@ -2431,6 +2473,49 @@ namespace Nebula
                     NebulaLog.Info($"dialing peer {w.WorkerId} at {w.Address}:{w.Port}");
                 }
             }
+        }
+
+        /// <summary>
+        /// This worker was declared dead while it was still running, and some of the containers it simulates now
+        /// belong to other workers, which restore them from their last checkpoint. Everything this worker holds in
+        /// them is despawned: without a save, because the new owner's copy is the one the mesh goes on with and a
+        /// save from here could only overwrite it, and without a handover, because the new owner may have restored
+        /// the same entity already (<c>docs/persistence-durability.md</c> D10). What changed here since that
+        /// checkpoint is lost; that is the price of the verdict, and exactly what a crash would have cost. Containers
+        /// the verdict left unassigned are kept: whoever gets them next is handed them in the ordinary way.
+        /// </summary>
+        private void AbandonLostContainers()
+        {
+            var lost = new List<Container>();
+            foreach (var e in _authoritative)
+            {
+                var root = e != null && e.Container != null ? e.Container.ScopeRoot : null;
+                if (root == null || root.IsDynamic || lost.Contains(root)) continue;
+                string owner = root.OwnerWorkerId;
+                if (!string.IsNullOrEmpty(owner) && owner != WorkerId) lost.Add(root);
+            }
+            if (lost.Count == 0) return;
+            int before = _authoritative.Count;
+            _abandoning = true;
+            try { foreach (var c in lost) EmptyContainer(c); }
+            finally { _abandoning = false; }
+            NebulaLog.Warn($"worker {WorkerId} was declared dead while still running; dropped {before - _authoritative.Count} entities in {lost.Count} container(s) now dealt to other workers, without saving them");
+        }
+
+        /// <summary>
+        /// The orchestrator declared <paramref name="workerId"/> dead while this worker may still be linked to it.
+        /// Drop the link as if it had broken: its ghosts go, so a restore here is not mistaken for a second copy of
+        /// an entity that is still alive, and nothing more is handed to it. It is dialled again when it registers.
+        /// </summary>
+        private void DropDeclaredDeadPeer(string workerId)
+        {
+            if (!_workerPeersById.TryGetValue(workerId, out var found))
+                foreach (var p in _peers.Values) if (p.Role == PeerRole.Worker && p.Id == workerId) { found = p; break; }
+            if (found == null) { _dialing.Remove(workerId); return; }
+            NebulaLog.Warn($"peer worker {workerId} was declared dead by the control plane; dropping its link");
+            _peers.Remove(found.PeerId);
+            _transport.Disconnect(found.PeerId);
+            OnPeerLost(found);
         }
 
         private void HandleTransportEvent(TransportEvent ev)

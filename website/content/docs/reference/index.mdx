@@ -238,6 +238,7 @@ Register processes and share container assignments and settings through the cont
 | [ScopeRetireContext](/docs/reference/control-plane/scope-retire-context) | Struct. What the retire policy is told about a scope. |
 | [ScopeState](/docs/reference/control-plane/scope-state) | Static class. The states a ScopeInfo row can be in. |
 | [WorkerInfo](/docs/reference/control-plane/worker-info) | Class. Describes a worker registered with the control plane. |
+| [WorkerRoster](/docs/reference/control-plane/worker-roster) | Class. Which workers the orchestrator has declared dead, as a mirror of the control plane can tell: a worker row that was in the last document observed and is missing from this one, when both are the same document (IControlPlane.DocumentId). |
 | [WorkerStats](/docs/reference/control-plane/worker-stats) | Struct. What a worker reports about itself on every heartbeat. |
 | [WorkerStatus](/docs/reference/control-plane/worker-status) | Static class. Provides the lifecycle states reported by a worker. |
 

@@ -693,6 +693,13 @@ namespace Nebula
                 else if (!self.DrainRequested && Draining) StopDraining();
             }
 
+            // A worker the orchestrator declared dead is dropped even while its link is up: its containers are about
+            // to be restored on another worker, and a client must not be shown the old copies beside the restored
+            // ones (docs/persistence-durability.md D11). It is dialled again if it registers again.
+            _declaredDead.Clear();
+            _roster.Observe(ControlPlane, _declaredDead);
+            for (int i = 0; i < _declaredDead.Count; i++) DropDeclaredDeadWorker(_declaredDead[i]);
+
             ContainerRegistry.SyncRuntime(ControlPlane.Leases);
             _ownership.Clear();
             _ownershipById.Clear();
@@ -818,6 +825,25 @@ namespace Nebula
                 case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
+        }
+
+        private readonly WorkerRoster _roster = new WorkerRoster();
+        private readonly List<string> _declaredDead = new List<string>();
+
+        /// <summary>
+        /// Treat a worker the control plane no longer lists (in the same document) as lost: forget its entities,
+        /// put its players' joins back to the start, and close the link so nothing more it publishes reaches a
+        /// client. A link held for a client's pawn is closed too: the verdict is the orchestrator's, and the pawn is
+        /// placed again the way it is after any worker death.
+        /// </summary>
+        private void DropDeclaredDeadWorker(string workerId)
+        {
+            _links.Remove(workerId);
+            _dialing.Remove(workerId);
+            if (!_workersById.TryGetValue(workerId, out var w)) return;
+            NebulaLog.Warn($"worker {workerId} was declared dead by the control plane while its link was still up; dropping it");
+            _transport.Disconnect(w.PeerId);
+            OnWorkerLost(w);
         }
 
         private void OnWorkerLost(WorkerConn w)

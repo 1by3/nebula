@@ -1,0 +1,24 @@
+---
+title: "WorkerRoster"
+description: "Which workers the orchestrator has declared dead, as a mirror of the control plane can tell: a worker row that was in the last document observed and is missing from this one, when both are the same document (IControlPlane.DocumentId)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/ControlPlane/WorkerRoster.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/ControlPlane/WorkerRoster.cs)</div>
+
+```csharp
+public sealed class WorkerRoster
+```
+
+Which workers the orchestrator has declared dead, as a mirror of the control plane can tell: a worker row that was in the last document observed and is missing from this one, when both are the same document ([`IControlPlane.DocumentId`](/docs/reference/control-plane/i-control-plane#documentid)). A row missing from a replacement document is a control plane that came back empty, not a verdict (`docs/control-plane-availability.md` D1b), so it is never reported.
+
+Gateways and workers use it to stop believing in a process the mesh has given up on, even while its socket is still up: its containers are about to be restored elsewhere, and a client must not be shown the old copy beside the restored one (`docs/persistence-durability.md` D11).
+
+## Methods
+
+### Observe [#observe]
+
+```csharp
+public void Observe(IControlPlane controlPlane, List<string> declaredDead);
+```
+
+Read the current document and add to `declaredDead` (which is not cleared) the id of every worker the previous observation listed and this one does not. Call on every control-plane change.

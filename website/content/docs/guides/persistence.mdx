@@ -188,7 +188,7 @@ worker mid-checkpoint with 200 dirty entities and asserting the loss stays withi
 
 Every record carries the entity's authority **epoch**: the number that increases when authority or a container assignment changes. The store keeps a save only when its epoch is at least the stored epoch. A worker that lost authority and does not know it yet cannot overwrite the new owner's state with older data.
 
-A restored entity comes back at `record.Epoch + 1`. Anything still holding the old epoch is stale everywhere in the mesh from that moment on.
+A restored entity comes back at `record.Epoch + 1`. Anything still holding the old epoch is stale everywhere in the mesh from that moment on. The restoring worker saves the entity on its next checkpoint pass, instead of waiting for the checkpoint interval. From then on, the store refuses any save the previous owner still had queued.
 
 ## Restore after a failure or a restart
 
@@ -204,6 +204,19 @@ If a handover arrives for a key that was already restored, the incoming entity w
 When the restore of a container finishes — including a container that had nothing saved in it — Nebula raises [`NebulaLifecycle.OnContainerRestored`](/docs/guides/lifecycle-hooks). It is the moment at which the box is as the store left it, so it is the safe place to spawn anything of your own into it.
 
 After a whole-mesh restart, the same path runs for every container as its first lease lands, so the world comes back container by container rather than all at once.
+
+### A worker that is declared dead while it is still running
+
+The orchestrator declares a worker dead when its control-plane heartbeat has not arrived for `WorkerTimeoutSeconds` (default 5 s). The worker may still be running: a network partition or a long stall can stop its heartbeats without stopping the process. Its containers are assigned to other workers, which restore them from the last checkpoint. Nebula makes sure the old copies do not live on beside the restored ones:
+
+- **The worker fences itself.** Once its own heartbeat is older than `WorkerTimeoutSeconds`, `NebulaWorker.IsFenced` is true. The orchestrator uses the same test to declare a worker dead. While a worker is fenced, it keeps simulating, but it does not save, restore, or hand entities over. Changes stay dirty and are saved when the next heartbeat arrives. A scope part is not retired and `ReleaseRuntimeContainer` returns `false` while the worker is fenced.
+- **Late saves lose.** The restored copy's first save carries the new epoch, so the store refuses the old worker's saves (see [The epoch rule](#the-epoch-rule)).
+- **The old worker drops what it lost.** When the old worker reaches the control plane again and sees that it was declared dead, it despawns everything in the containers now assigned to other workers. It does not save those entities first. Then it registers again as an empty worker. Containers that were not reassigned yet are handed over normally later.
+- **Gateways and workers stop listening to it.** A gateway closes its link to a declared-dead worker and forgets that worker's entities, even if the link still works. Clients are never shown the old copy beside the restored one. Players whose pawns were on that worker are placed again, as after any worker failure. Other workers drop their links to it as well.
+
+<Callout type="warn" title="The old worker's recent changes are lost">
+Changes the old worker made after its last checkpoint are lost, as they would be if it had crashed. The [durability window](#durability-window) applies to this case too.
+</Callout>
 
 ### Owned records and rejoining players
 
@@ -371,7 +384,7 @@ Two limits. `LoadWhere` filters in the caller for the local and remote stores (o
 
 - **Every load is a round trip to the orchestrator.** A worker's `remote` store keeps no mirror, so restoring a container waits for one request (retried until it succeeds). The orchestrator is the only process that opens the database.
 - **Live checkpoints overwrite dashboard edits.** Records the game is actively simulating are rewritten at the next checkpoint. Editing or deleting a record for an entity that is alive right now changes nothing lasting.
-- **One orchestrator, one database.** There is no orchestrator failover: while the orchestrator is down, workers queue their checkpoints and cannot restore containers. `IPersistenceStore` is request/response, with no subscriptions, so another backend fits behind the same interface without changing game code.
+- **One orchestrator, one database.** There is no orchestrator failover: while the orchestrator is down, workers queue their checkpoints and cannot restore containers. After `WorkerTimeoutSeconds` without a heartbeat, workers are [fenced](#a-worker-that-is-declared-dead-while-it-is-still-running) and stop checkpointing until the orchestrator is back. `IPersistenceStore` is request/response, with no subscriptions, so another backend fits behind the same interface without changing game code.
 - **Owned records need game code.** Nebula never restores a record saved under a client's ownership. Your game decides when a returning player's entity comes back.
 - **A record is only as good as its build.** A restore needs the prefab in the running build, found by ID or by asset name. A prefab that no longer exists logs a warning and the record stays in the store.
 

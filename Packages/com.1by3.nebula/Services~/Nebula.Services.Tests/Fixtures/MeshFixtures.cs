@@ -1104,6 +1104,12 @@ public sealed class Fleet : IDisposable
     public readonly List<int> Ports = new();
     public readonly List<FakeClient> Clients = new();
     public readonly HashSet<NebulaGateway> PausedGateways = new();
+    /// <summary>
+    /// Workers whose control-plane traffic is lost while the process runs on: they neither heartbeat nor register
+    /// again, but they keep their sockets and keep publishing. A network partition from the orchestrator, or the
+    /// stalls that get a live worker declared dead (docs/persistence-durability.md D8–D11).
+    /// </summary>
+    public readonly HashSet<FakeWorker> SilencedWorkers = new();
     public readonly List<string> ContainerIds = new();
     /// <summary>Called once per pump, after the gateways tick: where a test drives its workers' content.</summary>
     public Action? OnPump;
@@ -1253,6 +1259,7 @@ public sealed class Fleet : IDisposable
     {
         foreach (var worker in Workers)
         {
+            if (SilencedWorkers.Contains(worker)) continue;
             // What a Unity worker does from its OnControlPlaneChanged: notice its row has gone and put back both
             // the row and the containers only it knows it is still simulating. Checking it every pump rather than
             // only on a change is the one difference, and it costs nothing here because LocalControlPlane answers

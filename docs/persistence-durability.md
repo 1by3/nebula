@@ -1,6 +1,6 @@
-# Persistence durability window (NEB-224)
+# Persistence durability window (NEB-224), and one copy after a death verdict (NEB-256)
 
-Status: landed with NEB-224. User-facing page: `website/content/docs/guides/persistence.mdx` §"Durability
+Status: landed with NEB-224; D7–D12 landed with NEB-256. User-facing page: `website/content/docs/guides/persistence.mdx` §"Durability
 window". Failure test: `Tests/EditMode/ConformancePersistenceDurabilityTests.cs` (conformance scenario 10, see
 `docs/conformance-suite.md` §4). Telemetry: `WorkerStats.OldestDirtySeconds` / `WorkerInfo.OldestDirtySeconds` on
 the existing worker heartbeat, surfaced on the orchestrator dashboard.
@@ -149,6 +149,132 @@ It is a proxy, not a duplicate of the bound: it does not know about a pose-move-
 "became dirty at" timestamp, and it resets to 0 the moment a save lands even though the record still has to become
 durable in the backend (§D3). It is enough to notice "this worker has been sitting on an unsaved change for longer
 than `PersistenceCheckpointSeconds` should allow", which is the operational question the number exists to answer.
+
+## D7. A worker declared dead while it is still running (NEB-256)
+
+Status: landed with NEB-256. Conformance scenario 19 (`docs/conformance-suite.md` §4):
+`Tests/EditMode/ConformanceDeclaredDeadWorkerTests.cs` and `Services~/Nebula.Services.Tests/DeclaredDeadWorkerTests.cs`.
+
+D1–D6 bound what a worker **crash** loses. This is the other failure: the worker does not crash, it only stops
+getting its heartbeats through. The orchestrator cannot tell the two apart. After `WorkerTimeoutSeconds` without a
+heartbeat, `NebulaOrchestrator.ReapDeadWorkers` removes the row and the planner deals the containers to someone
+else. That worker waits `PersistenceRestoreGraceSeconds` and restores the entities from their last checkpoint. The
+restore's other guards (a key alive here, a saver that is still alive, a handover that wins over a restored copy)
+all read the new owner's view, and in that view the old owner is dead. So in a real run the survivor logged
+`restored 18 persisted entities into <anchor>` while the old owner's copies were still simulating. For a moment the
+same entity had two authoritative copies, and the restored one was up to a checkpoint interval stale.
+
+**The goal:** at most one authoritative copy of a persistent entity at a time, with the fewest moving parts. The
+liveness model does not change. The orchestrator still decides who is alive, and it still decides the same way. The
+rest of the mesh, the declared-dead worker included, now acts on that verdict. Four rules do it: D8 to D11.
+
+## D8. The fence: a worker stops acting as an owner when it can no longer prove it is alive
+
+`WorkerRegistration.IsFenced`, exposed as `NebulaWorker.IsFenced`, is true when the worker's own row, as its mirror
+of the control plane shows it, has had no heartbeat for more than `WorkerTimeoutSeconds`, or when the row is gone
+(D10). The test is `IControlPlane.IsWorkerAlive`, the same one the orchestrator applies, and it runs on the same
+clock: a `RemoteControlPlane` keeps `Now` as the orchestrator's clock at the last document, plus the local time
+since. A partitioned worker that receives no documents at all still sees `Now` advance past its last recorded
+heartbeat. So it fences itself even though it cannot learn anything from the control plane.
+
+**Timing.** The mirror's `LastHeartbeat` is never newer than the orchestrator's. The mirror's `Now` lags the
+orchestrator's by at most one document's transit. So the worker fences no later than one transit after the
+orchestrator could declare it dead. The survivor then waits `PersistenceRestoreGraceSeconds` (3 s by default) after
+the verdict reaches it before it reads a record. The fence wins by the grace period minus that transit.
+
+**What a fenced worker does.** It keeps simulating. It stops doing the three things that can make a second copy or
+overwrite the survivor's:
+
+- **It saves nothing.** `NebulaPersistence.Update` skips checkpoints, and `SaveNow` returns without writing but
+  leaves the entity dirty. A save issued now would be queued, and it could land after the new owner's.
+  `CheckpointContainer`, shutdown and a despawn's last save all go through `SaveNow`, so they are fenced too. A
+  scope part is not retired while its worker is fenced, and `ReleaseRuntimeContainer` refuses: both would empty a
+  container they could not save first.
+- **It restores nothing.** The restore pumps do not run, and the scene pass spawns no scene entities. A fenced
+  worker's view of its leases may be stale.
+- **It hands nothing over.** The tick's container-crossing handover is skipped, and the entity keeps authority,
+  the same way it does when the new owner is not connected. The receiver would hold a copy of something that may
+  be restored elsewhere, and a handover bumps the epoch to the same value a restore gives it.
+
+**Deletes are not fenced.** A delete has no epoch. If a delete lands late, the survivor's next periodic checkpoint
+writes the record again, because that save is unconditional (D2). Holding the delete back instead would bring back
+an entity the game destroyed when the fence turns out to be a false alarm.
+
+**A false alarm costs nothing.** An orchestrator that is restarting or slow declares nobody dead while it is away
+(`docs/control-plane-availability.md` D3). When the worker's next heartbeat lands, the fence lifts and the dirty
+entities are saved on the next pass. A pause longer than `WorkerTimeoutSeconds` therefore holds back saves and
+handovers until the next heartbeat. Before this change it was fully invisible up to
+`RemoteControlPlane.DisconnectAfterSeconds` (15 s). That cost is deliberate: past `WorkerTimeoutSeconds` the worker
+cannot know whether the orchestrator is away or deciding without it.
+
+## D9. The survivor stamps the new epoch into the store before anything else
+
+A restored entity comes back at `record.Epoch + 1` (`NebulaWorker.SpawnRestored`). The store keeps a save only when
+its epoch is at least the stored one (`LocalPersistenceStore.Save`, and `SqlPersistenceStore`'s
+`WHERE excluded.epoch >= nebula_entity.epoch`). Before this change the restored entity's first save waited for its
+checkpoint schedule. Until then the record still carried the old epoch. The old owner's late saves were accepted and
+were overwritten only at the next checkpoint.
+
+Now `NebulaPersistence.Restore` and the scene-entity path set `PersistentEntity.StampPending`. `IsDue` puts that
+entity first, so its first checkpoint happens on the next pass, within the per-frame budget. After that, a save the
+old owner had queued before it fenced carries a lower epoch and the store refuses it. A queued save can still land
+between the survivor's read and its stamp. That write is then overwritten by the stamp, which is the outcome the
+mesh wants anyway. The stamp costs one save per restored entity, spread by `MaxSavesPerFrame` like any other.
+
+## D10. The old owner learns the verdict: drop what was lost, without a save
+
+`WorkerRegistration.IsDeclaredDead` is true when a document this worker has been listed in no longer lists it. A row
+missing from a replacement document (a new `DocumentId`) is a control plane that came back empty. That is not a
+verdict: it is the reclaim path of `docs/control-plane-availability.md` D1b, and it is left exactly as it was.
+`NebulaWorker.OnControlPlaneChanged` reads the verdict before `RegisterAgainIfForgotten` can put the row back,
+because on an in-process control plane that happens at once. It applies the new leases and then runs
+`AbandonLostContainers`. Every container the worker still simulates that is now leased to **another** worker is
+emptied through `EmptyContainer`, riders before their carriers, with persistence switched off for those despawns. No
+save runs, because the survivor's copy is the one the mesh goes on with. No delete runs, because the record is the
+survivor's. No handover runs, because the survivor may already have restored the entity. The despawns still go out
+to gateways and ghost peers. The worker then registers again and joins the mesh as an empty worker.
+
+**Containers the verdict left unassigned are kept.** The planner deals them in a later pass. By then this worker is
+registered again, and the ordinary handover gives the new owner the live copy inside its grace period. So a restore
+never happens for them.
+
+**The price** is what changed on the old owner since its last checkpoint: exactly what a crash would have cost (D2).
+The alternative was to hand the old copy over and let it win over the restored one. That would roll back whatever the
+survivor had simulated since its restore, and it would still leave the window in which both copies existed.
+
+## D11. Peers and gateways believe the verdict even while the link is up
+
+`WorkerRoster` (`Runtime/ControlPlane`) reports a worker row that was in the last document and is missing from the
+current one, when both are the same document. It reports each removal once.
+
+- **A gateway** (`NebulaGateway.DropDeclaredDeadWorker`) closes the link and forgets that worker's entities, as if
+  the link had broken. Its players are placed again, as after any worker death. Without this, the old copies stayed
+  on the gateway beside the restored ones until the link linger ran out, or for good if a client's pawn was on that
+  worker. Restored entities get new net ids, so the gateway had no way to tell the two copies apart. The link is not
+  dialled again until the worker registers again, because `EnsureLink` needs a row.
+- **A worker** (`NebulaWorker.DropDeclaredDeadPeer`) drops the peer link the same way. The peer's ghosts go with
+  it. This matters for the restore: `NebulaPersistence` counts a ghost as "alive here" and would skip restoring that
+  key, and then the ghost would be despawned the moment the dead worker cleaned up (D10).
+
+## D12. Not done, and what the maintainer should decide
+
+- **Freezing the simulation while fenced.** A fenced worker keeps simulating, and a client still linked to it can
+  still see it. D11 removes that link as soon as the gateway sees the verdict, but a gateway that is partitioned
+  along with the worker cannot. Freezing would change what an orchestrator restart longer than
+  `WorkerTimeoutSeconds` looks like: every worker would stop. That is a liveness-model decision.
+- **Aligning the two clocks of liveness.** `WorkerTimeoutSeconds` (5 s) and `RemoteControlPlane.DisconnectAfterSeconds`
+  (15 s) disagree about how long silence is survivable. The fence follows the first one.
+- **Fencing the receiver.** A worker still accepts a handover from a peer the control plane no longer lists, if the
+  link is up and the sender is not fenced. D8 makes the sender refuse, and D11 drops the link, so this is defence in
+  depth only.
+- **A restored document that lost a fresh registration.** `ControlPlaneHost` stores the document about a second
+  after each change. Suppose an orchestrator crashes, and its replacement comes back from storage with the same
+  `DocumentId` but without a row that was written just before the crash. That missing row reads as a verdict (D10,
+  D11). Gateways and peers drop their links to that worker, and the players it hosted are placed again. The worker
+  re-registers and is dialled again. The cost is a disruption, not a second copy. Distinguishing the two would need an explicit "declared dead" record, not a missing row.
+- **A delete followed by a late save.** A late save for a key the survivor has deleted in the meantime finds no
+  record to compare epochs with, and it is accepted. Keeping tombstones with epochs would close this gap. It is a
+  store-schema change.
 
 ## Non-goals (restated from the issue)
 

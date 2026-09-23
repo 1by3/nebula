@@ -22,6 +22,12 @@ namespace Nebula
     /// restore anyway, the incoming entity wins and the restored duplicate is despawned <i>without</i> deleting the
     /// record.
     /// </para><para>
+    /// A worker that was declared dead but is still running is the case those rules cannot see, so two more hold
+    /// the line there (<c>docs/persistence-durability.md</c> D8–D10). A worker whose own control-plane heartbeat is
+    /// older than <see cref="NebulaConfig.WorkerTimeoutSeconds"/> is fenced: it saves and restores nothing until the
+    /// heartbeat lands. And a restored entity's first checkpoint is taken straight away, so the record carries the
+    /// new epoch and the store refuses whatever the previous owner still had queued.
+    /// </para><para>
     /// Restores are also bounded in how hard they ask. A worker can gain hundreds of containers at once (a re-deal
     /// after another worker died, a rebalance, a burst of runtime chunks), and each frame the containers that are due
     /// are read in batches of at most <see cref="MaxContainersPerRestoreLoad"/> through
@@ -278,6 +284,8 @@ namespace Nebula
         /// <summary>
         /// Checkpoint <paramref name="identity"/> now, whatever its timer says. Use it at a moment the game knows is
         /// worth saving (a player logging out, a quest completed); the periodic checkpoint covers everything else.
+        /// Nothing is written while the worker is fenced (<see cref="NebulaWorker.IsFenced"/>): the entity keeps its
+        /// changes and is saved once the worker's heartbeat lands again.
         /// </summary>
         public void SaveNow(NetworkIdentity identity)
         {
@@ -289,10 +297,19 @@ namespace Nebula
                 NebulaLog.Warn($"persistence: SaveNow({identity}) on a copy this worker does not own; ignored");
                 return;
             }
+            // A fenced worker may already have been declared dead and its containers restored elsewhere: a save from
+            // it now would be queued and could land after the new owner's (docs/persistence-durability.md D8). The
+            // entity stays dirty and is saved once the fence lifts, if this worker still holds it then.
+            if (_worker != null && _worker.IsFenced)
+            {
+                if (!pe.IsDirty) { pe.IsDirty = true; pe.DirtySince = Now(); }
+                return;
+            }
             var record = BuildRecord(identity);
             if (record == null) return;
             _store.Save(record);
             SavedCount++;
+            pe.StampPending = false;
             pe.HasBeenSaved = true;
             pe.IsDirty = false;
             pe.DirtySince = 0f;
@@ -369,7 +386,9 @@ namespace Nebula
         /// <summary>
         /// Instantiate and spawn the entity a record describes, on this worker, with authority. Null when the prefab
         /// is unknown to this build or the scene object is not resident. The entity comes back at
-        /// <c>record.Epoch + 1</c>, so anything still holding the old epoch is stale everywhere.
+        /// <c>record.Epoch + 1</c>, so anything still holding the old epoch is stale everywhere, and its first
+        /// checkpoint is taken at the next opportunity rather than on the schedule: once the record carries the new
+        /// epoch, the store refuses a late save from whoever held the previous life.
         /// </summary>
         public NetworkIdentity Restore(PersistedEntityRecord record)
         {
@@ -392,7 +411,11 @@ namespace Nebula
             }
 
             Apply(record, identity);
-            if (identity.Persistent != null) _restored.Add(identity.Persistent);
+            if (identity.Persistent != null)
+            {
+                _restored.Add(identity.Persistent);
+                identity.Persistent.StampPending = true;
+            }
             _worker.SpawnRestored(identity, container, record);
             RestoredCount++;
             EntityRestored?.Invoke(identity);
@@ -476,6 +499,10 @@ namespace Nebula
         internal void Update()
         {
             float now = Now();
+            // A worker that cannot show the control plane a recent heartbeat may already have been declared dead, and
+            // its containers dealt to someone who is restoring them. It neither reads nor writes the store until its
+            // heartbeat lands again (docs/persistence-durability.md D8); what changes meanwhile stays dirty.
+            if (_worker != null && _worker.IsFenced) return;
             PumpRestores(now);
             PumpCarried();
             PumpWaiting(now);
@@ -675,6 +702,7 @@ namespace Nebula
         private bool IsDue(PersistentEntity pe, NetworkIdentity identity, float now)
         {
             float since = now - pe.LastSavedAt;
+            if (pe.StampPending) return true; // restored at a new epoch: put the epoch in the store first (D9)
             if (!pe.HasBeenSaved && pe.LastSavedAt == 0f) return true;
             if (since >= CheckpointSecondsFor(pe)) return true;
             if (since < MinSaveIntervalSeconds) return false;
@@ -851,6 +879,7 @@ namespace Nebula
             if (identity.Persistent == null) return 0;
             Apply(record, identity);
             _restored.Add(identity.Persistent);
+            identity.Persistent.StampPending = true;
             RestoredCount++;
             NebulaLog.Info($"persistence: scene entity {record.Key} restored from its saved state (epoch {record.Epoch + 1})");
             return record.Epoch + 1;
@@ -870,6 +899,12 @@ namespace Nebula
             _carriersDue.Clear();
             _carriedRequested.Clear();
 
+            if (_worker != null && _worker.IsFenced)
+            {
+                // Its containers may be restored elsewhere already; a save now could only race the new owner's.
+                NebulaLog.Warn("persistence: shutting down while fenced (no recent control-plane heartbeat); nothing saved");
+                return;
+            }
             int saved = 0;
             for (int i = 0; i < _tracked.Count; i++)
             {

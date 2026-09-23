@@ -70,6 +70,13 @@ namespace Nebula
         /// </summary>
         internal float DirtySince;
 
+        /// <summary>
+        /// Brought back from the store at a new epoch and not saved under it yet. The first checkpoint is taken as
+        /// soon as the save budget allows, so the record carries the new epoch and a late save from the worker that
+        /// held the previous life is refused by the store (<c>docs/persistence-durability.md</c> D9).
+        /// </summary>
+        internal bool StampPending;
+
         /// <summary>Ask for a checkpoint soon (coalesced with every other change since the last save).</summary>
         public void MarkDirty()
         {

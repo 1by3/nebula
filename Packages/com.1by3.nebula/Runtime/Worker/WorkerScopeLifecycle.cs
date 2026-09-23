@@ -314,6 +314,11 @@ namespace Nebula
                 work.Step = Step.Checkpoint;
             }
 
+            // A fenced worker may have been declared dead: it cannot save, so it must not empty the part either, or
+            // what changed since the last checkpoint is lost (docs/persistence-durability.md D8). It carries on
+            // when its heartbeat lands; if it was declared dead, the part is not its to retire any more.
+            if (_worker.IsFenced) return;
+
             if (work.Step == Step.Checkpoint)
             {
                 // The forced checkpoint: every persistent entity in the part, whatever the schedule said. It has to

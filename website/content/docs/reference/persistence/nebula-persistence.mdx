@@ -15,6 +15,8 @@ It is never on the per-tick path. Checkpoints run from the worker's `Update`, at
 
 Restores are deliberately timid, because a persisted entity coming back must never become a second copy of one that is still alive somewhere. A freshly leased container waits [`NebulaConfig.PersistenceRestoreGraceSeconds`](/docs/reference/core/nebula-config#persistencerestoregraceseconds) so the previous owner's handover wins; a record whose key is already alive here is skipped; a record written moments ago by a worker that is still alive waits another grace period, in case that worker is about to hand the entity over; and if a handover arrives after a restore anyway, the incoming entity wins and the restored duplicate is despawned *without* deleting the record.
 
+A worker that was declared dead but is still running is the case those rules cannot see, so two more hold the line there (`docs/persistence-durability.md` D8–D10). A worker whose own control-plane heartbeat is older than [`NebulaConfig.WorkerTimeoutSeconds`](/docs/reference/core/nebula-config#workertimeoutseconds) is fenced: it saves and restores nothing until the heartbeat lands. And a restored entity's first checkpoint is taken straight away, so the record carries the new epoch and the store refuses whatever the previous owner still had queued.
+
 Restores are also bounded in how hard they ask. A worker can gain hundreds of containers at once (a re-deal after another worker died, a rebalance, a burst of runtime chunks), and each frame the containers that are due are read in batches of at most [`MaxContainersPerRestoreLoad`](#maxcontainersperrestoreload) through [`IPersistenceStore.LoadContainers`](/docs/reference/persistence/i-persistence-store#loadcontainers), with at most [`MaxRestoreLoadsInFlight`](#maxrestoreloadsinflight) of those batches waiting on the store at a time. The rest wait for a later frame. Nothing about a lease change can make the worker send an unbounded burst of requests to the orchestrator, which serves the control plane's heartbeats from the same address.
 
 What rode in a carrier comes back with the carrier, and those reads are batched the same way. A carrier that spawns with authority is marked due; each frame the due carriers are read together through [`IPersistenceStore.LoadCarried`](/docs/reference/persistence/i-persistence-store#loadcarried), at most [`MaxCarriersPerRestoreLoad`](#maxcarriersperrestoreload) per read and at most [`MaxRestoreLoadsInFlight`](#maxrestoreloadsinflight) of those reads waiting at a time, so a restore that brings back a hangar full of vehicles costs one read rather than one per vehicle.
@@ -225,7 +227,7 @@ Build the record for `identity` as it is right now: prefab or scene id, containe
 public void SaveNow(NetworkIdentity identity);
 ```
 
-Checkpoint `identity` now, whatever its timer says. Use it at a moment the game knows is worth saving (a player logging out, a quest completed); the periodic checkpoint covers everything else.
+Checkpoint `identity` now, whatever its timer says. Use it at a moment the game knows is worth saving (a player logging out, a quest completed); the periodic checkpoint covers everything else. Nothing is written while the worker is fenced ([`NebulaWorker.IsFenced`](/docs/reference/worker/nebula-worker#isfenced)): the entity keeps its changes and is saved once the worker's heartbeat lands again.
 
 ### Apply [#apply]
 
@@ -241,7 +243,7 @@ Put a record's state back onto `identity`. Works both before the entity is spawn
 public NetworkIdentity Restore(PersistedEntityRecord record);
 ```
 
-Instantiate and spawn the entity a record describes, on this worker, with authority. Null when the prefab is unknown to this build or the scene object is not resident. The entity comes back at `record.Epoch + 1`, so anything still holding the old epoch is stale everywhere.
+Instantiate and spawn the entity a record describes, on this worker, with authority. Null when the prefab is unknown to this build or the scene object is not resident. The entity comes back at `record.Epoch + 1`, so anything still holding the old epoch is stale everywhere, and its first checkpoint is taken at the next opportunity rather than on the schedule: once the record carries the new epoch, the store refuses a late save from whoever held the previous life.
 
 ### Plan [#plan]
 

@@ -295,6 +295,14 @@ public bool IsRegistered { get; }
 
 Registered with the control plane; the mesh knows about this worker.
 
+### IsFenced [#isfenced]
+
+```csharp
+public bool IsFenced { get; }
+```
+
+This worker cannot currently prove it is alive to the control plane: its own row, as its mirror shows it, has had no heartbeat for more than [`NebulaConfig.WorkerTimeoutSeconds`](/docs/reference/core/nebula-config#workertimeoutseconds), or the row is gone because the orchestrator declared it dead. The orchestrator applies the same test before it deals a worker's containers to someone else, so while this is true those containers may already be restored on another worker. A fenced worker keeps simulating, but it saves nothing, restores nothing and hands no entity over, so it cannot overwrite or duplicate the new owner's copy; it is unfenced when its next heartbeat lands. See `docs/persistence-durability.md` D8.
+
 ### HeldContainers [#heldcontainers]
 
 ```csharp

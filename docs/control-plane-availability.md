@@ -106,6 +106,13 @@ invisible and starts being an outage a mirror can see. What the mesh cannot do d
 the orchestrator decides: nothing declares a worker dead, nothing starts a replacement, nothing rebalances, and
 no new container assignment is made.
 
+**Since NEB-256, one thing is visible sooner.** Once a worker's own heartbeat is older than
+`WorkerTimeoutSeconds` (5 s), the worker fences itself: it holds back checkpoints, restores and handovers until a
+heartbeat lands (`docs/persistence-durability.md` D8). A worker cannot tell an orchestrator that is away from one
+that is deciding without it, and in the second case its containers are being restored elsewhere. Nothing is lost.
+Dirty entities are saved when the fence lifts, and simulation and clients are untouched. A restart longer than
+5 s therefore delays saves and handovers for that long.
+
 **D3a. The one thing to get right.** A replacement orchestrator must be given the same storage, and the operator
 must not pass `-nebula-reset` (its default is *on*, because registrations normally describe processes that are no
 longer running). A restart that resets is the cold path of D1 — survivable now, but it re-deals epochs and costs
