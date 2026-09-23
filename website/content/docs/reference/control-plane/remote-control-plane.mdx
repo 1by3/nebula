@@ -13,6 +13,8 @@ public sealed partial class RemoteControlPlane : IControlPlane
 
 A reader thread keeps one long-poll request open (`GET /api/control-plane?since=<version>`) and parses each document it gets; [`Tick`](#tick) swaps the parsed lists in on the main thread and raises [`Changed`](#changed), so callers see the same threading as with any other control plane. Writes are queued and a sender thread posts them in order, batched when several are waiting; a write is never dropped while the orchestrator is unreachable, only delayed (up to [`MaxQueuedWrites`](#maxqueuedwrites), after which the oldest go). [`Now`](#now) is the orchestrator's clock as of the last document plus the time since.
 
+Both threads send their requests with blocking socket calls, not through the thread pool, so the mirror and the heartbeats keep going when the game fills the pool with blocking work. When a write has waited longer than [`StallWarningSeconds`](#stallwarningseconds), or no document has arrived for longer than [`DisconnectAfterSeconds`](#disconnectafterseconds), [`Tick`](#tick) logs a warning that includes the thread pool's state.
+
 ## Constructors
 
 ### RemoteControlPlane [#remotecontrolplane]
@@ -65,6 +67,14 @@ public string DocumentId { get; } = "";
 ```
 
 Identity of the mirrored document, or an empty string until a document with an identity arrives.
+
+### StallWarningSeconds [#stallwarningseconds]
+
+```csharp
+public float StallWarningSeconds { get; set; } = 5f;
+```
+
+Seconds a write (a heartbeat, for example) may wait to reach the orchestrator before [`Tick`](#tick) logs a warning, once per stall. Set it to the orchestrator's worker timeout (`NebulaConfig.WorkerTimeoutSeconds`): after that long without a heartbeat, the orchestrator treats a worker or gateway as dead.
 
 ### Url [#url]
 

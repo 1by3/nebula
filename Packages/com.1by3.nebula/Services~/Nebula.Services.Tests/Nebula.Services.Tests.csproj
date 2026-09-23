@@ -10,7 +10,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
-    <Compile Include="../../Tests/EditMode/OrchestratorAssignmentTests.cs;../../Tests/EditMode/ControlPlaneJsonTests.cs" />
+    <Compile Include="../../Tests/EditMode/OrchestratorAssignmentTests.cs;../../Tests/EditMode/ControlPlaneJsonTests.cs;../../Tests/EditMode/BlockingHttpClientTests.cs" />
     <!-- Per-container cost telemetry (docs/cost-telemetry.md) is parsed and weighed in pure C#, so the standalone
          orchestrator runs the same round-trip tests the package does. -->
     <Compile Include="../../Tests/EditMode/ContainerCostTests.cs" />

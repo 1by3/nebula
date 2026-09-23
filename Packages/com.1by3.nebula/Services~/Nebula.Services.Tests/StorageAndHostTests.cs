@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Nebula;
 using Nebula.ServicePrimitives;
+using Nebula.Tests;
 using NUnit.Framework;
 
 namespace Nebula.ServiceTests;
@@ -364,6 +365,123 @@ public class StorageAndHostTests
         Assert.That(restored.Leases.Select(l => l.ContainerId), Is.EquivalentTo(new[] { "cell-1", "rt_7" }));
         Assert.That(restored.Settings["npcs"], Is.EqualTo("12"));
         restored.Dispose();
+    }
+
+    /// <summary>
+    /// NEB-253: the mirror's reader and sender threads do their HTTP without the thread pool, so a game that fills the
+    /// pool with blocking work no longer freezes the mirror or stops the heartbeats (the orchestrator would declare the
+    /// worker dead). The orchestrator here is served by <see cref="TestHttpServer"/>, which runs on its own threads,
+    /// because Kestrel would starve along with everything else in this process.
+    /// </summary>
+    [Test]
+    public void RemoteControlPlaneKeepsHeartbeatingWithTheThreadPoolStarved()
+    {
+        var host = new ControlPlaneHost(null, "s3cret", restore: false);
+        host.Connect();
+        var writes = new System.Collections.Concurrent.ConcurrentQueue<(OrchestratorHttpServer.Request Request, OrchestratorHttpServer.Response[] Answer, ManualResetEventSlim Done)>();
+        using var server = new TestHttpServer(r =>
+        {
+            var req = new OrchestratorHttpServer.Request { Method = r.Method, Path = r.Path, Query = r.Query, Body = r.Body, Token = r.Header(ControlPlaneHost.TokenHeader) };
+            OrchestratorHttpServer.Response answer;
+            if (r.Method == "GET") answer = host.HandleRead(req);
+            else
+            {
+                // Writes are applied on the "main thread" (the test's pump), as the orchestrator's command pump does.
+                var slot = new OrchestratorHttpServer.Response[1];
+                var done = new ManualResetEventSlim();
+                writes.Enqueue((req, slot, done));
+                answer = done.Wait(TimeSpan.FromSeconds(5)) ? slot[0] : OrchestratorHttpServer.Response.Error(503, "not pumped");
+            }
+            return new TestHttpServer.Reply { Status = answer.Status, Body = answer.Body };
+        });
+        var remote = new RemoteControlPlane(server.Url, "s3cret");
+        void Pump()
+        {
+            while (writes.TryDequeue(out var w))
+            {
+                if (!host.TryHandle(w.Request, out w.Answer[0])) w.Answer[0] = OrchestratorHttpServer.Response.Error(404, "no");
+                w.Done.Set();
+            }
+            host.Tick();
+            remote.Tick();
+        }
+
+        ThreadPool.GetMaxThreads(out int maxWorkers, out int maxIo);
+        ThreadPool.GetMinThreads(out int minWorkers, out _);
+        var release = new ManualResetEventSlim(); // never disposed: queued work items may still wait on it after the test
+        try
+        {
+            remote.Connect();
+            remote.RegisterWorker("w1", 1, "10.0.0.5", 7101);
+            WaitUntil(() => remote.Workers.Count == 1, Pump);
+
+            // Fill every pool thread with blocking work and queue more behind it; the probe runs only once the pool
+            // gets through all of it, which it cannot until the test releases it.
+            Assert.That(ThreadPool.SetMaxThreads(minWorkers, maxIo), Is.True);
+            int flood = Math.Max(ThreadPool.ThreadCount, minWorkers) * 2 + 16;
+            for (int i = 0; i < flood; i++) ThreadPool.QueueUserWorkItem(_ => release.Wait());
+            int probeRan = 0;
+            ThreadPool.QueueUserWorkItem(_ => Interlocked.Exchange(ref probeRan, 1));
+            WaitUntil(() => ThreadPool.PendingWorkItemCount > 0);
+
+            for (ulong tick = 1; tick <= 5; tick++)
+            {
+                ulong expected = tick;
+                remote.HeartbeatWorker("w1", WorkerStatus.Ready, new WorkerStats { TickCount = expected });
+                WaitUntil(() => remote.Workers[0].TickCount == expected, Pump);
+            }
+            Assert.That(host.Workers[0].TickCount, Is.EqualTo(5), "every heartbeat reached the host");
+            Assert.That(remote.IsConnected, Is.True);
+            Assert.That(Volatile.Read(ref probeRan), Is.Zero, "the pool stayed starved the whole time");
+            Assert.That(RemoteControlPlane.ThreadPoolState(), Does.Contain("work items waiting"));
+        }
+        finally
+        {
+            release.Set();
+            ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+            remote.Dispose();
+            host.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// NEB-253: a write that waits longer than the orchestrator's dead threshold is reported, with the thread pool's
+    /// state, instead of the worker dying for no stated reason; and the recovery is reported too.
+    /// </summary>
+    [Test]
+    public void RemoteControlPlaneWarnsWhenAWriteStalls()
+    {
+        var host = new ControlPlaneHost(null, null, restore: false);
+        host.Connect();
+        var release = new ManualResetEventSlim();
+        using var server = new TestHttpServer(r =>
+        {
+            if (r.Method == "GET") return new TestHttpServer.Reply { Body = host.HandleRead(new OrchestratorHttpServer.Request { Method = r.Method, Path = r.Path, Query = r.Query }).Body };
+            release.Wait(TimeSpan.FromSeconds(10));
+            return new TestHttpServer.Reply { Body = "{\"ok\":true}" };
+        });
+        var remote = new RemoteControlPlane(server.Url) { StallWarningSeconds = 0.3f };
+        var output = new StringWriter();
+        var original = Console.Out;
+        Console.SetOut(TextWriter.Synchronized(output));
+        try
+        {
+            remote.Connect();
+            remote.RegisterWorker("w1", 1, "10.0.0.5", 7101);
+            WaitUntil(() => output.ToString().Contains("has waited"), remote.Tick, 5);
+            string warning = output.ToString();
+            Assert.That(warning, Does.Contain("the orchestrator treats this process as dead after"));
+            Assert.That(warning, Does.Contain("Thread pool: "));
+            release.Set();
+            WaitUntil(() => output.ToString().Contains("writes to " + server.Url + " are getting through again"), remote.Tick, 5);
+        }
+        finally
+        {
+            Console.SetOut(original);
+            release.Set();
+            remote.Dispose();
+            host.Dispose();
+        }
     }
 
     /// <summary>

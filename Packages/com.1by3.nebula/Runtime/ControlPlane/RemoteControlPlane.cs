@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http;
-using System.Text;
 using System.Threading;
 #if NEBULA_SERVICE
 using Nebula.ServicePrimitives;
@@ -24,6 +23,12 @@ namespace Nebula
     /// the orchestrator is unreachable, only delayed (up to <see cref="MaxQueuedWrites"/>, after which the oldest
     /// go). <see cref="Now"/> is the orchestrator's clock as of the last document plus the time since.
     /// </para>
+    /// <para>
+    /// Both threads send their requests with blocking socket calls, not through the thread pool, so the mirror and the
+    /// heartbeats keep going when the game fills the pool with blocking work. When a write has waited longer than
+    /// <see cref="StallWarningSeconds"/>, or no document has arrived for longer than
+    /// <see cref="DisconnectAfterSeconds"/>, <see cref="Tick"/> logs a warning that includes the thread pool's state.
+    /// </para>
     /// </summary>
     public sealed partial class RemoteControlPlane : IControlPlane
     {
@@ -37,7 +42,9 @@ namespace Nebula
 
         private readonly string _baseUrl;
         private readonly string _token;
+        /// <summary>Gateway session requests only. The reader and sender threads each have a blocking client.</summary>
         private readonly HttpClient _http;
+        private readonly BlockingHttpClient _readHttp, _sendHttp;
         /// <summary>Local clock usable from every thread (Unity's Time is main-thread only).</summary>
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private readonly object _gate = new object();
@@ -55,6 +62,11 @@ namespace Nebula
         private volatile string _readError, _writeError;
         private string _loggedReadError, _loggedWriteError;
         private bool _loggedConnected;
+        /// <summary>When the sender took the batch it is sending from the queue (local clock), or NaN while it sends none.</summary>
+        private double _sendingSince = double.NaN;
+        /// <summary>When the read in flight started (local clock), or NaN while none is.</summary>
+        private double _readingSince = double.NaN;
+        private bool _warnedSendStall, _warnedReadStall;
 
         private readonly List<WorkerInfo> _workers = new List<WorkerInfo>();
         private readonly List<LeaseInfo> _leases = new List<LeaseInfo>();
@@ -68,7 +80,16 @@ namespace Nebula
             _baseUrl = (url ?? "").TrimEnd('/');
             _token = string.IsNullOrEmpty(token) ? null : token;
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(LongPollSeconds + 10) };
+            _readHttp = new BlockingHttpClient(TimeSpan.FromSeconds(LongPollSeconds + 10));
+            _sendHttp = new BlockingHttpClient(TimeSpan.FromSeconds(LongPollSeconds + 10));
         }
+
+        /// <summary>
+        /// Seconds a write (a heartbeat, for example) may wait to reach the orchestrator before <see cref="Tick"/> logs a
+        /// warning, once per stall. Set it to the orchestrator's worker timeout (<c>NebulaConfig.WorkerTimeoutSeconds</c>):
+        /// after that long without a heartbeat, the orchestrator treats a worker or gateway as dead.
+        /// </summary>
+        public float StallWarningSeconds { get; set; } = 5f;
 
         public string Url => _baseUrl;
         public bool IsConnected => _running && _clock.Elapsed.TotalSeconds - Volatile.Read(ref _lastReadAt) <= DisconnectAfterSeconds;
@@ -108,6 +129,7 @@ namespace Nebula
                 incoming = _incoming;
                 _incoming = null;
             }
+            CheckStalls();
             string readError = _readError, writeError = _writeError;
             if (readError != _loggedReadError)
             {
@@ -147,8 +169,64 @@ namespace Nebula
             // Give the sender a moment to flush an Unregister that was queued right before this, then cut the
             // reader's long poll short.
             _sender?.Join(1000);
+            _readHttp.Abort();
+            _sendHttp.Abort();
             try { _http.CancelPendingRequests(); } catch { }
             _http.Dispose();
+        }
+
+        /// <summary>
+        /// Main thread: warn once when a write has waited longer than <see cref="StallWarningSeconds"/>, or when no
+        /// document has arrived for longer than <see cref="DisconnectAfterSeconds"/>, and say when each recovers.
+        /// </summary>
+        private void CheckStalls()
+        {
+            double now = _clock.Elapsed.TotalSeconds;
+            double sending = Volatile.Read(ref _sendingSince);
+            if (!double.IsNaN(sending) && now - sending > StallWarningSeconds)
+            {
+                if (!_warnedSendStall)
+                {
+                    _warnedSendStall = true;
+                    NebulaLog.Warn($"control plane: a write to {_baseUrl} has waited {now - sending:0.0} s and heartbeats queue behind it; the orchestrator treats this process as dead after {StallWarningSeconds:0.#} s without one. {PendingWrites} more writes queued. {ThreadPoolState()}");
+                }
+            }
+            else if (_warnedSendStall && double.IsNaN(sending))
+            {
+                _warnedSendStall = false;
+                NebulaLog.Info($"control plane: writes to {_baseUrl} are getting through again");
+            }
+
+            double reading = Volatile.Read(ref _readingSince);
+            double lastRead = Volatile.Read(ref _lastReadAt);
+            // Before the first document arrives, count from the start of the read in flight.
+            double silentSince = double.IsNegativeInfinity(lastRead) ? reading : lastRead;
+            if (_running && !double.IsNaN(silentSince) && now - silentSince > DisconnectAfterSeconds)
+            {
+                if (!_warnedReadStall)
+                {
+                    _warnedReadStall = true;
+                    string inFlight = double.IsNaN(reading) ? "no read in flight" : $"the read in flight started {now - reading:0.0} s ago";
+                    NebulaLog.Warn($"control plane: no document from {_baseUrl} for {now - silentSince:0.0} s ({inFlight}); the mesh keeps running on its last known topology. {ThreadPoolState()}");
+                }
+            }
+            else if (_warnedReadStall && !double.IsNegativeInfinity(lastRead) && now - lastRead <= DisconnectAfterSeconds)
+            {
+                _warnedReadStall = false;
+                NebulaLog.Info($"control plane: documents from {_baseUrl} are arriving again");
+            }
+        }
+
+        /// <summary>How busy the thread pool is, for a stall warning. A game that fills the pool stalls every task that waits on it.</summary>
+        internal static string ThreadPoolState()
+        {
+            ThreadPool.GetAvailableThreads(out int workers, out int io);
+            ThreadPool.GetMaxThreads(out int maxWorkers, out int maxIo);
+            string state = $"Thread pool: {maxWorkers - workers} of {maxWorkers} worker threads busy, {maxIo - io} of {maxIo} I/O threads busy";
+#if NEBULA_SERVICE
+            state += $", {ThreadPool.ThreadCount} threads, {ThreadPool.PendingWorkItemCount} work items waiting";
+#endif
+            return state + ".";
         }
 
         // ---------------------------------------------------------------------------------------- writes
@@ -222,22 +300,19 @@ namespace Nebula
                 try
                 {
                     string url = $"{_baseUrl}{ControlPlaneHost.Path}?since={since.ToString(CultureInfo.InvariantCulture)}&wait={LongPollSeconds}";
-                    using (var req = NebulaHttp.Request(HttpMethod.Get, url, _token))
-                    {
-                        using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
-                        {
-                            string body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                            if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}: {Trim(body)}");
-                            var snapshot = ControlPlaneJson.Parse(body);
-                            since = snapshot.Version;
-                            Volatile.Write(ref _lastReadAt, _clock.Elapsed.TotalSeconds);
-                            lock (_gate) _incoming = snapshot;
-                            _readError = null;
-                        }
-                    }
+                    Volatile.Write(ref _readingSince, _clock.Elapsed.TotalSeconds);
+                    var resp = _readHttp.Send("GET", url, _token, null);
+                    Volatile.Write(ref _readingSince, double.NaN);
+                    if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {resp.Status}: {Trim(resp.Body)}");
+                    var snapshot = ControlPlaneJson.Parse(resp.Body);
+                    since = snapshot.Version;
+                    Volatile.Write(ref _lastReadAt, _clock.Elapsed.TotalSeconds);
+                    lock (_gate) _incoming = snapshot;
+                    _readError = null;
                 }
                 catch (Exception e)
                 {
+                    Volatile.Write(ref _readingSince, double.NaN);
                     if (!_running) return;
                     _readError = e is HttpRequestException || e is FormatException ? e.Message : e.GetType().Name + ": " + e.Message;
                     Sleep(RetrySeconds);
@@ -258,22 +333,16 @@ namespace Nebula
                     while (_writes.Count > 0 && batch.Count < MaxBatch) batch.Add(_writes.Dequeue());
                 }
                 string body = ControlPlaneJson.WriteBatch(batch);
+                Volatile.Write(ref _sendingSince, _clock.Elapsed.TotalSeconds);
                 while (true)
                 {
                     try
                     {
-                        using (var req = NebulaHttp.Request(HttpMethod.Post, _baseUrl + ControlPlaneHost.Path, _token))
-                        {
-                            req.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                            using (var resp = _http.SendAsync(req).GetAwaiter().GetResult())
-                            {
-                                if (resp.IsSuccessStatusCode) { _writeError = null; break; }
-                                string text = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                                // A rejected batch (bad request, wrong token) will not get better by retrying it.
-                                if ((int)resp.StatusCode == 400 || (int)resp.StatusCode == 401) { _writeError = $"HTTP {(int)resp.StatusCode}: {Trim(text)} (batch dropped)"; break; }
-                                throw new HttpRequestException($"HTTP {(int)resp.StatusCode}: {Trim(text)}");
-                            }
-                        }
+                        var resp = _sendHttp.Send("POST", _baseUrl + ControlPlaneHost.Path, _token, body);
+                        if (resp.IsSuccessStatusCode) { _writeError = null; break; }
+                        // A rejected batch (bad request, wrong token) will not get better by retrying it.
+                        if (resp.Status == 400 || resp.Status == 401) { _writeError = $"HTTP {resp.Status}: {Trim(resp.Body)} (batch dropped)"; break; }
+                        throw new HttpRequestException($"HTTP {resp.Status}: {Trim(resp.Body)}");
                     }
                     catch (Exception e)
                     {
@@ -282,6 +351,7 @@ namespace Nebula
                         Sleep(RetrySeconds);
                     }
                 }
+                Volatile.Write(ref _sendingSince, double.NaN);
             }
         }
 

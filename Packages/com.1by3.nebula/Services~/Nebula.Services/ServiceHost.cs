@@ -83,7 +83,7 @@ namespace Nebula
                 }
                 else if (role == "gateway")
                 {
-                    control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new RemoteControlPlane(config.ControlPlaneUrl, config.MeshToken);
+                    control = config.UseLocalControlPlane ? (IControlPlane)new LocalControlPlane() : new RemoteControlPlane(config.ControlPlaneUrl, config.MeshToken) { StallWarningSeconds = config.WorkerTimeoutSeconds };
                     control.Connect();
                     gateway = new NebulaGateway();
                     gateway.Initialize(config, control, config.WebClients ? StartWebClients(config, out web) : null);

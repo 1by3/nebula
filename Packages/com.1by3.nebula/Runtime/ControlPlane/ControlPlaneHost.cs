@@ -206,7 +206,7 @@ namespace Nebula
         }
 
         /// <summary>Listener thread: wait for a version above <c>since</c>, then answer with the document.</summary>
-        private OrchestratorHttpServer.Response HandleRead(OrchestratorHttpServer.Request req)
+        internal OrchestratorHttpServer.Response HandleRead(OrchestratorHttpServer.Request req)
         {
             if (!Authorized(req)) return OrchestratorHttpServer.Response.Error(401, "missing or wrong mesh token");
             long since = -1;

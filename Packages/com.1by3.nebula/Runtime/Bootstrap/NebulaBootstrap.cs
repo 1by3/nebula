@@ -158,7 +158,7 @@ namespace Nebula
                 }
                 else
                 {
-                    ControlPlane = new RemoteControlPlane(Config.ControlPlaneUrl, Config.MeshToken);
+                    ControlPlane = new RemoteControlPlane(Config.ControlPlaneUrl, Config.MeshToken) { StallWarningSeconds = Config.WorkerTimeoutSeconds };
                 }
                 ControlPlane.Connect();
             }
