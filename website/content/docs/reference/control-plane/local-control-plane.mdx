@@ -257,7 +257,7 @@ Move a scope to another lifecycle state ([`ScopeState`](/docs/reference/control-
 public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId);
 ```
 
-A worker reporting that it finished the step the scope is in for one of its containers ([`ScopePhase`](/docs/reference/control-plane/scope-phase)). Recorded on the row, so the orchestrator's next sweep sees it and every other role can watch the progress. An ack for a container the scope does not own, or in a phase that does not match the scope's state, is dropped: it belongs to a step that has already ended.
+A worker reporting that it finished the step the scope is in for one of its containers ([`ScopePhase`](/docs/reference/control-plane/scope-phase)). Recorded on the row, so the orchestrator's next sweep sees it and every other role can watch the progress. The container must be one of the scope's live parts ([`ScopeLifecycle.CollectParts`](/docs/reference/control-plane/scope-lifecycle#collectparts)): named by the row, or leased under the scope's key. An ack for any other container, or in a phase that does not match the scope's state, is dropped: it belongs to a step that has already ended.
 
 ### RemoveScope [#removescope]
 

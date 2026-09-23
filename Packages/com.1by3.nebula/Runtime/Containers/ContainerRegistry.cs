@@ -474,7 +474,9 @@ namespace Nebula
         public static bool UnregisterRuntime(ulong id)
         {
             if (!RuntimeById.TryGetValue(id, out var c)) return false;
-            // A removed lease cannot silently move private occupants into the public world.
+            // A removed lease cannot silently move private occupants into the public world. An entity whose object was
+            // destroyed without a despawn is no occupant: counting it would keep the box registered forever.
+            if (c != null) c.Entities.RemoveAll(e => e == null);
             if (c != null && c.InstanceId != 0 && c.Entities.Count > 0) return false;
             if (c == null)
             {

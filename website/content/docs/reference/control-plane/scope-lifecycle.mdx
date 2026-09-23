@@ -39,21 +39,39 @@ public static bool RetireWhenIdle(in ScopeRetireContext context);
 
 The default policy: retire once the scope has held no client-owned entity and no authoritative entity at all for [`ScopeRetireContext.RetireAfterSeconds`](/docs/reference/control-plane/scope-retire-context#retireafterseconds). Pure.
 
+### CollectParts [#collectparts]
+
+```csharp
+public static void CollectParts(IControlPlane cp, ScopeInfo scope, List<string> into);
+```
+
+The scope's **live parts**, into `into` (cleared first): the containers its row names, then every other lease row whose [`InstanceContainerInfo.ScopeKey`](/docs/reference/protocol/instance-container-info#scopekey) is the scope's key. For a [`ScopeKind.Parts`](/docs/reference/control-plane/scope-kind#parts) scope the two are the same set. A [`ScopeKind.Grid`](/docs/reference/control-plane/scope-kind#grid) scope's row names only its anchor chunk; the rest are the chunks the allocator leased on demand around the scope's pawns. Idle age, occupancy and the retire sequence are all judged over this set, so a player standing three chunks from the anchor keeps the scope alive (`docs/scope-lifecycle.md` D4).
+
+### IndexParts [#indexparts]
+
+```csharp
+public static void IndexParts(IControlPlane cp, Dictionary<string, List<string>> into);
+```
+
+[`CollectParts`](#collectparts) for every scope row at once, keyed by scope key, in one pass over the lease rows. For a caller that visits every scope: the orchestrator's sweep and a worker's lifecycle pass. Lists already in `into` are cleared and reused.
+
 ### IdleSeconds [#idleseconds]
 
 ```csharp
 public static double IdleSeconds(IControlPlane cp, ScopeInfo scope);
+public static double IdleSeconds(IControlPlane cp, IReadOnlyList<string> parts);
 ```
 
-Seconds since anything last wanted any part of the scope: the smallest lease-row age over its containers. A part with no lease row does not take part (it is already gone), and a scope with no leased part at all is 0 — there is nothing there to retire. The row's age is the mesh-wide idle clock every worker already re-stamps while it wants a box ([`IControlPlane.TouchContainer`](/docs/reference/control-plane/i-control-plane#touchcontainer), [`NebulaWorker.RuntimeContainerIdleSeconds`](/docs/reference/worker/nebula-worker#runtimecontaineridleseconds)).
+Seconds since anything last wanted any live part of the scope ([`CollectParts`](#collectparts)); see the other overload.
 
 ### Occupancy [#occupancy]
 
 ```csharp
 public static void Occupancy(ScopeInfo scope, IReadOnlyDictionary<string, ContainerLoad> occupancy, out int entities, out int players);
+public static void Occupancy(IReadOnlyList<string> parts, IReadOnlyDictionary<string, ContainerLoad> occupancy, out int entities, out int players);
 ```
 
-What the workers last reported inside the scope's parts, summed over them. Absent parts count 0.
+What the workers last reported inside the containers the scope's row names, summed over them. A grid scope's row names only its anchor: pass its live parts ([`CollectParts`](#collectparts)) to the other overload.
 
 ### Admits [#admits]
 
@@ -67,6 +85,7 @@ Whether a client naming `scopeKey` may be placed now, and why not when it may no
 
 ```csharp
 public static string NextState(ScopeInfo scope, double elapsedSeconds, out bool timedOut);
+public static string NextState(ScopeInfo scope, IReadOnlyList<string> parts, double elapsedSeconds, out bool timedOut);
 ```
 
 The next state of a scope in a step that waits on its parts, or null when it should stay where it is. Pure, so the ordering ("every part, or the deadline") is one testable function rather than a shape of the orchestrator's loop: [`ScopeState.Retiring`](/docs/reference/control-plane/scope-state#retiring) ends in [`ScopeState.Retired`](/docs/reference/control-plane/scope-state#retired) and [`ScopeState.Restoring`](/docs/reference/control-plane/scope-state#restoring) in [`ScopeState.Active`](/docs/reference/control-plane/scope-state#active), once every container has acknowledged the step's phase or `elapsedSeconds` has passed [`StepTimeoutSeconds`](#steptimeoutseconds).

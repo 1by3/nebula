@@ -62,12 +62,34 @@ activation, of a `Retired` row, restores.
 
 ## 2. Deciding that a scope is idle
 
-**D4 Idle age is the minimum over the scope's parts, and each part's age is its lease row's age.** The lease row's
-`UpdatedAt` is *already* the mesh-wide "when did anybody last want this box" clock: every worker re-stamps a runtime
-container it wants but does not own (`NebulaWorker.RuntimeTouchSeconds`), and `RuntimeContainerIdleSeconds` is
-documented as exactly this. Taking the minimum is what makes "all parts retire together" safe from the other
+**D4 Idle age is the minimum over the scope's live parts, and each part's age is its lease row's age.** The lease
+row's `UpdatedAt` is *already* the mesh-wide "when did anybody last want this box" clock: every worker re-stamps a
+runtime container it wants but does not own (`NebulaWorker.RuntimeTouchSeconds`), and `RuntimeContainerIdleSeconds`
+is documented as exactly this. Taking the minimum is what makes "all parts retire together" safe from the other
 direction: one busy part keeps the whole scope hot, so a retire can never take a room out from under a player
 standing in the cellar.
+
+*Live parts* (NEB-252) are the containers the row names **and every other lease row whose
+`InstanceContainerInfo.ScopeKey` is the scope's key** (`ScopeLifecycle.CollectParts`, and `IndexParts` for every
+scope in one pass over the leases). For a `Parts` scope the two sets are the same. A `Grid` scope's row names only
+its anchor chunk, and the rest of the world is chunks the allocator leased on demand; judging the anchor alone
+retired a planet with a player three chunks away from it. Everything in this record that says "the scope's parts"
+means the live parts: the idle age, the occupancy (D7), the retire sequence (§3: every live chunk gets the
+before-retire window, the forced checkpoint, the emptying and an ack, and `NextState` waits for all of them), and the
+lease rows released on `Retired`. Restore is the exception (§4): only the row's parts are recreated, so only they
+are waited on.
+
+Two rules keep a chunk's lease age meaning "when was it last wanted":
+
+* A request for a **scope's** chunk re-stamps the row every `RuntimeTouchSeconds` even when the requesting worker
+  owns it (`NebulaWorker.RequestRuntimeContainer`). The public world's chunks keep the old rule — only a worker that
+  does not own the box re-stamps it — so they cost no extra writes.
+* A **pin** only makes sure the row exists and never re-stamps it (`RuntimeGridAllocator.AddPin`, through
+  `NebulaWorker.EnsureRuntimeContainer`). Every worker that knows a grid scope pins its anchor; if a pin counted as
+  wanting the anchor, two workers knowing the scope would have kept it hot forever.
+
+The chunk allocator leaves every chunk of a retiring scope to this sequence, rather than releasing the idle ones by
+its own rule while the anchor checkpoints: releasing one there would skip its before-retire window and its ack.
 
 **D5 The owning worker keeps a busy part hot, and "busy" means a retire would lose something.**
 `WorkerScopeLifecycle.KeepHot` re-stamps the lease of a scope part it owns, at most every
@@ -215,6 +237,6 @@ busy test (D5) refuses to retire a part that holds any.
   `OnBeforeRetire(container, cancelToken)` (§3 step 2, already ordered and already given a cancellable window), and
   `NebulaPersistence.ContainerRestored` becomes `OnContainerRestored` (§D10, already raised once per lease,
   including for an empty container). Neither needs the sequence to change.
-- **Scoped chunk grids (NEB-239)** get idle retirement for free the moment their parts are ordinary scope
-  containers: D4 aggregates over `ScopeInfo.ContainerIds`, whatever produced them. A grid whose parts come and go
-  will want `ContainerIds` to be the *current* set at the moment of the sweep, which it already is.
+- **Scoped chunk grids (NEB-239)** were first judged on `ScopeInfo.ContainerIds` alone, which for a grid is the
+  anchor. NEB-252 made D4 aggregate over the live parts, every lease row under the scope's key, so a grid scope is
+  judged, retired and released as a whole (`Tests/EditMode/ConformanceGridScopeLifecycleTests.cs`).

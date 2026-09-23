@@ -205,18 +205,18 @@ A scope with nobody in it does not have to keep a worker busy. The orchestrator 
 
 ### When a scope is idle
 
-A scope's idle age is the **smallest** age over its parts, so one busy part keeps the whole scope hot. The owning worker keeps a part's clock at zero while it holds anything a retire would lose:
+A scope's parts are the containers its activation created and, for a chunked world, every chunk leased since around the players in it. A scope's idle age is the **smallest** age over those parts, so one busy part keeps the whole scope hot: a player standing ten chunks from a chunked world's anchor keeps that world alive. A chunk's clock restarts whenever a worker wants it for a pawn nearby. The owning worker also keeps the clock of each part the activation created at zero while it holds anything a retire would lose:
 
 - an entity a client owns (somebody is in it);
 - an entity that is not persistent (its state cannot be brought back);
 - a persistent entity whose latest changes have not been saved yet.
 
-A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula-scope-idle-retire`; 0 turns retirement off) and that the workers report as empty is retired. The public world has no scope row and is never retired.
+A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula-scope-idle-retire`; 0 turns retirement off) and that the workers report as empty, across all of its parts, is retired. The public world has no scope row and is never retired.
 
 ### What retiring does
 
 1. The scope is marked `retiring`. **It admits nobody from this moment**, before anything is saved.
-2. Each part runs the before-retire step, force-checkpoints every persistent entity inside it, and waits for the store to confirm the writes.
+2. Each part, including every chunk a chunked world has leased, runs the before-retire step, force-checkpoints every persistent entity inside it, and waits for the store to confirm the writes.
 3. Each part despawns its contents — persistent entities keep their saved records, anything else is gone — and reports back.
 4. Only when **every** part has reported does the orchestrator release the lease rows and mark the scope `retired`.
 
@@ -226,7 +226,9 @@ The scope's row is kept, so the key keeps its identity and a later activation is
 
 ### What coming back does
 
-Activating a retired key puts the scope in `restoring` and brings its lease rows back with the same container IDs. Each worker that lands a part loads that part's persisted records in the ordinary way and reports the restore complete; only then does the scope become `active` and admit clients again.
+Activating a retired key puts the scope in `restoring` and brings back the lease rows its activation creates, with the same container IDs. Each worker that lands a part loads that part's persisted records in the ordinary way and reports the restore complete; only then does the scope become `active` and admit clients again.
+
+A chunked world comes back with its anchor chunk only. Its other chunks are leased again when players come near them, and each one restores its saved entities when it is leased, like any chunk.
 
 On the way back your game is told that the scope is coming to life, and whether anything is saved under its key, before any of its parts restores ([`OnScopeActivating`](/docs/guides/lifecycle-hooks)), and told again once each part's records are back (`OnContainerRestored`). That ordering is what lets a game rebuild a world from its own summary without racing the records.
 

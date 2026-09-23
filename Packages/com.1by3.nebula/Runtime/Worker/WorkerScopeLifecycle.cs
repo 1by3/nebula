@@ -78,6 +78,8 @@ namespace Nebula
         private readonly Dictionary<string, Activation> _activating = new Dictionary<string, Activation>(StringComparer.Ordinal);
         private readonly HashSet<string> _here = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<string> _scratch = new List<string>();
+        /// <summary>Every scope's live parts this pass (<see cref="ScopeLifecycle.IndexParts"/>).</summary>
+        private readonly Dictionary<string, List<string>> _parts = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         private float _next;
 
         public WorkerScopeLifecycle(NebulaWorker worker) => _worker = worker;
@@ -104,15 +106,20 @@ namespace Nebula
 
             _scratch.Clear();
             _here.Clear();
+            // The live parts, not only the containers the row names: a grid scope's row names its anchor, and every
+            // chunk leased on demand under its key is retired with it (docs/scope-lifecycle.md D4).
+            ScopeLifecycle.IndexParts(cp, _parts);
             for (int i = 0; i < scopes.Count; i++)
             {
                 var scope = scopes[i];
-                if (scope == null || scope.ContainerIds == null) continue;
-                for (int c = 0; c < scope.ContainerIds.Count; c++)
+                if (scope == null || string.IsNullOrEmpty(scope.ScopeKey) || !_parts.TryGetValue(scope.ScopeKey, out var parts)) continue;
+                for (int c = 0; c < parts.Count; c++)
                 {
-                    string containerId = scope.ContainerIds[c];
+                    string containerId = parts[c];
                     var container = ContainerRegistry.FindById(containerId);
                     if (container == null || !container.IsOwnedBy(_worker.WorkerId)) continue;
+                    // A part the row names, rather than a chunk leased on demand: the parts re-activation recreates.
+                    bool named = scope.ContainerIds != null && scope.ContainerIds.Contains(containerId);
                     // This worker holds a part of the scope, so the scope is coming to life here (or already has):
                     // raise the activation hook once, and keep the parts' restores behind it until it has been.
                     if (_here.Add(scope.ScopeKey)) NoteActivating(scope, now);
@@ -122,14 +129,17 @@ namespace Nebula
                             // The mesh-wide idle clock: the lease row's age is what every worker already re-stamps
                             // while it wants a box, and it is what the scope's idle age is the smallest of. Stamping
                             // it while the part is busy is the whole of this worker's contribution to the decision.
-                            KeepHot(cp, container, now);
+                            // Only for the parts the row names: a chunk leased on demand is re-stamped while an
+                            // allocator wants it, and left to the allocator's own retire rule when nothing does.
+                            if (named) KeepHot(cp, container, now);
                             break;
                         case ScopeState.Retiring:
                             _scratch.Add(containerId);
                             StepRetire(cp, scope, container, now);
                             break;
                         case ScopeState.Restoring:
-                            ReportRestore(cp, scope, containerId);
+                            // Re-activation recreates only the row's parts; other chunks restore when they are leased.
+                            if (named) ReportRestore(cp, scope, containerId);
                             break;
                     }
                 }

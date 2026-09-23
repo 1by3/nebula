@@ -545,14 +545,22 @@ namespace Nebula
         /// <summary>
         /// A worker reporting that it finished the step the scope is in for one of its containers
         /// (<see cref="ScopePhase"/>). Recorded on the row, so the orchestrator's next sweep sees it and every other
-        /// role can watch the progress. An ack for a container the scope does not own, or in a phase that does not
-        /// match the scope's state, is dropped: it belongs to a step that has already ended.
+        /// role can watch the progress. The container must be one of the scope's live parts
+        /// (<see cref="ScopeLifecycle.CollectParts"/>): named by the row, or leased under the scope's key. An ack for
+        /// any other container, or in a phase that does not match the scope's state, is dropped: it belongs to a
+        /// step that has already ended.
         /// </summary>
         public void AckScopePart(string scopeKey, string containerId, string phase, int count, string workerId)
         {
             var scope = this.FindScope(scopeKey);
             if (scope == null || string.IsNullOrEmpty(containerId)) return;
-            if (!scope.ContainerIds.Contains(containerId)) return;
+            if (!scope.ContainerIds.Contains(containerId))
+            {
+                // Not one the row names, but still a live part when its lease row carries the scope's key: a chunk a
+                // grid scope leased on demand, which is retired with the rest (docs/scope-lifecycle.md D4).
+                var lease = this.FindLease(containerId);
+                if (lease?.Instance == null || !string.Equals(lease.Instance.ScopeKey, scope.ScopeKey, StringComparison.Ordinal)) return;
+            }
             string expected = scope.State == ScopeState.Retiring ? ScopePhase.Checkpointed
                 : scope.State == ScopeState.Restoring ? ScopePhase.Restored : null;
             if (expected == null || !string.Equals(expected, phase, StringComparison.Ordinal)) return;

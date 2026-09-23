@@ -33,7 +33,6 @@ namespace Nebula.Tests
         private static readonly Vector3 Cell = new Vector3(64f, 64f, 64f);
         private const float RetireAfter = 30f;
         private const ulong PilotClient = 7;
-        private const string RetiringScope = "world/retiring";
 
         private ConformanceMesh _mesh;
         private LocalControlPlane _plane;
@@ -213,38 +212,36 @@ namespace Nebula.Tests
         }
 
         /// <summary>
-        /// The occupancy rule on its own, at every depth: in a retiring scope nothing is wanted any more, so only
-        /// occupancy keeps a chunk that is not one of the scope's parts. A pilot in a ship, and a passenger in a
-        /// shuttle in that ship's hangar, both occupy it; an empty ship does not.
+        /// The occupancy rule on its own, at every depth. The pawn is moved away from its carrier while it is still
+        /// filed aboard (as it is between two ticks), so its ring does not cover the chunk and the ship stands in
+        /// its own chunk: only occupancy can keep the chunk. A pilot in a ship, and a passenger in a shuttle in that
+        /// ship's hangar, both occupy it; an empty ship does not.
         /// </summary>
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(2)]
         public void AClientsPawnRidingAtAnyDepthOccupiesTheChunkItsCarrierIsIn(int depth)
         {
-            var grid = new RuntimeGrid(Cell, planar: false, scopeKey: RetiringScope);
-            _plane.ActivateScope(new ScopeActivationRequest
-            {
-                ScopeKey = RetiringScope,
-                Definition = new ChunkGridDefinition { CellSize = Cell, Planar = false }.ToScopeDefinition(),
-                PreferredWorkerId = W.Id,
-            });
-            Chunk(grid, Vector3Int.zero); // the anchor: a part, which the lifecycle retires, not the allocator
+            var grid = new RuntimeGrid(Cell, planar: true);
             var coord = new Vector3Int(1, 0, 0);
             var chunk = Chunk(grid, coord);
             var ship = SpawnShip(chunk, grid.CenterOf(coord));
             NetworkIdentity pawn = null;
             if (depth == 1) pawn = SpawnAboard(_pawnPrefab, ship, PilotClient);
             if (depth == 2) pawn = SpawnAboard(_pawnPrefab, SpawnAboard(_shuttlePrefab, ship), PilotClient);
+            var away = new Vector3Int(40, 0, 0);
+            if (pawn != null)
+            {
+                pawn.transform.position = grid.CenterOf(away);
+                Assume.That(pawn.Container, Is.Not.SameAs(chunk), "still filed aboard");
+            }
 
             var allocator = Allocator(grid);
-            allocator.AddPin(Vector3Int.zero);
             Tick(allocator, 0f);
-            _plane.SetScopeState(RetiringScope, ScopeState.Retiring);
             PassRetireDelay();
             Tick(allocator, RetireAfter + 1f);
 
-            Assert.That(allocator.WantedIds, Is.Empty, "a retiring scope wants nothing");
+            Assert.That(allocator.IsWanted(coord), Is.False, "nothing wants the chunk the ship is in");
             bool occupied = depth > 0;
             Assert.That(_plane.FindLease(chunk.ContainerId) != null, Is.EqualTo(occupied),
                 occupied ? $"a client's pawn {depth} carrier(s) deep occupies the chunk" : "an empty ship does not occupy the chunk");

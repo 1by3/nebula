@@ -538,7 +538,7 @@
       $('scopes').innerHTML = scopes.map(sc => `
         <tr><td class="mono">${esc(sc.key)}</td>
             <td>${esc(sc.state)}${sc.state === 'active' && !sc.ready ? ' <span class="muted">(no owner)</span>' : ''}</td>
-            <td>${sc.parts}</td>
+            <td>${sc.liveParts != null && sc.liveParts !== sc.parts ? `${sc.parts} + ${sc.liveParts - sc.parts} leased` : sc.parts}</td>
             <td>${sc.players}</td>
             <td>${sc.entities}</td>
             <td>${sc.state === 'active' ? fmtSecs(sc.idleSeconds) : '<span class="muted">—</span>'}</td>

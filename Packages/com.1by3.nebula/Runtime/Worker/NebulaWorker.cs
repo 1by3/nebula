@@ -456,7 +456,17 @@ namespace Nebula
             return rowHasHint && rowHint != wanted;
         }
 
-        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance)
+        /// <summary>
+        /// Make sure the runtime container <paramref name="id"/> has a lease row, without saying that anything here
+        /// wants it: the row is created when it is missing, and never re-stamped. For a box that must exist but must
+        /// not keep its scope from going idle, like the anchor chunk every worker that knows a grid scope pins
+        /// (<see cref="Nebula.World.RuntimeGridAllocator.AddPin"/>). Re-stamping it from every such worker would keep
+        /// the scope's idle clock at zero for as long as two workers knew the scope.
+        /// </summary>
+        internal void EnsureRuntimeContainer(ulong id, Bounds frameBounds, InstanceContainerInfo instance) =>
+            Request(id, frameBounds, ContainerHint.Default, writeHint: false, instance: instance, touch: false);
+
+        private void Request(ulong id, Bounds frameBounds, in ContainerHint hint, bool writeHint, InstanceContainerInfo instance, bool touch = true)
         {
             if (!_registered || !ControlPlane.IsConnected)
             {
@@ -474,8 +484,13 @@ namespace Nebula
                 return;
             }
             if (ShouldWriteHint(writeHint, lease.HasHint, lease.Hint, hint)) ControlPlane.SetContainerHint(containerId, hint);
-            // Somebody else owns it and we still want it: say so now and then, so the owner's idle clock does not run out.
-            if (lease.WorkerId != WorkerId && (ControlPlane.Now - lease.UpdatedAt).TotalSeconds >= RuntimeTouchSeconds) ControlPlane.TouchContainer(containerId);
+            // We still want it: say so now and then. When somebody else owns it, so the owner's idle clock does not
+            // run out. When it is a scope's chunk, even one we own, so the scope's idle clock (the youngest lease row
+            // of its live parts, docs/scope-lifecycle.md D4) does not either: the orchestrator judges a grid scope
+            // over every chunk leased under its key, and only these rows say when a chunk was last wanted.
+            if (!touch) return;
+            bool scoped = !string.IsNullOrEmpty(lease.Instance?.ScopeKey);
+            if ((lease.WorkerId != WorkerId || scoped) && (ControlPlane.Now - lease.UpdatedAt).TotalSeconds >= RuntimeTouchSeconds) ControlPlane.TouchContainer(containerId);
         }
 
         /// <summary>How often a worker re-stamps a runtime container it wants but does not own (see <see cref="RuntimeContainerIdleSeconds"/>).</summary>

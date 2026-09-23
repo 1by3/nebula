@@ -95,6 +95,8 @@ namespace Nebula
         private CostBalancedAssignmentPolicy _costPolicy;
         private readonly AssignmentInput _assignmentInput = new AssignmentInput();
         private readonly Dictionary<string, ContainerLoad> _occupancy = new Dictionary<string, ContainerLoad>(StringComparer.Ordinal);
+        /// <summary>Every scope's live parts as of the last sweep (<see cref="ScopeLifecycle.IndexParts"/>).</summary>
+        private readonly Dictionary<string, List<string>> _scopeParts = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         /// <summary>
         /// The latest cost row of every container the mesh holds, one per lease (<see cref="ContainerCost"/>,
         /// docs/cost-telemetry.md): what it costs in simulation, in replication and in gateway relay. Refreshed
@@ -1287,32 +1289,43 @@ namespace Nebula
             // The per-container counts the workers report. Rebalance refreshes these too, but it can return early
             // (nothing to plan), and a scope must not be judged on a stale reading of what is inside it.
             Telemetry.CopyOccupancy(_occupancy);
+            // Every scope's live parts in one pass over the lease rows: a grid scope's row names only its anchor,
+            // and the chunks leased on demand around it are judged and retired with it (docs/scope-lifecycle.md D4).
+            ScopeLifecycle.IndexParts(ControlPlane, _scopeParts);
             for (int i = 0; i < scopes.Count; i++)
             {
                 var scope = scopes[i];
                 if (scope == null || string.IsNullOrEmpty(scope.ScopeKey)) continue;
                 double elapsed = Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds);
+                var parts = PartsOf(scope);
                 switch (scope.State)
                 {
                     case ScopeState.Active:
-                        JudgeScope(scope);
+                        JudgeScope(scope, parts);
                         break;
                     case ScopeState.Retiring:
                     {
-                        // Every part checkpointed and emptied itself, or the deadline passed. Only now are the lease
-                        // rows deleted: the checkpoint has to finish while the owner still holds the box.
-                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        // Every live part checkpointed and emptied itself, or the deadline passed. Only now are the
+                        // lease rows deleted: the checkpoint has to finish while the owner still holds the box.
+                        if (ScopeLifecycle.NextState(scope, parts, elapsed, out bool timedOut) == null) break;
                         if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish checkpointing within {ScopeLifecycle.StepTimeoutSeconds:0} s; retiring it anyway");
                         int saved = scope.AckedCount(ScopePhase.Checkpointed);
-                        int parts = scope.ContainerIds.Count;
-                        for (int c = 0; c < scope.ContainerIds.Count; c++) ControlPlane.RemoveContainer(scope.ContainerIds[c]);
+                        // Copied first: removing a lease row changes the document the index was built from.
+                        var release = new List<string>(parts);
+                        int released = 0;
+                        for (int c = 0; c < release.Count; c++)
+                        {
+                            if (ControlPlane.FindLease(release[c]) == null) continue;
+                            ControlPlane.RemoveContainer(release[c]);
+                            released++;
+                        }
                         ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Retired);
-                        Log("info", $"scope '{scope.ScopeKey}' retired: {parts} container(s) released, {saved} persistent entities checkpointed");
+                        Log("info", $"scope '{scope.ScopeKey}' retired: {released} container(s) released, {saved} persistent entities checkpointed");
                         break;
                     }
                     case ScopeState.Restoring:
                     {
-                        if (ScopeLifecycle.NextState(scope, elapsed, out bool timedOut) == null) break;
+                        if (ScopeLifecycle.NextState(scope, parts, elapsed, out bool timedOut) == null) break;
                         if (timedOut) Log("warn", $"scope '{scope.ScopeKey}' did not finish restoring within {ScopeLifecycle.StepTimeoutSeconds:0} s; admitting clients anyway");
                         int restored = scope.AckedCount(ScopePhase.Restored);
                         ControlPlane.SetScopeState(scope.ScopeKey, ScopeState.Active);
@@ -1366,14 +1379,18 @@ namespace Nebula
         /// <summary>How far a saturation reading has to move before it is worth another control-plane document.</summary>
         private const float CapacityPublishStep = 0.02f;
 
+        /// <summary>The live parts of <paramref name="scope"/> as of the last <see cref="ScopeLifecycle.IndexParts"/>.</summary>
+        private IReadOnlyList<string> PartsOf(ScopeInfo scope) =>
+            _scopeParts.TryGetValue(scope.ScopeKey, out var parts) ? parts : (IReadOnlyList<string>)scope.ContainerIds;
+
         /// <summary>Ask the retire policy about one active scope (<see cref="ScopeLifecycle.ShouldRetire"/>).</summary>
-        private void JudgeScope(ScopeInfo scope)
+        private void JudgeScope(ScopeInfo scope, IReadOnlyList<string> parts)
         {
-            ScopeLifecycle.Occupancy(scope, _occupancy, out int entities, out int players);
+            ScopeLifecycle.Occupancy(parts, _occupancy, out int entities, out int players);
             var context = new ScopeRetireContext
             {
                 Scope = scope,
-                IdleSeconds = ScopeLifecycle.IdleSeconds(ControlPlane, scope),
+                IdleSeconds = ScopeLifecycle.IdleSeconds(ControlPlane, parts),
                 Entities = entities,
                 Players = players,
                 RetireAfterSeconds = Config.ScopeIdleRetireSeconds,
@@ -1982,18 +1999,23 @@ namespace Nebula
             // is inside them and how long nothing has wanted them (docs/scope-lifecycle.md).
             w.Key("scopes");
             w.BeginArray();
+            var liveParts = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            ScopeLifecycle.IndexParts(ControlPlane, liveParts);
             foreach (var scope in ControlPlane.Scopes.OrderBy(x => x.ScopeKey, StringComparer.Ordinal))
             {
-                ScopeLifecycle.Occupancy(scope, _occupancy, out int scopeEntities, out int scopePlayers);
+                // Judged over the live parts, as the sweep judges them: a grid scope's row names only its anchor.
+                IReadOnlyList<string> scopeParts = liveParts.TryGetValue(scope.ScopeKey, out var list) ? list : (IReadOnlyList<string>)scope.ContainerIds;
+                ScopeLifecycle.Occupancy(scopeParts, _occupancy, out int scopeEntities, out int scopePlayers);
                 w.BeginObject();
                 w.Prop("key", scope.ScopeKey);
                 w.Prop("state", scope.State ?? ScopeState.Active);
                 w.Prop("requester", scope.Requester ?? "");
                 w.Prop("parts", scope.ContainerIds.Count);
+                w.Prop("liveParts", scopeParts.Count);
                 w.Prop("ready", ControlPlane.IsScopeReady(scope, Config.WorkerTimeoutSeconds));
                 w.Prop("entities", scopeEntities);
                 w.Prop("players", scopePlayers);
-                w.Prop("idleSeconds", ScopeLifecycle.IdleSeconds(ControlPlane, scope));
+                w.Prop("idleSeconds", ScopeLifecycle.IdleSeconds(ControlPlane, scopeParts));
                 w.Prop("stateSeconds", Math.Max(0.0, (ControlPlane.Now - scope.StateSince).TotalSeconds));
                 w.Prop("ageSeconds", Math.Max(0.0, (ControlPlane.Now - scope.CreatedAt).TotalSeconds));
                 w.Prop("acked", scope.Acks != null ? scope.Acks.Count : 0);

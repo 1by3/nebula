@@ -32,6 +32,8 @@ namespace Nebula.World
         private readonly List<Vector3Int> anchors = new List<Vector3Int>();
         private readonly List<Vector3Int> pins = new List<Vector3Int>();
         private readonly HashSet<ulong> wanted = new HashSet<ulong>();
+        /// <summary>Ids in <see cref="wanted"/> only because they are pinned: kept leased, never re-stamped.</summary>
+        private readonly HashSet<ulong> pinnedOnly = new HashSet<ulong>();
         private readonly Dictionary<ulong, float> lastWanted = new Dictionary<ulong, float>();
         private readonly List<ulong> scratch = new List<ulong>();
         private readonly List<Vector3Int> ring = new List<Vector3Int>();
@@ -124,25 +126,33 @@ namespace Nebula.World
             next = unscaledTime + TickIntervalSeconds;
 
             wanted.Clear();
+            pinnedOnly.Clear();
             var scope = ReadScope();
             if (definitionChanged) return;
             bool retiring = scope?.State == ScopeState.Retiring;
             if (MayAllocate(scope))
             {
                 foreach (var a in anchors) AddRing(a);
-                for (int i = 0; i < pins.Count; i++) wanted.Add(grid.IdOf(pins[i]));
                 foreach (var entity in worker.Authoritative)
                     // Only this grid's own pawns: a player standing in another scope must not drag this world's
                     // chunks into being at the coordinate he happens to occupy over there.
                     if (entity != null && entity.OwnerClientId != 0 && entity.InstanceId == grid.InstanceId) AddRing(grid.CoordOf(entity));
+                for (int i = 0; i < pins.Count; i++)
+                {
+                    ulong pinned = grid.IdOf(pins[i]);
+                    if (wanted.Add(pinned)) pinnedOnly.Add(pinned);
+                }
             }
 
             foreach (var id in wanted)
             {
                 lastWanted[id] = unscaledTime;
                 if (!grid.TryCoordOf(id, out var coord)) continue;
+                // A pin only keeps the row in existence. Every worker that knows a scope pins its anchor, and if each
+                // re-stamped it the scope's idle clock would never run (docs/scope-lifecycle.md D4).
+                if (pinnedOnly.Contains(id)) worker.EnsureRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
                 // Touch existing foreign leases too: their owner must not retire our neighbours.
-                worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
+                else worker.RequestRuntimeContainer(id, grid.BoundsOf(coord), InstanceOf(id, coord));
             }
 
             scratch.Clear();
@@ -151,8 +161,10 @@ namespace Nebula.World
                 // Only this grid's chunks: another scope's allocator owns its own, and retiring a box that is not
                 // ours would empty somebody else's world.
                 if (!grid.Owns(c)) continue;
-                // The lifecycle owns the checkpoint barrier for its parts. Other idle chunks may drain normally.
-                if (retiring && scope.ContainerIds.Contains(c.ContainerId)) continue;
+                // A retiring scope's chunks belong to the lifecycle, every one of them and not only the anchor: each
+                // gets the before-retire window, the forced checkpoint and the acknowledgement the orchestrator waits
+                // for (docs/scope-lifecycle.md D4). Releasing one here would skip all three.
+                if (retiring) continue;
                 if (!c.IsOwnedBy(worker.WorkerId) || wanted.Contains(c.RuntimeId)) continue;
                 if (!lastWanted.TryGetValue(c.RuntimeId, out var last)) { lastWanted[c.RuntimeId] = unscaledTime; continue; }
                 if (unscaledTime - last < RetireAfterSeconds || worker.RuntimeContainerIdleSeconds(c.RuntimeId) < RetireAfterSeconds) continue;

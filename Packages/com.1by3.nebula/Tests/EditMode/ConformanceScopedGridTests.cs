@@ -179,7 +179,7 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void ARetiringScopeKeepsItsCheckpointedPartsWhileOtherIdleChunksDrain()
+        public void ARetiringScopeLeavesEveryChunkToTheLifecycle()
         {
             using var plane = new LocalControlPlane();
             var clock = new System.DateTime(2026, 1, 1, 0, 0, 0, System.DateTimeKind.Utc);
@@ -212,8 +212,8 @@ namespace Nebula.Tests
             Assert.That(plane.FindScope(Alpha).Acks, Is.Empty, "the lifecycle has not completed its checkpoint");
             Assert.That(plane.FindLease(anchor.ContainerId), Is.Not.Null,
                 "allocator idleness must not bypass the lifecycle's checkpoint barrier");
-            Assert.That(plane.FindLease(other.ContainerId), Is.Null,
-                "ordinary idle chunks can still drain while the scope's parts are checkpointing");
+            Assert.That(plane.FindLease(other.ContainerId), Is.Not.Null,
+                "nor may it for a chunk leased on demand: every live part is checkpointed and acknowledged by the lifecycle (docs/scope-lifecycle.md D4)");
             Assert.That(allocator.WantedIds, Is.Empty);
         }
 

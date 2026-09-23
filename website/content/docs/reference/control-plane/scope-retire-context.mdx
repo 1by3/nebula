@@ -27,7 +27,7 @@ The row being judged. Never null when the policy is called.
 public double IdleSeconds;
 ```
 
-Seconds since anything last wanted any part of this scope: the smallest age over its lease rows ([`ScopeLifecycle.IdleSeconds`](/docs/reference/control-plane/scope-lifecycle#idleseconds)). One busy part keeps the whole scope hot, which is what "all parts retire together" requires.
+Seconds since anything last wanted any part of this scope: the smallest age over the lease rows of its live parts ([`ScopeLifecycle.CollectParts`](/docs/reference/control-plane/scope-lifecycle#collectparts)). One busy part keeps the whole scope hot, which is what "all parts retire together" requires.
 
 ### Entities [#entities]
 
@@ -35,7 +35,7 @@ Seconds since anything last wanted any part of this scope: the smallest age over
 public int Entities;
 ```
 
-Authoritative entities the workers last reported inside the scope's parts, summed.
+Authoritative entities the workers last reported inside the scope's live parts, summed.
 
 ### Players [#players]
 
@@ -43,7 +43,7 @@ Authoritative entities the workers last reported inside the scope's parts, summe
 public int Players;
 ```
 
-Client-owned entities inside the scope's parts (players and bots), summed.
+Client-owned entities inside the scope's live parts (players and bots), summed.
 
 ### RetireAfterSeconds [#retireafterseconds]
 

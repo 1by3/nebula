@@ -183,14 +183,15 @@ From the issue, unchanged: non-Cartesian grids, terrain generation, seams betwee
 Entities do not ghost, interact or see across scopes, by construction (D11) rather than by policy. Deciding which
 scope a player belongs in, and when a scope should go away, remain the game's and NEB-240's.
 
-**Interaction with the scope lifecycle (NEB-240).** A grid scope's `ScopeInfo.ContainerIds` is its anchor and
-nothing else, because that is all activation created. The idle sweep therefore measures a grid scope's idleness and
-occupancy on its anchor chunk alone, and retiring one drops the anchor's lease row; the chunks leased on demand
-around it are retired by the allocator's own idle rule (`ChunkGridDefinition.RetireSeconds`), which is what
-retires them today in the public world. A grid scope that is idle at the anchor but busy three chunks away is
-therefore judged idle. Making the lifecycle aggregate over a scope's *live* containers — every lease row whose
-`InstanceContainerInfo.ScopeKey` is the scope's, not only the ones on the row — is a small follow-up on top of
-both items, and is the right place to fix it.
+**Interaction with the scope lifecycle (NEB-240, NEB-252).** A grid scope's `ScopeInfo.ContainerIds` is its anchor
+and nothing else, because that is all activation created. The lifecycle judges a scope over its *live parts*
+instead: every lease row whose `InstanceContainerInfo.ScopeKey` is the scope's, anchor included
+(`docs/scope-lifecycle.md` D4). A grid scope with a player three chunks from its anchor is therefore not idle; once
+nobody wants any of it, every chunk it leased is checkpointed, emptied and released together, and while the scope
+is `Retiring` the allocator releases none of them by its own idle rule. Outside a retire, an idle chunk is still
+retired by `ChunkGridDefinition.RetireSeconds` as in the public world. Re-activation recreates the anchor only; the
+other chunks come back, with their persisted entities, through the ordinary lease-landing restore when pawns ring
+them again.
 
 One more, stated because the code allows it: nothing stops two scopes' chunks from occupying the same absolute
 coordinates, and the conformance scenario relies on it. They are different worlds that happen to be drawn on the
