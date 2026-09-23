@@ -4,6 +4,17 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Crewed carriers crossing between scopes
+
+A ship with players seated in its dynamic container can now fly from one scope into a chunk of another — from a planet's grid scope into a space grid scope — with its crew. No wire change; the protocol stays 18. Design record: `docs/scope-activation.md` §11 (D12–D20). User-facing page: [Move a crewed carrier into another scope](https://nebula.1by3.co/docs/guides/scopes#move-a-crewed-carrier-into-another-scope). Conformance: scenario 15 (`ConformanceCrossScopeCarrierTests`, `ConformanceCrossScopeCrewTests`).
+
+- **A crossing into another scope becomes ready.** The gateway sends a pawn's client the destination container's row ahead of `InstancePrepare` and keeps it pinned for 30 s, so a client in one grid scope can prepare a chunk of another. Before, the client could not resolve the destination and the group never became ready.
+- **Riders stay seated.** `TryCommitTransfers` keeps a member that rides in another member's dynamic container in its seat instead of placing it in the destination container.
+- **A carrier crossing on its own takes its riders' clients with it.** The gateway follows every carrier its players ride in by network ID (an explicit interest subscription), so a ship that moves into another scope keeps reaching its crew's gateway; the riders' scope, window and subscriptions follow it with no reconnect, and a rider reconnecting after the crossing finds the ship. Explicitly subscribed records are no longer evicted when their region is unsubscribed. A client whose carrier chain is briefly unresolvable stays in the scope it was last in instead of falling back to the public world.
+- **Onlookers are revoked first.** An entity that changes scope is re-authorized for every client holding it before anything about the destination is sent, so a client left behind is never told the destination's container.
+- **No update names a container before its row.** Updates naming a runtime container whose lease has not reached the gateway yet are held until it arrives (10 s at most, then applied fail-closed as before); a state entry that changes an entity's container is relayed on the reliable stream behind the new row; rows that leave a client's window linger 1 s before they are withdrawn, so a replica interpolating out of a box is not despawned. This also fixes a fast carrier disappearing inside one scope.
+- **Client.** `NebulaClient` switches the instance content view when the local pawn's scope changes through its carrier.
+
 ## [0.1.0-alpha.30] - 2026-09-22
 
 ### NEB-228: deployment and protocol compatibility policy

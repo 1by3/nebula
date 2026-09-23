@@ -115,6 +115,8 @@ The gateway uses the carrier pose to reconstruct a passenger's world position fo
 
 An entity inside a dynamic container is bucketed for [interest management](/docs/guides/interest-management#carried-entities) at its **root** carrier's position — the outermost carrier, if one dynamic container rides inside another — and inherits the root carrier's radius, always-relevance, and enter/exit decision for each client. Everything riding a carrier enters and leaves a client's set together with it, at any speed, instead of a passenger popping in or out independently as it nears a region edge. A client also only learns the dynamic container exists (through `ContainerOwnership`) once one of its entities is in that client's interest set, or the container overlaps a window the client's own foci opened.
 
+A player riding a carrier is in the carrier's [scope](/docs/guides/scopes). The gateway follows the carriers of every player it serves by network ID, wherever they go. When a ship moves into a container of another scope, each rider's client keeps the ship and its own pawn and switches to the ship's new scope without reconnecting. To move a ship and its crew between scopes, see [Move a crewed carrier into another scope](/docs/guides/scopes#move-a-crewed-carrier-into-another-scope).
+
 ## Inspect dynamic containers
 
 Open the dashboard's [World map](/docs/guides/orchestrator-and-dashboard#inspect-the-world-map) to inspect:

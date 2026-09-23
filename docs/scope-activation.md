@@ -1,8 +1,8 @@
 # Scope activation — design
 
-Status: design of record for **NEB-233**, protocol **v18** (one appended `Hello` field, no version bump). Decisions
-made without asking are marked **D#**. User-facing page: `website/content/docs/guides/scopes.mdx`. Conformance
-tests: `Tests/EditMode/ConformanceScopeActivationTests.cs` and
+Status: design of record for **NEB-233**, protocol **v18** (one appended `Hello` field, no version bump), and for
+transfers across scopes (§11, no wire change). Decisions made without asking are marked **D#**. User-facing page:
+`website/content/docs/guides/scopes.mdx`. Conformance tests: `Tests/EditMode/ConformanceScopeActivationTests.cs` and
 `Services~/Nebula.Services.Tests/ConformanceScopeRoutingTests.cs` (both `[Category("Conformance")]`, scenario 2 of
 `docs/conformance-suite.md`).
 
@@ -265,3 +265,114 @@ carries `UpdatedAt`, and `ContainerIds` is what an idle sweep aggregates lease a
 Deciding which key a player should go to, admission policy, matchmaking and loading-screen UI are the game's.
 Content preparation stays the game's `ChunkContent` / instance content path (§4). Nebula still never parses a scope
 key (location contract D2).
+
+## 11. Transfers across scopes
+
+Status: added after alpha.30 for a crewed ship flying out of one grid scope (a planet, `world/planet`, planar) into
+another (space, `world/space`, volumetric). No wire message, field or protocol version changed (**D20**). Conformance:
+scenario 15 of `docs/conformance-suite.md` — `Services~/Nebula.Services.Tests/ConformanceCrossScopeCarrierTests.cs`
+(tier A: the gateway and the client) and `Tests/EditMode/ConformanceCrossScopeCrewTests.cs` (tier B: the worker).
+
+### 11.1 What went wrong
+
+§5 says the second way into a scope is "an entity already in the mesh crosses with `PrepareTransfer` /
+`TryCommitTransfer`". Between two *grid* scopes that path had four holes:
+
+1. **A group of a ship and its crew never became ready.** A client-owned pawn's preparation is answered by its
+   client, which says ready only when it can resolve the destination. A client can resolve only the container rows
+   its gateway sent it, and a client in scope A is never sent a chunk of scope B (`docs/scoped-chunk-grids.md`
+   D10). So the answer was always "unavailable".
+2. **A ship that crossed on its own stranded its crew's clients.** A client's scope is its pawn's, and a carried
+   pawn's scope is its outermost carrier's (`NebulaGateway.ScopeContainer`). The gateway learns that a carrier moved
+   only from the carrier's own updates — which, once it is in B, are published under B-salted region keys
+   (`docs/scope-frames.md` D7) that nobody subscribed for the crew, because their salt still came from the ship's
+   old record. The worker told the gateway to forget the ship, the pawns' scope resolved to nothing, and nothing
+   ever put it right: not a reconnect, not a fresh session.
+3. **A fast ship was lost inside one scope.** A worker leases the next chunk and flies into it before that lease
+   reaches the gateway's control-plane mirror. The gateway could not resolve the container the update named, failed
+   closed (an unknown runtime container is never observable), and took the ship — and, through it, everyone aboard —
+   away from every client that held it.
+4. **A group commit pulled the crew out of the ship.** `TryCommitTransfers` put every member into the destination
+   container, so riders prepared with their ship arrived standing in the chunk, not in their seats.
+
+### 11.2 Decisions
+
+**D12 A client follows its pawn's carriers by name.** On every subscription pass the gateway names each carrier in
+its clients' pawns' carrier chains in `InterestSubscribe.Entities`, the explicit subscription the protocol already
+has. An explicitly named entity is sticky on its worker for that gateway (it is in `StickyMask`), so it is never
+forgotten on a rebucket and is published to that gateway wherever it goes. The crossing therefore arrives, the
+pawn's scope resolves to B, and the client's salt, window and subscriptions follow. Two supporting rules: the
+eviction sweep never evicts an explicitly named record (its region being unsubscribed says nothing about whether it
+is wanted), and the carrier's worker is linked with the `Owned` reason. A carrier the gateway has no record of at all
+— a reconnect after the crossing — is named too, and an explicit id nobody has answered for links every live worker
+until its owner announces it, which is how a reconnecting rider finds its ship in space.
+
+The alternative was to make crossing move the riders by construction: refuse a carrier transfer whose riders are
+not in the group, or have the worker drag them in. It was rejected because it fixes only the path through
+`TryCommitTransfers`. A carrier changes scope in other ways too — a handover into another worker's chunk, a game
+that moves a ship itself — and a client that lost its ship's record for any reason (a reconnect, an eviction) would
+still be stuck. Following by name repairs the client whatever moved the ship, with a mechanism the worker already
+implements, and costs one id per carrier in a subscription message.
+
+**D13 An entity that changes scope is revoked before anything about the destination is sent.** When a state entry
+or a spawn moves an entity into another scope, every client that holds it is re-authorized on the spot
+(`RevalidateInterest`). An onlooker on the planet loses the ship and everyone aboard before the ship's next message
+is relayed and before the destination container's row goes to anyone — so it is never told which chunk of space
+the ship went to. The crew, whose own scope is resolved through the ship, stay authorized and lose nothing.
+
+**D14 A preparation brings its destination row with it.** When the gateway relays `InstancePrepare` to a pawn's
+client, it first sends that client the destination container's row on the same reliable stream, and pins it in the
+client's needed set for `NebulaGateway.PreparedRowSeconds` (30 s) so the window cannot withdraw it before the
+commit names it. Only that client is told, and only because the worker simulating its own pawn asked; a
+preparation still grants no visibility of the destination's entities, because those are authorized by the pawn's
+scope, which has not changed yet. If the gateway has no row for the destination yet (or one older than the lease
+epoch the worker named), the preparation waits for it, for up to 15 s.
+
+The alternative — putting the destination's row inside `InstancePreparationMsg` — was a wire change for something
+the ordered reliable stream already guarantees, and would have given the client a row outside the delta the gateway
+tracks per client (`KnownContainers`), so the next window pass would not have known to withdraw it.
+
+**D15 An update naming a container the gateway cannot describe waits for the row.** A spawn or a state entry that
+names a runtime container missing from the gateway's registry is held, per entity and in arrival order, until the
+control plane delivers the lease; everything after it for that entity waits behind it. Held updates are applied
+through the normal path when the row arrives, and relayed on the reliable stream behind the row. The hold is bounded
+(`NebulaGateway.HoldSeconds`, 10 s, and 1024 updates); past the bound the updates are applied anyway and fail closed
+exactly as before. Separately, any state entry that moved an entity into another container is now relayed on the
+reliable stream, behind the row `SendOwnershipForContainerChange` has just queued there, instead of on the sequenced
+channel where it could overtake it. Together: a client is never sent an entity update naming a container before
+that container's row.
+
+What the hold costs: variables, behavior state and RPCs from a new owner that arrive while the owner's spawn is held
+are dropped by the ordinary owner check, exactly as they are during any handover the gateway has not confirmed yet.
+
+**D16 A client whose carrier chain cannot be resolved stays in the scope it was last in.** `ClientConn.LastScope`
+records the client's scope whenever its pawn's chain resolves, starting from its `Hello`'s scope key. While the chain
+is broken (a carrier record on its way), authorization, region salting, the container window and the policy
+snapshot all use it, instead of treating the client as standing in the public world — which would have widened what
+it may see and subscribed it to the wrong world.
+
+**D17 A container row that leaves a client's window lingers for a second.** A row whose lease still exists is
+withdrawn only after it has been out of the client's window for `NebulaGateway.ContainerRowLingerSeconds` (1 s). A
+client despawns whatever stands in a row it is told to drop, and a replica that has just moved out of a box — a
+fast ship, or a whole crew whose scope just changed — is still gliding out of it through its interpolation buffer
+in that box's frame. A row whose lease is gone is withdrawn at once, as before.
+
+**D18 The client's instance view follows its pawn's carriers.** `InstanceScenes.SetView` was called only when the
+local pawn changed container. A seated rider changes scope without changing container — its ship moved — so
+`NebulaClient` now compares the pawn's `InstanceId` (which follows the carrier chain) every frame and switches the
+view when it changes.
+
+**D19 A group commit keeps riders in their seats.** A member of a `TryCommitTransfers` group that is carried, at any
+depth, by another member of the same group now stays in its carrier: carriers are committed first, and a seated
+member is committed in place — new epoch, preparation finished, container and pose unchanged. Its preparation is
+still what readied its owner's client for the destination. A rider committed without its ship is put down in the
+destination as before.
+
+**D20 No wire change.** Every rule above is a gateway, client or worker decision over messages that already existed:
+`InterestSubscribe.Entities`, `ContainerOwnership` deltas, `WorldState` on the reliable stream. Protocol stays 18.
+
+### 11.3 What a game does
+
+Nothing new is required. A game may prepare every rider along with the ship — that readies each rider's client for
+the destination before the commit — and commit them as one group; or it may move the ship alone and let the riders'
+clients follow it. Both are tested.

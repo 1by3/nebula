@@ -475,7 +475,10 @@ the turnkey chunked world, and **D38-D41** out of integrating the three and runn
   exists, and the pawn's own worker then holds the link under `Owned`.
 - **D14. Owned entities are a link reason and are never evicted.** The counterpart of §5's "an owned entity is
   always published to its session gateway": the gateway holds the link to that entity's worker and does not
-  evict the record when its region falls out of the subscription, or it would drop the client's own pawn.
+  evict the record when its region falls out of the subscription, or it would drop the client's own pawn. The
+  same now holds for every entity the gateway names explicitly, which includes the carriers its clients' pawns
+  ride in: the worker publishes a named entity wherever it is, so an unsubscribed region says nothing about it
+  (`docs/scope-activation.md` §11, D12).
 - **D15. The gateway's world space is absolute space.** The gateway never shifts its origin, so its existing
   `WorldPosition` container maths already produces absolute coordinates; the record caches that result as three
   doubles rather than duplicating the container chain in double. Precision is that of the container frame

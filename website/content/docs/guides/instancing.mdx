@@ -136,7 +136,7 @@ The built-in boundary handles this sequence automatically. If a crossing cannot 
 
 The destination must be a static container. Authored scene entities cannot transfer out of their scene. For a return trip from game code, select a public container and prepare another transfer; do not change only the transform or `InstanceId`.
 
-`TryCommitTransfers` checks all preparations before moving a group. Prepare each player separately so every client confirms readiness. Moving a carrier also moves its parented contents into the carrier's physics scene.
+`TryCommitTransfers` checks all preparations before moving a group. Prepare each player separately so every client confirms readiness. Moving a carrier also moves its parented contents into the carrier's physics scene. A group member that rides inside another member's dynamic container stays in its seat: it moves with its carrier instead of being placed in the destination container. See [Move a crewed carrier into another scope](/docs/guides/scopes#move-a-crewed-carrier-into-another-scope).
 
 Group commits accept a translation applied to each member's world position and preserve each rotation. Pass `Vector3.zero` to keep their positions. All preparations must belong to the worker performing the commit. Cross-worker party coordination and game-level rollback are the game's responsibility; this API is not a distributed transaction.
 
@@ -177,7 +177,7 @@ Apply the same rule to movement sweeps, ground checks, triggers, projectiles, an
 
 Parts in the same instance share one local physics scene per process. Parts in different instances do not collide. `InstanceScenes.PhysicsFor` returns an invalid scene for an unloaded private scope; check `IsValid()` before querying it. Nebula advances private physics scenes on workers. Unity 2D physics isolation is not implemented by this feature.
 
-Nebula filters gateway spawns, variables, transform state, behavior state, and entity RPCs by visibility. Unknown runtime containers are hidden until their metadata arrives. Distance-based update frequency applies after this visibility check.
+Nebula filters gateway spawns, variables, transform state, behavior state, and entity RPCs by visibility. The gateway sends a client a container's description before any update that names the container. When a worker moves an entity into a runtime container before the gateway has received that container's lease, the gateway holds the entity's updates until the lease arrives, for up to 10 seconds, instead of relaying them. Distance-based update frequency applies after this visibility check.
 
 ## Interest behavior
 

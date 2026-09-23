@@ -33,6 +33,30 @@ public uint ExtensionErrors;
 
 Exceptions thrown by a game extension running in this gateway, since the process started: policy calls, client events, posted work. It is a total and not a rate, because the number that matters is "is it still zero". Set by `GatewayExtensionHost`; reported as [`GatewayStats.ExtensionErrors`](/docs/reference/control-plane/gateway-stats#extensionerrors).
 
+### PreparedRowSeconds [#preparedrowseconds]
+
+```csharp
+public const double PreparedRowSeconds = 30;
+```
+
+How long a destination row stays pinned for a client after a preparation named it.
+
+### ContainerRowLingerSeconds [#containerrowlingerseconds]
+
+```csharp
+public const double ContainerRowLingerSeconds = 1;
+```
+
+How long a container row that has left a client's window, but whose lease still exists, is kept before it is withdrawn. Longer than any interpolation delay: a replica gliding out of a box through its buffer is still expressed in that box's frame, and the client despawns what stands in a withdrawn row.
+
+### HoldSeconds [#holdseconds]
+
+```csharp
+public const double HoldSeconds = 10;
+```
+
+The longest an entity's updates wait for a container row this gateway does not have. The control plane delivers a new lease in one long-poll round; past this bound the updates are applied anyway and the entity fails closed exactly as an unknown container always did.
+
 ## Properties
 
 ### Config [#config]
