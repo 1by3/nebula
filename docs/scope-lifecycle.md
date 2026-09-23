@@ -123,7 +123,11 @@ orchestrator per mesh and the decision must not depend on which of its objects a
 
 **D7 Two independent readings, and a clock seam.** The occupancy term comes from the per-container counts the
 workers already post on the telemetry path (`MeshTelemetry.CopyOccupancy`, the same table the assignment planner
-uses); the age term comes from the lease rows. They are belt and braces: telemetry can be stale or absent, and the
+uses); the age term comes from the lease rows. A worker counts an entity riding in a vehicle under the vehicle's
+carried container, which is right for cost, so each carried container's row also names the container its vehicle is
+in (`ContainerLoad.Enclosing`), and `ScopeLifecycle.Occupancy` adds a carried container's counts to the part its
+vehicle sits in, through vehicles inside vehicles (NEB-259). A scope whose players are all seated in ships reports
+its players to a custom policy. They are belt and braces: telemetry can be stale or absent, and the
 lease clock can only be *too young*, never too old. `LocalControlPlane.Clock` is the seam (internal, defaulting to
 `DateTime.UtcNow`) that lets a test age a scope by minutes without waiting; nothing in Nebula sets it.
 

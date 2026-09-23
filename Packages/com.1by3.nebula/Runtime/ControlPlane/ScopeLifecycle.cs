@@ -18,9 +18,9 @@ namespace Nebula
         /// what "all parts retire together" requires.
         /// </summary>
         public double IdleSeconds;
-        /// <summary>Authoritative entities the workers last reported inside the scope's live parts, summed.</summary>
+        /// <summary>Authoritative entities the workers last reported inside the scope's live parts, summed, riders of vehicles in them included.</summary>
         public int Entities;
-        /// <summary>Client-owned entities inside the scope's live parts (players and bots), summed.</summary>
+        /// <summary>Client-owned entities inside the scope's live parts (players and bots), summed, including those riding in vehicles.</summary>
         public int Players;
         /// <summary>The configured idle threshold, in seconds (<c>NebulaConfig.ScopeIdleRetireSeconds</c>); 0 or less turns retiring off.</summary>
         public float RetireAfterSeconds;
@@ -164,7 +164,13 @@ namespace Nebula
         public static void Occupancy(ScopeInfo scope, IReadOnlyDictionary<string, ContainerLoad> occupancy, out int entities, out int players) =>
             Occupancy(scope?.ContainerIds, occupancy, out entities, out players);
 
-        /// <summary>What the workers last reported inside <paramref name="parts"/>, summed over them. Absent parts count 0.</summary>
+        /// <summary>
+        /// What the workers last reported inside <paramref name="parts"/>, summed over them, <b>riders included</b>.
+        /// A worker reports an entity riding in a vehicle under the vehicle's own carried container, which is right
+        /// for cost; here the carried container's counts are added to the part its vehicle is in, following
+        /// <see cref="ContainerLoad.Enclosing"/> through vehicles inside vehicles. So a scope whose players are all
+        /// seated in ships still reports its players. Absent parts count 0.
+        /// </summary>
         public static void Occupancy(IReadOnlyList<string> parts, IReadOnlyDictionary<string, ContainerLoad> occupancy, out int entities, out int players)
         {
             entities = 0; players = 0;
@@ -175,6 +181,33 @@ namespace Nebula
                 entities += load.Authoritative;
                 players += load.Players + load.Bots;
             }
+            HashSet<string> partSet = null;
+            foreach (var kv in occupancy)
+            {
+                if (string.IsNullOrEmpty(kv.Value.Enclosing)) continue;
+                if (partSet == null)
+                {
+                    partSet = new HashSet<string>(StringComparer.Ordinal);
+                    for (int i = 0; i < parts.Count; i++) if (parts[i] != null) partSet.Add(parts[i]);
+                }
+                if (!RidesIn(kv.Value.Enclosing, partSet, occupancy)) continue;
+                entities += kv.Value.Authoritative;
+                players += kv.Value.Players + kv.Value.Bots;
+            }
+        }
+
+        /// <summary>Carrier chains deeper than this read as not in the scope, so a corrupt report cannot loop.</summary>
+        private const int MaxCarrierDepth = 16;
+
+        /// <summary>Whether a carried box whose vehicle is in <paramref name="enclosing"/> is, at some depth, inside one of <paramref name="parts"/>.</summary>
+        private static bool RidesIn(string enclosing, HashSet<string> parts, IReadOnlyDictionary<string, ContainerLoad> occupancy)
+        {
+            for (int depth = 0; depth < MaxCarrierDepth && !string.IsNullOrEmpty(enclosing); depth++)
+            {
+                if (parts.Contains(enclosing)) return true;
+                enclosing = occupancy.TryGetValue(enclosing, out var outer) ? outer.Enclosing : null;
+            }
+            return false;
         }
 
         /// <summary>

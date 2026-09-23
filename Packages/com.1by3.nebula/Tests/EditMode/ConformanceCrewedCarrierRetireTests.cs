@@ -328,6 +328,46 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// The orchestrator's view of a scope counts riders (NEB-259). The worker's telemetry reports a pilot under
+        /// the ship's own carried container, which is right for cost, and the scope's occupancy folds it into the
+        /// chunk the ship is in, through a shuttle in the ship's hangar too. A custom retire policy reading
+        /// <see cref="ScopeRetireContext.Players"/> must not see an empty scope when every player is aboard a vehicle.
+        /// </summary>
+        [Test]
+        public void PlayersAboardVehiclesCountTowardsTheirScopesOccupancy()
+        {
+            const string scopeKey = "world/crewed";
+            var grid = new RuntimeGrid(Cell, planar: true, scopeKey: scopeKey);
+            _plane.ActivateScope(new ScopeActivationRequest
+            {
+                ScopeKey = scopeKey,
+                Definition = new ChunkGridDefinition { CellSize = Cell, Planar = true }.ToScopeDefinition(),
+                PreferredWorkerId = W.Id,
+            });
+            Chunk(grid, Vector3Int.zero);
+            var coord = new Vector3Int(2, 0, 0);
+            var chunk = Chunk(grid, coord);
+            var ship = SpawnShip(chunk, grid.CenterOf(coord));
+            SpawnAboard(_pawnPrefab, ship, PilotClient);
+            SpawnAboard(_pawnPrefab, SpawnAboard(_shuttlePrefab, ship), PilotClient + 1);
+
+            string document = null;
+            W.Act(() => document = WorkerTelemetry.ForTests().Write(W.Id, W.Index, 1, W.Instance.Entities, false, null));
+            var mesh = new MeshTelemetry(() => 0.0);
+            Assert.That(mesh.Accept(document, out _), Is.Null);
+            var occupancy = new Dictionary<string, ContainerLoad>();
+            mesh.CopyOccupancy(occupancy);
+            Assert.That(occupancy[chunk.ContainerId].Players, Is.EqualTo(0), "for cost the pilots stay in the containers they ride in");
+            Assert.That(occupancy[ship.Carried.ContainerId].Enclosing, Is.EqualTo(chunk.ContainerId), "the telemetry says where the ship is");
+
+            var parts = new List<string>();
+            ScopeLifecycle.CollectParts(_plane, _plane.FindScope(scopeKey), parts);
+            ScopeLifecycle.Occupancy(parts, occupancy, out int entities, out int players);
+            Assert.That(players, Is.EqualTo(2), "the pilot, and the passenger of the shuttle in the ship's hangar");
+            Assert.That(entities, Is.EqualTo(4), "the ship, the shuttle and both riders");
+        }
+
+        /// <summary>
         /// The scope lifecycle's idle rule reads the same contents: a part is busy while emptying it would lose
         /// something aboard a vehicle in it, whether that is a client's pawn or transient state.
         /// </summary>

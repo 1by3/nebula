@@ -43,6 +43,14 @@ public int Other;
 public int Ghosts;
 ```
 
+### Enclosing [#enclosing]
+
+```csharp
+public string Enclosing;
+```
+
+For a carried (dynamic) container: the container its carrier is in, which may itself be carried. Empty for every other container. Lets a reader fold a vehicle's riders into the box the vehicle is in ([`ScopeLifecycle.Occupancy`](/docs/reference/control-plane/scope-lifecycle#occupancy)) without counting them twice for cost: the counts above stay where the worker simulates the riders.
+
 ### WorkerId [#workerid]
 
 ```csharp

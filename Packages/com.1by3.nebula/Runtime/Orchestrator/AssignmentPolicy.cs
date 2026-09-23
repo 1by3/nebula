@@ -18,6 +18,13 @@ namespace Nebula
         public int ServerDriven;
         public int Other;
         public int Ghosts;
+        /// <summary>
+        /// For a carried (dynamic) container: the container its carrier is in, which may itself be carried. Empty for
+        /// every other container. Lets a reader fold a vehicle's riders into the box the vehicle is in
+        /// (<see cref="ScopeLifecycle.Occupancy(IReadOnlyList{string}, IReadOnlyDictionary{string, ContainerLoad}, out int, out int)"/>)
+        /// without counting them twice for cost: the counts above stay where the worker simulates the riders.
+        /// </summary>
+        public string Enclosing;
         /// <summary>The worker that reported it.</summary>
         public string WorkerId;
         /// <summary>When the report arrived, on the telemetry clock.</summary>

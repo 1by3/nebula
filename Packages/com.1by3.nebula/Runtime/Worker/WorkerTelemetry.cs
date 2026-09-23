@@ -46,6 +46,8 @@ namespace Nebula
             public float Cost;
             /// <summary>The container's scope key; "" in the public world (<see cref="Container.ScopeKey"/>).</summary>
             public string Scope;
+            /// <summary>For a carried container: the container its carrier is in; "" otherwise.</summary>
+            public string Enclosing;
         }
 
         /// <summary>
@@ -375,6 +377,8 @@ namespace Nebula
                 // them, and a worker that never measured anything still writes zeroes rather than leaving them out,
                 // so "reported 0" and "never reported" stay distinguishable from the presence of the row.
                 w.Prop("scope", c.Scope ?? "");
+                // Where a carried box is: its riders count towards the scope of the box their vehicle is in.
+                if (!string.IsNullOrEmpty(c.Enclosing)) w.Prop("enclosing", c.Enclosing);
                 w.Prop("cost", Math.Round(c.Cost, 3));
                 w.Prop("tickMs", Math.Round(cost.TickMs, 4));
                 w.Prop("bytesOut", cost.BytesOutPerSec);
@@ -452,7 +456,9 @@ namespace Nebula
             _slotById[id] = slot;
             _slotIds.Add(id);
             _counts.Add(new Counts { Scope = container != null ? container.ScopeKey : EntityLocation.PublicScope,
-                Owner = container != null ? container.OwnerWorkerId : "" });
+                Owner = container != null ? container.OwnerWorkerId : "",
+                Enclosing = container != null && container.IsDynamic && container.Carrier != null && container.Carrier.Container != null
+                    ? container.Carrier.Container.ContainerId : "" });
             return slot;
         }
 

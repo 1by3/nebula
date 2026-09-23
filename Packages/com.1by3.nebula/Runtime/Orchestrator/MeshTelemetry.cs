@@ -297,6 +297,7 @@ namespace Nebula
                         if (strEnd >= json.Length) return;
                         if (key == "id") id = json.Substring(at + 1, strEnd - at - 1);
                         else if (key == "scope") cost.ScopeKey = json.Substring(at + 1, strEnd - at - 1);
+                        else if (key == "enclosing") load.Enclosing = json.Substring(at + 1, strEnd - at - 1);
                         at = strEnd + 1;
                     }
                     else
