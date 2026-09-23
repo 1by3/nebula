@@ -97,7 +97,17 @@ Use generic names that explain the role of an example, such as:
 - `interior#…`
 - `my-game`
 
-Do not refer to private demo projects, their classes, worlds, commands, entities, performance results, or settings. In particular, do not publish ShooterGame names or data.
+Nebula's internal test game uses licensed third-party art and code, and its repository is private. Its source and assets cannot be distributed, but screenshots, short videos, and performance numbers from it are fine to publish as examples of what Nebula can do. Images may show names such as ShooterGame, Corporation, Starhopper, player and NPC names, and dashboard data.
+
+In prose, call it "Nebula's internal test game." Present it as a showcase of Nebula, not as something the reader can get. Do not tell readers to clone, open, build, or run it. Do not link to its repository. Do not show its code or class names as things the reader can use or copy, and do not describe its scripts as if they ship with Nebula. Code examples keep using the generic names above.
+
+Acceptable caption:
+
+> A ship with its own physics frame in Nebula's internal test game.
+
+Unacceptable caption:
+
+> Open the ShooterGame project and press Play.
 
 Make code examples internally consistent:
 
@@ -107,17 +117,11 @@ Make code examples internally consistent:
 - Do not imply that sample bot, NPC, spawning, or game-mode behavior comes with Nebula.
 - Use placeholders such as `<address>` only when the reader must replace them. Explain what value belongs there.
 
-Audit screenshots and other images visually. A text search cannot find private names rendered inside an image. Do not publish captures containing private project names, map labels, entity names, credentials, account details, or internal infrastructure unless the repository records an explicit exception.
+Never publish credentials, account details, tokens, internal hostnames or IP addresses, or other infrastructure details, in text or in images.
 
-### Approved dashboard screenshot exception
+Audit screenshots and other images visually. A text search cannot find text rendered inside an image. Reject a capture that shows credentials, account details, or internal infrastructure, or anything that implies the reader can get the game, such as a repository URL, a file path, or setup instructions. A private project name, map label, or entity name in an image is not by itself a reason to reject it.
 
-The following screenshots are approved for publication even though they contain ShooterGame names and data:
-
-- `website/public/screenshots/dashboard-overview.png`
-- `website/public/screenshots/dashboard-world-map.png`
-- `website/public/screenshots/dashboard-world-map-container.png`
-
-The screenshots were intentionally removed from the landing page. This exception permits their use but does not require their display; do not restore them as part of a content audit. It applies only to these three existing image files. Do not add their private names to surrounding prose, examples, alt text, or new assets.
+The three dashboard screenshots under `website/public/screenshots/` (`dashboard-overview.png`, `dashboard-world-map.png`, and `dashboard-world-map-container.png`) were deliberately taken off the landing page. Do not restore them during a content audit unless the maintainer asks for it.
 
 ## Make commands actionable
 
@@ -177,7 +181,9 @@ Before finishing a documentation change, check that:
 - Examples use generic public names and define their dependencies.
 - Claims match the current API and implementation.
 - Limitations, security concerns, and destructive effects are explicit.
-- No text or image exposes private demo data outside a recorded exception.
+- No text implies that readers can access, build, or run the internal test game or its code.
+- Code examples use generic names, not test-game class or script names.
+- No text or image exposes credentials, account details, or internal infrastructure.
 - Generated pages were changed at their source and regenerated.
 - Internal links point to an existing route and heading.
 
@@ -190,7 +196,7 @@ npm run gen
 npm run build
 ```
 
-Search the repository for known private demo identifiers. Include source comments and CLI metadata because they feed generated pages. At minimum, check for `ShooterGame`, its class names, and its world or entity names.
+Search the repository for test-game leakage into code-facing text: ShooterGame class names, script paths, repository URLs, and wording that tells the reader to use the game. Include source comments and CLI metadata because they feed generated pages, and code-facing text there must stay generic. A mention of the game's name in an image caption or showcase prose is not a failure.
 
 Inspect changed screenshots directly. Confirm that every added page has non-empty frontmatter and that internal `/docs/...` links resolve.
 
