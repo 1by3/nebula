@@ -162,6 +162,29 @@ worker.TryCommitTransfer(transfer, position, rotation);
 
 [`InstanceBoundary`](/docs/guides/instancing) is this path driven by a trigger volume. `PrepareInstance` now activates a scope like any other caller, so an instance a boundary created and a scope a matchmaker created are the same thing.
 
+The destination can be in another scope, including a chunk of another [scoped world](#a-scope-can-be-a-whole-world). The player's client does not need to know about the destination beforehand: the gateway sends it the destination container's description together with the preparation request, and tells no other client.
+
+### Move a crewed carrier into another scope
+
+A ship with players seated in its [dynamic container](/docs/guides/dynamic-containers) can fly from one scope into another, for example from a planet's world into space. Players riding a carrier are in the carrier's scope, so when the ship crosses, its riders cross with it.
+
+To move the ship and its crew, prepare the ship and every rider for the same destination on the worker that simulates the ship, then commit them as one group:
+
+```csharp
+var group = new List<InstanceTransfer> { worker.PrepareTransfer(ship, destination) };
+foreach (var rider in shipInterior.Contents)
+    group.Add(worker.PrepareTransfer(rider, destination));
+
+// ... later, once every transfer in the group is Ready
+worker.TryCommitTransfers(group, translation);
+```
+
+`shipInterior` is the ship's `DynamicContainer`. Preparing each rider lets its client get the destination ready before the commit. After the commit, the ship is in the destination container and every rider is still in its seat inside the ship, now in the destination scope.
+
+You can also commit only the ship. Each rider's client follows the ship into the new scope without reconnecting: it keeps the ship and its own pawn, starts receiving the destination's entities, and stops receiving the scope it left. Clients that were watching the ship from the old scope lose it and everyone aboard, and are not told where it went. A rider that reconnects after the crossing finds the ship in its new scope.
+
+A rider committed without its ship leaves the ship and is placed in the destination container.
+
 ## From outside the mesh
 
 Activation is an ordinary control-plane write, so a service that is not part of the mesh can post it to the orchestrator:

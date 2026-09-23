@@ -95,7 +95,15 @@ namespace Nebula
             return references;
         }
 
-        /// <summary>Commit a group only when every member is ready. Each member must have its own preparation and admission check.</summary>
+        /// <summary>
+        /// Commit a group only when every member is ready. Each member must have its own preparation and admission check.
+        /// <para>
+        /// A member riding in another member's <see cref="DynamicContainer"/>, at any depth (the crew of a ship that is
+        /// itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the
+        /// destination scope through the carrier instead of being put down in the destination container. Its
+        /// preparation is still what readies its owner's client for the destination.
+        /// </para>
+        /// </summary>
         /// <param name="transfers">Distinct entity preparations owned by this worker. This is not a cross-worker transaction.</param>
         /// <param name="translation">World-space displacement applied to each member, preserving its rotation.</param>
         public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation)
@@ -107,13 +115,50 @@ namespace Nebula
                     !entities.Add(transfer.Entity) || !InstanceScenes.Prepare(transfer.Destination)) return false;
             var positions = new Vector3[transfers.Count];
             var rotations = new Quaternion[transfers.Count];
+            var seated = new bool[transfers.Count];
             for (int i = 0; i < transfers.Count; i++)
             {
                 positions[i] = transfers[i].Entity.transform.position + translation;
                 rotations[i] = transfers[i].Entity.transform.rotation;
+                seated[i] = RidesInAny(transfers[i].Entity, entities);
             }
-            for (int i = 0; i < transfers.Count; i++) TryCommitTransfer(transfers[i], positions[i], rotations[i]);
+            // Carriers first, then what they carry: a rider is committed in place once the ship it sits in has
+            // already moved it (docs/scope-activation.md D19).
+            for (int i = 0; i < transfers.Count; i++) if (!seated[i]) TryCommitTransfer(transfers[i], positions[i], rotations[i]);
+            for (int i = 0; i < transfers.Count; i++) if (seated[i]) CommitSeated(transfers[i]);
             return true;
+        }
+
+        /// <summary>Whether <paramref name="entity"/> is carried, at any depth, by one of <paramref name="group"/>.</summary>
+        private static bool RidesInAny(NetworkIdentity entity, HashSet<NetworkIdentity> group)
+        {
+            var container = entity.Container;
+            // Bounded by the dynamic containers there are: a chain longer than that has revisited one, which is a loop
+            // and not a seat.
+            int limit = ContainerRegistry.Dynamic.Count;
+            for (int hops = 0; container != null && container.IsDynamic && hops <= limit; hops++)
+            {
+                var carrier = container.Carrier;
+                if (carrier == null || carrier == entity) return false;
+                if (group.Contains(carrier)) return true;
+                container = carrier.Container;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Commit a member that stays in its seat: its carrier has already crossed, so it is in the destination scope
+        /// already. It keeps its container and pose; the crossing is recorded as it is for any other member — a new
+        /// epoch, so every copy takes the next state as a fresh location, and the preparation is finished.
+        /// </summary>
+        private void CommitSeated(InstanceTransfer transfer)
+        {
+            if (!ValidTransfer(transfer)) return;
+            var entity = transfer.Entity;
+            entity.Epoch++;
+            entity.HasStateTick = false;
+            transfer.Finished = true;
+            _instanceTransfers.Remove(transfer.Message.RequestId);
         }
 
         /// <summary>Prepare an authorized crossing. The game must check admission before calling. Preparation grants no visibility of destination entities.</summary>

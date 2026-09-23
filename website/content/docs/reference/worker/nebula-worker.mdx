@@ -588,6 +588,8 @@ public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector
 
 Commit a group only when every member is ready. Each member must have its own preparation and admission check.
 
+A member riding in another member's [`DynamicContainer`](/docs/reference/containers/dynamic-container), at any depth (the crew of a ship that is itself in the group), keeps its seat: it moves with its carrier and stays inside it, so it arrives in the destination scope through the carrier instead of being put down in the destination container. Its preparation is still what readies its owner's client for the destination.
+
 | Parameter | Description |
 | --- | --- |
 | `transfers` | Distinct entity preparations owned by this worker. This is not a cross-worker transaction. |

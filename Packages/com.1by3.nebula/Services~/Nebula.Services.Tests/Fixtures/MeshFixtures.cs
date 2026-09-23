@@ -52,6 +52,8 @@ public sealed class FakeWorker : IDisposable
     public readonly Dictionary<int, string> Gateways = new();
     public readonly List<string> Refused = new();
     public readonly List<ClientInputMsg> Inputs = new();
+    /// <summary>Every <see cref="MsgId.InstanceReady"/> a gateway relayed back from a client, in order.</summary>
+    public readonly List<InstancePreparationMsg> ReadyAnswers = new();
     /// <summary>Spawns, forgets and resyncs this worker has sent, by gateway id: what the subscription tests assert on.</summary>
     public readonly Dictionary<string, int> SpawnsSent = new(), ForgetsSent = new(), ResyncsSent = new();
     /// <summary>
@@ -180,6 +182,51 @@ public sealed class FakeWorker : IDisposable
         _carried.Capture(_index, netId, _publisher, WideMaskOf);
         _index.Move(netId, to);
         PublishCarried();
+    }
+
+    /// <summary>
+    /// Move an entity into another container, the way a committed crossing does (<c>NebulaWorker.TryCommitTransfer</c>
+    /// sets the container, and the next tick's <c>UpdateInterestIndex</c> rebuckets it): the entity and everything
+    /// riding in it are rebucketed under the region key of where they now are — a key salted with the new container's
+    /// scope (docs/scope-frames.md D7) — and the gateways that gained or lost them are told. A gateway that follows it
+    /// by name is sticky and is told nothing but its next state entry, which names the new container.
+    /// </summary>
+    public void MoveTo(ulong netId, ContainerRef container, Vector3 local)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) return;
+        e.Container = container;
+        e.Local = local;
+        e.Epoch++;
+        if (e.Placement != InterestPlacement.Region || _index.CarrierOf(netId) != 0) { _index.SetValue(netId, e); return; }
+        _carried.Capture(_index, netId, _publisher, WideMaskOf);
+        _index.SetValue(netId, e);
+        _index.Move(netId, RegionOf(e));
+        PublishCarried();
+    }
+
+    /// <summary>
+    /// Record <paramref name="netId"/> as <paramref name="clientId"/>'s pawn, for a test that spawned the pawn itself
+    /// (with <see cref="DeferSpawns"/>): a later claim for that session re-announces it, as a real worker's reclaim does.
+    /// </summary>
+    public void AdoptPawn(ulong clientId, ulong netId) => _pawns[clientId] = netId;
+
+    /// <summary>
+    /// What <c>NebulaWorker.PrepareTransfer</c> sends for a client-owned entity: an <see cref="MsgId.InstancePrepare"/>
+    /// to the gateway speaking for its owner, asking that client to get <paramref name="destination"/> ready. The
+    /// answer comes back as <see cref="ReadyAnswers"/>.
+    /// </summary>
+    public void Prepare(ulong netId, ContainerRef destination, ulong leaseEpoch, uint requestId = 1)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) throw new InvalidOperationException($"{WorkerId} does not own #{netId}");
+        foreach (var link in _links.Values)
+        {
+            if (!IsOwnersGateway(e, link.PeerId)) continue;
+            _w.Reset();
+            new InstancePreparationMsg { RequestId = requestId, EntityId = netId, Destination = destination, SourceWorker = Index, LeaseEpoch = leaseEpoch }
+                .Write(_w, MsgId.InstancePrepare);
+            Transport.Send(link.PeerId, Delivery.ReliableOrdered, _w.ToSegment());
+        }
+        Transport.Flush();
     }
 
     /// <summary>
@@ -558,6 +605,7 @@ public sealed class FakeWorker : IDisposable
                 break;
             }
             case MsgId.DespawnPlayer: Despawns.Add(DespawnPlayerMsg.Read(r)); break;
+            case MsgId.InstanceReady: ReadyAnswers.Add(InstancePreparationMsg.Read(r)); break;
             case MsgId.ClientInput: Inputs.Add(ClientInputMsg.Read(r)); break;
         }
     }
@@ -800,6 +848,16 @@ public sealed class FakeClient : IDisposable
     /// </summary>
     public int DuplicateContainerRows;
     public int VarsReceived, StatesReceived, SyncStatesReceived, RpcsReceived, DuplicateSpawns, OrphanUpdates;
+    /// <summary>
+    /// Spawns and state entries that named a runtime container this client had not been sent a row for, as
+    /// "#netId in rt_…". A real client cannot place such an entity: it holds the update and, for a container that never
+    /// arrives, the entity with it. The gateway's rule is a row before (or with) the first message that names it.
+    /// </summary>
+    public readonly List<string> UnresolvableNames = new();
+    /// <summary>Every preparation this client was asked for, and whether it held the destination's row when asked.</summary>
+    public readonly List<(InstancePreparationMsg Request, bool HadRow)> Preparations = new();
+    /// <summary>The newest container each entity was placed in by a spawn or a state entry.</summary>
+    public readonly Dictionary<ulong, ContainerRef> ContainerOf = new();
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
@@ -936,9 +994,25 @@ public sealed class FakeClient : IDisposable
                     }
                 break;
             }
+            case MsgId.InstancePrepare:
+            {
+                // What NebulaClient.Dispatch answers: ready only when it can resolve the destination, which a
+                // client can do only from a row its gateway sent it.
+                var msg = InstancePreparationMsg.Read(r);
+                string? rowId = RowIdOf(msg.Destination);
+                bool hadRow = rowId != null && Containers.Contains(rowId);
+                Preparations.Add((msg, hadRow));
+                Wire.Add("prepare " + msg.EntityId);
+                msg.Success = hadRow;
+                var w = new NetworkWriter();
+                msg.Write(w, MsgId.InstanceReady);
+                Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
+                break;
+            }
             case MsgId.EntitySpawn:
             {
                 var msg = EntitySpawnMsg.Read(r);
+                Named(msg.NetId, msg.Container);
                 Spawned.Add(msg.NetId);
                 Wire.Add("spawn " + msg.NetId);
                 // A spawn with no view sequence is a relayed in-place update (an authority transfer, a container
@@ -967,13 +1041,24 @@ public sealed class FakeClient : IDisposable
             case MsgId.WorldState:
             {
                 WorldStateMsg.ReadHeader(r, out _, out _, out ushort count);
-                for (int i = 0; i < count; i++) { var entry = EntityStateEntry.Read(r); Note(entry.NetId); StatesReceived++; }
+                for (int i = 0; i < count; i++) { var entry = EntityStateEntry.Read(r); Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++; }
                 break;
             }
             case MsgId.EntityVars: { Note(EntityVarsMsg.Read(r).NetId); VarsReceived++; break; }
             case MsgId.EntityState: { Note(EntitySyncMsg.Read(r).NetId); SyncStatesReceived++; break; }
             case MsgId.EntityRpc: { Note(EntityRpcMsg.Read(r).NetId); RpcsReceived++; break; }
         }
+    }
+
+    /// <summary>The row id a container reference needs, for the kinds a client registers from rows (runtime containers).</summary>
+    private static string? RowIdOf(ContainerRef container) =>
+        container.Index == ContainerRef.RuntimeIndex ? ContainerRegistry.RuntimeContainerId(container.NetId) : ContainerRegistry.Resolve(container)?.ContainerId;
+
+    private void Named(ulong netId, ContainerRef container)
+    {
+        ContainerOf[netId] = container;
+        if (container.Index == ContainerRef.RuntimeIndex && !Containers.Contains(ContainerRegistry.RuntimeContainerId(container.NetId)))
+            UnresolvableNames.Add($"#{netId} in {ContainerRegistry.RuntimeContainerId(container.NetId)}");
     }
 
     private void Note(ulong netId)

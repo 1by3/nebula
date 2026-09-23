@@ -105,6 +105,25 @@ namespace Nebula
             /// </summary>
             public string ScopeKey = "";
             /// <summary>
+            /// The isolation id of the scope this client was last known to be in: its pawn's, resolved through the
+            /// pawn's carrier chain, or its Hello's <see cref="ScopeKey"/> before there is a pawn. Used while that
+            /// chain cannot be resolved (a carrier record is on its way), so the client stays in the world it was
+            /// in rather than falling back to the public one (docs/scope-activation.md D16).
+            /// </summary>
+            public ulong LastScope;
+            /// <summary>
+            /// Destination rows a worker's <see cref="InstancePreparationMsg"/> asked this client to prepare, with
+            /// the gateway-clock time they stop being pinned. They are part of what the client needs until then,
+            /// whatever its window says (docs/scope-activation.md D14).
+            /// </summary>
+            public readonly Dictionary<string, double> PreparedRows = new Dictionary<string, double>();
+            /// <summary>
+            /// Rows that have left this client's window but whose lease still exists, with when they left. They are
+            /// withdrawn after <see cref="NebulaGateway.ContainerRowLingerSeconds"/>, so a replica still
+            /// interpolating out of a box is not despawned by the row going first (docs/scope-activation.md D17).
+            /// </summary>
+            public readonly Dictionary<string, double> RowsLeaving = new Dictionary<string, double>();
+            /// <summary>
             /// The accepted version from this connection's Hello, echoed in the welcome.
             /// The gateway accepts protocol 18 only.
             /// </summary>
@@ -297,7 +316,9 @@ namespace Nebula
             // Unknown runtime containers must never fall back to public visibility.
             if (target == null && !entity.Container.IsNone) return false;
             var source = _entities.TryGetValue(client.PawnNetId, out var pawn) ? ScopeContainer(pawn.Container) : null;
-            ulong scope = source?.InstanceId ?? 0;
+            // The client's scope, which stays the last one it was known to be in while its pawn's carrier chain is
+            // being re-resolved, rather than becoming the public world (docs/scope-activation.md D16).
+            ulong scope = ScopeOfClient(client);
             if ((target?.InstanceId ?? 0) == scope) return true;
             if (target != null && target.InstanceId != 0) return false;
             var view = source?.Instance;
@@ -504,6 +525,10 @@ namespace Nebula
             _lastTickAt = now;
 
             _transport.Poll(HandleTransportEvent);
+            // Updates that named a container this gateway could not describe yet, and preparations whose
+            // destination row had not arrived: both wait for the control plane, never longer than their bound.
+            ReleaseHeldUpdates(InterestNow);
+            RetryPreparations(InterestNow);
             _oidc?.Tick();
             TickInterest();
             foreach (var c in _clientsById.Values) { FlushWorldState(c); FlushReliable(c); }
@@ -780,16 +805,7 @@ namespace Nebula
             switch (id)
             {
                 case MsgId.EntitySpawn: OnEntitySpawn(w, EntitySpawnMsg.Read(r)); break;
-                case MsgId.InstancePrepare:
-                {
-                    var preparation = InstancePreparationMsg.Read(r);
-                    if (!_entities.TryGetValue(preparation.EntityId, out var pawn) || pawn.OwnerWorkerIndex != w.Index ||
-                        !_clientsById.TryGetValue(pawn.OwnerClientId, out var client) || client.PawnNetId != pawn.NetId) break;
-                    preparation.SourceWorker = w.Index;
-                    _writer.Reset(); preparation.Write(_writer, MsgId.InstancePrepare);
-                    AppendReliable(client, _writer.ToSegment());
-                    break;
-                }
+                case MsgId.InstancePrepare: OnInstancePrepare(w, InstancePreparationMsg.Read(r)); break;
                 case MsgId.EntityDespawn: OnEntityDespawn(w, EntityDespawnMsg.Read(r)); break;
                 case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r), r); break;
                 case MsgId.EntityRpc: OnEntityRpc(w, r); break;
@@ -838,7 +854,12 @@ namespace Nebula
 
         private void OnEntitySpawn(WorkerConn w, EntitySpawnMsg msg)
         {
-            if (_entities.TryGetValue(msg.NetId, out var rec))
+            // A spawn naming a runtime container this gateway has no row for yet (the worker's control-plane mirror
+            // was ahead of ours) is held until the row arrives: acting on it now would decide the entity's scope,
+            // region and audience on a container nobody here can describe (docs/scope-activation.md D15).
+            if (HoldIfUndescribed(msg.NetId, msg.Container, new HeldUpdate { IsSpawn = true, Spawn = msg, Worker = w.Index })) return;
+            bool existed = _entities.TryGetValue(msg.NetId, out var rec);
+            if (existed)
             {
                 if (msg.Epoch < rec.Epoch) return;
             }
@@ -848,6 +869,7 @@ namespace Nebula
                 _entities[msg.NetId] = rec;
             }
             bool containerChanged = rec.Container != msg.Container;
+            bool scopeChanged = existed && containerChanged && ScopeIdOf(rec.Container) != ScopeIdOf(msg.Container);
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
             // A spawn from a worker is the one thing that confirms who owns an entity; a redirect only promised.
@@ -871,6 +893,9 @@ namespace Nebula
                 c.InterestDirty = true;
                 SendJoinStatus(c, JoinState.Joined);
             }
+            // Another scope: whoever may no longer see it loses it now, before the new container's row goes out,
+            // so an onlooker left behind is never told the destination exists (docs/scope-activation.md D13).
+            if (scopeChanged) RevokeAcrossScope(rec);
             // The observers it already has are told about the new state in place; everyone else learns of it only
             // if it is near them, which is one test per client whose focus regions cover its region.
             if (rec.Observers.Count > 0)
@@ -890,7 +915,8 @@ namespace Nebula
 
         private void OnEntityDespawn(WorkerConn w, EntityDespawnMsg msg)
         {
-            if (!_entities.TryGetValue(msg.NetId, out var rec)) return;
+            // An entity that only exists here as a held spawn is gone before it was ever applied.
+            if (!_entities.TryGetValue(msg.NetId, out var rec)) { _held.Remove(msg.NetId); return; }
             if (msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == msg.NetId)
             {
@@ -980,42 +1006,10 @@ namespace Nebula
             {
                 var entry = EntityStateEntry.Read(r);
                 if (!_entities.TryGetValue(entry.NetId, out var rec)) { _wsUnknown++; continue; }
-                if (entry.Epoch < rec.Epoch) { _wsStale++; continue; }
-                if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; continue; }
-                if (entry.Epoch == rec.Epoch && rec.HasStateTick && tick <= rec.LastStateTick) continue;
-                rec.HasStateTick = true;
-                rec.LastStateTick = tick;
-                rec.Epoch = entry.Epoch;
-                rec.LastSpawn.Epoch = entry.Epoch;
-                if (rec.Container != entry.Container && (entry.Fields & TransformFields.Location) == 0)
-                {
-                    var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition);
-                    var rotation = WorldRotation(rec.Container, rec.LastSpawn.LocalRotation);
-                    rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world);
-                    rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity)) * rotation;
-                }
-                bool changedScope = ScopeContainer(rec.Container)?.InstanceId != ScopeContainer(entry.Container)?.InstanceId;
-                bool changedCarrier = rec.Container.IsDynamic != entry.Container.IsDynamic || rec.Container.NetId != entry.Container.NetId;
-                bool changedContainer = rec.Container != entry.Container;
-                rec.Container = entry.Container;
-                rec.LastSpawn.Container = entry.Container;
-                entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
-                // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
-                // has to be rebucketed, and only when its region key actually changed.
-                if (changedCarrier) RelinkCarrier(rec);
-                // The observers that already hold this entity need the new container's lease row, or they cannot
-                // resolve the frame the pose that follows is expressed in. Entering a set is not the only way an
-                // entity comes to name a container a client has never heard of: walking into the next chunk is.
-                if (changedContainer) SendOwnershipForContainerChange(rec);
-                RebucketIfMoved(rec);
-                if (changedScope || changedCarrier)
-                {
-                    for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].InterestDirty = true;
-                    if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var moved)) moved.InterestDirty = true;
-                    // The passengers move with it: a ship that changed scope or carrier reseated its whole
-                    // subtree, and nothing else offers those records to the clients of where it now sits.
-                    ConsiderCarried(rec);
-                }
+                // An entry naming a runtime container this gateway cannot describe yet waits for its row, and so
+                // does everything after it for the same entity, in order (docs/scope-activation.md D15).
+                if (HoldIfUndescribed(entry.NetId, entry.Container, new HeldUpdate { Entry = entry, Tick = tick, Worker = w.Index })) continue;
+                if (!ApplyStateEntry(w, tick, rec, ref entry)) continue;
                 _scratchEntries.Add(entry);
             }
             if (_scratchEntries.Count == 0) return;
@@ -1028,12 +1022,7 @@ namespace Nebula
                 if (!_entities.TryGetValue(entry.NetId, out var rec)) continue;
                 if (entry.Reliable)
                 {
-                    _writer.Reset();
-                    int slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, w.Index);
-                    entry.Write(_writer);
-                    WorldStateMsg.End(_writer, slot, 1);
-                    var reliable = _writer.ToSegment();
-                    for (int o = rec.Observers.Count - 1; o >= 0; o--) { AppendReliable(rec.Observers[o], reliable); _wsSent++; }
+                    RelayReliable(rec, tick, w.Index, entry);
                     continue;
                 }
                 for (int o = rec.Observers.Count - 1; o >= 0; o--)
@@ -1045,6 +1034,76 @@ namespace Nebula
                     _wsSent++;
                 }
             }
+        }
+
+        /// <summary>
+        /// Apply one state entry to its record: the owner and epoch checks, the pose, and whatever a new container
+        /// changes about who hears of the entity. Returns false when the entry is dropped. An entry that moved the
+        /// entity into another container comes back marked <see cref="TransformFields.Reliable"/>, so it is relayed
+        /// on the reliable stream <b>behind</b> the container row <see cref="SendOwnershipForContainerChange"/> has
+        /// just queued there, and never overtakes it on the sequenced channel (docs/scope-activation.md D15).
+        /// </summary>
+        private bool ApplyStateEntry(WorkerConn w, uint tick, EntityRecord rec, ref EntityStateEntry entry)
+        {
+            if (entry.Epoch < rec.Epoch) { _wsStale++; return false; }
+            if (rec.OwnerWorkerIndex != w.Index) { _wsWrongOwner++; return false; }
+            if (entry.Epoch == rec.Epoch && rec.HasStateTick && tick <= rec.LastStateTick) return false;
+            rec.HasStateTick = true;
+            rec.LastStateTick = tick;
+            rec.Epoch = entry.Epoch;
+            rec.LastSpawn.Epoch = entry.Epoch;
+            if (rec.Container != entry.Container && (entry.Fields & TransformFields.Location) == 0)
+            {
+                var world = WorldPosition(rec.Container, rec.LastSpawn.LocalPosition);
+                var rotation = WorldRotation(rec.Container, rec.LastSpawn.LocalRotation);
+                rec.LastSpawn.LocalPosition = ContainerPosition(entry.Container, world);
+                rec.LastSpawn.LocalRotation = Quaternion.Inverse(WorldRotation(entry.Container, Quaternion.identity)) * rotation;
+            }
+            bool changedScope = ScopeIdOf(rec.Container) != ScopeIdOf(entry.Container);
+            bool changedCarrier = rec.Container.IsDynamic != entry.Container.IsDynamic || rec.Container.NetId != entry.Container.NetId;
+            bool changedContainer = rec.Container != entry.Container;
+            rec.Container = entry.Container;
+            rec.LastSpawn.Container = entry.Container;
+            entry.Merge(ref rec.LastSpawn.LocalPosition, ref rec.LastSpawn.LocalRotation, ref rec.LastSpawn.LocalScale, ref rec.LastSpawn.Velocity);
+            // A scope or carrier change invalidates a decision that was made on the old one; a plain move only
+            // has to be rebucketed, and only when its region key actually changed.
+            if (changedCarrier) RelinkCarrier(rec);
+            // Another scope: the observers that may no longer see it (an onlooker on the planet a ship just left)
+            // lose it now, before anything about the destination is sent, so none of them is ever told the other
+            // scope's container exists. The ones that stay (the ship's own crew) are re-authorized in the new
+            // scope on the same pass (docs/scope-activation.md D13).
+            if (changedScope) RevokeAcrossScope(rec);
+            // The observers that already hold this entity need the new container's lease row, or they cannot
+            // resolve the frame the pose that follows is expressed in. Entering a set is not the only way an
+            // entity comes to name a container a client has never heard of: walking into the next chunk is.
+            if (changedContainer)
+            {
+                SendOwnershipForContainerChange(rec);
+                entry.Fields |= TransformFields.Reliable;
+            }
+            RebucketIfMoved(rec);
+            if (changedScope || changedCarrier)
+            {
+                for (int o = rec.Observers.Count - 1; o >= 0; o--) rec.Observers[o].InterestDirty = true;
+                if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var moved)) moved.InterestDirty = true;
+                // A carrier's riders are in the scope it is in: their own clients' salt and window follow it.
+                if (changedScope) MarkRidersDirty(rec);
+                // The passengers move with it: a ship that changed scope or carrier reseated its whole
+                // subtree, and nothing else offers those records to the clients of where it now sits.
+                ConsiderCarried(rec);
+            }
+            return true;
+        }
+
+        /// <summary>One state entry, alone in a <see cref="MsgId.WorldState"/>, on each observer's reliable stream.</summary>
+        private void RelayReliable(EntityRecord rec, uint tick, ushort worker, in EntityStateEntry entry)
+        {
+            _writer.Reset();
+            int slot = WorldStateMsg.Begin(_writer, MsgId.WorldState, tick, worker);
+            entry.Write(_writer);
+            WorldStateMsg.End(_writer, slot, 1);
+            var reliable = _writer.ToSegment();
+            for (int o = rec.Observers.Count - 1; o >= 0; o--) { AppendReliable(rec.Observers[o], reliable); _wsSent++; }
         }
 
         /// <summary>
@@ -1271,6 +1330,7 @@ namespace Nebula
                 // ---- end NEB-228 block
                 c.IsBot = (hello.Flags & HelloFlags.Bot) != 0;
                 c.ScopeKey = hello.ScopeKey ?? "";
+                c.LastScope = c.ScopeKey.Length == 0 ? 0UL : ScopeKeys.Hash(c.ScopeKey);
                 if (Draining) { Reject(c, "gateway is draining", true); return; }
                 Authenticate(c, hello.Token ?? "", hello.Session ?? "");
                 return;

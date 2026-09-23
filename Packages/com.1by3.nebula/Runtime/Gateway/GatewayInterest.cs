@@ -150,6 +150,7 @@ namespace Nebula
         private readonly List<ClientConn> _revalidateScratch = new List<ClientConn>();
         private bool _revalidating;
         private readonly List<string> _containerIdScratch = new List<string>();
+        private readonly List<string> _preparedScratch = new List<string>();
         /// <summary>The same ids as a set: foci overlap, and a linear scan of a few hundred rows per focus is not free.</summary>
         private readonly HashSet<string> _containerIdSeen = new HashSet<string>();
         private readonly List<ContainerOwnershipEntry> _upsertScratch = new List<ContainerOwnershipEntry>();
@@ -558,13 +559,10 @@ namespace Nebula
         /// <summary>
         /// The scope a client's region keys are salted with: the one its pawn actually stands in, and the key it
         /// asked for in its <c>Hello</c> while it has no pawn yet, so a client's window is in its own world from
-        /// the first evaluation rather than from the first spawn.
+        /// the first evaluation rather than from the first spawn. While the pawn's carrier chain cannot be
+        /// resolved it is the scope the client was last in (<see cref="ScopeOfClient"/>).
         /// </summary>
-        private ulong InstanceOf(ClientConn client)
-        {
-            if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn)) return InstanceOf(pawn);
-            return string.IsNullOrEmpty(client.ScopeKey) ? 0UL : ScopeKeys.Hash(client.ScopeKey);
-        }
+        private ulong InstanceOf(ClientConn client) => ScopeOfClient(client);
 
         // ------------------------------------------------------------------------------------------- the index
 
@@ -769,6 +767,8 @@ namespace Nebula
             client.Visible.Clear();
             client.ViewSeq.Clear();
             client.KnownContainers.Clear();
+            client.PreparedRows.Clear();
+            client.RowsLeaving.Clear();
             _hintFilter.Forget(client.ClientId);
             _subscriptionsDirty = true;
             if (welcomed) RaiseClientEvent(ClientLeft, client, nameof(ClientLeft));
@@ -894,7 +894,7 @@ namespace Nebula
                 // The scope comes from the pawn's own container chain, not from the root it resolved to: they
                 // are the same container by construction, and asking the pawn keeps this line and CanObserve's
                 // reading the same thing.
-                snapshot.InstanceId = ScopeContainer(pawn.Container)?.InstanceId ?? 0;
+                snapshot.InstanceId = ScopeOfClient(client);
                 snapshot.PawnCarrierNetId = root != pawn ? root.NetId : 0;
             }
             if (client.HasHint)
@@ -1141,6 +1141,7 @@ namespace Nebula
             }
             _fociRegions.Clear();
             _explicitIds.Clear();
+            _explicitSet.Clear();
             bool unreachablePawn = false;
 
             foreach (var client in _clientsById.Values)
@@ -1165,7 +1166,7 @@ namespace Nebula
                     if (client.Query != null)
                     {
                         var extras = client.Query.Entities;
-                        for (int i = 0; i < extras.Count; i++) if (!_explicitIds.Contains(extras[i])) _explicitIds.Add(extras[i]);
+                        for (int i = 0; i < extras.Count; i++) AddExplicit(extras[i]);
                     }
                 }
                 // A client that owns an entity must hear about it wherever it is, so its worker is linked. The
@@ -1176,6 +1177,8 @@ namespace Nebula
                     bool placed = false;
                     if (_entities.TryGetValue(client.PawnNetId, out var pawn))
                     {
+                        // The ship it rides in decides which world it is in, so it is followed wherever it goes.
+                        FollowCarriers(pawn);
                         string ownerId = WorkerIdOfIndex(pawn.OwnerWorkerIndex);
                         // The link is held even while the owner is only a redirect's word, because dialling it
                         // is how the announcement that confirms it can arrive at all.
@@ -1255,7 +1258,7 @@ namespace Nebula
             }
             if (waited < PawnRecoverySeconds)
             {
-                if (!_explicitIds.Contains(client.PawnNetId)) _explicitIds.Add(client.PawnNetId);
+                AddExplicit(client.PawnNetId);
                 return true;
             }
             // Nobody owns it any more. Drop what we think we know and let the client be placed again; a stale
@@ -1424,6 +1427,9 @@ namespace Nebula
                 if (rec.Placement != InterestPlacement.Region) continue;
                 if (rec.OwnerClientId != 0 && _clientsById.ContainsKey(rec.OwnerClientId)) continue;
                 if (_subscribedRegions.Contains(rec.Region)) continue;
+                // Followed by name (a policy's explicit entity, a pawn's carrier): the worker keeps publishing it
+                // wherever it is, so its region being unsubscribed says nothing about whether we still want it.
+                if (_explicitSet.Contains(rec.NetId)) continue;
                 _evictScratch.Add(rec.NetId);
             }
             for (int i = 0; i < _evictScratch.Count; i++) ForgetEntity(_evictScratch[i]);
@@ -1433,6 +1439,7 @@ namespace Nebula
         /// <summary>Forget one record entirely: out of the index, out of every set, despawned from every observer.</summary>
         private void ForgetEntity(ulong netId)
         {
+            _held.Remove(netId);
             if (!_entities.TryGetValue(netId, out var rec)) return;
             _entities.Remove(netId);
             UnindexEntity(rec);
@@ -1467,7 +1474,9 @@ namespace Nebula
         /// <summary>An entity left every region we subscribe on that worker: drop it, and despawn it from whoever had it.</summary>
         private void OnEntityForget(WorkerConn w, in EntityForgetMsg msg)
         {
-            if (!_entities.TryGetValue(msg.NetId, out var rec) || rec.OwnerWorkerIndex != w.Index) return;
+            // Held updates only (its spawn is waiting for a row): the worker has let go of it for us.
+            if (!_entities.TryGetValue(msg.NetId, out var rec)) { _held.Remove(msg.NetId); return; }
+            if (rec.OwnerWorkerIndex != w.Index) return;
             if (msg.Epoch < rec.Epoch) return;
             // A client's own pawn is sticky on the worker (design D22) and must never be forgotten here: a
             // worker that sends one anyway has lost track of the session, and obeying it would take a player's
@@ -1575,8 +1584,10 @@ namespace Nebula
                 var root = RootOf(pawn);
                 pawnNetId = client.PawnNetId;
                 var scope = ScopeContainer(pawn.Container);
-                scopeInstance = scope != null ? scope.InstanceId : 0;
-                observePublic = scopeInstance == 0 || (scope.Instance != null && scope.Instance.ObservePublic);
+                // An unresolvable carrier chain keeps the client in the scope it was last in, and a scope nobody
+                // can describe does not look out at the public world (docs/scope-activation.md D16).
+                scopeInstance = ScopeOfClient(client);
+                observePublic = scopeInstance == 0 || (scope != null && scope.Instance != null && scope.Instance.ObservePublic);
                 // The pawn's own window first: whatever a camera is doing, the player's body must be able to
                 // stand on the ground, and this is the one focus that exists before any evaluation has run.
                 AddWindow(root.AbsX, root.AbsY, root.AbsZ, 0, 0, 0, reach);
@@ -1597,6 +1608,17 @@ namespace Nebula
                         if (!focus.IsBox && focus.SourceNetId != 0 && focus.SourceNetId == pawnNetId) continue;
                         AddWindow(focus.X, focus.Y, focus.Z, focus.HalfX, focus.HalfY, focus.HalfZ, (float)focus.Scaled(reach));
                     }
+            }
+            // A destination a worker asked this client to prepare (D14): pinned for the life of the crossing, whatever
+            // the window says, so the client can still resolve it when the commit names it.
+            if (client.PreparedRows.Count > 0)
+            {
+                double now = InterestNow;
+                _preparedScratch.Clear();
+                foreach (var id in client.PreparedRows.Keys) _preparedScratch.Add(id);
+                for (int i = 0; i < _preparedScratch.Count; i++)
+                    if (IsPrepared(client, _preparedScratch[i], now)) Add(_preparedScratch[i]);
+                _preparedScratch.Clear();
             }
             if (truncated)
             {
@@ -1734,13 +1756,30 @@ namespace Nebula
             FlushOwnershipRemoves(client);
         }
 
-        /// <summary>The rows this client holds that <see cref="_containerIdScratch"/> no longer asks for.</summary>
+        /// <summary>
+        /// The rows this client holds that <see cref="_containerIdScratch"/> no longer asks for. A row whose lease is
+        /// gone goes at once — the container is retired and whatever stood in it has been despawned. A row that only
+        /// left the window lingers for <see cref="ContainerRowLingerSeconds"/> first: a replica that has just moved
+        /// out of it (a fast ship, or a whole crew whose scope just changed) is still gliding out of that box
+        /// through its interpolation buffer, and a client despawns whatever stands in a row it is told to drop
+        /// (docs/scope-activation.md D17).
+        /// </summary>
         private void FlushOwnershipRemoves(ClientConn client)
         {
             _removeScratch.Clear();
+            double now = InterestNow;
             foreach (string id in client.KnownContainers)
-                if (!_containerIdScratch.Contains(id)) _removeScratch.Add(id);
+            {
+                if (_containerIdSeen.Contains(id)) { client.RowsLeaving.Remove(id); continue; }
+                if (_ownershipById.ContainsKey(id))
+                {
+                    if (!client.RowsLeaving.TryGetValue(id, out double since)) { client.RowsLeaving[id] = now; continue; }
+                    if (now - since < ContainerRowLingerSeconds) continue;
+                }
+                _removeScratch.Add(id);
+            }
             if (_removeScratch.Count == 0) return;
+            for (int i = 0; i < _removeScratch.Count; i++) client.RowsLeaving.Remove(_removeScratch[i]);
             for (int i = 0; i < _removeScratch.Count; i++) client.KnownContainers.Remove(_removeScratch[i]);
             _interestWriter.Reset();
             ContainerOwnershipMsg.Write(_interestWriter, Array.Empty<ContainerOwnershipEntry>(), false, _removeScratch);
@@ -1752,6 +1791,7 @@ namespace Nebula
         {
             CollectNeededContainers(client, null);
             client.KnownContainers.Clear();
+            client.RowsLeaving.Clear();
             _upsertScratch.Clear();
             for (int i = 0; i < _containerIdScratch.Count; i++)
             {

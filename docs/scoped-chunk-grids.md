@@ -144,7 +144,8 @@ in them. A scoped *grid* is a whole world of empty terrain, and empty terrain is
 the window is now queried with the client's own isolation id, and additionally in the public world **only when the
 client is public or its scope's `ObservePublic` is set**. A public client is never told a scope's chunks exist; a
 scoped client is never told the public world's unless its scope looks out at it. The conformance test fails on
-either half.
+either half. One exception is made on an authority's word: the destination of a crossing a worker has prepared for the
+client's own pawn is sent to that client, and only to it (`docs/scope-activation.md` §11, D14).
 
 **D11 Ghosting and adjacency needed nothing: they were already scope-qualified.** `ContainerRegistry.Link` refuses
 to make neighbours of containers with different `InstanceId`s, and every neighbour query filters the same way. Two

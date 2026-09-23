@@ -548,6 +548,24 @@ namespace Nebula
                 e.RemoteTick(_renderTick);
             }
             TrackCarrier();
+            FollowLocalScope();
+        }
+
+        /// <summary>The scope whose instance content this client last showed.</summary>
+        private ulong _viewScope;
+
+        /// <summary>
+        /// Show the instance content of the scope the local pawn is in. The pawn's own container change does this
+        /// already; a pawn riding in a ship changes scope without changing container at all — the ship moved — so
+        /// the scope is read through the carrier chain every frame and the view follows it
+        /// (docs/scope-activation.md D18).
+        /// </summary>
+        private void FollowLocalScope()
+        {
+            ulong scope = LocalPlayer != null ? LocalPlayer.InstanceId : 0;
+            if (LocalPlayer == null || scope == _viewScope) return;
+            _viewScope = scope;
+            InstanceScenes.SetView(scope);
         }
 
         /// <summary>Telemetry for the hull under the local pawn: a rendered jump the reported velocity does not explain is a hitch the pilot sees.</summary>
