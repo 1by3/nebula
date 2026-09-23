@@ -104,7 +104,7 @@ For a fire button, store enough state in the input or controller to recognize on
 
 By default, `WriteState` records the entity's container-local position and rotation plus `Identity.Motion.Velocity`. `ReadState` restores those values.
 
-Override both methods when the next simulation result also depends on other state, such as grounded state, a movement mode, or a cooldown.
+Override both methods when the next simulation result also depends on other state, such as grounded state, a movement mode, or a cooldown. Include everything `Simulate` carries from one tick to the next: the same state moves with the entity when another worker takes it over.
 
 ```csharp
 protected override void WriteState(NetworkWriter writer)
@@ -146,7 +146,7 @@ See [Debugging](/docs/guides/debugging#use-the-in-game-overlay) for the client-s
 
 ## Transfer prediction during handover
 
-When an entity moves to another worker, the authority transfer includes the last processed input, future buffered inputs, and the previous input used for repetition. The receiving worker can therefore continue on the next tick without asking the client to resend its history.
+When an entity moves to another worker, the authority transfer includes the last processed input, future buffered inputs, the previous input used for repetition, and the state `WriteState` writes. The receiving worker applies that state with `ReadState`, so it continues on the next tick from exactly where the previous worker stopped, for example in the middle of a jump, without asking the client to resend its history.
 
 The client keeps the same network ID and continues predicting. Owner-state messages from the new worker carry a higher authority epoch, so the client rejects older state from the previous worker.
 

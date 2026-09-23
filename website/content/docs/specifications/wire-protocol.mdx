@@ -13,12 +13,12 @@ The current protocol version is `19`. Every `Hello` carries the version its send
 
 A gateway accepts protocol-19 clients only: both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `19`. Gateway-to-worker and worker-to-worker connections MUST also match protocol `19` exactly.
 
-Protocol 19 changed no byte layout. It changed what a behavior index names: an entity carrying a container no longer has a behavior for it, so the indices of its other network behaviors, which address RPCs, network variables, and sync state, moved down by one. A protocol-18 peer would address the wrong behavior on such an entity, which is why protocol 18 is outside the window.
+Protocol 19 changed no byte layout. It changed what a behavior index names: an entity carrying a container no longer has a behavior for it, so every network behavior that came after that one on the entity moved down by one index. RPCs, network variables, and sync state are addressed by that index. A protocol-18 peer would address the wrong behavior on such an entity, which is why protocol 18 is outside the window.
 
 - A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
 - A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
 - A sender MUST preserve the message identifiers, field order, primitive encodings, and field meanings defined here. Fields explicitly described as optional may be omitted at the end of a message.
-- The gateway returns the client's accepted version in `Welcome.negotiated_version`. All accepted clients use protocol `18`; this field does not select a different encoder.
+- The gateway returns the client's accepted version in `Welcome.negotiated_version`. All accepted clients use protocol `19`; this field does not select a different encoder.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats. `Hello.game_content_version` is a number the game chooses for its own content; Nebula compares it and refuses a mismatch, and gives it no other meaning.
 
 For process replacement and compatibility requirements, see [Upgrade a running mesh](/docs/deploy/upgrades).

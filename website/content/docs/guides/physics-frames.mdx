@@ -34,7 +34,7 @@ worker.RequestRuntimeContainer(stationId, placement);
 
 ### Interior geometry
 
-A frame needs the container's interior colliders inside its own scene. By default Nebula copies the carrier's colliders into the frame: every non-trigger collider under the carrier that does not belong to another networked entity. It keeps each copy where its original is relative to the carrier and enabled when the original is, every tick, so a ramp that lowers or a door that opens works inside the frame too. The originals stay in the world scene for everything outside.
+A frame needs the container's interior colliders inside its own scene. By default Nebula copies the carrier's colliders into the frame: every non-trigger collider under the carrier, except those of entities riding in it. Parts of the carrier's own prefab count as the carrier's, including doors and seats whose network behaviors added a `NetworkIdentity` of their own. Nebula keeps each copy where its original is relative to the carrier, and enabled when the original is, on workers every tick and on clients every rendered frame, so a ramp that lowers or a door that opens blocks and can be aimed at inside the frame too. The originals stay in the world scene for everything outside.
 
 To use your own geometry instead, set **Frame Content** on the `Container` to a prefab of colliders (and visuals, if you want them). The prefab must not contain a `NetworkIdentity`.
 
@@ -81,9 +81,34 @@ if (Identity.PhysicsScene.Raycast(EyePosition, AimDirection, out var hit, range)
 
 Do not write a world position straight onto the transform of an entity inside a frame. The frame reads it as container-local coordinates. Call `PlaceInScope` instead.
 
+Positions computed while an entity simulates are in the frame's coordinates, too. Convert them before you draw something with them. A predicted shot's tracer, for example, goes through `identity.ToScope` before the client draws it. A position that a worker sends to other clients, such as where a shot hit, is best sent in the frame's coordinates, with each client converting it at the carrier's pose it shows:
+
+```csharp
+// Worker: the frame's own coordinates, independent of where this worker has the carrier right now.
+var frame = Identity.Space != null ? Identity.Space.Frame : null;
+Vector3 local = frame != null ? frame.SimulationToLocal(hitPoint) : hitPoint;
+
+// Client: where the carrier is drawn.
+Vector3 drawn = Identity.Space != null ? PhysicsFrames.Convert(local, Identity.Space, null) : local;
+```
+
+`hitPoint` is where the worker's raycast hit, in the shooter's simulation space. Send `local` in your RPC and convert it in the client's handler.
+
 ## Cross the frame's boundary
 
 An entity enters a frame when the worker resolves it into the framed container's box, and leaves when it is farther than `HandoverHysteresis` outside the inside of that box. Nebula converts its position, rotation, and velocity at the frame's pose for that tick. A leaving entity gains the frame's velocity, including the part that comes from the frame turning, so a crate that falls out of a moving ship keeps moving with the ship.
+
+Nebula converts `Identity.Motion.Velocity` and a `Rigidbody`'s velocity. A controller that keeps a velocity of its own, such as a vertical speed for jumping, reads it back from `Identity.Motion.Velocity` in `OnContainerChanged` on the worker, so a fall or a jump continues along the new space's up:
+
+```csharp
+public override void OnContainerChanged(Container previous, Container current)
+{
+    bool newSpace = (previous != null ? previous.InnerSpace : null) != (current != null ? current.InnerSpace : null);
+    if (HasAuthority && newSpace) _verticalSpeed = Identity.Motion.Velocity.y;
+}
+```
+
+`_verticalSpeed` stands for your controller's own field. Write it into `Identity.Motion.Velocity` each tick so Nebula has the value to convert.
 
 Only the worker that simulates the carrier knows its pose exactly. That worker, the **pose owner**, performs every crossing. Any other worker that would cross an entity hands it to the pose owner first, unconverted. The pose owner crosses it, then hands it on if the destination belongs to another worker. A crossing costs at most one extra handover and never a position error.
 
