@@ -1,0 +1,34 @@
+---
+title: "PersistenceAnswer"
+description: "Whether the answer a store is delivering right now is a stand-in for one the backend could not give."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Persistence/IPersistenceStore.cs)</div>
+
+```csharp
+public static class PersistenceAnswer
+```
+
+Whether the answer a store is delivering right now is a stand-in for one the backend could not give.
+
+Every read and every [`IPersistenceStore.WhenWritten`](/docs/reference/persistence/i-persistence-store#whenwritten) is answered exactly once, even when the backend fails for good (a store gives up on a job after a few attempts). A read it could not answer gets the empty result — a null record, an empty list, an empty entry per container, a count of 0 — and a barrier is released, after the store has logged the error. While such a callback runs, [`Failed`](#failed) is true, so a caller that must not mistake "unreadable" for "nothing saved" can tell them apart. The orchestrator's [`PersistenceHost`](/docs/reference/persistence/persistence-host) answers those requests with HTTP 503, and the worker retries.
+
+## Properties
+
+### Failed [#failed]
+
+```csharp
+public static bool Failed { get; }
+```
+
+True only inside a store callback whose answer is a stand-in for a failed backend call.
+
+## Methods
+
+### Invoke [#invoke]
+
+```csharp
+public static void Invoke(Action callback, bool failed);
+```
+
+Run `callback` with [`Failed`](#failed) set to `failed`. For store implementations.

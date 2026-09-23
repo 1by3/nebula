@@ -218,6 +218,54 @@ public class StorageAndHostTests
         reopened.Dispose();
     }
 
+    [Test]
+    public void SqlPersistenceStoreAnswersEveryCallbackWhenItGivesUp()
+    {
+        // A database that can never be opened: the SQLite file is a directory.
+        string path = Path.Combine(directory, "unopenable.db");
+        Directory.CreateDirectory(path);
+        using var db = NebulaDatabase.Open(DatabaseUrl.Parse("sqlite:" + path, ""));
+        var store = new SqlPersistenceStore(db) { RetryDelaySeconds = 0.01f };
+        store.Connect();
+        var failed = new Dictionary<string, bool>();
+        PersistedEntityRecord? loaded = Record("sentinel", "x");
+        IReadOnlyDictionary<string, IReadOnlyList<PersistedEntityRecord>>? containers = null;
+        IReadOnlyList<PersistedEntityRecord>? carried = null, where = null;
+        int count = -1;
+        store.Save(Record("a", "c1"));
+        store.WhenWritten(() => failed["barrier"] = PersistenceAnswer.Failed);
+        store.Load("a", r => { loaded = r; failed["load"] = PersistenceAnswer.Failed; });
+        store.LoadContainers(new[] { "c1", "c2" }, r => { containers = r; failed["containers"] = PersistenceAnswer.Failed; });
+        store.LoadCarried("truck", r => { carried = r; failed["carried"] = PersistenceAnswer.Failed; });
+        store.LoadWhere(_ => true, r => { where = r; failed["where"] = PersistenceAnswer.Failed; });
+        store.CountRecords("", "", n => { count = n; failed["count"] = PersistenceAnswer.Failed; });
+        try
+        {
+            WaitUntil(() => failed.Count == 6, store.Tick);
+            Assert.That(failed.Values, Is.All.True, "every stand-in answer is marked failed");
+            Assert.That(PersistenceAnswer.Failed, Is.False, "only while the callback runs");
+            Assert.That(loaded, Is.Null);
+            Assert.That(containers!.Keys, Is.EquivalentTo(new[] { "c1", "c2" }));
+            Assert.That(containers.Values.All(list => list.Count == 0));
+            Assert.That(carried, Is.Empty);
+            Assert.That(where, Is.Empty);
+            Assert.That(count, Is.EqualTo(0));
+            Assert.That(store.PendingJobs, Is.EqualTo(0));
+
+            // Over HTTP the stand-in becomes a 503, so a worker retries instead of restoring nothing.
+            var host = new PersistenceHost(store, null);
+            var request = new OrchestratorHttpServer.Request { Method = "POST", Path = PersistenceHost.Prefix + "/containers", Body = "{\"ids\":[\"c1\"]}" };
+            Assert.That(host.TryHandle(request, out var response), Is.True);
+            Assert.That(response.IsPending, Is.True);
+            WaitUntil(() => request.Completion.Task.IsCompleted, store.Tick);
+            Assert.That(request.Completion.Task.Result.Status, Is.EqualTo(503));
+        }
+        finally
+        {
+            store.Dispose();
+        }
+    }
+
     // ---------------------------------------------------------------------------------------- hosts over HTTP
 
     [Test]

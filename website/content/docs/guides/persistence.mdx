@@ -296,7 +296,7 @@ The table's columns are the record fields: `entity_key`, prefab ID and name, sce
 | Delete | Delete one record by key. |
 | Clear | Delete every record. |
 
-One writer thread on the orchestrator runs every save, delete, and query in order, so the epoch rule is one conditional upsert and a later save never overtakes an earlier one. If the database is unreachable the queue waits, the connection is retried every two seconds, and the mesh keeps simulating; a job that still fails after three attempts is dropped with an error in the orchestrator log.
+One writer thread on the orchestrator runs every save, delete, and query in order, so the epoch rule is one conditional upsert and a later save never overtakes an earlier one. If the database is unreachable the queue waits, the connection is retried every two seconds, and the mesh keeps simulating; after three failed attempts at a job, the store gives up on it and logs an error. A read it gives up on is still answered, with an empty result that `PersistenceAnswer.Failed` marks as a stand-in, and the orchestrator answers the worker's request with HTTP 503, so the worker retries instead of restoring nothing. A save it gives up on fails the next `WhenWritten` barrier the same way.
 
 A Unity orchestrator (the compatibility role, not the standalone service) carries no database driver: give it `file:<folder>` or `memory`.
 

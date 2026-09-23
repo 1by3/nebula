@@ -13,6 +13,8 @@ Long-term storage for entities that opted into persistence ([`PersistentEntity`]
 
 The contract is request/response on purpose (no subscriptions), so a relational backend fits behind it. Every callback lands on the main thread from [`Tick`](#tick). Writes are fire-and-forget ([`WhenWritten`](#whenwritten) is the barrier for the few callers that must wait): a save is accepted by the backend when its epoch is not older than the stored one, otherwise dropped, and the caller never waits. The store is never on the per-tick path: if it is unreachable the mesh keeps simulating and saves are retried on the next checkpoint.
 
+Every callback runs exactly once. A store that gives up on a read answers it with the empty result and sets [`PersistenceAnswer.Failed`](/docs/reference/persistence/persistence-answer#failed) for the duration of the callback; it never leaves a caller waiting.
+
 ## Properties
 
 ### IsConnected [#isconnected]
@@ -77,7 +79,7 @@ Delete the record for `key`, if any.
 void WhenWritten(Action onWritten);
 ```
 
-Calls `onWritten` on the main thread once every save and delete issued before this call has reached the backend. It says the writes were delivered, not that each was kept (a stale epoch is still dropped): follow it with one [`Load`](#load) when the outcome matters, instead of polling.
+Calls `onWritten` on the main thread once every save and delete issued before this call has reached the backend. It says the writes were delivered, not that each was kept (a stale epoch is still dropped): follow it with one [`Load`](#load) when the outcome matters, instead of polling. When the store gave up on a write issued since the previous barrier, or on the barrier itself, the callback still runs, with [`PersistenceAnswer.Failed`](/docs/reference/persistence/persistence-answer#failed) set.
 
 ### Load [#load]
 

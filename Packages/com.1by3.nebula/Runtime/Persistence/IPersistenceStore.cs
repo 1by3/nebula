@@ -96,6 +96,10 @@ namespace Nebula
     /// The store is never on the per-tick path: if it is unreachable the mesh keeps simulating and saves are retried
     /// on the next checkpoint.
     /// </para>
+    /// <para>
+    /// Every callback runs exactly once. A store that gives up on a read answers it with the empty result and sets
+    /// <see cref="PersistenceAnswer.Failed"/> for the duration of the callback; it never leaves a caller waiting.
+    /// </para>
     /// </summary>
     public interface IPersistenceStore : IDisposable
     {
@@ -117,7 +121,9 @@ namespace Nebula
         /// <summary>
         /// Calls <paramref name="onWritten"/> on the main thread once every save and delete issued before this call has
         /// reached the backend. It says the writes were delivered, not that each was kept (a stale epoch is still
-        /// dropped): follow it with one <see cref="Load"/> when the outcome matters, instead of polling.
+        /// dropped): follow it with one <see cref="Load"/> when the outcome matters, instead of polling. When the store
+        /// gave up on a write issued since the previous barrier, or on the barrier itself, the callback still runs,
+        /// with <see cref="PersistenceAnswer.Failed"/> set.
         /// </summary>
         void WhenWritten(Action onWritten);
 
@@ -160,6 +166,35 @@ namespace Nebula
 
         /// <summary>Delete every record (dashboard / dev reset).</summary>
         void Clear();
+    }
+
+    /// <summary>
+    /// Whether the answer a store is delivering right now is a stand-in for one the backend could not give.
+    /// <para>
+    /// Every read and every <see cref="IPersistenceStore.WhenWritten"/> is answered exactly once, even when the
+    /// backend fails for good (a store gives up on a job after a few attempts). A read it could not answer gets the
+    /// empty result — a null record, an empty list, an empty entry per container, a count of 0 — and a barrier is
+    /// released, after the store has logged the error. While such a callback runs, <see cref="Failed"/> is true, so a
+    /// caller that must not mistake "unreadable" for "nothing saved" can tell them apart. The orchestrator's
+    /// <see cref="PersistenceHost"/> answers those requests with HTTP 503, and the worker retries.
+    /// </para>
+    /// </summary>
+    public static class PersistenceAnswer
+    {
+        [ThreadStatic] private static bool _failed;
+
+        /// <summary>True only inside a store callback whose answer is a stand-in for a failed backend call.</summary>
+        public static bool Failed => _failed;
+
+        /// <summary>Run <paramref name="callback"/> with <see cref="Failed"/> set to <paramref name="failed"/>. For store implementations.</summary>
+        public static void Invoke(Action callback, bool failed)
+        {
+            if (!failed) { callback(); return; }
+            bool outer = _failed;
+            _failed = true;
+            try { callback(); }
+            finally { _failed = outer; }
+        }
     }
 
     /// <summary>The answer of <see cref="IPersistenceStore.LoadContainers"/> as the stores build it.</summary>

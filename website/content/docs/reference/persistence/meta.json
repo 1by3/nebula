@@ -1,4 +1,4 @@
 {
   "title": "Persistence",
-  "pages": ["i-persistence-store", "local-persistence-store", "nebula-persistence", "persist-attribute", "persisted-entity-record", "persisted-record-json", "persistence-host", "persistent-entity", "persistent-state-codec", "remote-persistence-store"]
+  "pages": ["i-persistence-store", "local-persistence-store", "nebula-persistence", "persist-attribute", "persisted-entity-record", "persisted-record-json", "persistence-answer", "persistence-host", "persistent-entity", "persistent-state-codec", "remote-persistence-store"]
 }

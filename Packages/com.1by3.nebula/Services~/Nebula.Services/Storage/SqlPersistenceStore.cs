@@ -22,13 +22,17 @@ namespace Nebula
         public const float RetrySeconds = 2f;
         /// <summary>Seconds between refreshes of <see cref="KnownCount"/> while writes keep coming.</summary>
         public const float CountIntervalSeconds = 2f;
-        /// <summary>Times a job that throws is retried (after a reconnect) before it is dropped with an error.</summary>
+        /// <summary>Times a job that throws is retried (after a reconnect) before the store gives up on it.</summary>
         private const int MaxAttempts = 3;
 
         private sealed class Job
         {
             public string Name;
             public Action<DbConnection> Run;
+            /// <summary>Writer thread, when the store gives up on the job: deliver the stand-in answer (<see cref="PersistenceAnswer.Failed"/>).</summary>
+            public Action GiveUp;
+            /// <summary>A save, delete or clear: giving up on it fails the next <see cref="WhenWritten"/>.</summary>
+            public bool IsWrite;
             public int Attempts;
         }
 
@@ -47,6 +51,8 @@ namespace Nebula
         private bool _loggedConnected;
         private bool _countDirty = true;
         private double _nextCount;
+        /// <summary>Writer thread: a write queued since the last barrier was given up.</summary>
+        private bool _writeGivenUp;
 
         public SqlPersistenceStore(NebulaDatabase db)
         {
@@ -58,6 +64,8 @@ namespace Nebula
         public int KnownCount => _count;
         /// <summary>Jobs waiting for the writer thread.</summary>
         public int PendingJobs { get { lock (_gate) return _jobs.Count; } }
+        /// <summary>Wait after a failure before the next attempt (<see cref="RetrySeconds"/>; tests shorten it).</summary>
+        internal float RetryDelaySeconds = RetrySeconds;
 
         public void Connect()
         {
@@ -139,7 +147,7 @@ namespace Nebula
                     ("@state", r.State != null && r.State.Length > 0 ? r.State : Array.Empty<byte>()),
                     ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""), ("@scope_key", r.ScopeKey ?? ""));
                 _countDirty = true;
-            });
+            }, isWrite: true);
         }
 
         public void Delete(string key)
@@ -149,14 +157,24 @@ namespace Nebula
             {
                 NebulaDatabase.Execute(c, "DELETE FROM nebula_entity WHERE entity_key = @key", ("@key", key));
                 _countDirty = true;
-            });
+            }, isWrite: true);
         }
 
         public void WhenWritten(Action onWritten)
         {
             if (onWritten == null) return;
-            // Jobs run in order on one connection, so this one runs after every write queued before it.
-            Enqueue("barrier", c => Deliver(onWritten));
+            // Jobs run in order on one connection, so this one runs after every write queued before it. A write given
+            // up on since the previous barrier fails this one: those writes never reached the database.
+            Enqueue("barrier", c =>
+            {
+                bool failed = _writeGivenUp;
+                _writeGivenUp = false;
+                Deliver(onWritten, failed);
+            }, giveUp: () =>
+            {
+                _writeGivenUp = false;
+                Deliver(onWritten, true);
+            });
         }
 
         public void Clear()
@@ -165,7 +183,7 @@ namespace Nebula
             {
                 NebulaDatabase.Execute(c, "DELETE FROM nebula_entity");
                 _countDirty = true;
-            });
+            }, isWrite: true);
         }
 
         // ---------------------------------------------------------------------------------------- reads
@@ -185,7 +203,7 @@ namespace Nebula
                     if (reader.Read()) record = Read(reader);
                 }
                 Deliver(() => onLoaded(record));
-            });
+            }, giveUp: () => Deliver(() => onLoaded(null), true));
         }
 
         /// <summary>
@@ -224,6 +242,10 @@ namespace Nebula
                     }
                 }
                 Deliver(() => onLoaded(result));
+            }, giveUp: () =>
+            {
+                foreach (var list in result.Values) ((List<PersistedEntityRecord>)list).Clear();
+                Deliver(() => onLoaded(result), true);
             });
         }
 
@@ -254,7 +276,7 @@ namespace Nebula
                     n = scalar == null || scalar is DBNull ? 0L : Convert.ToInt64(scalar);
                 }
                 Deliver(() => onCounted((int)n));
-            });
+            }, giveUp: () => Deliver(() => onCounted(0), true));
         }
 
         private void Query(string name, string sql, (string, object)[] args, Func<PersistedEntityRecord, bool> filter, Action<IReadOnlyList<PersistedEntityRecord>> onLoaded)
@@ -273,7 +295,7 @@ namespace Nebula
                     }
                 }
                 Deliver(() => onLoaded(hits));
-            });
+            }, giveUp: () => Deliver(() => onLoaded(Array.Empty<PersistedEntityRecord>()), true));
         }
 
         private static PersistedEntityRecord Read(DbDataReader r)
@@ -304,18 +326,20 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- writer thread
 
-        private void Enqueue(string name, Action<DbConnection> run)
+        private void Enqueue(string name, Action<DbConnection> run, Action giveUp = null, bool isWrite = false)
         {
             lock (_gate)
             {
-                _jobs.AddLast(new Job { Name = name, Run = run });
+                _jobs.AddLast(new Job { Name = name, Run = run, GiveUp = giveUp, IsWrite = isWrite });
                 Monitor.PulseAll(_gate);
             }
         }
 
-        private void Deliver(Action callback)
+        /// <summary>Hand <paramref name="callback"/> to <see cref="Tick"/>; <paramref name="failed"/> runs it under <see cref="PersistenceAnswer.Failed"/>.</summary>
+        private void Deliver(Action callback, bool failed = false)
         {
-            lock (_gate) _callbacks.Add(callback);
+            Action run = failed ? () => PersistenceAnswer.Invoke(callback, true) : callback;
+            lock (_gate) _callbacks.Add(run);
         }
 
         private void Loop()
@@ -341,7 +365,11 @@ namespace Nebula
                         _error = null;
                         _countDirty = true;
                     }
-                    if (job != null) job.Run(conn);
+                    if (job != null)
+                    {
+                        job.Run(conn);
+                        job = null; // done: a failure below (the count refresh) must not run it, or answer it, twice
+                    }
                     if (_countDirty && _clock.Elapsed.TotalSeconds >= _nextCount)
                     {
                         _nextCount = _clock.Elapsed.TotalSeconds + CountIntervalSeconds;
@@ -363,10 +391,16 @@ namespace Nebula
                             _error = $"{job.Name} failed ({e.Message}); reconnecting";
                             lock (_gate) _jobs.AddFirst(job);
                         }
-                        else _error = $"{job.Name} dropped after {job.Attempts} attempts: {e.Message}";
+                        else
+                        {
+                            // Give up, but still answer: an in-process caller would otherwise wait forever.
+                            _error = $"{job.Name} given up after {job.Attempts} attempts: {e.Message}";
+                            if (job.IsWrite) _writeGivenUp = true;
+                            job.GiveUp?.Invoke();
+                        }
                     }
                     else _error = e.Message;
-                    lock (_gate) { if (_running) Monitor.Wait(_gate, TimeSpan.FromSeconds(RetrySeconds)); }
+                    lock (_gate) { if (_running) Monitor.Wait(_gate, TimeSpan.FromSeconds(RetryDelaySeconds)); }
                 }
             }
             try { conn?.Dispose(); } catch { }

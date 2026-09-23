@@ -89,7 +89,7 @@ namespace Nebula
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET record":
-                    _store.Load(req.GetQuery("key"), r => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteOne(r))));
+                    _store.Load(req.GetQuery("key"), r => req.Complete(Answer(() => OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteOne(r)))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "POST containers":
@@ -107,28 +107,28 @@ namespace Nebula
                         }
                     }
                     if (ids.Count > MaxContainersPerLoad) { response = OrchestratorHttpServer.Response.Error(400, $"at most {MaxContainersPerLoad} container ids per request, got {ids.Count}"); return true; }
-                    _store.LoadContainers(ids, loaded =>
+                    _store.LoadContainers(ids, loaded => req.Complete(Answer(() =>
                     {
                         var records = new List<PersistedEntityRecord>();
                         foreach (var kv in loaded) records.AddRange(kv.Value);
-                        req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(records)));
-                    });
+                        return OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(records));
+                    })));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 }
                 case "GET carried":
-                    _store.LoadCarried(req.GetQuery("key"), rs => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs))));
+                    _store.LoadCarried(req.GetQuery("key"), rs => req.Complete(Answer(() => OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs)))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET count":
                     // Only the number travels: this is the "is there anything saved for this scope?" question a
                     // worker asks on the path that brings a scope to life (docs/lifecycle-hooks.md).
                     _store.CountRecords(req.GetQuery("scope"), req.GetQuery("container"),
-                        n => req.Complete(OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"count\":{n.ToString(CultureInfo.InvariantCulture)}}}")));
+                        n => req.Complete(Answer(() => OrchestratorHttpServer.Response.Json(200, $"{{\"ok\":true,\"count\":{n.ToString(CultureInfo.InvariantCulture)}}}"))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 case "GET all":
-                    _store.LoadWhere(r => true, rs => req.Complete(OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs))));
+                    _store.LoadWhere(r => true, rs => req.Complete(Answer(() => OrchestratorHttpServer.Response.Json(200, PersistedRecordJson.WriteList(rs)))));
                     response = OrchestratorHttpServer.Response.Pending;
                     return true;
                 default:
@@ -144,8 +144,16 @@ namespace Nebula
             var weak = new WeakReference<OrchestratorHttpServer.Request>(request);
             _store.WhenWritten(() =>
             {
-                if (weak.TryGetTarget(out var pending)) pending.Complete(response);
+                if (weak.TryGetTarget(out var pending)) pending.Complete(Answer(() => response));
             });
         }
+
+        /// <summary>
+        /// The response for a store answer: <paramref name="ok"/>'s, or 503 when the store gave up on the read or the
+        /// writes (<see cref="PersistenceAnswer.Failed"/>). An empty 200 would tell the worker nothing is saved; a 503
+        /// makes it retry.
+        /// </summary>
+        private static OrchestratorHttpServer.Response Answer(Func<OrchestratorHttpServer.Response> ok) =>
+            PersistenceAnswer.Failed ? OrchestratorHttpServer.Response.Error(503, "the persistence store could not complete the request; retry") : ok();
     }
 }
