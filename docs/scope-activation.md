@@ -342,8 +342,17 @@ reliable stream, behind the row `SendOwnershipForContainerChange` has just queue
 channel where it could overtake it. Together: a client is never sent an entity update naming a container before
 that container's row.
 
-What the hold costs: variables, behavior state and RPCs from a new owner that arrive while the owner's spawn is held
-are dropped by the ordinary owner check, exactly as they are during any handover the gateway has not confirmed yet.
+What arrives behind a held update waits with it (NEB-257). Variables, behavior state, RPCs and a despawn for an entity
+with held updates are held too, in arrival order, and applied through the normal path right after what they followed.
+Before, a new owner's messages that arrived while its spawn was held were dropped by the ordinary owner check (the
+record still named the previous owner), or, after a redirect had already named the new owner, relayed *ahead* of the
+spawn, whose older variables then overwrote them on every client. Either way a carrier arrived with stale variables
+(a speed cap, a gear state) until the next change. Two refinements: a message of an epoch older than everything held
+(the previous owner's last words) is not held, and goes through or is dropped exactly as before; and a released
+behavior-state message is relayed on the reliable stream, so a sequenced copy cannot overtake the spawn it waited
+behind. A state entry for an entity the gateway knows only as a held spawn waits behind it too, instead of being
+dropped as unknown. The bound is shared: every held message counts toward the 1024 updates per entity, and the 10 s
+applies to them all. Owner state (`OwnerStateMsg`) is not held: it is sequenced, and the next tick supersedes it.
 
 **D16 A client whose carrier chain cannot be resolved stays in the scope it was last in.** `ClientConn.LastScope`
 records the client's scope whenever its pawn's chain resolves, starting from its `Hello`'s scope key. While the chain

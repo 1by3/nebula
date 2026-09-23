@@ -807,8 +807,8 @@ namespace Nebula
                 case MsgId.EntitySpawn: OnEntitySpawn(w, EntitySpawnMsg.Read(r)); break;
                 case MsgId.InstancePrepare: OnInstancePrepare(w, InstancePreparationMsg.Read(r)); break;
                 case MsgId.EntityDespawn: OnEntityDespawn(w, EntityDespawnMsg.Read(r)); break;
-                case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r), r); break;
-                case MsgId.EntityRpc: OnEntityRpc(w, r); break;
+                case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r)); break;
+                case MsgId.EntityRpc: OnEntityRpc(w, EntityRpcMsg.Read(r)); break;
                 case MsgId.WorldState: OnWorldState(w, r); break;
                 case MsgId.EntityState: OnEntityState(w, EntitySyncMsg.Read(r)); break;
                 case MsgId.OwnerState: OnOwnerState(w, r); break;
@@ -857,7 +857,7 @@ namespace Nebula
             // A spawn naming a runtime container this gateway has no row for yet (the worker's control-plane mirror
             // was ahead of ours) is held until the row arrives: acting on it now would decide the entity's scope,
             // region and audience on a container nobody here can describe (docs/scope-activation.md D15).
-            if (HoldIfUndescribed(msg.NetId, msg.Container, new HeldUpdate { IsSpawn = true, Spawn = msg, Worker = w.Index })) return;
+            if (HoldIfUndescribed(msg.NetId, msg.Container, new HeldUpdate { Kind = HeldKind.Spawn, Spawn = msg, Worker = w.Index })) return;
             bool existed = _entities.TryGetValue(msg.NetId, out var rec);
             if (existed)
             {
@@ -917,6 +917,9 @@ namespace Nebula
         {
             // An entity that only exists here as a held spawn is gone before it was ever applied.
             if (!_entities.TryGetValue(msg.NetId, out var rec)) { _held.Remove(msg.NetId); return; }
+            // A new owner's despawn of an entity whose spawn from it is still held comes after that spawn: applied
+            // now it would fail the owner check, and the spawn would bring the entity back when its row arrived.
+            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Despawn, Despawn = msg, Worker = w.Index })) return;
             if (msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             if (rec.OwnerClientId != 0 && _clientsById.TryGetValue(rec.OwnerClientId, out var c) && c.PawnNetId == msg.NetId)
             {
@@ -927,8 +930,12 @@ namespace Nebula
             ForgetEntity(msg.NetId);
         }
 
-        private void OnEntityVars(WorkerConn w, EntityVarsMsg msg, NetworkReader r)
+        private void OnEntityVars(WorkerConn w, EntityVarsMsg msg)
         {
+            // Variables, behaviour state and RPCs for an entity whose spawn or state is held for a container row
+            // wait behind it, so a new owner's changes land after its spawn instead of being lost to the owner
+            // check below (docs/scope-activation.md D15).
+            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Vars, Vars = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             rec.LastSpawn.Vars = msg.Vars;
             rec.LastSpawn.Epoch = msg.Epoch;
@@ -939,6 +946,7 @@ namespace Nebula
 
         private void OnEntityState(WorkerConn w, EntitySyncMsg msg)
         {
+            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Sync, Sync = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             // Remember keyframes so a late joiner's spawn carries the newest full state of each behaviour.
             _reader.Set(new ArraySegment<byte>(msg.Chunks));
@@ -951,9 +959,9 @@ namespace Nebula
             BroadcastEntity(rec, msg.Delivery);
         }
 
-        private void OnEntityRpc(WorkerConn w, NetworkReader r)
+        private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
         {
-            var msg = EntityRpcMsg.Read(r);
+            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Rpc, Rpc = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
             _writer.Reset();
             msg.Write(_writer, MsgId.EntityRpc);
@@ -1005,10 +1013,13 @@ namespace Nebula
             for (int i = 0; i < count; i++)
             {
                 var entry = EntityStateEntry.Read(r);
-                if (!_entities.TryGetValue(entry.NetId, out var rec)) { _wsUnknown++; continue; }
+                bool known = _entities.TryGetValue(entry.NetId, out var rec);
+                // An entity this gateway knows only as a held spawn is not unknown: its entries wait behind it.
+                if (!known && !_held.ContainsKey(entry.NetId)) { _wsUnknown++; continue; }
                 // An entry naming a runtime container this gateway cannot describe yet waits for its row, and so
                 // does everything after it for the same entity, in order (docs/scope-activation.md D15).
-                if (HoldIfUndescribed(entry.NetId, entry.Container, new HeldUpdate { Entry = entry, Tick = tick, Worker = w.Index })) continue;
+                if (HoldIfUndescribed(entry.NetId, entry.Container, new HeldUpdate { Kind = HeldKind.State, Entry = entry, Tick = tick, Worker = w.Index })) continue;
+                if (!known) { _wsUnknown++; continue; }
                 if (!ApplyStateEntry(w, tick, rec, ref entry)) continue;
                 _scratchEntries.Add(entry);
             }

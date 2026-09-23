@@ -30,6 +30,8 @@ public sealed class FakeWorker : IDisposable
         public byte InterestGroup;
         public ulong Region;
         public InterestPlacement Placement;
+        /// <summary>The entity's variables as its spawn carries them: the last block <see cref="SendVars"/> sent.</summary>
+        public byte[] Vars = Array.Empty<byte>();
     }
 
     private sealed class GatewayLink
@@ -318,7 +320,9 @@ public sealed class FakeWorker : IDisposable
     /// so a service test that handed a ship over would fail if that production code were removed (design D87).
     /// </para>
     /// </summary>
-    public void HandOver(ulong netId, FakeWorker target)
+    /// <param name="into">The container the new owner has already put it in, as a worker that took it over at a chunk
+    /// edge and flew it on; null keeps the one it had.</param>
+    public void HandOver(ulong netId, FakeWorker target, ContainerRef? into = null)
     {
         using var frame = _handover.Begin();
         if (frame.IsOutermost) _handover.Collect(_index, netId);
@@ -338,6 +342,7 @@ public sealed class FakeWorker : IDisposable
         _index.Remove(netId);
         if (carried) PublishCarried();
         if (_pawns.TryGetValue(e.OwnerClientId, out ulong pawn) && pawn == netId) _pawns.Remove(e.OwnerClientId);
+        if (into.HasValue) e.Container = into.Value;
         target.Receive(e, this);
     }
 
@@ -437,6 +442,7 @@ public sealed class FakeWorker : IDisposable
     /// <summary>A netvar update, filtered exactly as world state is: only gateways that subscribe where it sits.</summary>
     public void SendVars(ulong netId, byte[] vars)
     {
+        if (_entities.TryGetValue(netId, out var owned)) owned.Vars = vars;
         Each(netId, (peer, e) =>
         {
             _w.Reset();
@@ -769,7 +775,7 @@ public sealed class FakeWorker : IDisposable
             LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
             RelevanceRadius = e.RelevanceRadius,
             InterestFlags = e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
-            InterestGroup = e.InterestGroup,
+            InterestGroup = e.InterestGroup, Vars = e.Vars,
         }.Write(_w, MsgId.EntitySpawn);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
         if (_links.TryGetValue(peerId, out var link)) { Bump(SpawnsSent, link.GatewayId); SpawnLog.Add((link.GatewayId, e.NetId)); }
@@ -858,6 +864,11 @@ public sealed class FakeClient : IDisposable
     public readonly List<(InstancePreparationMsg Request, bool HadRow)> Preparations = new();
     /// <summary>The newest container each entity was placed in by a spawn or a state entry.</summary>
     public readonly Dictionary<ulong, ContainerRef> ContainerOf = new();
+    /// <summary>
+    /// Each entity's variables as a real client would hold them: the block of the last spawn that carried one, or of
+    /// the last <see cref="MsgId.EntityVars"/>, whichever came later. A spawn relayed after a newer block regresses it.
+    /// </summary>
+    public readonly Dictionary<ulong, byte[]> VarsOf = new();
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
@@ -1015,6 +1026,7 @@ public sealed class FakeClient : IDisposable
                 Named(msg.NetId, msg.Container);
                 Spawned.Add(msg.NetId);
                 Wire.Add("spawn " + msg.NetId);
+                if (msg.Vars != null && msg.Vars.Length > 0) VarsOf[msg.NetId] = msg.Vars;
                 // A spawn with no view sequence is a relayed in-place update (an authority transfer, a container
                 // change) for an entity already in the set; only a new view of an entity we still hold would be
                 // the gateway telling us the same thing twice.
@@ -1044,9 +1056,17 @@ public sealed class FakeClient : IDisposable
                 for (int i = 0; i < count; i++) { var entry = EntityStateEntry.Read(r); Note(entry.NetId); Named(entry.NetId, entry.Container); StatesReceived++; }
                 break;
             }
-            case MsgId.EntityVars: { Note(EntityVarsMsg.Read(r).NetId); VarsReceived++; break; }
-            case MsgId.EntityState: { Note(EntitySyncMsg.Read(r).NetId); SyncStatesReceived++; break; }
-            case MsgId.EntityRpc: { Note(EntityRpcMsg.Read(r).NetId); RpcsReceived++; break; }
+            case MsgId.EntityVars:
+            {
+                var msg = EntityVarsMsg.Read(r);
+                Note(msg.NetId);
+                VarsReceived++;
+                VarsOf[msg.NetId] = msg.Vars;
+                Wire.Add("vars " + msg.NetId);
+                break;
+            }
+            case MsgId.EntityState: { ulong netId = EntitySyncMsg.Read(r).NetId; Note(netId); SyncStatesReceived++; Wire.Add("sync " + netId); break; }
+            case MsgId.EntityRpc: { ulong netId = EntityRpcMsg.Read(r).NetId; Note(netId); RpcsReceived++; Wire.Add("rpc " + netId); break; }
         }
     }
 

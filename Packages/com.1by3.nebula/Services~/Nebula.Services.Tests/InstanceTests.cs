@@ -79,7 +79,7 @@ public class InstanceTests
     [Test]
     public void VariablesNeverReachObserversOutsideTheInstance()
     {
-        Call("OnEntityVars",worker,new EntityVarsMsg {NetId=2,Epoch=1,Vars=new byte[]{1,2,3}},new NetworkReader());
+        Call("OnEntityVars",worker,new EntityVarsMsg {NetId=2,Epoch=1,Vars=new byte[]{1,2,3}});
         Flush();
         Assert.That(transport.Messages.Select(m=>m.Peer), Is.EquivalentTo(new[]{2}));
     }

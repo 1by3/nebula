@@ -58,13 +58,16 @@ public class ConformanceCrossScopeCarrierTests
     /// </summary>
     private sealed class Voyage : IDisposable
     {
-        public readonly Fleet Fleet = new(gateways: 1);
+        public readonly Fleet Fleet;
         public FakeWorker Worker => Fleet.Worker;
         public readonly FakeClient Rider, Onlooker;
         public ulong RiderPawn, OnlookerPawn;
 
-        public Voyage()
+        /// <param name="workers">Workers in the mesh. The scopes and everything in them start on the first; a second
+        /// owns nothing until a test hands it something.</param>
+        public Voyage(int workers = 1)
         {
+            Fleet = new(gateways: 1, workers: workers);
             Activate(Planet, PlanetGrid());
             Activate(Space, SpaceGrid());
             Worker.DeferSpawns = true;
@@ -187,5 +190,48 @@ public class ConformanceCrossScopeCarrierTests
         Assert.That(v.Onlooker.UnresolvableNames, Is.Empty);
         Assert.That(v.Rider.Despawned, Does.Not.Contain(Hull));
         Assert.That(v.Onlooker.Despawned, Does.Not.Contain(Hull), "the ship never left the onlooker's world, so it was never taken away");
+    }
+
+    /// <summary>
+    /// NEB-257: the ship is handed to another worker that has already flown it into a chunk of space whose lease has
+    /// not reached the gateway, so the new owner's spawn is held (D15). Whatever that owner changes during the hold —
+    /// a variable, behaviour state, an RPC — must arrive after the spawn, not be dropped by the owner check or relayed
+    /// ahead of it and then overwritten by the older variables the spawn carries.
+    /// </summary>
+    [Test]
+    public void ANewOwnersChangesDuringAHeldSpawnArriveAfterIt()
+    {
+        using var v = new Voyage(workers: 2);
+        var owner = v.Fleet.Workers[1];
+        v.Worker.SendVars(Hull, new byte[] { 1 });
+        Assert.That(v.Fleet.Run(() => v.Rider.VarsOf.TryGetValue(Hull, out var gear) && gear[0] == 1), Is.True, "the ship's first gear");
+
+        var next = new Vector3Int(1, 0, 0);
+        var nextRef = ContainerRef.Runtime(ChunkKeys.RuntimeId(Space, next));
+        // Carrier first, then its rider, as TransferAuthority recurses. The redirect is what links the new owner.
+        v.Worker.HandOver(Hull, owner, into: nextRef);
+        v.Worker.HandOver(v.RiderPawn, owner);
+        Assert.That(v.Fleet.Run(() => owner.SpawnLog.Contains(("gw1", Hull))), Is.True, "the new owner announced the ship to the gateway that follows it");
+        v.Fleet.RunFor(0.2);
+
+        owner.SendVars(Hull, new byte[] { 2 });
+        owner.SendSyncState(Hull, 0, new byte[] { 9 });
+        owner.SendRpc(Hull);
+        v.Fleet.RunFor(0.5);
+        Assert.That(v.Rider.ContainerOf[Hull], Is.EqualTo(Anchor(Planet)), "the spawn naming a chunk the gateway cannot describe is held");
+        Assert.That(v.Rider.VarsOf[Hull][0], Is.EqualTo(1), "and so is everything its owner said after it: nothing overtakes the spawn");
+
+        v.Fleet.Plane.EnsureRuntimeContainer(ChunkKeys.ContainerId(Space, next), SpaceGrid().AbsoluteBoundsOf(next), "w2",
+            new InstanceContainerInfo { InstanceId = ScopeKeys.Hash(Space), ScopeKey = Space, PartId = ChunkKeys.PartId(next) });
+
+        Assert.That(v.Fleet.Run(() => v.Rider.ContainerOf[Hull] == nextRef && v.Rider.Wire.Contains("rpc " + Hull)), Is.True,
+            "the row arrives, the spawn lands, and what was held behind it follows");
+        Assert.That(v.Rider.VarsOf[Hull][0], Is.EqualTo(2), "the rider's ship has the gear its new owner set during the hold, not the spawn's older one");
+        int spawn = v.Rider.Wire.LastIndexOf("spawn " + Hull);
+        Assert.That(v.Rider.Wire.LastIndexOf("vars " + Hull), Is.GreaterThan(spawn), "the variables came after the spawn");
+        Assert.That(v.Rider.Wire.LastIndexOf("sync " + Hull), Is.GreaterThan(spawn), "and so did the behaviour state");
+        Assert.That(v.Rider.Wire.LastIndexOf("rpc " + Hull), Is.GreaterThan(spawn), "and the RPC, which was never dropped");
+        Assert.That(v.Rider.Despawned, Does.Not.Contain(Hull).And.Not.Contain(v.RiderPawn));
+        Assert.That(v.Rider.UnresolvableNames, Is.Empty);
     }
 }

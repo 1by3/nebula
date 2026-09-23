@@ -122,21 +122,68 @@ namespace Nebula
 
         // ------------------------------------------------------------------------------------------- held updates
 
-        /// <summary>One spawn or state entry that named a container this gateway could not describe when it arrived.</summary>
+        /// <summary>What a held update is.</summary>
+        private enum HeldKind : byte { Spawn, State, Vars, Sync, Rpc, Despawn }
+
+        /// <summary>
+        /// One update held for an entity: a spawn or state entry that named a container this gateway could not
+        /// describe when it arrived, or a variable, behaviour-state, RPC or despawn message that arrived behind one.
+        /// </summary>
         private struct HeldUpdate
         {
-            public bool IsSpawn;
+            public HeldKind Kind;
             public EntitySpawnMsg Spawn;
             public EntityStateEntry Entry;
+            public EntityVarsMsg Vars;
+            public EntitySyncMsg Sync;
+            public EntityRpcMsg Rpc;
+            public EntityDespawnMsg Despawn;
             public uint Tick;
             public ushort Worker;
-            public ContainerRef Container => IsSpawn ? Spawn.Container : Entry.Container;
+
+            /// <summary>
+            /// The container this update waits for: a spawn's or a state entry's. Variables, behaviour state and
+            /// RPCs wait for none of their own; they only keep their place behind what is held ahead of them.
+            /// </summary>
+            public ContainerRef WaitsFor => Kind == HeldKind.Spawn ? Spawn.Container : Kind == HeldKind.State ? Entry.Container : ContainerRef.None;
+
+            public uint Epoch => Kind switch
+            {
+                HeldKind.Spawn => Spawn.Epoch,
+                HeldKind.State => Entry.Epoch,
+                HeldKind.Vars => Vars.Epoch,
+                HeldKind.Sync => Sync.Epoch,
+                HeldKind.Rpc => Rpc.Epoch,
+                _ => Despawn.Epoch,
+            };
         }
 
         private sealed class HeldUpdates
         {
             public double Since;
+            /// <summary>
+            /// The oldest epoch held. An owner message of an older epoch predates everything held (a previous
+            /// owner's last words before a handover) and is applied at once, as it always was.
+            /// </summary>
+            public uint Epoch;
             public readonly List<HeldUpdate> Items = new List<HeldUpdate>();
+
+            public void Add(in HeldUpdate update)
+            {
+                if (Items.Count == 0 || update.Epoch < Epoch) Epoch = update.Epoch;
+                Items.Add(update);
+                if (Items.Count >= HoldLimit) Since = double.NegativeInfinity;
+            }
+
+            /// <summary>Forget the first <paramref name="count"/> items, which are being applied.</summary>
+            public void Released(int count, double now)
+            {
+                Items.RemoveRange(0, count);
+                Since = now;
+                if (Items.Count == 0) return;
+                Epoch = Items[0].Epoch;
+                for (int i = 1; i < Items.Count; i++) if (Items[i].Epoch < Epoch) Epoch = Items[i].Epoch;
+            }
         }
 
         /// <summary>Per entity, the updates waiting for a container row, in arrival order.</summary>
@@ -172,15 +219,31 @@ namespace Nebula
                 _held[netId] = held;
                 NebulaLog.Debugf($"entity #{netId} names {container}, which this gateway has no row for yet; holding its updates until the row arrives");
             }
-            held.Items.Add(update);
-            if (held.Items.Count >= HoldLimit) held.Since = double.NegativeInfinity;
+            held.Add(update);
+            return true;
+        }
+
+        /// <summary>
+        /// Hold a variable, behaviour-state, RPC or despawn message behind the updates already held for its entity.
+        /// While a new owner's spawn waits for its row, the record still names the previous owner (or, after a
+        /// redirect, an owner whose spawn has not been applied): the ordinary owner check would drop the new
+        /// owner's messages, or relay them ahead of the spawn, whose older variables would then overwrite them.
+        /// Either way the entity would arrive with stale state until its next change. Held here, they are applied
+        /// through the normal path, in arrival order, right after the spawn lands. A message of an epoch older than
+        /// everything held is not held (<see cref="HeldUpdates.Epoch"/>). The bound is the rest of the hold's:
+        /// <see cref="HoldSeconds"/> and <see cref="HoldLimit"/> updates per entity, counted together.
+        /// </summary>
+        private bool HoldBehind(ulong netId, uint epoch, in HeldUpdate update)
+        {
+            if (_replayingHeld || !_held.TryGetValue(netId, out var held) || epoch < held.Epoch) return false;
+            held.Add(update);
             return true;
         }
 
         /// <summary>
         /// Apply every held update whose container can be described now, in order, stopping at the first that still
-        /// cannot. Past <see cref="HoldSeconds"/> everything is applied regardless. State entries released here go
-        /// out on the reliable stream behind the row they name.
+        /// cannot. Past <see cref="HoldSeconds"/> everything is applied regardless. State entries and behaviour
+        /// state released here go out on the reliable stream, behind the row they name and the spawn they follow.
         /// </summary>
         private void ReleaseHeldUpdates(double now)
         {
@@ -193,14 +256,13 @@ namespace Nebula
                 if (!_held.TryGetValue(netId, out var held)) continue;
                 bool expired = now - held.Since >= HoldSeconds;
                 int ready = 0;
-                while (ready < held.Items.Count && (expired || !Undescribed(held.Items[ready].Container))) ready++;
+                while (ready < held.Items.Count && (expired || !Undescribed(held.Items[ready].WaitsFor))) ready++;
                 if (ready == 0) continue;
-                if (expired) NebulaLog.Warn($"entity #{netId}: no row for {held.Items[0].Container} arrived in {HoldSeconds} s; applying its updates anyway");
+                if (expired) NebulaLog.Warn($"entity #{netId}: no row for {held.Items[0].WaitsFor} arrived in {HoldSeconds} s; applying its updates anyway");
                 _releaseScratch.Clear();
                 for (int i = 0; i < ready; i++) _releaseScratch.Add(held.Items[i]);
-                held.Items.RemoveRange(0, ready);
+                held.Released(ready, now);
                 if (held.Items.Count == 0) _held.Remove(netId);
-                else held.Since = now;
                 _replayingHeld = true;
                 try
                 {
@@ -216,7 +278,21 @@ namespace Nebula
         {
             // The worker that sent it is gone: whatever it said is superseded by the loss handling.
             if (!_workersByIndex.TryGetValue(update.Worker, out var w)) return;
-            if (update.IsSpawn) { OnEntitySpawn(w, update.Spawn); return; }
+            switch (update.Kind)
+            {
+                case HeldKind.Spawn: OnEntitySpawn(w, update.Spawn); return;
+                case HeldKind.Vars: OnEntityVars(w, update.Vars); return;
+                case HeldKind.Rpc: OnEntityRpc(w, update.Rpc); return;
+                case HeldKind.Despawn: OnEntityDespawn(w, update.Despawn); return;
+                case HeldKind.Sync:
+                {
+                    // Behind the spawn it waited for, on the same stream: a sequenced copy could overtake it.
+                    var sync = update.Sync;
+                    sync.Reliable = true;
+                    OnEntityState(w, sync);
+                    return;
+                }
+            }
             if (!_entities.TryGetValue(update.Entry.NetId, out var rec)) return;
             var entry = update.Entry;
             if (!ApplyStateEntry(w, update.Tick, rec, ref entry)) return;
