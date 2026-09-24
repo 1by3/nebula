@@ -26,6 +26,7 @@ namespace Nebula.Tests
         private static readonly Vector3 Hold = new Vector3(6f, 4f, 10f);
 
         private ConformanceMesh _mesh;
+        private LocalPersistenceStore _store;
         private Container _space;
         private ushort _shipPrefab, _bigCrate, _midCrate, _smallCrate;
         private PhysicsMaterial _material;
@@ -45,6 +46,8 @@ namespace Nebula.Tests
         {
             _mesh?.Dispose();
             _mesh = null;
+            _store?.Dispose();
+            _store = null;
             ContainerRegistry.Rebuild();
             PhysicsFrames.DrainPool();
             Assert.AreEqual(0, PhysicsFrames.All.Count, "every frame was released with its container");
@@ -406,6 +409,121 @@ namespace Nebula.Tests
             Assert.That(crate.LocalPosition.y, Is.EqualTo(0.2f + half).Within(0.02f), "back where it started, on the lift");
             Assert.IsTrue(crateBody.IsSleeping(), "and asleep, with the ship kilometres away at 1 km/s");
             Assert.AreSame(box, crate.Container);
+        }
+
+        // ------------------------------------------------------------------------------------ stowing (D5)
+
+        /// <summary>A real <see cref="NebulaPersistence"/> for each worker over one shared memory store.</summary>
+        internal static LocalPersistenceStore PersistenceFor(ConformanceMesh mesh)
+        {
+            var store = new LocalPersistenceStore();
+            store.Connect();
+            foreach (var w in mesh.Workers)
+            {
+                var persistence = new NebulaPersistence(w.Instance, mesh.Config, store);
+                typeof(NebulaWorker).GetProperty(nameof(NebulaWorker.Persistence)).SetValue(w.Instance, persistence);
+            }
+            return store;
+        }
+
+        internal static PersistedEntityRecord RecordOf(LocalPersistenceStore store, string key)
+        {
+            PersistedEntityRecord record = null;
+            bool answered = false;
+            store.Load(key, r => { record = r; answered = true; });
+            store.Tick();
+            Assert.That(answered, Is.True);
+            return record;
+        }
+
+        /// <summary>Restore a carrier from its record and let persistence bring back what it carries.</summary>
+        internal static NetworkIdentity RestoreWithCargo(ConformanceMesh.Worker w, LocalPersistenceStore store, PersistedEntityRecord record)
+        {
+            NetworkIdentity restored = null;
+            w.Act(() => restored = w.Instance.Persistence.Restore(record));
+            for (int i = 0; i < 4; i++)
+            {
+                w.Act(() => w.Instance.Persistence.Update());
+                store.Tick();
+            }
+            return restored;
+        }
+
+        [Test]
+        public void AShipStowedWithItsCargoBringsItBack()
+        {
+            MeshWith(1);
+            _store = PersistenceFor(_mesh);
+            var shipPrefab = HoldPrefab("stowable-ship-prefab");
+            shipPrefab.AddComponent<PersistentEntity>();
+            var ships = _mesh.RegisterPrefab(shipPrefab);
+            var cargo = _mesh.RegisterPrefab(CratePrefab("cargo-prefab", 1.0f, 60f, _material, persistent: true));
+            var pawnPrefab = new GameObject("pawn-prefab");
+            pawnPrefab.AddComponent<NetworkIdentity>();
+            var pawns = _mesh.RegisterPrefab(pawnPrefab);
+
+            var ship = W1.SpawnServerDriven(ships, _space, new Vector3(30f, 0f, 0f), Quaternion.identity);
+            var box = ship.Carried;
+            var bottom = SpawnIn(W1, cargo, box, new Vector3(0f, 0.51f, 2f));
+            var top = SpawnIn(W1, cargo, box, new Vector3(0f, 1.53f, 2f));
+            var loose = SpawnIn(W1, _smallCrate, box, new Vector3(2f, 0.26f, -3f)); // transient
+            NetworkIdentity pawn = null;
+            W1.Act(() =>
+            {
+                pawn = NetworkPrefabs.Instantiate(pawns, new Vector3(-2f, 1f, 0f), Quaternion.identity, box.ContentRoot);
+                W1.Instance.Spawn(pawn, box, ownerClientId: 7);
+            });
+            uint tick = 1;
+            Settle(W1, ref tick, 60);
+            var bottomPose = bottom.LocalPosition;
+            var topPose = top.LocalPosition;
+            string shipKey = ship.Persistent.EnsureKey(), bottomKey = bottom.Persistent.EnsureKey(), topKey = top.Persistent.EnsureKey();
+            ulong shipId = ship.NetId, bottomId = bottom.NetId, topId = top.NetId;
+
+            W1.Act(() => W1.Instance.Despawn(ship, keepPersisted: true, CargoPolicy.Stow));
+            Assert.IsNull(W1.Find(shipId), "the ship is stowed");
+            Assert.IsNull(W1.Find(bottomId), "its persistent cargo went with it");
+            Assert.IsNull(W1.Find(topId));
+            Assert.AreSame(loose, W1.Find(loose.NetId), "a transient crate is set down");
+            Assert.AreSame(_space, loose.Container);
+            Assert.AreSame(pawn, W1.Find(pawn.NetId), "a player's pawn is never stowed");
+            Assert.AreSame(_space, pawn.Container);
+
+            var bottomRecord = RecordOf(_store, bottomKey);
+            Assert.IsNotNull(bottomRecord, "saved, not forgotten");
+            Assert.AreEqual(shipKey, bottomRecord.CarrierKey, "saved aboard the ship");
+            Assert.That(Vector3.Distance(bottomPose, bottomRecord.LocalPosition), Is.LessThan(1e-3f));
+            Assert.AreEqual(shipKey, RecordOf(_store, topKey).CarrierKey);
+
+            // Later, somewhere else: the ship comes back, and its cargo with it.
+            var shipRecord = RecordOf(_store, shipKey);
+            var restored = RestoreWithCargo(W1, _store, shipRecord);
+            Assert.IsNotNull(restored);
+            var bottomBack = W1.Instance.Persistence.Find(bottomKey);
+            var topBack = W1.Instance.Persistence.Find(topKey);
+            Assert.IsNotNull(bottomBack, "the cargo came back with the ship");
+            Assert.IsNotNull(topBack);
+            Assert.AreSame(restored.Carried, bottomBack.Container, "aboard the restored ship");
+            Assert.AreSame(restored.Carried, topBack.Container);
+            Assert.That(Vector3.Distance(bottomPose, bottomBack.LocalPosition), Is.LessThan(1e-3f), "where it was stowed");
+            Assert.That(Vector3.Distance(topPose, topBack.LocalPosition), Is.LessThan(1e-3f));
+            Settle(W1, ref tick, 60);
+            Assert.That(Vector3.Distance(bottomPose, bottomBack.LocalPosition), Is.LessThan(0.01f), "and stays there");
+            Assert.That(Vector3.Distance(topPose, topBack.LocalPosition), Is.LessThan(0.01f));
+        }
+
+        [Test]
+        public void StowingNeedsAKeptPersistentCarrier()
+        {
+            MeshWith(1);
+            _store = PersistenceFor(_mesh);
+            var cargo = _mesh.RegisterPrefab(CratePrefab("cargo-prefab", 1.0f, 60f, _material, persistent: true));
+            var ship = W1.SpawnServerDriven(_shipPrefab, _space, new Vector3(30f, 0f, 0f), Quaternion.identity); // not persistent
+            var crate = SpawnIn(W1, cargo, ship.Carried, new Vector3(0f, 0.51f, 2f));
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("CargoPolicy.Stow"));
+            W1.Act(() => W1.Instance.Despawn(ship, keepPersisted: true, CargoPolicy.Stow));
+            Assert.AreSame(crate, W1.Find(crate.NetId), "set down: its record could never come back with a carrier that has none");
+            Assert.AreSame(_space, crate.Container);
         }
 
         // ------------------------------------------------------------------------------------ handover
