@@ -477,14 +477,17 @@ AuthorityTransfer :=
   string session_gateway,
   u16 interest_gateway_count,
   string interest_gateway_key[interest_gateway_count],
-  [u8 crossing]
+  [u8 crossing,
+   [u8 session_orphan, f32 session_reclaim_remaining]]
 ```
 
-`crossing` is an optional trailing byte, written only when it is `1`. It means the sender is handing the entity over for a [physics frame](/docs/guides/physics-frames) crossing that it may not perform itself, because the receiver simulates the frame's carrier. The entity's pose is still in the sender's coordinates. The receiver crosses it on its next tick and does not hand it back for a short hold (30 ticks), so a lagging copy of the frame on the sender cannot return it at once.
+`crossing` is an optional trailing byte. The sender writes it when it is `1`, and also, as `0`, when the session section follows. It means the sender is handing the entity over for a [physics frame](/docs/guides/physics-frames) crossing that it may not perform itself, because the receiver simulates the frame's carrier. The entity's pose is still in the sender's coordinates. The receiver crosses it on its next tick and does not hand it back for a short hold (30 ticks), so a lagging copy of the frame on the sender cannot return it at once.
 
 `interest_gateway_key` lists the gateways that were following the entity on the old owner without subscribing its region — an explicit per-entity subscription, or the session the gateway speaks for. The old owner also sends each of them an `EntityRedirect`; the new owner announces the entity's spawn to them in addition to the gateways its own subscribed regions cover, so a followed entity is not lost when it changes worker.
 
 `session_generation` and `session_gateway` describe the owner's session as the sender knew it: the connection generation and the gateway key `<gateway_id>#<incarnation>` of the gateway that holds the session, so the receiving worker accepts input from that gateway at once. They are `0` and empty for an entity no client owns.
+
+The optional session section is written only when the owner's session is waiting to be reclaimed on the sender. `session_orphan` is `1` when the gateway reported that the client disconnected, and `2` when the gateway's link to the sender dropped. `session_reclaim_remaining` is the number of seconds left of the `SessionReclaimSeconds` grace on the sender. It is a duration, not a timestamp, because the two workers' clocks differ. The receiving worker keeps the session waiting for that long, then removes the pawn unless the player has reconnected. For `2`, a receiver that has a link to the same gateway treats the session as connected. A receiver treats a message that ends before the section as a connected session.
 
 The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 19. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 

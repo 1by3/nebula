@@ -21,7 +21,27 @@ namespace Nebula
             /// <summary>The gateway that speaks for the session: "<gatewayId>#<incarnation>".</summary>
             public string Gateway = "";
             public bool Orphaned;
+            /// <summary>
+            /// The orphan is a release: the gateway said the client's link ended. Only a newer claim renews it. An
+            /// orphan that is not released only lost its gateway's link to this worker, and the same gateway coming
+            /// back renews it too (<see cref="GatewayReturned"/>).
+            /// </summary>
+            public bool Released;
             public double OrphanedAt;
+
+            /// <summary>Why the session is an orphan, or <see cref="OrphanKind.None"/> while a gateway speaks for it.</summary>
+            public OrphanKind Orphan => !Orphaned ? OrphanKind.None : Released ? OrphanKind.Released : OrphanKind.GatewayLost;
+        }
+
+        /// <summary>Why a session is waiting for a reclaim. Carried in a handover (<see cref="AuthorityTransferMsg.SessionOrphan"/>).</summary>
+        public enum OrphanKind : byte
+        {
+            /// <summary>A gateway speaks for the session.</summary>
+            None = 0,
+            /// <summary>The gateway said the client's link ended (<see cref="PlayerSessions.Release"/>).</summary>
+            Released = 1,
+            /// <summary>The gateway's link to the worker dropped (<see cref="PlayerSessions.GatewayLost"/>).</summary>
+            GatewayLost = 2,
         }
 
         public enum Claim
@@ -69,6 +89,7 @@ namespace Nebula
             s.Generation = generation;
             s.Gateway = gateway ?? "";
             s.Orphaned = false;
+            s.Released = false;
             return same ? Claim.Repeat : Claim.Reclaimed;
         }
 
@@ -76,17 +97,46 @@ namespace Nebula
         /// Seed a session this worker inherited with an entity (a handover carries the owner's session with it), so
         /// the gateway's inputs are accepted at once. Never lowers a generation already known.
         /// </summary>
-        public void Adopt(ulong id, ulong generation, string gateway)
+        public void Adopt(ulong id, ulong generation, string gateway) => Adopt(id, generation, gateway, OrphanKind.None, 0, 0, 0);
+
+        /// <summary>
+        /// Seed a session this worker inherited with an entity, in the state the sender had it. An orphan stays an
+        /// orphan, with <paramref name="reclaimRemaining"/> seconds of its grace left: the sender measured that on
+        /// its own clock, so the countdown resumes here rather than restarting, and no absolute time crosses
+        /// between two processes whose clocks differ. <paramref name="now"/> and <paramref name="graceSeconds"/>
+        /// are this worker's, the ones <see cref="Expire"/> is called with. Never lowers a generation already
+        /// known, and a release this worker already heard for the same generation is kept: it is newer than the
+        /// sender's view (the gateway followed the entity here before the handover arrived).
+        /// </summary>
+        public void Adopt(ulong id, ulong generation, string gateway, OrphanKind orphan, double reclaimRemaining, double now, double graceSeconds)
         {
             if (id == 0) return;
-            if (_sessions.TryGetValue(id, out var s))
+            if (!_sessions.TryGetValue(id, out var s))
             {
-                if (generation < s.Generation) return;
-                s.Generation = generation; s.Gateway = gateway ?? ""; s.Orphaned = false;
+                s = new Session { Id = id, Generation = generation };
+                _sessions[id] = s;
+            }
+            else if (generation < s.Generation) return;
+            bool keepRelease = generation == s.Generation && s.Released;
+            s.Generation = generation;
+            s.Gateway = gateway ?? "";
+            if (orphan == OrphanKind.None)
+            {
+                if (keepRelease) return;
+                s.Orphaned = false;
+                s.Released = false;
                 return;
             }
-            _sessions[id] = new Session { Id = id, Generation = generation, Gateway = gateway ?? "" };
+            // Backdated so that Expire finds the same time left as the sender did.
+            double orphanedAt = now - Math.Max(0, graceSeconds - Math.Max(0, reclaimRemaining));
+            s.OrphanedAt = s.Orphaned ? Math.Min(s.OrphanedAt, orphanedAt) : orphanedAt;
+            s.Orphaned = true;
+            s.Released = keepRelease || orphan == OrphanKind.Released;
         }
+
+        /// <summary>Seconds left before <see cref="Expire"/> gives up on an orphaned session; 0 once it is due, and for a session that is not an orphan.</summary>
+        public static double ReclaimRemaining(Session session, double now, double graceSeconds) =>
+            session == null || !session.Orphaned ? 0 : Math.Max(0, graceSeconds - (now - session.OrphanedAt));
 
         /// <summary>
         /// A gateway says the session's link ended. True when that is current news: the session becomes an orphan
@@ -97,12 +147,13 @@ namespace Nebula
         {
             if (!_sessions.TryGetValue(id, out var s))
             {
-                _sessions[id] = new Session { Id = id, Generation = generation, Orphaned = true, OrphanedAt = now };
+                _sessions[id] = new Session { Id = id, Generation = generation, Orphaned = true, Released = true, OrphanedAt = now };
                 return true;
             }
             if (generation < s.Generation) return false;
             s.Generation = generation;
             s.Orphaned = true;
+            s.Released = true;
             s.OrphanedAt = now;
             return true;
         }
@@ -134,10 +185,10 @@ namespace Nebula
             }
         }
 
-        /// <summary>The same gateway (same incarnation) is back: its sessions are no longer orphans.</summary>
+        /// <summary>The same gateway (same incarnation) is back: its sessions are no longer orphans, except the ones it released (their clients left).</summary>
         public void GatewayReturned(string gateway)
         {
-            foreach (var s in _sessions.Values) if (s.Gateway == gateway) s.Orphaned = false;
+            foreach (var s in _sessions.Values) if (s.Gateway == gateway && !s.Released) s.Orphaned = false;
         }
 
         /// <summary>Drop every orphan older than <paramref name="graceSeconds"/> and list its id, so the caller despawns the pawn.</summary>
