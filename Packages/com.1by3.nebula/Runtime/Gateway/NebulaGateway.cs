@@ -264,6 +264,19 @@ namespace Nebula
         public int EntityCount => _entities.Count;
         /// <summary>Registered with the control plane, connected to it, and not draining: fit to take clients.</summary>
         public bool IsReady => _registered && ControlPlane != null && ControlPlane.IsConnected && !Draining;
+        /// <summary>The client port is bound. False before <see cref="Initialize"/> and after a failed bind (<see cref="Failed"/>).</summary>
+        public bool IsListening { get; private set; }
+        /// <summary>
+        /// The gateway could not start, most often because another process holds <see cref="NebulaConfig.GatewayPort"/>.
+        /// A failed gateway does nothing: it never registers and never takes a client. <see cref="FailureReason"/> says why.
+        /// </summary>
+        public bool Failed => FailureReason != null;
+        /// <summary>Why the gateway could not start, or null while it is fine.</summary>
+        public string FailureReason { get; private set; }
+
+        /// <summary>The error for a port some other process holds, with the likely culprit named.</summary>
+        internal static string BindFailure(int port) =>
+            $"could not bind udp/{port}: another process is using it, most likely another Nebula mesh on this machine (stop it with nebula stop) or a second copy of this game. Pick another port or stop the other process";
         /// <summary>Taking itself out of service: new clients are refused, existing ones were told to reconnect elsewhere.</summary>
         public bool Draining { get; private set; }
         /// <summary>
@@ -578,7 +591,21 @@ namespace Nebula
             Incarnation = SessionIds.NewIncarnation();
             _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
             var udp = new LiteNetTransport("gateway");
-            udp.Listen(config.GatewayPort);
+            try { udp.Listen(config.GatewayPort); }
+            catch (InvalidOperationException e)
+            {
+                udp.Dispose();
+#if NEBULA_SERVICE
+                throw new InvalidOperationException(BindFailure(config.GatewayPort), e);
+#else
+                // A clean failed state: one error, no per-frame exceptions, and a flag the bootstrap can report.
+                FailureReason = BindFailure(config.GatewayPort);
+                NebulaLog.Error($"gateway {GatewayId}: {FailureReason}");
+                enabled = false;
+                return;
+#endif
+            }
+            IsListening = true;
             ITransport clientLink = InitializeEncryption(config, udp);
             _transport = browserTransport != null ? new MultiTransport(clientLink, browserTransport) : clientLink;
             InitializeInterest();
@@ -694,6 +721,7 @@ namespace Nebula
         private void Update()
 #endif
         {
+            if (!IsListening) return;
             double now = _clock.Elapsed.TotalSeconds;
             if (_lastTickAt >= 0)
             {

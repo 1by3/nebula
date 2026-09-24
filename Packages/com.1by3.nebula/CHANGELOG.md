@@ -11,6 +11,7 @@ All notable changes to this package are documented here. The format follows [Kee
 ### Fixed
 
 - **A single-process run lost the scopes its worker activated at start.** The orchestrator reset the control plane at its first tick, after the worker in the same process had initialized and the game had activated its scopes from `OnWorkerStarted`. The reset removed those rows, so every client waited for a scope that never became ready. The orchestrator now resets the control plane in `Initialize`, before anything else can write to it; `-nebula-reset false` still keeps the stored plane. A mesh started with `nebula start` resets at the same point in its life as before, since its workers start later. `OrchestratorResetTests` covers it. (NEB-316)
+- **A Unity gateway or worker whose port was taken threw an exception every frame.** After `could not bind UDP port`, the component kept running with no socket, and its `Update` threw a `NullReferenceException` each frame. A failed bind is now one error that names the port and the likely cause (another Nebula mesh on the machine, or a second copy of the game), and the component turns itself off. `NebulaGateway` and `NebulaWorker` gain `Failed` and `FailureReason`, and `NebulaGateway` gains `IsListening`, so a caller can tell. The standalone gateway still exits, with the same message. The dashboard's port stays a warning. `BindFailureTests` covers it. (NEB-317)
 
 ## [0.1.0-alpha.32] - 2026-09-24
 

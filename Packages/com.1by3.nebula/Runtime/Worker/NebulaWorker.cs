@@ -63,6 +63,13 @@ namespace Nebula
         public ushort WorkerIndex { get; private set; }
         public ushort Port { get; private set; }
         public bool IsListening { get; private set; }
+        /// <summary>
+        /// The worker could not start, most often because another process holds its port. A failed worker does
+        /// nothing: it never registers and never simulates. <see cref="FailureReason"/> says why.
+        /// </summary>
+        public bool Failed => FailureReason != null;
+        /// <summary>Why the worker could not start, or null while it is fine.</summary>
+        public string FailureReason { get; private set; }
         public uint CurrentTick { get; private set; }
 
         // stats
@@ -380,7 +387,15 @@ namespace Nebula
             if (_gameMode == null) NebulaLog.Warn("No NebulaGameMode in the scene; players cannot be spawned");
 
             _transport = new LiteNetTransport($"worker:{WorkerId}");
-            _transport.Listen(Port);
+            try { _transport.Listen(Port); }
+            catch (InvalidOperationException)
+            {
+                // A clean failed state: one error, no per-frame exceptions, and a flag the bootstrap can report.
+                FailureReason = NebulaGateway.BindFailure(Port);
+                NebulaLog.Error($"worker {WorkerId}: {FailureReason}");
+                enabled = false;
+                return;
+            }
             IsListening = true;
             _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
             // The row this worker asks the control plane for, settled before anything can read the document: the
@@ -732,6 +747,7 @@ namespace Nebula
 
         private void Update()
         {
+            if (!IsListening) return;
             ProfPoll.Begin();
             _transport.Poll(HandleTransportEvent);
             ProfPoll.End();
