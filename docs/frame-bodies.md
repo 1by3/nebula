@@ -138,7 +138,10 @@ network, and one spawned again with no record is not attached. The container com
 or `CarrierKey`), so attached cargo stowed with `CargoPolicy.Stow` comes back attached with its carrier.
 
 **D15 `AttachedChanged` fires on every process.** It is raised from `Attached.OnValueChanged`, which fires on the
-authority when the value is set and on ghosts and clients when it is received, including a late joiner's spawn.
+authority when the value is set and on ghosts and clients when it is received. It is never raised before the entity
+spawns: a value read before then (a spawn's variables, a restore, an object that was already active) is reported
+once by `OnNetworkSpawn`, including a late joiner's, so a listener that subscribes in its own `OnNetworkSpawn`
+hears it.
 
 ## 3. Conformance
 

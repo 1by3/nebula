@@ -485,6 +485,39 @@ namespace Nebula.Tests
             finally { Object.DestroyImmediate(copy.gameObject); }
         }
 
+        [Test]
+        public void AnActiveCopyHearsItIsAttachedAtItsSpawnNotBefore()
+        {
+            Space(1);
+            var ship = W1.SpawnServerDriven(_shipPrefab, _space, Vector3.zero, Quaternion.identity);
+            var crate = SpawnIn(W1, _crate, ship.Carried, new Vector3(0f, 0.5f, 0f));
+            Assert.IsTrue(crate.GetComponent<FrameAttachment>().Attach());
+            var vars = new NetworkWriter();
+            crate.WriteVars(vars);
+
+            // An object that is already active when its values arrive, as a scene entity is.
+            var copy = NetworkPrefabs.Instantiate(_crate, Vector3.zero, Quaternion.identity, null);
+            try
+            {
+                copy.gameObject.SetActive(true);
+                copy.Initialize();
+                var attachment = copy.GetComponent<FrameAttachment>();
+                var early = new List<bool>();
+                attachment.AttachedChanged += early.Add;
+                copy.ReadVars(new NetworkReader(vars.ToArray()));
+                Assert.IsTrue(attachment.Attached);
+                CollectionAssert.IsEmpty(early, "nothing is reported before the spawn");
+
+                // A listener that subscribes in its own OnNetworkSpawn, after the values were read.
+                var late = new List<bool>();
+                attachment.AttachedChanged += late.Add;
+                copy.InvokeSpawn();
+                CollectionAssert.AreEqual(new[] { true }, early, "reported once, at the spawn");
+                CollectionAssert.AreEqual(new[] { true }, late, "to every listener subscribed by then");
+            }
+            finally { Object.DestroyImmediate(copy.gameObject); }
+        }
+
         // ------------------------------------------------------------------------------------ any worker can ask (D7)
 
         [Test]

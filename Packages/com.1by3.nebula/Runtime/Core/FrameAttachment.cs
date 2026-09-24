@@ -90,7 +90,9 @@ namespace Nebula
 
         private void Report(bool attached)
         {
-            if (_reported == attached) return;
+            // Not before the spawn: a value read or restored before it is reported by OnNetworkSpawn, once, when a
+            // listener that subscribes in its own OnNetworkSpawn can hear it (D15).
+            if (!IsSpawned || _reported == attached) return;
             _reported = attached;
             try { AttachedChanged?.Invoke(attached); }
             catch (Exception e) { NebulaLog.Error($"FrameAttachment.AttachedChanged on {name} threw: {e}"); }
