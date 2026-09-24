@@ -171,13 +171,21 @@ namespace Nebula.World
         }
 
         /// <summary>
-        /// Which cell an entity is in: its container's cell (if it sits in a runtime container registered by this
-        /// grid) offset by its local position within that container, or its frame position otherwise.
+        /// Which cell an entity is in. For an entity directly in a chunk of this grid, it is the chunk's cell offset by
+        /// the entity's local position in the chunk. Anywhere else, including aboard a carrier at any depth, it is the
+        /// cell of the entity's position in its scope's own space (<see cref="NetworkIdentity.ToScope"/>). On a worker,
+        /// the transform of an entity inside a physics frame reads frame-local coordinates, so the position is
+        /// converted out through every frame: a rider is in the cell its carrier is in.
         /// </summary>
         public Vector3Int CoordOf(NetworkIdentity entity)
         {
-            if (entity.Container == null || !entity.Container.IsRuntime) return CoordOf(entity.transform.position);
-            if (!TryCoordOf(entity.Container.RuntimeId, out var c)) return CoordOf(entity.transform.position);
+            var container = entity.Container;
+            // Only a root of this grid's scope is a chunk (docs/container-tree.md D9). The public grid unpacks any
+            // id, so a runtime container of another kind (a room fixed in a frame, another scope's box) would
+            // otherwise be read as a cell it is not.
+            if (container == null || !container.IsRuntime || container.Parent != null || container.InstanceId != InstanceId
+                || !TryCoordOf(container.RuntimeId, out var c))
+                return CoordOf(entity.ToScope(entity.transform.position));
             var local = entity.LocalPosition;
             return new Vector3Int(
                 c.x + Mathf.FloorToInt((local.x + CellSize.x / 2) / CellSize.x),

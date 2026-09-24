@@ -107,6 +107,10 @@ takes its inherited children's rows with it (`ReleaseRuntimeContainer`); a lease
 
 **D9 `RuntimeGrid`/`RuntimeGridAllocator` stay.** A chunk grid is one way to lay out leased root containers.
 Nothing in them changed except that their rows carry `Center` in double.
+An entity's cell (`RuntimeGrid.CoordOf(NetworkIdentity)`) comes from its container only when that is a root chunk of
+the grid's scope; anywhere else, a rider aboard a carrier at any depth included, it comes from the entity's position
+converted to the scope's own space (`ToScope`), because inside a frame a worker's transform is frame-local (D11). A
+client follows the grid of the chunk its pawn's carrier chain ends in (`NebulaChunks.GridHolding`) (NEB-306).
 
 ## 3. Physics frames
 
