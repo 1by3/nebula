@@ -92,7 +92,7 @@ nebula build
 nebula start --workers 0
 ```
 
-With `EditorRole` set to `Worker`, press Play. The Editor worker uses the defaults for a worker without command-line switches: ID `w1`, index 1, port `WorkerBasePort + 1` (7101). Starting the mesh with `--workers 0` keeps a launched worker from already using that ID and port. The orchestrator sees the Editor worker register and gives it every container.
+With `EditorRole` set to `Worker`, press Play. The Editor worker uses the defaults for a worker without command-line switches: ID `w1`, index 1, port `WorkerBasePort + 1` (7101). If the environment the Editor started from sets `PORT`, the Editor worker listens on that port instead. Starting the mesh with `--workers 0` keeps a launched worker from already using that ID and port. The orchestrator sees the Editor worker register and gives it every container.
 
 Join with **Nebula > Mesh > Launch Extra Client Window** or `Builds\Win64\Nebula.exe -nebula-role client -nebula-name Player`. To test handovers, select **Add worker** on the dashboard: the orchestrator launches `w2` from the build, and the containers are split between the two.
 

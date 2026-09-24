@@ -13,7 +13,7 @@ To start a worker directly, pass `-batchmode -nographics -nebula-role worker`. A
 
 A worker also holds the mesh's persistence service. It checkpoints the entities it controls that carry a `PersistentEntity` and restores them when it gains a container lease. See [Persistence](/docs/guides/persistence).
 
-The worker registers with the control plane and listens on `WorkerBasePort + index`. Each tick, it simulates authoritative entities, updates ghosts, performs handovers, and sends entity state to the gateway. Its heartbeat includes tick time and entity counts. See [Containers and handover](/docs/concepts/containers-and-handover) for the tick sequence and [Spawning](/docs/guides/spawning) for the gameplay API.
+The worker listens on the port from `-nebula-port`, the `PORT` environment variable, or `WorkerBasePort + index`, in that order, and registers that port with the control plane. Gateways and other workers connect to the registered port, so it does not have to be agreed in advance. Each tick, it simulates authoritative entities, updates ghosts, performs handovers, and sends entity state to the gateway. Its heartbeat includes tick time and entity counts. See [Containers and handover](/docs/concepts/containers-and-handover) for the tick sequence and [Spawning](/docs/guides/spawning) for the gameplay API.
 
 ## Gateway
 
