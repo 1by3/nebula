@@ -1,0 +1,163 @@
+---
+title: "EditorDevSession"
+description: "Binds the clients of the Multiplayer Play Mode dev loop to the server their own session started, so a client never joins some other mesh that happens to hold the port."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorDevSession.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorDevSession.cs)</div>
+
+```csharp
+public static class EditorDevSession
+```
+
+Binds the clients of the Multiplayer Play Mode dev loop to the server their own session started, so a client never joins some other mesh that happens to hold the port. The server writes `Library/Nebula/dev-session.json` once its gateway and worker have bound their ports, or failed to, and deletes it when it stops. A client waits for the file, connects to the port it names while the process that wrote it is alive, and refuses with the server's reason when the server could not start.
+
+## Fields
+
+### ListeningState [#listeningstate]
+
+```csharp
+public const string ListeningState = "listening";
+```
+
+### FailedState [#failedstate]
+
+```csharp
+public const string FailedState = "failed";
+```
+
+## Properties
+
+### CurrentPid [#currentpid]
+
+```csharp
+public static int CurrentPid { get; }
+```
+
+This process's id.
+
+## Methods
+
+### PathFor [#pathfor]
+
+```csharp
+public static string PathFor(string projectRoot);
+```
+
+The file: `<project>/Library/Nebula/dev-session.json`.
+
+### Evaluate [#evaluate]
+
+```csharp
+public static Verdict Evaluate(Record record, Func<int, bool> isAlive);
+```
+
+Judge a record. A missing record, one whose writer is no longer running (a server that crashed without removing it), or one in an unknown state means the session's server has not started yet.
+
+### FailureMessage [#failuremessage]
+
+```csharp
+public static string FailureMessage(Record record);
+```
+
+The error a client logs when the server of its session could not start.
+
+### Write [#write]
+
+```csharp
+public static void Write(string path, Record record);
+```
+
+Write the server's record; replaces the previous one.
+
+### Read [#read]
+
+```csharp
+public static Record Read(string path);
+```
+
+Read the record, or null when there is none or it is being written.
+
+### Remove [#remove]
+
+```csharp
+public static void Remove(string path, int pid);
+```
+
+Remove the record when it is this process's, as a server stops.
+
+### IsAlive [#isalive]
+
+```csharp
+public static bool IsAlive(int pid);
+```
+
+Whether a process with this id is running.
+
+## Nested types
+
+### Record [#record]
+
+```csharp
+[Serializable]
+public sealed class Record
+```
+
+What the server wrote.
+
+#### Fields
+
+##### state [#state]
+
+```csharp
+public string state = "";
+```
+
+`listening` or `failed`.
+
+##### port [#port]
+
+```csharp
+public int port;
+```
+
+The gateway port the server listens on, or failed to bind.
+
+##### pid [#pid]
+
+```csharp
+public int pid;
+```
+
+The server's process id: a file whose writer is gone is stale.
+
+##### incarnation [#incarnation]
+
+```csharp
+public string incarnation = "";
+```
+
+The gateway's incarnation, so the log can tell one server start from the next.
+
+##### error [#error]
+
+```csharp
+public string error = "";
+```
+
+Why the server could not start, when `state` is `failed`.
+
+### Verdict [#verdict]
+
+```csharp
+public enum Verdict
+```
+
+What a client should do about the server.
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="waiting"></span>`Waiting` |  | No server of this session has started yet: keep waiting. |
+| <span id="ready"></span>`Ready` |  | The server is listening: connect to `Record.port`. |
+| <span id="failed"></span>`Failed` |  | The server could not start: do not connect anywhere. |

@@ -220,6 +220,8 @@ namespace Nebula
         private float _nextPass;
         private float _nextPublish;
         private bool _containersEnsured;
+        /// <summary>The control plane still has to be reset: it was not connected when <see cref="Initialize"/> ran.</summary>
+        private bool _resetPending;
         private bool _gatewayLaunched;
         private bool _hostErrorLogged;
         /// <summary>Runtime containers appeared or vanished since the map's geometry was published.</summary>
@@ -231,6 +233,17 @@ namespace Nebula
         {
             Config = config;
             ControlPlane = controlPlane;
+            // Start from an empty control plane unless -nebula-reset false keeps the stored one. This happens here,
+            // before anything else can write to the plane, and not at the first tick: a process that also hosts the
+            // worker (a single-process run) initializes the worker right after this, and the game activates its
+            // scopes from OnWorkerStarted. A reset at the first tick wiped those rows and left every join waiting for
+            // a scope that never became ready (NEB-316). A plane that is not connected yet is reset when it is.
+            _resetPending = CommandLine.GetBool("nebula-reset", true);
+            if (_resetPending && controlPlane != null && controlPlane.IsConnected)
+            {
+                controlPlane.ResetControlPlane();
+                _resetPending = false;
+            }
             // Session takeover uses the same liveness budget as the mesh's configured heartbeats.
             var localPlane = controlPlane as LocalControlPlane ?? (controlPlane as ControlPlaneHost)?.Plane;
             if (localPlane != null) localPlane.GatewayStaleAfterSeconds = config.WorkerTimeoutSeconds;
@@ -378,11 +391,12 @@ namespace Nebula
             if (!_containersEnsured)
             {
                 _containersEnsured = true;
-                if (CommandLine.GetBool("nebula-reset", true)) ControlPlane.ResetControlPlane();
+                if (_resetPending) ControlPlane.ResetControlPlane();
+                _resetPending = false;
                 foreach (var c in ContainerRegistry.All) ControlPlane.EnsureContainer(c.ContainerId);
                 SeedSettings();
                 if (!Config.UseLocalControlPlane) LaunchGateway();
-                _nextPass = Time.unscaledTime + 1f; // let the reset land before judging anybody
+                _nextPass = Time.unscaledTime + 1f; // let the containers land before judging anybody
                 return;
             }
             if (Time.unscaledTime < _nextPass) return;

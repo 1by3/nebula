@@ -28,7 +28,7 @@ public ControlPlaneHost(IControlPlaneStorage storage, string token, bool restore
 | --- | --- |
 | `storage` | Where the document is kept between runs; null keeps it in memory only. |
 | `token` | Shared secret subscribers must present; null or empty for none. |
-| `restore` | Read the stored document at [`Connect`](#connect). The orchestrator resets the plane at its first tick unless `-nebula-reset false`, so this only matters then. |
+| `restore` | Read the stored document at [`Connect`](#connect). The orchestrator resets the plane when it initializes unless `-nebula-reset false`, so this only matters then. |
 
 ## Fields
 

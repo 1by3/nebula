@@ -10,7 +10,7 @@ description: "Entry point for Unity workers and clients."
 public sealed class NebulaBootstrap : MonoBehaviour
 ```
 
-Entry point for Unity workers and clients. Put one in the boot scene. Reads the role from the command line (`-nebula-role worker,gateway`) or from [`EditorRole`](#editorrole) when running in the Editor, loads the game scene, and starts the matching components. A process is a worker *or* a client, never both. The CLI launches standalone .NET orchestrator and gateway executables; Unity service roles remain available for compatibility and in-process tests.
+Entry point for Unity workers and clients. Put one in the boot scene. Reads the role from the command line (`-nebula-role worker,gateway`) or from [`EditorRole`](#editorrole) when running in the Editor, loads the game scene, and starts the matching components. A process is a worker *or* a client, never both. With [`NebulaConfig.EditorRunMode`](/docs/reference/core/nebula-config#editorrunmode) set to [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), the Editor needs no build: a Multiplayer Play Mode virtual player is the server process and the main Editor is the client. The CLI launches standalone .NET orchestrator and gateway executables; Unity service roles remain available for compatibility and in-process tests.
 
 - `-nebula-role client|worker|gateway|orchestrator` (comma separated)
 - `-nebula-worker-id w1 -nebula-worker-index 1 -nebula-port 7101`
@@ -106,6 +106,14 @@ public NebulaChunkedWorld ChunkedWorld { get; }
 ```
 
 Per-role chunked-world policy; null unless [`NebulaConfig.ChunkedWorld`](/docs/reference/core/nebula-config#chunkedworld) is on with a [`NebulaConfig.RuntimeWorld`](/docs/reference/core/nebula-config#runtimeworld).
+
+### RunPlan [#runplan]
+
+```csharp
+public EditorRunPlan RunPlan { get; }
+```
+
+What this Editor process does under [`NebulaConfig.EditorRunMode`](/docs/reference/core/nebula-config#editorrunmode): [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh) in a build, in [`NebulaEditorRunMode.Mesh`](/docs/reference/bootstrap/nebula-editor-run-mode#mesh), or when `-nebula-role` is given.
 
 ## Methods
 

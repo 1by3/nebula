@@ -1,0 +1,20 @@
+---
+title: "EditorPlayer"
+description: "What one Editor process does under NebulaEditorRunMode.MultiplayerPlayMode, decided by EditorRunPlan.Resolve from facts the bootstrap reads (whether this is the Editor, whether this is the main Editor or a virtual player, its Multiplayer..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs)</div>
+
+```csharp
+public enum EditorPlayer
+```
+
+What one Editor process does under [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), decided by [`EditorRunPlan.Resolve`](/docs/reference/bootstrap/editor-run-plan#resolve) from facts the bootstrap reads (whether this is the Editor, whether this is the main Editor or a virtual player, its Multiplayer Play Mode tags, and the command line), so the rule can be tested without Multiplayer Play Mode.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="mesh"></span>`Mesh` |  | The run mode does not apply: a build, [`NebulaEditorRunMode.Mesh`](/docs/reference/bootstrap/nebula-editor-run-mode#mesh), or an explicit `-nebula-role`. |
+| <span id="client"></span>`Client` |  | A client that connects to the server a virtual player hosts. |
+| <span id="server"></span>`Server` |  | The virtual player that hosts the server: orchestrator, gateway and one worker in one process. |

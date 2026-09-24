@@ -1,0 +1,19 @@
+---
+title: "NebulaEditorRunMode"
+description: "What pressing Play in the Editor starts (NebulaConfig.EditorRunMode)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs)</div>
+
+```csharp
+public enum NebulaEditorRunMode
+```
+
+What pressing Play in the Editor starts ([`NebulaConfig.EditorRunMode`](/docs/reference/core/nebula-config#editorrunmode)). Builds are never affected.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="mesh"></span>`Mesh` | `0` | The Editor runs [`NebulaBootstrap.EditorRole`](/docs/reference/bootstrap/nebula-bootstrap#editorrole) and joins a mesh started from a build with `nebula start`. The default, and the only mode that tests more than one worker. |
+| <span id="multiplayerplaymode"></span>`MultiplayerPlayMode` | `1` | No build: a Multiplayer Play Mode virtual player hosts the whole server in its own Editor process (orchestrator, gateway and one worker, with the control plane in memory), and the main Editor is a client that connects to it. Needs Unity's Multiplayer Play Mode package and one enabled virtual player. |

@@ -1,6 +1,6 @@
 ---
 title: Running locally
-description: Build the player, run the whole mesh on one machine, watch it on the dashboard, and stop it.
+description: Build the player, run the whole mesh on one machine, iterate in the Editor without a build, watch the mesh on the dashboard, and stop it.
 ---
 
 Run the commands on this page from a Unity project where you have already run `nebula init`. You can also run the same operations from the **Nebula** menu in the Unity Editor.
@@ -73,9 +73,9 @@ Your game must provide bot input and server-driven behavior. Nebula does not pro
 
 ## Choosing the Editor's role
 
-`NebulaBootstrap.EditorRole` sets the roles the Editor starts when you press Play. The Editor has no command line, so this field takes the place of `-nebula-role`. It does **not** let you skip `nebula build` and `nebula start`:
+`NebulaBootstrap.EditorRole` sets the roles the Editor starts when you press Play. The Editor has no command line, so this field takes the place of `-nebula-role`. On its own, it does **not** let you skip `nebula build` and `nebula start`:
 
-- **A process is a client or a worker, never both.** If `EditorRole` includes both, Nebula drops the worker role and logs an error. Whichever half the Editor does not run must come from a build.
+- **A process is a client or a worker, never both.** If `EditorRole` includes both, Nebula drops the worker role and logs an error. Whichever half the Editor does not run must come from a build, or from a second Editor process. See [Iterate without building](#iterate-without-building-multiplayer-play-mode).
 - **The orchestrator launches processes from a build.** It starts the gateway and every worker as a separate player process. In the Editor there is no player executable to reuse, so an Editor orchestrator logs `executable not found` unless `NebulaConfig.WorkerExecutable` points at a build.
 - **Workers and the gateway need an orchestrator.** They mirror the control plane from the orchestrator at `NebulaConfig.ControlPlaneUrl` (default `http://127.0.0.1:7080/`). `nebula start` is what starts it.
 
@@ -107,6 +107,70 @@ This mode has limits:
 - There is exactly one worker, so there are no handovers, ghosts or cross-worker RPCs to test.
 - Persistence in `auto` mode writes to a local file under `Application.persistentDataPath`.
 - `UseLocalControlPlane` is saved in the config asset that builds also load. Turn it off again before running `nebula build` for `nebula start` or a deployment. Otherwise, the built orchestrator also uses a local control plane and never launches the gateway or workers.
+
+## Iterate without building: Multiplayer Play Mode
+
+To play your game in the Editor without running `nebula build` and `nebula start`, use Unity's Multiplayer Play Mode. It runs a *virtual player*: a second Editor process that shares your project. With `NebulaConfig.EditorRunMode` set to `MultiplayerPlayMode`, the virtual player hosts the server and the main Editor is a client. Each process still has one side: the virtual player is the worker, and the main Editor is the client.
+
+### Before you start
+
+- Use Unity 6.6 (6000.6) or later. Earlier Unity 6 versions can work if the Multiplayer Play Mode package provides its player API. If Nebula cannot read it, it runs as `Mesh` and logs a warning.
+- Add the `com.unity.multiplayer.playmode` package with the Package Manager.
+- Open **Window > Multiplayer > Multiplayer Play Mode** and enable one virtual player.
+
+### Turn it on
+
+1. Select `NebulaConfig` (**Nebula > Select Config**).
+2. Set **Editor Run Mode** to `MultiplayerPlayMode`.
+3. Press Play.
+
+The virtual player runs the orchestrator, the gateway and one worker in one process. The control plane stays in memory, and autoscaling is off. The main Editor waits until that server is listening, then connects to it. The title screen stays hidden. Each process logs the side it took, for example:
+
+```text
+[nebula] editor run mode: Multiplayer Play Mode (this virtual player hosts the server)
+```
+
+The setting affects only the Editor. Builds ignore it. The settings it implies are applied to the Editor's copy of the config, never to the asset. So you do not have to change anything back before `nebula build`. A command-line switch such as `-nebula-role` or `-nebula-workers` still wins.
+
+To add a second player, enable another virtual player and give it the `Client` tag in the Multiplayer Play Mode window. A virtual player tagged `Server` hosts the server. With no tags, the main Editor is the client and a virtual player is the server. Run only one server.
+
+### Saved entities
+
+`NebulaConfig.EditorPersistence` chooses what the server does with [persistent entities](/docs/guides/persistence):
+
+| Value | Behavior |
+| --- | --- |
+| `DevSaveFile` (default) | Keeps them in `Library/Nebula/DevSaves/world.bin` from one Play to the next. The file is separate from the database that `nebula start` uses. |
+| `InMemory` | Starts every Play from an empty world. |
+
+To start from an empty world once, stop Play and choose **Nebula > Dev Loop > Reset Dev Saves**. This deletes the dev save file.
+
+### Ports
+
+Both sides add `NebulaConfig.EditorPortOffset` (default `50`) to `GatewayPort`, `WorkerBasePort` and `DashboardPort`. With the default ports, the gateway listens on 7050, the worker on 7151, and the dashboard on `http://localhost:7130/`. So a mesh started with `nebula start` can run at the same time. Set the offset to `0` to use the configured ports.
+
+A client in this mode connects only to the server its own Play session started. The server records its port, or the reason it could not start, in `Library/Nebula/dev-session.json`. If another process holds the server's port, the client connects to nothing and logs the server's error, for example:
+
+```text
+The Editor-hosted server could not start (could not bind udp/7050: another process is using it, ...). A client of this session does not join any other server. Stop the other mesh (nebula stop) or change NebulaConfig.EditorPortOffset, then press Play again.
+```
+
+If no server starts within 20 seconds, the client logs how to enable a virtual player, then keeps waiting.
+
+### What it does not test
+
+The server runs exactly one worker, so this mode cannot test anything that needs two:
+
+- Container boundaries between workers
+- Handovers
+- Ghosts and cross-worker RPCs
+- Recovery from a failed worker
+
+To test these, run `nebula build` and `nebula start` with more than one worker, or add a worker from the dashboard.
+
+### The server renders nothing
+
+The server turns off every camera, so its Game view stays empty. That is by design: it has nothing to show. It also works around a known problem. On Unity 6000.6, a virtual player cannot compile the Universal Render Pipeline's (URP) shaders, which leaves a black screen and fills its log with shader errors. For the same reason, a virtual player tagged `Client` in a URP project may not render.
 
 ## Watch
 

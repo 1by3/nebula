@@ -62,6 +62,30 @@ public int OriginShiftThresholdCells = 4;
 
 The floating origin moves once the pawn (client) or the centroid of the leased cells (worker) is more than this many cells from the origin cell.
 
+### EditorRunMode [#editorrunmode]
+
+```csharp
+public NebulaEditorRunMode EditorRunMode = NebulaEditorRunMode.Mesh;
+```
+
+Editor only. Mesh: Play runs EditorRole against a mesh started with nebula start. MultiplayerPlayMode: a Multiplayer Play Mode virtual player hosts the server (orchestrator, gateway, one worker) and the main Editor joins it as a client, with no build. Builds ignore this.
+
+### EditorPersistence [#editorpersistence]
+
+```csharp
+public NebulaEditorPersistence EditorPersistence = NebulaEditorPersistence.DevSaveFile;
+```
+
+Where the server a virtual player hosts keeps persistent entities under [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode): [`NebulaEditorPersistence.DevSaveFile`](/docs/reference/bootstrap/nebula-editor-persistence#devsavefile) (the default) keeps them in `Library/Nebula/DevSaves/world.bin` from one Play to the next, apart from anything a mesh started with `nebula start` keeps; [`NebulaEditorPersistence.InMemory`](/docs/reference/bootstrap/nebula-editor-persistence#inmemory) starts every Play from a fresh world. `Nebula > Dev Loop > Reset Dev Saves` deletes the file.
+
+### EditorPortOffset [#editorportoffset]
+
+```csharp
+public int EditorPortOffset = 50;
+```
+
+Added to [`GatewayPort`](#gatewayport), [`WorkerBasePort`](#workerbaseport) and [`DashboardPort`](#dashboardport) by both sides of [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), so the dev loop and a mesh started with `nebula start` can run on one machine at once. 50 by default: with the default ports, the dev loop's gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+
 ### GatewayAddress [#gatewayaddress]
 
 ```csharp

@@ -1,0 +1,89 @@
+---
+title: "EditorRunPlan"
+description: "The decision for one Editor process in the Multiplayer Play Mode dev loop, and the settings it implies."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs)</div>
+
+```csharp
+public readonly struct EditorRunPlan
+```
+
+The decision for one Editor process in the Multiplayer Play Mode dev loop, and the settings it implies.
+
+## Fields
+
+### ServerTag [#servertag]
+
+```csharp
+public const string ServerTag = "Server";
+```
+
+A virtual player with this tag (any case) hosts the server; one with [`ClientTag`](#clienttag) is a client. Untagged, the main Editor is the client and a virtual player is the server.
+
+### ClientTag [#clienttag]
+
+```csharp
+public const string ClientTag = "Client";
+```
+
+A player with this tag is a client, so a second virtual player can be a second player.
+
+## Properties
+
+### Player [#player]
+
+```csharp
+public EditorPlayer Player { get; }
+```
+
+### Roles [#roles]
+
+```csharp
+public NebulaRoles Roles { get; }
+```
+
+The roles this process runs; [`NebulaRoles.None`](/docs/reference/bootstrap/nebula-roles#none) for [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh), which keeps the usual rule.
+
+### Warning [#warning]
+
+```csharp
+public string Warning { get; }
+```
+
+Why the plan is [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh) when the mode asked for more; null otherwise.
+
+## Methods
+
+### Resolve [#resolve]
+
+```csharp
+public static EditorRunPlan Resolve(NebulaEditorRunMode mode, bool isEditor, bool playModeAvailable, bool isMainEditor, IReadOnlyList<string> tags, bool explicitRole);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `mode` | The configured [`NebulaConfig.EditorRunMode`](/docs/reference/core/nebula-config#editorrunmode). |
+| `isEditor` | Whether this process is the Unity Editor. A build is always [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh). |
+| `playModeAvailable` | Whether Multiplayer Play Mode's `CurrentPlayer` could be read. |
+| `isMainEditor` | Whether this is the main Editor rather than a virtual player. |
+| `tags` | This player's Multiplayer Play Mode tags; null or empty for none. |
+| `explicitRole` | Whether `-nebula-role` was given, which always wins. |
+
+### ApplyTo [#applyto]
+
+```csharp
+public void ApplyTo(NebulaConfig config, Func<string, bool> hasArg, string projectRoot);
+```
+
+Apply the plan's settings to `config` (the bootstrap's copy, never the asset). A setting whose command-line switch was given (`hasArg`, without the leading dash) keeps the command line's value. Does nothing for [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh).
+
+| Parameter | Description |
+| --- | --- |
+| `projectRoot` | The project's root folder, from [`EditorDevPaths.ProjectRoot`](/docs/reference/bootstrap/editor-dev-paths#projectroot): the dev loop's files live under its `Library/Nebula`. |
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

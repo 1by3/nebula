@@ -32,6 +32,35 @@ namespace Nebula
         [Tooltip("The floating origin moves once the pawn (client) or the centroid of the leased cells (worker) is more than this many cells from the origin cell.")]
         public int OriginShiftThresholdCells = 4;
 
+        [Header("Editor dev loop")]
+        /// <summary>
+        /// What pressing Play in the Editor starts. <see cref="NebulaEditorRunMode.Mesh"/> (the default) runs
+        /// <see cref="NebulaBootstrap.EditorRole"/> against a mesh started from a build.
+        /// <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/> needs no build: a Multiplayer Play Mode virtual player
+        /// hosts the server (orchestrator, gateway and one worker) and the main Editor connects to it as a client. A
+        /// virtual player tagged <c>Client</c> is one more client; one tagged <c>Server</c> hosts. An explicit
+        /// <c>-nebula-role</c> wins, and builds ignore this setting.
+        /// </summary>
+        [Tooltip("Editor only. Mesh: Play runs EditorRole against a mesh started with nebula start. MultiplayerPlayMode: a Multiplayer Play Mode virtual player hosts the server (orchestrator, gateway, one worker) and the main Editor joins it as a client, with no build. Builds ignore this.")]
+        public NebulaEditorRunMode EditorRunMode = NebulaEditorRunMode.Mesh;
+        /// <summary>
+        /// Where the server a virtual player hosts keeps persistent entities under
+        /// <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>: <see cref="NebulaEditorPersistence.DevSaveFile"/> (the
+        /// default) keeps them in <c>Library/Nebula/DevSaves/world.bin</c> from one Play to the next, apart from
+        /// anything a mesh started with <c>nebula start</c> keeps; <see cref="NebulaEditorPersistence.InMemory"/> starts
+        /// every Play from a fresh world. <c>Nebula &gt; Dev Loop &gt; Reset Dev Saves</c> deletes the file.
+        /// </summary>
+        [Tooltip("MultiplayerPlayMode only. DevSaveFile: saved entities survive Play/Stop in Library/Nebula/DevSaves (Nebula > Dev Loop > Reset Dev Saves deletes them). InMemory: every Play starts fresh.")]
+        public NebulaEditorPersistence EditorPersistence = NebulaEditorPersistence.DevSaveFile;
+        /// <summary>
+        /// Added to <see cref="GatewayPort"/>, <see cref="WorkerBasePort"/> and <see cref="DashboardPort"/> by both sides
+        /// of <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>, so the dev loop and a mesh started with
+        /// <c>nebula start</c> can run on one machine at once. 50 by default: with the default ports, the dev loop's
+        /// gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+        /// </summary>
+        [Tooltip("MultiplayerPlayMode only. Added to GatewayPort, WorkerBasePort and DashboardPort on both sides, so the dev loop and a mesh started with nebula start can run side by side. 0 = the configured ports.")]
+        public int EditorPortOffset = 50;
+
         [Header("Networking")]
         public string GatewayAddress = "127.0.0.1";
         public ushort GatewayPort = 7000;

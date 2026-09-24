@@ -123,6 +123,22 @@ public ushort Port { get; }
 public bool IsListening { get; }
 ```
 
+### Failed [#failed]
+
+```csharp
+public bool Failed { get; }
+```
+
+The worker could not start, most often because another process holds its port. A failed worker does nothing: it never registers and never simulates. [`FailureReason`](#failurereason) says why.
+
+### FailureReason [#failurereason]
+
+```csharp
+public string FailureReason { get; }
+```
+
+Why the worker could not start, or null while it is fine.
+
 ### CurrentTick [#currenttick]
 
 ```csharp

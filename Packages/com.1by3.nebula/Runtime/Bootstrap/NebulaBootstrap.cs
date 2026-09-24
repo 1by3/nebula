@@ -19,7 +19,9 @@ namespace Nebula
     /// <summary>
     /// Entry point for Unity workers and clients. Put one in the boot scene. Reads the role from the command line
     /// (<c>-nebula-role worker,gateway</c>) or from <see cref="EditorRole"/> when running in the Editor, loads the
-    /// game scene, and starts the matching components. A process is a worker <i>or</i> a client, never both.
+    /// game scene, and starts the matching components. A process is a worker <i>or</i> a client, never both. With
+    /// <see cref="NebulaConfig.EditorRunMode"/> set to <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>, the Editor
+    /// needs no build: a Multiplayer Play Mode virtual player is the server process and the main Editor is the client.
     /// The CLI launches standalone .NET orchestrator and gateway executables; Unity service roles remain available for compatibility and in-process tests.
     /// <list type="bullet">
     /// <item><c>-nebula-role client|worker|gateway|orchestrator</c> (comma separated)</item>
@@ -89,7 +91,9 @@ namespace Nebula
             if (Config.WorldManifest == null && Config.RuntimeWorld != null)
                 NebulaWorld.LoadRuntime(Config.RuntimeWorld);
 
-            Roles = ResolveRoles();
+            RunPlan = ResolveEditorRunPlan(Config);
+            RunPlan.ApplyTo(Config, CommandLine.Has, ProjectRoot);
+            Roles = RunPlan.Player != EditorPlayer.Mesh ? RunPlan.Roles : ResolveRoles();
             if ((Roles & NebulaRoles.Client) != 0 && (Roles & NebulaRoles.Worker) != 0)
             {
                 NebulaLog.Error("A process cannot be both a client and a worker; dropping the worker role");
@@ -111,6 +115,7 @@ namespace Nebula
             Physics.simulationMode = SimulationMode.FixedUpdate;
 
             NetworkPrefabs.Register(Config.NetworkPrefabs);
+            if (Config.EditorRunMode != NebulaEditorRunMode.Mesh && Application.isEditor) NebulaLog.Info($"editor run mode: {RunPlan}");
             NebulaLog.Info($"boot roles={Roles} scene={Config.GameScene} tickRate={NetworkTime.TickRate}");
         }
 
@@ -184,6 +189,9 @@ namespace Nebula
             if ((Roles & NebulaRoles.Gateway) != 0)
             {
                 Gateway = gameObject.AddComponent<NebulaGateway>();
+                // The dev loop's server signs identities with a key of the project's, not of the virtual player's
+                // own data folder, so the identity the main Editor saved stays valid from one session to the next.
+                if (RunPlan.Player == EditorPlayer.Server) Gateway.AuthKeyPath = EditorDevPaths.DevAuthKey(ProjectRoot);
                 Gateway.Initialize(Config, ControlPlane);
             }
             if ((Roles & NebulaRoles.Worker) != 0)
@@ -196,13 +204,18 @@ namespace Nebula
                 Client = gameObject.AddComponent<NebulaClient>();
                 // Scripted clients (bots, an explicit -nebula-gateway, -nebula-connect) go straight in. Otherwise the
                 // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
-                bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", false);
-                Client.Initialize(Config, autoConnect);
+                // A client of the Editor-hosted server (EditorRunMode MultiplayerPlayMode) has nobody to ask either.
+                bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", RunPlan.Player == EditorPlayer.Client);
+                // A client of the dev loop connects once the server of its own session says where (or that it failed).
+                _awaitDevServer = RunPlan.Player == EditorPlayer.Client && autoConnect && !CommandLine.Has("nebula-gateway");
+                Client.Initialize(Config, autoConnect, connectNow: autoConnect && !_awaitDevServer);
+                if (_awaitDevServer) _devServerWaitSince = Time.realtimeSinceStartup;
                 // A headless bot's log is the only place a soak can read what one client actually holds, so bots
                 // carry the probe by default; a player client takes -nebula-probe to turn it on (and a bot takes
                 // -nebula-probe=false to turn it off). It costs one pass over the replica set per second.
                 if (CommandLine.GetBool("nebula-probe", CommandLine.Has("nebula-bot"))) InterestProbe.Attach(Client);
             }
+            if (RunPlan.Player == EditorPlayer.Server) PublishDevSession();
             if (NebulaWorld.IsActive)
             {
                 WorldStreaming = gameObject.AddComponent<NebulaWorldStreaming>();
@@ -263,6 +276,9 @@ namespace Nebula
 
         private void Update()
         {
+            // The server a virtual player hosts renders nothing, by design (see HeadlessEditorPlayer).
+            if (RunPlan.Player == EditorPlayer.Server) HeadlessEditorPlayer.DisableCameras();
+            if (_awaitDevServer) AwaitDevServer();
             ControlPlane?.Tick();
             // The store's callbacks land here, on the main thread, once per frame.
             PersistenceStore?.Tick();
@@ -271,6 +287,7 @@ namespace Nebula
         private void OnDestroy()
         {
             if (Instance != this) return;
+            if (_publishedDevSession) EditorDevSession.Remove(EditorDevSession.PathFor(ProjectRoot), EditorDevSession.CurrentPid);
             ControlPlane?.Dispose();
             PersistenceStore?.Dispose();
             PersistenceStore = null;
@@ -341,6 +358,83 @@ namespace Nebula
                     NebulaLog.Error($"control plane: a Unity orchestrator cannot open '{url.Scheme}:' databases (use file: or memory here, or run the standalone orchestrator); keeping it in memory");
                     return new MemoryControlPlaneStorage();
             }
+        }
+
+        /// <summary>
+        /// What this Editor process does under <see cref="NebulaConfig.EditorRunMode"/>: <see cref="EditorPlayer.Mesh"/>
+        /// in a build, in <see cref="NebulaEditorRunMode.Mesh"/>, or when <c>-nebula-role</c> is given.
+        /// </summary>
+        public EditorRunPlan RunPlan { get; private set; }
+
+        // ------------------------------------------------------------------------------ Multiplayer Play Mode session
+
+        /// <summary>Seconds a dev-loop client waits for its server before saying how to start one.</summary>
+        private const float DevServerHintSeconds = 20f;
+        private bool _awaitDevServer;
+        private float _devServerWaitSince;
+        private float _nextDevServerPoll;
+        private bool _devServerHinted;
+        private bool _publishedDevSession;
+
+        /// <summary>The dev loop's server says where its clients connect, or why they must not (see <see cref="EditorDevSession"/>).</summary>
+        private void PublishDevSession()
+        {
+            var record = new EditorDevSession.Record { pid = EditorDevSession.CurrentPid, port = Config.GatewayPort };
+            string failure = Gateway != null && Gateway.Failed ? Gateway.FailureReason : Worker != null && Worker.Failed ? Worker.FailureReason : null;
+            if (Gateway == null) failure = failure ?? "this virtual player runs no gateway";
+            record.state = failure == null ? EditorDevSession.ListeningState : EditorDevSession.FailedState;
+            record.error = failure ?? "";
+            if (Gateway != null) record.incarnation = Gateway.Incarnation.ToString("x8");
+            EditorDevSession.Write(EditorDevSession.PathFor(ProjectRoot), record);
+            _publishedDevSession = true;
+            if (failure != null) NebulaLog.Error($"dev session: the Editor-hosted server could not start: {failure}. Its clients will not connect.");
+            else NebulaLog.Info($"dev session: the Editor-hosted server is listening on udp/{Config.GatewayPort}");
+        }
+
+        /// <summary>A dev-loop client: connect when the server of this session is listening, refuse when it failed.</summary>
+        private void AwaitDevServer()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextDevServerPoll) return;
+            _nextDevServerPoll = now + 0.25f;
+            var record = EditorDevSession.Read(EditorDevSession.PathFor(ProjectRoot));
+            switch (EditorDevSession.Evaluate(record, EditorDevSession.IsAlive))
+            {
+                case EditorDevSession.Verdict.Ready:
+                    _awaitDevServer = false;
+                    Config.GatewayAddress = "127.0.0.1";
+                    Config.GatewayPort = (ushort)record.port;
+                    NebulaLog.Info($"dev session: joining the Editor-hosted server on udp/{record.port} (gateway {record.incarnation})");
+                    Client.Connect();
+                    break;
+                case EditorDevSession.Verdict.Failed:
+                    _awaitDevServer = false;
+                    NebulaLog.Error(EditorDevSession.FailureMessage(record));
+                    break;
+                default:
+                    if (!_devServerHinted && now - _devServerWaitSince >= DevServerHintSeconds)
+                    {
+                        _devServerHinted = true;
+                        NebulaLog.Warn($"dev session: no Editor-hosted server has started after {DevServerHintSeconds:0} s. Enable a virtual player in Window > Multiplayer > Multiplayer Play Mode, or set NebulaConfig.EditorRunMode to Mesh. Still waiting.");
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>The main project's folder, also from a virtual player (see <see cref="EditorDevPaths.ProjectRoot"/>).</summary>
+        private static string ProjectRoot => EditorDevPaths.ProjectRoot(Application.dataPath);
+
+        private static EditorRunPlan ResolveEditorRunPlan(NebulaConfig config)
+        {
+            bool isEditor = Application.isEditor;
+            bool explicitRole = !string.IsNullOrEmpty(CommandLine.Get("nebula-role"));
+            bool available = false, isMainEditor = true;
+            string[] tags = null;
+            if (config.EditorRunMode == NebulaEditorRunMode.MultiplayerPlayMode && isEditor && !explicitRole)
+                available = MultiplayerPlayModePlayer.TryRead(out isMainEditor, out tags);
+            var plan = EditorRunPlan.Resolve(config.EditorRunMode, isEditor, available, isMainEditor, tags, explicitRole);
+            if (plan.Warning != null) NebulaLog.Warn(plan.Warning);
+            return plan;
         }
 
         private NebulaRoles ResolveRoles()
