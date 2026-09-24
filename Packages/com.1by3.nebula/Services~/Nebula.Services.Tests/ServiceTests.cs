@@ -345,6 +345,9 @@ public class ServiceTests
         // leased room has a worker of its own, and an inherited room inside that follows it.
         Load(new ServiceManifest());
         using var plane = new LocalControlPlane(); plane.Connect();
+        // The orchestrator resets the plane when it initializes, so it starts before the rows are written.
+        var orch = new NebulaOrchestrator();
+        orch.Initialize(new NebulaConfig { UseLocalControlPlane = true, WorkerCount = 0, OrchestratorSpawnsGateway = false, DashboardPort = 0 }, plane);
         plane.EnsureContainer("hopper#9");
         plane.AssignContainer("hopper#9", "w1"); plane.SetLeaseState("hopper#9", LeaseState.Active);
         plane.EnsureContainer("liner#10", ContainerAuthority.Auto, ownPhysicsFrame: true);
@@ -360,10 +363,8 @@ public class ServiceTests
         Assert.That(dealt, Does.Not.Contain("rt_5"), "demoted: the carrier's worker simulates it");
         Assert.That(dealt, Does.Not.Contain("rt_7"), "inherited");
 
-        var orch = new NebulaOrchestrator();
         try
         {
-            orch.Initialize(new NebulaConfig { UseLocalControlPlane = true, WorkerCount = 0, OrchestratorSpawnsGateway = false, DashboardPort = 0 }, plane);
             var state = JsonDocument.Parse(orch.BuildStateJson()).RootElement;
             var rows = state.GetProperty("containers").EnumerateArray().ToDictionary(r => r.GetProperty("id").GetString()!);
 

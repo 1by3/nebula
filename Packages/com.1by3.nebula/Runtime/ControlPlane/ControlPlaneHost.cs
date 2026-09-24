@@ -51,7 +51,7 @@ namespace Nebula
 
         /// <param name="storage">Where the document is kept between runs; null keeps it in memory only.</param>
         /// <param name="token">Shared secret subscribers must present; null or empty for none.</param>
-        /// <param name="restore">Read the stored document at <see cref="Connect"/>. The orchestrator resets the plane at its first tick unless <c>-nebula-reset false</c>, so this only matters then.</param>
+        /// <param name="restore">Read the stored document at <see cref="Connect"/>. The orchestrator resets the plane when it initializes unless <c>-nebula-reset false</c>, so this only matters then.</param>
         public ControlPlaneHost(IControlPlaneStorage storage, string token, bool restore = true)
         {
             _storage = storage ?? new MemoryControlPlaneStorage();

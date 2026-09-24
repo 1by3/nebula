@@ -8,6 +8,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 - **A worker listens on the `PORT` environment variable.** A worker now takes its port from `-nebula-port`, then `PORT`, then `WorkerBasePort + index`, so a host that runs one worker per machine and owns its firewall can choose the port without a command-line switch. A `PORT` that is not a port from 1 to 65535 is ignored with a warning, as is such a `-nebula-port`. Only the worker reads `PORT`; the gateway, orchestrator and client do not. The worker still registers the port it listens on, and the startup line says where it came from: `listening on udp/7101 (from PORT)`. The orchestrator's own hosts pass `-nebula-port` to every worker they start, so a `PORT` inherited from a shell cannot make local workers collide. (NEB-312)
 
+### Fixed
+
+- **A single-process run lost the scopes its worker activated at start.** The orchestrator reset the control plane at its first tick, after the worker in the same process had initialized and the game had activated its scopes from `OnWorkerStarted`. The reset removed those rows, so every client waited for a scope that never became ready. The orchestrator now resets the control plane in `Initialize`, before anything else can write to it; `-nebula-reset false` still keeps the stored plane. A mesh started with `nebula start` resets at the same point in its life as before, since its workers start later. `OrchestratorResetTests` covers it. (NEB-316)
+
 ## [0.1.0-alpha.32] - 2026-09-24
 
 Wire protocol 19, as in alpha.31; the `AuthorityTransfer` change is additive. Every worker of a mesh must still run the same build.
