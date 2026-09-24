@@ -92,7 +92,7 @@ namespace Nebula
                 NebulaWorld.LoadRuntime(Config.RuntimeWorld);
 
             RunPlan = ResolveEditorRunPlan(Config);
-            RunPlan.ApplyTo(Config, CommandLine.Has);
+            RunPlan.ApplyTo(Config, CommandLine.Has, EditorDevPaths.ProjectRoot(Application.dataPath));
             Roles = RunPlan.Player != EditorPlayer.Mesh ? RunPlan.Roles : ResolveRoles();
             if ((Roles & NebulaRoles.Client) != 0 && (Roles & NebulaRoles.Worker) != 0)
             {

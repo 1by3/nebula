@@ -12,6 +12,7 @@ namespace Nebula.Tests
     {
         private const NebulaEditorRunMode Mppm = NebulaEditorRunMode.MultiplayerPlayMode;
         private static readonly string[] NoTags = new string[0];
+        private const string Root = "C:/Dev/game";
 
         private static EditorRunPlan Plan(bool isMainEditor, params string[] tags) =>
             EditorRunPlan.Resolve(Mppm, isEditor: true, playModeAvailable: true, isMainEditor, tags, explicitRole: false);
@@ -62,7 +63,7 @@ namespace Nebula.Tests
             try
             {
                 config.GatewayAddress = "play.example.com";
-                Plan(isMainEditor: false).ApplyTo(config, _ => false);
+                Plan(isMainEditor: false).ApplyTo(config, _ => false, Root);
                 Assert.IsTrue(config.UseLocalControlPlane);
                 Assert.AreEqual("memory", config.DatabaseUrl);
                 Assert.AreEqual(1, config.WorkerCount);
@@ -83,7 +84,7 @@ namespace Nebula.Tests
                 config.WorkerCount = 4;
                 config.GatewayAddress = "10.0.0.5";
                 var given = new HashSet<string> { "nebula-workers", "nebula-gateway" };
-                Plan(isMainEditor: false).ApplyTo(config, given.Contains);
+                Plan(isMainEditor: false).ApplyTo(config, given.Contains, Root);
                 Assert.AreEqual(4, config.WorkerCount);
                 Assert.AreEqual("10.0.0.5", config.GatewayAddress);
                 Assert.IsTrue(config.UseLocalControlPlane);
@@ -98,12 +99,46 @@ namespace Nebula.Tests
             try
             {
                 config.GatewayAddress = "play.example.com";
-                Plan(isMainEditor: true).ApplyTo(config, _ => false);
+                Plan(isMainEditor: true).ApplyTo(config, _ => false, Root);
                 Assert.AreEqual("127.0.0.1", config.GatewayAddress);
                 Assert.IsFalse(config.UseLocalControlPlane);
                 Assert.AreEqual(4, config.WorkerCount);
             }
             finally { Object.DestroyImmediate(config); }
+        }
+
+        [Test]
+        public void TheServerKeepsADevSaveFileOfTheProjectsOwn()
+        {
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            try
+            {
+                Plan(isMainEditor: false).ApplyTo(config, _ => false, Root);
+                Assert.AreEqual("local", config.PersistenceMode);
+                Assert.AreEqual(System.IO.Path.Combine(Root, "Library", "Nebula", "DevSaves", "world.bin"), config.PersistenceLocalFile);
+
+                config.EditorPersistence = NebulaEditorPersistence.InMemory;
+                config.PersistenceLocalFile = "";
+                Plan(isMainEditor: false).ApplyTo(config, _ => false, Root);
+                Assert.AreEqual("memory", config.PersistenceMode);
+                Assert.AreEqual("", config.PersistenceLocalFile);
+
+                config.EditorPersistence = NebulaEditorPersistence.DevSaveFile;
+                config.PersistenceMode = "auto";
+                Plan(isMainEditor: false).ApplyTo(config, key => key == "nebula-persistence-mode", Root);
+                Assert.AreEqual("auto", config.PersistenceMode, "-nebula-persistence-mode wins");
+            }
+            finally { Object.DestroyImmediate(config); }
+        }
+
+        [TestCase("C:/Dev/game/Assets", "C:/Dev/game")]
+        [TestCase("C:/Dev/game/Library/VP/mppm531add0a/Assets", "C:/Dev/game")]
+        [TestCase(@"C:\Dev\game\Library\VP\mppm1\Assets\", "C:/Dev/game")]
+        [TestCase("/home/me/game/Assets", "/home/me/game")]
+        [TestCase("/home/me/Library/game/Assets", "/home/me/Library/game")]
+        public void TheProjectRootIsTheMainProjectsEvenInAVirtualPlayer(string dataPath, string root)
+        {
+            Assert.AreEqual(root, EditorDevPaths.ProjectRoot(dataPath));
         }
 
 #if UNITY_6000_6_OR_NEWER

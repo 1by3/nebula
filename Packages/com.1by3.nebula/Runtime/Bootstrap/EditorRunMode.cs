@@ -20,6 +20,15 @@ namespace Nebula
         MultiplayerPlayMode = 1,
     }
 
+    /// <summary>Where the server a virtual player hosts keeps persistent entities (<see cref="NebulaConfig.EditorPersistence"/>).</summary>
+    public enum NebulaEditorPersistence
+    {
+        /// <summary>A save file inside the project's <c>Library/Nebula/DevSaves</c> folder, kept from one Play to the next. <c>Nebula &gt; Dev Loop &gt; Reset Dev Saves</c> deletes it.</summary>
+        DevSaveFile = 0,
+        /// <summary>Nothing is kept: every Play starts from a fresh world.</summary>
+        InMemory = 1,
+    }
+
     /// <summary>
     /// What one Editor process does under <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>, decided by
     /// <see cref="EditorRunPlan.Resolve"/> from facts the bootstrap reads (whether this is the Editor, whether this is
@@ -87,7 +96,8 @@ namespace Nebula
         /// whose command-line switch was given (<paramref name="hasArg"/>, without the leading dash) keeps the
         /// command line's value. Does nothing for <see cref="EditorPlayer.Mesh"/>.
         /// </summary>
-        public void ApplyTo(NebulaConfig config, Func<string, bool> hasArg)
+        /// <param name="projectRoot">The project's root folder, from <see cref="EditorDevPaths.ProjectRoot"/>: the dev loop's files live under its <c>Library/Nebula</c>.</param>
+        public void ApplyTo(NebulaConfig config, Func<string, bool> hasArg, string projectRoot)
         {
             if (Player == EditorPlayer.Mesh) return;
             if (!hasArg("nebula-gateway")) config.GatewayAddress = "127.0.0.1";
@@ -100,11 +110,53 @@ namespace Nebula
             if (!hasArg("nebula-min-workers")) config.MinWorkers = 1;
             if (!hasArg("nebula-max-workers")) config.MaxWorkers = 1;
             if (!hasArg("nebula-autoscale")) config.AutoScale = false;
+            // Saved entities: a file of the project's own, never the one a mesh started with nebula start uses, or nothing.
+            if (!hasArg("nebula-persistence-mode")) config.PersistenceMode = config.EditorPersistence == NebulaEditorPersistence.InMemory ? "memory" : "local";
+            if (!hasArg("nebula-persistence-file") && config.EditorPersistence == NebulaEditorPersistence.DevSaveFile)
+                config.PersistenceLocalFile = EditorDevPaths.DevSaveFile(projectRoot);
         }
 
         public override string ToString() => Player == EditorPlayer.Client ? "Multiplayer Play Mode (this Editor is a client of the server a virtual player hosts)"
             : Player == EditorPlayer.Server ? "Multiplayer Play Mode (this virtual player hosts the server)"
             : "Mesh";
+    }
+
+    /// <summary>
+    /// Where the Multiplayer Play Mode dev loop keeps its files: under the project's <c>Library/Nebula</c>, shared by
+    /// the main Editor and every virtual player, and never read by a build.
+    /// </summary>
+    public static class EditorDevPaths
+    {
+        /// <summary>
+        /// The project's root folder from <see cref="Application.dataPath"/> (<c>&lt;root&gt;/Assets</c>). A virtual
+        /// player runs from a copy of the project inside <c>&lt;root&gt;/Library/VP/&lt;player&gt;</c>, so its own
+        /// data path is walked back out of that folder to the project it belongs to.
+        /// </summary>
+        public static string ProjectRoot(string dataPath)
+        {
+            if (string.IsNullOrEmpty(dataPath)) return "";
+            string[] parts = dataPath.Replace('\\', '/').TrimEnd('/').Split('/');
+            // Drop the Assets folder, then step out of Library/VP/<player> when this is a virtual player's copy.
+            int end = parts.Length - 1;
+            for (int i = end - 2; i >= 1; i--)
+            {
+                if (string.Equals(parts[i], "VP", StringComparison.OrdinalIgnoreCase) && string.Equals(parts[i - 1], "Library", StringComparison.OrdinalIgnoreCase))
+                {
+                    end = i - 1;
+                    break;
+                }
+            }
+            return string.Join("/", parts, 0, end);
+        }
+
+        /// <summary>The dev loop's folder: <c>&lt;root&gt;/Library/Nebula</c>.</summary>
+        public static string Folder(string projectRoot) => System.IO.Path.Combine(projectRoot, "Library", "Nebula");
+
+        /// <summary>The save file of <see cref="NebulaEditorPersistence.DevSaveFile"/>: <c>Library/Nebula/DevSaves/world.bin</c>.</summary>
+        public static string DevSaveFile(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves", "world.bin");
+
+        /// <summary>The folder <see cref="DevSaveFile"/> is in.</summary>
+        public static string DevSaves(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves");
     }
 
     /// <summary>Reads the running Editor's Multiplayer Play Mode player, where the Editor has one.</summary>

@@ -69,6 +69,36 @@ namespace Nebula.Editor
             Debug.Log("[nebula] local mesh stopped");
         }
 
+        /// <summary>
+        /// Delete the save file the Multiplayer Play Mode dev loop keeps (<see cref="NebulaEditorPersistence.DevSaveFile"/>),
+        /// so the next Play starts from a fresh world. A mesh started with <c>nebula start</c> keeps its own data and is
+        /// not touched.
+        /// </summary>
+        [MenuItem("Nebula/Dev Loop/Reset Dev Saves", priority = 45)]
+        public static void ResetDevSaves()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogWarning("[nebula] stop Play before resetting the dev saves: the server that a virtual player hosts is still writing them");
+                return;
+            }
+            string folder = EditorDevPaths.DevSaves(EditorDevPaths.ProjectRoot(Application.dataPath));
+            if (!Directory.Exists(folder))
+            {
+                Debug.Log($"[nebula] no dev saves to reset ({folder} does not exist)");
+                return;
+            }
+            try
+            {
+                Directory.Delete(folder, recursive: true);
+                Debug.Log($"[nebula] dev saves reset: deleted {folder}. The next Play starts from a fresh world.");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[nebula] could not delete {folder}: {e.Message}. Stop every virtual player first (Window > Multiplayer > Multiplayer Play Mode).");
+            }
+        }
+
         [MenuItem("Nebula/Mesh/Open Nebula Dashboard (workers, containers, players)", priority = 43)]
         public static void OpenDashboard()
         {

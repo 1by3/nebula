@@ -43,6 +43,15 @@ namespace Nebula
         /// </summary>
         [Tooltip("Editor only. Mesh: Play runs EditorRole against a mesh started with nebula start. MultiplayerPlayMode: a Multiplayer Play Mode virtual player hosts the server (orchestrator, gateway, one worker) and the main Editor joins it as a client, with no build. Builds ignore this.")]
         public NebulaEditorRunMode EditorRunMode = NebulaEditorRunMode.Mesh;
+        /// <summary>
+        /// Where the server a virtual player hosts keeps persistent entities under
+        /// <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>: <see cref="NebulaEditorPersistence.DevSaveFile"/> (the
+        /// default) keeps them in <c>Library/Nebula/DevSaves/world.bin</c> from one Play to the next, apart from
+        /// anything a mesh started with <c>nebula start</c> keeps; <see cref="NebulaEditorPersistence.InMemory"/> starts
+        /// every Play from a fresh world. <c>Nebula &gt; Dev Loop &gt; Reset Dev Saves</c> deletes the file.
+        /// </summary>
+        [Tooltip("MultiplayerPlayMode only. DevSaveFile: saved entities survive Play/Stop in Library/Nebula/DevSaves (Nebula > Dev Loop > Reset Dev Saves deletes them). InMemory: every Play starts fresh.")]
+        public NebulaEditorPersistence EditorPersistence = NebulaEditorPersistence.DevSaveFile;
 
         [Header("Networking")]
         public string GatewayAddress = "127.0.0.1";
