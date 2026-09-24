@@ -51,7 +51,7 @@ namespace Nebula
         private Rigidbody _body;
         private NetworkRigidbody _networkBody;
         private bool _subscribed, _reported, _placing, _restoring, _hasPose;
-        private bool _bareHeld, _bareWasKinematic;
+        private bool _bareHeld, _bareWasKinematic, _handoverBare, _handoverBareKinematic;
         private Vector3 _simPosition, _previousSimPosition;
         private int _simSamples;
         private int _settleTicks;
@@ -227,7 +227,13 @@ namespace Nebula
             if (body == null || identity == null || !identity.HasAuthority) return;
             if (on)
             {
-                if (!_bareHeld) { _bareHeld = true; _bareWasKinematic = body.isKinematic; }
+                if (!_bareHeld)
+                {
+                    // After a handover the worker has already made the body dynamic: its own flag came in the bytes.
+                    _bareHeld = true;
+                    _bareWasKinematic = _handoverBare ? _handoverBareKinematic : body.isKinematic;
+                }
+                _handoverBare = false;
                 body.isKinematic = true;
             }
             else if (_bareHeld)
@@ -355,6 +361,7 @@ namespace Nebula
             if (Identity != null) Identity.ContainerPinned = false;
             if (NetworkBody != null) NetworkBody.Held = false;
             _bareHeld = false;
+            _handoverBare = false;
             _hasPose = false;
             _simSamples = 0;
         }
@@ -387,6 +394,8 @@ namespace Nebula
             if (!_attached.Value) return;
             writer.WriteVector3(AttachedLocalPosition);
             writer.WriteQuaternion(AttachedLocalRotation);
+            // A bare body's own kinematic flag, under the hold (a NetworkRigidbody carries its own).
+            writer.WriteBool(_bareHeld ? _bareWasKinematic : Body != null && Body.isKinematic);
         }
 
         public override void ReadHandoverState(NetworkReader reader)
@@ -397,6 +406,8 @@ namespace Nebula
                 AttachedLocalPosition = reader.ReadVector3();
                 AttachedLocalRotation = reader.ReadQuaternion();
                 _hasPose = true;
+                _handoverBareKinematic = reader.ReadBool();
+                _handoverBare = NetworkBody == null;
             }
             // Before authority lands: the body is held from the first moment it is this worker's (D12).
             _attached.Value = attached;

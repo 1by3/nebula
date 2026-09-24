@@ -303,6 +303,34 @@ namespace Nebula.Tests
             Assert.That(Quaternion.Angle(turn, theirs.LocalRotation), Is.LessThan(0.01f));
         }
 
+        [Test]
+        public void ABareKinematicBodyStaysKinematicAfterAHandoverAndADetach()
+        {
+            TwoChunks();
+            var prefab = new GameObject("bare-kinematic-prefab");
+            prefab.AddComponent<NetworkIdentity>();
+            prefab.AddComponent<Rigidbody>().isKinematic = true; // a platform the game moves itself
+            prefab.AddComponent<BoxCollider>();
+            prefab.AddComponent<FrameAttachment>();
+            var platforms = _mesh.RegisterPrefab(prefab);
+            var platform = W1.SpawnServerDriven(platforms, _west, new Vector3(-10f, 1f, 0f), Quaternion.identity);
+            Assert.IsTrue(platform.GetComponent<FrameAttachment>().Attach());
+            uint tick = 1;
+            Ticks(W1, ref tick, 3);
+
+            _mesh.SetOwner(_west, W2);
+            W1.Tick(tick++);
+            _mesh.Pump();
+            var theirs = W2.Find(platform.NetId);
+            var attachment = theirs.GetComponent<FrameAttachment>();
+            Assert.IsTrue(theirs.HasAuthority);
+            Assert.IsTrue(attachment.Attached);
+            var body = theirs.GetComponent<Rigidbody>();
+            Assert.IsTrue(body.isKinematic, "held");
+            Assert.IsTrue(attachment.Detach());
+            Assert.IsTrue(body.isKinematic, "let go, it is as kinematic as its prefab made it");
+        }
+
         // ------------------------------------------------------------------------------------ losing the container (D13)
 
         [Test]

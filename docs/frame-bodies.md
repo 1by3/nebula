@@ -106,8 +106,10 @@ is handed to that worker on the next tick, and a re-deal of the container takes 
 the authoritative body is kinematic while `!Simulate || Held`, and the body's own kinematic flag is kept underneath
 for when both reasons clear. The handover still carries the underlying flag. `FrameAttachment` sets `Held` while
 reading handover or persistent state, before the entity gains authority or spawns, so the body is never dynamic
-for a tick. A bare `Rigidbody` without `NetworkRigidbody` is made kinematic and dynamic directly. No variable was
-added to `NetworkRigidbody`, whose variable layout existing props depend on.
+for a tick. A bare `Rigidbody` without `NetworkRigidbody` is made kinematic and dynamic directly, and
+`FrameAttachment`'s own handover bytes carry its kinematic flag, since the worker makes a bare body dynamic when it
+gains authority, before the hold would read the flag. No variable was added to `NetworkRigidbody`, whose variable
+layout existing props depend on.
 
 **D10 The authority re-applies the attached pose every tick.** In `NetworkTick`, `SetLocalPose(container, pose)`.
 Nothing then drifts, whatever touched the transform, and the attached pose is exact in a frame, in a fixed
