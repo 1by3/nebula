@@ -10,6 +10,8 @@ const scripts = 'https://raw.githubusercontent.com/1by3/nebula/main/cli/install'
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  // PostHog's API paths end in a trailing slash; keep Next from redirecting them.
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     return {
       beforeFiles: [
@@ -17,6 +19,12 @@ const config = {
         { source: '/', has: [{ type: 'host', value: 'windows.nebula.1by3.co' }], destination: `${scripts}/install.ps1` },
         { source: '/install.sh', destination: `${scripts}/install.sh` },
         { source: '/install.ps1', destination: `${scripts}/install.ps1` },
+      ],
+      // PostHog reverse proxy, used by instrumentation-client.ts.
+      afterFiles: [
+        { source: '/ingest/static/:path*', destination: 'https://us-assets.i.posthog.com/static/:path*' },
+        { source: '/ingest/array/:path*', destination: 'https://us-assets.i.posthog.com/array/:path*' },
+        { source: '/ingest/:path*', destination: 'https://us.i.posthog.com/:path*' },
       ],
     };
   },
