@@ -424,6 +424,49 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ApplyingARecordToALiveEntityAttachesOrDetachesItAsTheRecordSays()
+        {
+            TwoChunks();
+            var north = _mesh.AddStaticContainer("north", new Vector3(-32f, 0f, 96f), new Vector3(64f, 40f, 64f));
+            _mesh.SetOwner(north, W1);
+            _store = ConformanceFrameBodiesTests.PersistenceFor(_mesh);
+            var saved = _mesh.RegisterPrefab(AttachablePrefab("saved-crate", persistent: true));
+            var crate = W1.SpawnServerDriven(saved, _west, new Vector3(-10f, 0.5f, 0f), Quaternion.identity);
+            var attachment = crate.GetComponent<FrameAttachment>();
+            var body = crate.GetComponent<Rigidbody>();
+            string key = crate.Persistent.EnsureKey();
+            var local = new Vector3(3f, 2f, 5f);
+            var turn = Quaternion.Euler(0f, 60f, 0f);
+            Assert.IsTrue(attachment.Attach(_west, local, turn));
+            W1.Act(() => W1.Instance.Persistence.SaveNow(crate));
+            var attachedRecord = ConformanceFrameBodiesTests.RecordOf(_store, key);
+
+            // Attached somewhere else since, then the record is applied to the live entity.
+            Assert.IsTrue(attachment.Attach(north, new Vector3(0f, 1f, 0f), Quaternion.identity));
+            W1.Act(() => W1.Instance.Persistence.Apply(attachedRecord, crate));
+            Assert.IsTrue(attachment.Attached, "moving into the record's container did not detach it");
+            Assert.AreSame(_west, attachment.AttachedTo);
+            Assert.IsTrue(crate.ContainerPinned, "pinned");
+            Assert.IsTrue(body.isKinematic, "held");
+            uint tick = 1;
+            Ticks(W1, ref tick, 3);
+            Assert.IsTrue(attachment.Attached);
+            Assert.AreSame(_west, crate.Container);
+            Assert.That(Vector3.Distance(local, crate.LocalPosition), Is.LessThan(1e-4f), "at the record's attached pose");
+            Assert.That(Quaternion.Angle(turn, crate.LocalRotation), Is.LessThan(0.01f));
+
+            // A record saved detached, applied to a live attached entity, lets it go.
+            Assert.IsTrue(attachment.Detach());
+            W1.Act(() => W1.Instance.Persistence.SaveNow(crate));
+            var detachedRecord = ConformanceFrameBodiesTests.RecordOf(_store, key);
+            Assert.IsTrue(attachment.Attach());
+            W1.Act(() => W1.Instance.Persistence.Apply(detachedRecord, crate));
+            Assert.IsFalse(attachment.Attached);
+            Assert.IsFalse(crate.ContainerPinned);
+            Assert.IsFalse(body.isKinematic);
+        }
+
+        [Test]
         public void ASceneEntitySpawnedAgainWithNoRecordIsNotAttached()
         {
             TwoChunks();

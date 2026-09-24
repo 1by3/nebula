@@ -50,7 +50,7 @@ namespace Nebula
 
         private Rigidbody _body;
         private NetworkRigidbody _networkBody;
-        private bool _subscribed, _reported, _placing, _hasPose;
+        private bool _subscribed, _reported, _placing, _restoring, _hasPose;
         private bool _bareHeld, _bareWasKinematic;
         private Vector3 _simPosition, _previousSimPosition;
         private int _simSamples;
@@ -292,6 +292,7 @@ namespace Nebula
 
         public override void NetworkTick(uint tick, float deltaTime)
         {
+            _restoring = false;
             if (_attached.Value)
             {
                 var container = Identity.Container;
@@ -327,6 +328,7 @@ namespace Nebula
         {
             RestoreDepenetration();
             _reported = false;
+            _restoring = false;
             // A scene entity keeps its values and its body when it leaves the network: the attachment must not outlive
             // this life, so one spawned again with no record is not attached, pinned or held (D14). The record was
             // written before the despawn. The body gets its own kinematic flag back, as the scene authored it, before
@@ -360,7 +362,7 @@ namespace Nebula
         public override void OnContainerChanged(Container previous, Container current)
         {
             // Moved out of its container by anything but Attach: it no longer sits where it was attached (D13).
-            if (_placing || !_attached.Value || !HasAuthority || !IsSpawned) return;
+            if (_placing || _restoring || !_attached.Value || !HasAuthority || !IsSpawned) return;
             Release();
         }
 
@@ -422,15 +424,41 @@ namespace Nebula
             if (version == 1) attached = true; // written only while attached
             else if (version == PersistVersion) attached = reader.ReadBool();
             else NebulaLog.Warn($"FrameAttachment on {name}: saved state version {version} is not one this build reads; restored unattached");
-            _hasPose = attached;
-            if (attached)
+            var localPosition = attached ? reader.ReadVector3() : Vector3.zero;
+            var localRotation = attached ? reader.ReadQuaternion() : Quaternion.identity;
+            if (IsSpawned)
             {
-                AttachedLocalPosition = reader.ReadVector3();
-                AttachedLocalRotation = reader.ReadQuaternion();
+                if (HasAuthority) RestoreLive(attached, localPosition, localRotation);
+                return;
             }
+            _hasPose = attached;
+            AttachedLocalPosition = localPosition;
+            AttachedLocalRotation = localRotation;
             // Before the spawn: the body is held from its first tick.
             _attached.Value = attached;
             if (NetworkBody != null) NetworkBody.Held = attached;
+        }
+
+        /// <summary>
+        /// <see cref="NebulaPersistence.Apply"/> on a live entity: attach or detach it as the record says, pin and hold
+        /// included. Apply moves the entity into the record's container next, which is not a move out of the
+        /// attachment, so that change does not detach it; the next tick puts it at the attached pose.
+        /// </summary>
+        private void RestoreLive(bool attached, Vector3 localPosition, Quaternion localRotation)
+        {
+            if (!attached)
+            {
+                if (_attached.Value) Release();
+                return;
+            }
+            AttachedLocalPosition = localPosition;
+            AttachedLocalRotation = localRotation;
+            _hasPose = true;
+            RestoreDepenetration();
+            Hold(true);
+            _simSamples = 0;
+            _restoring = true;
+            _attached.Value = true;
         }
     }
 }

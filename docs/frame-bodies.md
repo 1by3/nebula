@@ -130,7 +130,9 @@ something outside the tick moves it.
 
 **D14 Persistence saves one chunk, not a variable.** `WritePersistentState` always writes a version, the flag, and
 the local pose when attached, so a detached save says so rather than leaving a stale value in place.
-`ReadPersistentState` sets `Attached` and the hold from it before the restored entity spawns. `Attached` is
+`ReadPersistentState` sets `Attached` and the hold from it before the restored entity spawns. On a live entity
+(`NebulaPersistence.Apply` on an entity the worker already owns) it attaches or detaches it as the record says, pin
+and hold included, and the move into the record's container that `Apply` makes next does not detach it. `Attached` is
 deliberately not `[Persist]`: one source of truth, with no dependence on the order in which the codec reads
 variables and chunks, and it survives `PersistentEntity.PersistPose = false`. A despawn on the authority clears the
 attachment and gives the body its own kinematic flag back: a scene entity keeps its values when it leaves the
