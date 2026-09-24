@@ -75,6 +75,22 @@ public bool Crossing;
 
 The entity is crossing a physics frame's boundary and the sender is not the frame's pose owner, so it hands the entity over unconverted for the pose owner to cross it at its exact pose (`docs/container-tree.md` D15). A trailing optional byte: an older reader stops before it.
 
+### SessionOrphan [#sessionorphan]
+
+```csharp
+public PlayerSessions.OrphanKind SessionOrphan;
+```
+
+The owner's session was waiting for a reclaim on the sender ([`PlayerSessions.Session.Orphan`](/docs/reference/protocol/player-sessions#orphan)): the player disconnected, or the gateway's link to the sender dropped. The receiver keeps it waiting, so a pawn handed over in the reclaim window is still removed if nobody comes back. With [`SessionReclaimRemaining`](#sessionreclaimremaining), a trailing optional section after [`Crossing`](#crossing), written only for an orphan: an older reader stops before it.
+
+### SessionReclaimRemaining [#sessionreclaimremaining]
+
+```csharp
+public float SessionReclaimRemaining;
+```
+
+Seconds of the reclaim grace ([`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds)) the session had left on the sender. A duration, not a time: the two workers' clocks differ, so the receiver resumes the countdown from its own clock.
+
 ## Methods
 
 ### Write [#write]

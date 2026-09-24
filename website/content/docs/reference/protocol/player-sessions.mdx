@@ -52,9 +52,18 @@ A gateway claims the session with `generation`. See [`Claim`](#claim) for what h
 
 ```csharp
 public void Adopt(ulong id, ulong generation, string gateway);
+public void Adopt(ulong id, ulong generation, string gateway, OrphanKind orphan, double reclaimRemaining, double now, double graceSeconds);
 ```
 
 Seed a session this worker inherited with an entity (a handover carries the owner's session with it), so the gateway's inputs are accepted at once. Never lowers a generation already known.
+
+### ReclaimRemaining [#reclaimremaining]
+
+```csharp
+public static double ReclaimRemaining(Session session, double now, double graceSeconds);
+```
+
+Seconds left before [`Expire`](#expire) gives up on an orphaned session; 0 once it is due, and for a session that is not an orphan.
 
 ### Release [#release]
 
@@ -92,7 +101,7 @@ The gateway's link dropped: its sessions wait for a reclaim until [`Expire`](#ex
 public void GatewayReturned(string gateway);
 ```
 
-The same gateway (same incarnation) is back: its sessions are no longer orphans.
+The same gateway (same incarnation) is back: its sessions are no longer orphans, except the ones it released (their clients left).
 
 ### Expire [#expire]
 
@@ -140,11 +149,45 @@ The gateway that speaks for the session: "#".
 public bool Orphaned;
 ```
 
+##### Released [#released]
+
+```csharp
+public bool Released;
+```
+
+The orphan is a release: the gateway said the client's link ended. Only a newer claim renews it. An orphan that is not released only lost its gateway's link to this worker, and the same gateway coming back renews it too ([`GatewayReturned`](#gatewayreturned)).
+
 ##### OrphanedAt [#orphanedat]
 
 ```csharp
 public double OrphanedAt;
 ```
+
+#### Properties
+
+##### Orphan [#orphan]
+
+```csharp
+public OrphanKind Orphan { get; }
+```
+
+Why the session is an orphan, or `OrphanKind.None` while a gateway speaks for it.
+
+### OrphanKind [#orphankind]
+
+```csharp
+public enum OrphanKind : byte
+```
+
+Why a session is waiting for a reclaim. Carried in a handover ([`AuthorityTransferMsg.SessionOrphan`](/docs/reference/protocol/authority-transfer-msg#sessionorphan)).
+
+#### Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | A gateway speaks for the session. |
+| <span id="released"></span>`Released` | `1` | The gateway said the client's link ended ([`PlayerSessions.Release`](/docs/reference/protocol/player-sessions#release)). |
+| <span id="gatewaylost"></span>`GatewayLost` | `2` | The gateway's link to the worker dropped ([`PlayerSessions.GatewayLost`](/docs/reference/protocol/player-sessions#gatewaylost)). |
 
 ### Claim [#claim]
 

@@ -24,6 +24,8 @@
     <!-- Conformance suite (docs/conformance-suite.md): the pure-C# legs run here too, so `Tools/conformance.ps1 -DotnetOnly`
          exercises the same wire contracts the standalone gateway depends on. Unity-only scenarios stay in the package. -->
     <Compile Include="../../Tests/EditMode/ConformanceHandoverWireTests.cs" />
+    <!-- A worker's session bookkeeping (the reclaim grace, and an orphan carried in a handover) is pure C#. -->
+    <Compile Include="../../Tests/EditMode/PlayerSessionsTests.cs" />
     <!-- The cross-worker call contract (docs/cross-worker-calls.md) is pure C# too, so its conformance tests run here as well. -->
     <Compile Include="../../Tests/EditMode/ConformanceCallContractTests.cs" />
     <!-- Scope activation (docs/scope-activation.md) is decided by the control plane, which is pure C#. -->

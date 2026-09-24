@@ -121,6 +121,48 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AnOrphanedSessionTravelsWithTheTimeItHadLeft()
+        {
+            var msg = Loaded();
+            msg.Entity.OwnerClientId = 0xABCDEF;
+            msg.SessionGeneration = 3;
+            msg.SessionGateway = "g1#1a2b3c4d";
+            msg.SessionOrphan = PlayerSessions.OrphanKind.Released;
+            msg.SessionReclaimRemaining = 12.5f;
+
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsFalse(back.Crossing, "the crossing byte is written as 0 to reach the section after it");
+            Assert.AreEqual(PlayerSessions.OrphanKind.Released, back.SessionOrphan);
+            Assert.AreEqual(12.5f, back.SessionReclaimRemaining);
+
+            msg.Crossing = true;
+            msg.SessionOrphan = PlayerSessions.OrphanKind.GatewayLost;
+            back = RoundTrip(msg, out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsTrue(back.Crossing);
+            Assert.AreEqual(PlayerSessions.OrphanKind.GatewayLost, back.SessionOrphan);
+        }
+
+        [Test]
+        public void AConnectedSessionAddsNoBytes()
+        {
+            var msg = Loaded();
+            var w = new NetworkWriter(512);
+            msg.Write(w);
+            int plain = w.Length;
+            msg.SessionReclaimRemaining = 7f; // ignored while the session is not an orphan
+            w = new NetworkWriter(512);
+            msg.Write(w);
+            Assert.AreEqual(plain, w.Length, "the trailing section is written only for an orphan");
+
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.AreEqual(PlayerSessions.OrphanKind.None, back.SessionOrphan);
+            Assert.AreEqual(0f, back.SessionReclaimRemaining);
+        }
+
+        [Test]
         public void NullBlobsAndListsReadBackEmptyNotNull()
         {
             var msg = Loaded();

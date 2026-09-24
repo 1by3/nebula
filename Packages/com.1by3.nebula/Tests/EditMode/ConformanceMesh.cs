@@ -15,10 +15,12 @@ namespace Nebula.Tests
     /// worker's own <c>Dispatch</c>, so a handover here runs the same builder, the same wire format and the same
     /// applier a live mesh runs, deterministically and in one Editor process.
     /// <para>
-    /// What it does not have: a gateway, a control plane, leases, or a tick loop. Handovers are triggered directly
-    /// (<see cref="Worker.Transfer"/>), or by one whole tick the scenario asks for (<see cref="Worker.Tick"/>)
-    /// against the owners <see cref="SetOwner"/> handed out, and nothing announces anything to a gateway because
-    /// no gateway link is registered. Scenarios that need those belong in the service tests
+    /// What it does not have: a real gateway, a control plane, leases, or a tick loop. Handovers are triggered
+    /// directly (<see cref="Worker.Transfer"/>), or by one whole tick the scenario asks for (<see cref="Worker.Tick"/>)
+    /// against the owners <see cref="SetOwner"/> handed out. A scenario can speak for a gateway
+    /// (<see cref="AddGateway"/>, <see cref="FromGateway"/>): what the workers send it is recorded and never
+    /// answered, and nothing is announced to it by interest because its link is not registered. Scenarios that need
+    /// more belong in the service tests
     /// (tier A, <c>Nebula.Services.Tests/Fixtures/MeshFixtures.cs</c>) or in the later multi-process tier.
     /// </para>
     /// <para>
@@ -37,6 +39,8 @@ namespace Nebula.Tests
         private static readonly MethodInfo TickMethod = typeof(NebulaWorker).GetMethod("Tick", Flags);
         /// <summary>Peer ids are global across the mesh: worker index <c>i</c> is peer <c>100 + i</c> on every other worker.</summary>
         private const int PeerIdBase = 100;
+        /// <summary>Gateway <c>i</c> (from 1, in the order <see cref="AddGateway"/> made them) is peer <c>900 + i</c> on every worker.</summary>
+        private const int GatewayPeerIdBase = 900;
         private const int MaxPumpRounds = 64;
 
         /// <summary>One message a worker handed its transport, decoded far enough to tell what it was.</summary>
@@ -90,6 +94,21 @@ namespace Nebula.Tests
             public void Dispose() { }
         }
 
+        /// <summary>
+        /// A gateway as the workers hear it: a peer with a gateway's role and session key that a scenario speaks for
+        /// through <see cref="FromGateway"/>. What the workers send it lands in <see cref="Delivered"/> and goes no
+        /// further.
+        /// </summary>
+        public sealed class Gateway
+        {
+            public readonly string Id;
+            /// <summary>Its session key (<see cref="PlayerSessions.GatewayKey"/>), the one a worker records for a session this gateway speaks for.</summary>
+            public readonly string Key;
+            internal readonly int PeerId;
+
+            internal Gateway(string id, string key, int peerId) { Id = id; Key = key; PeerId = peerId; }
+        }
+
         /// <summary>One real worker of the mesh and the handles a scenario drives it through.</summary>
         public sealed class Worker
         {
@@ -97,7 +116,7 @@ namespace Nebula.Tests
             public readonly string Id;
             public readonly ushort Index;
             internal readonly RecordingTransport Transport;
-            /// <summary>This worker's Peer record for each other worker, by that worker's id.</summary>
+            /// <summary>This worker's Peer record for each other worker and each gateway, by its id.</summary>
             internal readonly Dictionary<string, object> PeersById = new Dictionary<string, object>();
             private readonly ConformanceMesh _mesh;
 
@@ -202,6 +221,7 @@ namespace Nebula.Tests
         private readonly List<Worker> _workers = new List<Worker>();
         private readonly Dictionary<int, Worker> _byPeerId = new Dictionary<int, Worker>();
         private readonly List<GameObject> _prefabs = new List<GameObject>();
+        private readonly Dictionary<int, Gateway> _gatewaysByPeerId = new Dictionary<int, Gateway>();
 
         /// <summary>Every message delivered so far, in delivery order.</summary>
         public readonly List<WireMessage> Delivered = new List<WireMessage>();
@@ -233,7 +253,7 @@ namespace Nebula.Tests
                 foreach (var b in _workers)
                 {
                     if (ReferenceEquals(a, b)) continue;
-                    var peer = MakePeer(PeerIdBase + b.Index, b.Id, b.Index);
+                    var peer = MakePeer(PeerIdBase + b.Index, b.Id, b.Index, PeerRole.Worker, b.Id);
                     a.PeersById[b.Id] = peer;
                     byId[b.Id] = peer;
                     byIndex[(uint)b.Index] = peer;
@@ -243,6 +263,30 @@ namespace Nebula.Tests
 
         public Worker this[int index] => _workers[index];
         public Worker Get(string id) => _workers.Find(w => w.Id == id) ?? throw new ArgumentException($"no worker {id}");
+
+        /// <summary>A gateway every worker hears from (see <see cref="Gateway"/>), keyed by <paramref name="id"/> and <paramref name="incarnation"/>.</summary>
+        public Gateway AddGateway(string id, uint incarnation = 1)
+        {
+            int peerId = GatewayPeerIdBase + _gatewaysByPeerId.Count + 1;
+            var gateway = new Gateway(id, PlayerSessions.GatewayKey(id, incarnation), peerId);
+            _gatewaysByPeerId[peerId] = gateway;
+            foreach (var w in _workers) w.PeersById[id] = MakePeer(peerId, id, 0, PeerRole.Gateway, gateway.Key);
+            return gateway;
+        }
+
+        /// <summary>
+        /// Deliver one message from <paramref name="gateway"/> into <paramref name="to"/>'s own <c>Dispatch</c>, as
+        /// the gateway's link would. <paramref name="write"/> writes it, id byte first, as a message's own
+        /// <c>Write</c> does. What the worker sends back waits in its outbox until <see cref="Pump"/>.
+        /// </summary>
+        public void FromGateway(Gateway gateway, Worker to, Action<NetworkWriter> write)
+        {
+            var w = new NetworkWriter(256);
+            write(w);
+            var bytes = w.ToArray();
+            Delivered.Add(new WireMessage(gateway.Id, to.Id, bytes));
+            to.Dispatch(to.PeersById[gateway.Id], bytes);
+        }
 
         /// <summary>A static container every worker resolves; the mesh does not lease it to anyone.</summary>
         public Container AddStaticContainer(string id, Vector3 position, Vector3 size)
@@ -294,6 +338,14 @@ namespace Nebula.Tests
                     while (from.Transport.Outbox.Count > 0)
                     {
                         var sent = from.Transport.Outbox.Dequeue();
+                        if (_gatewaysByPeerId.TryGetValue(sent.Key, out var gateway))
+                        {
+                            // A gateway only listens here: what it is sent is recorded and goes no further.
+                            Delivered.Add(new WireMessage(from.Id, gateway.Id, sent.Value));
+                            delivered++;
+                            moved = true;
+                            continue;
+                        }
                         if (!_byPeerId.TryGetValue(sent.Key, out var to))
                             throw new InvalidOperationException($"{from.Id} sent {(MsgId)sent.Value[0]} to unknown peer {sent.Key}");
                         var message = new WireMessage(from.Id, to.Id, sent.Value);
@@ -323,13 +375,13 @@ namespace Nebula.Tests
             return result;
         }
 
-        private static object MakePeer(int peerId, string id, uint index)
+        private static object MakePeer(int peerId, string id, uint index, PeerRole role, string key)
         {
             object peer = Activator.CreateInstance(PeerType, nonPublic: true);
             PeerType.GetField("PeerId").SetValue(peer, peerId);
-            PeerType.GetField("Role").SetValue(peer, PeerRole.Worker);
+            PeerType.GetField("Role").SetValue(peer, role);
             PeerType.GetField("Id").SetValue(peer, id);
-            PeerType.GetField("Key").SetValue(peer, id);
+            PeerType.GetField("Key").SetValue(peer, key);
             PeerType.GetField("Index").SetValue(peer, index);
             PeerType.GetField("HelloReceived").SetValue(peer, true);
             return peer;

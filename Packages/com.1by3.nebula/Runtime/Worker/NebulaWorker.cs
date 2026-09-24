@@ -759,7 +759,7 @@ namespace Nebula
             }
             if (_registered) _telemetry?.Update(this);
             if (_registered) ScopeLifecycleAgent.Update();
-            ExpireSessions();
+            ExpireSessions(Time.unscaledTime);
             // A fenced worker spawns no scene entities either: the container may be spawning them elsewhere (D8).
             if (_registered && !fenced && Time.unscaledTime >= _nextScenePass)
             {
@@ -1882,7 +1882,15 @@ namespace Nebula
                 InterestGateways = InterestGatewayKeys(followMask),
                 Crossing = e == _crossingEntity,
             };
-            if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session)) { transfer.SessionGeneration = session.Generation; transfer.SessionGateway = session.Gateway; }
+            if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session))
+            {
+                transfer.SessionGeneration = session.Generation;
+                transfer.SessionGateway = session.Gateway;
+                // A pawn whose player is gone keeps its countdown across the handover, or the next worker would
+                // take the player for connected and keep the pawn, and the chunk it stands in, forever.
+                transfer.SessionOrphan = session.Orphan;
+                transfer.SessionReclaimRemaining = (float)PlayerSessions.ReclaimRemaining(session, Time.unscaledTime, Config.SessionReclaimSeconds);
+            }
             _writer.Reset();
             transfer.Write(_writer);
             Send(target, Delivery.ReliableOrdered);
@@ -1963,8 +1971,16 @@ namespace Nebula
             if (e.OwnerClientId != 0)
             {
                 _players[e.OwnerClientId] = e;
-                // The session came with the pawn: the owner's gateway is trusted here from the first input.
-                _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway);
+                // The session came with the pawn: the owner's gateway is trusted here from the first input. A session
+                // waiting for a reclaim keeps waiting, for the time it had left, unless all it lost was the old
+                // worker's link to a gateway this worker still has.
+                var orphan = msg.SessionOrphan;
+                if (orphan == PlayerSessions.OrphanKind.GatewayLost && IsGatewayLinked(msg.SessionGateway)) orphan = PlayerSessions.OrphanKind.None;
+                _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway, orphan, msg.SessionReclaimRemaining,
+                    Time.unscaledTime, Config.SessionReclaimSeconds);
+                if (_sessions.TryGet(e.OwnerClientId, out var adopted) && adopted.Orphaned)
+                    NebulaLog.Info($"session {e.OwnerClientId} came with {e} waiting for a reclaim; the pawn is kept for " +
+                                   $"{PlayerSessions.ReclaimRemaining(adopted, Time.unscaledTime, Config.SessionReclaimSeconds):0.#} s more");
             }
             e.SetAuthority(true);
             PhysicsIslands.CheckOnAuthority(e);
@@ -2385,17 +2401,20 @@ namespace Nebula
             }
             _pendingPlayerSpawns.Remove(msg.ClientId);
             var e = FindPlayer(msg.ClientId);
-            if (e == null) { _sessions.Remove(msg.ClientId); _playerIdentities.Remove(msg.ClientId); return; }
-            if (!e.HasAuthority)
+            if (e == null || !e.HasAuthority)
             {
-                _sessions.Remove(msg.ClientId);
                 _playerIdentities.Remove(msg.ClientId);
-                if (_handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
+                if (e != null && _handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
                 {
+                    _sessions.Remove(msg.ClientId);
                     _writer.Reset();
                     msg.Write(_writer);
                     Send(peer, Delivery.ReliableOrdered);
+                    return;
                 }
+                // Not ours, and not handed on by us: the pawn may be on its way here (the gateway followed the
+                // redirect before the handover arrived). The release is kept for the grace so the handover cannot
+                // undo it; ExpireSessions forgets it if nothing arrives.
                 return;
             }
             // The pawn stays for the reclaim grace (SessionReclaimSeconds): the player may be reconnecting, here or
@@ -2420,6 +2439,14 @@ namespace Nebula
             }
         }
 
+        /// <summary>Is a gateway with this key (<see cref="PlayerSessions.GatewayKey"/>) linked to this worker right now?</summary>
+        private bool IsGatewayLinked(string gatewayKey)
+        {
+            if (string.IsNullOrEmpty(gatewayKey)) return false;
+            foreach (var g in _gateways) if (g.Key == gatewayKey) return true;
+            return false;
+        }
+
         /// <summary>The player is gone for good: tell the game, drop the pawn (a persistent pawn keeps its record for the next connection).</summary>
         private void DespawnPlayer(ulong clientId)
         {
@@ -2435,10 +2462,10 @@ namespace Nebula
         }
 
         /// <summary>Sessions nobody reclaimed within <see cref="NebulaConfig.SessionReclaimSeconds"/> (their gateway went away, or their client left) lose their pawn.</summary>
-        private void ExpireSessions()
+        private void ExpireSessions(double now)
         {
             _expiredSessions.Clear();
-            _sessions.Expire(Time.unscaledTime, Config.SessionReclaimSeconds, _expiredSessions);
+            _sessions.Expire(now, Config.SessionReclaimSeconds, _expiredSessions);
             foreach (var id in _expiredSessions)
             {
                 if (FindPlayer(id) is NetworkIdentity e && e.HasAuthority) NebulaLog.Info($"session {id} was not reclaimed; despawning {e}");

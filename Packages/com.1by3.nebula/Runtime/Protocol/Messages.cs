@@ -1429,6 +1429,20 @@ namespace Nebula
         /// D15). A trailing optional byte: an older reader stops before it.
         /// </summary>
         public bool Crossing;
+        /// <summary>
+        /// The owner's session was waiting for a reclaim on the sender (<see cref="PlayerSessions.Session.Orphan"/>):
+        /// the player disconnected, or the gateway's link to the sender dropped. The receiver keeps it waiting, so a
+        /// pawn handed over in the reclaim window is still removed if nobody comes back. With
+        /// <see cref="SessionReclaimRemaining"/>, a trailing optional section after <see cref="Crossing"/>, written
+        /// only for an orphan: an older reader stops before it.
+        /// </summary>
+        public PlayerSessions.OrphanKind SessionOrphan;
+        /// <summary>
+        /// Seconds of the reclaim grace (<see cref="NebulaConfig.SessionReclaimSeconds"/>) the session had left on the
+        /// sender. A duration, not a time: the two workers' clocks differ, so the receiver resumes the countdown
+        /// from its own clock.
+        /// </summary>
+        public float SessionReclaimRemaining;
 
         public void Write(NetworkWriter w)
         {
@@ -1443,7 +1457,11 @@ namespace Nebula
             w.WriteString(SessionGateway ?? "");
             w.WriteUShort((ushort)(InterestGateways?.Length ?? 0));
             if (InterestGateways != null) foreach (var key in InterestGateways) w.WriteString(key);
-            if (Crossing) w.WriteByte(1);
+            bool orphan = SessionOrphan != PlayerSessions.OrphanKind.None;
+            if (Crossing || orphan) w.WriteByte(Crossing ? (byte)1 : (byte)0);
+            if (!orphan) return;
+            w.WriteByte((byte)SessionOrphan);
+            w.WriteFloat(SessionReclaimRemaining);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r)
@@ -1460,6 +1478,11 @@ namespace Nebula
                 InterestGateways = ReadStrings(r),
             };
             msg.Crossing = r.Remaining > 0 && r.ReadByte() != 0;
+            if (r.Remaining > 0)
+            {
+                msg.SessionOrphan = (PlayerSessions.OrphanKind)r.ReadByte();
+                msg.SessionReclaimRemaining = r.ReadFloat();
+            }
             return msg;
         }
 
