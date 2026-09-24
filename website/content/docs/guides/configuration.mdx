@@ -34,7 +34,7 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | Field | Default | What to set |
 | --- | --- | --- |
 | `GatewayAddress`, `GatewayPort` | `127.0.0.1`, `7000` | Set the address and port clients use to reach the gateway. |
-| `WorkerBasePort` | `7100` | Set the base for worker ports. Worker 1 uses `7101`, worker 2 uses `7102`, and so on. |
+| `WorkerBasePort` | `7100` | Set the base for worker ports. Worker 1 uses `7101`, worker 2 uses `7102`, and so on. A worker started with `-nebula-port`, or with the `PORT` environment variable set, listens on that port instead. |
 | `WorkerAdvertiseAddress` | `127.0.0.1` | Set the address workers advertise to peers and the gateway. |
 | `WebClients` | `true` | Let the standalone gateway accept clients from a Unity Web build over WebRTC. See [Build for the web](/docs/guides/web-builds). |
 | `WebPort` | `0` | Set the gateway's TCP port for WebRTC offers and the web build. `0` uses the same number as `GatewayPort`. A web client connects to this port. |
@@ -188,7 +188,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-auth-token <jwt>` | client | Present this OpenID Connect ID token to the gateway. See [Authentication](/docs/guides/authentication). |
 | `-nebula-worker-id <id>` | worker | Set the worker ID. The orchestrator normally supplies it. |
 | `-nebula-worker-index <number>` | worker | Set the worker index. The orchestrator normally supplies it. |
-| `-nebula-port <port>` | worker | Set the worker's listening port. |
+| `-nebula-port <port>` | worker | Set the worker's listening port. Without this option, the worker uses the `PORT` environment variable, then `WorkerBasePort + index`. A `PORT` value that is not a port from 1 to 65535 is ignored with a warning. Other roles ignore `PORT`. |
 | `-nebula-advertise <address\|auto>` | worker, gateway, orchestrator | Set the address advertised to other processes. Use `auto` to select the first private IPv4 address. |
 | `-nebula-control-plane <url>` | worker, gateway | Override `ControlPlaneUrl`. |
 | `-nebula-gateway-id <id>` | gateway | Set the gateway's persistent ID (default `gw1`). Give every gateway of a mesh a distinct one. |

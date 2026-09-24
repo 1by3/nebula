@@ -80,7 +80,7 @@ public ushort GatewayPort = 7000;
 public ushort WorkerBasePort = 7100;
 ```
 
-Workers listen on WorkerBasePort + workerIndex.
+The base of the worker ports: a worker listens on `WorkerBasePort` plus its index. A worker started with `-nebula-port` listens on that port instead, and one started without it listens on the `PORT` environment variable when that is set to a port from 1 to 65535. Only the worker reads `PORT`. The worker registers the port it listens on, and gateways and other workers connect to that, so no other process needs this value to find it.
 
 ### WorkerAdvertiseAddress [#workeradvertiseaddress]
 

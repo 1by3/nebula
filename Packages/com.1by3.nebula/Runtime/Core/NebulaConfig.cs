@@ -35,7 +35,14 @@ namespace Nebula
         [Header("Networking")]
         public string GatewayAddress = "127.0.0.1";
         public ushort GatewayPort = 7000;
-        [Tooltip("Workers listen on WorkerBasePort + workerIndex.")]
+        /// <summary>
+        /// The base of the worker ports: a worker listens on <c>WorkerBasePort</c> plus its index. A worker started
+        /// with <c>-nebula-port</c> listens on that port instead, and one started without it listens on the
+        /// <c>PORT</c> environment variable when that is set to a port from 1 to 65535. Only the worker reads
+        /// <c>PORT</c>. The worker registers the port it listens on, and gateways and other workers connect to that,
+        /// so no other process needs this value to find it.
+        /// </summary>
+        [Tooltip("Workers listen on WorkerBasePort + workerIndex, unless -nebula-port or the PORT environment variable sets another port.")]
         public ushort WorkerBasePort = 7100;
         [Tooltip("Address workers advertise to peers and the gateway.")]
         public string WorkerAdvertiseAddress = "127.0.0.1";
