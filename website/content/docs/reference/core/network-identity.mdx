@@ -407,7 +407,7 @@ A position in the scope's own space (a part of a ship, a door, a quest giver) in
 public void PlaceInScope(Vector3 position, Quaternion rotation);
 ```
 
-Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a frame would put it at those numbers in the frame's coordinates. Outside frames this is a plain assignment; the next tick resolves the container as usual.
+Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a frame would put it at those numbers in the frame's coordinates. When the target is inside a frame (a ship's interior), the entity lands in that frame at the matching frame-local pose. Outside frames this is a plain assignment; the next tick resolves the container as usual.
 
 ### StateAt [#stateat]
 
