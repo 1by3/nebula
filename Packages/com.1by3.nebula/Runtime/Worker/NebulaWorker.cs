@@ -166,7 +166,6 @@ namespace Nebula
         private readonly Dictionary<ContainerRef, List<EntitySpawnMsg>> _pendingGhostsByCarrier = new Dictionary<ContainerRef, List<EntitySpawnMsg>>();
         private readonly Dictionary<ContainerRef, List<PendingTransfer>> _pendingTransfersByCarrier = new Dictionary<ContainerRef, List<PendingTransfer>>();
         private readonly List<Container> _neighborScratch = new List<Container>();
-        private readonly List<NetworkIdentity> _contentsScratch = new List<NetworkIdentity>();
         /// <summary>
         /// Snapshots of one container's contents for the recursive whole-subtree walks (a handoff, an
         /// evacuation). One shared scratch list cannot serve those: the recursion would refill the list the
@@ -619,17 +618,33 @@ namespace Nebula
         public void EmptyContainer(Container container)
         {
             if (container == null) return;
-            _contentsScratch.Clear();
-            container.CollectContents(_contentsScratch, throughAuthoritativeCarriersOnly: true);
-            // Backwards: the walk lists every carrier before what rides in it, so riders go first and each is saved
-            // aboard its carrier rather than set down in the box by the carrier's own despawn.
-            for (int i = _contentsScratch.Count - 1; i >= 0; i--)
+            var contents = CollectCarriersFirst(container);
+            try
             {
-                var e = _contentsScratch[i];
-                if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
-                Despawn(e, keepPersisted: e.Persistent != null, takesRiders: true);
+                // Backwards: the walk lists every carrier before what rides in it, so riders go first and each is saved
+                // aboard its carrier rather than set down in the box by the carrier's own despawn.
+                for (int i = contents.Count - 1; i >= 0; i--)
+                {
+                    var e = contents[i];
+                    if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
+                    Despawn(e, keepPersisted: e.Persistent != null, takesRiders: true);
+                }
             }
-            _contentsScratch.Clear();
+            finally { ReturnContents(contents); }
+        }
+
+        /// <summary>
+        /// Everything in <paramref name="box"/> and, through the carriers this worker simulates, in their boxes at any
+        /// depth, every carrier listed before what rides in it: the walk <see cref="EmptyContainer"/> and
+        /// <see cref="CargoPolicy.Stow"/> share. A pooled list, safe while a despawn in the walk empties another box;
+        /// give it back with <see cref="ReturnContents"/>.
+        /// </summary>
+        private List<NetworkIdentity> CollectCarriersFirst(Container box)
+        {
+            var list = _contentsPool.Count > 0 ? _contentsPool.Pop() : new List<NetworkIdentity>(8);
+            list.Clear();
+            box.CollectContents(list, throughAuthoritativeCarriersOnly: true);
+            return list;
         }
 
         /// <summary>
@@ -1106,7 +1121,10 @@ namespace Nebula
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
                 // inside the other.
-                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
+                // An entity fixed to its container (FrameAttachment) keeps it, wherever its origin is: it is never
+                // moved into a neighbouring container or across a frame's boundary. The owner check below still runs,
+                // so it follows its container to whichever worker owns it (docs/frame-bodies.md D8).
+                var resolved = e.ContainerPinned ? e.Container : ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
                 if (resolved != e.Container)
                 {
                     var previous = e.Container;
@@ -1291,6 +1309,62 @@ namespace Nebula
         /// </para>
         /// </summary>
         public void Despawn(NetworkIdentity identity, bool keepPersisted = false) => Despawn(identity, keepPersisted, takesRiders: false);
+
+        /// <summary>
+        /// <see cref="Despawn(NetworkIdentity, bool)"/>, saying what becomes of the entities riding in its carried
+        /// container. <see cref="CargoPolicy.SetDown"/> puts them down where the carrier stood, as the two-argument
+        /// overload does. <see cref="CargoPolicy.Stow"/> keeps the persistent cargo aboard: each persistent rider this
+        /// worker simulates (not a player's pawn) is checkpointed aboard and despawned before the carrier, so it comes
+        /// back with the carrier when the carrier's record is restored. Use it to put a ship away in a hangar or an
+        /// inventory with its hold full. Stowing needs <paramref name="keepPersisted"/> and a persistent carrier;
+        /// without them the cargo is set down, with a warning (<c>docs/frame-bodies.md</c> D5).
+        /// </summary>
+        public void Despawn(NetworkIdentity identity, bool keepPersisted, CargoPolicy cargo)
+        {
+            if (cargo == CargoPolicy.Stow) StowCargo(identity, keepPersisted);
+            Despawn(identity, keepPersisted, takesRiders: false);
+        }
+
+        /// <summary>
+        /// Despawn, saved aboard, the riders <see cref="CargoPolicy.Stow"/> keeps with <paramref name="carrier"/>: a
+        /// rider is stowed when this worker is its authority, it is persistent and no client owns it, and it sits
+        /// directly in the box of the carrier or of a rider that is stowed itself. Riders go before their carriers.
+        /// </summary>
+        private void StowCargo(NetworkIdentity carrier, bool keepPersisted)
+        {
+            if (carrier == null || !carrier.HasAuthority || !_entities.ContainsKey(carrier.NetId)) return;
+            var box = carrier.Carried;
+            if (box == null || !box.IsDynamic || box.Entities.Count == 0) return;
+            if (!keepPersisted || carrier.Persistent == null)
+            {
+                NebulaLog.Warn($"Despawn({carrier}, CargoPolicy.Stow) needs a persistent carrier despawned with keepPersisted: its cargo could never come back, so it is set down instead");
+                return;
+            }
+            var contents = CollectCarriersFirst(box);
+            try
+            {
+                // Forwards, carriers before their riders, to decide; backwards to despawn, riders first.
+                _stowed.Clear();
+                _stowed.Add(carrier);
+                for (int i = 0; i < contents.Count; i++)
+                {
+                    var e = contents[i];
+                    if (e == null || !e.IsSpawned || !e.HasAuthority || e.Persistent == null || e.OwnerClientId != 0) { contents[i] = null; continue; }
+                    var c = e.Container;
+                    if (c == null || !c.IsDynamic || !_stowed.Contains(c.Carrier)) { contents[i] = null; continue; }
+                    _stowed.Add(e);
+                }
+                for (int i = contents.Count - 1; i >= 0; i--)
+                    if (contents[i] != null && contents[i].IsSpawned) Despawn(contents[i], keepPersisted: true, takesRiders: false);
+            }
+            finally
+            {
+                _stowed.Clear();
+                ReturnContents(contents);
+            }
+        }
+
+        private readonly HashSet<NetworkIdentity> _stowed = new HashSet<NetworkIdentity>();
 
         /// <summary>
         /// <see cref="Despawn(NetworkIdentity, bool)"/>, telling the workers that hold a ghost of a carrier whether

@@ -1,0 +1,187 @@
+---
+title: "FrameAttachment"
+description: "Fixes an entity to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's hold, a turret bolted to a deck, a crate set on a shelf in a building."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/FrameAttachment.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/FrameAttachment.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+public sealed class FrameAttachment : NetworkBehaviour
+```
+
+Fixes an entity to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's hold, a turret bolted to a deck, a crate set on a shelf in a building. An attached entity does not slide, is not moved into a neighboring container, keeps its attachment through a handover, a restore from the store and a late joiner's spawn, and is let go gently. Add it to any entity, with or without a [`NetworkRigidbody`](/docs/reference/core/network-rigidbody).
+
+The authority calls [`Attach`](#attach), at a pose or, with no arguments, where the entity is now, and [`Detach`](#detach); any worker holding a copy can ask with [`RequestAttach`](#requestattach) and [`RequestDetach`](#requestdetach). It works in a ship's physics frame, in a fixed container (a building, a chunk) and in a carrier without a frame. While attached:
+
+- the entity sits in the container it is attached to, and the worker's tick does not re-resolve its container from its position. It is still handed to the worker that owns the container, so an entity attached to a container another worker owns moves there on the next tick, and a re-deal of the container takes it along;
+- its body, if it has one, is kinematic on the authority, and its pose is put back at the attached pose every tick, so other bodies can rest on it;
+- when its container changes for any other reason (its carrier despawned and set it down, it was placed somewhere else), it detaches.
+
+A detach keeps the entity in its container, where it is. Its body turns dynamic with the velocity the attached pose had over the last tick (zero in a physics frame or a fixed container, the carrier's velocity in a carrier without a frame), and for [`DetachSettleTicks`](#detachsettleticks) the body's depenetration speed is capped at [`DetachDepenetrationVelocity`](#detachdepenetrationvelocity), so a crate attached slightly inside another is eased apart. The attachment is saved with a [`PersistentEntity`](/docs/reference/persistence/persistent-entity) and comes back attached, including as cargo stowed with [`CargoPolicy.Stow`](/docs/reference/worker/cargo-policy#stow). See `docs/frame-bodies.md` §2.
+
+## Fields
+
+### DetachSettleTicks [#detachsettleticks]
+
+```csharp
+public int DetachSettleTicks = 10;
+```
+
+For this many ticks after a detach the body's depenetration speed is capped at DetachDepenetrationVelocity, so an overlap is eased apart instead of launching the body.
+
+### DetachDepenetrationVelocity [#detachdepenetrationvelocity]
+
+```csharp
+public float DetachDepenetrationVelocity = 1f;
+```
+
+The body's depenetration speed, in m/s, for DetachSettleTicks ticks after a detach.
+
+## Properties
+
+### Attached [#attached]
+
+```csharp
+public bool Attached { get; }
+```
+
+The entity is attached to its container. The same on every process that holds it.
+
+### AttachedTo [#attachedto]
+
+```csharp
+public Container AttachedTo { get; }
+```
+
+The container the entity is attached to (always the container it is in), or null when it is not attached.
+
+### AttachedLocalPosition [#attachedlocalposition]
+
+```csharp
+public Vector3 AttachedLocalPosition { get; }
+```
+
+The attached pose's position in the container's space. Known on the authority; meaningless when not attached.
+
+### AttachedLocalRotation [#attachedlocalrotation]
+
+```csharp
+public Quaternion AttachedLocalRotation { get; } = Quaternion.identity;
+```
+
+The attached pose's rotation in the container's space. Known on the authority; meaningless when not attached.
+
+## Events
+
+### AttachedChanged [#attachedchanged]
+
+```csharp
+public event Action<bool> AttachedChanged;
+```
+
+The entity was attached (true) or detached (false). Raised on every process that holds the entity: on the authority when it happens, on ghosts and clients when they hear of it, and when an attached entity spawns on a process, a late joiner included.
+
+## Methods
+
+### Attach [#attach]
+
+```csharp
+public bool Attach(Container container, Vector3 localPosition, Quaternion localRotation, bool teleport = false);
+public bool Attach();
+```
+
+Authority: attach the entity to `container` at a pose in the container's space, moving it into the container first. Pass `teleport` to make remote copies snap to the pose instead of interpolating there. Attaching an attached entity moves the attachment. Returns false, with a warning, when this process is not the entity's authority or the container cannot hold the entity (one it carries itself).
+
+### Detach [#detach]
+
+```csharp
+public bool Detach();
+```
+
+Authority: let the entity go, where it is, in the container it is in. Returns false when it was not attached or this process is not its authority.
+
+### RequestAttach [#requestattach]
+
+```csharp
+public void RequestAttach(Container container, Vector3 localPosition, Quaternion localRotation, bool teleport = false);
+public void RequestAttach();
+```
+
+From any worker that simulates or ghosts the entity: ask its authority to [`Attach`](#attach). The container is named by its id, so it must be known on the authority's worker too.
+
+### RequestDetach [#requestdetach]
+
+```csharp
+public void RequestDetach();
+```
+
+From any worker that simulates or ghosts the entity: ask its authority to [`Detach`](#detach) it.
+
+### NetworkTick [#networktick]
+
+```csharp
+public override void NetworkTick(uint tick, float deltaTime);
+```
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnNetworkDespawn [#onnetworkdespawn]
+
+```csharp
+public override void OnNetworkDespawn();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```
+
+### OnLostAuthority [#onlostauthority]
+
+```csharp
+public override void OnLostAuthority();
+```
+
+### OnContainerChanged [#oncontainerchanged]
+
+```csharp
+public override void OnContainerChanged(Container previous, Container current);
+```
+
+### OnOriginShifted [#onoriginshifted]
+
+```csharp
+public override void OnOriginShifted(Vector3 delta);
+```
+
+### WriteHandoverState [#writehandoverstate]
+
+```csharp
+public override void WriteHandoverState(NetworkWriter writer);
+```
+
+### ReadHandoverState [#readhandoverstate]
+
+```csharp
+public override void ReadHandoverState(NetworkReader reader);
+```
+
+### WritePersistentState [#writepersistentstate]
+
+```csharp
+public override void WritePersistentState(NetworkWriter writer);
+```
+
+Always saved, attached or not, so the record is the one source of truth: a version byte, the flag, and the attached pose when attached (`docs/frame-bodies.md` D14).
+
+### ReadPersistentState [#readpersistentstate]
+
+```csharp
+public override void ReadPersistentState(NetworkReader reader);
+```

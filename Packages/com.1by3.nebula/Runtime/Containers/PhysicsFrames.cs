@@ -9,8 +9,9 @@ namespace Nebula
     /// The motion of a physics frame in the space around it, once per tick, on every process that holds the frame
     /// (<c>docs/container-tree.md</c> D14): its pose, linear and angular velocity, and linear acceleration. The frame's
     /// owner computes it from the carrier it simulates; everyone else from the replicated stream, so a leased interior
-    /// reads it one replication delay late. Nebula applies no fictitious forces: whether crates slide when the ship
-    /// brakes is the game's call, made from <see cref="LocalAcceleration"/> and <see cref="LocalAngularVelocity"/>.
+    /// reads it one replication delay late. Nebula applies no fictitious forces by itself: whether crates slide when the
+    /// ship brakes is the game's call, made with <see cref="FrameInertia"/> on the bodies that should, or from
+    /// <see cref="LocalAcceleration"/> and <see cref="LocalAngularVelocity"/> directly.
     /// </summary>
     public struct PhysicsFrameState
     {
@@ -117,6 +118,19 @@ namespace Nebula
         private Vector3 _lastVelocity;
         private int _samples;
         internal readonly List<KeyValuePair<Collider, Collider>> Clones = new List<KeyValuePair<Collider, Collider>>();
+        /// <summary>
+        /// The copies whose source has moved since the frame was built, each with the kinematic body that now moves it
+        /// (<c>docs/frame-bodies.md</c> D3). A copy that never moves is not in here and stays a static collider.
+        /// </summary>
+        internal readonly Dictionary<Collider, MovingClone> MovingClones = new Dictionary<Collider, MovingClone>();
+
+        /// <summary>A copy that moves as a kinematic body, and the frame-local pose it was last sent to.</summary>
+        internal struct MovingClone
+        {
+            public Rigidbody Body;
+            public Vector3 Position;
+            public Quaternion Rotation;
+        }
         internal GameObject Content;
         internal bool OwnsScene;
 
@@ -279,6 +293,7 @@ namespace Nebula
             }
             foreach (var pair in frame.Clones) if (!ReferenceEquals(pair.Value, null)) CloneSources.Remove(pair.Value);
             frame.Clones.Clear();
+            frame.MovingClones.Clear();
             if (frame.OwnsScene) ReturnScene(frame.Scene);
             frame.Scene = default;
         }
@@ -371,7 +386,7 @@ namespace Nebula
                 frame.Clones.Add(new KeyValuePair<Collider, Collider>(source, clone));
                 CloneSources[clone] = source;
             }
-            SyncContent(frame);
+            SyncContent(frame, placing: true);
         }
 
         /// <summary>
@@ -412,35 +427,90 @@ namespace Nebula
         /// <summary>
         /// Keep each cloned collider where its source is relative to the owner, and enabled as it is: a ramp that
         /// lowers or a door that opens on the hull does the same inside the frame. Called once per tick.
+        /// <para>
+        /// On a process that steps the frame's scene (a worker), a copy whose source moves becomes a kinematic body the
+        /// first time it moves, and is moved with <see cref="Rigidbody.MovePosition"/> from then on, so PhysX gives it
+        /// a velocity for the step and a crate on a moving ramp rides it rather than being pushed out of an overlap
+        /// (<c>docs/frame-bodies.md</c> D3). A client renders its frames posed and does not step them, so its copies
+        /// are placed through their transforms.
+        /// </para>
         /// </summary>
-        internal static void SyncContent(PhysicsFrame frame)
+        internal static void SyncContent(PhysicsFrame frame) => SyncContent(frame, placing: false);
+
+        /// <param name="frame">The frame whose copies follow their sources.</param>
+        /// <param name="placing">The frame is being built: every copy is put in place, and none counts as moving.</param>
+        private static void SyncContent(PhysicsFrame frame, bool placing)
         {
             if (frame.Clones.Count == 0 || frame.Owner == null) return;
-            var toOwner = frame.Owner.transform.worldToLocalMatrix;
+            var owner = frame.Owner.transform;
+            bool steps = !placing && frame.OwnsScene && !RendersFrames && frame.Root != null;
             for (int i = frame.Clones.Count - 1; i >= 0; i--)
             {
                 var pair = frame.Clones[i];
                 if (pair.Key == null || pair.Value == null)
                 {
-                    if (!ReferenceEquals(pair.Value, null)) CloneSources.Remove(pair.Value);
+                    if (!ReferenceEquals(pair.Value, null)) { CloneSources.Remove(pair.Value); frame.MovingClones.Remove(pair.Value); }
                     if (pair.Value != null) Destroy(pair.Value.gameObject);
                     frame.Clones.RemoveAt(i);
                     continue;
                 }
-                var m = toOwner * pair.Key.transform.localToWorldMatrix;
+                var m = RelativeTo(pair.Key.transform, owner);
                 var t = pair.Value.transform;
                 var position = (Vector3)m.GetColumn(3);
                 var rotation = m.rotation;
                 var scale = m.lossyScale;
-                if (t.localPosition != position || t.localRotation != rotation || t.localScale != scale)
+                if (t.localScale != scale) t.localScale = scale;
+                if (frame.MovingClones.TryGetValue(pair.Value, out var moving) && moving.Body != null)
                 {
-                    t.localPosition = position;
-                    t.localRotation = rotation;
-                    t.localScale = scale;
+                    // A kinematic copy's transform reaches its target when the scene steps, and reads back from the
+                    // body with rounding: compare with the target instead, exactly (the pose is composed from local
+                    // poses, so it does not jitter), so a slow part moves every tick and a part at rest sleeps.
+                    if (!moving.Position.Equals(position) || !moving.Rotation.Equals(rotation)) MoveKinematic(frame, pair.Value, position, rotation);
+                }
+                else if (t.localPosition != position || t.localRotation != rotation)
+                {
+                    if (steps) MoveKinematic(frame, pair.Value, position, rotation);
+                    else
+                    {
+                        t.localPosition = position;
+                        t.localRotation = rotation;
+                    }
                 }
                 bool enabled = pair.Key.enabled && pair.Key.gameObject.activeInHierarchy;
                 if (pair.Value.enabled != enabled) pair.Value.enabled = enabled;
             }
+        }
+
+        /// <summary>
+        /// <paramref name="source"/>'s pose relative to <paramref name="owner"/>, composed from the local poses in
+        /// between. Going through world space instead would subtract two large positions for a carrier far from the
+        /// origin and turn a part at rest into one that jitters by rounding error.
+        /// </summary>
+        private static Matrix4x4 RelativeTo(Transform source, Transform owner)
+        {
+            var m = Matrix4x4.identity;
+            for (var t = source; t != null && t != owner; t = t.parent) m = Matrix4x4.TRS(t.localPosition, t.localRotation, t.localScale) * m;
+            return m;
+        }
+
+        /// <summary>Move a copy to a frame-local pose as a kinematic body, turning it into one the first time.</summary>
+        private static void MoveKinematic(PhysicsFrame frame, Collider clone, Vector3 localPosition, Quaternion localRotation)
+        {
+            if (!frame.MovingClones.TryGetValue(clone, out var moving) || moving.Body == null)
+            {
+                var body = clone.GetComponent<Rigidbody>();
+                if (body == null) body = clone.gameObject.AddComponent<Rigidbody>();
+                body.isKinematic = true;
+                body.useGravity = false;
+                body.interpolation = RigidbodyInterpolation.None;
+                moving.Body = body;
+            }
+            moving.Position = localPosition;
+            moving.Rotation = localRotation;
+            frame.MovingClones[clone] = moving;
+            var root = frame.Root;
+            moving.Body.MovePosition(root.TransformPoint(localPosition));
+            moving.Body.MoveRotation(root.rotation * localRotation);
         }
 
         // ------------------------------------------------------------------------------------ per tick

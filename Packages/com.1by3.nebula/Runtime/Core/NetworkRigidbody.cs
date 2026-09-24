@@ -18,7 +18,7 @@ namespace Nebula
         private Rigidbody _body;
         private Vector3 _handoverAngularVelocity;
         private bool _handoverKinematic, _handoverSleeping;
-        private bool _simulate = true, _gated, _gatedKinematic;
+        private bool _simulate = true, _held, _gated, _gatedKinematic;
 
         public Rigidbody Body => _body != null ? _body : (_body = GetComponent<Rigidbody>());
 
@@ -34,15 +34,50 @@ namespace Nebula
             set
             {
                 if (_simulate == value) return;
+                bool was = Forced;
                 _simulate = value;
-                if (!HasAuthority) return;
-                if (!value) { Gate(Body.isKinematic); return; }
-                if (!_gated) return;
-                _gated = false;
-                if (_gatedKinematic) return;
-                SyncBodyPose();
-                Body.isKinematic = false;
+                Reforce(was);
             }
+        }
+
+        /// <summary>
+        /// A second reason to keep the authoritative body kinematic, next to <see cref="Simulate"/>: the entity is
+        /// fixed to its container (<see cref="FrameAttachment"/>, <c>docs/frame-bodies.md</c> D9). Set it before the
+        /// entity spawns or gains authority (while reading persistent or handover state) and the body is never
+        /// dynamic for a tick. Like <see cref="Simulate"/>, the body's own kinematic flag is kept underneath, and the
+        /// handover carries that flag, not this one.
+        /// </summary>
+        internal bool Held
+        {
+            get => _held;
+            set
+            {
+                if (_held == value) return;
+                bool was = Forced;
+                _held = value;
+                Reforce(was);
+            }
+        }
+
+        /// <summary>The body is held kinematic on the authority whatever its own flag says.</summary>
+        private bool Forced => !_simulate || _held;
+
+        /// <summary>
+        /// A reason to hold the body came or went. On the authority: hold it the moment the first reason appears, and
+        /// hand it back to the solver, from the pose the transform has now, when the last one clears. Elsewhere the
+        /// body is kinematic anyway and the next gain of authority reads <see cref="Forced"/>.
+        /// </summary>
+        private void Reforce(bool wasForced)
+        {
+            if (!HasAuthority) return;
+            bool forced = Forced;
+            if (forced == wasForced) return;
+            if (forced) { Gate(Body.isKinematic); return; }
+            if (!_gated) return;
+            _gated = false;
+            if (_gatedKinematic) return;
+            SyncBodyPose();
+            Body.isKinematic = false;
         }
 
         /// <summary>
@@ -58,7 +93,7 @@ namespace Nebula
         public override void OnNetworkSpawn()
         {
             _handoverKinematic = Body.isKinematic;
-            if (HasAuthority && !_simulate) { Gate(Body.isKinematic); return; }
+            if (HasAuthority && Forced) { Gate(Body.isKinematic); return; }
             if (HasAuthority) SyncBodyPose();
             Body.isKinematic = !HasAuthority;
             if (HasAuthority) Body.linearVelocity = Identity.Motion.Velocity;
@@ -78,7 +113,7 @@ namespace Nebula
 
         public override void OnGainedAuthority()
         {
-            if (!_simulate) { Gate(_handoverKinematic); return; }
+            if (Forced) { Gate(_handoverKinematic); return; }
             if (!_handoverKinematic) SyncBodyPose();
             Body.isKinematic = _handoverKinematic;
             if (Body.isKinematic) return;
