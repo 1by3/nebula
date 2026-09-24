@@ -1,0 +1,54 @@
+---
+title: "EditorDevPaths"
+description: "Where the Multiplayer Play Mode dev loop keeps its files: under the project's Library/Nebula, shared by the main Editor and every virtual player, and never read by a build."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs)</div>
+
+```csharp
+public static class EditorDevPaths
+```
+
+Where the Multiplayer Play Mode dev loop keeps its files: under the project's `Library/Nebula`, shared by the main Editor and every virtual player, and never read by a build.
+
+## Methods
+
+### ProjectRoot [#projectroot]
+
+```csharp
+public static string ProjectRoot(string dataPath);
+```
+
+The project's root folder from `Application.dataPath` (`<root>/Assets`). A virtual player runs from a copy of the project inside `<root>/Library/VP/<player>`, so its own data path is walked back out of that folder to the project it belongs to.
+
+### Folder [#folder]
+
+```csharp
+public static string Folder(string projectRoot);
+```
+
+The dev loop's folder: `<root>/Library/Nebula`.
+
+### DevSaveFile [#devsavefile]
+
+```csharp
+public static string DevSaveFile(string projectRoot);
+```
+
+The save file of [`NebulaEditorPersistence.DevSaveFile`](/docs/reference/bootstrap/nebula-editor-persistence#devsavefile): `Library/Nebula/DevSaves/world.bin`.
+
+### DevAuthKey [#devauthkey]
+
+```csharp
+public static string DevAuthKey(string projectRoot);
+```
+
+The player signing key of the server a virtual player hosts ([`NebulaGateway.AuthKeyPath`](/docs/reference/gateway/nebula-gateway#authkeypath)): `Library/Nebula/dev-auth.key`. A virtual player's persistent data folder is not the main Editor's, so without this the identity the main Editor saved would be refused once every session. Builds never read it.
+
+### DevSaves [#devsaves]
+
+```csharp
+public static string DevSaves(string projectRoot);
+```
+
+The folder [`DevSaveFile`](#devsavefile) is in.

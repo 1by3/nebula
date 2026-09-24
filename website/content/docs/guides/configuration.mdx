@@ -29,6 +29,16 @@ Run `nebula init` to create the asset. For every field and its current default, 
 | `OriginShiftThresholdCells` | `4` | Move the floating origin after the client pawn or worker lease center crosses this many cells. |
 | `SceneEntityGraceSeconds` | `2` | Wait this long before a new container owner spawns scene entities that did not arrive in a handover. |
 
+### Editor dev loop
+
+These fields change only what pressing Play in the Editor starts. Builds ignore them. See [Iterate without building](/docs/getting-started/running-locally#iterate-without-building-multiplayer-play-mode).
+
+| Field | Default | What to set |
+| --- | --- | --- |
+| `EditorRunMode` | `Mesh` | `Mesh` runs `NebulaBootstrap.EditorRole` against a mesh started with `nebula start`. `MultiplayerPlayMode` lets a Multiplayer Play Mode virtual player host the server while the main Editor joins as a client, with no build. |
+| `EditorPersistence` | `DevSaveFile` | `DevSaveFile` keeps the dev server's saved entities in `Library/Nebula/DevSaves/world.bin` between Play sessions. `InMemory` starts every Play from an empty world. |
+| `EditorPortOffset` | `50` | Add this to the gateway, worker and dashboard ports in `MultiplayerPlayMode`, so a mesh started with `nebula start` can run at the same time. `0` uses the configured ports. |
+
 ### Connections and processes
 
 | Field | Default | What to set |

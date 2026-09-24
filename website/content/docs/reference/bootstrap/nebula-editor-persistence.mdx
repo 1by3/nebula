@@ -1,0 +1,19 @@
+---
+title: "NebulaEditorPersistence"
+description: "Where the server a virtual player hosts keeps persistent entities (NebulaConfig.EditorPersistence)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Bootstrap/EditorRunMode.cs)</div>
+
+```csharp
+public enum NebulaEditorPersistence
+```
+
+Where the server a virtual player hosts keeps persistent entities ([`NebulaConfig.EditorPersistence`](/docs/reference/core/nebula-config#editorpersistence)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="devsavefile"></span>`DevSaveFile` | `0` | A save file inside the project's `Library/Nebula/DevSaves` folder, kept from one Play to the next. `Nebula > Dev Loop > Reset Dev Saves` deletes it. |
+| <span id="inmemory"></span>`InMemory` | `1` | Nothing is kept: every Play starts from a fresh world. |

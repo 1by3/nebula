@@ -59,7 +59,7 @@ If you already have a `Nebula` object, check that it has all three components. T
 
 The setup only fills in what is missing, so it is safe to run again at any point. Run it after the next steps too: it adds your game mode to the scene and registers your network prefabs.
 
-The bootstrap is the entry point of every process. It reads the role from `-nebula-role` (or `EditorRole` when you press Play), loads `NebulaConfig.GameScene`, and starts the matching services. A process is a worker *or* a client, never both.
+The bootstrap is the entry point of every process. It reads the role from `-nebula-role` (or `EditorRole` when you press Play), loads `NebulaConfig.GameScene`, and starts the matching services. A process is a worker *or* a client, never both. To play in the Editor without a build, let a second Editor process be the worker. See [Iterate without building](/docs/getting-started/running-locally#iterate-without-building-multiplayer-play-mode).
 
 </Step>
 <Step>

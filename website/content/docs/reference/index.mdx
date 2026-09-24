@@ -262,7 +262,13 @@ Choose a process role and start its Nebula components.
 
 | Type | Summary |
 | --- | --- |
+| [EditorDevPaths](/docs/reference/bootstrap/editor-dev-paths) | Static class. Where the Multiplayer Play Mode dev loop keeps its files: under the project's Library/Nebula, shared by the main Editor and every virtual player, and never read by a build. |
+| [EditorDevSession](/docs/reference/bootstrap/editor-dev-session) | Static class. Binds the clients of the Multiplayer Play Mode dev loop to the server their own session started, so a client never joins some other mesh that happens to hold the port. |
+| [EditorPlayer](/docs/reference/bootstrap/editor-player) | Enum. What one Editor process does under NebulaEditorRunMode.MultiplayerPlayMode, decided by EditorRunPlan.Resolve from facts the bootstrap reads (whether this is the Editor, whether this is the main Editor or a virtual player, its Multiplayer... |
+| [EditorRunPlan](/docs/reference/bootstrap/editor-run-plan) | Struct. The decision for one Editor process in the Multiplayer Play Mode dev loop, and the settings it implies. |
 | [NebulaBootstrap](/docs/reference/bootstrap/nebula-bootstrap) | Class. Entry point for Unity workers and clients. |
+| [NebulaEditorPersistence](/docs/reference/bootstrap/nebula-editor-persistence) | Enum. Where the server a virtual player hosts keeps persistent entities (NebulaConfig.EditorPersistence). |
+| [NebulaEditorRunMode](/docs/reference/bootstrap/nebula-editor-run-mode) | Enum. What pressing Play in the Editor starts (NebulaConfig.EditorRunMode). |
 | [NebulaRoles](/docs/reference/bootstrap/nebula-roles) | Enum. Lists the process roles that NebulaBootstrap can start. |
 
 ## Serialization

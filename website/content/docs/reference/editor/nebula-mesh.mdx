@@ -27,6 +27,15 @@ public static void StartLocalMesh();
 public static void StopLocalMesh();
 ```
 
+### ResetDevSaves [#resetdevsaves]
+
+```csharp
+[MenuItem("Nebula/Dev Loop/Reset Dev Saves", priority = 45)]
+public static void ResetDevSaves();
+```
+
+Delete the save file the Multiplayer Play Mode dev loop keeps ([`NebulaEditorPersistence.DevSaveFile`](/docs/reference/bootstrap/nebula-editor-persistence#devsavefile)), so the next Play starts from a fresh world. A mesh started with `nebula start` keeps its own data and is not touched.
+
 ### OpenDashboard [#opendashboard]
 
 ```csharp
