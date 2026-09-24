@@ -631,7 +631,7 @@ A member riding in another member's carried container ([`NetworkIdentity.Carried
 | Parameter | Description |
 | --- | --- |
 | `transfers` | Distinct entity preparations owned by this worker. This is not a cross-worker transaction. |
-| `translation` | World-space displacement applied to each member, preserving its rotation. |
+| `translation` | Displacement from the source scope's own space to the destination's, applied to each member's pose in its scope, preserving its rotation. A member inside a physics frame is read out of the frame first. |
 
 ### PrepareTransfer [#preparetransfer]
 
@@ -653,7 +653,7 @@ Prepare an authorized crossing. The game must check admission before calling. Pr
 public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quaternion rotation);
 ```
 
-Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.
+Commit a prepared crossing at a pose in the destination scope's own space (world space when no physics frame is involved). A destination inside a physics frame gets the frame-local pose that matches it. Preserves identity and velocity. Returns false if readiness or authority changed.
 
 ### HoldContainer [#holdcontainer]
 

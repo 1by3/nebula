@@ -119,7 +119,7 @@ The scope is derived from `TemplateId + "/" + key`; each part's runtime ID also 
 
 For matchmaking or teleportation, call `NebulaWorker.PrepareInstance(template, key, origin)`. It returns container references. Resolve them after the control plane has delivered their leases, then call `PrepareTransfer(entity, destination)` after checking admission.
 
-Keep the returned `InstanceTransfer` until `Ready` is true or `Error` is set. Call `TryCommitTransfer` to cross at a world-space position and rotation. It returns false if preparation, source authority, or the destination lease is no longer valid. Preparation expires after its timeout. Each transfer can be committed once.
+Keep the returned `InstanceTransfer` until `Ready` is true or `Error` is set. Call `TryCommitTransfer` to cross at a world-space position and rotation in the destination scope. If the destination is inside a [physics frame](/docs/guides/physics-frames), Nebula converts the pose into the frame. It returns false if preparation, source authority, or the destination lease is no longer valid. Preparation expires after its timeout. Each transfer can be committed once.
 
 Follow this sequence on the entity's authoritative worker:
 

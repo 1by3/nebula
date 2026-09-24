@@ -59,7 +59,7 @@ When code relates something inside a frame to something outside it, convert the 
 | `NetworkIdentity.Space` | The framed container whose coordinates the entity is in, or `null` outside frames. |
 | `identity.FromScope(worldPosition)` | A world position, such as a door on the hull, in the entity's coordinates. |
 | `identity.ToScope(position)` | A position in the entity's coordinates as a world position. |
-| `identity.PlaceInScope(position, rotation)` | Moves the entity to a world pose, leaving its frame first. Use it for respawns and teleports. |
+| `identity.PlaceInScope(position, rotation)` | Moves the entity to a world pose. It leaves its current frame first, and enters the frame at the target when the target is inside one, such as another ship's interior. Use it for respawns and teleports. |
 | `PhysicsFrames.Convert(position, fromSpace, toSpace)` | Converts between any two spaces. `null` is the world. |
 | `PhysicsFrames.SourceOf(collider)` | The carrier's original collider for a copy inside a frame. |
 
