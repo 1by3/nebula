@@ -262,6 +262,8 @@ The rest of the service is on `worker.Persistence` (a [`NebulaPersistence`](/doc
 - `Despawn(entity)` deletes the record. Use it when the entity ceased to exist in the world — it was destroyed, consumed, or picked up.
 - `Despawn(entity, keepPersisted: true)` removes the entity from the mesh but keeps the record. Use it when the world should still contain the entity, such as a player disconnecting.
 
+A despawned carrier sets down whatever rides in it where it stood. To keep a carrier's persistent cargo aboard, for example when a ship is put away in a hangar, pass `CargoPolicy.Stow`: `Despawn(ship, keepPersisted: true, CargoPolicy.Stow)` saves each persistent rider aboard the ship before despawning it, and the cargo comes back when the ship is restored. See [Stow a ship with its cargo](/docs/guides/physics-frames#stow-a-ship-with-its-cargo).
+
 Nebula's own paths that merely unload an entity never delete a record: a scene entity leaving with its streamed cell, a ghost being removed, a duplicate restore losing to a handover, and worker shutdown all keep what is saved. A disconnecting client's pawn is despawned with `keepPersisted: true` when it carries a `PersistentEntity`.
 
 To forget an entity without despawning it, call `worker.Persistence.Delete(key)`.

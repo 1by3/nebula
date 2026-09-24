@@ -1,0 +1,19 @@
+---
+title: "CargoPolicy"
+description: "What happens to the entities riding in a carrier's container when the carrier is despawned with NebulaWorker.Despawn (docs/frame-bodies.md D5)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Worker/CargoPolicy.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Worker/CargoPolicy.cs)</div>
+
+```csharp
+public enum CargoPolicy
+```
+
+What happens to the entities riding in a carrier's container when the carrier is despawned with [`NebulaWorker.Despawn`](/docs/reference/worker/nebula-worker#despawn) (`docs/frame-bodies.md` D5).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="setdown"></span>`SetDown` |  | Put every rider down in the container the carrier was in, at the pose it has now. What [`NebulaWorker.Despawn`](/docs/reference/worker/nebula-worker#despawn) always does. |
+| <span id="stow"></span>`Stow` |  | Keep the persistent cargo aboard: every rider this worker is authoritative for that has a [`PersistentEntity`](/docs/reference/persistence/persistent-entity), no owning client, and sits directly in the box of the carrier or of another stowed rider is checkpointed aboard and despawned, deepest first, so its record names its carrier and it comes back when the carrier is restored. Everything else aboard (a player's pawn, a transient entity) is put down as with `SetDown`. Needs a persistent carrier despawned with `keepPersisted`. |

@@ -10,7 +10,11 @@ namespace Nebula
     /// <summary>Motion shared by scripted movement, prediction, physics, telemetry, and persistence.</summary>
     public sealed class NetworkMotionState
     {
-        /// <summary>World-space linear velocity. This is only streamed when a root NetworkTransform opts in.</summary>
+        /// <summary>
+        /// Linear velocity in the entity's own space: frame-local (relative to the ship) inside a physics frame
+        /// (<see cref="NetworkIdentity.Space"/>), the scope's own space everywhere else. This is only streamed when a root
+        /// NetworkTransform opts in. A change of space converts it (<see cref="PhysicsFrames.ConvertVelocity"/>).
+        /// </summary>
         public Vector3 Velocity;
     }
 
@@ -133,6 +137,13 @@ namespace Nebula
         /// <summary>Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.</summary>
         public void LeaveCohesionGroup() => JoinCohesionGroup(0);
         public Container Container { get; internal set; }
+        /// <summary>
+        /// The entity is fixed to <see cref="Container"/> (<see cref="FrameAttachment"/>): its authority's tick does not
+        /// re-resolve its container from its position, and no <see cref="InstanceBoundary"/> moves it. The owner check
+        /// still runs, so it is handed to whichever worker owns the container. Local to the authority; a handover or a
+        /// restore sets it again (<c>docs/frame-bodies.md</c> D8).
+        /// </summary>
+        internal bool ContainerPinned;
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
         /// <summary>
@@ -510,6 +521,7 @@ namespace Nebula
             HasStateTick = false;
             _publishedLocation = false;
             _hasPendingState = false;
+            ContainerPinned = false;
             SetContainer(null, reparent: false);
             if (Interpolator != null)
             {

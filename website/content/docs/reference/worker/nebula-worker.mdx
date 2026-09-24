@@ -567,6 +567,7 @@ public NetworkIdentity SpawnPrefab(GameObject prefab, Vector3 position, Quaterni
 
 ```csharp
 public void Despawn(NetworkIdentity identity, bool keepPersisted = false);
+public void Despawn(NetworkIdentity identity, bool keepPersisted, CargoPolicy cargo);
 ```
 
 Remove an entity from the mesh. A persistent entity ([`PersistentEntity`](/docs/reference/persistence/persistent-entity)) is also forgotten by the store: this is the entity ceasing to exist, not merely leaving this process. Pass `keepPersisted` true when the world should keep it (a player disconnecting, a cell unloading): its record is checkpointed one last time and left in place.
