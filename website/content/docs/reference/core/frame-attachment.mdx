@@ -178,7 +178,7 @@ public override void ReadHandoverState(NetworkReader reader);
 public override void WritePersistentState(NetworkWriter writer);
 ```
 
-Saved only while attached: a version byte and the attached pose (`docs/frame-bodies.md` D14).
+Always saved, attached or not, so the record is the one source of truth: a version byte, the flag, and the attached pose when attached (`docs/frame-bodies.md` D14).
 
 ### ReadPersistentState [#readpersistentstate]
 

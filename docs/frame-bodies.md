@@ -128,12 +128,14 @@ reason other than `Attach` (its carrier despawned and set it down, `PlaceInScope
 detaches and `AttachedChanged(false)` is raised. A pinned entity is never re-resolved, so this only happens when
 something outside the tick moves it.
 
-**D14 Persistence saves one chunk, not a variable.** `WritePersistentState` writes the flag and the local pose
-(versioned) only while attached. `ReadPersistentState` sets `Attached`, the pin and the hold before the restored
-entity spawns. `Attached` is deliberately not `[Persist]`: one source of truth, with no dependence on the order in
-which the codec reads variables and chunks, and it survives `PersistentEntity.PersistPose = false`. The container
-comes from the record (`ContainerId` or `CarrierKey`), so attached cargo stowed with `CargoPolicy.Stow` comes back
-attached with its carrier.
+**D14 Persistence saves one chunk, not a variable.** `WritePersistentState` always writes a version, the flag, and
+the local pose when attached, so a detached save says so rather than leaving a stale value in place.
+`ReadPersistentState` sets `Attached` and the hold from it before the restored entity spawns. `Attached` is
+deliberately not `[Persist]`: one source of truth, with no dependence on the order in which the codec reads
+variables and chunks, and it survives `PersistentEntity.PersistPose = false`. A despawn on the authority clears the
+attachment and gives the body its own kinematic flag back: a scene entity keeps its values when it leaves the
+network, and one spawned again with no record is not attached. The container comes from the record (`ContainerId`
+or `CarrierKey`), so attached cargo stowed with `CargoPolicy.Stow` comes back attached with its carrier.
 
 **D15 `AttachedChanged` fires on every process.** It is raised from `Attached.OnValueChanged`, which fires on the
 authority when the value is set and on ghosts and clients when it is received, including a late joiner's spawn.

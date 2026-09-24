@@ -391,6 +391,67 @@ namespace Nebula.Tests
             Assert.That(Vector3.Distance(at, back.LocalPosition), Is.LessThan(1e-4f), "still strapped where it was, not fallen");
         }
 
+        [Test]
+        public void ADetachedSaveIsWrittenAndRestoresDetached()
+        {
+            TwoChunks();
+            _store = ConformanceFrameBodiesTests.PersistenceFor(_mesh);
+            var saved = _mesh.RegisterPrefab(AttachablePrefab("saved-crate", persistent: true));
+            var crate = W1.SpawnServerDriven(saved, _west, new Vector3(-10f, 0.5f, 0f), Quaternion.identity);
+            var attachment = crate.GetComponent<FrameAttachment>();
+            string key = crate.Persistent.EnsureKey();
+            Assert.IsTrue(attachment.Attach());
+            W1.Act(() => W1.Instance.Persistence.SaveNow(crate));
+            var attachedRecord = ConformanceFrameBodiesTests.RecordOf(_store, key);
+            Assert.IsTrue(attachment.Detach());
+            W1.Act(() => W1.Instance.Persistence.SaveNow(crate));
+            var detachedRecord = ConformanceFrameBodiesTests.RecordOf(_store, key);
+            Assert.IsTrue(PersistentStateCodec.TryReadBehaviourState(detachedRecord.State, nameof(FrameAttachment), out _),
+                "a detached save still writes the attachment's chunk");
+
+            // A copy that already says it is attached (a scene entity's last values) takes the record's word for it.
+            var copy = NetworkPrefabs.Instantiate(saved, Vector3.zero, Quaternion.identity, null);
+            try
+            {
+                W1.Act(() => W1.Instance.Persistence.Apply(attachedRecord, copy, applyPose: false));
+                var copyAttachment = copy.GetComponent<FrameAttachment>();
+                Assume.That(copyAttachment.Attached);
+                W1.Act(() => W1.Instance.Persistence.Apply(detachedRecord, copy, applyPose: false));
+                Assert.IsFalse(copyAttachment.Attached, "restored detached");
+                Assert.IsFalse(copy.GetComponent<NetworkRigidbody>().Held, "and not held");
+            }
+            finally { Object.DestroyImmediate(copy.gameObject); }
+        }
+
+        [Test]
+        public void ASceneEntitySpawnedAgainWithNoRecordIsNotAttached()
+        {
+            TwoChunks();
+            var go = AttachablePrefab("scene-crate");
+            var crate = go.GetComponent<NetworkIdentity>();
+            crate.SceneId = 4242;
+            go.transform.position = new Vector3(-10f, 0.5f, 0f);
+            try
+            {
+                W1.Act(() => W1.Instance.SpawnServerDriven(crate, _west));
+                var attachment = crate.GetComponent<FrameAttachment>();
+                Assert.IsTrue(attachment.Attach());
+                W1.Act(() => W1.Instance.Despawn(crate));
+                Assert.IsFalse(crate.IsSpawned);
+                Assert.IsFalse(attachment.Attached, "the attachment does not outlive the entity's life on the network");
+
+                W1.Act(() => W1.Instance.SpawnServerDriven(crate, _west));
+                Assert.IsFalse(attachment.Attached, "spawned again with no record: not attached");
+                Assert.IsFalse(crate.ContainerPinned);
+                Assert.IsFalse(crate.GetComponent<Rigidbody>().isKinematic, "and not held");
+            }
+            finally
+            {
+                if (crate.IsSpawned) W1.Act(() => W1.Instance.Despawn(crate));
+                Object.DestroyImmediate(go);
+            }
+        }
+
         // ------------------------------------------------------------------------------------ late joiners (D15)
 
         [Test]

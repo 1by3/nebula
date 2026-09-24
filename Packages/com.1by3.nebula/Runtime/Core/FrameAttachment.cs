@@ -42,8 +42,11 @@ namespace Nebula
 
         private NetworkVariable<bool> _attached = new NetworkVariable<bool>();
 
-        /// <summary>Version of the <see cref="WritePersistentState"/> chunk.</summary>
-        private const byte PersistVersion = 1;
+        /// <summary>
+        /// Version of the <see cref="WritePersistentState"/> chunk. Version 1 was written only while attached and held
+        /// the pose alone; version 2 always holds the flag, and the pose after it when attached.
+        /// </summary>
+        private const byte PersistVersion = 2;
 
         private Rigidbody _body;
         private NetworkRigidbody _networkBody;
@@ -321,8 +324,15 @@ namespace Nebula
         public override void OnNetworkDespawn()
         {
             RestoreDepenetration();
-            if (Identity != null) Identity.ContainerPinned = false;
             _reported = false;
+            // A scene entity keeps its values and its body when it leaves the network: the attachment must not outlive
+            // this life, so one spawned again with no record is not attached, pinned or held (D14). The record was
+            // written before the despawn. The body gets its own kinematic flag back, as the scene authored it, before
+            // the next spawn reads it. Reset after _reported, so no listener hears a detach.
+            Hold(false);
+            if (HasAuthority) _attached.Value = false;
+            _hasPose = false;
+            _simSamples = 0;
         }
 
         public override void OnGainedAuthority()
@@ -390,11 +400,15 @@ namespace Nebula
             if (Identity != null) Identity.ContainerPinned = false; // set with authority, in OnGainedAuthority
         }
 
-        /// <summary>Saved only while attached: a version byte and the attached pose (<c>docs/frame-bodies.md</c> D14).</summary>
+        /// <summary>
+        /// Always saved, attached or not, so the record is the one source of truth: a version byte, the flag, and the
+        /// attached pose when attached (<c>docs/frame-bodies.md</c> D14).
+        /// </summary>
         public override void WritePersistentState(NetworkWriter writer)
         {
-            if (!_attached.Value) return;
             writer.WriteByte(PersistVersion);
+            writer.WriteBool(_attached.Value);
+            if (!_attached.Value) return;
             writer.WriteVector3(AttachedLocalPosition);
             writer.WriteQuaternion(AttachedLocalRotation);
         }
@@ -402,17 +416,19 @@ namespace Nebula
         public override void ReadPersistentState(NetworkReader reader)
         {
             byte version = reader.ReadByte();
-            if (version != PersistVersion)
+            bool attached = false;
+            if (version == 1) attached = true; // written only while attached
+            else if (version == PersistVersion) attached = reader.ReadBool();
+            else NebulaLog.Warn($"FrameAttachment on {name}: saved state version {version} is not one this build reads; restored unattached");
+            _hasPose = attached;
+            if (attached)
             {
-                NebulaLog.Warn($"FrameAttachment on {name}: saved state version {version} is not one this build reads; restored unattached");
-                return;
+                AttachedLocalPosition = reader.ReadVector3();
+                AttachedLocalRotation = reader.ReadQuaternion();
             }
-            AttachedLocalPosition = reader.ReadVector3();
-            AttachedLocalRotation = reader.ReadQuaternion();
-            _hasPose = true;
             // Before the spawn: the body is held from its first tick.
-            _attached.Value = true;
-            if (NetworkBody != null) NetworkBody.Held = true;
+            _attached.Value = attached;
+            if (NetworkBody != null) NetworkBody.Held = attached;
         }
     }
 }
