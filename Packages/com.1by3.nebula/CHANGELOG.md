@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- The dashboard loads again. An apostrophe in the tooltip of the "leased → inherited" container tag ended its JavaScript string early, so the page's script failed with `SyntaxError: Unexpected identifier 's'` and nothing rendered. (NEB-307)
+
 ## [0.1.0-alpha.31] - 2026-09-23
 
 Wire protocol 19; gateways of this release refuse protocol-18 clients. Rebuild clients and servers together.

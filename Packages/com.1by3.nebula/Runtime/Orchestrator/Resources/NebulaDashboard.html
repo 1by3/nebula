@@ -365,7 +365,7 @@
 
     if (c.mode === 'inherited') t += `<span class="tag" title="Inherited: simulated by the worker that owns its parent${c.ownerFrom ? ' (' + esc(c.ownerFrom) + ')' : ''}">inherited</span>`;
 
-    if (c.mode === 'demoted') t += '<span class="tag warn" title="Authored as leased, but its parent moves and has no physics frame of its own, so its carrier's worker simulates it">leased → inherited</span>';
+    if (c.mode === 'demoted') t += '<span class="tag warn" title="Authored as leased, but its parent moves and has no physics frame of its own, so its carrier’s worker simulates it">leased → inherited</span>';
 
     return t + frameTags(c);
 
