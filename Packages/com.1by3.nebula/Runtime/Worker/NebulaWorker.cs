@@ -364,7 +364,10 @@ namespace Nebula
             WorkerId = CommandLine.Get("nebula-worker-id", $"w{WorkerIndex}");
             Incarnation = SessionIds.NewIncarnation();
             _peerKey = string.IsNullOrEmpty(config.MeshToken) ? null : MeshPeerAuth.DeriveKey(config.MeshToken);
-            Port = (ushort)CommandLine.GetInt("nebula-port", config.WorkerBasePort + WorkerIndex);
+            // Only the worker reads PORT: a host that runs one worker per machine can choose the port through it.
+            var listenPort = WorkerListenPort.Resolve(CommandLine.Get("nebula-port"), Environment.GetEnvironmentVariable(WorkerListenPort.EnvironmentVariable), config.WorkerBasePort, WorkerIndex);
+            if (listenPort.Warning != null) NebulaLog.Warn(listenPort.Warning);
+            Port = listenPort.Port;
             NebulaRuntime.LocalWorkerId = WorkerId;
             NebulaRuntime.LocalWorkerIndex = WorkerIndex;
             NebulaRuntime.RpcSink = this;
@@ -405,7 +408,7 @@ namespace Nebula
             }
             var boot = NebulaBootstrap.Instance;
             _telemetry = WorkerTelemetry.Create(boot != null && boot.Orchestrator != null ? boot.Orchestrator.Telemetry : null);
-            NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port}; telemetry {(_telemetry == null ? "off" : _telemetry.Url == "" ? "to the orchestrator in this process" : "to " + _telemetry.Url)}");
+            NebulaLog.Info($"worker {WorkerId} (index {WorkerIndex}) listening on udp/{Port} (from {listenPort.Describe}); telemetry {(_telemetry == null ? "off" : _telemetry.Url == "" ? "to the orchestrator in this process" : "to " + _telemetry.Url)}");
             _gameMode?.OnWorkerStarted(this);
         }
 
