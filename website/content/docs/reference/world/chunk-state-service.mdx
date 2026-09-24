@@ -1,0 +1,143 @@
+---
+title: "ChunkStateService"
+description: "The write side of ChunkState on a worker, reached as NebulaWorker.ChunkStates."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs)</div>
+
+```csharp
+public sealed class ChunkStateService : IDisposable
+```
+
+The write side of [`ChunkState`](/docs/reference/world/chunk-state) on a worker, reached as [`NebulaWorker.ChunkStates`](/docs/reference/worker/nebula-worker#chunkstates). Every change is applied by the worker that holds the chunk's lease, one at a time, so two workers cannot both take the last unit of a resource. A worker that does not hold the lease sends the change to the one that does, found through the container's lease, and gets the result back. That works whether or not the chunk has any entries yet, and whether or not this worker holds a copy of them.
+
+[`CompareAndSet`](#compareandset) is the safe way to consume something: it applies the change only if the entry is still what the caller last saw, and otherwise reports [`ChunkStateOutcome.Conflict`](/docs/reference/world/chunk-state-outcome#conflict) with the entry it found. When this worker holds the lease and the chunk is ready, the change is applied at once and the callback runs before the call returns; [`TryCompareAndSetLocal`](#trycompareandsetlocal) does only that, and never sends anything.
+
+The chunk must be leased by some worker: a change to a chunk nobody has loaded is [`ChunkStateOutcome.Unavailable`](/docs/reference/world/chunk-state-outcome#unavailable). A chunk that has just been leased is not ready until its saved state has been restored; changes to it wait for that, up to their deadline.
+
+## Fields
+
+### RequestMessageKind [#requestmessagekind]
+
+```csharp
+public const ushort RequestMessageKind = 65010;
+```
+
+Worker message kind of a change sent to the lease holder. High in the range, next to [`EntityRequests.RequestMessageKind`](/docs/reference/worker/entity-requests#requestmessagekind), so it does not collide with a game's own kinds.
+
+### ReplyMessageKind [#replymessagekind]
+
+```csharp
+public const ushort ReplyMessageKind = 65011;
+```
+
+Worker message kind of the lease holder's answer.
+
+### DefaultTimeoutSeconds [#defaulttimeoutseconds]
+
+```csharp
+public const float DefaultTimeoutSeconds = 5f;
+```
+
+How long a change waits for its result by default, in seconds.
+
+### EmptyLingerSeconds [#emptylingerseconds]
+
+```csharp
+public const float EmptyLingerSeconds = 1f;
+```
+
+How long an emptied chunk's entity stays before it is despawned and its record deleted, in seconds. Long enough for the last change to reach the clients as a change rather than as the entity leaving.
+
+### MaxAttempts [#maxattempts]
+
+```csharp
+public const int MaxAttempts = 4;
+```
+
+How many times a change follows a lease that moved before it gives up as [`ChunkStateOutcome.Unavailable`](/docs/reference/world/chunk-state-outcome#unavailable).
+
+### RetryDelaySeconds [#retrydelayseconds]
+
+```csharp
+public const float RetryDelaySeconds = 0.1f;
+```
+
+Seconds before a change whose lease moved is sent again, so the new lease can reach this worker.
+
+## Properties
+
+### PendingCount [#pendingcount]
+
+```csharp
+public int PendingCount { get; }
+```
+
+Changes this worker is waiting on: sent to another worker, or held until a chunk it leases is ready.
+
+## Methods
+
+### HoldsLease [#holdslease]
+
+```csharp
+public bool HoldsLease(string containerId);
+```
+
+Whether this worker holds the lease of the container `containerId`.
+
+### CanApplyLocally [#canapplylocally]
+
+```csharp
+public bool CanApplyLocally(string containerId);
+```
+
+Whether a change to the chunk would be applied on this worker right now: it holds the chunk's lease and the chunk's saved state has been restored.
+
+### Set [#set]
+
+```csharp
+public void Set(Container chunk, ulong objectId, ObjectState state, Action<ChunkStateResult> onDone = null, float timeoutSeconds = DefaultTimeoutSeconds);
+public void Set(string containerId, ulong objectId, ObjectState state, Action<ChunkStateResult> onDone = null, float timeoutSeconds = DefaultTimeoutSeconds);
+```
+
+Set the object's entry, whatever it was. See [`CompareAndSet`](#compareandset) for routing and results.
+
+### Clear [#clear]
+
+```csharp
+public void Clear(Container chunk, ulong objectId, Action<ChunkStateResult> onDone = null, float timeoutSeconds = DefaultTimeoutSeconds);
+public void Clear(string containerId, ulong objectId, Action<ChunkStateResult> onDone = null, float timeoutSeconds = DefaultTimeoutSeconds);
+```
+
+Remove the object's entry, so it is untouched again.
+
+### CompareAndSet [#compareandset]
+
+```csharp
+public void CompareAndSet(Container chunk, ulong objectId, ObjectState? expected, ObjectState? replacement, Action<ChunkStateResult> onDone, float timeoutSeconds = DefaultTimeoutSeconds);
+public void CompareAndSet(string containerId, ulong objectId, ObjectState? expected, ObjectState? replacement, Action<ChunkStateResult> onDone, float timeoutSeconds = DefaultTimeoutSeconds);
+```
+
+### TryCompareAndSetLocal [#trycompareandsetlocal]
+
+```csharp
+public bool TryCompareAndSetLocal(string containerId, ulong objectId, ObjectState? expected, ObjectState? replacement, out ChunkStateResult result);
+```
+
+The local fast path: apply a compare-and-set here and now if this worker holds the chunk's lease and the chunk is ready, and never send anything. Returns false, with nothing changed, when the change has to go to another worker or wait; use [`CompareAndSet`](#compareandset) for those.
+
+### TrySetLocal [#trysetlocal]
+
+```csharp
+public bool TrySetLocal(string containerId, ulong objectId, ObjectState? state, out ChunkStateResult result);
+```
+
+The local fast path for an unconditional write: set the entry (or clear it, for a null `state`) if this worker holds the chunk's lease and the chunk is ready. False, with nothing changed, otherwise.
+
+### Dispose [#dispose]
+
+```csharp
+public void Dispose();
+```
+
+Stop answering; changes still waiting are dropped without their callbacks.

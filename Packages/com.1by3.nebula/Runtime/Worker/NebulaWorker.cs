@@ -274,6 +274,15 @@ namespace Nebula
         /// </summary>
         private EntityRequests _entityRequests;
 
+        private Nebula.World.ChunkStateService _chunkStates;
+
+        /// <summary>
+        /// Changes to the sparse per-object state of procedurally placed objects (<see cref="Nebula.World.ChunkState"/>),
+        /// routed to the worker that holds each chunk's lease. Created with the worker, so every worker in a mesh
+        /// answers the changes other workers send it.
+        /// </summary>
+        public Nebula.World.ChunkStateService ChunkStates => _chunkStates ??= new Nebula.World.ChunkStateService(this);
+
         /// <summary>Answer entity requests of <paramref name="kind"/> whenever this worker has authority over the target key. See <see cref="EntityRequests.RegisterHandler"/>.</summary>
         public void RegisterEntityRequestHandler(ushort kind, EntityRequests.Handler handler) => _entityRequests.RegisterHandler(kind, handler);
 
@@ -398,6 +407,7 @@ namespace Nebula
             }
             IsListening = true;
             _entityRequests = new EntityRequests(this, key => Persistence?.Find(key), () => ConnectedWorkerIndices);
+            _ = ChunkStates; // registers the chunk state message handlers before any peer can send one
             // The row this worker asks the control plane for, settled before anything can read the document: the
             // port is known only now, and OnControlPlaneChanged may fire before the first Update.
             _registration.WorkerId = WorkerId;
@@ -724,6 +734,7 @@ namespace Nebula
         {
             _pendingPlayerSpawns.Clear();
             _entityRequests?.Dispose();
+            _chunkStates?.Dispose();
             // Save what we own before anything is torn down; the records stay, the entities come back elsewhere.
             Persistence?.Shutdown();
             ContainerRegistry.LeasesChanged -= OnLeasesChanged;
@@ -788,6 +799,7 @@ namespace Nebula
             // Checkpoints and restores run here, off the tick, bounded per frame.
             Persistence?.Update();
             _entityRequests?.Update();
+            _chunkStates?.Update();
             _callRouter?.Ledger.Expire(CurrentTick);
             _callTracker?.Expire(CurrentTick);
         }

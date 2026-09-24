@@ -3,9 +3,26 @@ using UnityEngine;
 
 namespace Nebula
 {
-    /// <summary>Prefab id table shared by every process. Ids are the index in <see cref="NebulaConfig.NetworkPrefabs"/>.</summary>
+    /// <summary>
+    /// Prefab id table shared by every process. Ids are the index in <see cref="NebulaConfig.NetworkPrefabs"/>.
+    /// Ids from <see cref="BuiltInBase"/> up are reserved for prefabs Nebula itself provides (such as the entity
+    /// behind <see cref="Nebula.World.ChunkState"/>): every process builds them the same way, so a game never
+    /// lists them and they never shift when the game's list changes.
+    /// </summary>
     public static class NetworkPrefabs
     {
+        /// <summary>First id reserved for Nebula's built-in prefabs. A game's list is never this long.</summary>
+        public const ushort BuiltInBase = 0xFF00;
+
+        /// <summary>The built-in prefab of <see cref="Nebula.World.ChunkStateEntity"/>.</summary>
+        public const ushort ChunkStatePrefabId = BuiltInBase;
+
+        /// <summary>Whether <paramref name="prefabId"/> is one of Nebula's built-in prefabs rather than an entry of the game's list.</summary>
+        public static bool IsBuiltIn(ushort prefabId) => prefabId >= BuiltInBase && prefabId != ushort.MaxValue;
+
+        private static GameObject BuiltIn(ushort prefabId) =>
+            prefabId == ChunkStatePrefabId ? Nebula.World.ChunkStateEntity.Template : null;
+
         private static readonly List<GameObject> Prefabs = new List<GameObject>();
         private static readonly Dictionary<GameObject, ushort> Ids = new Dictionary<GameObject, ushort>();
 
@@ -27,13 +44,23 @@ namespace Nebula
 
         public static int Count => Prefabs.Count;
 
-        public static GameObject Get(ushort prefabId) => prefabId < Prefabs.Count ? Prefabs[prefabId] : null;
+        /// <summary>The prefab registered under <paramref name="prefabId"/>, a built-in one included; null when there is none.</summary>
+        public static GameObject Get(ushort prefabId)
+        {
+            if (IsBuiltIn(prefabId)) return BuiltIn(prefabId);
+            return prefabId < Prefabs.Count ? Prefabs[prefabId] : null;
+        }
 
-        public static bool TryGetId(GameObject prefab, out ushort id) => Ids.TryGetValue(prefab, out id);
+        public static bool TryGetId(GameObject prefab, out ushort id)
+        {
+            if (Ids.TryGetValue(prefab, out id)) return true;
+            if (prefab != null && prefab == BuiltIn(ChunkStatePrefabId)) { id = ChunkStatePrefabId; return true; }
+            return false;
+        }
 
         public static ushort IdOf(GameObject prefab)
         {
-            if (Ids.TryGetValue(prefab, out var id)) return id;
+            if (TryGetId(prefab, out var id)) return id;
             throw new System.InvalidOperationException($"'{prefab.name}' is not registered in NebulaConfig.NetworkPrefabs");
         }
 
@@ -49,6 +76,8 @@ namespace Nebula
             var source = prefab.GetComponent<NetworkIdentity>();
             if (source != null && source.SceneId != 0) return InstantiateClearingSceneId(prefab, prefabId, source.SceneId, position, rotation, parent);
             var go = Object.Instantiate(prefab, position, rotation, parent);
+            // A built-in prefab is a hidden object that is never saved; its copies are ordinary scene objects.
+            if (IsBuiltIn(prefabId)) { go.hideFlags = HideFlags.None; go.name = prefab.name; }
             var identity = go.GetComponent<NetworkIdentity>();
             identity.PrefabId = prefabId;
             identity.Initialize();

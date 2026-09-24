@@ -214,6 +214,13 @@ namespace Nebula
             return saved;
         }
 
+        /// <summary>
+        /// A record under <paramref name="key"/> came back with a container this worker leases, but its saver is
+        /// still alive and may yet hand the entity over (<see cref="RestorePlan.Wait"/>). Anything that would create
+        /// an entity under that key must wait, or it would become a second copy of the one on its way.
+        /// </summary>
+        internal bool IsAwaitingHandover(string key) => !string.IsNullOrEmpty(key) && _waiting.ContainsKey(key);
+
         /// <summary>The live entity saving under <paramref name="key"/> in this process, or null.</summary>
         public NetworkIdentity Find(string key)
         {
@@ -303,6 +310,21 @@ namespace Nebula
             if (_worker != null && _worker.IsFenced)
             {
                 if (!pe.IsDirty) { pe.IsDirty = true; pe.DirtySince = Now(); }
+                return;
+            }
+            if (pe.DiscardRecord)
+            {
+                // Nothing worth keeping (an emptied chunk state): the checkpoint is a delete, so no empty record is
+                // left behind for a restore to bring back (docs/chunk-state.md D5).
+                string key = pe.EnsureKey();
+                _store.Delete(key);
+                _waiting.Remove(key);
+                _waitingUntil.Remove(key);
+                pe.StampPending = false;
+                pe.IsDirty = false;
+                pe.DirtySince = 0f;
+                pe.LastSavedAt = Now();
+                if (!_byKey.ContainsKey(key)) _byKey[key] = identity;
                 return;
             }
             var record = BuildRecord(identity);

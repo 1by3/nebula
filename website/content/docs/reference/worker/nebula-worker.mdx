@@ -303,6 +303,14 @@ public IEnumerable<NetworkIdentity> Entities { get; }
 public IReadOnlyList<NetworkIdentity> Authoritative { get; }
 ```
 
+### ChunkStates [#chunkstates]
+
+```csharp
+public Nebula.World.ChunkStateService ChunkStates { get; }
+```
+
+Changes to the sparse per-object state of procedurally placed objects (`Nebula.World.ChunkState`), routed to the worker that holds each chunk's lease. Created with the worker, so every worker in a mesh answers the changes other workers send it.
+
 ### ConnectedWorkerIds [#connectedworkerids]
 
 ```csharp

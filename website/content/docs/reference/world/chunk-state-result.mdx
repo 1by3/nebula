@@ -1,0 +1,56 @@
+---
+title: "ChunkStateResult"
+description: "The result of one change, passed to the callback of a ChunkStateService call."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs)</div>
+
+```csharp
+public readonly struct ChunkStateResult
+```
+
+The result of one change, passed to the callback of a [`ChunkStateService`](/docs/reference/world/chunk-state-service) call.
+
+## Fields
+
+### Outcome [#outcome]
+
+```csharp
+public readonly ChunkStateOutcome Outcome;
+```
+
+What became of the change.
+
+### HasState [#hasstate]
+
+```csharp
+public readonly bool HasState;
+```
+
+The object has an entry: after an applied change, the entry now; after a conflict or a refused change, the entry the worker found. False means untouched (or unknown, for [`ChunkStateOutcome.TimedOut`](/docs/reference/world/chunk-state-outcome#timedout) and [`ChunkStateOutcome.Unavailable`](/docs/reference/world/chunk-state-outcome#unavailable)).
+
+### State [#state]
+
+```csharp
+public readonly ObjectState State;
+```
+
+The entry, when [`HasState`](#hasstate) is true.
+
+## Properties
+
+### Succeeded [#succeeded]
+
+```csharp
+public bool Succeeded { get; }
+```
+
+Whether the change was applied.
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

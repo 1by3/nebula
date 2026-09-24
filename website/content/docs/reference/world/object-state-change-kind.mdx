@@ -1,0 +1,21 @@
+---
+title: "ObjectStateChangeKind"
+description: "What happened to an object's entry in ObjectStateChange."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkState.cs)</div>
+
+```csharp
+public enum ObjectStateChangeKind : byte
+```
+
+What happened to an object's entry in [`ObjectStateChange`](/docs/reference/world/object-state-change).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="set"></span>`Set` | `0` | The object has an entry, new or changed. This includes the entries of a chunk whose state has just arrived in this process. |
+| <span id="cleared"></span>`Cleared` | `1` | The entry was removed by a write. The object is untouched again. |
+| <span id="expired"></span>`Expired` | `2` | The entry's [`ObjectState.ExpiresAtUnixMs`](/docs/reference/world/object-state#expiresatunixms) passed. The object is untouched again. |
+| <span id="forgotten"></span>`Forgotten` | `3` | This process no longer holds the chunk's state: the chunk left this client's interest or was unloaded here. The entry was not changed. A client that still draws the chunk can keep the object as it was. |

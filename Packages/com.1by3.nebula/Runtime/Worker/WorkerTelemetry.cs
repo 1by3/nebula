@@ -339,7 +339,8 @@ namespace Nebula
             {
                 foreach (var e in entities)
                 {
-                    if (e == null) continue;
+                    // Nebula's own bookkeeping (a chunk's state) is not load and not occupancy (docs/chunk-state.md D7).
+                    if (e == null || e.ExcludeFromOccupancy) continue;
                     int slot = SlotOf(e.Container);
                     var c = _counts[slot];
                     if (!e.HasAuthority) c.Ghosts++;

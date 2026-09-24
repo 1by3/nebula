@@ -1,0 +1,70 @@
+---
+title: "ObjectStateChange"
+description: "One change to one object's entry, raised through ChunkState.Changed."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkState.cs)</div>
+
+```csharp
+public readonly struct ObjectStateChange
+```
+
+One change to one object's entry, raised through [`ChunkState.Changed`](/docs/reference/world/chunk-state#changed).
+
+## Fields
+
+### Container [#container]
+
+```csharp
+public readonly Container Container;
+```
+
+The chunk (container) the object belongs to. Can be null if the container is not registered in this process.
+
+### ContainerId [#containerid]
+
+```csharp
+public readonly string ContainerId;
+```
+
+The id of the chunk's container, such as `rt_1234`.
+
+### ObjectId [#objectid]
+
+```csharp
+public readonly ulong ObjectId;
+```
+
+The game's id for the object.
+
+### Kind [#kind]
+
+```csharp
+public readonly ObjectStateChangeKind Kind;
+```
+
+What happened.
+
+### HasState [#hasstate]
+
+```csharp
+public readonly bool HasState;
+```
+
+The object has an entry now. False means it is untouched, or unknown for [`ObjectStateChangeKind.Forgotten`](/docs/reference/world/object-state-change-kind#forgotten).
+
+### State [#state]
+
+```csharp
+public readonly ObjectState State;
+```
+
+The entry, when [`HasState`](#hasstate) is true.
+
+### IsAuthority [#isauthority]
+
+```csharp
+public readonly bool IsAuthority;
+```
+
+Raised by the worker that holds the chunk's lease. False on clients and on workers that hold a read-only copy. A process that runs several workers (tests, the Editor) raises one change per copy.
