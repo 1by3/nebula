@@ -112,6 +112,8 @@ Custom control planes must implement `IGatewaySessionControlPlane` to support th
 
 When a client's link drops, or a gateway's link to a worker is lost, the worker keeps the affected pawns for `NebulaConfig.SessionReclaimSeconds` (default 30) and despawns them afterwards unless the session was reclaimed. During the grace the pawn stays in the world without input. `OnPlayerDespawn` fires when the grace expires, not when the link drops. Set the value to `0` to despawn at once.
 
+The grace follows the pawn. If the pawn changes worker while its player is away, for example because it stands in a container that is handed to another worker, the new worker continues the countdown with the time that was left, and removes the pawn when it runs out unless the player has reconnected.
+
 The client reconnects by itself: one second after a lost link, and at once when the gateway tells it that it is being taken out of service (see [Connecting clients](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway)). Each attempt presents the session token, so a player who comes back within the grace continues with the same pawn.
 
 A player who connects again while in the world takes their session over rather than starting a new one (see [One connection per player](#one-connection-per-player)), so the reclaim grace is about a player who is away, not about a player who came back.

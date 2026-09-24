@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-alpha.32] - 2026-09-24
+
+Wire protocol 19, as in alpha.31; the `AuthorityTransfer` change is additive. Every worker of a mesh must still run the same build.
+
 ### Added
 
 - **Attach an entity to a container.** `FrameAttachment` fixes an entity, with or without a body, to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's hold, a turret on a deck, a crate on a shelf in a building. The authority calls `Attach(container, localPosition, localRotation, teleport)`, `Attach()` or `Detach()`; any worker that holds a copy can call `RequestAttach` or `RequestDetach`. While attached, the entity stays in its container whatever its position (it is still handed to the worker that owns the container), its body is kinematic, and its pose is re-applied every tick. The attachment survives a handover, a restore from persistence (also with `PersistPose` off) and a late join, and `AttachedChanged` is raised on every process. A detach leaves the entity where it is, with the attached pose's last velocity, and eases any overlap apart. An entity whose container changes for any other reason detaches. (NEB-267)

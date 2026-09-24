@@ -435,7 +435,7 @@ frame.Cell;                       // which cell of THIS world sits at Unity's (0
 frame.Shifted += delta => { };    // move anything of this world Nebula does not know about
 ```
 
-The public world's frame is `WorldOrigin`, exactly as before, so a game with one world sees no change. A **client** still has one origin: the frame of the scope its pawn stands in. Nothing about poses, prediction or interpolation differs between a scoped client and a public one.
+The public world's frame is `WorldOrigin`, exactly as before, so a game with one world sees no change. A **client** still has one origin: the frame of the scope its pawn stands in. A pawn aboard a carrier, such as a ship, counts as standing in the chunk the carrier is in, at any depth of carriers: the client follows that chunk's grid, and workers lease the ring of chunks around the pawn's world position as the ship flies. `NebulaChunks.GridHolding(container)` returns the grid of the chunk a container stands in. Nothing about poses, prediction or interpolation differs between a scoped client and a public one.
 
 This is also why a worker never costs more because a mesh has more worlds. The assignment policy and the autoscaler weigh containers by measured load and know nothing about scopes, so a dozen quiet worlds consolidate onto one worker exactly as a dozen quiet chunks of one world would.
 

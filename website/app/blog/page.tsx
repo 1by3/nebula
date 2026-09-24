@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    href: '/blog/2026-09-24-progress-update',
+    title: 'Nebula progress update: September 24, 2026',
+    description:
+      'Alpha.32 lets cargo ride in moving ships, fixes entities to containers, stows ships with their cargo, and fixes chunk leasing and player sessions aboard ships.',
+    date: 'September 24, 2026',
+    dateTime: '2026-09-24',
+  },
+  {
     href: '/blog/2026-09-21-interest-management',
     title: 'Interest management keeps large worlds local',
     description:
