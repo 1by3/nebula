@@ -154,5 +154,62 @@ namespace Nebula.Tests
             Assert.AreSame(planet, ship.Container);
             Assert.AreEqual(1, interior.Entities.Count, "and the ship keeps only its other rider");
         }
+
+        [Test]
+        public void ARiderLeavingAFramedShipBehindArrivesAtItsPoseInTheScope()
+        {
+            // The ship's interior is a physics frame, so the rider's transform reads frame-local coordinates. The
+            // commit must read its pose in the scope's own space, not those numbers (NEB-310).
+            PhysicsFrames.SceneFactory = () => UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
+            PhysicsFrames.SceneDisposer = s => UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(s);
+            try
+            {
+                var framedPrefab = new GameObject("framed-ship-prefab");
+                framedPrefab.AddComponent<NetworkIdentity>();
+                var box = framedPrefab.AddComponent<Container>();
+                box.ContainerId = "framed-interior";
+                box.Size = new Vector3(10, 6, 20);
+                box.Center = new Vector3(0, 3, 0);
+                box.OwnPhysicsFrame = true;
+                framedPrefab.AddComponent<NetworkTransform>();
+                ushort framedShip = _mesh.RegisterPrefab(framedPrefab);
+
+                var planet = Chunk(_planet);
+                var space = Chunk(_space);
+                var ship = _mesh[0].SpawnServerDriven(framedShip, planet, planet.WorldBounds.center, Quaternion.Euler(0f, 90f, 0f));
+                var interior = ship.Carried;
+                Assume.That(interior.Frame, Is.Not.Null, "the interior has a frame of its own");
+                NetworkIdentity pilot = null;
+                _mesh[0].Act(() =>
+                {
+                    pilot = NetworkPrefabs.Instantiate(_crewPrefab, Vector3.zero, Quaternion.identity, interior.ContentRoot);
+                    _mesh[0].Instance.SpawnServerDriven(pilot, interior);
+                });
+                var seat = new Vector3(1f, 1f, 4f);
+                pilot.transform.SetPositionAndRotation(seat, Quaternion.identity); // frame coordinates
+                Assume.That(pilot.Container, Is.SameAs(interior));
+                var scopePose = ship.transform.TransformPoint(seat);
+                var translation = new Vector3(0f, 200f, 0f);
+
+                InstanceTransfer transfer = null;
+                _mesh[0].Act(() => transfer = _mesh[0].Instance.PrepareTransfer(pilot, space));
+                Assert.IsTrue(transfer.Ready, transfer.Error);
+                bool committed = false;
+                _mesh[0].Act(() => committed = _mesh[0].Instance.TryCommitTransfers(new[] { transfer }, translation));
+
+                Assert.IsTrue(committed);
+                Assert.AreSame(space, pilot.Container);
+                Assert.That(Vector3.Distance(scopePose + translation, pilot.transform.position), Is.LessThan(1e-3f),
+                    "where it stood in the old scope, moved by the translation");
+                Assert.That(Quaternion.Angle(ship.transform.rotation, pilot.transform.rotation), Is.LessThan(0.01f), "and facing as it did in the scope");
+                _mesh[0].Act(() => _mesh[0].Instance.Despawn(ship));
+            }
+            finally
+            {
+                PhysicsFrames.DrainPool();
+                PhysicsFrames.SceneFactory = null;
+                PhysicsFrames.SceneDisposer = null;
+            }
+        }
     }
 }

@@ -185,6 +185,74 @@ namespace Nebula.Tests
             Assert.That(frame.State.PointVelocity(new Vector3(0f, 0f, 10f)).x, Is.EqualTo(1000f + 10f * 30f * Mathf.Deg2Rad).Within(1f), "v + ω × r");
         }
 
+        // ------------------------------------------------------------------------------------ placing in the scope (NEB-310)
+
+        /// <summary>A ship at a pose that is not the identity, with a crew member taken aboard by the pose owner.</summary>
+        private (NetworkIdentity Ship, NetworkIdentity Crew) CrewAboard()
+        {
+            MeshWith(1);
+            var ship = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(40f, 0f, 10f), Quaternion.Euler(0f, 90f, 0f));
+            ContainerRegistry.RefreshCaches();
+            var crew = W1.SpawnServerDriven(_crewPrefab, _yard, ship.transform.TransformPoint(new Vector3(1f, 1f, 2f)), Quaternion.identity);
+            W1.Tick(1);
+            Assume.That(crew.Container, Is.SameAs(ship.Carried), "the crew member is in the ship's frame");
+            return (ship, crew);
+        }
+
+        [Test]
+        public void PlacingAtAPointAboardLandsAtTheMatchingPoseInTheFrame()
+        {
+            var (ship, crew) = CrewAboard();
+            // A warp target given in the scope's own space, inside the ship the crew member is already in.
+            var local = new Vector3(-2f, 1f, -6f);
+            var localRotation = Quaternion.Euler(0f, 45f, 0f);
+            var target = ship.transform.TransformPoint(local);
+            var targetRotation = ship.transform.rotation * localRotation;
+
+            W1.Act(() => crew.PlaceInScope(target, targetRotation));
+
+            Assert.AreSame(ship.Carried, crew.Container);
+            Assert.That(Vector3.Distance(local, crew.transform.position), Is.LessThan(1e-3f), "frame coordinates, not the scope pose's numbers");
+            Assert.That(Vector3.Distance(local, crew.LocalPosition), Is.LessThan(1e-3f));
+            Assert.That(Vector3.Distance(target, crew.ToScope(crew.transform.position)), Is.LessThan(1e-3f), "where it was asked to be, in the scope");
+            Assert.That(Quaternion.Angle(localRotation, crew.LocalRotation), Is.LessThan(0.01f));
+
+            W1.Tick(2);
+            Assert.AreSame(ship.Carried, crew.Container, "the next tick keeps it aboard");
+            Assert.That(Vector3.Distance(local, crew.LocalPosition), Is.LessThan(1e-3f));
+        }
+
+        [Test]
+        public void PlacingFromAboardIntoAnotherShipLandsInThatShipsFrame()
+        {
+            var (_, crew) = CrewAboard();
+            var other = W1.SpawnServerDriven(_shipPrefab, _yard, new Vector3(-60f, 0f, -40f), Quaternion.Euler(0f, -30f, 0f));
+            ContainerRegistry.RefreshCaches();
+            var local = new Vector3(3f, 1f, 7f);
+            var target = other.transform.TransformPoint(local);
+
+            W1.Act(() => crew.PlaceInScope(target, other.transform.rotation));
+
+            Assert.AreSame(other.Carried, crew.Container);
+            Assert.AreSame(other.Carried.Frame.Root, crew.transform.parent);
+            Assert.That(Vector3.Distance(local, crew.LocalPosition), Is.LessThan(1e-3f));
+            Assert.That(Quaternion.Angle(Quaternion.identity, crew.LocalRotation), Is.LessThan(0.01f));
+        }
+
+        [Test]
+        public void PlacingFromAboardAtAPointOutsideLeavesTheFrame()
+        {
+            var (_, crew) = CrewAboard();
+            var target = new Vector3(-120f, 1f, 90f);
+            var rotation = Quaternion.Euler(0f, 10f, 0f);
+
+            W1.Act(() => crew.PlaceInScope(target, rotation));
+
+            Assert.AreSame(_yard, crew.Container);
+            Assert.That(Vector3.Distance(target, crew.transform.position), Is.LessThan(1e-3f));
+            Assert.That(Quaternion.Angle(rotation, crew.transform.rotation), Is.LessThan(0.01f));
+        }
+
         // ------------------------------------------------------------------------------------ crossings (D15)
 
         [Test]

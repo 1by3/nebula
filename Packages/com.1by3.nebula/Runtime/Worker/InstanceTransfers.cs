@@ -105,7 +105,7 @@ namespace Nebula
         /// </para>
         /// </summary>
         /// <param name="transfers">Distinct entity preparations owned by this worker. This is not a cross-worker transaction.</param>
-        /// <param name="translation">World-space displacement applied to each member, preserving its rotation.</param>
+        /// <param name="translation">Displacement from the source scope's own space to the destination's, applied to each member's pose in its scope, preserving its rotation. A member inside a physics frame is read out of the frame first.</param>
         public bool TryCommitTransfers(IReadOnlyList<InstanceTransfer> transfers, Vector3 translation)
         {
             if (transfers == null || transfers.Count == 0) return false;
@@ -118,8 +118,12 @@ namespace Nebula
             var seated = new bool[transfers.Count];
             for (int i = 0; i < transfers.Count; i++)
             {
-                positions[i] = transfers[i].Entity.transform.position + translation;
-                rotations[i] = transfers[i].Entity.transform.rotation;
+                // Read in the source scope's own space: a member inside a physics frame has frame-local numbers on
+                // its transform, which mean nothing in the destination.
+                var member = transfers[i].Entity;
+                var space = member.Space;
+                positions[i] = member.ToScope(member.transform.position) + translation;
+                rotations[i] = PhysicsFrames.InSimulationPose(space) ? PhysicsFrames.Convert(member.transform.rotation, space, null) : member.transform.rotation;
                 seated[i] = RidesInAny(transfers[i].Entity, entities);
             }
             // Carriers first, then what they carry: a rider is committed in place once the ship it sits in has
@@ -226,7 +230,11 @@ namespace Nebula
             return transfer;
         }
 
-        /// <summary>Commit a prepared crossing at a world-space pose. Preserves identity and velocity. Returns false if readiness or authority changed.</summary>
+        /// <summary>
+        /// Commit a prepared crossing at a pose in the destination scope's own space (world space when no physics
+        /// frame is involved). A destination inside a physics frame gets the frame-local pose that matches it.
+        /// Preserves identity and velocity. Returns false if readiness or authority changed.
+        /// </summary>
         public bool TryCommitTransfer(InstanceTransfer transfer, Vector3 position, Quaternion rotation)
         {
             if (transfer == null || !transfer.Ready || !ValidTransfer(transfer)) return false;
@@ -234,7 +242,7 @@ namespace Nebula
             if (entity.IsSceneEntity) throw new InvalidOperationException("Scene entities cannot leave their authored scene");
             if (!InstanceScenes.Prepare(transfer.Destination)) return false;
             entity.SetContainer(transfer.Destination);
-            entity.transform.SetPositionAndRotation(position, rotation);
+            entity.SetScopePose(position, rotation);
             entity.Epoch++;
             entity.HasStateTick = false;
             transfer.Finished = true;

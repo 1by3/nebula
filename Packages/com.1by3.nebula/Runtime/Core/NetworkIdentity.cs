@@ -178,8 +178,9 @@ namespace Nebula
         /// <summary>
         /// Authority: put the entity at a pose given in its scope's own space (a respawn point, a warp target), leaving
         /// any physics frame it is in first. Writing such a pose straight onto the transform of an entity inside a
-        /// frame would put it at those numbers in the frame's coordinates. Outside frames this is a plain assignment;
-        /// the next tick resolves the container as usual.
+        /// frame would put it at those numbers in the frame's coordinates. When the target is inside a frame (a ship's
+        /// interior), the entity lands in that frame at the matching frame-local pose. Outside frames this is a plain
+        /// assignment; the next tick resolves the container as usual.
         /// </summary>
         public void PlaceInScope(Vector3 position, Quaternion rotation)
         {
@@ -187,6 +188,22 @@ namespace Nebula
             {
                 var target = ContainerRegistry.Find(position, null, InstanceId, this);
                 SetContainer(target);
+            }
+            SetScopePose(position, rotation);
+        }
+
+        /// <summary>
+        /// Write a pose given in the scope's own space onto the transform, converted into the space the entity is in
+        /// now (<see cref="Space"/>). Called after a container change, so a target inside a physics frame lands at
+        /// the frame-local pose that matches it, not at the scope pose's numbers in the frame's coordinates.
+        /// </summary>
+        internal void SetScopePose(Vector3 position, Quaternion rotation)
+        {
+            var space = Space;
+            if (PhysicsFrames.InSimulationPose(space))
+            {
+                position = PhysicsFrames.FromScope(position, space);
+                rotation = PhysicsFrames.Convert(rotation, null, space);
             }
             transform.SetPositionAndRotation(position, rotation);
         }
