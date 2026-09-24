@@ -206,12 +206,16 @@ namespace Nebula
                 // client waits for ConnectTo, from NebulaTitleScreen if the scene has one or from the game's own UI.
                 // A client of the Editor-hosted server (EditorRunMode MultiplayerPlayMode) has nobody to ask either.
                 bool autoConnect = CommandLine.Has("nebula-gateway") || CommandLine.Has("nebula-bot") || CommandLine.GetBool("nebula-connect", RunPlan.Player == EditorPlayer.Client);
-                Client.Initialize(Config, autoConnect);
+                // A client of the dev loop connects once the server of its own session says where (or that it failed).
+                _awaitDevServer = RunPlan.Player == EditorPlayer.Client && autoConnect && !CommandLine.Has("nebula-gateway");
+                Client.Initialize(Config, autoConnect, connectNow: autoConnect && !_awaitDevServer);
+                if (_awaitDevServer) _devServerWaitSince = Time.realtimeSinceStartup;
                 // A headless bot's log is the only place a soak can read what one client actually holds, so bots
                 // carry the probe by default; a player client takes -nebula-probe to turn it on (and a bot takes
                 // -nebula-probe=false to turn it off). It costs one pass over the replica set per second.
                 if (CommandLine.GetBool("nebula-probe", CommandLine.Has("nebula-bot"))) InterestProbe.Attach(Client);
             }
+            if (RunPlan.Player == EditorPlayer.Server) PublishDevSession();
             if (NebulaWorld.IsActive)
             {
                 WorldStreaming = gameObject.AddComponent<NebulaWorldStreaming>();
@@ -274,6 +278,7 @@ namespace Nebula
         {
             // The server a virtual player hosts renders nothing, by design (see HeadlessEditorPlayer).
             if (RunPlan.Player == EditorPlayer.Server) HeadlessEditorPlayer.DisableCameras();
+            if (_awaitDevServer) AwaitDevServer();
             ControlPlane?.Tick();
             // The store's callbacks land here, on the main thread, once per frame.
             PersistenceStore?.Tick();
@@ -282,6 +287,7 @@ namespace Nebula
         private void OnDestroy()
         {
             if (Instance != this) return;
+            if (_publishedDevSession) EditorDevSession.Remove(EditorDevSession.PathFor(ProjectRoot), EditorDevSession.CurrentPid);
             ControlPlane?.Dispose();
             PersistenceStore?.Dispose();
             PersistenceStore = null;
@@ -359,6 +365,61 @@ namespace Nebula
         /// in a build, in <see cref="NebulaEditorRunMode.Mesh"/>, or when <c>-nebula-role</c> is given.
         /// </summary>
         public EditorRunPlan RunPlan { get; private set; }
+
+        // ------------------------------------------------------------------------------ Multiplayer Play Mode session
+
+        /// <summary>Seconds a dev-loop client waits for its server before saying how to start one.</summary>
+        private const float DevServerHintSeconds = 20f;
+        private bool _awaitDevServer;
+        private float _devServerWaitSince;
+        private float _nextDevServerPoll;
+        private bool _devServerHinted;
+        private bool _publishedDevSession;
+
+        /// <summary>The dev loop's server says where its clients connect, or why they must not (see <see cref="EditorDevSession"/>).</summary>
+        private void PublishDevSession()
+        {
+            var record = new EditorDevSession.Record { pid = EditorDevSession.CurrentPid, port = Config.GatewayPort };
+            string failure = Gateway != null && Gateway.Failed ? Gateway.FailureReason : Worker != null && Worker.Failed ? Worker.FailureReason : null;
+            if (Gateway == null) failure = failure ?? "this virtual player runs no gateway";
+            record.state = failure == null ? EditorDevSession.ListeningState : EditorDevSession.FailedState;
+            record.error = failure ?? "";
+            if (Gateway != null) record.incarnation = Gateway.Incarnation.ToString("x8");
+            EditorDevSession.Write(EditorDevSession.PathFor(ProjectRoot), record);
+            _publishedDevSession = true;
+            if (failure != null) NebulaLog.Error($"dev session: the Editor-hosted server could not start: {failure}. Its clients will not connect.");
+            else NebulaLog.Info($"dev session: the Editor-hosted server is listening on udp/{Config.GatewayPort}");
+        }
+
+        /// <summary>A dev-loop client: connect when the server of this session is listening, refuse when it failed.</summary>
+        private void AwaitDevServer()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextDevServerPoll) return;
+            _nextDevServerPoll = now + 0.25f;
+            var record = EditorDevSession.Read(EditorDevSession.PathFor(ProjectRoot));
+            switch (EditorDevSession.Evaluate(record, EditorDevSession.IsAlive))
+            {
+                case EditorDevSession.Verdict.Ready:
+                    _awaitDevServer = false;
+                    Config.GatewayAddress = "127.0.0.1";
+                    Config.GatewayPort = (ushort)record.port;
+                    NebulaLog.Info($"dev session: joining the Editor-hosted server on udp/{record.port} (gateway {record.incarnation})");
+                    Client.Connect();
+                    break;
+                case EditorDevSession.Verdict.Failed:
+                    _awaitDevServer = false;
+                    NebulaLog.Error(EditorDevSession.FailureMessage(record));
+                    break;
+                default:
+                    if (!_devServerHinted && now - _devServerWaitSince >= DevServerHintSeconds)
+                    {
+                        _devServerHinted = true;
+                        NebulaLog.Warn($"dev session: no Editor-hosted server has started after {DevServerHintSeconds:0} s. Enable a virtual player in Window > Multiplayer > Multiplayer Play Mode, or set NebulaConfig.EditorRunMode to Mesh. Still waiting.");
+                    }
+                    break;
+            }
+        }
 
         /// <summary>The main project's folder, also from a virtual player (see <see cref="EditorDevPaths.ProjectRoot"/>).</summary>
         private static string ProjectRoot => EditorDevPaths.ProjectRoot(Application.dataPath);

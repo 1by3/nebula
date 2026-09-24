@@ -342,7 +342,11 @@ namespace Nebula
 
         /// <param name="autoConnect">Connect to <see cref="NebulaConfig.GatewayAddress"/> at once (bots, scripted clients);
         /// false leaves the client idle until game code, or <see cref="NebulaTitleScreen"/>, calls <see cref="ConnectTo"/>.</param>
-        public void Initialize(NebulaConfig config, bool autoConnect = true)
+        public void Initialize(NebulaConfig config, bool autoConnect = true) => Initialize(config, autoConnect, autoConnect);
+
+        /// <param name="connectNow">False with <paramref name="autoConnect"/> true: the client connects on its own, but
+        /// later (<see cref="Connect"/>), once the bootstrap knows where. Connection UI stays hidden meanwhile.</param>
+        internal void Initialize(NebulaConfig config, bool autoConnect, bool connectNow)
         {
             Config = config;
             ConnectsAutomatically = autoConnect;
@@ -367,7 +371,7 @@ namespace Nebula
             SceneEntities.Unregistering += OnSceneEntityUnregistering;
             ContainerRegistry.DynamicRegistered += OnLateContainerRegistered;
             ContainerRegistry.RuntimeRegistered += OnLateContainerRegistered;
-            if (autoConnect) Connect();
+            if (connectNow) Connect();
         }
 
         private static string DefaultPlayerName()

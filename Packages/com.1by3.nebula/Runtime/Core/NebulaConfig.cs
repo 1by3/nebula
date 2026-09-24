@@ -52,6 +52,14 @@ namespace Nebula
         /// </summary>
         [Tooltip("MultiplayerPlayMode only. DevSaveFile: saved entities survive Play/Stop in Library/Nebula/DevSaves (Nebula > Dev Loop > Reset Dev Saves deletes them). InMemory: every Play starts fresh.")]
         public NebulaEditorPersistence EditorPersistence = NebulaEditorPersistence.DevSaveFile;
+        /// <summary>
+        /// Added to <see cref="GatewayPort"/>, <see cref="WorkerBasePort"/> and <see cref="DashboardPort"/> by both sides
+        /// of <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>, so the dev loop and a mesh started with
+        /// <c>nebula start</c> can run on one machine at once. 50 by default: with the default ports, the dev loop's
+        /// gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+        /// </summary>
+        [Tooltip("MultiplayerPlayMode only. Added to GatewayPort, WorkerBasePort and DashboardPort on both sides, so the dev loop and a mesh started with nebula start can run side by side. 0 = the configured ports.")]
+        public int EditorPortOffset = 50;
 
         [Header("Networking")]
         public string GatewayAddress = "127.0.0.1";

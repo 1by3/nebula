@@ -100,8 +100,16 @@ namespace Nebula
         public void ApplyTo(NebulaConfig config, Func<string, bool> hasArg, string projectRoot)
         {
             if (Player == EditorPlayer.Mesh) return;
-            if (!hasArg("nebula-gateway")) config.GatewayAddress = "127.0.0.1";
+            // Both sides move off the usual ports by the same offset, so a mesh started with nebula start can run too.
+            int offset = config.EditorPortOffset;
+            if (!hasArg("nebula-gateway"))
+            {
+                config.GatewayAddress = "127.0.0.1";
+                config.GatewayPort = Offset(config.GatewayPort, offset);
+            }
             if (Player != EditorPlayer.Server) return;
+            config.WorkerBasePort = Offset(config.WorkerBasePort, offset);
+            if (!hasArg("nebula-dashboard-port") && config.DashboardPort != 0) config.DashboardPort = Offset(config.DashboardPort, offset);
             // The whole mesh in this process: a control plane in memory, the one worker that is this process, and no
             // processes launched or retired around it.
             if (!hasArg("nebula-local-control-plane")) config.UseLocalControlPlane = true;
@@ -114,6 +122,13 @@ namespace Nebula
             if (!hasArg("nebula-persistence-mode")) config.PersistenceMode = config.EditorPersistence == NebulaEditorPersistence.InMemory ? "memory" : "local";
             if (!hasArg("nebula-persistence-file") && config.EditorPersistence == NebulaEditorPersistence.DevSaveFile)
                 config.PersistenceLocalFile = EditorDevPaths.DevSaveFile(projectRoot);
+        }
+
+        /// <summary>A port moved by <paramref name="offset"/>, or left alone when that would leave the valid range.</summary>
+        private static ushort Offset(ushort port, int offset)
+        {
+            int moved = port + offset;
+            return moved >= 1 && moved <= 65535 ? (ushort)moved : port;
         }
 
         public override string ToString() => Player == EditorPlayer.Client ? "Multiplayer Play Mode (this Editor is a client of the server a virtual player hosts)"
