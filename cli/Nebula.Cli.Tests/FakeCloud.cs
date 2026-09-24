@@ -285,7 +285,8 @@ internal sealed class FakeCloud : IDisposable
             if (m == "PATCH")
             {
                 foreach (var kv in body!.AsObject()) d[kv.Key] = kv.Value?.DeepClone();
-                Reply(ctx, 200, d); return;
+                // As the API: the deployment wrapped, with the reconfigure operation when one was started (none here).
+                Reply(ctx, 200, J(new { deployment = d, operation = (object?)null })); return;
             }
             if (m == "DELETE")
             {
