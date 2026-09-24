@@ -148,6 +148,13 @@ namespace Nebula.World
             return grid.TryCoordOf(container.RuntimeId, out _) || Adopt(grid, container) ? grid : null;
         }
 
+        /// <summary>
+        /// The grid of the chunk <paramref name="container"/> stands in, at any depth: the container itself when it is a
+        /// chunk, otherwise the chunk at the bottom of its carrier chain, so a ship's interior finds the chunk the ship
+        /// is in. Null when that chunk belongs to no grid here, or when a carrier in the chain is in no container.
+        /// </summary>
+        public static RuntimeGrid GridHolding(Container container) => container != null ? GridOf(container.ScopeRoot) : null;
+
         /// <summary>The scope key a container belongs to (<c>""</c> for the public world and for anything not in a grid).</summary>
         public static string ScopeOf(Container container) => GridOf(container)?.ScopeKey ?? "";
 

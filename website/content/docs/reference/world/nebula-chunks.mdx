@@ -144,6 +144,14 @@ public static RuntimeGrid GridOf(ulong id);
 
 The grid a container belongs to, or null when it is not a chunk of any grid here. The central "which scope does this container belong to" query: a dictionary lookup on the container's isolation id, which every role already carries on the container ([`Container.InstanceId`](/docs/reference/containers/container#instanceid)).
 
+### GridHolding [#gridholding]
+
+```csharp
+public static RuntimeGrid GridHolding(Container container);
+```
+
+The grid of the chunk `container` stands in, at any depth: the container itself when it is a chunk, otherwise the chunk at the bottom of its carrier chain, so a ship's interior finds the chunk the ship is in. Null when that chunk belongs to no grid here, or when a carrier in the chain is in no container.
+
 ### ScopeOf [#scopeof]
 
 ```csharp

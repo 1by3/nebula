@@ -219,12 +219,20 @@ namespace Nebula
             // A client is in exactly one scope at a time, so it keeps exactly one origin — the frame of the scope
             // its pawn stands in, which for an unscoped game is the public world's and is the behaviour this had
             // before per-scope frames existed (docs/scope-frames.md D6).
-            var grid = (pawn != null ? NebulaChunks.GridOf(pawn.Container) : null) ?? Grid;
+            var grid = OriginGridOf(pawn, Grid);
             // The pawn is asked by entity, not by position: inside a runtime container its cell is the
             // container's, which is the answer that survives a pose that has not been reconciled yet.
             if (pawn != null && anchor == pawn.transform) grid.KeepOriginNear(pawn, _originRing);
             else grid.KeepOriginNear(grid.CoordOf(anchor.position), _originRing);
         }
+
+        /// <summary>
+        /// The grid whose origin a client follows: the grid of the chunk its pawn stands in, or
+        /// <paramref name="fallback"/> (the public grid) when there is none. A pawn aboard a carrier stands in the chunk
+        /// its carrier chain ends in, so a pilot keeps the origin of the world the ship flies over.
+        /// </summary>
+        internal static RuntimeGrid OriginGridOf(NetworkIdentity pawn, RuntimeGrid fallback) =>
+            (pawn != null ? NebulaChunks.GridHolding(pawn.Container) : null) ?? fallback;
 
         /// <summary>
         /// A worker has no pawn of its own to follow, so each scope's origin follows the centroid of the cells of
