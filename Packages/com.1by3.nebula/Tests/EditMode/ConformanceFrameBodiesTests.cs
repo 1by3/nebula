@@ -299,6 +299,64 @@ namespace Nebula.Tests
             Assert.That(body.linearVelocity.magnitude, Is.LessThan(5f), "the ship's velocity was taken off: it is nearly at rest relative to the ship");
         }
 
+        // ------------------------------------------------------------------------------------ moving hull parts (D3)
+
+        [Test]
+        public void ACrateRidesALiftWhoseCopyIsAKinematicBody()
+        {
+            MeshWith(1);
+            var prefab = HoldPrefab("lift-hold-prefab");
+            Slab(prefab, "lift", new Vector3(0f, 0.1f, 2f), new Vector3(2f, 0.2f, 2f));
+            var liftShip = _mesh.RegisterPrefab(prefab);
+            var ship = W1.SpawnServerDriven(liftShip, _space, Vector3.zero, Quaternion.identity);
+            var box = ship.Carried;
+            var lift = ship.transform.Find("lift");
+            var copy = box.Frame.Clones.Find(p => p.Key.transform == lift).Value;
+            const float half = 0.25f;
+            var crate = SpawnIn(W1, _smallCrate, box, new Vector3(0f, 0.2f + half + 0.01f, 2f));
+            var crateBody = crate.GetComponent<Rigidbody>();
+            uint tick = 1;
+
+            // The ship cruises at 1 km/s the whole time: kilometres from the origin, the hull at rest must stay at rest.
+            void Step(float liftSpeed)
+            {
+                lift.localPosition += Vector3.up * (liftSpeed * Dt);
+                ship.transform.position += new Vector3(1000f * Dt, 0f, 0f);
+                W1.Tick(tick++);
+            }
+
+            for (int i = 0; i < 60; i++) Step(0f);
+            Assert.IsNull(copy.GetComponent<Rigidbody>(), "a part that has not moved is a static collider");
+            Assert.IsTrue(crateBody.IsSleeping(), "the crate settled on the lift");
+
+            float last = crate.LocalPosition.y;
+            for (int i = 0; i < 60; i++)
+            {
+                Step(1f);
+                float y = crate.LocalPosition.y;
+                Assert.That(Mathf.Abs(y - last), Is.LessThan(0.05f), $"rise tick {i}: no jump");
+                if (i >= 5) Assert.That((y - last) / Dt, Is.EqualTo(1f).Within(0.25f), $"rise tick {i}: carried at the lift's speed");
+                last = y;
+            }
+            var body = copy.GetComponent<Rigidbody>();
+            Assert.IsNotNull(body, "the lift's copy became a body when it moved");
+            Assert.IsTrue(body.isKinematic);
+
+            for (int i = 0; i < 30; i++) Step(0f);
+            for (int i = 0; i < 60; i++)
+            {
+                Step(-1f);
+                float gap = crate.LocalPosition.y - half - (copy.transform.localPosition.y + 0.1f);
+                // The lift drops away at 1 m/s at once: the crate falls after it and lands on it in ~12 ticks (1 = g t / 2).
+                Assert.That(gap, Is.InRange(-0.01f, 0.06f), $"lower tick {i}: never more than the free fall apart");
+                if (i >= 15) Assert.That(gap, Is.InRange(-0.01f, 0.02f), $"lower tick {i}: the crate rides the lift down");
+            }
+            for (int i = 0; i < 90; i++) Step(0f);
+            Assert.That(crate.LocalPosition.y, Is.EqualTo(0.2f + half).Within(0.02f), "back where it started, on the lift");
+            Assert.IsTrue(crateBody.IsSleeping(), "and asleep, with the ship kilometres away at 1 km/s");
+            Assert.AreSame(box, crate.Container);
+        }
+
         // ------------------------------------------------------------------------------------ handover
 
         [Test]

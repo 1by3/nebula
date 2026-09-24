@@ -131,12 +131,17 @@ namespace Nebula.Tests
             Assert.IsNotNull(copy);
             Assert.AreSame(shipDoor, PhysicsFrames.SourceOf(copy), "a ray that meets the copy finds the door");
 
-            // The door slides open and is switched off: its copy follows.
+            // The door slides open and is switched off: its copy follows. On a worker a copy that moves is a kinematic
+            // body from then on, and reaches its new pose when the frame's scene steps (docs/frame-bodies.md D3).
             shipDoor.transform.localPosition = new Vector3(2f, 1.5f, 5f);
             shipDoor.enabled = false;
             PhysicsFrames.SyncAllContent();
+            PhysicsFrames.Simulate(NetworkTime.TickInterval);
             Assert.That(Vector3.Distance(new Vector3(2f, 1.5f, 5f), copy.transform.localPosition), Is.LessThan(1e-4f));
             Assert.IsFalse(copy.enabled);
+            var body = copy.GetComponent<Rigidbody>();
+            Assert.IsNotNull(body, "the door's copy became a body when it moved");
+            Assert.IsTrue(body.isKinematic);
         }
 
         [Test]
