@@ -19,4 +19,4 @@ Motion shared by scripted movement, prediction, physics, telemetry, and persiste
 public Vector3 Velocity;
 ```
 
-World-space linear velocity. This is only streamed when a root NetworkTransform opts in.
+Linear velocity in the entity's own space: frame-local (relative to the ship) inside a physics frame ([`NetworkIdentity.Space`](/docs/reference/core/network-identity#space)), the scope's own space everywhere else. This is only streamed when a root NetworkTransform opts in. A change of space converts it ([`PhysicsFrames.ConvertVelocity`](/docs/reference/containers/physics-frames#convertvelocity)).

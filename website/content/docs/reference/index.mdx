@@ -18,6 +18,8 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [CommandLine](/docs/reference/core/command-line) | Static class. Tiny "-key value" / "-key=value" / "-flag" parser over Environment.GetCommandLineArgs. |
 | [CrossIslandJoint](/docs/reference/core/cross-island-joint) | Struct. A physics constraint Nebula cannot simulate symmetrically: a Joint or a child ArticulationBody whose two bodies belong to networked entities in different containers, so that two workers can end up each owning one side. |
 | [DatabaseUrl](/docs/reference/core/database-url) | Struct. Where the orchestrator keeps the control plane and saved entities, as one string (NebulaConfig.DatabaseUrl, -nebula-database). |
+| [FrameAttachment](/docs/reference/core/frame-attachment) | Class. Fixes an entity to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's hold, a turret bolted to a deck, a crate set on a shelf in a building. |
+| [FrameInertia](/docs/reference/core/frame-inertia) | Class. Lets a physics prop inside a moving physics frame feel the frame's motion: crates slide aft when the ship accelerates, outwards when it turns. |
 | [HistoricalState](/docs/reference/core/historical-state) | Struct. What an entity looked like at one recorded server tick: the answer of NetworkIdentity.StateAt. |
 | [INetworkInput](/docs/reference/core/i-network-input) | Interface. Marker for the per-tick input struct a predicted entity consumes. |
 | [IRpcSink](/docs/reference/core/i-rpc-sink) | Interface. Where RPCs and state changes go once a behaviour has produced them. |
@@ -120,6 +122,7 @@ Spawn and simulate authoritative entities, manage ghosts, and transfer entities 
 | [AuthorityCallRouter](/docs/reference/worker/authority-call-router) | Class. The rules every worker applies to an incoming AuthorityRpc call, in one place and with no engine types, so the worker, the standalone services and the conformance tests run the same code. |
 | [AuthorityCallTarget](/docs/reference/worker/authority-call-target) | Struct. What the receiving worker knows about a call's target when the call arrives. |
 | [AuthorityCallTracker](/docs/reference/worker/authority-call-tracker) | Class. The sender's side of the reply channel: the calls this worker sent with a reply requested and has not heard back about. |
+| [CargoPolicy](/docs/reference/worker/cargo-policy) | Enum. What happens to the entities riding in a carrier's container when the carrier is despawned with NebulaWorker.Despawn (docs/frame-bodies.md D5). |
 | [ContainerCostMeter](/docs/reference/worker/container-cost-meter) | Class. What each container this worker leases is actually costing it, measured rather than guessed: the NetworkTick time spent on its entities, the replication bytes they put on the wire, and the owner state a gateway has to relay for them. |
 | [EntityRequestResult](/docs/reference/worker/entity-request-result) | Struct. Outcome of one EntityRequests.Request call. |
 | [EntityRequestStatus](/docs/reference/worker/entity-request-status) | Enum. Where a EntityRequests call ended up. |

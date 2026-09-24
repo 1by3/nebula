@@ -6,13 +6,13 @@ namespace Nebula
     /// <summary>
     /// Fixes an entity to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's
     /// hold, a turret bolted to a deck, a crate set on a shelf in a building. An attached entity does not slide, is not
-    /// moved into a neighbouring container, keeps its attachment through a handover, a restore from the store and a late
+    /// moved into a neighboring container, keeps its attachment through a handover, a restore from the store and a late
     /// joiner's spawn, and is let go gently. Add it to any entity, with or without a <see cref="NetworkRigidbody"/>.
     /// <para>
-    /// The authority calls <see cref="Attach(Container, Vector3, Quaternion, bool)"/> or <see cref="Attach()"/>, and
-    /// <see cref="Detach"/>; any worker holding a copy can ask with <see cref="RequestAttach(Container, Vector3, Quaternion, bool)"/>
-    /// and <see cref="RequestDetach"/>. It works in a ship's physics frame, in a fixed container (a building, a chunk)
-    /// and in a carrier without a frame. While attached:
+    /// The authority calls <see cref="Attach(Container, Vector3, Quaternion, bool)"/>, at a pose or, with no arguments,
+    /// where the entity is now, and <see cref="Detach"/>; any worker holding a copy can ask with
+    /// <see cref="RequestAttach(Container, Vector3, Quaternion, bool)"/> and <see cref="RequestDetach"/>. It works in a
+    /// ship's physics frame, in a fixed container (a building, a chunk) and in a carrier without a frame. While attached:
     /// </para>
     /// <list type="bullet">
     /// <item>the entity sits in the container it is attached to, and the worker's tick does not re-resolve its container

@@ -9,8 +9,9 @@ namespace Nebula
     /// The motion of a physics frame in the space around it, once per tick, on every process that holds the frame
     /// (<c>docs/container-tree.md</c> D14): its pose, linear and angular velocity, and linear acceleration. The frame's
     /// owner computes it from the carrier it simulates; everyone else from the replicated stream, so a leased interior
-    /// reads it one replication delay late. Nebula applies no fictitious forces: whether crates slide when the ship
-    /// brakes is the game's call, made from <see cref="LocalAcceleration"/> and <see cref="LocalAngularVelocity"/>.
+    /// reads it one replication delay late. Nebula applies no fictitious forces by itself: whether crates slide when the
+    /// ship brakes is the game's call, made with <see cref="FrameInertia"/> on the bodies that should, or from
+    /// <see cref="LocalAcceleration"/> and <see cref="LocalAngularVelocity"/> directly.
     /// </summary>
     public struct PhysicsFrameState
     {

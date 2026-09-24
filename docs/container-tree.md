@@ -151,7 +151,8 @@ scope gets its own scene like any other. A worker steps every frame scene after 
 angular velocity, acceleration in the space around the frame; `LocalAcceleration`, `LocalAngularVelocity`,
 `PointVelocity`) is sampled once per tick on every process that holds the frame, from the carrier's transform: the
 authoritative pose on its owner, the interpolated one elsewhere, so a leased interior reads it one replication delay
-late. Rates are finite differences over one tick. Nebula applies no fictitious forces.
+late. Rates are finite differences over one tick. Nebula applies no fictitious forces by itself; a body opts in
+with `FrameInertia` (`docs/frame-bodies.md` D4).
 
 **D15 Crossings go through the pose owner.** Moving between a frame and the space around it needs the frame's pose at
 that tick, which only the carrier's authority knows exactly (a fixed frame's pose is known everywhere).

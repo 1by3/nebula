@@ -4,7 +4,7 @@ Status: design of record for **NEB-267**, implemented. Decisions made without as
 stays **19**: nothing on the wire changes shape. The new state rides behaviours a game opts into (a network variable,
 handover bytes, a persistence chunk), which a prefab without them never sends. Builds on physics frames
 (`docs/container-tree.md` §3, D10–D17). User-facing page: `website/content/docs/guides/physics-frames.mdx`
-(§ Loose cargo, § Attach an entity to a container). Conformance: scenarios 24 and 25 of `docs/conformance-suite.md`.
+(§ Carry loose cargo, § Attach an entity to a container). Conformance: scenarios 24 and 25 of `docs/conformance-suite.md`.
 
 ## 0. Problem
 
@@ -47,7 +47,11 @@ steps the frame's scene (a worker), it adds a kinematic `Rigidbody` to the copy 
 `MovePosition` and `MoveRotation`. PhysX then gives the part a velocity for the step, so a crate on a lowering
 ramp or a rising lift rides it instead of being pushed out of an overlap. A part that never moves stays a static
 collider. A client does not step frame scenes (it renders them posed, container-tree D11), so it keeps teleporting
-its copies. A scale change is still applied through the transform.
+its copies. A scale change is still applied through the transform. A copy's pose relative to the owner is now
+composed from the local poses between the two, not through world space: for a carrier kilometres from the origin
+the world-space route subtracted two large positions, and its rounding would have moved a part at rest every tick,
+made it kinematic and kept the cargo on it awake. A kinematic copy is compared with the target it was last sent,
+exactly, since its transform reads back from the body with rounding.
 
 **D4 Fictitious forces are opt-in: `FrameInertia`.** A `NetworkBehaviour` for a body that should feel its frame's
 motion. On the authority, each `NetworkTick` (before the frame scene steps) it applies, as
@@ -58,17 +62,19 @@ motion. On the authority, each `NetworkTick` (before the frame scene steps) it a
 with `A` the frame's acceleration and `ω` its angular velocity in the frame's own axes
 (`PhysicsFrameState.LocalAcceleration`, `LocalAngularVelocity`), `α` the rate of change of `ω`, `r` the body's
 frame-local position and `v` its frame-local velocity. The frame state is sampled once per tick after the carriers
-moved (container-tree D14), so the force lags the carrier by a tick. The acceleration is smoothed with an
-exponential moving average over `SmoothingTicks` (6), clamped to `MaxAcceleration` (20 m/s²), and not applied
-below `MinAcceleration` (0.05 m/s²) so a body at rest in a cruising ship can sleep. `Scale` defaults to 0: a
-game chooses how much of the ship's motion its cargo feels (inertial dampers), usually per ship. Nothing in
-Nebula applies it without the component.
+moved (container-tree D14), so the force lags the carrier by a tick. Each tick's value is multiplied by `Scale`,
+clamped to `MaxAcceleration` (20 m/s²), then smoothed with an exponential moving average over `SmoothingTicks` (6).
+Clamping before smoothing is what turns a snap of the carrier (a teleport, a landing, a jump to cruise speed:
+thousands of m/s² for one tick) into a nudge. Nothing is applied below `MinAcceleration` (0.05 m/s²), so a body at
+rest in a cruising ship can sleep. `Scale` defaults to 0: a game chooses how much of the ship's motion its cargo
+feels (inertial dampers), usually per ship. Nothing in Nebula applies fictitious forces without the component.
 
 **D5 Stowing a carrier can take its cargo: `CargoPolicy.Stow`.** `NebulaWorker.Despawn(identity, keepPersisted,
 CargoPolicy cargo)`. With `SetDown` (the default, and what the existing overloads do) the riders are put down where
 the carrier stood, as before. With `Stow` the worker walks the carrier's box, deepest first, and despawns with
-`keepPersisted` every rider it is authoritative for that has a `PersistentEntity`, no owning client, and whose own
-carrier is being stowed too. Each is checkpointed while still aboard, so its record names its carrier
+`keepPersisted` every rider it is authoritative for that has a `PersistentEntity`, no owning client, and that sits
+directly in the box of the carrier or of another stowed rider (not in a room fixed inside it, whose record names
+the room rather than the carrier). Each is checkpointed while still aboard, so its record names its carrier
 (`CarrierKey`) and `IPersistenceStore.LoadCarried` brings it back when the carrier is restored. Anything else
 aboard (a player's pawn, a transient entity, a rider of a transient vehicle) is put down as with `SetDown`. `Stow`
 needs a persistent carrier that is kept: with `keepPersisted` false or no `PersistentEntity` on the carrier it
@@ -87,7 +93,9 @@ NetworkBehaviour`. On the authority: `Attach(container, localPosition, localRota
 it is now), `Detach()`, and, from any worker that holds a copy, `RequestAttach(...)` and `RequestDetach()`, which
 reach the authority by `AuthorityRpc`. It works for a ship's frame, a fixed container (a building, a chunk) and a
 carrier without a frame. Invariant: **an attached entity sits in the container it is attached to**, so
-`AttachedTo` is `Identity.Container` while `Attached` is true, and no container id is stored.
+`AttachedTo` is `Identity.Container` while `Attached` is true, and no container id is stored. `Attached` is a
+read-only property over a private network variable, so game code cannot set the flag without going through
+`Attach` and `Detach`.
 
 **D8 An attached entity's container is pinned.** `NetworkIdentity.ContainerPinned` (internal) makes the worker's
 tick skip re-resolving the entity's container: it is not moved into a neighbouring chunk, out of a frame, or

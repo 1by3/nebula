@@ -10,7 +10,11 @@ namespace Nebula
     /// <summary>Motion shared by scripted movement, prediction, physics, telemetry, and persistence.</summary>
     public sealed class NetworkMotionState
     {
-        /// <summary>World-space linear velocity. This is only streamed when a root NetworkTransform opts in.</summary>
+        /// <summary>
+        /// Linear velocity in the entity's own space: frame-local (relative to the ship) inside a physics frame
+        /// (<see cref="NetworkIdentity.Space"/>), the scope's own space everywhere else. This is only streamed when a root
+        /// NetworkTransform opts in. A change of space converts it (<see cref="PhysicsFrames.ConvertVelocity"/>).
+        /// </summary>
         public Vector3 Velocity;
     }
 

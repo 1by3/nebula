@@ -36,6 +36,8 @@ worker.RequestRuntimeContainer(stationId, placement);
 
 A frame needs the container's interior colliders inside its own scene. By default Nebula copies the carrier's colliders into the frame: every non-trigger collider under the carrier, except those of entities riding in it. Parts of the carrier's own prefab count as the carrier's, including doors and seats whose network behaviors added a `NetworkIdentity` of their own. Nebula keeps each copy where its original is relative to the carrier, and enabled when the original is, on workers every tick and on clients every rendered frame, so a ramp that lowers or a door that opens blocks and can be aimed at inside the frame too. The originals stay in the world scene for everything outside.
 
+On a worker, a copy whose original moves becomes a kinematic `Rigidbody` the first time it moves, and Nebula moves it with `MovePosition` from then on. A crate on a lowering ramp or a rising lift rides it instead of being pushed out of it. A part that never moves stays a static collider. Clients do not simulate frames, so they keep placing their copies directly.
+
 To use your own geometry instead, set **Frame Content** on the `Container` to a prefab of colliders (and visuals, if you want them). The prefab must not contain a `NetworkIdentity`.
 
 ## Understand what your code sees
@@ -132,19 +134,84 @@ PhysicsFrames.CrossingPolicy = new AirlockPolicy();
 
 An entity belongs to one frame at a time. A ship half inside a hangar, or a crane that reaches out of a hull, is on one side or the other and switches at the hysteresis threshold.
 
+Size the container's box with that in mind. If the box of a ship's hold ends on its ramp rather than at its door, a crate pushed down the ramp leaves the frame while it still rests on the ramp's copy, and lands on the ground outside, where the ramp's original is.
+
 ## Read the frame's motion
 
 `container.Frame.State` is a `PhysicsFrameState`. It holds the frame's position, rotation, velocity, angular velocity, and acceleration in the space around it, updated once per tick on every process that holds the frame. On the worker that simulates the carrier it is exact. Elsewhere it comes from the replicated carrier pose, one replication delay late.
 
-Nebula does not apply fictitious forces. Apply them yourself if your game wants crates to slide when a ship brakes:
+Nebula applies no fictitious forces unless you ask for them. To make a body feel the frame's motion, add [`FrameInertia`](#let-cargo-feel-the-ship-move) to it. To apply your own, read `State.LocalAcceleration` and `State.LocalAngularVelocity`, which are in the frame's own axes.
+
+## Carry loose cargo
+
+A crate inside a frame needs no Nebula component beyond those of any physics prop: a `NetworkIdentity`, a `NetworkTransform`, a `Rigidbody`, a `NetworkRigidbody`, and its colliders. It simulates in the frame's scene, where the ship stands still, so a stack of crates stays put through takeoff, turns, cruise at any speed, and landing. It crosses out of the frame with the ship's velocity like any other entity, and a handover of the ship to another worker keeps each crate's pose, velocity, and sleep.
+
+These `Rigidbody` settings keep stacks stable:
+
+| Setting | Value |
+| --- | --- |
+| `solverIterations` | 8 to 10, for stacks of three or more |
+| `collisionDetectionMode` | `ContinuousSpeculative` |
+| Sleep threshold | The default |
+| `PhysicsMaterial` friction | About 0.6 |
+
+Inside a frame, `Identity.Motion.Velocity` and the `Rigidbody`'s velocity are relative to the ship: a crate at rest in a ship flying at 1 km/s reads zero.
+
+### Let cargo feel the ship move
+
+Add `FrameInertia` next to a crate's `NetworkRigidbody` to make it slide when the ship accelerates, brakes, or turns. On the authoritative worker, each tick, it applies the frame's fictitious acceleration to the body: the ship's acceleration and the centrifugal, Coriolis, and angular-acceleration terms of its rotation, all reversed.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `Scale` | 0 | How much of the ship's motion the crate feels, from 0 (none) to 1 (all of it). Set it per ship, like inertial dampers. |
+| `MaxAcceleration` | 20 m/s² | The most it applies in one tick, after `Scale`. A teleport or a hard landing nudges the crate rather than launching it. |
+| `SmoothingTicks` | 6 | Ticks it smooths the acceleration over. |
+| `MinAcceleration` | 0.05 m/s² | Below this it applies nothing, so a crate in a cruising ship can sleep. |
+
+`FrameInertia` does nothing outside a frame, on a ghost, on a client, or while the body is kinematic. It reads the frame's motion one tick late, and a frame leased to another worker than the ship's reads it one replication delay late. It does not rotate the frame's gravity: down stays the ship's floor.
+
+### Stow a ship with its cargo
+
+`worker.Despawn(ship)` sets down whatever rides in the ship where the ship stood. To put a ship away, in a hangar list or an inventory, and keep its cargo aboard, despawn it with `CargoPolicy.Stow`:
 
 ```csharp
-var frame = Identity.Space?.Frame;
-if (frame != null && frame.State.HasRates)
-    body.AddForce(-frame.State.LocalAcceleration, ForceMode.Acceleration);
+worker.Despawn(ship, keepPersisted: true, CargoPolicy.Stow);
 ```
 
-`body` is the crate's `Rigidbody`, inside the frame.
+Nebula saves and despawns every rider this worker simulates that has a `PersistentEntity` and no owning player, riders of riders first, so each record names the ship. When the ship's record is restored, [persistence](/docs/guides/persistence) brings the cargo back aboard it. A player's pawn and any entity without a `PersistentEntity` are set down, as with a plain despawn. The ship itself must have a `PersistentEntity`, and `keepPersisted` must be true. Otherwise the cargo could never come back, so Nebula sets it down and logs a warning.
+
+## Attach an entity to a container
+
+Add `FrameAttachment` to an entity that should stay fixed in a container: a crate strapped to a cargo grid, a turret on a deck, a crate on a shelf in a building. It works in a ship's frame, in a fixed container such as a building or a chunk, and in a carrier without a frame. The entity can have a `NetworkRigidbody` or no body at all.
+
+On the worker that has authority over the entity:
+
+```csharp
+var attachment = crate.GetComponent<FrameAttachment>();
+
+// At a pose in the container's space: here, a slot on a cargo grid in the ship's hold.
+attachment.Attach(ship.Carried, slotPosition, slotRotation);
+
+// Or in the container it is in, where it is now.
+attachment.Attach();
+
+// Let it go.
+attachment.Detach();
+```
+
+`slotPosition` and `slotRotation` stand for a pose your game computes in the container's local space. From another worker that holds a copy of the entity, call `RequestAttach` or `RequestDetach`. They reach the authority as an [authority RPC](/docs/guides/rpcs#call-the-worker-that-controls-another-entity), and they name the container by its ID, so the authority must know the container too.
+
+While the entity is attached:
+
+- It sits in the container it is attached to. Nebula does not move it into a neighboring container, out of a frame, or across an instance boundary, whatever its position. It is still handed to the worker that owns the container, so attaching it to a container another worker owns moves it there on the next tick.
+- Its body is kinematic on the authority, and Nebula puts it back at the attached pose every tick. Loose crates can rest on it.
+- A handover, a restore from persistence, and a client that joins later all see it attached. With a `PersistentEntity` it comes back attached, even with `PersistPose` off, and attached cargo stowed with `CargoPolicy.Stow` comes back attached aboard its ship.
+
+`Attached`, `AttachedTo`, `AttachedLocalPosition`, and `AttachedLocalRotation` describe the attachment. `AttachedChanged` is raised on every process that holds the entity.
+
+`Detach` leaves the entity where it is, in its container. The body turns dynamic with the velocity the attached pose had over the last tick: zero in a frame or a fixed container, the carrier's velocity in a carrier without a frame. For `DetachSettleTicks` (10) ticks, its depenetration speed is capped at `DetachDepenetrationVelocity` (1 m/s), so a crate attached slightly inside another is eased apart.
+
+If the entity's container changes for any other reason, it detaches and raises `AttachedChanged(false)`. For example, a ship despawned with a plain `Despawn` sets its attached cargo down, detached. To move an attached entity, call `Attach` again with the new pose.
 
 ## Lease part of the inside to another worker
 
@@ -185,6 +252,9 @@ A frame's coordinates can be large. Each worker keeps a floating origin per fram
 - Raycasts do not pass from one frame into another. A shot fired out of a ship's open ramp hits nothing outside the ship's frame unless your game casts again in the space around it.
 - A client predicts in the frame of its own player only. Other entities in other frames are shown at their replicated poses.
 - Leased containers inside a frame are found by a linear scan. Keep their number in the hundreds per frame, not the thousands.
+- A client places its copies of moving hull parts directly, so a pawn it predicts on a moving ramp is predicted against a copy that jumps from pose to pose.
+- `CargoPolicy.Stow` stows only the riders the despawning worker simulates. A rider that another worker simulates, in an interior leased to that worker, is set down.
+- An entity attached in a carrier without a frame moves with the carrier through its transform, so bodies resting on it are moved the same way as bodies resting on the carrier's own colliders.
 
 ## Related pages
 

@@ -6,7 +6,17 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Added
 
+- **Attach an entity to a container.** `FrameAttachment` fixes an entity, with or without a body, to a container at a pose in the container's space: a crate strapped to a cargo grid in a ship's hold, a turret on a deck, a crate on a shelf in a building. The authority calls `Attach(container, localPosition, localRotation, teleport)`, `Attach()` or `Detach()`; any worker that holds a copy can call `RequestAttach` or `RequestDetach`. While attached, the entity stays in its container whatever its position (it is still handed to the worker that owns the container), its body is kinematic, and its pose is re-applied every tick. The attachment survives a handover, a restore from persistence (also with `PersistPose` off) and a late join, and `AttachedChanged` is raised on every process. A detach leaves the entity where it is, with the attached pose's last velocity, and eases any overlap apart. An entity whose container changes for any other reason detaches. (NEB-267)
+- **Stow a carrier with its cargo.** `NebulaWorker.Despawn(identity, keepPersisted, CargoPolicy.Stow)` saves the carrier's persistent riders aboard it and despawns them with it, so they come back when the carrier is restored. Players' pawns and transient riders are set down as before; `CargoPolicy.SetDown` and the existing overloads keep the old behavior. (NEB-267)
+- **`FrameInertia`** lets a body in a moving physics frame feel the frame's motion: crates slide when the ship accelerates, brakes or turns. It applies the frame's fictitious acceleration on the authority, scaled by `Scale` (0 by default), clamped to `MaxAcceleration`, smoothed over `SmoothingTicks`, and not at all below `MinAcceleration`, so cargo can sleep. (NEB-267)
+- Conformance scenarios 24 and 25: `ConformanceFrameBodiesTests` (loose crates through a whole flight, with `FrameInertia`, on a moving lift, across the frame's boundary, through a handover, and stowed and restored) and `ConformanceFrameAttachmentTests`. `docs/frame-bodies.md` is the design record. (NEB-267)
 - `NebulaChunks.GridHolding(container)` returns the grid of the chunk a container stands in at any depth. For a ship's interior, that is the chunk the ship is in. `NebulaChunks.GridOf` still answers only for a chunk itself. (NEB-306)
+
+### Changed
+
+- **A moving hull part is a kinematic body inside its frame.** On a worker, the frame copy of a ramp, lift or door on a carrier becomes a kinematic `Rigidbody` the first time it moves and is moved with `MovePosition` from then on, so a crate on a moving ramp rides it instead of being pushed out of it. A copy now reaches a new pose when the frame's scene steps rather than at once. Parts that never move stay static colliders, and clients still place their copies directly. (NEB-267)
+- A frame copy's pose relative to its carrier is composed from local poses, so the copies of a carrier kilometres from the origin no longer move by rounding error every tick. (NEB-267)
+- The documentation of `NetworkMotionState.Velocity` says what it always was: the velocity in the entity's own space, frame-local inside a physics frame. It used to say world space. (NEB-267)
 
 ### Fixed
 
