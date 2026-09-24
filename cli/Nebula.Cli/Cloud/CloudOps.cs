@@ -155,7 +155,10 @@ public static class CloudDeploy
         if (patch.Count > 0)
         {
             Ui.Step("updating the deployment: " + string.Join(", ", patch.Select(kv => $"{kv.Key}={kv.Value}")));
-            dep = api.PatchDeployment(dep.Id, patch);
+            var (patched, reconfigure) = api.PatchDeployment(dep.Id, patch);
+            dep = patched;
+            // A running deployment reconfigures first; the rollout would otherwise answer 409 on the live operation.
+            if (reconfigure != null) OperationFollower.Follow(api, reconfigure);
         }
 
         // --- rollout ----------------------------------------------------------------------------------------

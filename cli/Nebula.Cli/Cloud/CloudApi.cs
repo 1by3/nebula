@@ -354,7 +354,13 @@ public sealed class CloudApi
     public List<Deployment> Deployments(string project) => As<List<Deployment>>(Send(HttpMethod.Get, $"/projects/{project}/deployments")["deployments"], "deployments");
     public Deployment GetDeployment(string deployment) => Send<Deployment>(HttpMethod.Get, $"/deployments/{deployment}");
     public Deployment CreateDeployment(string project, NewDeployment d) => Send<Deployment>(HttpMethod.Post, $"/projects/{project}/deployments", d, "create-deployment-" + d.Name);
-    public Deployment PatchDeployment(string deployment, object patch) => Send<Deployment>(HttpMethod.Patch, $"/deployments/{deployment}", patch, "patch-deployment");
+    /// <summary>PATCH answers <c>{deployment, operation}</c>: the operation is the reconfigure a change to a deployment with infrastructure starts, else null.</summary>
+    public (Deployment Deployment, Operation? Operation) PatchDeployment(string deployment, object patch)
+    {
+        var body = Send(HttpMethod.Patch, $"/deployments/{deployment}", patch, "patch-deployment");
+        var op = body["operation"] is JsonObject o ? As<Operation>(o, "an operation") : null;
+        return (As<Deployment>(body["deployment"], "a deployment"), op);
+    }
     public Deployment Scale(string deployment, int? minWorkers, int? maxWorkers, int? minGateways, int? maxGateways) =>
         Send<Deployment>(HttpMethod.Post, $"/deployments/{deployment}/scale", new { minWorkers, maxWorkers, minGateways, maxGateways }, "scale");
 
