@@ -89,7 +89,7 @@ namespace Nebula.Tests
         /// A crate prefab with the settings <c>docs/frame-bodies.md</c> D1 recommends: 10 solver iterations,
         /// speculative CCD, friction 0.6.
         /// </summary>
-        internal static GameObject CratePrefab(string name, float size, float mass, PhysicsMaterial material, bool persistent = false)
+        internal static GameObject CratePrefab(string name, float size, float mass, PhysicsMaterial material, bool persistent = false, float inertia = -1f)
         {
             var crate = new GameObject(name);
             crate.AddComponent<NetworkIdentity>();
@@ -102,6 +102,7 @@ namespace Nebula.Tests
             var collider = crate.AddComponent<BoxCollider>();
             collider.size = Vector3.one * size;
             collider.sharedMaterial = material;
+            if (inertia >= 0f) crate.AddComponent<FrameInertia>().Scale = inertia;
             if (persistent) crate.AddComponent<PersistentEntity>();
             return crate;
         }
@@ -256,6 +257,56 @@ namespace Nebula.Tests
 
             float slide = FlyAndCheck(W1, ship, stack, new[] { 0.8f, 0.5f, 0.25f }, tick);
             Assert.That(slide, Is.LessThan(0.005f), "without FrameInertia the frame feels nothing of the ship's motion");
+        }
+
+        // ------------------------------------------------------------------------------------ inertia (D4)
+
+        [Test]
+        public void WithFrameInertiaTheStackSlidesAndStaysInTheHold()
+        {
+            MeshWith(1);
+            _bigCrate = _mesh.RegisterPrefab(CratePrefab("inert-big", 1.6f, 200f, _material, inertia: 0.3f));
+            _midCrate = _mesh.RegisterPrefab(CratePrefab("inert-mid", 1.0f, 60f, _material, inertia: 0.3f));
+            _smallCrate = _mesh.RegisterPrefab(CratePrefab("inert-small", 0.5f, 15f, _material, inertia: 0.3f));
+            var ship = W1.SpawnServerDriven(_shipPrefab, _space, Vector3.zero, Quaternion.identity);
+            var stack = Stack(W1, ship.Carried);
+            uint tick = 1;
+            Settle(W1, ref tick, 90);
+
+            float slide = FlyAndCheck(W1, ship, stack, new[] { 0.8f, 0.5f, 0.25f }, tick);
+            Assert.That(slide, Is.GreaterThan(0.01f), "the crates felt the surges and turns and slid");
+        }
+
+        [Test]
+        public void FrameInertiaPushesACrateAgainstItsShipsAcceleration()
+        {
+            MeshWith(1);
+            var ice = new PhysicsMaterial("ice") { staticFriction = 0f, dynamicFriction = 0f, frictionCombine = PhysicsMaterialCombine.Minimum };
+            try
+            {
+                var sliding = _mesh.RegisterPrefab(CratePrefab("ice-crate", 0.5f, 15f, ice, inertia: 1f));
+                var ship = W1.SpawnServerDriven(_shipPrefab, _space, Vector3.zero, Quaternion.identity);
+                var crate = SpawnIn(W1, sliding, ship.Carried, new Vector3(0f, 0.26f, 4f));
+                var body = crate.GetComponent<Rigidbody>();
+                uint tick = 1;
+                Settle(W1, ref tick, 30);
+                Assume.That(body.linearVelocity.magnitude, Is.LessThan(0.05f));
+
+                // The ship accelerates forward at 10 m/s² from rest: the crate should slide aft at 10 m/s².
+                var velocity = Vector3.zero;
+                float before = 0f;
+                for (int i = 0; i < 40; i++)
+                {
+                    velocity += Vector3.forward * (10f * Dt);
+                    ship.transform.position += velocity * Dt;
+                    W1.Tick(tick++);
+                    if (i == 15) before = body.linearVelocity.z;
+                }
+                float measured = (body.linearVelocity.z - before) / (24 * Dt);
+                Assert.That(measured, Is.EqualTo(-10f).Within(0.5f), "the fictitious acceleration is -A in the frame");
+                Assert.That(crate.GetComponent<FrameInertia>().Applied.z, Is.EqualTo(-10f).Within(0.5f));
+            }
+            finally { Object.DestroyImmediate(ice); }
         }
 
         // ------------------------------------------------------------------------------------ crossings
