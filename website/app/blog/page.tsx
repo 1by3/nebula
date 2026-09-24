@@ -12,7 +12,7 @@ const posts = [
     href: '/blog/2026-09-24-progress-update',
     title: 'Nebula progress update: September 24, 2026',
     description:
-      'Alpha.32 lets cargo ride in moving ships, fixes entities to containers, stows ships with their cargo, and fixes chunk leasing and player sessions aboard ships.',
+      'Three alpha releases add safer upgrades, worlds you activate by key, containers in a tree with their own physics, and cargo that rides in moving ships.',
     date: 'September 24, 2026',
     dateTime: '2026-09-24',
   },
