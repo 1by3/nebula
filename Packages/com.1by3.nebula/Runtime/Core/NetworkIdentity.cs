@@ -133,6 +133,13 @@ namespace Nebula
         /// <summary>Leave the cohesion group this entity is in, if any. Nothing else about the entity changes.</summary>
         public void LeaveCohesionGroup() => JoinCohesionGroup(0);
         public Container Container { get; internal set; }
+        /// <summary>
+        /// The entity is fixed to <see cref="Container"/> (<see cref="FrameAttachment"/>): its authority's tick does not
+        /// re-resolve its container from its position, and no <see cref="InstanceBoundary"/> moves it. The owner check
+        /// still runs, so it is handed to whichever worker owns the container. Local to the authority; a handover or a
+        /// restore sets it again (<c>docs/frame-bodies.md</c> D8).
+        /// </summary>
+        internal bool ContainerPinned;
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
         /// <summary>
@@ -510,6 +517,7 @@ namespace Nebula
             HasStateTick = false;
             _publishedLocation = false;
             _hasPendingState = false;
+            ContainerPinned = false;
             SetContainer(null, reparent: false);
             if (Interpolator != null)
             {

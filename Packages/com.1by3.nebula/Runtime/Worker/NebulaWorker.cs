@@ -1121,7 +1121,10 @@ namespace Nebula
                 // A carrier never resolves into a container it carries: its own box (its origin is inside it), nor
                 // the box of another carrier riding inside it, which is how two overlapping ships would each end up
                 // inside the other.
-                var resolved = ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
+                // An entity fixed to its container (FrameAttachment) keeps it, wherever its origin is: it is never
+                // moved into a neighbouring container or across a frame's boundary. The owner check below still runs,
+                // so it follows its container to whichever worker owns it (docs/frame-bodies.md D8).
+                var resolved = e.ContainerPinned ? e.Container : ContainerRegistry.Resolve(e.transform.position, e.Container, Config.HandoverHysteresis, e);
                 if (resolved != e.Container)
                 {
                     var previous = e.Container;

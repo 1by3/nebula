@@ -35,7 +35,8 @@ namespace Nebula
 
         internal static void Tick(NebulaWorker worker, NetworkIdentity entity)
         {
-            if (entity.OwnerClientId == 0 || !entity.HasAuthority) return;
+            // A pinned entity keeps its container (docs/frame-bodies.md D8): no boundary moves it into another scope.
+            if (entity.OwnerClientId == 0 || !entity.HasAuthority || entity.ContainerPinned) return;
             foreach (var boundary in Active) if (boundary != null) boundary.Cross(worker, entity);
         }
 
