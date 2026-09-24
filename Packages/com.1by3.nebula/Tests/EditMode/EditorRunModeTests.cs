@@ -141,6 +141,42 @@ namespace Nebula.Tests
             Assert.AreEqual(root, EditorDevPaths.ProjectRoot(dataPath));
         }
 
+        [Test]
+        public void TheGatewayKeepsItsSigningKeyWhereItIsTold()
+        {
+            string folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nebula-dev-key-" + System.Guid.NewGuid().ToString("N"));
+            string key = EditorDevPaths.DevAuthKey(folder);
+            StringAssert.EndsWith(System.IO.Path.Combine("Library", "Nebula", "dev-auth.key"), key);
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            config.EncryptClients = false;
+            config.GatewayPort = 0; // any free port
+            var plane = new LocalControlPlane();
+            plane.Connect();
+            var go = new GameObject("gateway");
+            try
+            {
+                var gateway = go.AddComponent<NebulaGateway>();
+                gateway.AuthKeyPath = key;
+                gateway.Initialize(config, plane);
+                Assert.IsTrue(System.IO.File.Exists(key), "the key is created in the project's dev folder");
+                byte[] first = System.IO.File.ReadAllBytes(key);
+                Object.DestroyImmediate(go);
+
+                go = new GameObject("gateway");
+                var again = go.AddComponent<NebulaGateway>();
+                again.AuthKeyPath = key;
+                again.Initialize(config, plane);
+                CollectionAssert.AreEqual(first, System.IO.File.ReadAllBytes(key), "the next session signs with the same key");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(config);
+                plane.Dispose();
+                if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true);
+            }
+        }
+
 #if UNITY_6000_6_OR_NEWER
         [Test]
         public void ReadingThePlayerNeverThrows()

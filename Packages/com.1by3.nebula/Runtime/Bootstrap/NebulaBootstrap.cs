@@ -92,7 +92,7 @@ namespace Nebula
                 NebulaWorld.LoadRuntime(Config.RuntimeWorld);
 
             RunPlan = ResolveEditorRunPlan(Config);
-            RunPlan.ApplyTo(Config, CommandLine.Has, EditorDevPaths.ProjectRoot(Application.dataPath));
+            RunPlan.ApplyTo(Config, CommandLine.Has, ProjectRoot);
             Roles = RunPlan.Player != EditorPlayer.Mesh ? RunPlan.Roles : ResolveRoles();
             if ((Roles & NebulaRoles.Client) != 0 && (Roles & NebulaRoles.Worker) != 0)
             {
@@ -189,6 +189,9 @@ namespace Nebula
             if ((Roles & NebulaRoles.Gateway) != 0)
             {
                 Gateway = gameObject.AddComponent<NebulaGateway>();
+                // The dev loop's server signs identities with a key of the project's, not of the virtual player's
+                // own data folder, so the identity the main Editor saved stays valid from one session to the next.
+                if (RunPlan.Player == EditorPlayer.Server) Gateway.AuthKeyPath = EditorDevPaths.DevAuthKey(ProjectRoot);
                 Gateway.Initialize(Config, ControlPlane);
             }
             if ((Roles & NebulaRoles.Worker) != 0)
@@ -356,6 +359,9 @@ namespace Nebula
         /// in a build, in <see cref="NebulaEditorRunMode.Mesh"/>, or when <c>-nebula-role</c> is given.
         /// </summary>
         public EditorRunPlan RunPlan { get; private set; }
+
+        /// <summary>The main project's folder, also from a virtual player (see <see cref="EditorDevPaths.ProjectRoot"/>).</summary>
+        private static string ProjectRoot => EditorDevPaths.ProjectRoot(Application.dataPath);
 
         private static EditorRunPlan ResolveEditorRunPlan(NebulaConfig config)
         {

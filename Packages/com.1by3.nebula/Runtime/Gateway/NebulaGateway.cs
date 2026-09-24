@@ -271,6 +271,14 @@ namespace Nebula
         /// A failed gateway does nothing: it never registers and never takes a client. <see cref="FailureReason"/> says why.
         /// </summary>
         public bool Failed => FailureReason != null;
+        /// <summary>
+        /// The file the random player signing key is kept in when neither <see cref="NebulaConfig.AuthSigningKey"/> nor
+        /// <see cref="NebulaConfig.MeshToken"/> is set. Null or empty (the default) keeps it in <c>nebula-auth.key</c>
+        /// next to the standalone gateway, or in Unity's persistent data folder. Set it before <see cref="Initialize"/>.
+        /// The Multiplayer Play Mode dev loop sets it to a file of the project's, so a virtual player signs the same
+        /// identities the main Editor saved last time.
+        /// </summary>
+        public string AuthKeyPath { get; set; }
         /// <summary>Why the gateway could not start, or null while it is fine.</summary>
         public string FailureReason { get; private set; }
 
@@ -676,11 +684,7 @@ namespace Nebula
             }
             else
             {
-#if NEBULA_SERVICE
-                string path = System.IO.Path.Combine(AppContext.BaseDirectory, "nebula-auth.key");
-#else
-                string path = System.IO.Path.Combine(Application.persistentDataPath, "nebula-auth.key");
-#endif
+                string path = !string.IsNullOrEmpty(AuthKeyPath) ? AuthKeyPath : DefaultStatePath("nebula-auth.key");
                 key = AnonymousIdentityIssuer.LoadOrCreateKeyFile(path);
                 source = path;
             }

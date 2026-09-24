@@ -155,6 +155,13 @@ namespace Nebula
         /// <summary>The save file of <see cref="NebulaEditorPersistence.DevSaveFile"/>: <c>Library/Nebula/DevSaves/world.bin</c>.</summary>
         public static string DevSaveFile(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves", "world.bin");
 
+        /// <summary>
+        /// The player signing key of the server a virtual player hosts (<see cref="NebulaGateway.AuthKeyPath"/>):
+        /// <c>Library/Nebula/dev-auth.key</c>. A virtual player's persistent data folder is not the main Editor's, so
+        /// without this the identity the main Editor saved would be refused once every session. Builds never read it.
+        /// </summary>
+        public static string DevAuthKey(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "dev-auth.key");
+
         /// <summary>The folder <see cref="DevSaveFile"/> is in.</summary>
         public static string DevSaves(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves");
     }
