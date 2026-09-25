@@ -55,7 +55,9 @@ namespace Nebula.Hosting
         {
             string args = $"-nebula-role worker -nebula-worker-id {spec.WorkerId} -nebula-worker-index {spec.Index} -nebula-port {spec.Port} -nebula-advertise {_advertiseAddress}";
             var h = new Handle { WorkerId = spec.WorkerId };
-            h.Process = Start("worker", args + " " + spec.CommonArgs, spec.WorkerId, out string error);
+            // The game's variables (the manifest's Env, then NEBULA_ENV_FILE) on top of what the child inherits from here.
+            var env = WorkerEnvironment.Resolve(null, m => _log("warn", "worker environment: " + m));
+            h.Process = Start("worker", args + " " + spec.CommonArgs, spec.WorkerId, out string error, env);
             if (h.Process == null) { h.State = WorkerHandleState.Failed; h.Reason = error; }
             else h.State = WorkerHandleState.Running;
             _handles.Add(h);
@@ -72,7 +74,7 @@ namespace Nebula.Hosting
 #endif
         }
 
-        private Process Start(string kind, string roleArgs, string logName, out string error)
+        private Process Start(string kind, string roleArgs, string logName, out string error, System.Collections.Generic.IDictionary<string, string> env = null)
         {
             error = "";
             string exe = ResolveExecutable();
@@ -89,17 +91,12 @@ namespace Nebula.Hosting
 #endif
             Directory.CreateDirectory(logDir);
             string args = $"-batchmode -nographics {roleArgs} -logFile \"{Path.Combine(logDir, logName + ".log")}\"";
-            var psi = new ProcessStartInfo(exe, args)
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(exe) ?? ".",
-            };
+            var psi = StartInfo(exe, args, env);
             try
             {
                 var p = Process.Start(psi);
-                _log("info", $"launched {kind} {logName} pid={p?.Id}");
-                NebulaLog.Debugf($"{Path.GetFileName(exe)} {args}");
+                _log("info", $"launched {kind} {logName} pid={p?.Id}{(env != null && env.Count > 0 ? $" with {env.Count} game environment variable(s)" : "")}");
+                NebulaLog.Debugf($"{Path.GetFileName(exe)} {CommandLine.Redact(args)}");
                 return p;
             }
             catch (Exception e)
@@ -108,6 +105,19 @@ namespace Nebula.Hosting
                 _log("error", $"failed to launch {kind}: {e.Message}");
                 return null;
             }
+        }
+
+        /// <summary>How a role is started: no shell, no window, from the executable's folder, with <paramref name="env"/> added to what it inherits.</summary>
+        internal static ProcessStartInfo StartInfo(string exe, string args, System.Collections.Generic.IDictionary<string, string> env)
+        {
+            var psi = new ProcessStartInfo(exe, args)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(exe) ?? ".",
+            };
+            if (env != null) WorkerEnvironment.ApplyTo(psi.Environment, env);
+            return psi;
         }
 
         private string ResolveExecutable()

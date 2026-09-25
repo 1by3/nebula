@@ -15,6 +15,11 @@ namespace Nebula
         public List<Container> Containers = new List<Container>();
         public ServiceWorld World;
         public List<TemplateSchema> Schemas = new List<TemplateSchema>();
+        /// <summary>
+        /// Environment variables every worker of a self-hosted deployment gets (non-secret; see docs "Environment
+        /// variables"). Not exported by Unity: <c>nebula deploy</c> writes it from <c>deploy.env</c> in nebula.json.
+        /// </summary>
+        public Dictionary<string, string> Env;
         public static readonly JsonSerializerOptions Json = new JsonSerializerOptions { IncludeFields = true, IgnoreReadOnlyProperties = true, PropertyNameCaseInsensitive = true, WriteIndented = true };
         private static ServiceManifest Current;
         private readonly Dictionary<SchemaField, Type> resolvedTypes = new Dictionary<SchemaField, Type>();
