@@ -88,6 +88,11 @@ namespace Nebula
         EntityRedirect = 35,
         /// <summary>Worker -> gateway: an entity left every region this gateway subscribes here (<see cref="EntityForgetMsg"/>).</summary>
         EntityForget = 36,
+        /// <summary>
+        /// Worker -> gateway: the client member sets of an entity's <see cref="Nebula.SyncAudience.Custom"/> behaviors
+        /// changed (<see cref="SyncAudienceMsg"/>, protocol 20). Never forwarded to a client.
+        /// </summary>
+        SyncAudience = 37,
 
         // Worker <-> worker
         GhostSpawn = 40,
@@ -154,13 +159,15 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 19;
+        public const ushort ProtocolVersion = 20;
         /// <summary>
-        /// The oldest client protocol the gateway accepts. Both this limit and <see cref="ProtocolVersion"/>
-        /// are 19, so only protocol-19 clients can join: protocol 19 removed a behaviour from every carrier prefab
-        /// (the obsolete <c>DynamicContainer</c>), which renumbers the behaviour indices that RPCs, variables and sync
-        /// state are addressed by, and a protocol-18 client would address the wrong behaviour without noticing.
-        /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 19. Protocol 20 added sync audiences
+        /// (<see cref="SyncAudience"/>), and the change is additive for a client: a protocol-19 client ignores the
+        /// audience bits in a chunk's flags, and the one new thing a client can be sent, a
+        /// <see cref="SyncStateCodec.ChunkFlags.Cleared"/> chunk, goes only to clients that negotiated 20. Protocol 18
+        /// is still refused: protocol 19 removed a behavior from every carrier prefab (the obsolete
+        /// <c>DynamicContainer</c>), which renumbered the behavior indices that RPCs, variables and sync state are
+        /// addressed by. Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
         public const ushort MinProtocolVersion = 19;
         public PeerRole Role;
@@ -580,9 +587,29 @@ namespace Nebula
         /// field reads as -1, which leaves the receiver's current weight unchanged.
         /// </summary>
         public float CostWeight;
+        /// <summary>
+        /// Worker to gateway and worker to worker: the entity's audience generation
+        /// (<see cref="NetworkIdentity.SyncAudienceGeneration"/>), raised every time a <see cref="SyncAudience.Custom"/>
+        /// member set changes. It travels with the entity through ghosting and handover, so it never goes back, and a
+        /// gateway holds back a restricted chunk stamped with a newer generation than the member sets it has
+        /// (protocol 20, trailing and optional, written only when it or <see cref="Audience"/> is set). A gateway
+        /// never forwards it to a client.
+        /// </summary>
+        public uint AudienceGeneration;
+        /// <summary>
+        /// Worker to gateway and worker to worker: the member sets of the entity's Custom behaviors
+        /// (<see cref="SyncAudienceCodec"/>), or null when it has none. A gateway never forwards it to a client.
+        /// </summary>
+        public byte[] Audience;
 
 #if !NEBULA_SERVICE
-        public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch)
+        /// <param name="id">The entity.</param>
+        /// <param name="scratch">A writer this reuses.</param>
+        /// <param name="forGateway">
+        /// True for a spawn sent to a gateway: chunks of <see cref="SyncAudience.WorkersOnly"/> behaviors are left
+        /// out, since no client may have them. A ghost spawn or a handover carries every behavior.
+        /// </param>
+        public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch, bool forGateway = false)
         {
             scratch.Reset();
             id.WriteVars(scratch);
@@ -591,8 +618,15 @@ namespace Nebula
             byte[] state = Array.Empty<byte>();
             if (id.HasSyncState)
             {
-                id.WriteSyncSnapshot(scratch);
+                id.WriteSyncSnapshot(scratch, forGateway);
                 state = scratch.ToArray();
+            }
+            byte[] audience = null;
+            if (id.HasCustomAudience)
+            {
+                scratch.Reset();
+                id.WriteAudienceSets(scratch);
+                audience = scratch.ToArray();
             }
             return new EntitySpawnMsg
             {
@@ -616,6 +650,8 @@ namespace Nebula
                 InterestGroup = id.InterestGroup,
                 CohesionGroup = id.CohesionGroup,
                 CostWeight = id.EffectiveCostWeight,
+                AudienceGeneration = id.SyncAudienceGeneration,
+                Audience = audience,
             };
         }
 
@@ -626,7 +662,14 @@ namespace Nebula
             WriteBody(w);
         }
 
-        public void WriteBody(NetworkWriter w)
+        public void WriteBody(NetworkWriter w) => WriteBody(w, embedded: false);
+
+        /// <summary>
+        /// Write the body. <paramref name="embedded"/> is true when more fields follow it in the same message (an
+        /// <see cref="AuthorityTransferMsg"/>): the audience section is then always written, since a reader cannot
+        /// tell it apart from the fields after it. A standalone spawn writes it only when it holds something.
+        /// </summary>
+        public void WriteBody(NetworkWriter w, bool embedded)
         {
             w.WriteULong(NetId);
             w.WriteUShort(PrefabId);
@@ -649,11 +692,26 @@ namespace Nebula
             w.WriteUShort(ViewSeq);
             w.WriteUInt(CohesionGroup);
             w.WriteHalf(CostWeight);
+            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0)) return;
+            w.WriteUInt(AudienceGeneration);
+            w.WriteBytes(Audience ?? Array.Empty<byte>());
         }
 
-        public static EntitySpawnMsg Read(NetworkReader r)
+        /// <summary>This spawn as a client may see it: the fields only workers and gateways use are cleared.</summary>
+        public EntitySpawnMsg ForClient()
         {
-            return new EntitySpawnMsg
+            var copy = this;
+            copy.AudienceGeneration = 0;
+            copy.Audience = null;
+            return copy;
+        }
+
+        public static EntitySpawnMsg Read(NetworkReader r) => Read(r, embedded: false);
+
+        /// <summary>Read a body written by <see cref="WriteBody(NetworkWriter, bool)"/> with the same <paramref name="embedded"/>.</summary>
+        public static EntitySpawnMsg Read(NetworkReader r, bool embedded)
+        {
+            var msg = new EntitySpawnMsg
             {
                 NetId = r.ReadULong(),
                 PrefabId = r.ReadUShort(),
@@ -677,6 +735,13 @@ namespace Nebula
                 CohesionGroup = r.Remaining > 0 ? r.ReadUInt() : 0u,
                 CostWeight = r.Remaining > 0 ? r.ReadHalf() : -1f,
             };
+            if (embedded || r.Remaining > 0)
+            {
+                msg.AudienceGeneration = r.ReadUInt();
+                msg.Audience = r.ReadBytes();
+                if (msg.Audience.Length == 0) msg.Audience = null;
+            }
+            return msg;
         }
     }
 
@@ -756,6 +821,14 @@ namespace Nebula
         public ContainerRef Container;
         public bool Reliable;
         public byte[] Chunks;
+        /// <summary>
+        /// Worker to gateway: the entity's audience generation when these chunks were written
+        /// (<see cref="EntitySpawnMsg.AudienceGeneration"/>). A gateway forwards a restricted chunk only once it holds
+        /// member sets at least this new, so a chunk written after a client left an audience cannot reach that client
+        /// in a sequenced packet that overtook the reliable <see cref="SyncAudienceMsg"/>. Trailing and optional
+        /// (protocol 20); written only when non-zero, and never sent to a client.
+        /// </summary>
+        public uint AudienceGeneration;
 
         public Delivery Delivery => Reliable ? Delivery.ReliableOrdered : Delivery.Sequenced;
 
@@ -768,6 +841,7 @@ namespace Nebula
             Container.Write(w);
             w.WriteBool(Reliable);
             w.WriteBytes(Chunks);
+            if (AudienceGeneration != 0) w.WriteUInt(AudienceGeneration);
         }
 
         public static EntitySyncMsg Read(NetworkReader r) => new EntitySyncMsg
@@ -778,6 +852,41 @@ namespace Nebula
             Container = ContainerRef.Read(r),
             Reliable = r.ReadBool(),
             Chunks = r.ReadBytes(),
+            AudienceGeneration = r.Remaining >= 4 ? r.ReadUInt() : 0u,
+        };
+    }
+
+    /// <summary>
+    /// Worker to gateway (<see cref="MsgId.SyncAudience"/>, protocol 20): the member sets of an entity's
+    /// <see cref="SyncAudience.Custom"/> behaviors changed. Sent reliably, before that tick's sync chunks, to every
+    /// gateway the entity's sync state goes to. It carries every set whole rather than a delta, so applying it twice
+    /// does no harm. The gateway sends each client that joined a set the newest keyframe it holds, and tells each
+    /// client that left to drop its copy (<see cref="SyncStateCodec.ChunkFlags.Cleared"/>).
+    /// </summary>
+    public struct SyncAudienceMsg
+    {
+        public ulong NetId;
+        public uint Epoch;
+        /// <summary>The entity's audience generation after the change; see <see cref="EntitySpawnMsg.AudienceGeneration"/>.</summary>
+        public uint Generation;
+        /// <summary>Every Custom behavior's member set (<see cref="SyncAudienceCodec"/>).</summary>
+        public byte[] Sets;
+
+        public void Write(NetworkWriter w)
+        {
+            w.WriteByte((byte)MsgId.SyncAudience);
+            w.WriteULong(NetId);
+            w.WriteUInt(Epoch);
+            w.WriteUInt(Generation);
+            w.WriteBytes(Sets);
+        }
+
+        public static SyncAudienceMsg Read(NetworkReader r) => new SyncAudienceMsg
+        {
+            NetId = r.ReadULong(),
+            Epoch = r.ReadUInt(),
+            Generation = r.ReadUInt(),
+            Sets = r.ReadBytes(),
         };
     }
 
@@ -1447,7 +1556,7 @@ namespace Nebula
         public void Write(NetworkWriter w)
         {
             w.WriteByte((byte)MsgId.AuthorityTransfer);
-            Entity.WriteBody(w);
+            Entity.WriteBody(w, embedded: true);
             w.WriteUInt(NewEpoch);
             w.WriteBytes(PendingInputs);
             w.WriteBytes(HandoverState);
@@ -1468,7 +1577,7 @@ namespace Nebula
         {
             var msg = new AuthorityTransferMsg
             {
-                Entity = EntitySpawnMsg.Read(r),
+                Entity = EntitySpawnMsg.Read(r, embedded: true),
                 NewEpoch = r.ReadUInt(),
                 PendingInputs = r.ReadBytes(),
                 HandoverState = r.ReadBytes(),

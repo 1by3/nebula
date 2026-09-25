@@ -1300,7 +1300,8 @@ namespace Nebula
             NoteServerTick(msg.Tick);
             // Behaviours the local client is itself authoritative for (owner mode) ignore their own echo inside ReadSyncState.
             _reader.Set(new ArraySegment<byte>(msg.Chunks));
-            e.ReadSyncState(_reader, msg.Tick, ContainerRegistry.Resolve(msg.Container) ?? e.Container);
+            // The channel matters to a behaviour this client has just left the audience of (docs/sync-audience.md D9).
+            e.ReadSyncState(_reader, msg.Tick, ContainerRegistry.Resolve(msg.Container) ?? e.Container, msg.Reliable);
         }
 
         private void OnOwnerState(OwnerStateMsg msg)

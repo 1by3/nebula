@@ -946,7 +946,7 @@ namespace Nebula
         {
             if (mask == 0 && _unmaskedGateways.Count == 0) return;
             _writer.Reset();
-            EntitySpawnMsg.From(e, _scratch).Write(_writer, MsgId.EntitySpawn);
+            EntitySpawnMsg.From(e, _scratch, forGateway: true).Write(_writer, MsgId.EntitySpawn);
             SendToMask(mask, Delivery.ReliableOrdered);
         }
 

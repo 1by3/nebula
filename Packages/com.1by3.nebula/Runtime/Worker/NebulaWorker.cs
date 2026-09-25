@@ -1206,6 +1206,8 @@ namespace Nebula
             ProfContainers.End();
 
             foreach (var e in _authoritative) e.PrepareReplication(tick);
+            // Who may see each Custom behaviour, decided before anything of this tick is written to anyone.
+            EvaluateSyncAudiences(tick);
 
             // 4. Ghost band: create neighboring copies before an entity can cross.
             ProfBand.Begin();
@@ -2138,6 +2140,9 @@ namespace Nebula
             // The cohesion group travels with the entity, so this worker expands the same group the previous owner
             // did when it hands the entity on (docs/cohesion-hints.md, D3).
             e.JoinCohesionGroup(msg.CohesionGroup);
+            // So does its audience state: the generation never goes back, and a new authority starts from the
+            // member sets its predecessor chose (docs/sync-audience.md D7).
+            e.ApplyCarriedAudience(msg.AudienceGeneration, msg.Audience);
             // The cost weight travels with the entity, so a boss costs the same on the worker it hands over to
             // (docs/cost-telemetry.md, D4). Zero is valid; a negative value means the field was absent.
             if (msg.CostWeight >= 0f) e.ApplyCarriedCostWeight(msg.CostWeight);
@@ -2210,11 +2215,13 @@ namespace Nebula
         /// </summary>
         private void SendSyncState(NetworkIdentity e, uint tick, MsgId id, Peer to)
         {
+            // A gateway is never sent a WorkersOnly chunk: nothing past it may have one (docs/sync-audience.md D2).
+            bool forGateway = id == MsgId.EntityState;
             for (int d = 0; d < 2; d++)
             {
                 var delivery = d == 0 ? Delivery.ReliableOrdered : Delivery.Sequenced;
                 _scratch.Reset();
-                if (e.WriteSyncState(_scratch, tick, delivery) == 0) continue;
+                if (e.WriteSyncState(_scratch, tick, delivery, forGateway) == 0) continue;
                 _writer.Reset();
                 new EntitySyncMsg
                 {
@@ -2224,9 +2231,28 @@ namespace Nebula
                     Container = e.ContainerRef,
                     Reliable = delivery == Delivery.ReliableOrdered,
                     Chunks = _scratch.ToArray(),
+                    // Only entities with a restricted audience pay the four bytes (docs/sync-audience.md D6).
+                    AudienceGeneration = e.HasRestrictedAudience ? e.SyncAudienceGeneration : 0,
                 }.Write(_writer, id);
                 _costMeter.AddReplication(e.Container, _writer.Length); // once per destination: this is what it costs
                 Send(to, delivery);
+            }
+        }
+
+        private readonly List<ulong> _audienceScratch = new List<ulong>();
+
+        /// <summary>
+        /// Evaluate the due <see cref="SyncAudience.Custom"/> audiences of everything this worker simulates. The
+        /// candidates are the pawns this worker holds, simulated or ghosted (<see cref="_players"/>), which is every
+        /// client near enough to interact with anything here. Nothing is asked for an entity without a Custom
+        /// behaviour, and a behaviour is asked only when it is due (docs/sync-audience.md D5).
+        /// </summary>
+        private void EvaluateSyncAudiences(uint tick)
+        {
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e != null && e.HasCustomAudience) e.EvaluateSyncAudiences(tick, _players, _audienceScratch);
             }
         }
 
@@ -2334,6 +2360,17 @@ namespace Nebula
                     _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
                     SendToMask(mask, Delivery.ReliableOrdered);
                 }
+                if (e.AudienceChangedThisTick && (mask != 0 || _unmaskedGateways.Count > 0))
+                {
+                    // Reliable and ahead of this tick's chunks, so the gateway filters them by the new sets. A gateway
+                    // that subscribes later gets the sets in the entity's spawn.
+                    _scratch.Reset();
+                    e.WriteAudienceSets(_scratch);
+                    _writer.Reset();
+                    new SyncAudienceMsg { NetId = e.NetId, Epoch = e.Epoch, Generation = e.SyncAudienceGeneration, Sets = _scratch.ToArray() }.Write(_writer);
+                    _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
+                    SendToMask(mask, Delivery.ReliableOrdered);
+                }
                 if (e.HasSyncState)
                 {
                     // The keyframe decision is per tick, not per destination, so every gateway in the mask gets the
@@ -2394,7 +2431,10 @@ namespace Nebula
                 if (existing.HasAuthority)
                 {
                     // Re-announce; the gateway may have lost track of it.
-                    SendSpawn(gateway, EntitySpawnMsg.From(existing, _scratch), MsgId.EntitySpawn);
+                    SendSpawn(gateway, EntitySpawnMsg.From(existing, _scratch, forGateway: true), MsgId.EntitySpawn);
+                    // A new connection for the same session: what it is in the audience of starts from a fresh
+                    // keyframe this tick, not only from the gateway's cached one (docs/sync-audience.md D8).
+                    for (int i = 0; i < _authoritative.Count; i++) _authoritative[i].ForceAudienceKeyframes(msg.ClientId);
                     return;
                 }
             }

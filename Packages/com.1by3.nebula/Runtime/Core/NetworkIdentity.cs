@@ -552,6 +552,9 @@ namespace Nebula
                 Interpolator = null;
             }
             _history = null;
+            SyncAudienceGeneration = 0;
+            AudienceChangedThisTick = false;
+            foreach (var b in SyncBehaviours) ResetAudience(b);
             ClearDirty();
         }
 
@@ -588,7 +591,28 @@ namespace Nebula
             HistoryVars = history.Count > 0 ? history.ToArray() : Array.Empty<NetworkVariableBase>();
             _history?.Rebind(HistoryVars);
             var sync = new List<NetworkBehaviour>();
-            foreach (var b in Behaviours) if (b.HasSyncState) sync.Add(b);
+            HasCustomAudience = false;
+            HasRestrictedAudience = false;
+            foreach (var b in Behaviours)
+            {
+                if (!b.HasSyncState) continue;
+                sync.Add(b);
+                // Read once: the audience is configuration, and every process must agree on it for the whole life
+                // of the entity (docs/sync-audience.md D3).
+                var audience = SyncAudience.Everyone;
+                try { audience = b.SyncAudience; }
+                catch (Exception ex) { NebulaLog.Error($"SyncAudience on {b.GetType().Name} of {name} threw: {ex.Message}; using Everyone"); }
+                if (b == RootTransform && audience != SyncAudience.Everyone)
+                {
+                    // The root pose is the entity's place in the world: interest, carriers and every client's view
+                    // of the entity are built on it, so it cannot be private.
+                    NebulaLog.Warn($"{name}: the root NetworkTransform replicates to everyone; its SyncAudience {audience} is ignored");
+                    audience = SyncAudience.Everyone;
+                }
+                b.Audience = audience;
+                if (audience == SyncAudience.Custom) HasCustomAudience = true;
+                if (audience != SyncAudience.Everyone) HasRestrictedAudience = true;
+            }
             SyncBehaviours = sync.ToArray();
         }
 
@@ -694,14 +718,22 @@ namespace Nebula
                 if (b.SyncDirty) b.OnSyncStateSent();
                 b.SyncDirty = false;
                 // Only now, after every destination got this tick's chunk, does the stream count as opened.
-                if (b.SyncWrittenThisTick) { b.SyncEverSent = true; b.SyncWrittenThisTick = false; }
+                if (b.SyncWrittenThisTick) { b.SyncEverSent = true; b.SyncWrittenThisTick = false; b.AudienceKeyframe = false; }
             }
+            AudienceChangedThisTick = false;
         }
 
         // ---- sync channel ---------------------------------------------------------------------------------
 
         /// <summary>A keyframe from every sync behavior: what rides the spawn/handover message.</summary>
-        public void WriteSyncSnapshot(NetworkWriter writer)
+        public void WriteSyncSnapshot(NetworkWriter writer) => WriteSyncSnapshot(writer, forGateway: false);
+
+        /// <summary>
+        /// A keyframe from every sync behavior, each chunk flagged with its behavior's audience. For a gateway
+        /// (<paramref name="forGateway"/>), <see cref="SyncAudience.WorkersOnly"/> behaviors are left out: no client
+        /// may have them, so the gateway is not sent them at all.
+        /// </summary>
+        public void WriteSyncSnapshot(NetworkWriter writer, bool forGateway)
         {
             int at = SyncStateCodec.BeginEnvelope(writer);
             byte n = 0;
@@ -709,10 +741,156 @@ namespace Nebula
             {
                 var b = SyncBehaviours[i];
                 if (b == RootTransform) continue; // root snapshots live in EntitySpawnMsg
-                SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, SyncStateCodec.ChunkFlags.Full, b, true);
+                if (forGateway && b.Audience == SyncAudience.WorkersOnly) continue;
+                SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, SyncStateCodec.ChunkFlags.Full | SyncStateCodec.FlagsOf(b.Audience), b, true);
                 n++;
             }
             SyncStateCodec.EndEnvelope(writer, at, n);
+        }
+
+        // ---- sync audience --------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Raised every time the member set of one of this entity's <see cref="SyncAudience.Custom"/> behaviors
+        /// changes on its authority. It travels with the entity through ghosting and handover, so it only ever goes up,
+        /// and it stamps every sync message (<see cref="EntitySyncMsg.AudienceGeneration"/>) so a gateway can tell a
+        /// chunk written under member sets it has not received yet (docs/sync-audience.md D6).
+        /// </summary>
+        public uint SyncAudienceGeneration { get; internal set; }
+
+        /// <summary>At least one sync behavior has the <see cref="SyncAudience.Custom"/> audience.</summary>
+        public bool HasCustomAudience { get; private set; }
+
+        /// <summary>At least one sync behavior has an audience other than <see cref="SyncAudience.Everyone"/>.</summary>
+        public bool HasRestrictedAudience { get; private set; }
+
+        /// <summary>A Custom member set changed this tick: the gateways are sent a <see cref="SyncAudienceMsg"/> before the tick's chunks.</summary>
+        internal bool AudienceChangedThisTick;
+
+        /// <summary>The member sets of the Custom behaviors (<see cref="SyncAudienceCodec"/>).</summary>
+        internal void WriteAudienceSets(NetworkWriter writer)
+        {
+            _audienceSets.Clear();
+            for (int i = 0; i < SyncBehaviours.Length; i++)
+            {
+                var b = SyncBehaviours[i];
+                if (b.Audience == SyncAudience.Custom) _audienceSets.Add(new KeyValuePair<byte, ulong[]>(b.BehaviourIndex, b.AudienceMembers));
+            }
+            SyncAudienceCodec.Write(writer, _audienceSets);
+            _audienceSets.Clear();
+        }
+
+        private static readonly List<KeyValuePair<byte, ulong[]>> _audienceSets = new List<KeyValuePair<byte, ulong[]>>();
+
+        /// <summary>
+        /// Take the audience state that arrived with the entity (a ghost spawn, a handover): the generation, and the
+        /// member sets its previous authority chose. A new authority starts from them, so if it reaches the same
+        /// answer nothing changes for any client.
+        /// </summary>
+        internal void ApplyCarriedAudience(uint generation, byte[] sets)
+        {
+            if (generation > SyncAudienceGeneration) SyncAudienceGeneration = generation;
+            if (!HasCustomAudience || sets == null || sets.Length == 0) return;
+            Dictionary<byte, ulong[]> carried;
+            try { carried = SyncAudienceCodec.Read(sets); }
+            catch (Exception ex) { NebulaLog.Error($"{name}: unreadable audience sets ({ex.Message}); keeping the current ones"); return; }
+            foreach (var kv in carried)
+            {
+                if (kv.Key >= Behaviours.Length) continue;
+                var b = Behaviours[kv.Key];
+                if (b.Audience == SyncAudience.Custom) b.AudienceMembers = kv.Value;
+            }
+        }
+
+        /// <summary>
+        /// Authority, once per tick before anything is written: evaluate every <see cref="SyncAudience.Custom"/>
+        /// behavior that is due (marked dirty, or its <see cref="NetworkBehaviour.SyncAudienceRefreshTicks"/> ran out)
+        /// against <paramref name="candidates"/>, the pawns this worker holds by session id. A behavior whose set
+        /// changed writes a keyframe this tick, and the entity's generation goes up once. Returns whether anything
+        /// changed. The cost is one predicate call per candidate per due behavior.
+        /// </summary>
+        internal bool EvaluateSyncAudiences(uint tick, Dictionary<ulong, NetworkIdentity> candidates, List<ulong> scratch)
+        {
+            if (!HasCustomAudience) return false;
+            bool changed = false;
+            for (int i = 0; i < SyncBehaviours.Length; i++)
+            {
+                var b = SyncBehaviours[i];
+                if (b.Audience != SyncAudience.Custom) continue;
+                uint refresh = 0;
+                try { refresh = b.SyncAudienceRefreshTicks; }
+                catch (Exception ex) { NebulaLog.Error($"SyncAudienceRefreshTicks on {b.GetType().Name} of {name} threw: {ex.Message}"); }
+                if (!b.AudienceDirty && (refresh == 0 || tick < b.AudienceNextTick)) continue;
+                b.AudienceDirty = false;
+                b.AudienceNextTick = refresh > 0 ? tick + refresh : 0;
+                scratch.Clear();
+                if (candidates != null)
+                {
+                    foreach (var kv in candidates)
+                    {
+                        if (kv.Key == 0 || kv.Value == null) continue;
+                        if (b.EvaluateAudienceMember(kv.Key, kv.Value)) scratch.Add(kv.Key);
+                    }
+                }
+                scratch.Sort();
+                if (scratch.Count > SyncAudienceCodec.MaxMembers)
+                {
+                    if (!b.AudienceCapWarned)
+                    {
+                        b.AudienceCapWarned = true;
+                        NebulaLog.Warn($"{b.GetType().Name} of {name}: IsInSyncAudience chose {scratch.Count} clients, more than the {SyncAudienceCodec.MaxMembers} an audience can hold; the rest do not receive its state");
+                    }
+                    scratch.RemoveRange(SyncAudienceCodec.MaxMembers, scratch.Count - SyncAudienceCodec.MaxMembers);
+                }
+                if (SameMembers(b.AudienceMembers, scratch)) continue;
+                b.AudienceMembers = scratch.ToArray();
+                // Everyone who has the behaviour now, the new members included, gets a fresh keyframe this tick.
+                b.AudienceKeyframe = true;
+                b.SyncDirty = true;
+                SyncDirty = true;
+                changed = true;
+            }
+            if (!changed) return false;
+            SyncAudienceGeneration++;
+            AudienceChangedThisTick = true;
+            return true;
+        }
+
+        private static bool SameMembers(ulong[] current, List<ulong> next)
+        {
+            if (current.Length != next.Count) return false;
+            for (int i = 0; i < current.Length; i++) if (current[i] != next[i]) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Authority: the client <paramref name="clientId"/> came back (a reclaimed session). Every restricted behavior
+        /// it is in the audience of writes a keyframe this tick, so the new connection starts from current state and
+        /// not only from the gateway's newest cached keyframe.
+        /// </summary>
+        internal void ForceAudienceKeyframes(ulong clientId)
+        {
+            if (!HasRestrictedAudience || clientId == 0) return;
+            for (int i = 0; i < SyncBehaviours.Length; i++)
+            {
+                var b = SyncBehaviours[i];
+                bool member = b.Audience == SyncAudience.Owner ? OwnerClientId == clientId
+                    : b.Audience == SyncAudience.Custom && SyncAudienceCodec.Contains(b.AudienceMembers, clientId);
+                if (!member) continue;
+                b.AudienceKeyframe = true;
+                b.SyncDirty = true;
+                SyncDirty = true;
+            }
+        }
+
+        private static void ResetAudience(NetworkBehaviour b)
+        {
+            b.AudienceMembers = Array.Empty<ulong>();
+            b.AudienceDirty = true;
+            b.AudienceNextTick = 0;
+            b.AudienceKeyframe = false;
+            b.SyncCleared = false;
+            b.SyncClearedTick = 0;
         }
 
         /// <summary>
@@ -722,7 +900,14 @@ namespace Nebula
         /// tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns
         /// the number of chunks written; when zero the writer has been left untouched.
         /// </summary>
-        public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery)
+        public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery) => WriteSyncState(writer, tick, delivery, forGateway: false);
+
+        /// <summary>
+        /// As <see cref="WriteSyncState(NetworkWriter, uint, Delivery)"/>, with each chunk flagged with its behavior's
+        /// audience. For a gateway (<paramref name="forGateway"/>), <see cref="SyncAudience.WorkersOnly"/> behaviors
+        /// are left out. A behavior whose audience just changed, or whose owner just came back, writes a keyframe.
+        /// </summary>
+        public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery, bool forGateway)
         {
             int rewind = writer.Length;
             int at = SyncStateCodec.BeginEnvelope(writer);
@@ -733,10 +918,12 @@ namespace Nebula
                 var b = SyncBehaviours[i];
                 if (b == RootTransform) continue; // batched spatial stream, not opaque component chunks
                 if (b.SyncDelivery != delivery) continue;
-                bool keyframe = keyframeTick || !b.SyncEverSent || (b is NetworkTransform && delivery == Delivery.ReliableOrdered);
+                if (forGateway && b.Audience == SyncAudience.WorkersOnly) continue;
+                bool keyframe = keyframeTick || !b.SyncEverSent || b.AudienceKeyframe || (b is NetworkTransform && delivery == Delivery.ReliableOrdered);
                 bool send = b.SyncDirty || (keyframe && delivery == Delivery.Sequenced);
                 if (!send) continue;
-                SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, keyframe ? SyncStateCodec.ChunkFlags.Full : SyncStateCodec.ChunkFlags.None, b, keyframe);
+                var flags = (keyframe ? SyncStateCodec.ChunkFlags.Full : SyncStateCodec.ChunkFlags.None) | SyncStateCodec.FlagsOf(b.Audience);
+                SyncStateCodec.WriteChunk(writer, b.BehaviourIndex, flags, b, keyframe);
                 b.SyncWrittenThisTick = true;
                 n++;
             }
@@ -754,15 +941,38 @@ namespace Nebula
         public Container SyncContainer { get; internal set; }
 
         /// <summary>Non-authoritative copies: hand each chunk to its behavior. Chunks for unknown indices are skipped.</summary>
-        public void ReadSyncState(NetworkReader reader, uint tick, Container container)
+        public void ReadSyncState(NetworkReader reader, uint tick, Container container) => ReadSyncState(reader, tick, container, reliable: true);
+
+        /// <summary>
+        /// As <see cref="ReadSyncState(NetworkReader, uint, Container)"/>. <paramref name="reliable"/> says whether the
+        /// chunks came on the reliable stream. A <see cref="SyncStateCodec.ChunkFlags.Cleared"/> chunk calls
+        /// <see cref="NetworkBehaviour.OnSyncStateCleared"/> instead of <see cref="NetworkBehaviour.ReadSyncState"/>.
+        /// After it, chunks of that behavior from sequenced packets no newer than the clear are dropped: they were
+        /// sent before the client left the audience and overtook nothing but the notice.
+        /// </summary>
+        public void ReadSyncState(NetworkReader reader, uint tick, Container container, bool reliable)
         {
             SyncContainer = container;
             SyncStateCodec.ReadEnvelope(reader, (index, flags, chunk) =>
             {
                 if (index >= Behaviours.Length) return;
                 var b = Behaviours[index];
+                if ((flags & SyncStateCodec.ChunkFlags.Cleared) != 0)
+                {
+                    b.SyncCleared = true;
+                    b.SyncClearedTick = tick;
+                    try { b.OnSyncStateCleared(); }
+                    catch (Exception ex) { NebulaLog.Error($"OnSyncStateCleared on {b.GetType().Name} of {name} threw: {ex.Message}"); }
+                    return;
+                }
+                bool full = (flags & SyncStateCodec.ChunkFlags.Full) != 0;
+                if (b.SyncCleared)
+                {
+                    if (!reliable && tick <= b.SyncClearedTick) return;
+                    if (full) b.SyncCleared = false;
+                }
                 SyncChunkReader.Set(chunk);
-                try { b.ReadSyncState(SyncChunkReader, tick, (flags & SyncStateCodec.ChunkFlags.Full) != 0); }
+                try { b.ReadSyncState(SyncChunkReader, tick, full); }
                 catch (Exception ex) { NebulaLog.Error($"ReadSyncState on {b.GetType().Name} of {name} threw: {ex.Message}"); }
             });
         }
@@ -897,6 +1107,8 @@ namespace Nebula
             HasAuthority = authority;
             // A new authority (new epoch) opens its stream with keyframes so the gateway cache and ghosts restart clean.
             if (authority) foreach (var b in SyncBehaviours) { b.SyncEverSent = false; b.SyncWrittenThisTick = false; b.SyncDirty = true; SyncDirty = true; }
+            // A new authority asks its own pawns: the answer can differ from the previous worker's (docs/sync-audience.md D7).
+            if (authority) foreach (var b in SyncBehaviours) if (b.Audience == SyncAudience.Custom) b.AudienceDirty = true;
             if (authority) foreach (var b in Behaviours) b.OnGainedAuthority();
             else foreach (var b in Behaviours) b.OnLostAuthority();
         }

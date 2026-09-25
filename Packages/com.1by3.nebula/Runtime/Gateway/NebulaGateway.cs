@@ -204,39 +204,63 @@ namespace Nebula
             public byte InterestGroup;
             /// <summary>The clients that hold a replica: the exact audience of every message about this entity.</summary>
             public readonly List<ClientConn> Observers = new List<ClientConn>();
-            /// <summary>Newest keyframe per behavior index, assembled into LastSpawn.State for late joiners.</summary>
-            public Dictionary<byte, byte[]> SyncKeyframes;
+            /// <summary>
+            /// Newest keyframe per behavior index, with the audience it was flagged with. Assembled per client into the
+            /// spawn a late joiner gets, with every chunk that client may not have left out (docs/sync-audience.md D4).
+            /// </summary>
+            public Dictionary<byte, CachedKeyframe> SyncKeyframes;
+            /// <summary>The audience of each behaviour whose chunks came flagged with one other than Everyone.</summary>
+            public Dictionary<byte, SyncAudience> Audiences;
+            /// <summary>The member sets of the entity's Custom behaviours, as its authority last sent them. Replaced whole, never changed in place.</summary>
+            public Dictionary<byte, ulong[]> AudienceSets;
+            /// <summary>The generation of <see cref="AudienceSets"/> (<see cref="EntitySpawnMsg.AudienceGeneration"/>).</summary>
+            public uint AudienceGeneration;
+            /// <summary>The newest tick of sync state relayed for this entity: what a <see cref="SyncStateCodec.ChunkFlags.Cleared"/> notice is stamped with.</summary>
+            public uint LastSyncTick;
 
-            public void SeedKeyframes(byte[] state)
+            public void SeedKeyframes(byte[] state, uint generation)
             {
                 SyncKeyframes = null;
                 if (state == null || state.Length == 0) return;
                 var r = new NetworkReader(state);
-                SyncStateCodec.ReadEnvelope(r, (index, flags, chunk) => StoreKeyframe(index, chunk));
+                int count = r.ReadByte();
+                for (int i = 0; i < count; i++)
+                {
+                    byte index = r.ReadByte();
+                    var flags = (SyncStateCodec.ChunkFlags)r.ReadByte();
+                    var chunk = r.ReadSegment(r.ReadUShort());
+                    NoteAudience(index, flags);
+                    StoreKeyframe(index, chunk, flags, generation, 0);
+                }
             }
 
-            public void StoreKeyframe(byte index, ArraySegment<byte> chunk)
+            public void StoreKeyframe(byte index, ArraySegment<byte> chunk, SyncStateCodec.ChunkFlags flags, uint generation, uint tick)
             {
-                if (SyncKeyframes == null) SyncKeyframes = new Dictionary<byte, byte[]>();
+                if (SyncKeyframes == null) SyncKeyframes = new Dictionary<byte, CachedKeyframe>();
                 var copy = new byte[chunk.Count];
                 Buffer.BlockCopy(chunk.Array, chunk.Offset, copy, 0, chunk.Count);
-                SyncKeyframes[index] = copy;
+                SyncKeyframes[index] = new CachedKeyframe { Bytes = copy, Flags = flags & SyncStateCodec.ChunkFlags.AudienceMask, Generation = generation, Tick = tick };
             }
 
-            public void RefreshSpawnState(NetworkWriter scratch)
+            /// <summary>Remember a behaviour's audience from the flags of one of its chunks.</summary>
+            public void NoteAudience(byte index, SyncStateCodec.ChunkFlags flags)
             {
-                if (SyncKeyframes == null) return;
-                scratch.Reset();
-                int at = SyncStateCodec.BeginEnvelope(scratch);
-                byte n = 0;
-                foreach (var kv in SyncKeyframes)
-                {
-                    SyncStateCodec.WriteRawChunk(scratch, kv.Key, SyncStateCodec.ChunkFlags.Full, new ArraySegment<byte>(kv.Value));
-                    n++;
-                }
-                SyncStateCodec.EndEnvelope(scratch, at, n);
-                LastSpawn.State = scratch.ToArray();
+                if (!SyncStateCodec.IsRestricted(flags)) return;
+                if (Audiences == null) Audiences = new Dictionary<byte, SyncAudience>();
+                Audiences[index] = SyncStateCodec.AudienceOf(flags);
             }
+        }
+
+        /// <summary>One cached keyframe (<see cref="EntityRecord.SyncKeyframes"/>).</summary>
+        private struct CachedKeyframe
+        {
+            public byte[] Bytes;
+            /// <summary>Only the audience bits.</summary>
+            public SyncStateCodec.ChunkFlags Flags;
+            /// <summary>The audience generation the chunk was written under.</summary>
+            public uint Generation;
+            /// <summary>The tick it belongs to; 0 for a spawn snapshot.</summary>
+            public uint Tick;
         }
 
         public NebulaConfig Config { get; private set; }
@@ -1029,6 +1053,7 @@ namespace Nebula
                 case MsgId.InterestResync: OnInterestResync(w, InterestResyncMsg.Read(r)); break;
                 case MsgId.EntityForget: OnEntityForget(w, EntityForgetMsg.Read(r)); break;
                 case MsgId.EntityRedirect: OnEntityRedirect(w, EntityRedirectMsg.Read(r)); break;
+                case MsgId.SyncAudience: OnSyncAudience(w, SyncAudienceMsg.Read(r)); break;
                 default: NebulaLog.Warn($"gateway got unexpected {id} from worker {w.WorkerId}"); break;
             }
         }
@@ -1102,6 +1127,9 @@ namespace Nebula
             }
             bool containerChanged = rec.Container != msg.Container;
             bool scopeChanged = existed && containerChanged && ScopeIdOf(rec.Container) != ScopeIdOf(msg.Container);
+            // Who could see the restricted behaviours before this spawn, to tell the clients that lose them.
+            ulong previousOwner = rec.OwnerClientId;
+            var previousSets = rec.AudienceSets;
             rec.Epoch = msg.Epoch;
             rec.OwnerWorkerIndex = w.Index;
             // A spawn from a worker is the one thing that confirms who owns an entity; a redirect only promised.
@@ -1111,7 +1139,8 @@ namespace Nebula
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
             rec.HasStateTick = false;
-            rec.SeedKeyframes(msg.State);
+            rec.SeedKeyframes(msg.State, msg.AudienceGeneration);
+            ApplySpawnAudience(rec, msg);
             // The prefab's interest facts travel in the spawn (the standalone gateway has no prefabs) and are
             // clamped here: a prefab may not reach further than this mesh's InterestMaxRadius, which
             // InterestSettings.Validate guarantees is a real ceiling (>= InterestRadius > 0) and never "off".
@@ -1136,9 +1165,19 @@ namespace Nebula
                 // cell it landed in). The row has to be there before the spawn that names it, or the client
                 // cannot resolve the frame and holds the entity where it was - for its own pawn, for ever.
                 if (containerChanged) SendOwnershipForContainerChange(rec);
-                _writer.Reset();
-                msg.Write(_writer, MsgId.EntitySpawn);
-                BroadcastEntity(rec, Delivery.ReliableOrdered);
+                if (rec.Audiences == null)
+                {
+                    _writer.Reset();
+                    msg.ForClient().Write(_writer, MsgId.EntitySpawn);
+                    BroadcastEntity(rec, Delivery.ReliableOrdered);
+                }
+                else
+                {
+                    // Each observer gets the spawn with the chunks it may have: a client that has just joined an
+                    // audience gets its keyframe here, and one that has just left it is told to drop its copy.
+                    BroadcastSpawnFiltered(rec, msg);
+                    if (existed) SendAudienceChanges(rec, previousOwner, previousSets, sendJoins: false);
+                }
             }
             // A carrier can arrive after the passengers that named it: indexing it has just reseated them all,
             // so they are offered to the clients of its region here and not left waiting for a state entry.
@@ -1180,15 +1219,20 @@ namespace Nebula
         {
             if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Sync, Sync = msg, Worker = w.Index })) return;
             if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
-            // Remember keyframes so a late joiner's spawn carries the newest full state of each behaviour.
-            _reader.Set(new ArraySegment<byte>(msg.Chunks));
-            SyncStateCodec.ReadEnvelope(_reader, (index, flags, chunk) =>
+            // Remember keyframes so a late joiner's spawn carries the newest full state of each behaviour, and note
+            // which chunks only some clients may have.
+            bool restricted = ParseSyncChunks(rec, msg);
+            if (msg.Tick > rec.LastSyncTick) rec.LastSyncTick = msg.Tick;
+            if (!restricted)
             {
-                if ((flags & SyncStateCodec.ChunkFlags.Full) != 0) rec.StoreKeyframe(index, chunk);
-            });
-            _writer.Reset();
-            msg.Write(_writer, MsgId.EntityState);
-            BroadcastEntity(rec, msg.Delivery);
+                // Everything in it is for everyone: relayed as it came, which is what it cost before audiences.
+                msg.AudienceGeneration = 0;
+                _writer.Reset();
+                msg.Write(_writer, MsgId.EntityState);
+                BroadcastEntity(rec, msg.Delivery);
+                return;
+            }
+            BroadcastSyncFiltered(rec, msg);
         }
 
         private void OnEntityRpc(WorkerConn w, EntityRpcMsg msg)
