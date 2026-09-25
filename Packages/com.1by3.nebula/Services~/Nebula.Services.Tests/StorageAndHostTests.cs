@@ -155,16 +155,29 @@ public class StorageAndHostTests
         Assert.That(a!.Version, Is.EqualTo(1));
         Assert.That(store.IsConnected, Is.True);
 
-        // Older epoch: dropped. Same epoch: accepted, version bumped.
-        var stale = Record("a", "c1", epoch: 1); stale.Name = "stale";
-        store.Save(stale);
-        var fresh = Record("a", "c1", epoch: 2); fresh.Name = "fresh";
-        store.Save(fresh);
-        a = null;
-        store.Load("a", r => a = r);
-        WaitUntil(() => a != null, store.Tick);
+        // Older epoch: dropped, with one warning per key that names both epochs (NEB-325). Same epoch: accepted,
+        // version bumped.
+        var log = new StringWriter();
+        var console = Console.Out;
+        Console.SetOut(log);
+        try
+        {
+            var stale = Record("a", "c1", epoch: 1); stale.Name = "stale";
+            store.Save(stale);
+            var fresh = Record("a", "c1", epoch: 2); fresh.Name = "fresh";
+            store.Save(fresh);
+            store.Save(stale);
+            a = null;
+            store.Load("a", r => a = r);
+            WaitUntil(() => a != null, store.Tick);
+        }
+        finally { Console.SetOut(console); }
         Assert.That(a!.Name, Is.EqualTo("fresh"));
         Assert.That(a.Version, Is.EqualTo(2));
+        Assert.That(store.StaleSavesDropped, Is.EqualTo(2));
+        string warnings = log.ToString();
+        Assert.That(warnings, Does.Contain("warning: persistence: dropped a save of a at epoch 1 from w1 because the store holds epoch 2"));
+        Assert.That(warnings.Split("dropped a save of a ").Length - 1, Is.EqualTo(1), "warned once for the key");
 
         IReadOnlyList<PersistedEntityRecord>? inC1 = null, carried = null, all = null;
         store.LoadContainers(new[] { "c1" }, r => inC1 = r["c1"]);

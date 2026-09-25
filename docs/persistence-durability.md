@@ -1,6 +1,6 @@
 # Persistence durability window (NEB-224), and one copy after a death verdict (NEB-256)
 
-Status: landed with NEB-224; D7–D12 landed with NEB-256. User-facing page: `website/content/docs/guides/persistence.mdx` §"Durability
+Status: landed with NEB-224; D7–D12 landed with NEB-256; D13 landed with NEB-325. User-facing page: `website/content/docs/guides/persistence.mdx` §"Durability
 window". Failure test: `Tests/EditMode/ConformancePersistenceDurabilityTests.cs` (conformance scenario 10, see
 `docs/conformance-suite.md` §4). Telemetry: `WorkerStats.OldestDirtySeconds` / `WorkerInfo.OldestDirtySeconds` on
 the existing worker heartbeat, surfaced on the orchestrator dashboard.
@@ -215,7 +215,8 @@ its epoch is at least the stored one (`LocalPersistenceStore.Save`, and `SqlPers
 checkpoint schedule. Until then the record still carried the old epoch. The old owner's late saves were accepted and
 were overwritten only at the next checkpoint.
 
-Now `NebulaPersistence.Restore` and the scene-entity path set `PersistentEntity.StampPending`. `IsDue` puts that
+Now `NebulaPersistence.Restore` and the scene-entity path set `PersistentEntity.StampPending`, and so does
+`NebulaPersistence.Apply` on an entity this worker owns or is about to spawn (D13). `IsDue` puts that
 entity first, so its first checkpoint happens on the next pass, within the per-frame budget. After that, a save the
 old owner had queued before it fenced carries a lower epoch and the store refuses it. A queued save can still land
 between the survivor's read and its stamp. That write is then overwritten by the stamp, which is the outcome the
@@ -275,6 +276,46 @@ current one, when both are the same document. It reports each removal once.
 - **A delete followed by a late save.** A late save for a key the survivor has deleted in the meantime finds no
   record to compare epochs with, and it is accepted. Keeping tombstones with epochs would close this gap. It is a
   store-schema change.
+
+## D13. A record applied to an entity brings its epoch (NEB-325)
+
+The documented way to bring back a player is to spawn the pawn, read its record with `NebulaPersistence.Load` and
+give it to the pawn with `NebulaPersistence.Apply`. Before this change `Apply` took the state and left the epoch
+alone. A new pawn spawns at epoch 1, and its record carries the epoch of the pawn's previous life, which is higher
+after any handover. So the store refused every save of the pawn for the whole session, and said so only in a debug
+line. The Editor dev loop hit it on every Play once a record had passed epoch 1, because the pawn is always new. A
+mesh hits it whenever a player comes back to a new pawn after their previous pawn was handed over.
+
+`Apply` now does what a restore does, through the same two pieces:
+
+- **The epoch.** An entity this worker owns moves to `record.Epoch + 1` when its epoch is lower. An entity that is
+  not spawned yet keeps `record.Epoch + 1` in `PersistentEntity.AdoptedEpoch`, and `NebulaWorker`'s one spawn path
+  spawns it at that epoch or higher, whichever public spawn call the game makes. `Restore` and the scene-entity path
+  pass the same epoch to the spawn, so it is never raised twice. A copy this worker does not own takes the state only.
+- **The stamp.** `StampPending` is set, so the next checkpoint pass saves the entity first (D9).
+
+**Why this keeps the epoch rule's guarantee.** Only a worker that holds authority over the entity, or is about to
+spawn it with authority, raises the epoch, and it has just read the record. `record.Epoch + 1` outranks saves at the
+record's epoch or below, which come from lives of the entity older than the one it read. Those are the saves D9
+refuses after a restore. A life that saved after the read, at a higher epoch, still wins: the applying worker's saves
+are then refused, and the store warns. A fenced worker still writes nothing (D8). `Apply` cannot lift an epoch past
+what a restore of the same record would.
+
+**The live epoch change.** Raising the epoch of a spawned entity is the change a handover makes, without the
+change of worker. The next state the entity sends carries the new epoch as a reliable location update, and gateways,
+ghosts and clients take it as they take a handover's. Two things see the jump: an `AuthorityRpc` sent at the old
+epoch can be rejected as stale when the jump is more than `MaxHops`, and a scope transfer prepared before the change
+no longer commits. The guide tells games to apply the record right after the spawn, before either can happen.
+
+**A refused save is a warning.** `LocalPersistenceStore` and `SqlPersistenceStore` log the first refused save of each
+key as a warning with the key, both epochs and the saving worker, and later ones for that key as debug lines
+(`StaleSaveLog`). Refusals are expected after a death verdict (D9), so the warning is once per key per store rather
+than per save. `StaleSavesDropped` counts all of them.
+
+**Not done: seeding lease epochs in the dev loop.** The issue suggested that the dev loop's in-memory control plane
+start lease epochs above the highest epoch in the store. That would not have helped. The record's epoch is the
+entity's epoch (`NetworkIdentity.Epoch`), not a container lease's, and a new entity spawns at 1 whatever its
+container's lease epoch is.
 
 ## Non-goals (restated from the issue)
 

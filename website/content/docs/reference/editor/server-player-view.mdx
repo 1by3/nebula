@@ -1,0 +1,15 @@
+---
+title: "ServerPlayerView"
+description: "Takes the Game view's place in a Multiplayer Play Mode virtual player that hosts the server (EditorRunPlan.HidesGameView)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.Editor` · [Packages/com.1by3.nebula/Editor/ServerPlayerView.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Editor/ServerPlayerView.cs)</div>
+
+```csharp
+[InitializeOnLoad]
+public sealed class ServerPlayerView : EditorWindow
+```
+
+Takes the Game view's place in a Multiplayer Play Mode virtual player that hosts the server ([`EditorRunPlan.HidesGameView`](/docs/reference/bootstrap/editor-run-plan#hidesgameview)). The Game view builds the render pipeline each time it draws, whether or not a camera is on. A virtual player on Unity 6000.6 cannot build the Universal Render Pipeline, so a Game view left open there logs errors with stack traces every frame. When such a server enters Play, this tab opens next to the Game view, and the Game view closes. Unity may open a new Game view at the next Play; it closes again. When the same player later plays as a client, the Game view comes back and this tab closes.
+
+Only windows of this Editor process change. Nothing touches the render pipeline assets, GraphicsSettings or QualitySettings: a virtual player's ProjectSettings folder is a link to the main project's, and a pipeline changed from a script is saved there when the Editor saves or quits.

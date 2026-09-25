@@ -237,6 +237,8 @@ public void Apply(PersistedEntityRecord record, NetworkIdentity identity, bool a
 
 Put a record's state back onto `identity`. Works both before the entity is spawned (the restore path) and on an entity this worker already owns, which is what a rejoining player's pawn wants: the game spawns the pawn, asks for the record with [`Load`](#load) and applies it when the answer arrives. Pass `applyPose` false to keep the entity where it is and take only its state. A spawned entity also keeps its current pose when this process has not registered the record's container or carrier, such as an unloaded chunk, because the saved position is relative to that container.
 
+The entity also continues the record's epoch, as a restored one does (see [`Restore`](#restore)). An entity this worker owns moves to `record.Epoch + 1` if its epoch is lower, and one that is not spawned yet spawns at that epoch, whichever spawn call the game uses. Either way its next checkpoint is taken at the next opportunity. Without this, a pawn spawned at epoch 1 and given a record saved at a later epoch would have every save refused by the store. A copy this worker does not own takes the state only.
+
 ### Restore [#restore]
 
 ```csharp

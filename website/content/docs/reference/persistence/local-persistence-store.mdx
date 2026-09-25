@@ -86,6 +86,14 @@ public double TotalFileWriteMilliseconds { get; }
 
 Total milliseconds spent in successful full-file rewrites during this store's lifetime.
 
+### StaleSavesDropped [#stalesavesdropped]
+
+```csharp
+public long StaleSavesDropped { get; }
+```
+
+Saves refused during this store's lifetime because the stored record had a newer epoch. The first refusal of each key is also logged as a warning.
+
 ### LastFileWriteMilliseconds [#lastfilewritemilliseconds]
 
 ```csharp

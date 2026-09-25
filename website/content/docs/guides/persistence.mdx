@@ -192,6 +192,10 @@ Every record carries the entity's authority **epoch**: the number that increases
 
 A restored entity comes back at `record.Epoch + 1`. Anything still holding the old epoch is stale everywhere in the mesh from that moment on. The restoring worker saves the entity on its next checkpoint pass, instead of waiting for the checkpoint interval. From then on, the store refuses any save the previous owner still had queued.
 
+An entity you give a record with `Apply` continues that record's epoch in the same way (see [Owned records and rejoining players](#owned-records-and-rejoining-players)).
+
+When the store refuses a save, the worker or orchestrator that holds the store logs a warning with the key and both epochs, once per key. If the entity it names is the only copy, its saves are being lost: check that its record reached it through `Apply` or a restore.
+
 ## Restore after a failure or a restart
 
 When a worker gains the lease of a static container, it does not restore that container's records straight away. Restoring an entity that is still alive somewhere else would create a second copy, so the service is deliberately cautious:
@@ -242,6 +246,14 @@ private void OnPlayerJoined(NetworkIdentity pawn, string accountId)
 ```
 
 `Load` answers on the main thread, with `null` when there is no record. `Apply` puts the state and pose back onto an entity you have instantiated but not yet spawned, and also works on an entity this worker already owns.
+
+`Apply` also gives the entity the record's epoch history, so the store accepts its saves:
+
+- A pawn this worker owns moves to `record.Epoch + 1` if its epoch is lower. The pawn's clients and ghosts take the new epoch with its next state update, as they do after a handover.
+- An entity you have not spawned yet spawns at `record.Epoch + 1`, whichever spawn method you call.
+- Either way, the worker saves the entity on its next checkpoint pass. From then on, the store refuses saves from any older copy of the player, for example one on a worker that lost it.
+
+Apply the record soon after the spawn, before the game uses the pawn. An `AuthorityRpc` sent to the pawn before its epoch changes can be rejected as stale ([what Nebula promises for a cross-worker call](/docs/guides/rpcs#what-nebula-promises-for-a-cross-worker-call)), and a scope transfer prepared with `PrepareTransfer` before the change can no longer commit.
 
 The rest of the service is on `worker.Persistence` (a [`NebulaPersistence`](/docs/reference/persistence/nebula-persistence), null when persistence is off):
 
