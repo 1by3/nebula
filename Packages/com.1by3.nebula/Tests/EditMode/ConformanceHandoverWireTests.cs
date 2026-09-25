@@ -163,6 +163,70 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ARuntimeExtentRidesAfterTheSessionSection()
+        {
+            // docs/entity-extents.md D6: a structure edited at runtime hands its box to the next worker.
+            var msg = Loaded();
+            var w = new NetworkWriter(512);
+            msg.Write(w);
+            int plain = w.Length;
+
+            msg.CarriesExtent = true;
+            msg.ExtentSource = EntityExtentSource.Explicit;
+            msg.ExtentCenter = new Vector3(0f, 6f, 64f);
+            msg.ExtentSize = new Vector3(40f, 12f, 256f);
+            w = new NetworkWriter(512);
+            msg.Write(w);
+            Assert.AreEqual(plain + 1 + 1 + 4 + 1 + 24, w.Length,
+                "the crossing byte and an empty session section come first, so a reader that knows neither extent nor session stops where it always did");
+
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsFalse(back.Crossing);
+            Assert.AreEqual(PlayerSessions.OrphanKind.None, back.SessionOrphan);
+            Assert.AreEqual(0f, back.SessionReclaimRemaining);
+            Assert.IsTrue(back.CarriesExtent);
+            Assert.AreEqual(EntityExtentSource.Explicit, back.ExtentSource);
+            Assert.AreEqual(msg.ExtentCenter, back.ExtentCenter);
+            Assert.AreEqual(msg.ExtentSize, back.ExtentSize);
+
+            // With a crossing and an orphaned session in front of it.
+            msg.Crossing = true;
+            msg.SessionOrphan = PlayerSessions.OrphanKind.Released;
+            msg.SessionReclaimRemaining = 4f;
+            msg.ExtentSource = EntityExtentSource.Colliders;
+            back = RoundTrip(msg, out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsTrue(back.Crossing);
+            Assert.AreEqual(PlayerSessions.OrphanKind.Released, back.SessionOrphan);
+            Assert.AreEqual(4f, back.SessionReclaimRemaining);
+            Assert.IsTrue(back.CarriesExtent);
+            Assert.AreEqual(EntityExtentSource.Colliders, back.ExtentSource);
+
+            // A runtime extent can also be "none": a structure whose extent was cleared says so.
+            msg.ExtentSource = EntityExtentSource.None;
+            back = RoundTrip(msg, out remaining);
+            Assert.IsTrue(back.CarriesExtent);
+            Assert.AreEqual(EntityExtentSource.None, back.ExtentSource);
+        }
+
+        [Test]
+        public void ATransferWithoutARuntimeExtentReadsAsItAlwaysDid()
+        {
+            var msg = Loaded();
+            msg.SessionOrphan = PlayerSessions.OrphanKind.Released;
+            msg.SessionReclaimRemaining = 3f;
+            var back = RoundTrip(msg, out int remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsFalse(back.CarriesExtent, "no extent section: the receiver keeps its own copy's extent");
+            Assert.AreEqual(EntityExtentSource.None, back.ExtentSource);
+
+            back = RoundTrip(Loaded(), out remaining);
+            Assert.AreEqual(0, remaining);
+            Assert.IsFalse(back.CarriesExtent);
+        }
+
+        [Test]
         public void NullBlobsAndListsReadBackEmptyNotNull()
         {
             var msg = Loaded();
