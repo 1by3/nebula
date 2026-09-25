@@ -1,0 +1,181 @@
+---
+title: Private sync state
+description: Choose which clients receive a behavior's sync state, such as only the owner, no client at all, or clients your own rule selects.
+---
+
+By default, a behavior's sync state goes to every client that has its entity in its interest set. To keep state private, set the behavior's **sync audience**. Use it for a player's inventory, the contents of a container only its user has open, or state only the server needs.
+
+This page assumes you know the sync channel: `HasSyncState`, `WriteSyncState`, `ReadSyncState`, and `MarkSyncDirty`. See [Physics, handover state and the sync channel](/docs/guides/physics-and-handover-state#the-sync-channel).
+
+## Choose an audience
+
+Override `SyncAudience` on the behavior and return a constant:
+
+| Audience | Which clients receive the state |
+| --- | --- |
+| `Everyone` | Every client that holds the entity. The default. |
+| `Owner` | Only the client that owns the entity (`OwnerClientId`). No client, for an entity no client owns. |
+| `WorkersOnly` | No client. |
+| `Custom` | The clients your `IsInSyncAudience` rule selects on the authoritative worker. |
+
+An audience restricts clients only. A worker that holds a ghost of the entity, a non-authoritative copy on a neighboring worker, always receives every behavior's state. Game logic on that worker needs it, and the next worker to take authority starts from it. `Owner` therefore means "the owner and the workers", and `Custom` means "your chosen clients and the workers".
+
+Nebula reads `SyncAudience` once, when the entity is spawned or instantiated. It cannot change while the entity exists. An entity's root `NetworkTransform` always replicates to everyone; Nebula logs a warning and ignores any other audience on it. A child `NetworkTransform` or a `NetworkAnimator` can use any audience.
+
+<Callout type="warn" title="NetworkVariables are never private">
+A `NetworkVariable` goes to every client that holds the entity. When any variable changes, Nebula sends all of the entity's variables. Keep state a client must not see out of `NetworkVariable`s and in sync state with a restricted audience.
+</Callout>
+
+## Send state only to the owner
+
+This inventory is visible only to the player who owns it. Other players near the pawn never receive its bytes.
+
+```csharp title="PlayerInventory.cs"
+using System;
+using System.Collections.Generic;
+using Nebula;
+
+public sealed class PlayerInventory : NetworkBehaviour
+{
+    private readonly List<int> _itemIds = new List<int>();
+
+    public event Action Changed;
+    public IReadOnlyList<int> ItemIds => _itemIds;
+
+    public override bool HasSyncState => true;
+    public override SyncAudience SyncAudience => SyncAudience.Owner;
+
+    // Authority only: call from your game code on the worker.
+    public void Add(int itemId)
+    {
+        if (!HasAuthority) return;
+        _itemIds.Add(itemId);
+        MarkSyncDirty();
+    }
+
+    public override void WriteSyncState(NetworkWriter writer, bool full)
+    {
+        writer.WriteUShort((ushort)_itemIds.Count);
+        foreach (int id in _itemIds) writer.WriteInt(id);
+    }
+
+    public override void ReadSyncState(NetworkReader reader, uint tick, bool full)
+    {
+        _itemIds.Clear();
+        int count = reader.ReadUShort();
+        for (int i = 0; i < count; i++) _itemIds.Add(reader.ReadInt());
+        Changed?.Invoke();
+    }
+
+    public override void OnSyncStateCleared()
+    {
+        _itemIds.Clear();
+        Changed?.Invoke();
+    }
+}
+```
+
+`OwnerClientId` is the owning client's session ID. The session ID stays the same when the client reconnects with its session token, through the same gateway or another one. The owner keeps receiving the state after a reconnect and after the entity moves to another worker. See [Sessions and reconnection](/docs/guides/authentication#sessions-and-reconnection).
+
+## Choose clients with your own rule
+
+Return `SyncAudience.Custom` and override `IsInSyncAudience`. The authoritative worker calls it for each client whose player entity (pawn) that worker holds, either simulated there or as a ghost. It passes the client's session ID and that pawn, so a distance check needs no lookup. A client whose pawn the worker does not hold is not asked, and does not receive the state.
+
+This crate shows its contents to players who have opened it and are within 4 m:
+
+```csharp title="StorageCrate.cs"
+using System.Collections.Generic;
+using Nebula;
+using UnityEngine;
+
+public sealed class StorageCrate : NetworkBehaviour
+{
+    private const float ReachMeters = 4f;
+
+    private readonly List<int> _itemIds = new List<int>();
+    // Authority only: who has the crate open.
+    private readonly HashSet<ulong> _openBy = new HashSet<ulong>();
+
+    public override bool HasSyncState => true;
+    public override SyncAudience SyncAudience => SyncAudience.Custom;
+    // Evaluate every quarter second, so a player who walks away stops receiving the contents.
+    public override uint SyncAudienceRefreshTicks => 15;
+
+    // Authority only: call these from your game code, for example from a ServerRpc on the player's pawn.
+    public void Open(ulong clientId)
+    {
+        if (_openBy.Add(clientId)) MarkSyncAudienceDirty();
+    }
+
+    public void Close(ulong clientId)
+    {
+        if (_openBy.Remove(clientId)) MarkSyncAudienceDirty();
+    }
+
+    protected override bool IsInSyncAudience(ulong clientId, NetworkIdentity pawn) =>
+        _openBy.Contains(clientId) &&
+        Vector3.Distance(pawn.transform.position, transform.position) <= ReachMeters;
+
+    public override void WriteSyncState(NetworkWriter writer, bool full)
+    {
+        writer.WriteUShort((ushort)_itemIds.Count);
+        foreach (int id in _itemIds) writer.WriteInt(id);
+    }
+
+    public override void ReadSyncState(NetworkReader reader, uint tick, bool full)
+    {
+        _itemIds.Clear();
+        int count = reader.ReadUShort();
+        for (int i = 0; i < count; i++) _itemIds.Add(reader.ReadInt());
+    }
+
+    public override void OnSyncStateCleared() => _itemIds.Clear();
+
+    // The open set is authority state: carry it to the next worker if the crate changes worker.
+    public override void WriteHandoverState(NetworkWriter writer)
+    {
+        writer.WriteUShort((ushort)_openBy.Count);
+        foreach (ulong id in _openBy) writer.WriteULong(id);
+    }
+
+    public override void ReadHandoverState(NetworkReader reader)
+    {
+        _openBy.Clear();
+        int count = reader.ReadUShort();
+        for (int i = 0; i < count; i++) _openBy.Add(reader.ReadULong());
+    }
+}
+```
+
+Nebula evaluates a `Custom` audience:
+
+- when the entity gains authority, after a spawn or a handover;
+- at the next tick after you call `MarkSyncAudienceDirty`, at most once per tick;
+- every `SyncAudienceRefreshTicks` ticks. The default is 30, half a second at the 60 Hz tick rate. Return `0` to evaluate only on the first two occasions, for a rule that changes only when your code says so.
+
+Each evaluation calls `IsInSyncAudience` once for each pawn the worker holds. Keep the rule cheap and free of side effects. An audience holds at most 256 clients; past that, Nebula keeps the lowest session IDs and logs a warning.
+
+## When a client joins or leaves an audience
+
+When a client joins an audience, for example because it opened the crate, the gateway sends it the newest keyframe it holds for the behavior at once. The authoritative worker also writes a fresh keyframe in the same tick. The client receives it through `ReadSyncState` with `full` set to `true`.
+
+When a client leaves an audience, it receives no more of the behavior's state, and Nebula calls `OnSyncStateCleared` on that behavior on the client. Clear the state and any UI that shows it there. `OnSyncStateCleared` is not called when the entity itself leaves the client; use `OnNetworkDespawn` for that.
+
+A client built with the previous Nebula release (wire protocol 19) can still connect. It stops receiving the state when it leaves an audience, but it is not told, so `OnSyncStateCleared` is not called on it.
+
+## Costs and limits
+
+- An entity whose behaviors all use `Everyone` costs nothing extra. Its messages are the same as before.
+- For an entity with a restricted behavior, the gateway builds a separate message for each client that receives restricted state. Owner-only state is cheap: one client receives it. A `Custom` behavior that changes every tick on many entities, each with a large audience, costs gateway time in proportion.
+- A `Custom` rule sees only clients whose pawn the authoritative worker holds. A rule such as "everyone in my guild, wherever they are" only reaches the guild members nearby.
+- A client that starts holding an entity later, for example because it walked into range, starts from the gateway's newest cached keyframe of each behavior it may receive. This is the same as for any sync state.
+- Audiences decide what the gateway sends. They do not encrypt the state or protect against a compromised server process.
+
+## Related
+
+<Cards>
+  <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="Write a behavior that replicates through the sync channel." />
+  <Card title="Interest management" href="/docs/guides/interest-management" description="Decide which entities each client holds." />
+  <Card title="Authentication and player identity" href="/docs/guides/authentication" description="Session IDs, reconnection, and the reclaim grace." />
+  <Card title="RPCs and worker messages" href="/docs/guides/rpcs" description="OwnerRpc and targeted ClientRpc for one-off messages to one client." />
+</Cards>

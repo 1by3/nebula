@@ -275,6 +275,24 @@ namespace Nebula.Tests
         }
 
         /// <summary>
+        /// Make <paramref name="gateway"/> a linked gateway of every worker, as its <c>Hello</c> does: it joins the
+        /// worker's gateway list and gets a subscriber bit through the worker's own <c>AddGatewayLink</c>. From then on
+        /// a worker's <see cref="Worker.Tick"/> publishes to it what a live worker would: always-relevant entities and
+        /// the pawns of sessions it speaks for (it subscribes no regions). What it is sent lands in
+        /// <see cref="Delivered"/>.
+        /// </summary>
+        public void LinkGateway(Gateway gateway)
+        {
+            var addLink = typeof(NebulaWorker).GetMethod("AddGatewayLink", Flags);
+            foreach (var w in _workers)
+            {
+                var peer = w.PeersById[gateway.Id];
+                ((System.Collections.IList)w.GetField("_gateways")).Add(peer);
+                w.Act(() => addLink.Invoke(w.Instance, new[] { peer }));
+            }
+        }
+
+        /// <summary>
         /// Deliver one message from <paramref name="gateway"/> into <paramref name="to"/>'s own <c>Dispatch</c>, as
         /// the gateway's link would. <paramref name="write"/> writes it, id byte first, as a message's own
         /// <c>Write</c> does. What the worker sends back waits in its outbox until <see cref="Pump"/>.

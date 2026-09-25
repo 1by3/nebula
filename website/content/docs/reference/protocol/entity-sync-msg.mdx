@@ -49,6 +49,14 @@ public bool Reliable;
 public byte[] Chunks;
 ```
 
+### AudienceGeneration [#audiencegeneration]
+
+```csharp
+public uint AudienceGeneration;
+```
+
+Worker to gateway: the entity's audience generation when these chunks were written ([`EntitySpawnMsg.AudienceGeneration`](/docs/reference/protocol/entity-spawn-msg#audiencegeneration)). A gateway forwards a restricted chunk only once it holds member sets at least this new, so a chunk written after a client left an audience cannot reach that client in a sequenced packet that overtook the reliable [`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg). Trailing and optional (protocol 20); written only when non-zero, and never sent to a client.
+
 ## Properties
 
 ### Delivery [#delivery]

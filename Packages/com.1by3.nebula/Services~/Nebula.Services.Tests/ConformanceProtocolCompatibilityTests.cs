@@ -14,11 +14,11 @@ namespace Nebula.ServiceTests;
 /// <para>
 /// The replay half is the part that cannot be faked: <c>Fixtures/protocol-19-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
-/// gateway built from today's source. Protocol 19 is both ends of the window today
-/// (<see cref="HelloMsg.MinProtocolVersion"/> == <see cref="HelloMsg.ProtocolVersion"/>): the step from 18 was not
+/// gateway built from today's source. The window is 19-20: protocol 20 (sync audiences) is additive for a client, so
+/// replaying the protocol-19 recording at this build proves N-1 compatibility, and
+/// <c>Fixtures/protocol-20-handshake.json</c> is the recording the next bump will replay. The step from 18 was not
 /// additive (it renumbered carrier behaviours), so the protocol-18 recording is kept to prove that such a client is
-/// refused with the gateway's range rather than admitted. Today this proves only N compatibility; supporting a later
-/// protocol also requires a recording and frozen decoder for that protocol.
+/// refused with the gateway's range rather than admitted.
 /// </para>
 /// </summary>
 [TestFixture]

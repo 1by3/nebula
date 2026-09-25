@@ -96,6 +96,7 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `InterestResync` | worker to gateway | The worker could not apply a delta (its base sequence or the verifying hash did not match) and needs a full snapshot. |
 | `EntityRedirect` | worker to gateway | An entity the gateway follows explicitly (by ownership or subscription) moved to another worker. |
 | `EntityForget` | worker to gateway | An entity left every region this gateway subscribes on this worker. |
+| `SyncAudience` | worker to gateway | The clients chosen by a behavior's `Custom` [sync audience](/docs/guides/sync-audiences) changed. Never forwarded to a client. |
 | `ClientFocusHint` | client to gateway | Where a client's camera or scope is looking, as an unreliable, rate-limited input treated only as far as the server-owned focus mode allows for that client — clamped to the pawn by default. See [Interest management](/docs/guides/interest-management#client-focus-hints-are-inputs-never-authority). |
 
 See [Interest management](/docs/guides/interest-management) for how these messages are used, and the [wire protocol specification](/docs/specifications/wire-protocol#interest-management) for their exact layout.
@@ -108,7 +109,7 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | `OwnerState` | Sequenced | The predicted behavior's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
 | `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
-| `EntityState` | either | Sends state from sync components that have changed. |
+| `EntityState` | either | Sends state from sync components that have changed. The gateway gives each client only the components whose [sync audience](/docs/guides/sync-audiences) includes it. |
 | `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast). A broadcast declared with a `Radius` carries it, and the gateway forwards it only to clients whose pawn is within that distance of the entity. |
 
 **Client to gateway to worker**

@@ -1,0 +1,21 @@
+---
+title: "SyncAudience"
+description: "Who receives a behavior's sync state (NetworkBehaviour.SyncAudience)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SyncState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SyncState.cs)</div>
+
+```csharp
+public enum SyncAudience : byte
+```
+
+Who receives a behavior's sync state ([`NetworkBehaviour.SyncAudience`](/docs/reference/core/network-behaviour#syncaudience)). An audience only restricts **clients**: every worker that holds a ghost of the entity receives every behavior's sync state whatever its audience, because game logic on a neighboring worker (a hit test, an interaction, the next owner after a handover) reads those copies. `Owner` and `Custom` therefore mean "the workers, plus these clients". The audience is configuration, not state: declare it on the behavior and do not change it after spawn.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="everyone"></span>`Everyone` | `0` | Every client that has the entity in its interest set. The default, and what Nebula always did. |
+| <span id="owner"></span>`Owner` | `1` | Only the client that owns the entity (`NetworkIdentity.OwnerClientId`). No client at all for an unowned entity. |
+| <span id="workersonly"></span>`WorkersOnly` | `2` | No client. Workers holding a ghost of the entity still receive it. |
+| <span id="custom"></span>`Custom` | `3` | The clients the authority chooses with `NetworkBehaviour.IsInSyncAudience`, evaluated again every `NetworkBehaviour.SyncAudienceRefreshTicks` ticks and whenever the behavior calls `NetworkBehaviour.MarkSyncAudienceDirty`. |

@@ -32,6 +32,11 @@ public sealed class FakeWorker : IDisposable
         public InterestPlacement Placement;
         /// <summary>The entity's variables as its spawn carries them: the last block <see cref="SendVars"/> sent.</summary>
         public byte[] Vars = Array.Empty<byte>();
+        /// <summary>The sync snapshot its spawn carries (<see cref="EntitySpawnMsg.State"/>), chunks flagged with their audience.</summary>
+        public byte[] State = Array.Empty<byte>();
+        /// <summary>The audience generation and Custom member sets its spawn carries, as the last <see cref="SendAudience"/> set them.</summary>
+        public uint AudienceGeneration;
+        public byte[]? Audience;
     }
 
     private sealed class GatewayLink
@@ -451,6 +456,64 @@ public sealed class FakeWorker : IDisposable
         });
     }
 
+    /// <summary>A sync envelope as a worker writes one: each chunk with its behaviour index and flags (audience included).</summary>
+    public static byte[] Envelope(params (byte Index, SyncStateCodec.ChunkFlags Flags, byte[] Bytes)[] chunks)
+    {
+        var buffer = new NetworkWriter();
+        int at = SyncStateCodec.BeginEnvelope(buffer);
+        foreach (var c in chunks) SyncStateCodec.WriteRawChunk(buffer, c.Index, c.Flags, new ArraySegment<byte>(c.Bytes));
+        SyncStateCodec.EndEnvelope(buffer, at, (byte)chunks.Length);
+        return buffer.ToArray();
+    }
+
+    /// <summary>
+    /// One tick of sync chunks for an entity, stamped with <paramref name="generation"/>, on the reliable or the
+    /// sequenced stream: exactly the <see cref="EntitySyncMsg"/> a worker sends. Every gateway that hears about the
+    /// entity is sent it; filtering them per client is the gateway's job.
+    /// </summary>
+    public void SendSync(ulong netId, bool reliable, uint tick, uint generation, params (byte Index, SyncStateCodec.ChunkFlags Flags, byte[] Bytes)[] chunks)
+    {
+        byte[] envelope = Envelope(chunks);
+        Each(netId, (peer, e) =>
+        {
+            _w.Reset();
+            new EntitySyncMsg { NetId = e.NetId, Epoch = e.Epoch, Tick = tick, Container = e.Container, Reliable = reliable, Chunks = envelope, AudienceGeneration = generation }
+                .Write(_w, MsgId.EntityState);
+            Transport.Send(peer, reliable ? Delivery.ReliableOrdered : Delivery.Sequenced, _w.ToSegment());
+        });
+    }
+
+    /// <summary>
+    /// New Custom member sets for an entity, as its authority sends them (<see cref="SyncAudienceMsg"/>). They are
+    /// also what the entity's spawns carry from now on.
+    /// </summary>
+    public void SendAudience(ulong netId, uint generation, params (byte Index, ulong[] Members)[] sets)
+    {
+        var list = new List<KeyValuePair<byte, ulong[]>>();
+        foreach (var s in sets) { var sorted = (ulong[])s.Members.Clone(); Array.Sort(sorted); list.Add(new KeyValuePair<byte, ulong[]>(s.Index, sorted)); }
+        var writer = new NetworkWriter();
+        SyncAudienceCodec.Write(writer, list);
+        byte[] block = writer.ToArray();
+        if (_entities.TryGetValue(netId, out var owned)) { owned.AudienceGeneration = generation; owned.Audience = block; }
+        Each(netId, (peer, e) =>
+        {
+            _w.Reset();
+            new SyncAudienceMsg { NetId = e.NetId, Epoch = e.Epoch, Generation = generation, Sets = block }.Write(_w);
+            Transport.Send(peer, Delivery.ReliableOrdered, _w.ToSegment());
+        });
+    }
+
+    /// <summary>
+    /// Announce an entity again to every gateway that hears about it, as a worker does after a handover or a
+    /// container change: a spawn for a known id is an update. <paramref name="newEpoch"/> raises its epoch first.
+    /// </summary>
+    public void Reannounce(ulong netId, bool newEpoch = true)
+    {
+        if (!_entities.TryGetValue(netId, out var e)) return;
+        if (newEpoch) e.Epoch++;
+        Each(netId, (peer, entity) => SendSpawn(peer, entity));
+    }
+
     public void SendSyncState(ulong netId, byte behaviour, byte[] chunk)
     {
         var buffer = new NetworkWriter();
@@ -775,7 +838,8 @@ public sealed class FakeWorker : IDisposable
             LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
             RelevanceRadius = e.RelevanceRadius,
             InterestFlags = e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
-            InterestGroup = e.InterestGroup, Vars = e.Vars,
+            InterestGroup = e.InterestGroup, Vars = e.Vars, State = e.State,
+            AudienceGeneration = e.AudienceGeneration, Audience = e.Audience,
         }.Write(_w, MsgId.EntitySpawn);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
         if (_links.TryGetValue(peerId, out var link)) { Bump(SpawnsSent, link.GatewayId); SpawnLog.Add((link.GatewayId, e.NetId)); }
@@ -854,6 +918,13 @@ public sealed class FakeClient : IDisposable
     /// </summary>
     public int DuplicateContainerRows;
     public int VarsReceived, StatesReceived, SyncStatesReceived, RpcsReceived, DuplicateSpawns, OrphanUpdates;
+    /// <summary>
+    /// Every sync chunk this client was sent, in arrival order, with how it came: <c>spawn</c>, <c>reliable</c> or
+    /// <c>sequenced</c>. What the audience tests read: a restricted chunk a client may not have shows up here.
+    /// </summary>
+    public readonly List<(ulong NetId, byte Index, SyncStateCodec.ChunkFlags Flags, byte[] Bytes, string Via)> SyncChunks = new();
+    /// <summary>Messages that carried the worker-only audience fields (a generation or member sets) to this client. Must stay 0.</summary>
+    public int AudienceLeaks;
     /// <summary>
     /// Spawns and state entries that named a runtime container this client had not been sent a row for, as
     /// "#netId in rt_…". A real client cannot place such an entity: it holds the update and, for a container that never
@@ -1027,6 +1098,8 @@ public sealed class FakeClient : IDisposable
                 Spawned.Add(msg.NetId);
                 Wire.Add("spawn " + msg.NetId);
                 if (msg.Vars != null && msg.Vars.Length > 0) VarsOf[msg.NetId] = msg.Vars;
+                if (msg.AudienceGeneration != 0 || msg.Audience != null) AudienceLeaks++;
+                NoteSync(msg.NetId, msg.State, "spawn");
                 // A spawn with no view sequence is a relayed in-place update (an authority transfer, a container
                 // change) for an entity already in the set; only a new view of an entity we still hold would be
                 // the gateway telling us the same thing twice.
@@ -1065,7 +1138,15 @@ public sealed class FakeClient : IDisposable
                 Wire.Add("vars " + msg.NetId);
                 break;
             }
-            case MsgId.EntityState: { ulong netId = EntitySyncMsg.Read(r).NetId; Note(netId); SyncStatesReceived++; Wire.Add("sync " + netId); break; }
+            case MsgId.EntityState:
+            {
+                var msg = EntitySyncMsg.Read(r);
+                ulong netId = msg.NetId;
+                Note(netId); SyncStatesReceived++; Wire.Add("sync " + netId);
+                if (msg.AudienceGeneration != 0) AudienceLeaks++;
+                NoteSync(netId, msg.Chunks, msg.Reliable ? "reliable" : "sequenced");
+                break;
+            }
             case MsgId.EntityRpc: { ulong netId = EntityRpcMsg.Read(r).NetId; Note(netId); RpcsReceived++; Wire.Add("rpc " + netId); break; }
         }
     }
@@ -1079,6 +1160,12 @@ public sealed class FakeClient : IDisposable
         ContainerOf[netId] = container;
         if (container.Index == ContainerRef.RuntimeIndex && !Containers.Contains(ContainerRegistry.RuntimeContainerId(container.NetId)))
             UnresolvableNames.Add($"#{netId} in {ContainerRegistry.RuntimeContainerId(container.NetId)}");
+    }
+
+    private void NoteSync(ulong netId, byte[]? envelope, string via)
+    {
+        if (envelope == null || envelope.Length == 0) return;
+        SyncStateCodec.ReadEnvelope(new NetworkReader(envelope), (index, flags, chunk) => SyncChunks.Add((netId, index, flags, chunk.ToArray(), via)));
     }
 
     private void Note(ulong netId)

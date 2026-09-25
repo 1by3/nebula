@@ -112,6 +112,24 @@ public virtual Delivery SyncDelivery { get; }
 
 Delivery for this behaviour's sync chunks. Unreliable (sequenced) is right for transforms: a lost delta is healed by the next keyframe. Reliable is right for anything a receiver must not miss (animator triggers).
 
+### SyncAudience [#syncaudience]
+
+```csharp
+public virtual SyncAudience SyncAudience { get; }
+```
+
+Which clients receive this behavior's sync state ([`WriteSyncState`](#writesyncstate)). The default, `SyncAudience.Everyone`, costs nothing. A worker that holds a ghost of the entity receives the state whatever the audience; only clients are filtered. Override it with a constant: Nebula reads it once, when the entity is spawned or instantiated, so it is configuration and not state that can change at run time. An entity's root [`NetworkTransform`](/docs/reference/core/network-transform) always replicates to everyone.
+
+[`NetworkVariable<T>`](/docs/reference/core/network-variable)s are not covered: an entity's variables go to every client that holds it. Keep state a client must not see in sync state with a restricted audience.
+
+### SyncAudienceRefreshTicks [#syncaudiencerefreshticks]
+
+```csharp
+public virtual uint SyncAudienceRefreshTicks { get; }
+```
+
+For the `Custom` audience only: how often, in ticks, the authority evaluates the audience again without being asked. The default is 30, half a second at the 60 Hz tick rate. Return 0 to evaluate only when the entity gains authority and after [`MarkSyncAudienceDirty`](#marksyncaudiencedirty). That suits a rule that changes only on events, such as a player opening or closing a container.
+
 ## Methods
 
 ### OnNetworkSpawn [#onnetworkspawn]
@@ -213,6 +231,35 @@ protected void MarkSyncDirty();
 ```
 
 Ask the worker to send this behaviour's sync state at the end of the tick.
+
+### IsInSyncAudience [#isinsyncaudience]
+
+```csharp
+protected virtual bool IsInSyncAudience(ulong clientId, NetworkIdentity pawn);
+```
+
+For the `Custom` audience only, on the authoritative worker: whether the client with session ID `clientId` should receive this behavior's sync state. `pawn` is that client's player entity as this worker holds it (simulated here or a ghost), so a rule can measure the distance to it. Nebula asks about every client whose pawn this worker holds: when the entity gains authority, every [`SyncAudienceRefreshTicks`](#syncaudiencerefreshticks) ticks, and at the next tick after [`MarkSyncAudienceDirty`](#marksyncaudiencedirty). A client whose pawn this worker does not hold is not asked, and is not in the audience. Keep it cheap and free of side effects. By default it returns false for every client.
+
+| Parameter | Description |
+| --- | --- |
+| `clientId` | The client's session ID. It stays the same when the client reconnects ([`NetworkIdentity.OwnerClientId`](/docs/reference/core/network-identity#ownerclientid)). |
+| `pawn` | That client's player entity on this worker. |
+
+### MarkSyncAudienceDirty [#marksyncaudiencedirty]
+
+```csharp
+protected void MarkSyncAudienceDirty();
+```
+
+For the `Custom` audience only, on the authority: the answer of [`IsInSyncAudience`](#isinsyncaudience) may have changed, so evaluate it at the next tick instead of waiting for the refresh. Calling it often is cheap: the audience is evaluated at most once per tick.
+
+### OnSyncStateCleared [#onsyncstatecleared]
+
+```csharp
+public virtual void OnSyncStateCleared();
+```
+
+Client side: this client has just left the behavior's audience. For example, it no longer owns the entity, or a Custom rule stopped choosing it. None of the behavior's sync state arrives until the client joins again, and then a keyframe arrives through [`ReadSyncState`](#readsyncstate). Drop what you hold of that state and clear any UI that shows it. Not called when the entity itself leaves the client (see [`OnNetworkDespawn`](#onnetworkdespawn)).
 
 ### WriteSyncState [#writesyncstate]
 

@@ -97,7 +97,7 @@ Gaining authority (spawn or handover in) resets every sync behaviour to "never s
 [count:byte] { [behaviourIndex:byte] [flags:byte] [len:ushort] [chunk:len bytes] } * count
 ```
 
-`flags` is `SyncStateCodec.ChunkFlags`: `Full` (1) for a keyframe, `None` for a delta. Each chunk is bounded exactly like handover state: `ReadSyncState` gets a reader limited to its own bytes, an over-read throws and is logged, an under-read is harmless. Chunks for a behaviour index the receiver does not have are skipped.
+`flags` is `SyncStateCodec.ChunkFlags`: `Full` (1) for a keyframe, `None` for a delta. Bits 1 and 2 carry the behavior's [sync audience](/docs/guides/sync-audiences), which the gateway uses to decide which clients receive the chunk. Each chunk is bounded exactly like handover state: `ReadSyncState` gets a reader limited to its own bytes, an over-read throws and is logged, an under-read is harmless. Chunks for a behaviour index the receiver does not have are skipped.
 
 ### The receiving side
 
@@ -109,7 +109,7 @@ On clients, `renderTick` is delayed by `NebulaConfig.InterpolationDelayTicks` so
 
 ### What the gateway caches
 
-The gateway caches the newest complete keyframe for each sync behavior. When a client joins, the gateway includes those keyframes in the entity's spawn message. The new client therefore starts from recent state instead of the prefab defaults.
+The gateway caches the newest complete keyframe for each sync behavior. When a client joins, the gateway includes those keyframes in the entity's spawn message, except those of behaviors whose [sync audience](/docs/guides/sync-audiences) does not include that client. The new client therefore starts from recent state instead of the prefab defaults.
 
 The gateway does not cache partial component updates. Unreliable behaviors send periodic keyframes, so a new client can wait up to `SyncKeyframeInterval` ticks for current state. Reliable child `NetworkTransform` updates always carry a complete selected snapshot. Custom reliable behaviors must supply complete snapshots when needed; a behavior that sends a partial update and then stops has no periodic keyframe guarantee.
 
@@ -287,6 +287,7 @@ If the owning client must drive your component, derive from `NetworkSyncBehaviou
 <Cards>
   <Card title="NetworkTransform" href="/docs/guides/network-transform" description="Opt into root or child transform replication." />
   <Card title="NetworkAnimator" href="/docs/guides/network-animator" description="The built-in sync-channel component for animators." />
+  <Card title="Private sync state" href="/docs/guides/sync-audiences" description="Send a behavior's sync state only to its owner, to no client, or to clients you choose." />
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="When and how an authority transfer happens." />
   <Card title="Distributed physics" href="/docs/concepts/distributed-physics" description="What cross-worker physics does and does not do." />
   <Card title="Serialization" href="/docs/guides/serialization" description="NetworkWriter and NetworkReader." />

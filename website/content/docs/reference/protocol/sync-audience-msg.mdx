@@ -1,0 +1,56 @@
+---
+title: "SyncAudienceMsg"
+description: "Worker to gateway (MsgId.SyncAudience, protocol 20): the member sets of an entity's SyncAudience.Custom behaviors changed."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct SyncAudienceMsg
+```
+
+Worker to gateway ([`MsgId.SyncAudience`](/docs/reference/protocol/msg-id#syncaudience), protocol 20): the member sets of an entity's [`SyncAudience.Custom`](/docs/reference/core/sync-audience#custom) behaviors changed. Sent reliably, before that tick's sync chunks, to every gateway the entity's sync state goes to. It carries every set whole rather than a delta, so applying it twice does no harm. The gateway sends each client that joined a set the newest keyframe it holds, and tells each client that left to drop its copy ([`SyncStateCodec.ChunkFlags.Cleared`](/docs/reference/core/sync-state-codec#cleared)).
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### Generation [#generation]
+
+```csharp
+public uint Generation;
+```
+
+The entity's audience generation after the change; see [`EntitySpawnMsg.AudienceGeneration`](/docs/reference/protocol/entity-spawn-msg#audiencegeneration).
+
+### Sets [#sets]
+
+```csharp
+public byte[] Sets;
+```
+
+Every Custom behavior's member set ([`SyncAudienceCodec`](/docs/reference/core/sync-audience-codec)).
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static SyncAudienceMsg Read(NetworkReader r);
+```

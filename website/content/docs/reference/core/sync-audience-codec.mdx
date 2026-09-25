@@ -1,0 +1,48 @@
+---
+title: "SyncAudienceCodec"
+description: "The client member sets of an entity's SyncAudience.Custom behaviors, as the authority last evaluated them: [count:byte]{[behaviourIndex:byte][n:ushort]{[clientId:ulong]}}, each set sorted ascending."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/SyncState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/SyncState.cs)</div>
+
+```csharp
+public static class SyncAudienceCodec
+```
+
+The client member sets of an entity's [`SyncAudience.Custom`](/docs/reference/core/sync-audience#custom) behaviors, as the authority last evaluated them: `[count:byte]{[behaviourIndex:byte][n:ushort]{[clientId:ulong]}}`, each set sorted ascending. It rides the spawn ([`EntitySpawnMsg.Audience`](/docs/reference/protocol/entity-spawn-msg#audience)) and [`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg). The gateway filters Custom chunks by it and never forwards it to a client.
+
+## Fields
+
+### MaxMembers [#maxmembers]
+
+```csharp
+public const int MaxMembers = 256;
+```
+
+The most clients one Custom behavior's audience may name. Past it the authority keeps the lowest session ids and logs a warning once per behavior; a client left out does not receive the state (fail closed). The whole set is sent on every change, 8 bytes a member, so the bound keeps one change to about 2 KB.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public static void Write(NetworkWriter w, IReadOnlyList<KeyValuePair<byte, ulong[]>> sets);
+```
+
+Write the member sets. Each set must already be sorted; at most [`MaxMembers`](#maxmembers) of each is written.
+
+### Read [#read]
+
+```csharp
+public static Dictionary<byte, ulong[]> Read(byte[] block);
+```
+
+Read a block written by [`Write`](#write). Null or empty reads as no sets. Each set comes back sorted.
+
+### Contains [#contains]
+
+```csharp
+public static bool Contains(ulong[] sorted, ulong clientId);
+```
+
+Whether a sorted member set contains `clientId`.

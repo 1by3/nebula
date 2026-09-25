@@ -3,8 +3,8 @@ namespace Nebula
     /// <summary>
     /// Checks client protocol and game content versions against the gateway's supported range.
     /// <para>
-    /// Both protocol limits are 18, so only protocol-18 clients are accepted. Gateway-to-worker and
-    /// worker-to-worker connections also require <see cref="HelloMsg.ProtocolVersion"/> exactly.
+    /// The window is <see cref="HelloMsg.MinProtocolVersion"/> to <see cref="HelloMsg.ProtocolVersion"/>, which is 19 to
+    /// 20 today. Gateway-to-worker and worker-to-worker connections require <see cref="HelloMsg.ProtocolVersion"/> exactly.
     /// </para>
     /// </summary>
     public static class ProtocolCompatibility

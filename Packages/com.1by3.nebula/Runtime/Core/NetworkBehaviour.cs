@@ -139,6 +139,91 @@ namespace Nebula
             Identity?.MarkSyncDirty();
         }
 
+        // ---- sync audience ------------------------------------------------------------------------------
+        //
+        // Which clients receive this behaviour's sync state (docs/sync-audience.md). Workers holding a ghost always
+        // receive it; the audience only narrows the clients. Filtering happens at the gateway, on every path a chunk
+        // can take to a client: the spawn, deltas, keyframes and the gateway's cached keyframes for late joiners.
+
+        /// <summary>The audience this behavior was spawned with, read once from <see cref="SyncAudience"/> when the identity starts.</summary>
+        internal SyncAudience Audience;
+        /// <summary>Custom only: the sorted client ids the authority last chose (or that arrived with the entity).</summary>
+        internal ulong[] AudienceMembers = Array.Empty<ulong>();
+        /// <summary>Custom only: evaluate the audience at the next tick instead of waiting for the refresh.</summary>
+        internal bool AudienceDirty = true;
+        /// <summary>Custom only: the tick at or after which the audience is evaluated again.</summary>
+        internal uint AudienceNextTick;
+        /// <summary>The audience changed or its owner came back: the next chunk of this behavior is a keyframe for every destination.</summary>
+        internal bool AudienceKeyframe;
+        /// <summary>The member cap has been reported for this behavior.</summary>
+        internal bool AudienceCapWarned;
+        /// <summary>
+        /// Client side: the gateway said this client left the audience (<see cref="OnSyncStateCleared"/>) at this
+        /// tick. Chunks in sequenced packets no newer than it were sent before the leave, and are dropped.
+        /// </summary>
+        internal bool SyncCleared;
+        internal uint SyncClearedTick;
+
+        /// <summary>
+        /// Which clients receive this behavior's sync state (<see cref="WriteSyncState"/>). The default,
+        /// <c>SyncAudience.Everyone</c>, costs nothing. A worker that holds a ghost of the entity
+        /// receives the state whatever the audience; only clients are filtered. Override it with a constant: Nebula
+        /// reads it once, when the entity is spawned or instantiated, so it is configuration and not state that can
+        /// change at run time. An entity's root <see cref="NetworkTransform"/> always replicates to everyone.
+        /// <para>
+        /// <see cref="NetworkVariable{T}"/>s are not covered: an entity's variables go to every client that holds it.
+        /// Keep state a client must not see in sync state with a restricted audience.
+        /// </para>
+        /// </summary>
+        public virtual SyncAudience SyncAudience => SyncAudience.Everyone;
+
+        /// <summary>
+        /// For the <c>Custom</c> audience only, on the authoritative worker: whether the client with session ID
+        /// <paramref name="clientId"/> should receive this behavior's sync state. <paramref name="pawn"/> is that client's
+        /// player entity as this worker holds it (simulated here or a ghost), so a rule can measure the distance to it.
+        /// Nebula asks about every client whose pawn this worker holds: when the entity gains authority, every
+        /// <see cref="SyncAudienceRefreshTicks"/> ticks, and at the next tick after <see cref="MarkSyncAudienceDirty"/>.
+        /// A client whose pawn this worker does not hold is not asked, and is not in the audience. Keep it cheap and
+        /// free of side effects. By default it returns false for every client.
+        /// </summary>
+        /// <param name="clientId">The client's session ID. It stays the same when the client reconnects (<see cref="NetworkIdentity.OwnerClientId"/>).</param>
+        /// <param name="pawn">That client's player entity on this worker.</param>
+        protected virtual bool IsInSyncAudience(ulong clientId, NetworkIdentity pawn) => false;
+
+        /// <summary>
+        /// For the <c>Custom</c> audience only: how often, in ticks, the authority evaluates the audience again
+        /// without being asked. The default is 30, half a second at the 60 Hz tick rate. Return 0 to evaluate only when
+        /// the entity gains authority and after <see cref="MarkSyncAudienceDirty"/>. That suits a rule that changes
+        /// only on events, such as a player opening or closing a container.
+        /// </summary>
+        public virtual uint SyncAudienceRefreshTicks => 30;
+
+        /// <summary>
+        /// For the <c>Custom</c> audience only, on the authority: the answer of <see cref="IsInSyncAudience"/>
+        /// may have changed, so evaluate it at the next tick instead of waiting for the refresh. Calling it often is
+        /// cheap: the audience is evaluated at most once per tick.
+        /// </summary>
+        protected void MarkSyncAudienceDirty() => AudienceDirty = true;
+
+        /// <summary>
+        /// Client side: this client has just left the behavior's audience. For example, it no longer owns the entity,
+        /// or a Custom rule stopped choosing it. None of the behavior's sync state arrives until the client joins
+        /// again, and then a keyframe arrives through <see cref="ReadSyncState"/>. Drop what you hold of that state and
+        /// clear any UI that shows it. Not called when the entity itself leaves the client (see <see cref="OnNetworkDespawn"/>).
+        /// </summary>
+        public virtual void OnSyncStateCleared() { }
+
+        /// <summary>Custom only: ask the game's predicate about one client, keeping any exception inside this behavior.</summary>
+        internal bool EvaluateAudienceMember(ulong clientId, NetworkIdentity pawn)
+        {
+            try { return IsInSyncAudience(clientId, pawn); }
+            catch (Exception ex)
+            {
+                NebulaLog.Error($"IsInSyncAudience on {GetType().Name} of {(Identity != null ? Identity.name : name)} threw: {ex.Message}");
+                return false;
+            }
+        }
+
         /// <summary>
         /// Authority only. Write the state to replicate. When <paramref name="full"/> is true write everything (a
         /// keyframe: this is what a late joiner or a fresh ghost will start from); otherwise only what changed since

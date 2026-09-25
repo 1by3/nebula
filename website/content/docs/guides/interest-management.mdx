@@ -324,6 +324,7 @@ Interest management preserves the security properties of [instancing](/docs/guid
 - **Unknown containers are never public.** An entity in a container a client has not been told about is never added to that client's set, whatever its distance.
 - **A client's own pawn is always in its set**, at full update rate, regardless of distance rules — an owned entity is a standing reason for the gateway to hold its worker link.
 - **Spatial and targeted RPCs respect the set.** A broadcast RPC declared with a radius reaches only clients whose pawn is within that distance. A targeted `ClientRpc` or `OwnerRpc` reaches only the named client.
+- **Private sync state stays private.** Holding an entity does not mean receiving all of it: a behavior's [sync audience](/docs/guides/sync-audiences) can limit its sync state to the owner, to no client, or to clients a rule selects. The gateway applies it to every spawn, update, and cached keyframe it sends.
 - **A carried entity enters and leaves a client's set with its carrier.** See [Carried entities](#carried-entities) below.
 
 ## Carried entities

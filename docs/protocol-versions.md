@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`. Both values are currently 19; protocol 18 is not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 19..20; protocol 18 is not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -35,6 +35,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.29 | 17 | interest management |
 | v0.1.0-alpha.30 | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
+| Unreleased | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -47,6 +48,14 @@ addressed by that index. A protocol-18 client would talk to the wrong behaviour 
 `MinProtocolVersion` moved to 19 with `ProtocolVersion` (step 2 below, the refusal case). The protocol-18 recording
 is kept, and `ConformanceProtocolCompatibilityTests.ARecordedProtocol18ClientIsRefusedWithTheGatewaysRange` replays
 it to prove the refusal.
+
+20 is the first additive bump, so the window is 19..20. What a client can see of it: audience bits in a sync
+chunk's flags (a protocol-19 client reads only the `Full` bit), and a `Cleared` chunk, which is the first thing a
+gateway writes differently by negotiated version: only a protocol-20 client is sent one
+(`ConformanceSyncAudienceTests.AProtocol19ClientStopsReceivingButIsNotSentTheNotice`). Everything else is between
+workers and gateways, which must match exactly: the new `SyncAudience` message (37) and trailing fields in the spawn
+and sync bodies. The protocol-19 recording now exercises N-1; `protocol-20-handshake.json` was recorded for the next
+bump.
 
 ## Bumping the protocol
 

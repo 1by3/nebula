@@ -48,6 +48,8 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [SceneEntities](/docs/reference/core/scene-entities) | Static class. The scene-placed entities resident in this process, by NetworkIdentity.SceneId. |
 | [ServerRpcAttribute](/docs/reference/core/server-rpc-attribute) | Class. Sent by the owning client, runs on whichever worker currently has authority over the entity. |
 | [StateHistory](/docs/reference/core/state-history) | Class. The bounded per-entity ring of recorded ticks behind NetworkIdentity.StateAt: pose, velocity, container, epoch and the SyncHistoryAttribute variables, one entry per server tick, indexed by tick % capacity. |
+| [SyncAudience](/docs/reference/core/sync-audience) | Enum. Who receives a behavior's sync state (NetworkBehaviour.SyncAudience). |
+| [SyncAudienceCodec](/docs/reference/core/sync-audience-codec) | Static class. The client member sets of an entity's SyncAudience.Custom behaviors, as the authority last evaluated them: \[count:byte\]\{\[behaviourIndex:byte\]\[n:ushort\]\{\[clientId:ulong\]\}\}, each set sorted ascending. |
 | [SyncHistoryAttribute](/docs/reference/core/sync-history-attribute) | Class. Marks a NetworkVariable\<T\> field as part of the entity's recorded state history, so its value is snapshotted every tick alongside the pose and can be read back through NetworkIdentity.StateAt / HistoricalState.TryGetValue\<T\>. |
 | [SyncStateCodec](/docs/reference/core/sync-state-codec) | Static class. Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages) and the spawn snapshot: \[count\]\{\[behaviourIndex\]\[flags\]\[len:ushort\]\[chunk\]\}. |
 
@@ -359,6 +361,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |
 | [SessionReplacedMsg](/docs/reference/protocol/session-replaced-msg) | Struct. Gateway -\> client: the player this client signed in as connected again elsewhere, and that newer connection now holds the session and the pawn (NebulaConfig.SingleSessionPerPlayer). |
 | [SpawnPlayerMsg](/docs/reference/protocol/spawn-player-msg) | Struct. Gateway -\> worker: a client wants a pawn. |
+| [SyncAudienceMsg](/docs/reference/protocol/sync-audience-msg) | Struct. Worker to gateway (MsgId.SyncAudience, protocol 20): the member sets of an entity's SyncAudience.Custom behaviors changed. |
 | [TransformFields](/docs/reference/protocol/transform-fields) | Enum. Selected axes and encoding of a root transform update. |
 | [WelcomeMsg](/docs/reference/protocol/welcome-msg) | Struct. Carries the welcome protocol message. |
 | [WorldStateMsg](/docs/reference/protocol/world-state-msg) | Static class. Batched transforms for one tick from one worker. |
