@@ -464,8 +464,33 @@ namespace Nebula
                 container = carrier.Container;
             }
             var c = ContainerRegistry.Resolve(container);
-            return c != null ? c.ToWorld(local) : local;
+            return c != null ? AbsoluteOf(c, local) : local;
         }
+
+        /// <summary>
+        /// A position in <paramref name="container"/>'s local space as an absolute position in the container's scope:
+        /// where the worker files an entity (<c>WorkerInterest.ToAbsolute</c>) and what a lease row's box is in.
+        /// <para>
+        /// A gateway process shifts no floating origin of its own, but when it shares a process with a worker (the
+        /// Editor's Multiplayer Play Mode loop, or any in-process host) it also shares that worker's containers, and
+        /// the worker moves each scope's origin toward the cells it leases. The container's transform is then in the
+        /// shifted frame, so the frame's origin is added back here, exactly as the worker does. On a gateway of its
+        /// own the frame never moves and this is the container's world position (NEB-337).
+        /// </para>
+        /// </summary>
+        private static Vector3 AbsoluteOf(Container c, Vector3 local) =>
+            ContainerRegistry.ToAbsolutePrecise(c.ToWorld(local), c.InstanceId).ToVector3();
+
+        /// <summary>The inverse of <see cref="AbsoluteOf"/>: an absolute position of the container's scope in its local space.</summary>
+        private static Vector3 LocalOf(Container c, Vector3 absolute) =>
+            c.ToLocal(ContainerRegistry.ToFrame(Double3.From(absolute), c.InstanceId));
+
+        /// <summary>
+        /// An absolute box of a scope in the frame the container registry holds that scope's boxes in, for a registry
+        /// query (<see cref="ContainerRegistry.Overlapping"/>). The identity on a gateway of its own; see
+        /// <see cref="AbsoluteOf"/> for when it is not (NEB-337).
+        /// </summary>
+        private static Bounds InRegistryFrame(Bounds absolute, ulong instanceId) => ContainerRegistry.ToFrame(absolute, instanceId);
 
         /// <summary>
         /// The same point one region space further out: from a frame with regions of its own to the space around it,
@@ -484,7 +509,7 @@ namespace Nebula
             }
             var c = ContainerRegistry.Resolve(frame);
             if (c == null) return false;
-            position = c.ToWorld(position);
+            position = AbsoluteOf(c, position);
             frameKey = 0;
             frame = ContainerRef.None;
             return true;
@@ -1468,7 +1493,9 @@ namespace Nebula
         }
 
         /// <summary>
-        /// A container-local position as a world position. The gateway holds no entities, so a dynamic container's
+        /// A container-local position as a world position: absolute in the scope, as the lease rows' boxes and
+        /// every region key are, whatever origin a worker in the same process has shifted to (<see cref="AbsoluteOf"/>).
+        /// The gateway holds no entities, so a dynamic container's
         /// frame is rebuilt from its carrier's newest pose (itself container-local, hence the walk): a
         /// carried container's frame is its carrier's root transform, which is what makes this possible here.
         /// <para>
@@ -1505,7 +1532,7 @@ namespace Nebula
                 break;
             }
             var c = ContainerRegistry.Resolve(container);
-            return c != null ? c.ToWorld(local) : local;
+            return c != null ? AbsoluteOf(c, local) : local;
         }
 
         /// <inheritdoc cref="WorldPosition"/>
@@ -1543,7 +1570,7 @@ namespace Nebula
             if (!broken)
             {
                 var c = ContainerRegistry.Resolve(at);
-                if (c != null) local = c.ToLocal(world);
+                if (c != null) local = LocalOf(c, world);
             }
             for (int i = _carrierChain.Count - 1; i >= 0; i--)
             {
