@@ -88,6 +88,155 @@ namespace Nebula
 
         private bool _costWeightPinned;
 
+        [Header("Ghost band")]
+        [Tooltip("How the ghost band measures this entity. None (the default) measures from the entity's root position. Explicit measures from the Extent box. Colliders measures from a box around the entity's own colliders. Give a large entity (a building, a structure, a big ship) an extent so that every worker whose container its body comes near holds a ghost of it. See https://nebula.1by3.co/docs/concepts/containers-and-handover")]
+        [SerializeField] private EntityExtentSource _extentSource;
+        [Tooltip("The extent box in the entity's local space, used when the source is Explicit. The root's rotation and scale apply to it, as they do to a BoxCollider on the root.")]
+        [SerializeField] private Bounds _extent = new Bounds(Vector3.zero, Vector3.one);
+
+        /// <summary>
+        /// With <see cref="EntityExtentSource.Colliders"/>, the box is computed again at least this often, in ticks
+        /// of the worker that holds authority. Nothing tells Nebula that a collider deeper than a direct child
+        /// changed; call <see cref="RefreshExtent"/> when a change must count sooner.
+        /// </summary>
+        public const int ColliderExtentRefreshTicks = 60;
+
+        private Bounds _colliderExtent;
+        private bool _hasColliderExtent;
+        private bool _colliderExtentStale = true;
+        private uint _colliderExtentTick;
+
+        /// <summary>
+        /// Where this entity's extent comes from (<c>docs/entity-extents.md</c>). With
+        /// <see cref="EntityExtentSource.None"/>, the default, the ghost band measures from the entity's root
+        /// position, as it always has. With an extent it measures from the extent's box, so the entity is ghosted to
+        /// every worker whose container the box comes within <see cref="NebulaConfig.GhostBandMargin"/> of. An
+        /// extent never changes which worker has authority: that still follows the root position.
+        /// </summary>
+        public EntityExtentSource ExtentSource => _extentSource;
+
+        /// <summary>
+        /// The extent was set at runtime (<see cref="SetExtent"/>, <see cref="UseColliderExtent"/>,
+        /// <see cref="ClearExtent"/>, or received with a handover or a restore) rather than authored. Only such an
+        /// extent is carried by a handover and saved by a <see cref="PersistentEntity"/>; an authored one comes with
+        /// the prefab on every process.
+        /// </summary>
+        public bool ExtentChangedAtRuntime { get; private set; }
+
+        /// <summary>
+        /// The extent box in the entity's local space: the authored or set box for
+        /// <see cref="EntityExtentSource.Explicit"/>, the box around the colliders for
+        /// <see cref="EntityExtentSource.Colliders"/> (computed now if it never was), and an empty box at the origin
+        /// when there is none. Use <see cref="TryGetExtent"/> to tell "no extent" apart.
+        /// </summary>
+        public Bounds Extent => TryGetExtent(out var box) ? box : default;
+
+        /// <summary>
+        /// The extent box in the entity's local space, if the entity has one: always for
+        /// <see cref="EntityExtentSource.Explicit"/>, and for <see cref="EntityExtentSource.Colliders"/> when at least
+        /// one collider counts (enabled, not a trigger, and not under another <see cref="NetworkIdentity"/>).
+        /// </summary>
+        public bool TryGetExtent(out Bounds localBounds)
+        {
+            switch (_extentSource)
+            {
+                case EntityExtentSource.Explicit:
+                    localBounds = _extent;
+                    return true;
+                case EntityExtentSource.Colliders:
+                    if (_colliderExtentStale) ComputeColliderExtent(_colliderExtentTick);
+                    localBounds = _colliderExtent;
+                    return _hasColliderExtent;
+                default:
+                    localBounds = default;
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Give the entity an explicit extent: a box in its local space (the root's rotation and scale apply to it).
+        /// Call it on the authority when the entity's shape changes, for example after a structure is edited; the next
+        /// tick's ghost band uses it. The box travels with a handover and is saved by a <see cref="PersistentEntity"/>.
+        /// A negative size is taken as its absolute value.
+        /// </summary>
+        public void SetExtent(Bounds localBounds)
+        {
+            var size = localBounds.size;
+            localBounds.size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
+            _extentSource = EntityExtentSource.Explicit;
+            _extent = localBounds;
+            ChangedAtRuntime();
+        }
+
+        /// <summary>
+        /// Measure the entity by its own colliders from now on: every enabled, non-trigger collider on an active
+        /// object under it whose nearest <see cref="NetworkIdentity"/> is this one. The box is computed now and
+        /// again every <see cref="ColliderExtentRefreshTicks"/> ticks, when a direct child is added or removed, and
+        /// when <see cref="RefreshExtent"/> is called.
+        /// </summary>
+        public void UseColliderExtent()
+        {
+            _extentSource = EntityExtentSource.Colliders;
+            _colliderExtentStale = true;
+            ChangedAtRuntime();
+        }
+
+        /// <summary>Remove the entity's extent: the ghost band measures from its root position again, as for any entity.</summary>
+        public void ClearExtent()
+        {
+            _extentSource = EntityExtentSource.None;
+            ChangedAtRuntime();
+        }
+
+        /// <summary>
+        /// Compute a <see cref="EntityExtentSource.Colliders"/> extent again now, after the game added, removed,
+        /// resized or switched a collider. Does nothing for another source.
+        /// </summary>
+        public void RefreshExtent()
+        {
+            if (_extentSource == EntityExtentSource.Colliders) _colliderExtentStale = true;
+        }
+
+        private void ChangedAtRuntime()
+        {
+            ExtentChangedAtRuntime = true;
+            Persistent?.MarkDirty();
+        }
+
+        /// <summary>
+        /// The ghost band's read of the extent on the authority at <paramref name="tick"/>: a collider extent is
+        /// computed again when it is stale or <see cref="ColliderExtentRefreshTicks"/> old.
+        /// </summary>
+        internal bool TryGetExtentForBand(uint tick, out Bounds localBounds)
+        {
+            if (_extentSource == EntityExtentSource.None) { localBounds = default; return false; }
+            if (_extentSource == EntityExtentSource.Colliders && (_colliderExtentStale || tick - _colliderExtentTick >= ColliderExtentRefreshTicks))
+                ComputeColliderExtent(tick);
+            return TryGetExtent(out localBounds);
+        }
+
+        private void ComputeColliderExtent(uint tick)
+        {
+            _hasColliderExtent = EntityExtents.TryComputeColliderExtent(this, out _colliderExtent);
+            _colliderExtentStale = false;
+            _colliderExtentTick = tick;
+        }
+
+        /// <summary>
+        /// Take an extent that arrived with the entity (a handover, a restore): the sender's runtime extent replaces
+        /// the prefab's. It counts as set at runtime, so it travels on, but it does not mark the entity dirty.
+        /// </summary>
+        internal void ApplyCarriedExtent(EntityExtentSource source, Bounds localBounds)
+        {
+            _extentSource = source;
+            if (source == EntityExtentSource.Explicit) _extent = localBounds;
+            _colliderExtentStale = true;
+            ExtentChangedAtRuntime = true;
+        }
+
+        // A direct child came or went: a Colliders extent is computed again at the next ghost band.
+        private void OnTransformChildrenChanged() => _colliderExtentStale = true;
+
         /// <summary>Authored into a scene rather than spawned from a prefab: the object belongs to its scene and is bound, never instantiated or destroyed, by the network (see <see cref="SceneEntities"/>).</summary>
         public bool IsSceneEntity => SceneId != 0;
 

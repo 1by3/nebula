@@ -1552,6 +1552,19 @@ namespace Nebula
         /// from its own clock.
         /// </summary>
         public float SessionReclaimRemaining;
+        /// <summary>
+        /// The entity's extent was set at runtime (<c>NetworkIdentity.ExtentChangedAtRuntime</c>), so the receiver
+        /// takes <see cref="ExtentSource"/>, <see cref="ExtentCenter"/> and <see cref="ExtentSize"/> instead of its
+        /// prefab's. A trailing optional section after the session section (<c>docs/entity-extents.md</c> D6),
+        /// written only when set: an older reader stops before it. False leaves the receiver's copy as it is.
+        /// </summary>
+        public bool CarriesExtent;
+        /// <summary>Where the extent comes from. For <see cref="EntityExtentSource.Colliders"/> the receiver computes the box from its own copy.</summary>
+        public EntityExtentSource ExtentSource;
+        /// <summary>Centre of the extent box in the entity's local space.</summary>
+        public Vector3 ExtentCenter;
+        /// <summary>Size of the extent box in the entity's local space.</summary>
+        public Vector3 ExtentSize;
 
         public void Write(NetworkWriter w)
         {
@@ -1567,10 +1580,16 @@ namespace Nebula
             w.WriteUShort((ushort)(InterestGateways?.Length ?? 0));
             if (InterestGateways != null) foreach (var key in InterestGateways) w.WriteString(key);
             bool orphan = SessionOrphan != PlayerSessions.OrphanKind.None;
-            if (Crossing || orphan) w.WriteByte(Crossing ? (byte)1 : (byte)0);
-            if (!orphan) return;
+            // Each trailing section is written when it or any section after it holds something, so a reader that
+            // knows fewer sections stops where it always did and one that knows more reads their "none" values.
+            if (Crossing || orphan || CarriesExtent) w.WriteByte(Crossing ? (byte)1 : (byte)0);
+            if (!orphan && !CarriesExtent) return;
             w.WriteByte((byte)SessionOrphan);
-            w.WriteFloat(SessionReclaimRemaining);
+            w.WriteFloat(orphan ? SessionReclaimRemaining : 0f);
+            if (!CarriesExtent) return;
+            w.WriteByte((byte)ExtentSource);
+            w.WriteVector3(ExtentCenter);
+            w.WriteVector3(ExtentSize);
         }
 
         public static AuthorityTransferMsg Read(NetworkReader r)
@@ -1591,6 +1610,13 @@ namespace Nebula
             {
                 msg.SessionOrphan = (PlayerSessions.OrphanKind)r.ReadByte();
                 msg.SessionReclaimRemaining = r.ReadFloat();
+            }
+            if (r.Remaining > 0)
+            {
+                msg.CarriesExtent = true;
+                msg.ExtentSource = (EntityExtentSource)r.ReadByte();
+                msg.ExtentCenter = r.ReadVector3();
+                msg.ExtentSize = r.ReadVector3();
             }
             return msg;
         }
