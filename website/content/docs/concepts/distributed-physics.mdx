@@ -35,6 +35,8 @@ Authority is decided per container. Two containers that happen to be owned by on
 
 When an authoritative entity comes within `GhostBandMargin` of a container owned by another worker, that worker receives a ghost. On the ghost, `NetworkBehaviour.IsGhost` is `true` and `HasAuthority` is `false`.
 
+The ghost band measures an entity from its root position unless the entity has an extent. Give a building, a structure, or another large entity an extent, so that a player on the other side of a seam collides with its walls even when its root is far from the seam. See [Ghost a large entity by its extent](/docs/concepts/containers-and-handover#ghost-a-large-entity-by-its-extent).
+
 A ghost's body is kinematic. `NetworkRigidbody` sets `Rigidbody.isKinematic` to `true` on every copy that lacks authority and back to the entity's own setting when the worker gains authority. An entity with a plain `Rigidbody` and no `NetworkRigidbody` is also made kinematic by the worker when it becomes a ghost.
 
 A ghost moves only where its authoritative worker's root transform stream says. The worker applies the pose for tick `t - 1` at the start of tick `t`, so a ghost is one tick (16.7 ms at 60 ticks per second) behind the body it copies. This is a property of the design, not a tuning value: the owner has not yet simulated tick `t` when the ghost's worker starts it.

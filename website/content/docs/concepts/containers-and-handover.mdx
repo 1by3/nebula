@@ -90,6 +90,51 @@ The neighbour thus holds full warm state before the entity can cross. If the ent
 
 For what a collision with a ghost does and does not do, and why a joint across two workers is unsupported, see [Distributed physics](/docs/concepts/distributed-physics).
 
+## Ghost a large entity by its extent
+
+By default, the ghost band measures an entity from its root position. That works for players, vehicles, and props a few meters across. It does not work for a building, a player-built structure, or a large ship whose root is far from a seam while its walls reach across it: no other worker gets a ghost, so a player simulated on the other side walks through the walls.
+
+To fix this, give the entity an **extent**: a box in the entity's local space that the ghost band measures instead. The entity is then ghosted to every worker whose container the box comes within `GhostBandMargin` of, including containers that do not touch the entity's own container.
+
+Choose the source in the **Ghost band** section of the entity's `NetworkIdentity`, or from code:
+
+| `ExtentSource` | What the ghost band measures |
+| --- | --- |
+| `None` (default) | The root position, as for every entity without an extent. |
+| `Explicit` | The `Extent` box. The root's rotation and scale apply to it, as they do to a `BoxCollider` on the root. |
+| `Colliders` | A box around the entity's own enabled, non-trigger colliders. Colliders under another `NetworkIdentity` do not count. |
+
+When the entity's shape changes at runtime, call `SetExtent` on the worker that has authority over it:
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+public class StructureSection : NetworkBehaviour
+{
+    // Called on the authoritative worker after the section is edited.
+    public void OnEdited(Bounds localBounds)
+    {
+        Identity.SetExtent(localBounds);
+    }
+}
+```
+
+The next tick's ghost band uses the new box. An extent set at runtime travels with a handover. It is also saved and restored with the entity when the entity has a `PersistentEntity`. `ClearExtent` goes back to measuring the root, and `UseColliderExtent` switches to the colliders.
+
+With `Colliders`, Nebula computes the box when it is first needed, when a direct child is added or removed, and every `NetworkIdentity.ColliderExtentRefreshTicks` (60) ticks. Call `RefreshExtent` after you add, remove, resize, or turn off a collider deeper in the hierarchy if the change must count sooner.
+
+An extent changes only which workers hold a ghost:
+
+- The root position still decides the entity's container, which worker has authority, and when a handover happens.
+- The ghost is created from the prefab. If your game builds the entity's colliders at runtime, build them on the ghost too, from its `NetworkVariable` values and sync state.
+- A ghost that the extent no longer reaches lingers for `GhostLingerSeconds`, as for a root that left the band.
+- Client interest does not use the extent. Raise `RelevanceRadius` for an entity that players should see from far away.
+
+The extent is measured in the coordinates of the space the entity's container is in, so it works the same way inside a [physics frame](/docs/guides/physics-frames), such as a planet whose chunks are leased to several workers. It never reaches across a frame's boundary.
+
+Entities without an extent cost nothing extra. Each entity with an extent adds one container registry query and a few box tests per tick on its authoritative worker, so give an extent only to entities that need it. The box is axis-aligned in the entity's space. A long, rotated entity is measured by the box around it, which can ghost it to a worker it does not quite reach. When the extent reaches out of its own container, the worker that owns an enclosing container, such as a planet's frame, also gets a ghost.
+
 ## Complete the handover
 
 When an entity moves farther than `HandoverHysteresis` into a container assigned to another worker, the current worker sends a reliable `AuthorityTransfer` message. It contains:

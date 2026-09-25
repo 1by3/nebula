@@ -333,6 +333,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [DespawnPlayerMsg](/docs/reference/protocol/despawn-player-msg) | Struct. Gateway -\> worker: the session is over (or the gateway gave up waiting for it to reconnect). |
 | [EndSessionMsg](/docs/reference/protocol/end-session-msg) | Struct. Worker -\> gateway: this gateway no longer speaks for the session, because the player connected again through another gateway (NebulaConfig.SingleSessionPerPlayer). |
 | [EntityDespawnMsg](/docs/reference/protocol/entity-despawn-msg) | Struct. Carries the entity despawn protocol message. |
+| [EntityExtentSource](/docs/reference/protocol/entity-extent-source) | Enum. Where an entity's extent comes from: the box, in the entity's own space, that the ghost band measures to each neighbouring container instead of the entity's root position (NetworkIdentity.ExtentSource). |
 | [EntityFlags](/docs/reference/protocol/entity-flags) | Enum. Lists the supported entity flags values. |
 | [EntityForgetMsg](/docs/reference/protocol/entity-forget-msg) | Struct. Worker -\> gateway: the entity left every region this gateway subscribes on this worker. |
 | [EntityInterestFlags](/docs/reference/protocol/entity-interest-flags) | Enum. Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from). |

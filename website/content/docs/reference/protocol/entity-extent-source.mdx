@@ -1,0 +1,20 @@
+---
+title: "EntityExtentSource"
+description: "Where an entity's extent comes from: the box, in the entity's own space, that the ghost band measures to each neighbouring container instead of the entity's root position (NetworkIdentity.ExtentSource)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/EntityExtentSource.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/EntityExtentSource.cs)</div>
+
+```csharp
+public enum EntityExtentSource : byte
+```
+
+Where an entity's extent comes from: the box, in the entity's own space, that the ghost band measures to each neighbouring container instead of the entity's root position (`NetworkIdentity.ExtentSource`).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="none"></span>`None` | `0` | No extent: the entity is ghosted by its root position alone, as every entity was before extents. |
+| <span id="explicit"></span>`Explicit` | `1` | The box given in `NetworkIdentity.Extent`, authored on the prefab or set with `SetExtent`. |
+| <span id="colliders"></span>`Colliders` | `2` | A box computed from the entity's own enabled, non-trigger colliders, refreshed as they change. |

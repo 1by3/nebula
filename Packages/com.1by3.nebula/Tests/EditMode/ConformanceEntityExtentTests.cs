@@ -195,7 +195,7 @@ namespace Nebula.Tests
             Assert.AreEqual(ghosted, W2.Find(structure.NetId) != null);
         }
 
-        // ------------------------------------------------------------------------------------ the shape Holoverse uses
+        // ------------------------------------------------------------------------------------ a structure in a chunked world
 
         private const string Outpost = "world/outpost";
         private static readonly Vector3 Cell = new Vector3(64f, 64f, 64f);

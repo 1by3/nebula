@@ -79,7 +79,11 @@ comes near.** For an entity with an extent, `UpdateGhostBand`:
      rotated one, so it errs towards ghosting, never away from it;
    - a candidate that encloses the entity's container, or the frame around it: the seam is the container's own
      surface, so the distance is how far the extent is from leaving it, the largest signed distance of its corners
-     (`Container.MaxSignedDistance`), negated as the root test negates it;
+     (`Container.MaxSignedDistance`), negated as the root test negates it. An extent that reaches out of its own
+     container is therefore also ghosted to the owner of the enclosing container (a planet's frame, an outdoor area
+     around buildings), even where the part outside is covered by sibling containers. That errs towards ghosting, as
+     the root test already does for a root near its container's surface, and costs at most one ghost per enclosing
+     owner;
 4. ghosts the entity to the candidate's owner when that distance is within `GhostBandMargin`, **or** when the root
    test would have. The union means an extent can only add targets: an entity with a box that leaves its root out
    still has the band it always had at its root.
@@ -182,3 +186,5 @@ the entity's container, the collider computation per shape and its exclusions, t
   once. Call `RefreshExtent()` after a change that matters sooner.
 - Client interest is unchanged: `RelevanceRadius` still measures from the root.
 - The moving-runtime scan (§5) is linear in the chunks of a frame.
+- An extent that leaves its own container is also ghosted to the owner of any container enclosing it (D4), even when
+  the sibling containers there cover all of it.

@@ -114,6 +114,22 @@ The identity travels with authority: the next worker updates the same record ins
 public override void ReadHandoverState(NetworkReader reader);
 ```
 
+### WritePersistentState [#writepersistentstate]
+
+```csharp
+public override void WritePersistentState(NetworkWriter writer);
+```
+
+Saves the entity's extent when it was set at runtime ([`NetworkIdentity.ExtentChangedAtRuntime`](/docs/reference/core/network-identity#extentchangedatruntime)), so a structure edited since it spawned comes back measured by its edited box (`docs/entity-extents.md` D7). Writes nothing otherwise, so an entity with an authored extent, or none, saves the record it always did.
+
+### ReadPersistentState [#readpersistentstate]
+
+```csharp
+public override void ReadPersistentState(NetworkReader reader);
+```
+
+Restores the runtime extent [`WritePersistentState`](#writepersistentstate) saved, before the entity spawns.
+
 ### ToString [#tostring]
 
 ```csharp

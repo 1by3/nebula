@@ -170,9 +170,9 @@ namespace Nebula
 
         /// <summary>
         /// Measure the entity by its own colliders from now on: every enabled, non-trigger collider on an active
-        /// object under it whose nearest <see cref="NetworkIdentity"/> is this one. The box is computed now and
-        /// again every <see cref="ColliderExtentRefreshTicks"/> ticks, when a direct child is added or removed, and
-        /// when <see cref="RefreshExtent"/> is called.
+        /// object under it whose nearest <see cref="NetworkIdentity"/> is this one. The box is computed when it is next
+        /// needed, then again every <see cref="ColliderExtentRefreshTicks"/> ticks, when a direct child is added or
+        /// removed, and after <see cref="RefreshExtent"/> is called.
         /// </summary>
         public void UseColliderExtent()
         {
