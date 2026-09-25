@@ -77,6 +77,13 @@ namespace Nebula
         /// </summary>
         internal bool StampPending;
 
+        /// <summary>
+        /// The entity holds nothing worth keeping right now: a checkpoint deletes its record instead of writing one.
+        /// Set by Nebula's chunk state entity while its map is empty (docs/chunk-state.md D5), so a chunk whose
+        /// last entry was cleared or expired costs no record, even if it is released before the entity despawns.
+        /// </summary>
+        internal bool DiscardRecord;
+
         /// <summary>Ask for a checkpoint soon (coalesced with every other change since the last save).</summary>
         public void MarkDirty()
         {

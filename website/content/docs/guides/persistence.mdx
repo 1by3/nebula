@@ -20,6 +20,8 @@ A persistent entity is saved with:
 
 Nothing else persists. An entity without a `PersistentEntity` is lost when its worker stops, and so is any state on a persistent entity that is neither a `[Persist]` variable nor written by `WritePersistentState`. Client connections, prediction state, ghosts, and in-flight RPCs are never saved.
 
+Objects your game generates from a chunk's seed, such as rocks and plants, do not need to be entities to keep what players did to them. See [Save changes to procedural objects](/docs/guides/procedural-object-state).
+
 The control plane is not affected by any of this. It holds process registrations, container assignments, and shared settings, and it starts empty on every `nebula start`. Saved entities sit next to it in the orchestrator's database, in a table of their own.
 
 <Callout type="warn" title="Persistence is not a save-game system">

@@ -144,6 +144,12 @@ namespace Nebula
         /// restore sets it again (<c>docs/frame-bodies.md</c> D8).
         /// </summary>
         internal bool ContainerPinned;
+        /// <summary>
+        /// Nebula's own bookkeeping entity (the carrier of a chunk's <see cref="Nebula.World.ChunkState"/>), not
+        /// something the game simulates: worker telemetry leaves it out of a container's occupancy and cost, so it
+        /// never keeps a scope from looking idle (docs/chunk-state.md D7).
+        /// </summary>
+        internal bool ExcludeFromOccupancy;
         /// <summary>The entity's simulation scope. Zero is the public world.</summary>
         public ulong InstanceId => Container != null ? Container.InstanceId : 0;
         /// <summary>

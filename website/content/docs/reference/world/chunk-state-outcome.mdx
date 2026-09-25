@@ -1,0 +1,22 @@
+---
+title: "ChunkStateOutcome"
+description: "What became of a change made through ChunkStateService."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkStateService.cs)</div>
+
+```csharp
+public enum ChunkStateOutcome : byte
+```
+
+What became of a change made through [`ChunkStateService`](/docs/reference/world/chunk-state-service).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="applied"></span>`Applied` | `0` | The worker that holds the chunk's lease applied the change. [`ChunkStateResult.State`](/docs/reference/world/chunk-state-result#state) is the entry now. |
+| <span id="conflict"></span>`Conflict` | `1` | A compare-and-set found a different entry than expected, and changed nothing. [`ChunkStateResult.State`](/docs/reference/world/chunk-state-result#state) is the entry the worker found, so the caller can decide again. |
+| <span id="unavailable"></span>`Unavailable` | `2` | Nothing changed: no worker holds the chunk's lease, or the one that does could not apply the change before the deadline (its restore of the chunk was still running, or the lease was moving). |
+| <span id="timedout"></span>`TimedOut` | `3` | No answer arrived before the deadline. The change may or may not have been applied: read the entry before trying again, or use a compare-and-set, which is safe to repeat. |
+| <span id="rejected"></span>`Rejected` | `4` | The change was refused and nothing changed: the payload is longer than [`ChunkState.MaxPayloadBytes`](/docs/reference/world/chunk-state#maxpayloadbytes), the chunk's entries would exceed [`ChunkState.MaxEncodedBytes`](/docs/reference/world/chunk-state#maxencodedbytes), or the container cannot hold chunk state (it is carried by an entity, or the id is empty). |

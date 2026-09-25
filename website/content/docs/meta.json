@@ -36,6 +36,7 @@
     "guides/physics-frames",
     "guides/runtime-containers",
     "guides/infinite-runtime-world",
+    "guides/procedural-object-state",
     "guides/instancing",
     "guides/scopes",
     "guides/lifecycle-hooks",

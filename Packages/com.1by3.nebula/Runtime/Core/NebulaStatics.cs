@@ -24,6 +24,7 @@ namespace Nebula
             NebulaLifecycle.Reset();
             NebulaWorld.ResetForNewSession();
             Nebula.World.NebulaChunks.ResetForNewSession();
+            Nebula.World.ChunkState.ResetForNewSession();
             NebulaRuntime.IsServer = false;
             NebulaRuntime.IsClient = false;
             NebulaRuntime.LocalClientId = 0;

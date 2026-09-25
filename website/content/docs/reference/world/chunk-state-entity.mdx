@@ -1,0 +1,100 @@
+---
+title: "ChunkStateEntity"
+description: "The entity that carries one chunk's ChunkState entries."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkStateEntity.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkStateEntity.cs)</div>
+
+```csharp
+[DisallowMultipleComponent]
+[AddComponentMenu("")]
+public sealed class ChunkStateEntity : NetworkBehaviour
+```
+
+The entity that carries one chunk's [`ChunkState`](/docs/reference/world/chunk-state) entries. Nebula spawns it from a built-in prefab ([`PrefabId`](#prefabid)) in the chunk's container the first time an object in the chunk gets an entry, and despawns it, deleting its record, when the last entry is gone. A game never adds this component or spawns the entity itself; it reads through [`ChunkState`](/docs/reference/world/chunk-state) and writes through [`ChunkStateService`](/docs/reference/world/chunk-state-service).
+
+The entries replicate as one NetworkVariable holding the whole map, sent again whenever it changes. The gateway keeps the latest copy for clients that arrive later. They are saved through [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate), so the entity's [`PersistentEntity`](/docs/reference/persistence/persistent-entity) record is the chunk's record in the store.
+
+## Fields
+
+### PrefabId [#prefabid]
+
+```csharp
+public const ushort PrefabId = NetworkPrefabs.ChunkStatePrefabId;
+```
+
+The built-in network prefab id of the chunk state entity. Reserved in [`NetworkPrefabs`](/docs/reference/core/network-prefabs); no game list uses it.
+
+### PrefabName [#prefabname]
+
+```csharp
+public const string PrefabName = "NebulaChunkState";
+```
+
+Name of the built-in prefab, and of the prefab saved in the entity's records.
+
+## Properties
+
+### ContainerId [#containerid]
+
+```csharp
+public string ContainerId { get; } = "";
+```
+
+The id of the container (chunk) whose state this entity carries. Empty before it spawns.
+
+### EntryCount [#entrycount]
+
+```csharp
+public int EntryCount { get; }
+```
+
+How many entries the entity holds, including ones whose expiry time has passed but that are not removed yet.
+
+### EncodedBytes [#encodedbytes]
+
+```csharp
+public int EncodedBytes { get; }
+```
+
+The encoded size of the entries, in bytes. At most [`ChunkState.MaxEncodedBytes`](/docs/reference/world/chunk-state#maxencodedbytes).
+
+### IsEmpty [#isempty]
+
+```csharp
+public bool IsEmpty { get; }
+```
+
+Whether the entity holds no entries.
+
+## Methods
+
+### WritePersistentState [#writepersistentstate]
+
+```csharp
+public override void WritePersistentState(NetworkWriter writer);
+```
+
+### ReadPersistentState [#readpersistentstate]
+
+```csharp
+public override void ReadPersistentState(NetworkReader reader);
+```
+
+### OnNetworkSpawn [#onnetworkspawn]
+
+```csharp
+public override void OnNetworkSpawn();
+```
+
+### OnNetworkDespawn [#onnetworkdespawn]
+
+```csharp
+public override void OnNetworkDespawn();
+```
+
+### OnGainedAuthority [#ongainedauthority]
+
+```csharp
+public override void OnGainedAuthority();
+```

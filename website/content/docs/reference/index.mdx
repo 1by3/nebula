@@ -90,11 +90,19 @@ Split a large world into cell scenes, stream them by role, and keep coordinates 
 | [ChunkContext](/docs/reference/world/chunk-context) | Struct. What a game is told about one chunk of a chunked world. |
 | [ChunkGridDefinition](/docs/reference/world/chunk-grid-definition) | Class. What one procedural chunk grid is: the cell arithmetic every role must agree on, plus the one chunk that is brought into being with the scope so a client always has somewhere to arrive. |
 | [ChunkKeys](/docs/reference/world/chunk-keys) | Static class. How a chunk coordinate becomes the ids a scope's containers are named by. |
+| [ChunkState](/docs/reference/world/chunk-state) | Static class. Sparse, persistent state for objects that a game places procedurally inside chunks (runtime containers). |
+| [ChunkStateEntity](/docs/reference/world/chunk-state-entity) | Class. The entity that carries one chunk's ChunkState entries. |
+| [ChunkStateOutcome](/docs/reference/world/chunk-state-outcome) | Enum. What became of a change made through ChunkStateService. |
+| [ChunkStateResult](/docs/reference/world/chunk-state-result) | Struct. The result of one change, passed to the callback of a ChunkStateService call. |
+| [ChunkStateService](/docs/reference/world/chunk-state-service) | Class. The write side of ChunkState on a worker, reached as NebulaWorker.ChunkStates. |
 | [IWorldAnchor](/docs/reference/world/i-world-anchor) | Interface. Something the streamer keeps cells loaded around. |
 | [NebulaChunkedWorld](/docs/reference/world/nebula-chunked-world) | Class. The whole server and client side of an unbounded chunked world, wired from configuration alone (NebulaConfig.ChunkedWorld plus a NebulaConfig.RuntimeWorld). |
 | [NebulaChunks](/docs/reference/world/nebula-chunks) | Static class. Reports the runtime chunks available on each role so your game can load their content. |
 | [NebulaWorld](/docs/reference/world/nebula-world) | Static class. Nebula's floating-origin world state. |
 | [NebulaWorldStreaming](/docs/reference/world/nebula-world-streaming) | Class. Decides, per role, which cells this process keeps loaded and where the floating origin sits: worker: the cells of every container it leases plus NebulaConfig.WorkerLoadRingCells rings around them so ghosts and boundary physics have the n... |
+| [ObjectState](/docs/reference/world/object-state) | Struct. The saved state of one procedurally placed object: a rock that has been mined, a plant that has been harvested. |
+| [ObjectStateChange](/docs/reference/world/object-state-change) | Struct. One change to one object's entry, raised through ChunkState.Changed. |
+| [ObjectStateChangeKind](/docs/reference/world/object-state-change-kind) | Enum. What happened to an object's entry in ObjectStateChange. |
 | [RuntimeGrid](/docs/reference/world/runtime-grid) | Class. Maps runtime containers to a planar or three-dimensional grid. |
 | [RuntimeGridAllocator](/docs/reference/world/runtime-grid-allocator) | Class. Opt-in worker-side allocator for a game built on RuntimeGrid: keeps a ring of cells requested around every player-owned authoritative entity (and any fixed anchor coordinates, e.g. |
 | [ScopeFrame](/docs/reference/world/scope-frame) | Class. One scope's floating origin: which cell of that scope's grid currently sits at Unity's (0,0,0), and the delta every frame position of that scope gets when it moves. |

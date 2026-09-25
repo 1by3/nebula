@@ -1,0 +1,197 @@
+---
+title: Save changes to procedural objects
+description: Record which generated objects players changed, such as mined rocks or harvested plants, and keep that state across chunk unloads, restarts, and timers.
+---
+
+Use **chunk state** to remember what players did to objects your game generates, such as a rock that was mined or a plant that was harvested, without making each object a networked entity. Nebula saves an entry only for objects that changed, keeps it with the object's chunk, sends it to clients near the chunk, and can revert it at a time you choose.
+
+This page builds on the [infinite runtime world](/docs/guides/infinite-runtime-world) tutorial. A **chunk** is a runtime [container](/docs/concepts/containers-and-handover), a box-shaped area of the world assigned to one **worker** (a headless Unity process that simulates that area). The assignment is a **lease**.
+
+## How it works
+
+Your game already generates each chunk's objects from its seed (`ChunkContext.Seed`) on every role. Chunk state adds a small map per chunk, from an object ID to an `ObjectState` entry:
+
+| Field | Meaning |
+| --- | --- |
+| `Value` | A `uint` your game defines, such as units left or a growth stage. |
+| `ExpiresAtUnixMs` | When the entry goes away, in UTC Unix milliseconds. `0` means never. |
+| `Payload` | Up to 64 extra bytes. Optional. |
+
+An object with no entry is **untouched**, and your game draws it the way its generator made it. An untouched chunk costs nothing: it has no saved record and nothing is spawned for it.
+
+The first entry in a chunk spawns one small server-driven entity in the chunk's container, from a prefab that Nebula provides. That entity carries the chunk's entries, so they are:
+
+- saved with the chunk and restored whenever a worker gains its lease again, including after the chunk is released, after a worker restart, and after its [scope](/docs/guides/scopes) is retired and restored;
+- sent to every client within `InterestRadius` of any point of the chunk (limited to `InterestMaxRadius` from the chunk's center, with a warning in the log if that cuts it short);
+- removed, with their record, when the chunk's last entry is cleared or expires.
+
+You do not add this prefab to `NebulaConfig.NetworkPrefabs`. Nebula reserves prefab IDs from `NetworkPrefabs.BuiltInBase` (`0xFF00`) for its own prefabs.
+
+## Give every generated object a stable ID
+
+An object ID must name the same object in every process and every run. The simplest choice is the object's index in your generator's output for the chunk. Changing your generator so that index `3` becomes a different object also moves the saved state to that object.
+
+The ID is scoped to its chunk, so two chunks can both have an object `3`.
+
+## Draw objects from their state
+
+Read an entry with `ChunkState.TryGet`, and listen to `ChunkState.Changed` to update an object when its entry changes. Both work on clients and workers.
+
+```csharp title="OreNodes.cs"
+using System.Collections.Generic;
+using Nebula.World;
+using UnityEngine;
+
+public sealed class OreNodes : ChunkContent
+{
+    public const int NodesPerChunk = 12;
+    public const uint UnitsPerNode = 5;
+
+    [SerializeField] private GameObject nodeModel;
+    private readonly Dictionary<(string chunk, ulong node), GameObject> nodes = new();
+
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+        ChunkState.Changed += OnNodeChanged;
+    }
+
+    protected override void OnDisable()
+    {
+        base.OnDisable();
+        ChunkState.Changed -= OnNodeChanged;
+    }
+
+    protected override void OnChunkLoaded(in ChunkContext chunk)
+    {
+        var random = new System.Random(chunk.Seed);
+        for (ulong id = 0; id < NodesPerChunk; id++)
+        {
+            var node = Instantiate(nodeModel, chunk.Root);
+            node.transform.localPosition = new Vector3(random.Next(-30, 30), 0f, random.Next(-30, 30));
+            nodes[(chunk.Container.ContainerId, id)] = node;
+            Show(node, ChunkState.TryGet(chunk.Container, id, out var state) ? state.Value : UnitsPerNode);
+        }
+    }
+
+    protected override void OnChunkUnloading(in ChunkContext chunk)
+    {
+        for (ulong id = 0; id < NodesPerChunk; id++) nodes.Remove((chunk.Container.ContainerId, id));
+    }
+
+    private void OnNodeChanged(in ObjectStateChange change)
+    {
+        // Forgotten: this process stopped receiving the chunk's state. Keep what is drawn.
+        if (change.Kind == ObjectStateChangeKind.Forgotten) return;
+        if (!nodes.TryGetValue((change.ContainerId, change.ObjectId), out var node)) return;
+        Show(node, change.HasState ? change.State.Value : UnitsPerNode);
+    }
+
+    private static void Show(GameObject node, uint unitsLeft) => node.SetActive(unitsLeft > 0);
+}
+```
+
+A chunk's state can arrive after the chunk itself, so draw every object as untouched in `OnChunkLoaded` and let `Changed` correct it. When the state arrives, `Changed` reports each entry with the `Set` kind.
+
+`Changed` reports four kinds of change:
+
+| Kind | What happened |
+| --- | --- |
+| `Set` | The object has a new or changed entry, or the chunk's state just arrived in this process. |
+| `Cleared` | A write removed the entry. The object is untouched again. |
+| `Expired` | The entry's expiry time passed. The object is untouched again. |
+| `Forgotten` | This process no longer holds the chunk's state, because the chunk left the client's interest or was unloaded here. The entry itself did not change. |
+
+## Change an object from a worker
+
+Change entries on a worker through `NebulaWorker.ChunkStates`. The worker that holds the chunk's lease applies every change to that chunk, one at a time. A worker that does not hold the lease sends the change there and gets the result back in its callback, so the worker simulating the player can mine a node in a chunk next door.
+
+Use `CompareAndSet` to take something that other players might take at the same time. It applies the change only if the entry is still what you expect. `null` means "still untouched" as the expected value, and "clear the entry" as the replacement. On a conflict, the result holds the entry that the lease holder found, so you can decide again:
+
+```csharp title="Mining.cs"
+using System;
+using Nebula;
+using Nebula.World;
+
+public static class Mining
+{
+    private const long RegrowMs = 10 * 60 * 1000; // a node grows back 10 minutes after the last hit
+
+    public static void TryMine(NebulaWorker worker, Container chunk, ulong nodeId, Action<bool> done)
+    {
+        ObjectState? seen = ChunkState.TryGet(chunk, nodeId, out var state) ? state : null;
+        Attempt(worker, chunk, nodeId, seen, 3, done);
+    }
+
+    private static void Attempt(NebulaWorker worker, Container chunk, ulong nodeId, ObjectState? seen, int triesLeft, Action<bool> done)
+    {
+        uint left = seen is ObjectState s ? s.Value : OreNodes.UnitsPerNode;
+        if (left == 0 || triesLeft == 0) { done(false); return; }
+
+        var next = new ObjectState(left - 1, ChunkState.NowUnixMs + RegrowMs);
+        worker.ChunkStates.CompareAndSet(chunk, nodeId, seen, next, result =>
+        {
+            if (result.Succeeded) done(true);
+            else if (result.Outcome == ChunkStateOutcome.Conflict)
+                Attempt(worker, chunk, nodeId, result.HasState ? result.State : null, triesLeft - 1, done);
+            else done(false);
+        });
+    }
+}
+```
+
+Call it from worker code, such as a `ServerRpc` on the player's pawn, with `NebulaBootstrap.Instance.Worker`. Give the unit to the player only when `done(true)` runs. Two players who mine the last unit at the same moment cannot both succeed.
+
+The callback runs exactly once, on the worker's main thread, with one of these outcomes:
+
+| `ChunkStateOutcome` | Meaning |
+| --- | --- |
+| `Applied` | The change was applied. `State` is the entry now. |
+| `Conflict` | A compare-and-set found a different entry. `State` is that entry. Nothing changed. |
+| `Unavailable` | No worker holds the chunk's lease, or the lease holder could not apply the change before the deadline. Nothing changed. |
+| `TimedOut` | No answer arrived in time. The change may or may not have been applied. |
+| `Rejected` | The payload is too long, the chunk is full, or the container cannot hold chunk state. Nothing changed. |
+
+After `TimedOut`, read the entry again before you retry. A compare-and-set is safe to repeat; an unconditional `Set` is not.
+
+`Set` and `Clear` change an entry whatever it was. When the calling worker holds the lease and the chunk is ready, every call is applied before it returns. `TryCompareAndSetLocal` and `TrySetLocal` apply a change only in that case, and return `false` without sending anything otherwise.
+
+A worker that has just gained a chunk's lease holds changes to it until it has restored the chunk's saved state, so a change never runs against an empty chunk and never creates a second copy of the chunk's state. The change waits up to its timeout, 5 seconds by default.
+
+## Revert an entry after a time
+
+Set `ExpiresAtUnixMs` to make an entry go away at a given time. Compute it from `ChunkState.NowUnixMs`:
+
+```csharp
+var depleted = new ObjectState(0, ChunkState.NowUnixMs + 30 * 60 * 1000); // untouched again in 30 minutes
+```
+
+Nothing runs for a chunk while it is unloaded. An entry is compared with the current time when it is read, when its chunk loads, and once per frame on a process that holds a timed entry. An entry whose time passed while its chunk was unloaded is simply gone when the chunk comes back.
+
+The time is an absolute UTC time, so it keeps its meaning across restarts. Workers use their system clock. Clients correct their own clock by how far it is from the server's simulation tick, so an entry expires on a client when it expires on the server, late by the client's latency.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Payload per entry | `ChunkState.MaxPayloadBytes`, 64 bytes |
+| Encoded entries per chunk | `ChunkState.MaxEncodedBytes`, 48 KB |
+
+An entry takes 13 bytes, plus 8 if it expires, plus 1 and the payload length if it has a payload. A chunk holds about 3,700 entries without expiry or payload. A change that would go over a limit returns `Rejected` and changes nothing.
+
+Every change sends the chunk's whole map to the clients and workers that hold it. Keep entries for the objects that differ from their generated state, and let expiry and `Clear` remove the rest.
+
+## Current limitations
+
+- **A chunk must be leased to change it.** A change to a chunk that no worker holds returns `Unavailable`. Load the chunk first with `NebulaChunks.EnsureAt`, or edit the record offline through the [store](/docs/guides/persistence#offline-reads).
+- **Reads away from the lease holder can be old or missing.** A client or worker sees the state it last received, and a worker that holds no copy of the chunk's entity reads every object as untouched. Use `CompareAndSet` for decisions, and reads for display.
+- **Chunk state needs persistence to survive.** Without a store, entries still replicate and route, but they are lost when the chunk is released.
+- **Carried containers are not supported.** The interior of a ship or another [dynamic container](/docs/guides/dynamic-containers) cannot hold chunk state.
+- **The saved state is tied to its chunk's container ID.** A change to your grid's cell size or packing gives chunks new IDs, and their old entries are no longer found.
+
+<Cards>
+  <Card title="Infinite runtime world" href="/docs/guides/infinite-runtime-world" description="Generate chunk content on every role from the chunk's seed." />
+  <Card title="Persistence" href="/docs/guides/persistence" description="How records are checkpointed, stored, and restored." />
+  <Card title="Scopes" href="/docs/guides/scopes" description="Separate worlds with their own chunk grids, retired when idle." />
+  <Card title="ChunkState reference" href="/docs/reference/world/chunk-state" description="Every member of the read API." />
+</Cards>

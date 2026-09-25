@@ -1,0 +1,115 @@
+---
+title: "ObjectState"
+description: "The saved state of one procedurally placed object: a rock that has been mined, a plant that has been harvested."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkState.cs)</div>
+
+```csharp
+public readonly struct ObjectState : IEquatable<ObjectState>
+```
+
+The saved state of one procedurally placed object: a rock that has been mined, a plant that has been harvested. An object with no entry is *untouched*, and the game draws it from its seed as it always would. Only objects that differ from that default have an entry (see [`ChunkState`](/docs/reference/world/chunk-state)).
+
+[`Value`](#value) means whatever the game wants it to mean, such as units left or a growth stage. [`ExpiresAtUnixMs`](#expiresatunixms) is an absolute UTC time in Unix milliseconds. When that time passes, the entry is removed and the object is untouched again ("depleted until T"). Nothing runs while the object's chunk is unloaded: the time is compared when the chunk's state is next read or loaded.
+
+## Constructors
+
+### ObjectState [#objectstate]
+
+```csharp
+public ObjectState(uint value, long expiresAtUnixMs = 0, byte[] payload = null);
+```
+
+An entry with a value, an optional expiry and an optional payload of at most [`ChunkState.MaxPayloadBytes`](/docs/reference/world/chunk-state#maxpayloadbytes) bytes. The payload is copied, so the caller can reuse its array.
+
+## Fields
+
+### Value [#value]
+
+```csharp
+public readonly uint Value;
+```
+
+The game's value for the object.
+
+### ExpiresAtUnixMs [#expiresatunixms]
+
+```csharp
+public readonly long ExpiresAtUnixMs;
+```
+
+When the entry reverts to untouched, in UTC Unix milliseconds. 0 means it never expires. Use [`ChunkState.NowUnixMs`](/docs/reference/world/chunk-state#nowunixms) to compute it, for example `ChunkState.NowUnixMs + 600_000` for ten minutes from now.
+
+## Properties
+
+### Payload [#payload]
+
+```csharp
+public byte[] Payload { get; }
+```
+
+Extra bytes the game stores with the entry, or an empty array. Treat it as read-only: changing it does not change the stored entry, and it can be shared with the copy that replicated it.
+
+### PayloadLength [#payloadlength]
+
+```csharp
+public int PayloadLength { get; }
+```
+
+Length of [`Payload`](#payload) in bytes.
+
+### Expires [#expires]
+
+```csharp
+public bool Expires { get; }
+```
+
+Whether the entry has an expiry time.
+
+## Methods
+
+### IsLiveAt [#isliveat]
+
+```csharp
+public bool IsLiveAt(long nowUnixMs);
+```
+
+Whether the entry still applies at `nowUnixMs`: it never expires, or its expiry time has not passed yet.
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(ObjectState other);
+public override bool Equals(object obj);
+```
+
+Compares the value, the expiry time and the payload bytes.
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public override int GetHashCode();
+```
+
+### operator == [#operator]
+
+```csharp
+public static bool operator ==(ObjectState a, ObjectState b);
+```
+
+Two entries are equal when their value, expiry time and payload bytes are equal.
+
+### operator != [#operator]
+
+```csharp
+public static bool operator !=(ObjectState a, ObjectState b);
+```
+
+Two entries differ when their value, expiry time or payload bytes differ.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

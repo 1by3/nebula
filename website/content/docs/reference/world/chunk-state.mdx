@@ -1,0 +1,113 @@
+---
+title: "ChunkState"
+description: "Sparse, persistent state for objects that a game places procedurally inside chunks (runtime containers)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.World` · [Packages/com.1by3.nebula/Runtime/World/ChunkState.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/World/ChunkState.cs)</div>
+
+```csharp
+public static class ChunkState
+```
+
+Sparse, persistent state for objects that a game places procedurally inside chunks (runtime containers). A game generates its resource nodes, plants and props from the chunk's seed on every role. Only the objects that a player changed have an entry, keyed by an object id the game chooses. The id must be stable: the same object gets the same id in every process and every run, for example its index in the chunk's generation order. The entries are grouped per chunk, replicated to clients near the chunk, saved with the chunk, and brought back when the chunk is leased again, including after a scope is retired and restored.
+
+This class is the read side, and it works the same on clients and workers. A worker changes entries through [`NebulaWorker.ChunkStates`](/docs/reference/worker/nebula-worker#chunkstates) ([`ChunkStateService`](/docs/reference/world/chunk-state-service)), which routes each change to the worker that holds the chunk's lease.
+
+An untouched chunk costs nothing: it has no record in the store and nothing is spawned for it. The first entry in a chunk spawns one small server-driven entity in the chunk's container, and that entity carries the entries. When the chunk's last entry is cleared or expires, the entity is despawned and its record is deleted. Reads compare expiry times with [`NowUnixMs`](#nowunixms), so an expired entry reads as untouched even before it is removed. See the procedural state guide for the full design.
+
+## Fields
+
+### MaxPayloadBytes [#maxpayloadbytes]
+
+```csharp
+public const int MaxPayloadBytes = 64;
+```
+
+Most bytes an entry's [`ObjectState.Payload`](/docs/reference/world/object-state#payload) can hold.
+
+### MaxEncodedBytes [#maxencodedbytes]
+
+```csharp
+public const int MaxEncodedBytes = 48 * 1024;
+```
+
+Most bytes one chunk's entries can take when encoded. An entry takes 13 bytes, plus 8 when it expires and 1 plus its length when it has a payload, so a chunk holds about 3,700 plain entries. A change that would go over the limit is refused with [`ChunkStateOutcome.Rejected`](/docs/reference/world/chunk-state-outcome#rejected). The limit keeps the chunk's state under the 64 KB that one replicated or persisted blob can carry.
+
+### KeyPrefix [#keyprefix]
+
+```csharp
+public const string KeyPrefix = "chunkstate:";
+```
+
+Prefix of the [`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key) a chunk's state is saved under: `chunkstate:<containerId>`.
+
+## Properties
+
+### NowUnixMs [#nowunixms]
+
+```csharp
+public static long NowUnixMs { get; }
+```
+
+The current time in UTC Unix milliseconds, as this process compares expiry times. A worker uses its system clock (workers already share a clock for the simulation tick). A client uses its own clock, corrected by how far the server's tick is from the tick the client's clock would give, so a client with a wrong clock still sees entries expire when the server does, to within its latency.
+
+## Events
+
+### Changed [#changed]
+
+```csharp
+public static event ObjectStateChangedHandler Changed;
+```
+
+Raised on every role when an object's entry changes in this process: set or cleared by a write (on the worker that made it, and on every copy when the change replicates), expired, arrived with a chunk's state, or forgotten. Use it to update the object's visuals or colliders.
+
+## Methods
+
+### KeyOf [#keyof]
+
+```csharp
+public static string KeyOf(string containerId);
+```
+
+The store key a chunk's state is saved under.
+
+### TryGet [#tryget]
+
+```csharp
+public static bool TryGet(Container chunk, ulong objectId, out ObjectState state);
+public static bool TryGet(string containerId, ulong objectId, out ObjectState state);
+```
+
+The entry of `objectId` in `chunk`. False when the object is untouched, its entry has expired, or this process does not hold the chunk's state (it is not near the chunk).
+
+### Holds [#holds]
+
+```csharp
+public static bool Holds(string containerId);
+```
+
+Whether this process holds the state of the chunk right now. A chunk with no entries has no state to hold, so false means "untouched, or not replicated here".
+
+### CountIn [#countin]
+
+```csharp
+public static int CountIn(string containerId);
+```
+
+How many objects in the chunk have an entry that has not expired, as far as this process knows.
+
+### GetAll [#getall]
+
+```csharp
+public static void GetAll(string containerId, List<KeyValuePair<ulong, ObjectState>> into);
+```
+
+Add every entry of the chunk that has not expired to `into` (cleared first), in object id order. Use it to apply a chunk's state in one pass, for example after the chunk is built.
+
+### RelevanceRadiusFor [#relevanceradiusfor]
+
+```csharp
+public static float RelevanceRadiusFor(Container chunk);
+```
+
+The clients a chunk's state reaches. The entity is at the chunk's centre, so its relevance radius is the interest radius plus the chunk's half diagonal (horizontal only when interest is planar): every client within the interest radius of any point of the chunk receives the chunk's state. The result is clamped to [`InterestSettings.MaxRadius`](/docs/reference/interest/interest-settings#maxradius).

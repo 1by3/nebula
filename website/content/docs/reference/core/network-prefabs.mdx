@@ -9,7 +9,25 @@ description: "Prefab id table shared by every process."
 public static class NetworkPrefabs
 ```
 
-Prefab id table shared by every process. Ids are the index in [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs).
+Prefab id table shared by every process. Ids are the index in [`NebulaConfig.NetworkPrefabs`](/docs/reference/core/nebula-config#networkprefabs). Ids from [`BuiltInBase`](#builtinbase) up are reserved for prefabs Nebula itself provides (such as the entity behind `Nebula.World.ChunkState`): every process builds them the same way, so a game never lists them and they never shift when the game's list changes.
+
+## Fields
+
+### BuiltInBase [#builtinbase]
+
+```csharp
+public const ushort BuiltInBase = 0xFF00;
+```
+
+First id reserved for Nebula's built-in prefabs. A game's list is never this long.
+
+### ChunkStatePrefabId [#chunkstateprefabid]
+
+```csharp
+public const ushort ChunkStatePrefabId = BuiltInBase;
+```
+
+The built-in prefab of `Nebula.World.ChunkStateEntity`.
 
 ## Properties
 
@@ -20,6 +38,14 @@ public static int Count { get; }
 ```
 
 ## Methods
+
+### IsBuiltIn [#isbuiltin]
+
+```csharp
+public static bool IsBuiltIn(ushort prefabId);
+```
+
+Whether `prefabId` is one of Nebula's built-in prefabs rather than an entry of the game's list.
 
 ### Register [#register]
 
@@ -32,6 +58,8 @@ public static void Register(IList<GameObject> prefabs);
 ```csharp
 public static GameObject Get(ushort prefabId);
 ```
+
+The prefab registered under `prefabId`, a built-in one included; null when there is none.
 
 ### TryGetId [#trygetid]
 
