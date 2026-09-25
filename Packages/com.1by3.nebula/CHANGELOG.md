@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0-beta.0] - 2026-09-24
+
 Wire protocol 20. The change is additive for clients: a gateway admits clients of protocol 19 and 20 (`MinProtocolVersion` stays 19). Gateways and workers of a mesh must still run the same build.
 
 ### Added

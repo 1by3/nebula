@@ -157,7 +157,7 @@ Each evaluation calls `IsInSyncAudience` once for each pawn the worker holds. Ke
 
 ## When a client joins or leaves an audience
 
-When a client joins an audience, for example because it opened the crate, the gateway sends it the newest keyframe it holds for the behavior at once. The authoritative worker also writes a fresh keyframe in the same tick. The client receives it through `ReadSyncState` with `full` set to `true`.
+When a client joins an audience, for example because it opened the crate, the gateway sends it the newest keyframe (a full copy of the behavior's sync state) it holds for the behavior at once. The authoritative worker also writes a fresh keyframe in the same tick. The client receives it through `ReadSyncState` with `full` set to `true`.
 
 When a client leaves an audience, it receives no more of the behavior's state, and Nebula calls `OnSyncStateCleared` on that behavior on the client. Clear the state and any UI that shows it there. `OnSyncStateCleared` is not called when the entity itself leaves the client; use `OnNetworkDespawn` for that.
 

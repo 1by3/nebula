@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    href: '/blog/2026-09-24-beta',
+    title: 'Nebula 0.1.0-beta.0',
+    description:
+      'The first beta lets you play without a build, keep a behavior’s sync state private, and save changes to procedurally placed objects.',
+    date: 'September 24, 2026',
+    dateTime: '2026-09-24',
+  },
+  {
     href: '/blog/2026-09-24-progress-update',
     title: 'Nebula progress update: September 24, 2026',
     description:
