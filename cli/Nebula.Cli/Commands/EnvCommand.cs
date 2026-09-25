@@ -292,8 +292,17 @@ and are refused. A value can be up to 32 KiB.
         public CloudApi.EnvVar Set(string key, string value, bool secret) => _api.SetEnvVar(_project.Id, key, value, secret, _deployments);
         public void Remove(string key)
         {
-            if (_deployments.Count == 0) { _api.DeleteEnvVar(_project.Id, key, null); return; }
-            foreach (var d in _deployments) _api.DeleteEnvVar(_project.Id, key, d);
+            // A delete that matches nothing answers 404: the variable is not set there.
+            var scopes = _deployments.Count == 0 ? new List<string?> { null } : _deployments.Select(d => (string?)d).ToList();
+            var missing = new List<string>();
+            foreach (var d in scopes)
+            {
+                try { _api.DeleteEnvVar(_project.Id, key, d); }
+                catch (CloudApiError e) when (e.Status == 404) { missing.Add(d ?? "every deployment"); }
+            }
+            if (missing.Count == scopes.Count)
+                throw new CliError($"{key} is not set for {string.Join(", ", missing)} of {Describe}", "nebula env ls");
+            foreach (var m in missing) Ui.Warn($"{key} was not set for {m}");
         }
         public List<CloudApi.EnvVar> Push(List<CloudApi.EnvVarInput> vars) => _api.PushEnvVars(_project.Id, vars, _deployments);
     }

@@ -207,12 +207,14 @@ the launchers drop them with a warning. Nebula never logs a value.
 
 ```
 GET    /env?deployment=<name>          {"vars":[{"key","secret","value"(null if secret),"deployments":[],"updatedAt","updatedBy"}]}
-PUT    /env/{key}                      {"value","secret","deployments":[]}  -> the var; 400 {"error":"reserved_key"|"invalid_key"}
-DELETE /env/{key}?deployment=<name>    204; without the parameter the whole variable goes
+PUT    /env/{key}                      {"value","secret","deployments":[]}  -> the var
+DELETE /env/{key}?deployment=<name>    204; 404 when nothing matches; without the parameter the whole variable goes
 PUT    /env                            {"vars":[{"key","value","secret"}],"deployments":[]}  -> {"vars":[...]}
 ```
 
-An empty `deployments` list means every deployment of the project. `set KEY` without a value reads it from standard
+Errors use the usual envelope, `{"error":{"code","message","details"}}`; the codes are `reserved_key`, `invalid_key`,
+`value_too_large` and `invalid_value` (400), and 409 when a project already has 500 variables. An empty
+`deployments` list means every deployment of the project; deployment names that do not exist yet are allowed. `set KEY` without a value reads it from standard
 input (or a hidden prompt), so `nebula env set GAME_API_KEY --secret < key.txt` keeps a secret out of shell history.
 `pull` never downloads a secret. On a Hetzner target `--secret` and `--deployment` are refused.
 

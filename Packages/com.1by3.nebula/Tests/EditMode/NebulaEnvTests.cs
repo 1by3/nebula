@@ -108,6 +108,28 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void Parse_reads_the_env_file_nebula_cloud_writes()
+        {
+            // The cloud's NEBULA_ENV_FILE format: KEY="value" per line. Only \ and \" are escapes, line breaks are
+            // literal and $ is not expanded. A backslash in a value is always written doubled.
+            string file = string.Join("\n",
+                @"API_KEY=""k3y $NOT_EXPANDED""",
+                @"PEM=""-----BEGIN-----",
+                @"abc",
+                @"-----END-----""",
+                @"PATH_LIKE=""C:\\tools\\new \""quoted\""""",
+                @"LITERAL_BACKSLASH_N=""a\\nb""",
+                "");
+            var r = DotEnv.Parse(file);
+            Assert.That(r.Errors, Is.Empty);
+            var d = r.ToDictionary();
+            Assert.That(d["API_KEY"], Is.EqualTo("k3y $NOT_EXPANDED"));
+            Assert.That(d["PEM"], Is.EqualTo("-----BEGIN-----\nabc\n-----END-----"));
+            Assert.That(d["PATH_LIKE"], Is.EqualTo(@"C:\tools\new ""quoted"""));
+            Assert.That(d["LITERAL_BACKSLASH_N"], Is.EqualTo(@"a\nb"));
+        }
+
+        [Test]
         public void Parse_last_duplicate_wins_and_a_bom_is_ignored()
         {
             var d = DotEnv.Parse("\uFEFFKEY=1\nKEY=2\n").ToDictionary();

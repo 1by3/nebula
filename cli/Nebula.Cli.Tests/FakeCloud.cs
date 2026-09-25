@@ -373,7 +373,8 @@ internal sealed class FakeCloud : IDisposable
     {
         if (!EnvKey.IsMatch(key)) return "invalid_key";
         if (key.Equals("PORT", StringComparison.OrdinalIgnoreCase) || key.StartsWith("NEBULA_", StringComparison.OrdinalIgnoreCase)) return "reserved_key";
-        if (value != null && Encoding.UTF8.GetByteCount(value) > 32 * 1024) return "value_too_long";
+        if (value != null && Encoding.UTF8.GetByteCount(value) > 32 * 1024) return "value_too_large";
+        if (value != null && value.Contains(' ')) return "invalid_value";
         return null;
     }
 
@@ -392,14 +393,14 @@ internal sealed class FakeCloud : IDisposable
             var deployments = body!["deployments"]!.AsArray().Select(d => d!.ToString()).ToList();
             var inputs = body["vars"]!.AsArray().Select(v => (Key: v!["key"]!.ToString(), Value: v["value"]!.ToString(), Secret: (bool)v["secret"]!)).ToList();
             foreach (var i in inputs)
-                if (EnvRefusal(i.Key, i.Value) is { } bad) { Reply(ctx, 400, J(new { error = bad })); return; }
+                if (EnvRefusal(i.Key, i.Value) is { } bad) { Reply(ctx, 400, Error(bad, $"{bad.Replace('_', ' ')}", new { field = "key" })); return; }
             foreach (var i in inputs) Env[project + "/" + i.Key] = (i.Value, i.Secret, deployments.ToList());
             Reply(ctx, 200, J(new { vars = inputs.Select(i => EnvView(i.Key, Env[project + "/" + i.Key])).ToList() })); return;
         }
         if (key != null && m == "PUT")
         {
             string value = body!["value"]!.ToString();
-            if (EnvRefusal(key, value) is { } bad) { Reply(ctx, 400, J(new { error = bad })); return; }
+            if (EnvRefusal(key, value) is { } bad) { Reply(ctx, 400, Error(bad, $"{bad.Replace('_', ' ')}", new { field = "key" })); return; }
             var v = (value, (bool)body["secret"]!, body["deployments"]!.AsArray().Select(d => d!.ToString()).ToList());
             Env[project + "/" + key] = v;
             Reply(ctx, 200, EnvView(key, v)); return;

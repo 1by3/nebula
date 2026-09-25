@@ -123,13 +123,22 @@ public class EnvCommandTests
     }
 
     [Test]
-    public void The_api_error_code_alone_is_understood()
+    public void Api_refusals_carry_their_error_code()
     {
         var api = CloudApi.Require(new Context());
         var e = Assert.Throws<CloudApiError>(() => api.SetEnvVar("prj_1", "NEBULA_X", "v", false, new List<string>()))!;
         Assert.That(e.Status, Is.EqualTo(400));
         Assert.That(e.Code, Is.EqualTo("reserved_key"));
         Assert.That(e.Message, Does.Contain("reserved key"));
+    }
+
+    [Test]
+    public void A_delete_that_matches_nothing_is_a_404()
+    {
+        var api = CloudApi.Require(new Context());
+        var e = Assert.Throws<CloudApiError>(() => api.DeleteEnvVar("prj_1", "MISSING", null))!;
+        Assert.That(e.Status, Is.EqualTo(404));
+        Assert.That(e.Code, Is.EqualTo("not_found"));
     }
 
     // --- cloud: ls / rm ----------------------------------------------------------------------------------------
@@ -169,7 +178,14 @@ public class EnvCommandTests
 
         var missing = Env("rm", "NOPE");
         Assert.That(missing.Code, Is.EqualTo(1));
-        Assert.That(missing.Err, Does.Contain("NOPE is not set"));
+        Assert.That(missing.Err, Does.Contain("NOPE is not set for every deployment of acme/my-game"));
+        Assert.That(missing.Err, Does.Not.Contain("HTTP 404"));
+
+        // Removing from two deployments where it is set in one only removes that one and warns about the other.
+        var partial = Env("rm", "B", "--deployment", "production,qa");
+        Assert.That(partial.Code, Is.EqualTo(0), partial.All);
+        Assert.That(partial.Out, Does.Contain("B was not set for qa"));
+        Assert.That(_cloud.Env.ContainsKey("prj_1/B"), Is.False);
     }
 
     [Test]
