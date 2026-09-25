@@ -60,11 +60,19 @@ namespace Nebula
             : NebulaRoles.None;
         /// <summary>Why the plan is <see cref="EditorPlayer.Mesh"/> when the mode asked for more; null otherwise.</summary>
         public string Warning { get; }
+        /// <summary>
+        /// Whether this Editor closes its Game view while it plays: true only for the server when a virtual player
+        /// hosts it, never for the main Editor or a client. The Game view builds the render pipeline each time it
+        /// draws, whatever the cameras do, and a virtual player that cannot build the pipeline logs errors every frame.
+        /// The Editor puts a <c>Nebula Server</c> tab in the Game view's place.
+        /// </summary>
+        public bool HidesGameView { get; }
 
-        private EditorRunPlan(EditorPlayer player, string warning)
+        private EditorRunPlan(EditorPlayer player, string warning, bool hidesGameView = false)
         {
             Player = player;
             Warning = warning;
+            HidesGameView = hidesGameView;
         }
 
         /// <param name="mode">The configured <see cref="NebulaConfig.EditorRunMode"/>.</param>
@@ -78,9 +86,9 @@ namespace Nebula
             if (mode != NebulaEditorRunMode.MultiplayerPlayMode || !isEditor || explicitRole) return new EditorRunPlan(EditorPlayer.Mesh, null);
             if (!playModeAvailable)
                 return new EditorRunPlan(EditorPlayer.Mesh, "EditorRunMode is MultiplayerPlayMode, but Multiplayer Play Mode is not available in this Editor (it needs Unity 6 with the com.unity.multiplayer.playmode package); running as EditorRunMode Mesh");
-            if (HasTag(tags, ServerTag)) return new EditorRunPlan(EditorPlayer.Server, null);
+            if (HasTag(tags, ServerTag)) return new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: !isMainEditor);
             if (HasTag(tags, ClientTag)) return new EditorRunPlan(EditorPlayer.Client, null);
-            return new EditorRunPlan(isMainEditor ? EditorPlayer.Client : EditorPlayer.Server, null);
+            return isMainEditor ? new EditorRunPlan(EditorPlayer.Client, null) : new EditorRunPlan(EditorPlayer.Server, null, hidesGameView: true);
         }
 
         private static bool HasTag(IReadOnlyList<string> tags, string tag)
@@ -242,6 +250,10 @@ namespace Nebula
     /// <summary>
     /// Keeps a server that a virtual player hosts from rendering. It has nothing to show, and a virtual player of
     /// some Editor versions cannot compile the render pipeline's shaders, which fills its log and costs frames.
+    /// Turning cameras off is not enough on its own: the Game view builds the render pipeline each time it draws,
+    /// with or without cameras, so the Editor also closes the server's Game view (<see cref="EditorRunPlan.HidesGameView"/>,
+    /// done by <c>Nebula.Editor.ServerPlayerView</c>). The pipeline assets are left alone on purpose: a virtual
+    /// player shares the main Editor's ProjectSettings folder, and changing them there would be saved into it.
     /// </summary>
     internal static class HeadlessEditorPlayer
     {

@@ -57,6 +57,22 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void OnlyAServerInAVirtualPlayerHidesItsGameView()
+        {
+            // NEB-326: the Game view builds the render pipeline on every draw, cameras or not, and a virtual player
+            // cannot build URP on Unity 6000.6. Only that process closes its Game view.
+            Assert.IsTrue(Plan(isMainEditor: false).HidesGameView, "an untagged virtual player hosts the server");
+            Assert.IsTrue(Plan(false, "Server").HidesGameView);
+            Assert.IsFalse(Plan(isMainEditor: true).HidesGameView, "the main Editor is the client");
+            Assert.IsFalse(Plan(true, "Server").HidesGameView, "a main Editor tagged Server can build its pipeline and keeps its Game view");
+            Assert.IsFalse(Plan(false, "Client").HidesGameView, "a second player must render");
+            Assert.IsFalse(EditorRunPlan.Resolve(NebulaEditorRunMode.Mesh, true, true, false, NoTags, false).HidesGameView);
+            Assert.IsFalse(EditorRunPlan.Resolve(Mppm, true, true, false, NoTags, explicitRole: true).HidesGameView);
+            Assert.IsFalse(EditorRunPlan.Resolve(Mppm, true, playModeAvailable: false, false, NoTags, false).HidesGameView);
+            Assert.IsFalse(EditorRunPlan.Resolve(Mppm, isEditor: false, true, false, NoTags, false).HidesGameView);
+        }
+
+        [Test]
         public void TheServerRunsTheWholeMeshInOneProcess()
         {
             var config = ScriptableObject.CreateInstance<NebulaConfig>();
