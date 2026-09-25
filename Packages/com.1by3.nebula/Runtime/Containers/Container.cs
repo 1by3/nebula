@@ -558,6 +558,48 @@ namespace Nebula
             return neighbor.SignedDistance(worldPosition);
         }
 
+        /// <summary>
+        /// How far the box's surface is from the shape spanned by <paramref name="count"/> points of
+        /// <paramref name="corners"/> (an entity's extent, <c>docs/entity-extents.md</c> D4): positive when they are
+        /// apart, the Euclidean gap; zero or negative when they touch or overlap. The points are taken into this box's
+        /// local frame and bounded there by an axis-aligned box, so the answer is exact for a shape aligned with this
+        /// box and errs towards "nearer" for a rotated one, never towards "farther". For a single point it is
+        /// <see cref="SignedDistance"/> wherever that is positive.
+        /// </summary>
+        internal float DistanceToCorners(Vector3[] corners, int count)
+        {
+            EnsureCached();
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+            for (int i = 0; i < count; i++)
+            {
+                var p = _worldToLocal.MultiplyPoint3x4(corners[i]) - Center;
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+            var h = Size * 0.5f;
+            // Per axis, the gap between [min, max] and [-h, h]: positive when apart, negative when they overlap.
+            float gx = Mathf.Max(min.x - h.x, -h.x - max.x);
+            float gy = Mathf.Max(min.y - h.y, -h.y - max.y);
+            float gz = Mathf.Max(min.z - h.z, -h.z - max.z);
+            if (gx > 0f || gy > 0f || gz > 0f)
+                return new Vector3(Mathf.Max(gx, 0f), Mathf.Max(gy, 0f), Mathf.Max(gz, 0f)).magnitude;
+            return Mathf.Max(gx, Mathf.Max(gy, gz));
+        }
+
+        /// <summary>
+        /// The largest <see cref="SignedDistance"/> among <paramref name="count"/> points of <paramref name="corners"/>:
+        /// for the corners of a box, how far that box reaches out of this one (positive) or how deep inside it stays
+        /// (negative). A box reaches farthest out, and stays least deep, at one of its corners, so the corners are
+        /// enough.
+        /// </summary>
+        internal float MaxSignedDistance(Vector3[] corners, int count)
+        {
+            float d = float.MinValue;
+            for (int i = 0; i < count; i++) d = Mathf.Max(d, SignedDistance(corners[i]));
+            return d;
+        }
+
         /// <summary><paramref name="other"/>'s box lies entirely inside this one (nested containers). A dynamic container is enclosed by the container its carrier is in whatever the boxes say.</summary>
         public bool Encloses(Container other)
         {

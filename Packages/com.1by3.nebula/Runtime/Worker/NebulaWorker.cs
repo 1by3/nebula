@@ -189,6 +189,9 @@ namespace Nebula
         private readonly Stack<List<NetworkIdentity>> _ghostListPool = new Stack<List<NetworkIdentity>>();
         /// <summary>Workers to re-ghost to, reused by <see cref="ResumeInheritedGhosts"/> so a handover allocates no list.</summary>
         private readonly List<ulong> _resumeCompleted = new List<ulong>();
+        /// <summary>An extent's corners in its container's space, and the containers it may reach (docs/entity-extents.md D4); reused every tick.</summary>
+        private readonly Vector3[] _extentCorners = new Vector3[8];
+        private readonly List<Container> _extentCandidates = new List<Container>();
 
         private readonly NetworkWriter _writer = new NetworkWriter(4096);
         /// <summary>The ghost band's sequenced batch, separate from <see cref="_writer"/> so a reliable message mid-batch needs no copy.</summary>
@@ -1570,6 +1573,9 @@ namespace Nebula
                         if (SeamDistance(c, pos, n) > margin) continue;
                         Ghost(e, owner, ref targets, now);
                     }
+                    // A large entity is measured by its body too: ghosted wherever its extent comes within the margin
+                    // of a container another worker owns, in addition to wherever its root does (docs/entity-extents.md).
+                    if (e.TryGetExtentForBand(tick, out var extent)) GhostByExtent(e, c, extent, margin, ref targets, now);
                     // Inside a carrier (or a room fixed in one): follow the carrier's ghosts.
                     var carrierBox = CarrierBoxOf(c);
                     if (carrierBox != null && carrierBox.Carrier != null && carrierBox.CarrierNetId != e.NetId && _ghostTargets.TryGetValue(carrierBox.Carrier.NetId, out var carrierTargets))
@@ -1702,6 +1708,66 @@ namespace Nebula
             if (n == c.Space) return -c.SignedDistance(pos);
             if (n.Space != c.Space) return float.MaxValue;
             return c.DistanceToSeam(pos, n);
+        }
+
+        /// <summary>
+        /// Ghost <paramref name="e"/> to the owner of every container its extent comes within <paramref name="margin"/>
+        /// of (<c>docs/entity-extents.md</c> D4): the containers next to its own, and any other the registry finds near
+        /// the extent in the same scope and space, however far from the entity's own container.
+        /// </summary>
+        private void GhostByExtent(NetworkIdentity e, Container c, Bounds extent, float margin, ref Dictionary<string, float> targets, float now)
+        {
+            ExtentCornersInSpaceOf(e, c, extent, _extentCorners);
+            var reach = BoundsOf(_extentCorners);
+            reach.Expand(2f * margin);
+            ContainerRegistry.Overlapping(reach, _extentCandidates, c.InstanceId);
+            for (int i = 0; i < _neighborScratch.Count; i++)
+                if (!_extentCandidates.Contains(_neighborScratch[i])) _extentCandidates.Add(_neighborScratch[i]);
+            for (int i = 0; i < _extentCandidates.Count; i++)
+            {
+                var n = _extentCandidates[i];
+                if (n == c) continue;
+                var owner = n.OwnerWorkerId;
+                if (string.IsNullOrEmpty(owner) || owner == WorkerId) continue;
+                if (n.IsCarriedBy(e)) continue; // its own box, or a shuttle in its hangar
+                if (ExtentSeamDistance(c, _extentCorners, n) > margin) continue;
+                Ghost(e, owner, ref targets, now);
+            }
+            _extentCandidates.Clear();
+        }
+
+        /// <summary>
+        /// The corners of <paramref name="e"/>'s extent in the space <paramref name="c"/>'s box lives in, where the seams
+        /// of <see cref="SeamDistance"/> are measured: the entity's own simulation space, converted out of the frame
+        /// when <paramref name="c"/> owns the frame the entity is in (<c>docs/entity-extents.md</c> D8).
+        /// </summary>
+        internal static void ExtentCornersInSpaceOf(NetworkIdentity e, Container c, Bounds extent, Vector3[] corners)
+        {
+            EntityExtents.Corners(e.transform.localToWorldMatrix, extent, corners);
+            if (c.OwnPhysicsFrame && c.InnerSpace == c)
+                for (int i = 0; i < corners.Length; i++) corners[i] = PhysicsFrames.Convert(corners[i], c, c.Space);
+        }
+
+        /// <summary>
+        /// <see cref="SeamDistance"/> for an extent: how far the box spanned by <paramref name="corners"/> (in the space
+        /// <paramref name="c"/>'s box lives in) is from the seam between <paramref name="c"/> and <paramref name="n"/>.
+        /// For a neighbour that encloses <paramref name="c"/>, or the frame around it, the seam is <paramref name="c"/>'s
+        /// own surface and the answer is how far the extent is from leaving it; for any other box it is the gap between
+        /// the extent and that box. A box of another space has no seam with this one.
+        /// </summary>
+        internal static float ExtentSeamDistance(Container c, Vector3[] corners, Container n)
+        {
+            if (n == c.Space) return -c.MaxSignedDistance(corners, corners.Length);
+            if (n.Space != c.Space) return float.MaxValue;
+            if (n.Encloses(c)) return -c.MaxSignedDistance(corners, corners.Length);
+            return n.DistanceToCorners(corners, corners.Length);
+        }
+
+        private static Bounds BoundsOf(Vector3[] points)
+        {
+            var b = new Bounds(points[0], Vector3.zero);
+            for (int i = 1; i < points.Length; i++) b.Encapsulate(points[i]);
+            return b;
         }
 
         /// <summary>The nearest carried box at or above <paramref name="c"/> through fixed parents: the ship a room is fixed in.</summary>
@@ -1924,6 +1990,16 @@ namespace Nebula
                 InterestGateways = InterestGatewayKeys(followMask),
                 Crossing = e == _crossingEntity,
             };
+            if (e.ExtentChangedAtRuntime)
+            {
+                // A runtime extent (a structure edited since it spawned) is the next authority's to measure by; an
+                // authored one comes with its own copy of the prefab (docs/entity-extents.md D6).
+                e.TryGetExtent(out var extent);
+                transfer.CarriesExtent = true;
+                transfer.ExtentSource = e.ExtentSource;
+                transfer.ExtentCenter = extent.center;
+                transfer.ExtentSize = extent.size;
+            }
             if (e.OwnerClientId != 0 && _sessions.TryGet(e.OwnerClientId, out var session))
             {
                 transfer.SessionGeneration = session.Generation;
@@ -1999,6 +2075,7 @@ namespace Nebula
                 _reader.Set(new ArraySegment<byte>(msg.PendingInputs));
                 e.Predicted.ReadPendingInputs(_reader);
             }
+            if (msg.CarriesExtent) e.ApplyCarriedExtent(msg.ExtentSource, new Bounds(msg.ExtentCenter, msg.ExtentSize));
             if (msg.HandoverState != null && msg.HandoverState.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.HandoverState));

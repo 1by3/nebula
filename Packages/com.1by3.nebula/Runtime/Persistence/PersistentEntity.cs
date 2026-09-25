@@ -135,6 +135,41 @@ namespace Nebula
             LastSavedVersion = reader.ReadULong();
         }
 
+        /// <summary>Version of the <see cref="WritePersistentState"/> chunk: 1 holds the entity's runtime extent.</summary>
+        private const byte PersistVersion = 1;
+
+        /// <summary>
+        /// Saves the entity's extent when it was set at runtime (<see cref="NetworkIdentity.ExtentChangedAtRuntime"/>),
+        /// so a structure edited since it spawned comes back measured by its edited box (<c>docs/entity-extents.md</c>
+        /// D7). Writes nothing otherwise, so an entity with an authored extent, or none, saves the record it always did.
+        /// </summary>
+        public override void WritePersistentState(NetworkWriter writer)
+        {
+            var identity = Identity;
+            if (identity == null || !identity.ExtentChangedAtRuntime) return;
+            identity.TryGetExtent(out var extent);
+            writer.WriteByte(PersistVersion);
+            writer.WriteByte((byte)identity.ExtentSource);
+            writer.WriteVector3(extent.center);
+            writer.WriteVector3(extent.size);
+        }
+
+        /// <summary>Restores the runtime extent <see cref="WritePersistentState"/> saved, before the entity spawns.</summary>
+        public override void ReadPersistentState(NetworkReader reader)
+        {
+            if (reader.Remaining == 0) return;
+            byte version = reader.ReadByte();
+            if (version > PersistVersion)
+            {
+                NebulaLog.Warn($"{this}: the saved extent is version {version} and this build reads {PersistVersion}; the prefab's extent is kept");
+                return;
+            }
+            var source = (EntityExtentSource)reader.ReadByte();
+            var center = reader.ReadVector3();
+            var size = reader.ReadVector3();
+            Identity?.ApplyCarriedExtent(source, new Bounds(center, size));
+        }
+
         public override string ToString() => $"PersistentEntity({(_key == "" ? "unkeyed" : _key)})";
     }
 }

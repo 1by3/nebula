@@ -91,6 +91,38 @@ public float SessionReclaimRemaining;
 
 Seconds of the reclaim grace ([`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds)) the session had left on the sender. A duration, not a time: the two workers' clocks differ, so the receiver resumes the countdown from its own clock.
 
+### CarriesExtent [#carriesextent]
+
+```csharp
+public bool CarriesExtent;
+```
+
+The entity's extent was set at runtime (`NetworkIdentity.ExtentChangedAtRuntime`), so the receiver takes [`ExtentSource`](#extentsource), [`ExtentCenter`](#extentcenter) and [`ExtentSize`](#extentsize) instead of its prefab's. A trailing optional section after the session section (`docs/entity-extents.md` D6), written only when set: an older reader stops before it. False leaves the receiver's copy as it is.
+
+### ExtentSource [#extentsource]
+
+```csharp
+public EntityExtentSource ExtentSource;
+```
+
+Where the extent comes from. For [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders) the receiver computes the box from its own copy.
+
+### ExtentCenter [#extentcenter]
+
+```csharp
+public Vector3 ExtentCenter;
+```
+
+Centre of the extent box in the entity's local space.
+
+### ExtentSize [#extentsize]
+
+```csharp
+public Vector3 ExtentSize;
+```
+
+Size of the extent box in the entity's local space.
+
 ## Methods
 
 ### Write [#write]

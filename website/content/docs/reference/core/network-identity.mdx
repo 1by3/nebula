@@ -62,6 +62,14 @@ public float CostWeight = 1f;
 
 What this entity costs to simulate, as a multiplier on its category weight in NebulaConfig.CostWeights. 1 (the default) leaves balancing exactly as it was; 8 on a raid boss and 0.25 on an ambient critter tell the planner and the scaler that they are not the same machine. NebulaCost.EntityWeight can override it at spawn; NetworkIdentity.SetCostWeight overrides both.
 
+### ColliderExtentRefreshTicks [#colliderextentrefreshticks]
+
+```csharp
+public const int ColliderExtentRefreshTicks = 60;
+```
+
+With [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders), the box is computed again at least this often, in ticks of the worker that holds authority. Nothing tells Nebula that a collider deeper than a direct child changed; call [`RefreshExtent`](#refreshextent) when a change must count sooner.
+
 ### SyncKeyframeInterval [#synckeyframeinterval]
 
 ```csharp
@@ -79,6 +87,30 @@ public float EffectiveCostWeight { get; } = 1f;
 ```
 
 The multiplier this entity actually carries right now (see [`NebulaCost`](/docs/reference/core/nebula-cost) for how it is chosen). It is computed at spawn, travels with the entity through ghosting and handover, and only changes when the game calls [`SetCostWeight`](#setcostweight): never per tick. Multiply it by the entity's category weight in [`CostWeights`](/docs/reference/orchestrator/cost-weights) to get what the mesh thinks it costs.
+
+### ExtentSource [#extentsource]
+
+```csharp
+public EntityExtentSource ExtentSource { get; }
+```
+
+Where this entity's extent comes from (`docs/entity-extents.md`). With [`EntityExtentSource.None`](/docs/reference/protocol/entity-extent-source#none), the default, the ghost band measures from the entity's root position, as it always has. With an extent it measures from the extent's box, so the entity is ghosted to every worker whose container the box comes within [`NebulaConfig.GhostBandMargin`](/docs/reference/core/nebula-config#ghostbandmargin) of. An extent never changes which worker has authority: that still follows the root position.
+
+### ExtentChangedAtRuntime [#extentchangedatruntime]
+
+```csharp
+public bool ExtentChangedAtRuntime { get; }
+```
+
+The extent was set at runtime ([`SetExtent`](#setextent), [`UseColliderExtent`](#usecolliderextent), [`ClearExtent`](#clearextent), or received with a handover or a restore) rather than authored. Only such an extent is carried by a handover and saved by a [`PersistentEntity`](/docs/reference/persistence/persistent-entity); an authored one comes with the prefab on every process.
+
+### Extent [#extent]
+
+```csharp
+public Bounds Extent { get; }
+```
+
+The extent box in the entity's local space: the authored or set box for [`EntityExtentSource.Explicit`](/docs/reference/protocol/entity-extent-source#explicit), the box around the colliders for [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders) (computed now if it never was), and an empty box at the origin when there is none. Use [`TryGetExtent`](#trygetextent) to tell "no extent" apart.
 
 ### IsSceneEntity [#issceneentity]
 
@@ -388,6 +420,46 @@ public void SetCostWeight(float weight);
 ```
 
 Say what this entity costs from now on, overruling both [`CostWeight`](#costweight) and [`NebulaCost.EntityWeight`](/docs/reference/core/nebula-cost#entityweight). The value is clamped to \[0, [`NebulaCost.MaxWeight`](/docs/reference/core/nebula-cost#maxweight)\] and travels with the entity: the worker it hands over to reports the same cost for it.
+
+### TryGetExtent [#trygetextent]
+
+```csharp
+public bool TryGetExtent(out Bounds localBounds);
+```
+
+The extent box in the entity's local space, if the entity has one: always for [`EntityExtentSource.Explicit`](/docs/reference/protocol/entity-extent-source#explicit), and for [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders) when at least one collider counts (enabled, not a trigger, and not under another [`NetworkIdentity`](/docs/reference/core/network-identity)).
+
+### SetExtent [#setextent]
+
+```csharp
+public void SetExtent(Bounds localBounds);
+```
+
+Give the entity an explicit extent: a box in its local space (the root's rotation and scale apply to it). Call it on the authority when the entity's shape changes, for example after a structure is edited; the next tick's ghost band uses it. The box travels with a handover and is saved by a [`PersistentEntity`](/docs/reference/persistence/persistent-entity). A negative size is taken as its absolute value.
+
+### UseColliderExtent [#usecolliderextent]
+
+```csharp
+public void UseColliderExtent();
+```
+
+Measure the entity by its own colliders from now on: every enabled, non-trigger collider on an active object under it whose nearest [`NetworkIdentity`](/docs/reference/core/network-identity) is this one. The box is computed when it is next needed, then again every [`ColliderExtentRefreshTicks`](#colliderextentrefreshticks) ticks, when a direct child is added or removed, and after [`RefreshExtent`](#refreshextent) is called.
+
+### ClearExtent [#clearextent]
+
+```csharp
+public void ClearExtent();
+```
+
+Remove the entity's extent: the ghost band measures from its root position again, as for any entity.
+
+### RefreshExtent [#refreshextent]
+
+```csharp
+public void RefreshExtent();
+```
+
+Compute a [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders) extent again now, after the game added, removed, resized or switched a collider. Does nothing for another source.
 
 ### JoinCohesionGroup [#joincohesiongroup]
 
