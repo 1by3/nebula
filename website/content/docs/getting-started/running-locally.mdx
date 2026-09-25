@@ -170,7 +170,11 @@ To test these, run `nebula build` and `nebula start` with more than one worker, 
 
 ### The server renders nothing
 
-The server turns off every camera, so its Game view stays empty. That is by design: it has nothing to show. It also works around a known problem. On Unity 6000.6, a virtual player cannot compile the Universal Render Pipeline's (URP) shaders, which leaves a black screen and fills its log with shader errors. For the same reason, a virtual player tagged `Client` in a URP project may not render.
+The server has nothing to show, so it renders nothing. It turns off every camera, and when a virtual player hosts it, Nebula also closes that player's Game view while it plays. A **Nebula Server** tab takes the Game view's place. Read the server's log in the virtual player's Console.
+
+This also works around a known problem. On Unity 6000.6, a virtual player cannot build the Universal Render Pipeline (URP). A Game view builds the render pipeline every time it draws, even with every camera off, so an open Game view in the server's virtual player logs shader errors every frame. Its log can grow by gigabytes in one session. For the same reason, a virtual player tagged `Client` in a URP project may not render.
+
+Nebula does not change the render pipeline settings to avoid this. A virtual player shares the main Editor's `ProjectSettings` folder, so a change there would reach the main Editor. When a virtual player that hosted the server later plays as a client, its Game view comes back and the **Nebula Server** tab closes.
 
 ## Watch
 

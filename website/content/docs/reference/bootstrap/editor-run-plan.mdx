@@ -53,6 +53,14 @@ public string Warning { get; }
 
 Why the plan is [`EditorPlayer.Mesh`](/docs/reference/bootstrap/editor-player#mesh) when the mode asked for more; null otherwise.
 
+### HidesGameView [#hidesgameview]
+
+```csharp
+public bool HidesGameView { get; }
+```
+
+Whether this Editor closes its Game view while it plays: true only for the server when a virtual player hosts it, never for the main Editor or a client. The Game view builds the render pipeline each time it draws, whatever the cameras do, and a virtual player that cannot build the pipeline logs errors every frame. The Editor puts a `Nebula Server` tab in the Game view's place.
+
 ## Methods
 
 ### Resolve [#resolve]
