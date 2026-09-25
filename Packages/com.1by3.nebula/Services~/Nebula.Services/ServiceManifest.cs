@@ -303,6 +303,13 @@ namespace Nebula
         /// <summary>The services hold every box in absolute coordinates already; the scope-frame overload exists so
         /// code shared with the Unity registry (<see cref="WorkerRegistration"/>) compiles against both.</summary>
         public static Bounds ToAbsolute(Bounds b, ulong instanceId) => b;
+        /// <summary>The services' frame is absolute, so these are identities; they let the gateway convert as a Unity
+        /// gateway sharing a worker's shifted containers must (NEB-337).</summary>
+        public static Bounds ToFrame(Bounds b, ulong instanceId) => b;
+        /// <inheritdoc cref="ToFrame(Bounds, ulong)"/>
+        public static Vector3 ToFrame(Double3 absolute, ulong instanceId) => absolute.ToVector3();
+        /// <inheritdoc cref="ToFrame(Bounds, ulong)"/>
+        public static Double3 ToAbsolutePrecise(Vector3 frame, ulong instanceId) => Double3.From(frame);
         public static string RuntimeContainerId(ulong id) => "rt_" + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         public static bool IsDynamicId(string id) => id != null && id.IndexOf('#') >= 0;
         public static ulong CarrierNetIdOf(string id) => id != null && id.LastIndexOf('#') is int i && i >= 0 && ulong.TryParse(id.Substring(i + 1), out var n) ? n : 0;

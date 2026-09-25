@@ -511,8 +511,9 @@ namespace Nebula
 
         /// <summary>
         /// The record's absolute world position, cached on the record and refreshed only when a pose or container
-        /// actually changes. The gateway never shifts its floating origin, so its world space <i>is</i> absolute
-        /// space and a region key computed here never moves under a client.
+        /// actually changes. The gateway shifts no floating origin of its own, and a position it reads through a
+        /// container shared with a worker in the same process has that scope's origin added back
+        /// (<see cref="AbsoluteOf"/>), so a region key computed here is absolute and never moves under a client.
         /// </summary>
         private void RefreshAbsolute(EntityRecord rec)
         {
@@ -1338,7 +1339,8 @@ namespace Nebula
             if (double.IsInfinity(minY)) { minY = -10000; maxY = 10000; }
             var center = new Vector3((float)((minX + maxX) / 2), (float)((minY + maxY) / 2), (float)((minZ + maxZ) / 2));
             var size = new Vector3((float)(maxX - minX) + 2 * margin, (float)(maxY - minY) + 2 * margin, (float)(maxZ - minZ) + 2 * margin);
-            ContainerRegistry.Overlapping(new Bounds(center, size), _containerScratch, instanceId);
+            // Absolute, like every region; the registry is asked in its own frame for that scope (NEB-337).
+            ContainerRegistry.Overlapping(InRegistryFrame(new Bounds(center, size), instanceId), _containerScratch, instanceId);
             for (int i = 0; i < _containerScratch.Count; i++)
             {
                 string id = _containerScratch[i].OwnerWorkerId;
@@ -1346,7 +1348,7 @@ namespace Nebula
             }
             if (owners.Count == 0)
             {
-                var nearest = ContainerRegistry.Find(center, null, instanceId);
+                var nearest = ContainerRegistry.Find(InRegistryFrame(new Bounds(center, Vector3.zero), instanceId).center, null, instanceId);
                 if (nearest != null && !string.IsNullOrEmpty(nearest.OwnerWorkerId)) owners.Add(nearest.OwnerWorkerId);
             }
             _regionWorkers[region] = owners;
@@ -1377,7 +1379,7 @@ namespace Nebula
             }
             float reach = _interest.MaxRadius;
             var box = new Bounds(new Vector3((float)focus.X, (float)focus.Y, (float)focus.Z), new Vector3(2 * reach, 2 * reach, 2 * reach));
-            ContainerRegistry.Overlapping(box, _containerScratch);
+            ContainerRegistry.Overlapping(InRegistryFrame(box, 0UL), _containerScratch);
             for (int i = 0; i < _containerScratch.Count; i++) Reason(_containerScratch[i].OwnerWorkerId, InterestLinkReason.Foci);
         }
 
@@ -1695,7 +1697,7 @@ namespace Nebula
                 var box = new Bounds(new Vector3((float)x, (float)y, (float)z), size);
                 if (scopeInstance != 0)
                 {
-                    ContainerRegistry.Overlapping(box, _containerScratch, scopeInstance);
+                    ContainerRegistry.Overlapping(InRegistryFrame(box, scopeInstance), _containerScratch, scopeInstance);
                     for (int i = 0; i < _containerScratch.Count; i++)
                     {
                         if (budget <= 0) { truncated = true; return; }
@@ -1703,7 +1705,7 @@ namespace Nebula
                     }
                     if (!observePublic) return;
                 }
-                ContainerRegistry.Overlapping(box, _containerScratch);
+                ContainerRegistry.Overlapping(InRegistryFrame(box, 0UL), _containerScratch);
                 for (int i = 0; i < _containerScratch.Count; i++)
                 {
                     if (budget <= 0) { truncated = true; return; }

@@ -10,6 +10,7 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
+- **In the Editor loop, a client that joined far from the origin got no new spawns or variable changes.** In the Multiplayer Play Mode run mode, and any other in-process host, the gateway and the worker share their containers, and the worker moves each scoped grid's floating origin toward the chunks it leases. The gateway read entity positions through those shifted containers, so a player who joined at chunk (7, 4) of a 256 m grid was subscribed to regions near (108, 76) while the worker kept the entities around them under (1900, 1100). Entities that existed at join time arrived; nothing spawned later did, and no variable changed, until the player rejoined. The gateway now adds each scope's origin back, as the worker does, for region keys, pawn windows and world positions, and asks the container registry in its frame when it resolves a region's owners or a client's container rows. A gateway in its own process is unchanged. The orchestrator's spatial sort of containers converts through each container's own scope as well. `ConformanceScopeFrameGatewayTests` (scenario 14) covers it. (NEB-337)
 - The worker launch line `-nebula-verbose` logs no longer prints the mesh token, the player signing key or other credential switches (`CommandLine.Redact`). (NEB-333)
 
 ## [0.1.0-beta.0] - 2026-09-24

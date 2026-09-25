@@ -379,7 +379,8 @@ namespace Nebula
         /// <summary>Morton key of a container's centre, so a sort puts spatial neighbours next to each other.</summary>
         public static ulong OrderKey(Container c)
         {
-            var p = ContainerRegistry.ToAbsolute(c.WorldBounds).center;
+            // In the container's own scope frame: a worker in the same process may have shifted it (NEB-337).
+            var p = ContainerRegistry.ToAbsolute(c.WorldBounds, c.InstanceId).center;
             return WorldGrid.Morton(new Vector3Int(Mathf.FloorToInt(p.x / OrderQuantum), Mathf.FloorToInt(p.y / OrderQuantum), Mathf.FloorToInt(p.z / OrderQuantum)));
         }
 

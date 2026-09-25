@@ -78,6 +78,16 @@ container's own frame. The no-argument overloads remain and mean the public fram
 caller wanted. Lease rows, telemetry and persistence therefore keep carrying **absolute** boxes, unchanged, and
 two processes with different per-scope origins still agree on every one of them.
 
+**D4a A gateway converts too, because it may share a worker's frames.** A gateway shifts no origin of its own,
+so on a gateway process a container's world position *is* its absolute position. In the Editor's Multiplayer Play
+Mode loop, and in any other in-process host, the gateway shares `ContainerRegistry` and `ScopeFrames` with a
+worker that moves each scope's origin toward the chunks it leases, so the shared chunk transforms are in the
+shifted frame. `NebulaGateway` therefore reads a container-local position through `AbsoluteOf` (the frame's origin
+added back, as the worker's `ToAbsolute` does) and asks the registry in its frame (`InRegistryFrame`) before
+`Overlapping` or `Find`. On a gateway of its own both are the identity. Before NEB-337 a client that joined far
+from the origin was subscribed to regions near (0, 0) while the worker kept the entities around it under their
+absolute keys, and received no new spawn or variable change.
+
 **D5 A container that arrived before its grid did is re-placed, not left behind.** A lease row can reach a
 process before that scope's grid is activated here (the grid is activated *because* of it). Such a container is
 registered in the public frame, because nothing here could say otherwise yet. `NebulaChunks.Activate` therefore
