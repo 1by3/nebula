@@ -73,9 +73,17 @@ namespace Nebula
         /// <summary>
         /// Brought back from the store at a new epoch and not saved under it yet. The first checkpoint is taken as
         /// soon as the save budget allows, so the record carries the new epoch and a late save from the worker that
-        /// held the previous life is refused by the store (<c>docs/persistence-durability.md</c> D9).
+        /// held the previous life is refused by the store (<c>docs/persistence-durability.md</c> D9). Set by a
+        /// restore and by <see cref="NebulaPersistence.Apply"/> on an entity this worker owns or is about to spawn.
         /// </summary>
         internal bool StampPending;
+
+        /// <summary>
+        /// The lowest epoch this entity may spawn at, because a record was applied to it before it was spawned
+        /// (<see cref="NebulaPersistence.Apply"/>): the record's epoch + 1. The worker spawns it at that epoch or
+        /// higher, whichever spawn call the game makes, and clears it. 0 when no record was applied.
+        /// </summary>
+        internal uint AdoptedEpoch;
 
         /// <summary>
         /// The entity holds nothing worth keeping right now: a checkpoint deletes its record instead of writing one.

@@ -32,6 +32,7 @@ namespace Nebula
         public float WriteBarrierIntervalSeconds = 0.1f;
 
         private readonly Dictionary<string, PersistedEntityRecord> _records = new Dictionary<string, PersistedEntityRecord>();
+        private readonly StaleSaveLog _staleSaves = new StaleSaveLog();
         private readonly Queue<Action> _callbacks = new Queue<Action>();
         private readonly List<(long Version, Action Done)> _writeBarriers = new List<(long, Action)>();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -68,6 +69,11 @@ namespace Nebula
         public long FileWriteCount { get; private set; }
         /// <summary>Total milliseconds spent in successful full-file rewrites during this store's lifetime.</summary>
         public double TotalFileWriteMilliseconds { get; private set; }
+        /// <summary>
+        /// Saves refused during this store's lifetime because the stored record had a newer epoch. The first refusal
+        /// of each key is also logged as a warning.
+        /// </summary>
+        public long StaleSavesDropped => _staleSaves.Dropped;
         /// <summary>Milliseconds spent in the most recent successful full-file rewrite.</summary>
         public double LastFileWriteMilliseconds { get; private set; }
 
@@ -102,7 +108,7 @@ namespace Nebula
                 // A worker that lost authority must not overwrite what its successor already wrote.
                 if (record.Epoch < existing.Epoch)
                 {
-                    NebulaLog.Debugf($"persistence: stale save for {record.Key} (epoch {record.Epoch} < {existing.Epoch}); dropped");
+                    _staleSaves.Report(record.Key, record.Epoch, existing.Epoch, record.SavedBy);
                     return;
                 }
                 record.Version = existing.Version + 1;

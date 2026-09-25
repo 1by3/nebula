@@ -53,6 +53,7 @@ namespace Nebula
         private double _nextCount;
         /// <summary>Writer thread: a write queued since the last barrier was given up.</summary>
         private bool _writeGivenUp;
+        private readonly StaleSaveLog _staleSaves = new StaleSaveLog();
 
         public SqlPersistenceStore(NebulaDatabase db)
         {
@@ -64,6 +65,11 @@ namespace Nebula
         public int KnownCount => _count;
         /// <summary>Jobs waiting for the writer thread.</summary>
         public int PendingJobs { get { lock (_gate) return _jobs.Count; } }
+        /// <summary>
+        /// Saves refused since the store was created because the stored record had a newer epoch. The first refusal
+        /// of each key is also logged as a warning.
+        /// </summary>
+        public long StaleSavesDropped => _staleSaves.Dropped;
         /// <summary>Wait after a failure before the next attempt (<see cref="RetrySeconds"/>; tests shorten it).</summary>
         internal float RetryDelaySeconds = RetrySeconds;
 
@@ -125,7 +131,7 @@ namespace Nebula
             r.SavedAt = DateTime.UtcNow;
             Enqueue("save " + r.Key, c =>
             {
-                NebulaDatabase.Execute(c, @"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
+                int written = NebulaDatabase.Execute(c, @"INSERT INTO nebula_entity (entity_key, prefab_id, prefab_name, scene_id, container_id, carrier_key,
                     pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, vel_x, vel_y, vel_z, epoch, server_driven, owned, name, state, version, saved_at, saved_by, scope_key)
                     VALUES (@key, @prefab_id, @prefab_name, @scene_id, @container_id, @carrier_key,
                     @pos_x, @pos_y, @pos_z, @rot_x, @rot_y, @rot_z, @rot_w, @vel_x, @vel_y, @vel_z, @epoch, @server_driven, @owned, @name, @state, 1, @saved_at, @saved_by, @scope_key)
@@ -146,8 +152,30 @@ namespace Nebula
                     ("@epoch", (long)r.Epoch), ("@server_driven", r.ServerDriven), ("@owned", r.Owned), ("@name", r.Name ?? ""),
                     ("@state", r.State != null && r.State.Length > 0 ? r.State : Array.Empty<byte>()),
                     ("@saved_at", ControlPlaneJson.ToUnixMs(r.SavedAt)), ("@saved_by", r.SavedBy ?? ""), ("@scope_key", r.ScopeKey ?? ""));
+                // No row inserted or updated: the stored record has a newer epoch and the save was refused.
+                if (written == 0) ReportStale(c, r);
                 _countDirty = true;
             }, isWrite: true);
+        }
+
+        /// <summary>
+        /// Writer thread: the epoch rule refused <paramref name="r"/>. The first refusal of each key is a warning with
+        /// both epochs, which costs one read of the stored epoch; later ones are debug lines (<see cref="StaleSaveLog"/>).
+        /// </summary>
+        private void ReportStale(DbConnection c, PersistedEntityRecord r)
+        {
+            if (!_staleSaves.Drop(r.Key))
+            {
+                NebulaLog.Debugf($"persistence: stale save for {r.Key} (epoch {r.Epoch}); dropped");
+                return;
+            }
+            long stored;
+            using (var cmd = NebulaDatabase.Command(c, "SELECT epoch FROM nebula_entity WHERE entity_key = @key", ("@key", r.Key)))
+            {
+                object scalar = cmd.ExecuteScalar();
+                stored = scalar == null || scalar is DBNull ? 0L : Convert.ToInt64(scalar);
+            }
+            NebulaLog.Warn(StaleSaveLog.Message(r.Key, r.Epoch, (uint)stored, r.SavedBy));
         }
 
         public void Delete(string key)

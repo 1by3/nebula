@@ -126,12 +126,24 @@ namespace Nebula.Tests
             Assert.AreEqual(3UL, Loaded(store, "crate-1").Version);
 
             // A worker that lost authority must not overwrite what its successor wrote.
+            // The refusal is a warning with both epochs, once per key (NEB-325).
             var stale = Record("crate-1", 5);
             stale.Name = "stale";
-            store.Save(stale);
+            var warnings = new List<string>();
+            Application.LogCallback onLog = (message, _, type) => { if (type == LogType.Warning && message.Contains("dropped a save of")) warnings.Add(message); };
+            Application.logMessageReceived += onLog;
+            try
+            {
+                store.Save(stale);
+                store.Save(stale);
+            }
+            finally { Application.logMessageReceived -= onLog; }
+            Assert.AreEqual(1, warnings.Count, "one warning per key");
+            StringAssert.Contains("dropped a save of crate-1 at epoch 5 from w1 because the store holds epoch 6", warnings[0]);
             loaded = Loaded(store, "crate-1");
             Assert.AreEqual("third", loaded.Name);
             Assert.AreEqual(3UL, loaded.Version);
+            Assert.AreEqual(2L, store.StaleSavesDropped);
         }
 
         [Test]
