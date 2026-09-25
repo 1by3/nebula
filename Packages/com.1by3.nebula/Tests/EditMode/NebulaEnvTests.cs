@@ -10,7 +10,6 @@ namespace Nebula.Tests
     /// The dotenv format, the variable-name rules, and <see cref="NebulaEnv.Get"/>'s lookup order. Pure C#: the
     /// standalone services run these too.
     /// </summary>
-    [NonParallelizable]
     public sealed class NebulaEnvTests
     {
         private readonly List<string> _vars = new List<string>();
