@@ -4,6 +4,14 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **Environment variables for workers.** A game can pass its own settings and secrets (service URLs, API keys, feature flags) to every worker process as ordinary environment variables. `NebulaEnv.Get(key, fallback)` reads one from the command line (`-game-api-url` for `GAME_API_URL`), then the process environment, then the files Nebula loaded, then the fallback. Local runs read `.env.nebula` at the project root: the Editor loads it each time Play starts (including the Multiplayer Play Mode server), and `nebula start` hands it to the orchestrator through `NEBULA_ENV_FILE`. `nebula env ls|set|rm|pull|push` manages a deployment's variables: on Nebula Cloud through the Cloud API, per project and optionally per deployment, with secrets read from standard input and never downloaded; on a Hetzner deployment in `deploy.env` in `nebula.json` (no secrets), which `nebula deploy` writes into the service manifest's new `Env` map. Worker hosts apply the manifest's `Env`, then the dotenv file `NEBULA_ENV_FILE` names (`WorkerEnvironment`); `ProcessWorkerHost` sets them on each worker process and `HetznerWorkerHost` writes them to a root-only `/etc/nebula/worker.env` that the worker unit reads. `PORT` and `NEBULA_*` are reserved. `nebula init` adds `.env.nebula` to an existing `.gitignore`. New: `NebulaEnv`, `DotEnv`, `WorkerEnvironment`, `CommandLine.Redact`. See the environment variables guide. (NEB-333)
+
+### Fixed
+
+- The worker launch line `-nebula-verbose` logs no longer prints the mesh token, the player signing key or other credential switches (`CommandLine.Redact`). (NEB-333)
+
 ## [0.1.0-beta.0] - 2026-09-24
 
 Wire protocol 20. The change is additive for clients: a gateway admits clients of protocol 19 and 20 (`MinProtocolVersion` stays 19). Gateways and workers of a mesh must still run the same build.

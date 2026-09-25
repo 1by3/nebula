@@ -102,6 +102,10 @@ Press Ctrl-C to stop following. The operation keeps running; the CLI prints its 
 
 Autoscaling works as it does locally: the orchestrator adds workers while the ones it has are busy and retires idle ones down to `--min`. `--min 0` allows scaling to zero. See [Orchestrator, Nebula Dashboard and worker hosts](/docs/guides/orchestrator-and-dashboard).
 
+### Environment variables
+
+To give the deployment's workers your own settings and secrets, such as service URLs and API keys, use `nebula env` or the Cloud Dashboard. For example, `nebula env set GAME_API_KEY --secret < api-key.txt` reads a secret from a file. Workers get changes the next time they start. See [Pass settings and secrets to workers](/docs/guides/environment-variables).
+
 ### Spend limit
 
 Each organization has a spend limit, set in the Cloud Dashboard. When the projected cost for the month reaches it, `nebula status --cloud` shows `SPEND LIMIT REACHED`, and rollouts and scale-out are refused with a message that says so. Running sessions are not terminated. Raise the limit in the Cloud Dashboard or scale the deployment in.

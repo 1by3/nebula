@@ -213,7 +213,11 @@ namespace Nebula.Hosting
 
             string workerArgs = $"-nebula-role worker -nebula-worker-id {spec.WorkerId} -nebula-worker-index {spec.Index} -nebula-port {spec.Port} -nebula-advertise $PRIVATE_IP";
             workerArgs += " " + spec.CommonArgs;
-            string userData = BuildCloudInit(_settings.BuildUrl, workerArgs);
+            // The deployment's non-secret variables (the manifest's Env) go into the boot script, which Hetzner keeps
+            // with the server, so secrets never do. A worker that needs secrets reads the file NEBULA_ENV_FILE names.
+            Action<string> warn = m => _log("warn", "worker environment: " + m);
+            var env = NebulaEnv.Filter(WorkerEnvironment.ManifestEnv, "service manifest Env", warn);
+            string userData = BuildCloudInit(_settings.BuildUrl, workerArgs, env, warn);
 
             var sb = new StringBuilder();
             var w = new JsonWriter(sb);
@@ -475,13 +479,28 @@ namespace Nebula.Hosting
 
         // ---------------------------------------------------------------------------------------- cloud-init
 
+        /// <summary>The worker's environment file on its VM: the game's variables, applied by systemd before the worker starts.</summary>
+        public const string WorkerEnvFile = "/etc/nebula/worker.env";
+
         /// <summary>
         /// Boot script for a worker VM. Waits for the private interface, fetches the build from the orchestrator,
-        /// and runs the worker as a systemd unit. <c>$PRIVATE_IP</c> in <paramref name="workerArgs"/> expands on the machine.
+        /// writes the game's variables (<paramref name="env"/>) to <see cref="WorkerEnvFile"/> (root-only), and runs
+        /// the worker as a systemd unit that reads it. <c>$PRIVATE_IP</c> in <paramref name="workerArgs"/> expands on
+        /// the machine; the variables are written literally.
         /// </summary>
-        public static string BuildCloudInit(string buildUrl, string workerArgs)
+        public static string BuildCloudInit(string buildUrl, string workerArgs, System.Collections.Generic.IDictionary<string, string> env = null, Action<string> warn = null)
         {
-            return string.Join("\n", new[]
+            var envLines = new System.Collections.Generic.List<string>();
+            if (env != null)
+            {
+                foreach (var kv in env)
+                {
+                    string line = SystemdEnvLine(kv.Key, kv.Value);
+                    if (line == null) { warn?.Invoke($"{kv.Key} is left out on Hetzner workers: its value has a line break, which a systemd environment file cannot hold"); continue; }
+                    envLines.Add(line);
+                }
+            }
+            var script = new System.Collections.Generic.List<string>
             {
                 "#!/bin/bash",
                 "set -u",
@@ -503,6 +522,15 @@ namespace Nebula.Hosting
                 "done",
                 "tar xzf build.tar.gz && chmod +x /opt/nebula/Nebula.x86_64",
                 "echo \"[nebula] build unpacked $(date -u +%FT%TZ)\"",
+                "mkdir -p /etc/nebula",
+                // A quoted heredoc, so the shell expands nothing in the values; umask 077 makes the file root-only.
+                "(umask 077; cat > " + WorkerEnvFile + " <<'NEBULA_WORKER_ENV'",
+            };
+            script.AddRange(envLines);
+            script.AddRange(new[]
+            {
+                "NEBULA_WORKER_ENV",
+                ")",
                 "cat > /etc/systemd/system/nebula-worker.service <<UNIT",
                 "[Unit]",
                 "Description=Nebula worker",
@@ -510,6 +538,7 @@ namespace Nebula.Hosting
                 "",
                 "[Service]",
                 "WorkingDirectory=/opt/nebula",
+                "EnvironmentFile=-" + WorkerEnvFile,
                 "ExecStart=/opt/nebula/Nebula.x86_64 -batchmode -nographics " + workerArgs + " -logFile /var/log/nebula-worker.log",
                 "Restart=no",
                 "LimitNOFILE=65536",
@@ -522,6 +551,25 @@ namespace Nebula.Hosting
                 "echo \"[nebula] worker started $(date -u +%FT%TZ)\"",
                 "",
             });
+            return string.Join("\n", script);
+        }
+
+        /// <summary>
+        /// One line of a systemd environment file: <c>KEY="value"</c> with <c>\</c>, <c>"</c>, <c>$</c> and <c>`</c>
+        /// escaped. Null when the value has a line break, which the format cannot carry safely.
+        /// </summary>
+        public static string SystemdEnvLine(string key, string value)
+        {
+            value = value ?? "";
+            if (value.IndexOf('\n') >= 0 || value.IndexOf('\r') >= 0) return null;
+            var sb = new StringBuilder(key.Length + value.Length + 4);
+            sb.Append(key).Append("=\"");
+            foreach (char c in value)
+            {
+                if (c == '\\' || c == '"' || c == '$' || c == '`') sb.Append('\\');
+                sb.Append(c);
+            }
+            return sb.Append('"').ToString();
         }
 
         // ---------------------------------------------------------------------------------------- http

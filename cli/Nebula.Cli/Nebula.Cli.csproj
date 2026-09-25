@@ -33,4 +33,12 @@
     <Compile Include="../../Packages/com.1by3.nebula/Runtime/Core/DatabaseUrl.cs" Link="Core/DatabaseUrl.cs" />
   </ItemGroup>
 
+  <!-- Shared with the runtime: the dotenv format and the rules for worker environment variable names (NebulaEnv's
+       file reading comes along; its command-line lookup is not used here). -->
+  <ItemGroup>
+    <Compile Include="../../Packages/com.1by3.nebula/Runtime/Core/DotEnv.cs" Link="Core/DotEnv.cs" />
+    <Compile Include="../../Packages/com.1by3.nebula/Runtime/Core/NebulaEnv.cs" Link="Core/NebulaEnv.cs" />
+    <Compile Include="../../Packages/com.1by3.nebula/Runtime/Core/CommandLine.cs" Link="Core/CommandLine.cs" />
+  </ItemGroup>
+
 </Project>

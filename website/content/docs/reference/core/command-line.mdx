@@ -11,6 +11,23 @@ public static class CommandLine
 
 Tiny "-key value" / "-key=value" / "-flag" parser over `Environment.GetCommandLineArgs`. A web build has no command line and reads the same switches from the page's query string instead: `?nebula-name=Jesse&nebula-connect`.
 
+## Fields
+
+### SecretSwitches [#secretswitches]
+
+```csharp
+public static readonly string[] SecretSwitches =
+{
+    "nebula-token",
+    "nebula-auth-key",
+    "nebula-cloud-token",
+    "nebula-cloud-deployment-token",
+    "nebula-database",
+};
+```
+
+Switches whose value is a credential: [`Redact`](#redact) hides them.
+
 ## Properties
 
 ### Keys [#keys]
@@ -38,6 +55,14 @@ public static void ParseQuery(string url, IDictionary<string, string> into);
 ```
 
 Adds the parameters of a URL's query string ("a=1&b") to `into`, URL-decoded, with any leading dashes removed from the keys.
+
+### Redact [#redact]
+
+```csharp
+public static string Redact(string commandLine);
+```
+
+A command line as text, for a log line, with the values of [`SecretSwitches`](#secretswitches) replaced by `***`. Handles `-key value` and `-key=value`; a value in quotes is hidden whole.
 
 ### Override [#override]
 

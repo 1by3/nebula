@@ -56,6 +56,8 @@ namespace Nebula
                 using var timer = FineTimer.Request();
                 var manifest = ServiceManifest.Load(CommandLine.Get("nebula-service-manifest", Path.Combine(AppContext.BaseDirectory, "nebula-services.json")));
                 var config = manifest.Config;
+                Hosting.WorkerEnvironment.ManifestEnv = manifest.Env;
+                NebulaEnv.Warn = message => NebulaLog.Warn("env: " + message);
                 ApplyOverrides(config);
                 if (config.UseLocalControlPlane && !CommandLine.Has("nebula-local-control-plane"))
                     throw new InvalidOperationException("A standalone service cannot use an in-process control plane; disable UseLocalControlPlane in the exported configuration.");

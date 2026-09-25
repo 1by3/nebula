@@ -157,6 +157,10 @@ The Editor-hosted server could not start (could not bind udp/7050: another proce
 
 If no server starts within 20 seconds, the client logs how to enable a virtual player, then keeps waiting.
 
+### Environment variables
+
+The server reads your game's environment variables from `.env.nebula` at the project root, the same file `nebula start` uses. Nebula loads it each time you press Play. See [Pass settings and secrets to workers](/docs/guides/environment-variables).
+
 ### What it does not test
 
 The server runs exactly one worker, so this mode cannot test anything that needs two:

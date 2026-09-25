@@ -48,6 +48,7 @@ public sealed class HelpCommand : Command
         PrintRow("config", "configure a deploy target (hetzner), the deployed database, or the Unity editor path");
         PrintRow("deploy", "build and run the mesh in the cloud (--target cloud for Nebula Cloud, hetzner for your own VMs)");
         PrintRow("destroy", "delete the deployed mesh");
+        PrintRow("env", "manage the environment variables your workers get (cloud or hetzner)");
         Ui.Blank();
         Console.WriteLine("Nebula Cloud");
         PrintRow("cloud", "log in (device code), log out, or show your account");

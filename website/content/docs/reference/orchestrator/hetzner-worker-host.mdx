@@ -39,6 +39,14 @@ public const float BillingSafetyMarginSeconds = 120f;
 
 Delete a parked machine this long before the paid hour ends, so the delete call lands inside it.
 
+### WorkerEnvFile [#workerenvfile]
+
+```csharp
+public const string WorkerEnvFile = "/etc/nebula/worker.env";
+```
+
+The worker's environment file on its VM: the game's variables, applied by systemd before the worker starts.
+
 ## Properties
 
 ### Name [#name]
@@ -160,7 +168,15 @@ public void Dispose();
 ### BuildCloudInit [#buildcloudinit]
 
 ```csharp
-public static string BuildCloudInit(string buildUrl, string workerArgs);
+public static string BuildCloudInit(string buildUrl, string workerArgs, System.Collections.Generic.IDictionary<string, string> env = null, Action<string> warn = null);
 ```
 
-Boot script for a worker VM. Waits for the private interface, fetches the build from the orchestrator, and runs the worker as a systemd unit. `$PRIVATE_IP` in `workerArgs` expands on the machine.
+Boot script for a worker VM. Waits for the private interface, fetches the build from the orchestrator, writes the game's variables (`env`) to [`WorkerEnvFile`](#workerenvfile) (root-only), and runs the worker as a systemd unit that reads it. `$PRIVATE_IP` in `workerArgs` expands on the machine; the variables are written literally.
+
+### SystemdEnvLine [#systemdenvline]
+
+```csharp
+public static string SystemdEnvLine(string key, string value);
+```
+
+One line of a systemd environment file: `KEY="value"` with `\`, `"`, `$` and `` ` `` escaped. Null when the value has a line break, which the format cannot carry safely.

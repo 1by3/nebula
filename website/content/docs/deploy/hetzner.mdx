@@ -55,6 +55,7 @@ Set `HCLOUD_TOKEN` to override the saved token, such as in continuous integratio
 | `workerType` | CLI config (`cpx21`) | Hetzner server type for worker VMs. |
 | `orchestratorType` | CLI config (`cpx21`) | Server type for the orchestrator VM. |
 | `location` | CLI config (`ash`) | Region. Changing it after the network exists needs `nebula destroy --all` first, because the subnet is bound to a network zone. |
+| `env` | none | Environment variables every worker gets, as `{ "KEY": "value" }`. Edit them with `nebula env`. Not for secrets: see [Pass settings and secrets to workers](/docs/guides/environment-variables). |
 
 The `mesh` section (`dashboardPort` 7080, `gatewayPort` 7000) is shared with the local mesh and also sets the ports the firewall opens.
 
@@ -150,7 +151,7 @@ Nebula.x86_64 -batchmode -nographics -nebula-role orchestrator -nebula-host hetz
 1. Logs to `/var/log/nebula-bootstrap.log`.
 2. Reads its private IP from the Hetzner metadata service (`169.254.169.254/hetzner/v1/metadata/private-networks`), falling back to the first `10.*` address, retrying for up to two minutes.
 3. Downloads `http://<orchestrator private ip>:7080/build/nebula-linux.tar.gz` from the orchestrator's `/build/` route, retrying up to 90 times.
-4. Unpacks it into `/opt/nebula` and writes `nebula-worker.service`, which runs `Nebula.x86_64 -batchmode -nographics -nebula-role worker -nebula-worker-id wN -nebula-worker-index N -nebula-port 710N -nebula-advertise <private ip> ...` with `-logFile /var/log/nebula-worker.log`.
+4. Unpacks it into `/opt/nebula`, writes the deployment's environment variables (`deploy.env`) to `/etc/nebula/worker.env`, readable only by root, and writes `nebula-worker.service`, which loads that file and runs `Nebula.x86_64 -batchmode -nographics -nebula-role worker -nebula-worker-id wN -nebula-worker-index N -nebula-port 710N -nebula-advertise <private ip> ...` with `-logFile /var/log/nebula-worker.log`.
 5. Starts the unit. `Restart=no`: if the worker dies, the orchestrator notices through heartbeats and replaces the VM.
 
 From the create call to a registered, container-owning worker takes about 30 s. Killing a worker (dashboard Kill, `POST /api/workers/kill`) deletes its VM; removing one drains it first and then deletes it. When the orchestrator starts it deletes every VM labelled `nebula-mesh=<mesh>,nebula-role=worker` before launching fresh ones, so a crashed or redeployed orchestrator never leaves machines billing.

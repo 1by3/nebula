@@ -21,6 +21,7 @@ public static class Program
         new DeploymentsCommand(),
         new ScaleCommand(),
         new RollbackCommand(),
+        new EnvCommand(),
         new DashboardCommand(),
         new VersionCommand(),
         new HelpCommand(),
