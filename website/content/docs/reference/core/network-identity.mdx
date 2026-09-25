@@ -325,6 +325,30 @@ public bool ReceivingHandover { get; }
 
 Each behavior reads from a reader bounded to its own chunk, so one that reads too much throws (and is logged) instead of eating the next behavior's bytes, and one that reads too little leaves no residue.
 
+### SyncAudienceGeneration [#syncaudiencegeneration]
+
+```csharp
+public uint SyncAudienceGeneration { get; }
+```
+
+Raised every time the member set of one of this entity's [`SyncAudience.Custom`](/docs/reference/core/sync-audience#custom) behaviors changes on its authority. It travels with the entity through ghosting and handover, so it only ever goes up, and it stamps every sync message ([`EntitySyncMsg.AudienceGeneration`](/docs/reference/protocol/entity-sync-msg#audiencegeneration)) so a gateway can tell a chunk written under member sets it has not received yet (docs/sync-audience.md D6).
+
+### HasCustomAudience [#hascustomaudience]
+
+```csharp
+public bool HasCustomAudience { get; }
+```
+
+At least one sync behavior has the [`SyncAudience.Custom`](/docs/reference/core/sync-audience#custom) audience.
+
+### HasRestrictedAudience [#hasrestrictedaudience]
+
+```csharp
+public bool HasRestrictedAudience { get; }
+```
+
+At least one sync behavior has an audience other than [`SyncAudience.Everyone`](/docs/reference/core/sync-audience#everyone).
+
 ### SyncContainer [#synccontainer]
 
 ```csharp
@@ -469,6 +493,7 @@ public void ClearDirty();
 
 ```csharp
 public void WriteSyncSnapshot(NetworkWriter writer);
+public void WriteSyncSnapshot(NetworkWriter writer, bool forGateway);
 ```
 
 A keyframe from every sync behavior: what rides the spawn/handover message.
@@ -477,6 +502,7 @@ A keyframe from every sync behavior: what rides the spawn/handover message.
 
 ```csharp
 public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery);
+public int WriteSyncState(NetworkWriter writer, uint tick, Delivery delivery, bool forGateway);
 ```
 
 Authority, once per tick per delivery class and per destination: the chunks due this tick. A behavior is written when it is dirty, or (unreliable only) when a keyframe is due. The keyframe decision depends only on the tick and on state that [`ClearDirty`](#cleardirty) advances, so every destination written in the same tick gets identical chunks: the first tick after gaining authority is a keyframe for all of them. Returns the number of chunks written; when zero the writer has been left untouched.
@@ -485,6 +511,7 @@ Authority, once per tick per delivery class and per destination: the chunks due 
 
 ```csharp
 public void ReadSyncState(NetworkReader reader, uint tick, Container container);
+public void ReadSyncState(NetworkReader reader, uint tick, Container container, bool reliable);
 ```
 
 Non-authoritative copies: hand each chunk to its behavior. Chunks for unknown indices are skipped.

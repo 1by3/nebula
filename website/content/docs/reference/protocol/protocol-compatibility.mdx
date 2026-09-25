@@ -11,7 +11,7 @@ public static class ProtocolCompatibility
 
 Checks client protocol and game content versions against the gateway's supported range.
 
-Both protocol limits are 18, so only protocol-18 clients are accepted. Gateway-to-worker and worker-to-worker connections also require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
+The window is [`HelloMsg.MinProtocolVersion`](/docs/reference/protocol/hello-msg#minprotocolversion) to [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion), which is 19 to 20 today. Gateway-to-worker and worker-to-worker connections require [`HelloMsg.ProtocolVersion`](/docs/reference/protocol/hello-msg#protocolversion) exactly.
 
 ## Methods
 

@@ -1,24 +1,26 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 19, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 20, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 19. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 20. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `19`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `20`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts protocol-19 clients only: both `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are `19`. Gateway-to-worker and worker-to-worker connections MUST also match protocol `19` exactly.
+A gateway accepts clients of protocol 19 and 20: `HelloMsg.MinProtocolVersion` is `19` and `HelloMsg.ProtocolVersion` is `20`. Gateway-to-worker and worker-to-worker connections MUST match protocol `20` exactly.
+
+Protocol 20 added sync audiences: a behavior's sync state can be limited to some clients (see [Private sync state](/docs/guides/sync-audiences)). Every change is additive for a client. The audience bits in a chunk's flags are ignored by a protocol-19 client, and the one new thing a client can receive, a `Cleared` chunk, is sent only to clients that negotiated `20`. Between workers and gateways, protocol 20 adds the `SyncAudience` message and trailing fields in `EntitySpawnBody` and `EntitySyncBody`.
 
 Protocol 19 changed no byte layout. It changed what a behavior index names: an entity carrying a container no longer has a behavior for it, so every network behavior that came after that one on the entity moved down by one index. RPCs, network variables, and sync state are addressed by that index. A protocol-18 peer would address the wrong behavior on such an entity, which is why protocol 18 is outside the window.
 
 - A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
 - A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
 - A sender MUST preserve the message identifiers, field order, primitive encodings, and field meanings defined here. Fields explicitly described as optional may be omitted at the end of a message.
-- The gateway returns the client's accepted version in `Welcome.negotiated_version`. All accepted clients use protocol `19`; this field does not select a different encoder.
+- The gateway returns the client's accepted version in `Welcome.negotiated_version`. The gateway uses the same encoder for protocol 19 and 20 clients, except that it sends a `Cleared` sync chunk only to a protocol-20 client.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats. `Hello.game_content_version` is a number the game chooses for its own content; Nebula compares it and refuses a mismatch, and gives it no other meaning.
 
 For process replacement and compatibility requirements, see [Upgrade a running mesh](/docs/deploy/upgrades).
@@ -122,7 +124,7 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
 
-Unknown flag bits are reserved. A version 19 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 20 sender MUST write them as zero.
 
 ## Message registry
 
@@ -159,6 +161,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 34 | `InterestResync` | `W-G` | Reliable ordered | [`InterestResync`](#interest-management) |
 | 35 | `EntityRedirect` | `W-G` | Reliable ordered | [`EntityRedirect`](#interest-management) |
 | 36 | `EntityForget` | `W-G` | Reliable ordered | [`EntityForget`](#interest-management) |
+| 37 | `SyncAudience` | `W-G` | Reliable ordered | [`SyncAudience`](#sync-audiences) |
 | 40 | `GhostSpawn` | `W-W` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 41 | `GhostState` | `W-W` | Conditional | [`StateBatchBody`](#batched-transform-state) |
 | 42 | `GhostVars` | `W-W` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -170,7 +173,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
 
-IDs not listed in this table are reserved. A version 19 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 20 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -245,7 +248,9 @@ EntitySpawnBody :=
   u8 interest_group,
   u16 view_seq,
   u32 cohesion_group,
-  f16 cost_weight
+  f16 cost_weight,
+  [u32 audience_generation,
+   bytes audience_sets]
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
@@ -261,6 +266,8 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 
 `view_seq` is assigned by the gateway, per client and per entity, and increases every time the entity enters that client's set. A client MUST ignore an `EntityDespawn` whose `view_seq` is older than the view it currently holds for that `net_id`, so a despawn delayed behind a re-entry cannot remove the replica the client has just been given. Workers write `0` in both messages; only the gateway-to-client link uses the field.
 
+`audience_generation` and `audience_sets` are the entity's [sync audience](#sync-audiences) state, written only by workers. A standalone `EntitySpawn` or `GhostSpawn` carries the section only when the generation is non-zero or the entity has a `Custom` audience. The entity body nested in `AuthorityTransfer` always carries it, because fields follow it there. A gateway MUST NOT forward the section to a client.
+
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
 ### Behavior sync state
@@ -272,10 +279,11 @@ EntitySyncBody :=
   u32 tick,
   ContainerRef container,
   bool reliable,
-  bytes chunks
+  bytes chunks,
+  [u32 audience_generation]
 ```
 
-`EntityState` and `GhostSyncState` share this body. A sender MUST use reliable ordered delivery when `reliable` is true and sequenced delivery when it is false. `chunks` contains a sync-state envelope.
+`EntityState` and `GhostSyncState` share this body. A sender MUST use reliable ordered delivery when `reliable` is true and sequenced delivery when it is false. `chunks` contains a sync-state envelope. A worker writes `audience_generation` for an entity that has a behavior with an audience other than `Everyone`; a gateway MUST NOT forward it to a client.
 
 #### Sync-state envelope
 
@@ -284,9 +292,26 @@ SyncStateEnvelope := u8 chunk_count, Chunk[chunk_count]
 Chunk             := u8 behavior_index, u8 flags, u16 byte_length, raw[byte_length]
 ```
 
-Chunk flag bit 0 (`Full`) marks a keyframe. Bits 1–7 are reserved. The raw chunk is defined by that behavior's `WriteSyncState` and `ReadSyncState` pair. Receivers skip an unknown behavior index and bound each reader to `byte_length`.
+Chunk flag bit 0 (`Full`) marks a keyframe. Bits 1–2 hold the behavior's sync audience: `0` `Everyone`, `1` `Owner`, `2` `WorkersOnly`, `3` `Custom`. Bit 3 (`Cleared`) is sent only from a gateway to a protocol-20 client, on an empty chunk, and tells the client it has left the behavior's audience. Bits 4–7 are reserved. The raw chunk is defined by that behavior's `WriteSyncState` and `ReadSyncState` pair. Receivers skip an unknown behavior index and bound each reader to `byte_length`.
 
-Spawn snapshots contain a full chunk for every sync behavior except the root `NetworkTransform`. Per-tick sequenced sync streams send a full keyframe every 30 ticks. The root transform uses `WorldState` and `GhostState` instead.
+Spawn snapshots contain a full chunk for every sync behavior except the root `NetworkTransform`. A spawn to a gateway leaves out `WorkersOnly` behaviors. Per-tick sequenced sync streams send a full keyframe every 30 ticks. The root transform uses `WorldState` and `GhostState` instead.
+
+#### Sync audiences
+
+```text
+SyncAudience :=
+  u64 net_id,
+  u32 entity_epoch,
+  u32 audience_generation,
+  bytes audience_sets
+
+AudienceSets := u8 set_count, AudienceSet[set_count]
+AudienceSet  := u8 behavior_index, u16 member_count, u64 client_id[member_count]
+```
+
+An audience limits which clients receive a behavior's chunks. It never limits workers: `GhostSyncState`, `GhostSpawn` and `AuthorityTransfer` carry every behavior. The gateway filters each chunk per client on every path to a client: `EntitySpawn`, `EntityState` on either channel, and the spawns it builds from its cached keyframes. A chunk goes to a client when its audience is `Everyone`; when it is `Owner` and the client is the entity's `owner_client_id`; or when it is `Custom` and the client is in the behavior's set. A `WorkersOnly` chunk never goes to a client.
+
+A worker sends `SyncAudience` when the member set of one of an entity's `Custom` behaviors changes, before that tick's sync chunks, to every gateway it sends the entity's sync state to. It carries every set of the entity, sorted, at most 256 members each. `audience_generation` increases with every change and travels with the entity through `GhostSpawn` and `AuthorityTransfer`. A gateway MUST NOT send a client a `Custom` chunk whose `EntitySyncBody.audience_generation` is newer than the sets it holds. When a set changes, the gateway sends each client that joined it the newest keyframe it holds for that behavior, as a reliable `EntityState`, and sends each protocol-20 client that left it a reliable `EntityState` holding one empty `Cleared` chunk for the behavior. It does the same for `Owner` behaviors when an `EntitySpawn` names a different owner.
 
 ### Remote procedure calls
 
@@ -489,7 +514,7 @@ AuthorityTransfer :=
 
 The optional session section is written only when the owner's session is waiting to be reclaimed on the sender. `session_orphan` is `1` when the gateway reported that the client disconnected, and `2` when the gateway's link to the sender dropped. `session_reclaim_remaining` is the number of seconds left of the `SessionReclaimSeconds` grace on the sender. It is a duration, not a timestamp, because the two workers' clocks differ. The receiving worker keeps the session waiting for that long, then removes the pawn unless the player has reconnected. For `2`, a receiver that has a link to the same gateway treats the session as connected. A receiver treats a message that ends before the section as a connected session.
 
-The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 19. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
+The nested entity body's `entity_epoch` and `new_epoch` are the same in messages emitted by version 20. `pending_inputs` is empty for an entity without a predicted behavior. Otherwise it has this layout, where each game-defined input has no length prefix:
 
 ```text
 PendingInputs := u32 last_processed_input_tick,

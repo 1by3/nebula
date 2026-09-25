@@ -138,6 +138,10 @@ kept and replayed to prove that such a client is refused with the gateway's rang
 protocol-19 recording and reader can exercise N-1. Later versions need their own recorded bytes and frozen reader; updating
 both production readers and writers must not silently update the compatibility oracle.
 
+Since NEB-321 that is the case: protocol 20 (sync audiences, `docs/sync-audience.md` D10) is additive, the window is
+19..20, the protocol-19 replay exercises N-1, and `protocol-20-handshake.json` is recorded for the next bump. The
+first field written differently by negotiated version is the `Cleared` sync chunk, sent only to protocol-20 clients.
+
 ## D7. Measured on this machine
 
 `dotnet test --filter "TestCategory=Conformance"`: **105 passed, 0 failed, 50 s** (6 of them this issue's; the

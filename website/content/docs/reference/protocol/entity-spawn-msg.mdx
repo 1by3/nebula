@@ -159,13 +159,35 @@ public float CostWeight;
 
 What the game says this entity costs to simulate, as a multiplier on its category weight ([`NetworkIdentity.EffectiveCostWeight`](/docs/reference/core/network-identity#effectivecostweight), protocol 18). It travels with the entity so the worker it lands on reports the same cost for it. Sent as an f16; zero is a valid weight. A missing field reads as -1, which leaves the receiver's current weight unchanged.
 
+### AudienceGeneration [#audiencegeneration]
+
+```csharp
+public uint AudienceGeneration;
+```
+
+Worker to gateway and worker to worker: the entity's audience generation ([`NetworkIdentity.SyncAudienceGeneration`](/docs/reference/core/network-identity#syncaudiencegeneration)), raised every time a [`SyncAudience.Custom`](/docs/reference/core/sync-audience#custom) member set changes. It travels with the entity through ghosting and handover, so it never goes back, and a gateway holds back a restricted chunk stamped with a newer generation than the member sets it has (protocol 20, trailing and optional, written only when it or [`Audience`](#audience) is set). A gateway never forwards it to a client.
+
+### Audience [#audience]
+
+```csharp
+public byte[] Audience;
+```
+
+Worker to gateway and worker to worker: the member sets of the entity's Custom behaviors ([`SyncAudienceCodec`](/docs/reference/core/sync-audience-codec)), or null when it has none. A gateway never forwards it to a client.
+
 ## Methods
 
 ### From [#from]
 
 ```csharp
-public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch);
+public static EntitySpawnMsg From(NetworkIdentity id, NetworkWriter scratch, bool forGateway = false);
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `id` | The entity. |
+| `scratch` | A writer this reuses. |
+| `forGateway` | True for a spawn sent to a gateway: chunks of [`SyncAudience.WorkersOnly`](/docs/reference/core/sync-audience#workersonly) behaviors are left out, since no client may have them. A ghost spawn or a handover carries every behavior. |
 
 ### Write [#write]
 
@@ -177,10 +199,24 @@ public void Write(NetworkWriter w, MsgId id);
 
 ```csharp
 public void WriteBody(NetworkWriter w);
+public void WriteBody(NetworkWriter w, bool embedded);
 ```
+
+Write the body. `embedded` is true when more fields follow it in the same message (an [`AuthorityTransferMsg`](/docs/reference/protocol/authority-transfer-msg)): the audience section is then always written, since a reader cannot tell it apart from the fields after it. A standalone spawn writes it only when it holds something.
+
+### ForClient [#forclient]
+
+```csharp
+public EntitySpawnMsg ForClient();
+```
+
+This spawn as a client may see it: the fields only workers and gateways use are cleared.
 
 ### Read [#read]
 
 ```csharp
 public static EntitySpawnMsg Read(NetworkReader r);
+public static EntitySpawnMsg Read(NetworkReader r, bool embedded);
 ```
+
+Read a body written by [`WriteBody`](#writebody) with the same `embedded`.

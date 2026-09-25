@@ -13,6 +13,30 @@ Envelope shared by the per-tick sync stream (EntityState/GhostSyncState messages
 
 ## Methods
 
+### AudienceOf [#audienceof]
+
+```csharp
+public static SyncAudience AudienceOf(ChunkFlags flags);
+```
+
+The audience a chunk's flags carry.
+
+### FlagsOf [#flagsof]
+
+```csharp
+public static ChunkFlags FlagsOf(SyncAudience audience);
+```
+
+The flag bits that carry `audience`; none for [`SyncAudience.Everyone`](/docs/reference/core/sync-audience#everyone).
+
+### IsRestricted [#isrestricted]
+
+```csharp
+public static bool IsRestricted(ChunkFlags flags);
+```
+
+Whether the flags name an audience that limits which clients receive the chunk (anything but [`SyncAudience.Everyone`](/docs/reference/core/sync-audience#everyone)).
+
 ### BeginEnvelope [#beginenvelope]
 
 ```csharp
@@ -60,6 +84,11 @@ Lists the supported chunk flags values.
 | --- | --- | --- |
 | <span id="none"></span>`None` | `0` |  |
 | <span id="full"></span>`Full` | `1` | The chunk is a keyframe: everything the behaviour replicates, not just what changed. |
+| <span id="audienceowner"></span>`AudienceOwner` | `1 << 1` | Bits 1 and 2 hold the behavior's [`SyncAudience`](/docs/reference/core/sync-audience) (`AudienceMask`). Zero is [`SyncAudience.Everyone`](/docs/reference/core/sync-audience#everyone), so a chunk of an unrestricted behavior is byte for byte what it was before audiences existed. The gateway filters on these bits; workers and clients ignore them. |
+| <span id="audienceworkersonly"></span>`AudienceWorkersOnly` | `2 << 1` | See `AudienceOwner`: the chunk is for workers only. |
+| <span id="audiencecustom"></span>`AudienceCustom` | `3 << 1` | See `AudienceOwner`: the chunk is for the member set the authority sent ([`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg)). |
+| <span id="audiencemask"></span>`AudienceMask` | `3 << 1` | The two audience bits. |
+| <span id="cleared"></span>`Cleared` | `1 << 3` | Gateway to client, protocol 20 and later: this client left the behavior's audience. The chunk is empty. The client calls `NetworkBehaviour.OnSyncStateCleared` instead of `ReadSyncState`. |
 
 ### ChunkVisitor [#chunkvisitor]
 

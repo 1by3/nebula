@@ -81,6 +81,8 @@ Every welcome also carries a **session token**: a signed token that names the se
 
 When a client presents a session token that verifies and belongs to the identity that just authenticated, the gateway that answers, whichever gateway of the mesh it is, welcomes the client with the same session ID, a newer connection generation, and `NebulaClient.SessionReclaimed` set. If a worker still holds the player's pawn, the client gets that pawn back; the worker re-announces it and routes the session's input through the new gateway from then on. If the pawn is gone, the gateway asks a worker to spawn the player again through `OnSpawnPlayer`, with the same session ID.
 
+Because the session ID does not change, state that only the owner may see, a behavior with the `Owner` [sync audience](/docs/guides/sync-audiences), reaches the reconnected client without any code of yours: the new connection starts from the newest keyframe and receives every update after it.
+
 A session token proves which session a client had. It does not prove that the session still exists, and it is not an identity: a token for another identity, an expired token, or one signed for another mesh is ignored. With single-session coordination enabled, the authenticated identity can still reclaim its existing session after the previous gateway acknowledges disconnection. Otherwise a new session starts. The gateway accepts it only together with the client's identity credential (the anonymous token or ID token), so a copied session token alone does not take over a session.
 
 ### One connection per player

@@ -25,6 +25,7 @@
     "guides/prediction",
     "guides/lag-compensation",
     "guides/physics-and-handover-state",
+    "guides/sync-audiences",
     "---Players and clients---",
     "guides/connecting-clients",
     "guides/authentication",

@@ -44,6 +44,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | <span id="interestresync"></span>`InterestResync` | `34` | Worker -\> gateway: the last subscription could not be applied; send a Full snapshot ([`InterestResyncMsg`](/docs/reference/protocol/interest-resync-msg)). |
 | <span id="entityredirect"></span>`EntityRedirect` | `35` | Worker -\> gateway: an explicitly subscribed entity now lives on another worker ([`EntityRedirectMsg`](/docs/reference/protocol/entity-redirect-msg)). |
 | <span id="entityforget"></span>`EntityForget` | `36` | Worker -\> gateway: an entity left every region this gateway subscribes here ([`EntityForgetMsg`](/docs/reference/protocol/entity-forget-msg)). |
+| <span id="syncaudience"></span>`SyncAudience` | `37` | Worker -\> gateway: the client member sets of an entity's `Nebula.SyncAudience.Custom` behaviors changed ([`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg), protocol 20). Never forwarded to a client. |
 | <span id="ghostspawn"></span>`GhostSpawn` | `40` |  |
 | <span id="ghoststate"></span>`GhostState` | `41` |  |
 | <span id="ghostvars"></span>`GhostVars` | `42` |  |
