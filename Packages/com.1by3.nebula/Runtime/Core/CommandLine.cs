@@ -74,6 +74,51 @@ namespace Nebula
             }
         }
 
+        /// <summary>Switches whose value is a credential: <see cref="Redact"/> hides them.</summary>
+        public static readonly string[] SecretSwitches =
+        {
+            "nebula-token", "nebula-auth-key", "nebula-cloud-token", "nebula-cloud-deployment-token", "nebula-database",
+        };
+
+        /// <summary>
+        /// A command line as text, for a log line, with the values of <see cref="SecretSwitches"/> replaced by
+        /// <c>***</c>. Handles <c>-key value</c> and <c>-key=value</c>; a value in quotes is hidden whole.
+        /// </summary>
+        public static string Redact(string commandLine)
+        {
+            if (string.IsNullOrEmpty(commandLine)) return commandLine;
+            var sb = new System.Text.StringBuilder(commandLine.Length);
+            bool hideNext = false;
+            int i = 0;
+            while (i < commandLine.Length)
+            {
+                if (char.IsWhiteSpace(commandLine[i])) { sb.Append(commandLine[i++]); continue; }
+                int start = i;
+                bool quoted = false;
+                while (i < commandLine.Length && (quoted || !char.IsWhiteSpace(commandLine[i])))
+                {
+                    if (commandLine[i] == '"') quoted = !quoted;
+                    i++;
+                }
+                string token = commandLine.Substring(start, i - start);
+                if (hideNext && !token.StartsWith("-")) { sb.Append("***"); hideNext = false; continue; }
+                hideNext = false;
+                if (token.StartsWith("-"))
+                {
+                    string key = token.TrimStart('-');
+                    int eq = key.IndexOf('=');
+                    string name = eq >= 0 ? key.Substring(0, eq) : key;
+                    if (Array.Exists(SecretSwitches, s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (eq >= 0) { sb.Append(token, 0, token.IndexOf('=') + 1).Append("***"); continue; }
+                        hideNext = true;
+                    }
+                }
+                sb.Append(token);
+            }
+            return sb.ToString();
+        }
+
         /// <summary>For tests/editor: pretend these arguments were passed.</summary>
         public static void Override(IDictionary<string, string> values)
         {
