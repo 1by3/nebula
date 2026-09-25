@@ -349,7 +349,69 @@ internal sealed class FakeCloud : IDisposable
             long after = long.Parse(Regex.Match(query, "after=(\\d+)").Groups[1].Value is { Length: > 0 } s ? s : "0");
             Reply(ctx, 200, Advance(op, after)); return;
         }
+        if ((mm = Regex.Match(path, "^/projects/([^/]+)/env(?:/([^/]+))?$")).Success)
+        {
+            HandleEnv(ctx, m, mm.Groups[1].Value, mm.Groups[2].Success ? Uri.UnescapeDataString(mm.Groups[2].Value) : null, record, body);
+            return;
+        }
         Reply(ctx, 404, Error("not_found", $"{m} {path} is not implemented by the fake"));
+    }
+
+    // --- environment variables --------------------------------------------------------------------------------
+
+    /// <summary>Stored variables per "project/key", with their real value (a secret's never goes back out).</summary>
+    public Dictionary<string, (string Value, bool Secret, List<string> Deployments)> Env = new();
+
+    private static readonly Regex EnvKey = new("^[A-Za-z_][A-Za-z0-9_]*$");
+
+    private static JsonObject EnvView(string key, (string Value, bool Secret, List<string> Deployments) v) => J(new
+    {
+        key, secret = v.Secret, value = v.Secret ? null : v.Value, deployments = v.Deployments, updatedAt = "2026-09-20T10:00:00Z", updatedBy = "dev@example.com",
+    });
+
+    private static string? EnvRefusal(string key, string? value)
+    {
+        if (!EnvKey.IsMatch(key)) return "invalid_key";
+        if (key.Equals("PORT", StringComparison.OrdinalIgnoreCase) || key.StartsWith("NEBULA_", StringComparison.OrdinalIgnoreCase)) return "reserved_key";
+        if (value != null && Encoding.UTF8.GetByteCount(value) > 32 * 1024) return "value_too_long";
+        return null;
+    }
+
+    private void HandleEnv(HttpListenerContext ctx, string m, string project, string? key, Request req, JsonNode? body)
+    {
+        IEnumerable<KeyValuePair<string, (string Value, bool Secret, List<string> Deployments)>> Of() => Env.Where(e => e.Key.StartsWith(project + "/"));
+        if (key == null && m == "GET")
+        {
+            string? dep = req.Param("deployment");
+            var list = Of().Where(e => dep == null || e.Value.Deployments.Count == 0 || e.Value.Deployments.Contains(dep))
+                .Select(e => EnvView(e.Key.Substring(project.Length + 1), e.Value)).ToList();
+            Reply(ctx, 200, J(new { vars = list })); return;
+        }
+        if (key == null && m == "PUT")
+        {
+            var deployments = body!["deployments"]!.AsArray().Select(d => d!.ToString()).ToList();
+            var inputs = body["vars"]!.AsArray().Select(v => (Key: v!["key"]!.ToString(), Value: v["value"]!.ToString(), Secret: (bool)v["secret"]!)).ToList();
+            foreach (var i in inputs)
+                if (EnvRefusal(i.Key, i.Value) is { } bad) { Reply(ctx, 400, J(new { error = bad })); return; }
+            foreach (var i in inputs) Env[project + "/" + i.Key] = (i.Value, i.Secret, deployments.ToList());
+            Reply(ctx, 200, J(new { vars = inputs.Select(i => EnvView(i.Key, Env[project + "/" + i.Key])).ToList() })); return;
+        }
+        if (key != null && m == "PUT")
+        {
+            string value = body!["value"]!.ToString();
+            if (EnvRefusal(key, value) is { } bad) { Reply(ctx, 400, J(new { error = bad })); return; }
+            var v = (value, (bool)body["secret"]!, body["deployments"]!.AsArray().Select(d => d!.ToString()).ToList());
+            Env[project + "/" + key] = v;
+            Reply(ctx, 200, EnvView(key, v)); return;
+        }
+        if (key != null && m == "DELETE")
+        {
+            if (!Env.TryGetValue(project + "/" + key, out var v)) { Reply(ctx, 404, Error("not_found", $"{key} is not set")); return; }
+            string? dep = req.Param("deployment");
+            if (dep == null || (v.Deployments.Remove(dep) && v.Deployments.Count == 0)) Env.Remove(project + "/" + key);
+            Reply(ctx, 204, null); return;
+        }
+        Reply(ctx, 405, Error("method_not_allowed", m));
     }
 
     private JsonObject NewOperation(string deploymentId, string kind, string[] steps)

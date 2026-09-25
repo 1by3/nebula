@@ -186,6 +186,8 @@ public sealed class HetznerMesh
             Ui.Ok("build installed");
         }
 
+        SendManifestEnv(publicIp);
+
         // Secrets go over stdin into a root-only file, never onto a command line: the provider token, the database
         // URL (it may carry a password) and the mesh token the orchestrator hands to its workers.
         // The player signing key is separate from the mesh token on purpose: the mesh token changes on every
@@ -258,6 +260,46 @@ WantedBy=multi-user.target
         }
         Ui.Ok($"mesh is up: {LocalMesh.Summary(state)} (worker VMs take ~30s each to register)");
         return url;
+    }
+
+    /// <summary>
+    /// The service manifest the orchestrator loads, with deploy.env from nebula.json as its Env map: the orchestrator
+    /// hands those variables to every worker VM it starts. Sent on every deploy (also with --skip-upload), so a
+    /// change or a removal in deploy.env applies. The manifest is the one packed into the tarball.
+    /// </summary>
+    private void SendManifestEnv(string publicIp)
+    {
+        var env = _project.File.Deploy.Env;
+        string local = Path.Combine(_project.LinuxBuildDir, ServiceBuild.ManifestName);
+        if (!File.Exists(local))
+        {
+            if (env is { Count: > 0 }) throw new CliError($"no service manifest at {local} to carry deploy.env", "run `nebula build --linux`");
+            return;
+        }
+        string text = WithEnv(File.ReadAllText(local), env);
+        _ssh.SendFile(publicIp, text, "/opt/nebula/bin/" + ServiceBuild.ManifestName);
+        if (env is { Count: > 0 }) Ui.Ok($"workers get {env.Count} variable(s) from deploy.env");
+    }
+
+    /// <summary>The manifest JSON with its Env map replaced by <paramref name="env"/> (removed when there is none).</summary>
+    internal static string WithEnv(string manifestJson, IDictionary<string, string>? env)
+    {
+        JsonObject node;
+        try { node = JsonNode.Parse(manifestJson) as JsonObject ?? throw new CliError("the service manifest is not a JSON object", "run `nebula build --linux` again"); }
+        catch (JsonException e) { throw new CliError($"the service manifest is not valid JSON: {e.Message}", "run `nebula build --linux` again"); }
+        foreach (var existing in node.Where(kv => string.Equals(kv.Key, "Env", StringComparison.OrdinalIgnoreCase)).Select(kv => kv.Key).ToList()) node.Remove(existing);
+        if (env is { Count: > 0 })
+        {
+            var map = new JsonObject();
+            foreach (var kv in env)
+            {
+                if (DotEnv.KeyProblem(kv.Key) is { } problem) throw new CliError($"deploy.env in nebula.json: {problem}", "nebula env rm " + kv.Key);
+                if (DotEnv.ValueProblem(kv.Key, kv.Value) is { } valueProblem) throw new CliError($"deploy.env in nebula.json: {valueProblem}");
+                map[kv.Key] = kv.Value;
+            }
+            node["Env"] = map;
+        }
+        return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
     // --- status / logs / destroy -------------------------------------------------------------------------

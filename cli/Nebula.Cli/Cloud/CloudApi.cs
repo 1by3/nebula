@@ -146,9 +146,13 @@ public sealed class CloudApi
 
     private CloudApiError ToError(RawResponse r, string path)
     {
-        var err = r.Body?["error"];
-        string code = err?["code"]?.ToString() ?? r.Status switch { 401 => "unauthorized", 403 => "forbidden", 404 => "not_found", 409 => "conflict", 429 => "rate_limited", _ => "error" };
-        string message = err?["message"]?.ToString() ?? (string.IsNullOrWhiteSpace(r.Text) ? $"HTTP {r.Status}" : r.Text.Trim());
+        var errNode = r.Body is JsonObject body ? body["error"] : null;
+        // Most answers carry {"error": {"code", "message"}}; some carry the code alone, {"error": "reserved_key"}.
+        var err = errNode as JsonObject;
+        string? bareCode = errNode is JsonValue bare && bare.TryGetValue<string>(out var bareText) ? bareText : null;
+        string code = err?["code"]?.ToString() ?? bareCode ?? r.Status switch { 401 => "unauthorized", 403 => "forbidden", 404 => "not_found", 409 => "conflict", 429 => "rate_limited", _ => "error" };
+        string message = err?["message"]?.ToString() ?? (bareCode != null ? (r.Body?["message"]?.ToString() ?? bareCode.Replace('_', ' ')) : null)
+            ?? (string.IsNullOrWhiteSpace(r.Text) ? $"HTTP {r.Status}" : r.Text.Trim());
         string? hint = r.Status switch
         {
             401 => Session?.IsLoggedIn == true ? "your session has expired; run `nebula cloud login` again" : "run `nebula cloud login`",
@@ -371,6 +375,31 @@ public sealed class CloudApi
         OperationOf(Send(HttpMethod.Post, $"/deployments/{deployment}/rollback", new { releaseId }, "rollback"));
 
     private static Operation OperationOf(JsonNode body) => As<Operation>(body["operation"] ?? body, "an operation");
+
+    // --- environment variables -------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// One of a project's environment variables. <see cref="Value"/> is null for a secret: the API never returns one.
+    /// <see cref="Deployments"/> names the deployments it applies to; empty means every deployment of the project.
+    /// </summary>
+    public sealed record EnvVar(string Key, bool Secret, string? Value, List<string>? Deployments, string? UpdatedAt, string? UpdatedBy);
+    public sealed record EnvVarInput(string Key, string Value, bool Secret);
+
+    /// <summary>The project's variables, or those that apply to <paramref name="deployment"/>.</summary>
+    public List<EnvVar> EnvVars(string project, string? deployment) =>
+        As<List<EnvVar>>(Send(HttpMethod.Get, $"/projects/{project}/env" + (deployment != null ? "?deployment=" + Uri.EscapeDataString(deployment) : ""))["vars"], "vars");
+
+    /// <summary>Create or replace one variable. The answer never carries a secret's value.</summary>
+    public EnvVar SetEnvVar(string project, string key, string value, bool secret, List<string> deployments) =>
+        Send<EnvVar>(HttpMethod.Put, $"/projects/{project}/env/{Uri.EscapeDataString(key)}", new { value, secret, deployments }, "env-set-" + key);
+
+    /// <summary>Remove a variable from one deployment, or remove it altogether when <paramref name="deployment"/> is null.</summary>
+    public void DeleteEnvVar(string project, string key, string? deployment) =>
+        Send(HttpMethod.Delete, $"/projects/{project}/env/{Uri.EscapeDataString(key)}" + (deployment != null ? "?deployment=" + Uri.EscapeDataString(deployment) : ""), null, "env-rm-" + key);
+
+    /// <summary>Create or replace several variables with the same scope in one call.</summary>
+    public List<EnvVar> PushEnvVars(string project, List<EnvVarInput> vars, List<string> deployments) =>
+        As<List<EnvVar>>(Send(HttpMethod.Put, $"/projects/{project}/env", new { vars, deployments }, "env-push")["vars"], "vars");
 
     // --- catalog ----------------------------------------------------------------------------------------------------
 

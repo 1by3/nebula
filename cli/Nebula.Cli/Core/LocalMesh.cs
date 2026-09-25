@@ -64,7 +64,17 @@ public static class LocalMesh
         if (o.ResetPersistence) orch.Add("-nebula-reset-persistence");
         if (o.ResetSessions) orch.Add("-nebula-reset-sessions");
         if (ctx.Verbose) orch.Add("-nebula-verbose");
-        Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null);
+        // .env.nebula reaches the workers through NEBULA_ENV_FILE: the orchestrator reads the file and puts its
+        // variables in each worker's environment. Only the orchestrator gets the switch, not the bots started below.
+        var localEnv = LocalEnv.Check(project);
+        string? previousEnvFile = Environment.GetEnvironmentVariable(Nebula.NebulaEnv.EnvFileVariable);
+        if (localEnv != null)
+        {
+            Environment.SetEnvironmentVariable(Nebula.NebulaEnv.EnvFileVariable, LocalEnv.PathOf(project));
+            Ui.Info($"workers get {localEnv.Count} variable(s) from {LocalEnv.FileName}");
+        }
+        try { Shell.Detach(ServiceBuild.Executable(project.HostBuildDir, "orchestrator"), orch, project.HostBuildDir, null); }
+        finally { Environment.SetEnvironmentVariable(Nebula.NebulaEnv.EnvFileVariable, previousEnvFile); }
 
         // A game's bot behaviour is the game's business, so --bot-args is passed through verbatim rather than
         // being modelled here: the bot reads its own switches from the command line like any other Unity build.

@@ -53,6 +53,7 @@ NebulaConfig.asset and nebula.json are always kept.
         {
             Ui.Info("this is the Nebula repository itself; only nebula.json is (re)written");
             WriteProjectFile(root);
+            IgnoreLocalEnv(root);
             return 0;
         }
 
@@ -95,6 +96,7 @@ NebulaConfig.asset and nebula.json are always kept.
 
         WriteConfigAsset(root);
         WriteProjectFile(root);
+        IgnoreLocalEnv(root);
 
         Ui.Blank();
         Ui.Ok("done. Next steps:");
@@ -103,6 +105,28 @@ NebulaConfig.asset and nebula.json are always kept.
         Ui.Info("   list every networked prefab in NetworkPrefabs and add a NebulaGameMode to the scene");
         Ui.Info("3. nebula build, then nebula start --open-ui");
         return 0;
+    }
+
+    /// <summary>
+    /// Keep .env.nebula (local worker variables, often secrets) out of version control: add it to the project's
+    /// .gitignore when there is one and it does not already name the file.
+    /// </summary>
+    internal static void IgnoreLocalEnv(string root)
+    {
+        string gitignore = Path.Combine(root, ".gitignore");
+        if (!File.Exists(gitignore))
+        {
+            Ui.Info($"no .gitignore at the project root: keep {LocalEnv.FileName} out of version control yourself");
+            return;
+        }
+        string text = File.ReadAllText(gitignore);
+        var lines = text.Replace("\r\n", "\n").Split('\n').Select(l => l.Trim());
+        string[] covering = { LocalEnv.FileName, "/" + LocalEnv.FileName, ".env*", "*.env*", ".env.*" };
+        if (lines.Any(covering.Contains)) return;
+        string nl = text.Contains("\r\n") ? "\r\n" : "\n";
+        string prefix = text.Length > 0 && !text.EndsWith("\n") ? nl : "";
+        File.AppendAllText(gitignore, $"{prefix}{nl}# Nebula: local environment variables for workers (may hold secrets){nl}/{LocalEnv.FileName}{nl}");
+        Ui.Ok($".gitignore: added /{LocalEnv.FileName}");
     }
 
     private static void WriteProjectFile(string root)

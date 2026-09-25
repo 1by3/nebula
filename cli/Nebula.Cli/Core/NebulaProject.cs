@@ -64,6 +64,12 @@ public sealed class ProjectFile
         public string? WorkerType { get; set; }
         public string? OrchestratorType { get; set; }
         public string? Location { get; set; }
+        /// <summary>
+        /// Environment variables every worker of a self-hosted deployment gets (`nebula env` edits them). Not secret:
+        /// nebula.json is committed with the project. `nebula deploy --target hetzner` writes them into the service
+        /// manifest on the orchestrator VM, which hands them to each worker VM.
+        /// </summary>
+        public SortedDictionary<string, string>? Env { get; set; }
     }
 }
 

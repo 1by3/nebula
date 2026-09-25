@@ -82,3 +82,6 @@ website/next-env.d.ts
 # Standalone service projects
 !/Packages/com.1by3.nebula/Services~/**/*.csproj
 TestResults/
+
+# Nebula: local environment variables for workers (may hold secrets)
+/.env.nebula
