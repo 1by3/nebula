@@ -1,0 +1,109 @@
+---
+title: "NebulaEnv"
+description: "A game's own settings and secrets on a worker (service URLs, API keys, feature flags): the environment variables set with nebula env, in the Nebula Cloud dashboard, or in .env.nebula for local runs."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NebulaEnv.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NebulaEnv.cs)</div>
+
+```csharp
+public static class NebulaEnv
+```
+
+A game's own settings and secrets on a worker (service URLs, API keys, feature flags): the environment variables set with `nebula env`, in the Nebula Cloud dashboard, or in `.env.nebula` for local runs.
+
+[`Get`](#get) looks a variable up in this order and returns the first value it finds:
+
+1. The command line: `-game-api-url <value>` (or `=value`) for `GAME_API_URL`. The switch is the name in lower case with `_` turned into `-` ([`ArgName`](#argname)). A web build reads it from the page's query string instead.
+2. The process environment: `GAME_API_URL` ([`EnvName`](#envname)). Deployed workers get their variables here: Nebula Cloud and `nebula deploy` set them before the worker starts.
+3. The files Nebula loaded for this process: the file `NEBULA_ENV_FILE` names, when the process that started the worker did not apply it, and in the Editor the project's `.env.nebula`.
+4. `fallback`.
+
+Either spelling of a name works: `Get("GAME_API_URL")` and `Get("game-api-url")` look up the same variable. Nebula never logs a variable's value.
+
+## Fields
+
+### LocalFileName [#localfilename]
+
+```csharp
+public const string LocalFileName = ".env.nebula";
+```
+
+The file a project keeps its local variables in, at the project root. Keep it out of version control.
+
+### EnvFileVariable [#envfilevariable]
+
+```csharp
+public const string EnvFileVariable = "NEBULA_ENV_FILE";
+```
+
+Names a dotenv file whose variables are applied to a worker on top of the deployment's own (Nebula Cloud writes its secrets there).
+
+### Warn [#warn]
+
+```csharp
+public static Action<string> Warn = message =>
+{
+};
+```
+
+Where warnings go (names and line numbers only, never values). Set by the runtime to its log.
+
+## Methods
+
+### Get [#get]
+
+```csharp
+public static string Get(string key, string fallback = null);
+```
+
+The value of `key` from the command line, the process environment or a loaded file, in that order, or `fallback`.
+
+### Has [#has]
+
+```csharp
+public static bool Has(string key);
+```
+
+Whether [`Get`](#get) would find `key` anywhere.
+
+### EnvName [#envname]
+
+```csharp
+public static string EnvName(string key);
+```
+
+The environment variable name for a key: upper case, `-` turned into `_`. `game-api-url` is `GAME_API_URL`.
+
+### ArgName [#argname]
+
+```csharp
+public static string ArgName(string key);
+```
+
+The command-line switch for a key, without its dash: lower case, `_` turned into `-`. `GAME_API_URL` is `game-api-url`.
+
+### LoadFile [#loadfile]
+
+```csharp
+public static int LoadFile(string path);
+```
+
+Read a dotenv file into the file layer of [`Get`](#get) and copy its variables into this process's environment, where the environment does not already have them, so code that reads `Environment.GetEnvironmentVariable` sees them too. Variables a previous call copied are replaced or removed. Reserved names (`PORT`, `NEBULA_*`) are skipped with a warning.
+
+**Returns:** How many variables were loaded; 0 when the file does not exist.
+
+### ReadFile [#readfile]
+
+```csharp
+public static Dictionary<string, string> ReadFile(string path, Action<string> warn);
+```
+
+A dotenv file's game variables. Unreadable lines, reserved names and values that are too long are left out, each with a warning that names the line or the key.
+
+### Filter [#filter]
+
+```csharp
+public static Dictionary<string, string> Filter(IDictionary<string, string> vars, string source, Action<string> warn);
+```
+
+`vars` without the names a game may not set and the values that are too long, with a warning for each (named by `source`).

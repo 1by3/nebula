@@ -44,6 +44,7 @@
     "guides/cohesion",
     "---Running a mesh---",
     "guides/configuration",
+    "guides/environment-variables",
     "guides/gateway-extensions",
     "guides/orchestrator-and-dashboard",
     "guides/control-plane",

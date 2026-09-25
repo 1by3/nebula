@@ -53,6 +53,8 @@ nebula deploy [--target hetzner|cloud] [--workers N] [--min N] [--max N] [--npcs
                              same --workers/--min/--max semantics as `nebula start`; defaults from nebula.json deploy.*
                              cloud: [--release rel_id] [--label v12] [--allow-protocol-change] [--region id] [--worker-size s]
 nebula destroy [--target hetzner|cloud] [--all]
+nebula env ls|set|rm|pull|push [KEY[=VALUE]|file] [--secret] [--deployment a,b] [--out file] [--secret-keys K1,K2]
+                             the environment variables workers get: Nebula Cloud, or deploy.env for a Hetzner deploy
 nebula cloud login|logout|account
 nebula deployments [--all] [--json]
 nebula rollback [--release rel_id]
@@ -99,6 +101,9 @@ Per-project settings that travel with the project:
 `hetzner` or `cloud`. `cloud` names the Nebula Cloud organization, project and deployment; the first
 `nebula deploy --target cloud` writes it. Keys the CLI does not know are kept as they are. `executable` is the
 base name NebulaBuild gives the player (`Nebula.exe`, `Nebula.x86_64`, `Nebula.app`).
+
+`deploy.env` (a `{ "KEY": "value" }` map) holds the environment variables of a self-hosted deployment; `nebula env`
+edits it. It is committed with the project, so it holds no secrets. See "Environment variables" below.
 
 `database` names the control-plane database, `persistenceDatabase` the separate database that holds saved
 entities. Leave `deploy.persistenceDatabase` out and the CLI uses the control-plane database name with a
@@ -178,6 +183,38 @@ with the orchestrator VM; a PostgreSQL database is left in place.
 The Hetzner token is stored in `~/.nebula-cli/config.json` (0600 on Unix); `HCLOUD_TOKEN` in the environment
 always takes precedence, so CI can run without the file. The CLI replaced the earlier `Tools/run-mesh.ps1`,
 `Tools/build.ps1` and `Tools/hetzner/*.ps1` scripts; `Tools/smoke-test.ps1` drives the mesh through it.
+
+## Environment variables
+
+Games pass their own settings and secrets (service URLs, API keys, feature flags) to their workers as environment
+variables. Every worker process gets them as ordinary process environment variables; in code,
+`NebulaEnv.Get("GAME_API_URL", fallback)` reads the command line (`-game-api-url <value>`: lower case, `_` becomes
+`-`), then the process environment, then the files Nebula loaded (the file `NEBULA_ENV_FILE` names; in the Editor,
+`.env.nebula`), then the fallback. `PORT` and names starting with `NEBULA_` are reserved: the CLI refuses them and
+the launchers drop them with a warning. Nebula never logs a value.
+
+| Where | Source of the variables | How they reach the workers |
+| --- | --- | --- |
+| Editor (Mesh or Multiplayer Play Mode) | `.env.nebula` at the project root | `NebulaEnvLoader` loads it each time Play starts, in every Editor process (the virtual player that hosts the server reads the main project's file) and copies it into the process environment |
+| `nebula start` | `.env.nebula` at the project root | The CLI starts the orchestrator with `NEBULA_ENV_FILE` pointing at it; `ProcessWorkerHost` puts the variables in each worker's environment |
+| `nebula deploy --target hetzner` | `deploy.env` in `nebula.json` | The CLI writes them as the `Env` map of `/opt/nebula/bin/nebula-services.json` on the orchestrator VM; `HetznerWorkerHost` writes them to a root-only `/etc/nebula/worker.env` in each worker VM's boot script, which the `nebula-worker` unit reads (`EnvironmentFile=`) |
+| `nebula deploy --target cloud` | The project's variables in Nebula Cloud (`nebula env`, Cloud Dashboard) | Nebula Cloud sets them when it starts a worker VM, and writes secrets to a root-only dotenv file named by `NEBULA_ENV_FILE` |
+
+`WorkerEnvironment` (Runtime/Orchestrator/Hosting) is the launcher-side rule every host follows: the manifest's
+`Env` map first, then the file `NEBULA_ENV_FILE` names on top. Changes apply when workers next start.
+
+`nebula env` on a cloud target calls, under `/v1/projects/{projectId}`:
+
+```
+GET    /env?deployment=<name>          {"vars":[{"key","secret","value"(null if secret),"deployments":[],"updatedAt","updatedBy"}]}
+PUT    /env/{key}                      {"value","secret","deployments":[]}  -> the var; 400 {"error":"reserved_key"|"invalid_key"}
+DELETE /env/{key}?deployment=<name>    204; without the parameter the whole variable goes
+PUT    /env                            {"vars":[{"key","value","secret"}],"deployments":[]}  -> {"vars":[...]}
+```
+
+An empty `deployments` list means every deployment of the project. `set KEY` without a value reads it from standard
+input (or a hidden prompt), so `nebula env set GAME_API_KEY --secret < key.txt` keeps a secret out of shell history.
+`pull` never downloads a secret. On a Hetzner target `--secret` and `--deployment` are refused.
 
 ## Layout
 

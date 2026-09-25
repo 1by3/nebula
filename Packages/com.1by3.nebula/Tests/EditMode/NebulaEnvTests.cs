@@ -164,9 +164,9 @@ namespace Nebula.Tests
         [Test]
         public void Arg_and_env_names_map_both_ways()
         {
-            Assert.That(NebulaEnv.ArgName("HOLOVERSE_ECONOMY_URI"), Is.EqualTo("holoverse-economy-uri"));
-            Assert.That(NebulaEnv.EnvName("holoverse-economy-uri"), Is.EqualTo("HOLOVERSE_ECONOMY_URI"));
-            Assert.That(NebulaEnv.EnvName("-holoverse-economy-uri"), Is.EqualTo("HOLOVERSE_ECONOMY_URI"));
+            Assert.That(NebulaEnv.ArgName("GAME_API_URL"), Is.EqualTo("game-api-url"));
+            Assert.That(NebulaEnv.EnvName("game-api-url"), Is.EqualTo("GAME_API_URL"));
+            Assert.That(NebulaEnv.EnvName("-game-api-url"), Is.EqualTo("GAME_API_URL"));
             Assert.That(NebulaEnv.ArgName(NebulaEnv.EnvName("feature-x")), Is.EqualTo("feature-x"));
         }
 

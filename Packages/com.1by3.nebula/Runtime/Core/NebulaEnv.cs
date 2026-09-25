@@ -12,16 +12,16 @@ namespace Nebula
     /// <remarks>
     /// <see cref="Get"/> looks a variable up in this order and returns the first value it finds:
     /// <list type="number">
-    /// <item>The command line: <c>-holoverse-economy-uri &lt;value&gt;</c> (or <c>=value</c>) for <c>HOLOVERSE_ECONOMY_URI</c>.
+    /// <item>The command line: <c>-game-api-url &lt;value&gt;</c> (or <c>=value</c>) for <c>GAME_API_URL</c>.
     /// The switch is the name in lower case with <c>_</c> turned into <c>-</c> (<see cref="ArgName"/>). A web build
     /// reads it from the page's query string instead.</item>
-    /// <item>The process environment: <c>HOLOVERSE_ECONOMY_URI</c> (<see cref="EnvName"/>). Deployed workers get their
+    /// <item>The process environment: <c>GAME_API_URL</c> (<see cref="EnvName"/>). Deployed workers get their
     /// variables here: Nebula Cloud and <c>nebula deploy</c> set them before the worker starts.</item>
     /// <item>The files Nebula loaded for this process: the file <c>NEBULA_ENV_FILE</c> names, when the process that
     /// started the worker did not apply it, and in the Editor the project's <c>.env.nebula</c>.</item>
     /// <item><c>fallback</c>.</item>
     /// </list>
-    /// Either spelling of a name works: <c>Get("HOLOVERSE_ECONOMY_URI")</c> and <c>Get("holoverse-economy-uri")</c>
+    /// Either spelling of a name works: <c>Get("GAME_API_URL")</c> and <c>Get("game-api-url")</c>
     /// look up the same variable. Nebula never logs a variable's value.
     /// </remarks>
     public static class NebulaEnv
@@ -67,10 +67,10 @@ namespace Nebula
         /// <summary>Whether <see cref="Get"/> would find <paramref name="key"/> anywhere.</summary>
         public static bool Has(string key) => Get(key) != null;
 
-        /// <summary>The environment variable name for a key: upper case, <c>-</c> turned into <c>_</c>. <c>holoverse-economy-uri</c> is <c>HOLOVERSE_ECONOMY_URI</c>.</summary>
+        /// <summary>The environment variable name for a key: upper case, <c>-</c> turned into <c>_</c>. <c>game-api-url</c> is <c>GAME_API_URL</c>.</summary>
         public static string EnvName(string key) => (key ?? "").Trim().TrimStart('-').ToUpperInvariant().Replace('-', '_');
 
-        /// <summary>The command-line switch for a key, without its dash: lower case, <c>_</c> turned into <c>-</c>. <c>HOLOVERSE_ECONOMY_URI</c> is <c>holoverse-economy-uri</c>.</summary>
+        /// <summary>The command-line switch for a key, without its dash: lower case, <c>_</c> turned into <c>-</c>. <c>GAME_API_URL</c> is <c>game-api-url</c>.</summary>
         public static string ArgName(string key) => (key ?? "").Trim().TrimStart('-').ToLowerInvariant().Replace('_', '-');
 
         /// <summary>

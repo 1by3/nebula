@@ -44,7 +44,7 @@ and are refused. A value can be up to 32 KiB.
     public static readonly OptionSpec EnvDeploymentOption = new("deployment", true, "cloud: the deployments a variable applies to, comma-separated (default: every deployment of the project); ls and pull show what one deployment gets", "name");
     public override OptionSpec[] Options => new[]
     {
-        new OptionSpec("secret", false, "set: the value is secret. It is stored encrypted and never shown or downloaded again (cloud only)"),
+        new OptionSpec("secret", false, "set: the value is secret. It is never shown or downloaded again (cloud only)"),
         EnvDeploymentOption,
         new OptionSpec("out", true, "pull: write to this file instead of standard output", "file"),
         new OptionSpec("secret-keys", true, "push: the keys in the file whose values are secret, comma-separated", "K1,K2"),

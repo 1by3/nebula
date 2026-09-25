@@ -54,7 +54,7 @@ mkdirSync(outDir, { recursive: true });
 const groups = [
   { title: 'Getting started', commands: ['setup', 'init'] },
   { title: 'Running locally', commands: ['build', 'start', 'stop', 'status', 'logs', 'scale', 'dashboard'] },
-  { title: 'Deploy', commands: ['config', 'deploy', 'destroy'] },
+  { title: 'Deploy', commands: ['config', 'deploy', 'destroy', 'env'] },
   { title: 'Nebula Cloud', commands: ['cloud', 'deployments', 'rollback'] },
   { title: 'Other', commands: ['version', 'help'] },
 ];

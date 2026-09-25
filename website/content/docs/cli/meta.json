@@ -19,6 +19,7 @@
     "config",
     "deploy",
     "destroy",
+    "env",
     "---Nebula Cloud---",
     "cloud",
     "deployments",

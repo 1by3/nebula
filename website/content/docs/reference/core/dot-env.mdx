@@ -1,0 +1,153 @@
+---
+title: "DotEnv"
+description: "Reads and writes dotenv files (.env.nebula, the file NEBULA_ENV_FILE names, nebula env pull output), and holds the rules for the names of the environment variables a game gives its workers."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/DotEnv.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/DotEnv.cs)</div>
+
+```csharp
+public static class DotEnv
+```
+
+Reads and writes dotenv files (`.env.nebula`, the file `NEBULA_ENV_FILE` names, `nebula env pull` output), and holds the rules for the names of the environment variables a game gives its workers. The same code runs in the Unity runtime, the standalone services and the CLI.
+
+The format, one variable per line:
+
+- `KEY=value`. Spaces around the `=` and around an unquoted value are dropped, and so is an unquoted value's trailing comment (` # ...`, a `#` after whitespace).
+- `export KEY=value`: the `export` is ignored, so a file can be sourced by a shell too.
+- `KEY='value'`: taken literally. It may span several lines.
+- `KEY="value"`: `\n`, `\r`, `\t`, `\"` and `\\` are escapes. It may span several lines.
+- Blank lines and lines starting with `#` are skipped. Nothing is expanded: `$OTHER` stays as written.
+- When a key appears twice, the last one wins.
+
+## Fields
+
+### MaxValueBytes [#maxvaluebytes]
+
+```csharp
+public const int MaxValueBytes = 32 * 1024;
+```
+
+The longest value a variable may have: 32 KiB of UTF-8.
+
+## Methods
+
+### Parse [#parse]
+
+```csharp
+public static Result Parse(string text);
+```
+
+Parse dotenv text. Never throws: lines it cannot read are reported in `Result.Errors` and skipped.
+
+### Format [#format]
+
+```csharp
+public static string Format(string key, string value);
+```
+
+One `KEY=value` line that [`Parse`](#parse) reads back as the same value: bare when that is safe, double-quoted and escaped otherwise.
+
+### Write [#write]
+
+```csharp
+public static string Write(IEnumerable<KeyValuePair<string, string>> vars, IEnumerable<string> header = null);
+```
+
+A whole file: `header` lines as comments, then one line per variable.
+
+### IsValidKey [#isvalidkey]
+
+```csharp
+public static bool IsValidKey(string key);
+```
+
+A name the environment can carry: `^[A-Za-z_][A-Za-z0-9_]*$`.
+
+### IsReserved [#isreserved]
+
+```csharp
+public static bool IsReserved(string key);
+```
+
+Names Nebula sets itself, which a game cannot set for its workers: `PORT` (the port a worker listens on, set by the host) and anything starting with `NEBULA_`. Compared without regard to case.
+
+### KeyProblem [#keyproblem]
+
+```csharp
+public static string KeyProblem(string key);
+```
+
+Why `key` cannot be a game variable, or null when it can.
+
+### ValueProblem [#valueproblem]
+
+```csharp
+public static string ValueProblem(string key, string value);
+```
+
+Why `value` cannot be a variable's value, or null when it can.
+
+## Nested types
+
+### Entry [#entry]
+
+```csharp
+public sealed class Entry
+```
+
+One variable read from a file, with the line it starts on.
+
+#### Fields
+
+##### Key [#key]
+
+```csharp
+public string Key;
+```
+
+##### Value [#value]
+
+```csharp
+public string Value;
+```
+
+##### Line [#line]
+
+```csharp
+public int Line;
+```
+
+### Result [#result]
+
+```csharp
+public sealed class Result
+```
+
+What [`Parse`](#parse) read: the variables in file order (duplicates included), and one message per line it could not read.
+
+#### Fields
+
+##### Entries [#entries]
+
+```csharp
+public readonly List<Entry> Entries = new List<Entry>();
+```
+
+##### Errors [#errors]
+
+```csharp
+public readonly List<string> Errors = new List<string>();
+```
+
+"line 3: ..." messages. They name lines and keys, never values.
+
+#### Methods
+
+##### ToDictionary [#todictionary]
+
+```csharp
+public Dictionary<string, string> ToDictionary();
+```
+
+The variables as a map; a key that appears twice keeps its last value.

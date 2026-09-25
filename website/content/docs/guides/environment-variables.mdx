@@ -1,0 +1,171 @@
+---
+title: Pass settings and secrets to workers
+description: Give every worker your game's own environment variables, such as service URLs, API keys, and feature flags, locally and in deployments.
+---
+
+Use environment variables to give your workers settings that are not part of the build: the URL of a service your game calls, an API key, or a feature flag. A **worker** is a headless Unity process that simulates part of the game world. Nebula starts every worker process with your variables in its environment, and your code reads them with `NebulaEnv.Get`.
+
+Where the variables come from depends on how you run the game:
+
+| How you run it | Where you set the variables |
+| --- | --- |
+| Press Play in the Editor | A `.env.nebula` file at the project root |
+| `nebula start` | The same `.env.nebula` file |
+| `nebula deploy --target cloud` | `nebula env`, or the Cloud Dashboard |
+| `nebula deploy --target hetzner` | `nebula env`, which keeps them in `deploy.env` in `nebula.json` |
+
+## Read a variable in your code
+
+To read a variable, call `NebulaEnv.Get` with its name and a fallback:
+
+```csharp
+using Nebula;
+using UnityEngine;
+
+public sealed class GameServices : MonoBehaviour
+{
+    private string _apiUrl;
+
+    private void Awake()
+    {
+        _apiUrl = NebulaEnv.Get("GAME_API_URL", "http://localhost:5000");
+    }
+}
+```
+
+`NebulaEnv.Get` returns the first value it finds, in this order:
+
+1. **The command line.** The switch is the variable name in lower case with `_` turned into `-`. For `GAME_API_URL`, pass `-game-api-url https://api.example.com` or `-game-api-url=https://api.example.com`. A web build reads the same name from the page's query string.
+2. **The process environment.** This is where deployed workers get their variables.
+3. **The files Nebula loaded.** In the Editor, that is `.env.nebula`. A worker also reads the file that `NEBULA_ENV_FILE` names, if the process that started it did not already apply it.
+4. **The fallback** you passed, or `null`.
+
+Either spelling of a name works: `NebulaEnv.Get("game-api-url")` reads `GAME_API_URL`. Because the variables are ordinary environment variables, `System.Environment.GetEnvironmentVariable("GAME_API_URL")` also works on a worker.
+
+Nebula never writes a variable's value to a log. Warnings about a variable name the key or the line number only.
+
+## Name your variables
+
+- Use letters, digits, and `_`, and do not start with a digit. For example, `GAME_API_URL`.
+- Do not use `PORT` or a name that starts with `NEBULA_`. Nebula sets these itself. The CLI refuses them, and a worker host skips them with a warning.
+- Keep each value under 32 KiB.
+
+## Set variables for local runs
+
+To give local workers their variables, create `.env.nebula` at the project root, next to `nebula.json`:
+
+```bash
+# .env.nebula
+GAME_API_URL=http://localhost:5000
+GAME_API_KEY="dev-key-with spaces"
+export FEATURE_TRADING=on   # a comment
+```
+
+The file uses the dotenv format:
+
+- One `KEY=value` per line. Blank lines and lines that start with `#` are skipped.
+- A value in single quotes is taken literally. A value in double quotes understands `\n`, `\t`, `\"`, and `\\`. Both kinds of quoted value can span several lines.
+- An unquoted value ends at a `#` that follows a space.
+- A leading `export` is ignored, so you can also source the file from a shell.
+- Nothing is expanded: `$HOME` stays as written.
+
+<Callout type="warn" title="Keep .env.nebula out of version control">
+The file often holds secrets. `nebula init` adds `/.env.nebula` to your project's `.gitignore` when the project has one. If it does not, add the line yourself.
+</Callout>
+
+How each local run picks up the file:
+
+- **In the Editor**, Nebula loads `.env.nebula` each time you press Play, before any scene loads. This includes the Editor dev loop with [Multiplayer Play Mode](/docs/getting-started/running-locally#iterate-without-building-multiplayer-play-mode): the virtual player that hosts the server reads the main project's `.env.nebula`. Nebula also copies the variables into the Editor's environment, unless the environment already has a variable with that name. Edit the file, then stop and press Play again.
+- **With `nebula start`**, the CLI checks the file, prints how many variables the workers get, and starts the orchestrator with `NEBULA_ENV_FILE` set to the file. The orchestrator puts the variables in each worker's environment. Restart the mesh after you edit the file.
+
+Builds never read `.env.nebula` by themselves.
+
+To start a local file from a deployment's settings, pull its non-secret variables:
+
+```bash
+nebula env pull --deployment production --out .env.nebula
+```
+
+## Set variables on Nebula Cloud
+
+On [Nebula Cloud](/docs/deploy/cloud), variables belong to the project named in the `cloud` section of `nebula.json`. `nebula env` and the Cloud Dashboard edit the same variables.
+
+To set a variable for every deployment of the project, run:
+
+```bash
+nebula env set GAME_API_URL=https://api.example.com
+```
+
+To set a secret, pass the value on standard input so it stays out of your shell history:
+
+```bash
+nebula env set GAME_API_KEY --secret < api-key.txt
+```
+
+Without a value and without redirected input, the CLI asks for the value and hides what you type. Nebula Cloud never returns a secret's value: `nebula env ls` shows `(secret)`, and `nebula env pull` leaves it out.
+
+To limit a variable to some deployments, name them with `--deployment`:
+
+```bash
+nebula env set FEATURE_TRADING=on --deployment staging
+nebula env set FEATURE_TRADING=off --deployment production
+```
+
+To list the variables and the deployments they apply to, run:
+
+```bash
+nebula env ls
+```
+
+Add `--deployment <name>` to see only what one deployment gets.
+
+To remove a variable, run `nebula env rm GAME_API_URL`. Add `--deployment staging` to remove it from one deployment only.
+
+To upload a whole dotenv file at once, run:
+
+```bash
+nebula env push .env.production --deployment production --secret-keys GAME_API_KEY
+```
+
+`--secret-keys` names the variables in the file whose values are secret. The CLI checks the whole file first and uploads nothing if a line cannot be read or a name is reserved.
+
+Workers get a change the next time they start: after the next `nebula deploy`, rollout, or restart. Running workers keep the values they started with.
+
+## Set variables on a self-hosted Hetzner deployment
+
+On a [Hetzner deployment](/docs/deploy/hetzner), `nebula env` keeps the variables in `deploy.env` in `nebula.json`:
+
+```bash
+nebula env set GAME_API_URL=https://api.example.com
+```
+
+```json
+{
+  "deploy": {
+    "target": "hetzner",
+    "env": { "GAME_API_URL": "https://api.example.com" }
+  }
+}
+```
+
+`nebula env ls`, `rm`, `pull`, and `push` work on the same map. `--deployment` does not apply, because a Hetzner project has one deployment.
+
+On each `nebula deploy`, the CLI writes `deploy.env` into the service manifest on the orchestrator VM. When the orchestrator creates a worker VM, the VM's boot script writes the variables to `/etc/nebula/worker.env`, readable only by root, and the worker's systemd unit loads that file. Workers get a change on the next `nebula deploy`.
+
+<Callout type="warn" title="Hetzner deployments cannot hold secrets yet">
+`nebula.json` is committed with your project, and Hetzner keeps a copy of each worker VM's boot script. For that reason the CLI refuses `--secret` and `--secret-keys` on a Hetzner target. Do not put secrets in `deploy.env`. A value that contains a line break is also left out on Hetzner workers, with a warning.
+</Callout>
+
+## Point a worker at a secrets file
+
+Any process that starts workers can hand them a dotenv file of secrets: set `NEBULA_ENV_FILE` to the file's path in the worker host's environment. The orchestrator's local worker host applies the service manifest's `Env` map first, then the file on top. Nebula Cloud uses the same variable for the secrets it writes to each worker machine. A worker that can read the file also consults it through `NebulaEnv.Get`.
+
+## Troubleshooting
+
+**A variable is missing on a worker.** Check the orchestrator's log for a line that starts with `worker environment:` or `env:`. It names any variable that was skipped and why: a reserved name, an unreadable line, or a value that is too long.
+
+**The Editor still sees an old value.** A variable that was already in the Editor's environment before Nebula loaded `.env.nebula` wins over the file. Unset it, or restart the Editor from a shell that does not set it.
+
+**`nebula env` says the project has no Nebula Cloud project.** Run `nebula deploy --target cloud` once to record the organization and project in `nebula.json`, or pass `--org` and `--cloud-project`.
+
+For every option, see the [`nebula env` reference](/docs/cli/env).

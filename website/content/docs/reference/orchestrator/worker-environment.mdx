@@ -1,0 +1,45 @@
+---
+title: "WorkerEnvironment"
+description: "The game's environment variables a worker host gives every worker it launches, in this order (a later layer wins over an earlier one): The service manifest's Env map (ManifestEnv): the non-secret variables of a self-hosted deployment, wr..."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula.Hosting` · [Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/WorkerEnvironment.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Orchestrator/Hosting/WorkerEnvironment.cs)</div>
+
+```csharp
+public static class WorkerEnvironment
+```
+
+The game's environment variables a worker host gives every worker it launches, in this order (a later layer wins over an earlier one):
+
+1. The service manifest's `Env` map ([`ManifestEnv`](#manifestenv)): the non-secret variables of a self-hosted deployment, written by `nebula deploy` from `deploy.env` in nebula.json.
+2. The dotenv file the host's own `NEBULA_ENV_FILE` names: secrets a platform keeps out of the build (Nebula Cloud), or the project's `.env.nebula` under `nebula start`.
+
+Reserved names (`PORT`, `NEBULA_*`) are dropped with a warning; values are never logged.
+
+## Fields
+
+### ManifestEnv [#manifestenv]
+
+```csharp
+public static IDictionary<string, string> ManifestEnv;
+```
+
+The service manifest's `Env` map, set by the standalone orchestrator when it loads the manifest. Null when there is none.
+
+## Methods
+
+### Resolve [#resolve]
+
+```csharp
+public static Dictionary<string, string> Resolve(Func<string, string> getEnvironment = null, Action<string> warn = null);
+```
+
+The variables to give a worker. `getEnvironment` reads the launcher's own environment (null reads the process's); `warn` gets one line per variable left out.
+
+### ApplyTo [#applyto]
+
+```csharp
+public static void ApplyTo(IDictionary<string, string> target, IDictionary<string, string> vars);
+```
+
+Put `vars` into a child process's environment (`System.Diagnostics.ProcessStartInfo.Environment`).
