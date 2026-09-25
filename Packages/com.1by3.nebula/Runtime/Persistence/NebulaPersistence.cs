@@ -357,6 +357,13 @@ namespace Nebula
         /// arrives. Pass <paramref name="applyPose"/> false to keep the entity where it is and take only its state.
         /// A spawned entity also keeps its current pose when this process has not registered the record's container
         /// or carrier, such as an unloaded chunk, because the saved position is relative to that container.
+        /// <para>
+        /// The entity also continues the record's epoch, as a restored one does (see <see cref="Restore"/>). An
+        /// entity this worker owns moves to <c>record.Epoch + 1</c> if its epoch is lower, and one that is not
+        /// spawned yet spawns at that epoch, whichever spawn call the game uses. Either way its next checkpoint is
+        /// taken at the next opportunity. Without this, a pawn spawned at epoch 1 and given a record saved at a later
+        /// epoch would have every save refused by the store. A copy this worker does not own takes the state only.
+        /// </para>
         /// </summary>
         public void Apply(PersistedEntityRecord record, NetworkIdentity identity, bool applyPose = true)
         {
@@ -371,6 +378,7 @@ namespace Nebula
                 pe.LastSavedAt = Now();
                 pe.IsDirty = false;
                 pe.DirtySince = 0f;
+                AdoptEpoch(record, identity, pe);
             }
             PersistentStateCodec.Read(record.State, identity);
             if (identity.IsSpawned && identity.HasAuthority)
@@ -403,6 +411,39 @@ namespace Nebula
             }
             if (pe == null || pe.PersistVelocity) identity.Motion.Velocity = record.Velocity;
             if (!string.IsNullOrEmpty(record.Key)) _byKey[record.Key] = identity;
+        }
+
+        /// <summary>
+        /// Make <paramref name="identity"/> continue the lineage of <paramref name="record"/>, as a restore does: an
+        /// epoch of at least <c>record.Epoch + 1</c> and a checkpoint at the next opportunity
+        /// (<c>docs/persistence-durability.md</c> D9, D13).
+        /// <para>
+        /// This cannot weaken the epoch rule. Only a worker that holds authority over the entity, or is about to
+        /// spawn it with authority, gets here, and it has just read the record. The new epoch outranks saves at the
+        /// record's epoch or below, that is, saves from lives of the entity older than the one it read, which are
+        /// exactly the saves D9 refuses after a restore. A life that saved after the read, at a higher epoch, still
+        /// wins: this entity's saves are then refused, and the store warns.
+        /// </para>
+        /// </summary>
+        private static void AdoptEpoch(PersistedEntityRecord record, NetworkIdentity identity, PersistentEntity pe)
+        {
+            uint next = record.Epoch == uint.MaxValue ? uint.MaxValue : record.Epoch + 1;
+            if (!identity.IsSpawned)
+            {
+                // The spawn takes it, whichever spawn call the game uses; a restore passes the same epoch, so it is not
+                // raised twice.
+                if (next > pe.AdoptedEpoch) pe.AdoptedEpoch = next;
+                pe.StampPending = true;
+                return;
+            }
+            if (!identity.HasAuthority) return; // a ghost: its owner's epoch is the one that counts
+            if (identity.Epoch < next)
+            {
+                // Replicas take the higher epoch from the next state they receive, as after a handover.
+                NebulaLog.Info($"persistence: {identity} continues {record.Key} from epoch {record.Epoch}; now at epoch {next}");
+                identity.Epoch = next;
+            }
+            pe.StampPending = true;
         }
 
         /// <summary>

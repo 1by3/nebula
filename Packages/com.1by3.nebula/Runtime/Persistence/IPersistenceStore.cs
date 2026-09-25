@@ -265,4 +265,50 @@ namespace Nebula
             if (result.TryGetValue(record.CarrierKey, out var list)) ((List<PersistedEntityRecord>)list).Add(record);
         }
     }
+
+    /// <summary>
+    /// The stores' report of saves the epoch rule dropped. A dropped save is normally from a worker that lost an
+    /// entity and does not know it yet. It can also come from a live entity whose epoch is behind its own record,
+    /// and then every checkpoint of that entity is lost (NEB-325). So the first drop of each key is a warning with
+    /// both epochs. Later drops of that key are debug lines, so a lagging worker cannot flood the log. There is one
+    /// instance per store, so one per process. Thread-safe: <c>SqlPersistenceStore</c> reports from its writer thread.
+    /// </summary>
+    internal sealed class StaleSaveLog
+    {
+        /// <summary>Most keys remembered. Past this, drops of new keys are counted but not warned about.</summary>
+        public const int MaxKeys = 4096;
+
+        private readonly HashSet<string> _warned = new HashSet<string>(StringComparer.Ordinal);
+        private readonly object _gate = new object();
+        private long _dropped;
+
+        /// <summary>Saves dropped since the store was created, warned about or not.</summary>
+        public long Dropped { get { lock (_gate) return _dropped; } }
+
+        /// <summary>
+        /// Count one dropped save of <paramref name="key"/>. True when it is the first for that key and the caller
+        /// should warn with <see cref="Message"/>.
+        /// </summary>
+        public bool Drop(string key)
+        {
+            lock (_gate)
+            {
+                _dropped++;
+                return _warned.Count < MaxKeys && _warned.Add(key ?? "");
+            }
+        }
+
+        /// <summary>Count one dropped save, and warn when it is the first for its key.</summary>
+        public void Report(string key, uint savedEpoch, uint storedEpoch, string savedBy)
+        {
+            if (Drop(key)) NebulaLog.Warn(Message(key, savedEpoch, storedEpoch, savedBy));
+            else NebulaLog.Debugf($"persistence: stale save for {key} (epoch {savedEpoch} < {storedEpoch}); dropped");
+        }
+
+        public static string Message(string key, uint savedEpoch, uint storedEpoch, string savedBy) =>
+            $"persistence: dropped a save of {key} at epoch {savedEpoch}{(string.IsNullOrEmpty(savedBy) ? "" : " from " + savedBy)} " +
+            $"because the store holds epoch {storedEpoch}. Either a worker that lost this entity is still saving it, or " +
+            "this entity was given its record's state without the record's epoch and none of its saves will land. " +
+            "Later drops for this key are logged only with verbose logging.";
+    }
 }

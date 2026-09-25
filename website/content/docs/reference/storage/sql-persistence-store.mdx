@@ -63,6 +63,14 @@ public int PendingJobs { get; }
 
 Jobs waiting for the writer thread.
 
+### StaleSavesDropped [#stalesavesdropped]
+
+```csharp
+public long StaleSavesDropped { get; }
+```
+
+Saves refused since the store was created because the stored record had a newer epoch. The first refusal of each key is also logged as a warning.
+
 ## Methods
 
 ### Connect [#connect]

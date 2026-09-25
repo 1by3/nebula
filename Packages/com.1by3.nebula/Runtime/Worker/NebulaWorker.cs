@@ -1281,7 +1281,9 @@ namespace Nebula
 
         /// <summary>
         /// The one spawn path. <paramref name="epoch"/> is 1 for a new entity and <c>record.Epoch + 1</c> for one
-        /// restored from the store.
+        /// restored from the store. An entity the game applied a record to before spawning it
+        /// (<see cref="NebulaPersistence.Apply"/>) spawns at that record's epoch + 1 as well, whichever spawn call
+        /// made it (<see cref="PersistentEntity.AdoptedEpoch"/>).
         /// </summary>
         private void Spawn(NetworkIdentity identity, Container container, ulong ownerClientId, bool serverDriven, uint epoch)
         {
@@ -1294,6 +1296,13 @@ namespace Nebula
             identity.Initialize();
             identity.NetId = ((ulong)WorkerIndex << 48) | (++_nextSequence);
             identity.Epoch = epoch == 0 ? 1 : epoch;
+            var persistent = identity.Persistent;
+            if (persistent != null)
+            {
+                // A record applied before the spawn: continue its lineage, or its saves would be refused (NEB-325).
+                if (persistent.AdoptedEpoch > identity.Epoch) identity.Epoch = persistent.AdoptedEpoch;
+                persistent.AdoptedEpoch = 0;
+            }
             identity.OwnerClientId = ownerClientId;
             identity.OwnerIdentity = ownerClientId != 0 && _playerIdentities.TryGetValue(ownerClientId, out var playerIdentity) ? playerIdentity : "";
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
