@@ -620,6 +620,14 @@ public float ScopeIdleRetireSeconds = 300f;
 
 Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.
 
+### ScopeRetireWithEntities [#scoperetirewithentities]
+
+```csharp
+public bool ScopeRetireWithEntities = false;
+```
+
+Retire an idle scope that nobody is playing in even though it still holds entities, such as saved crates or parked vehicles. Its persistent entities are checkpointed and come back with it. Off: a scope retires only once it holds no entity at all. -nebula-scope-retire-with-entities overrides.
+
 ### SceneEntityGraceSeconds [#sceneentitygraceseconds]
 
 ```csharp

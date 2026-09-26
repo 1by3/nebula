@@ -70,6 +70,34 @@ namespace Nebula
         /// </summary>
         public static event Action<Container> OnRetired;
 
+        /// <summary>
+        /// Which entities a retire may throw away: return true for a non-persistent entity your game rebuilds by itself
+        /// when the scope comes back, such as an NPC it respawns from its own saved state, a projectile or an effect.
+        /// Null (the default) keeps every non-persistent entity.
+        /// <para>
+        /// A worker holds the idle clock of a scope's part at zero while the part holds anything a retire would lose
+        /// (<see cref="WorkerScopeLifecycle.IsBusy"/>), so a single NPC that is not persistent keeps its scope running
+        /// forever. An entity this accepts no longer counts: the part can go idle with it inside, and the retire removes
+        /// it with the part. Client-owned entities, and persistent entities with unsaved changes, still keep the part
+        /// busy whatever this returns. Consulted on the worker that owns the part, on the main thread; a predicate that
+        /// throws is logged and the entity is kept.
+        /// </para>
+        /// </summary>
+        public static Func<NetworkIdentity, bool> DiscardOnRetire;
+
+        /// <summary>Whether <see cref="DiscardOnRetire"/> accepts <paramref name="entity"/>; false when nothing is set or it throws.</summary>
+        internal static bool MayDiscard(NetworkIdentity entity)
+        {
+            var predicate = DiscardOnRetire;
+            if (predicate == null || entity == null) return false;
+            try { return predicate(entity); }
+            catch (Exception e)
+            {
+                NebulaLog.Error($"the DiscardOnRetire predicate threw for entity {entity.NetId}: {e.Message}; keeping it");
+                return false;
+            }
+        }
+
         /// <summary>Whether anything is listening for <see cref="OnScopeActivating"/>; the restore gate is free when nothing is.</summary>
         internal static bool HasScopeActivating => OnScopeActivating != null;
 
@@ -149,6 +177,7 @@ namespace Nebula
             OnContainerRestored = null;
             OnBeforeRetire = null;
             OnRetired = null;
+            DiscardOnRetire = null;
         }
     }
 }

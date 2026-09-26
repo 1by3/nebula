@@ -1443,6 +1443,7 @@ namespace Nebula
                 Entities = entities,
                 Players = players,
                 RetireAfterSeconds = Config.ScopeIdleRetireSeconds,
+                RetireWithEntities = Config.ScopeRetireWithEntities,
             };
             bool retire;
             // The policy is the game's code. One that throws must not stop the sweep or retire the scope by accident.
@@ -2214,6 +2215,7 @@ namespace Nebula
             }
             w.EndArray();
             w.Prop("scopeIdleRetireSeconds", Config.ScopeIdleRetireSeconds);
+            w.Prop("scopeRetireWithEntities", Config.ScopeRetireWithEntities);
             w.Prop("capacitySaturation", Config.CapacitySaturation);
 
             w.Key("gateways");

@@ -222,6 +222,8 @@ namespace Nebula
 
         [Tooltip("Seconds a shared simulation scope (an instance, a keyed world) may sit with nobody in it before the orchestrator retires it: its persistent entities are checkpointed, its containers are released, and the scope comes back when it is activated again. 0 turns retiring off. Never applies to the public world. -nebula-scope-idle-retire overrides.")]
         public float ScopeIdleRetireSeconds = 300f;
+        [Tooltip("Retire an idle scope that nobody is playing in even though it still holds entities, such as saved crates or parked vehicles. Its persistent entities are checkpointed and come back with it. Off: a scope retires only once it holds no entity at all. -nebula-scope-retire-with-entities overrides.")]
+        public bool ScopeRetireWithEntities = false;
 
         [Header("Scene entities")]
         [Tooltip("After a worker gains a container lease, how long it waits before spawning the unspawned scene entities standing in it. Gives the previous owner's handover time to arrive so an entity is not spawned twice.")]

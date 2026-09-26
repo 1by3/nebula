@@ -24,6 +24,13 @@ namespace Nebula
         public int Players;
         /// <summary>The configured idle threshold, in seconds (<c>NebulaConfig.ScopeIdleRetireSeconds</c>); 0 or less turns retiring off.</summary>
         public float RetireAfterSeconds;
+        /// <summary>
+        /// The configured <c>NebulaConfig.ScopeRetireWithEntities</c>: when true, entities nobody plays
+        /// (<see cref="Entities"/> beyond <see cref="Players"/>) don't keep an idle scope. Persistent ones are
+        /// checkpointed by the retire and come back with the scope; anything a retire would lose already keeps the
+        /// scope's idle clock at zero on its worker, so the scope never reaches the threshold.
+        /// </summary>
+        public bool RetireWithEntities;
     }
 
     /// <summary>The game's answer to "should this scope go now?". See <see cref="ScopeLifecycle.ShouldRetire"/>.</summary>
@@ -56,12 +63,15 @@ namespace Nebula
 
         /// <summary>
         /// The default policy: retire once the scope has held no client-owned entity and no authoritative entity at
-        /// all for <see cref="ScopeRetireContext.RetireAfterSeconds"/>. Pure.
+        /// all for <see cref="ScopeRetireContext.RetireAfterSeconds"/>. With
+        /// <see cref="ScopeRetireContext.RetireWithEntities"/>, only client-owned entities keep it: a scope that holds
+        /// saved objects and nobody playing retires once it is idle. Pure.
         /// </summary>
         public static bool RetireWhenIdle(in ScopeRetireContext context)
         {
             if (context.RetireAfterSeconds <= 0f) return false;
-            if (context.Players > 0 || context.Entities > 0) return false;
+            if (context.Players > 0) return false;
+            if (context.Entities > 0 && !context.RetireWithEntities) return false;
             return context.IdleSeconds >= context.RetireAfterSeconds;
         }
 

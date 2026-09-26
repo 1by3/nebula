@@ -108,6 +108,7 @@ Entities carrying a `PersistentEntity` component are saved and restored. See [Pe
 | `PersistenceCheckpointSeconds` | `5` | Choose how often an authoritative persistent entity is checkpointed. A change or a move saves sooner. |
 | `PersistenceRestoreGraceSeconds` | `3` | Wait this long after gaining a container lease before restoring that container's saved entities. |
 | `ScopeIdleRetireSeconds` | `300` | Retire a [simulation scope](/docs/guides/scopes#retiring-and-re-activating-a-scope) that has held nothing for this long: checkpoint its persistent entities, release its containers, and bring it back when the key is activated again. `0` turns retirement off. Never applies to the public world. |
+| `ScopeRetireWithEntities` | `false` | Retire an idle scope that no player is in even though it still holds entities, such as saved crates or parked vehicles. See [Retire a world that still holds things](/docs/guides/scopes#retire-a-world-that-still-holds-things). |
 
 ### Interest management
 
@@ -223,6 +224,7 @@ Pass options as `-name value`. Pass a Boolean option without a value to enable i
 | `-nebula-persistence-file <path>` | worker, orchestrator | Override `PersistenceLocalFile`. |
 | `-nebula-persistence-checkpoint <seconds>` | worker | Override `PersistenceCheckpointSeconds`. |
 | `-nebula-scope-idle-retire <seconds>` | orchestrator | Override `ScopeIdleRetireSeconds`. `0` turns scope retirement off. |
+| `-nebula-scope-retire-with-entities true\|false` | orchestrator | Override `ScopeRetireWithEntities`. |
 | `-nebula-workers <number>` | orchestrator | Set the initial worker count. |
 | `-nebula-min-workers <number>`, `-nebula-max-workers <number>` | orchestrator | Override `MinWorkers` and `MaxWorkers`, the autoscaling band. |
 | `-nebula-autoscale true\|false` | orchestrator | Override `AutoScale`. |

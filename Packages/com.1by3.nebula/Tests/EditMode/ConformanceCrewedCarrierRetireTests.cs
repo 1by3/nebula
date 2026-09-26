@@ -392,5 +392,36 @@ namespace Nebula.Tests
             SpawnAboard(_pawnPrefab, shuttle, PilotClient);
             Assert.That(WorkerScopeLifecycle.IsBusy(chunk), Is.True, "a client's pawn two carriers deep is standing in the part");
         }
+
+        /// <summary>
+        /// <see cref="NebulaLifecycle.DiscardOnRetire"/>: a non-persistent entity the game rebuilds by itself (an NPC it
+        /// respawns from its own state) no longer keeps its part busy, so the scope's idle clock can run. A client's pawn
+        /// still does, whatever the predicate says.
+        /// </summary>
+        [Test]
+        public void AnEntityTheGameRebuildsDoesNotKeepItsPartBusy()
+        {
+            var persistence = AttachPersistence();
+            var grid = new RuntimeGrid(Cell, planar: true);
+            var chunk = Chunk(grid, Vector3Int.zero);
+            var ship = SpawnShip(chunk, grid.CenterOf(Vector3Int.zero));
+            persistence.SaveNow(ship);
+            var drone = SpawnAboard(_pawnPrefab, ship);
+            Assert.That(WorkerScopeLifecycle.IsBusy(chunk), Is.True, "by default transient state keeps the part busy");
+            try
+            {
+                NebulaLifecycle.DiscardOnRetire = e => e == drone;
+                Assert.That(WorkerScopeLifecycle.IsBusy(chunk), Is.False, "the game rebuilds the drone itself");
+
+                NebulaLifecycle.DiscardOnRetire = e => throw new InvalidOperationException("broken predicate");
+                UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("DiscardOnRetire predicate threw"));
+                Assert.That(WorkerScopeLifecycle.IsBusy(chunk), Is.True, "a predicate that throws keeps the entity");
+
+                NebulaLifecycle.DiscardOnRetire = e => true;
+                SpawnAboard(_pawnPrefab, ship, PilotClient);
+                Assert.That(WorkerScopeLifecycle.IsBusy(chunk), Is.True, "a client's pawn is never discarded");
+            }
+            finally { NebulaLifecycle.DiscardOnRetire = null; }
+        }
     }
 }

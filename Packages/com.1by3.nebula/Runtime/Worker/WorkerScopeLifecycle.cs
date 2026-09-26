@@ -257,7 +257,9 @@ namespace Nebula
         /// <summary>
         /// Whether emptying this container now would lose something. Pure over the container's contents, including
         /// everything riding in a vehicle in it at any depth, because <see cref="NebulaWorker.EmptyContainer"/>
-        /// removes riders too. A client's pawn seated in a ship parked in the part keeps the part busy.
+        /// removes riders too. A client's pawn seated in a ship parked in the part keeps the part busy. A
+        /// non-persistent entity the game said it rebuilds by itself (<see cref="NebulaLifecycle.DiscardOnRetire"/>)
+        /// does not.
         /// </summary>
         public static bool IsBusy(Container container)
         {
@@ -273,7 +275,12 @@ namespace Nebula
                     if (e == null || !e.IsSpawned || !e.HasAuthority) continue;
                     if (e.OwnerClientId != 0) return true;         // an interested client is standing in it, or riding
                     var pe = e.Persistent;
-                    if (pe == null) return true;                   // transient state a retire would destroy
+                    if (pe == null)
+                    {
+                        // Transient state a retire would destroy, unless the game rebuilds it by itself.
+                        if (NebulaLifecycle.MayDiscard(e)) continue;
+                        return true;
+                    }
                     if (pe.IsDirty || PersistentStateCodec.HasDirtyVars(e)) return true; // changes not yet in the store
                 }
                 return false;

@@ -87,6 +87,7 @@ namespace Nebula
         public float PersistenceCheckpointSeconds = 5f;
         public float PersistenceRestoreGraceSeconds = 3f;
         public float ScopeIdleRetireSeconds = 300f;
+        public bool ScopeRetireWithEntities = false;
         public float SceneEntityGraceSeconds = 2f;
         public float InterestRadius = 120f;
         public float InterestExitMargin = 16f;
