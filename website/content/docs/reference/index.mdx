@@ -34,6 +34,10 @@ Build replicated gameplay with identities, behaviors, variables, RPCs, predictio
 | [NetworkAnimator](/docs/reference/core/network-animator) | Class. Replicates selected Animator parameters from the authoritative worker to clients and ghost workers. |
 | [NetworkBehaviour](/docs/reference/core/network-behaviour) | Abstract class. Base class for replicated gameplay components. |
 | [NetworkIdentity](/docs/reference/core/network-identity) | Class. Marks a GameObject as a networked entity. |
+| [NetworkMap\<TKey, TValue\>](/docs/reference/core/network-map) | Class. A keyed collection replicated from the authoritative worker to clients and ghost workers, sending only what changed. |
+| [NetworkMapBase](/docs/reference/core/network-map-base) | Abstract class. The untyped half of NetworkMap\<TKey, TValue\>: what NetworkIdentity needs to send and apply a map without knowing its types (docs/replicated-collections.md). |
+| [NetworkMapChange\<TKey, TValue\>](/docs/reference/core/network-map-change) | Struct. One key's change, raised by NetworkMap\<TKey, TValue\>.OnChanged on every copy of the map. |
+| [NetworkMapChangeKind](/docs/reference/core/network-map-change-kind) | Enum. What happened to one key of a NetworkMap\<TKey, TValue\>. |
 | [NetworkMotionState](/docs/reference/core/network-motion-state) | Class. Motion shared by scripted movement, prediction, physics, telemetry, and persistence. |
 | [NetworkPrefabs](/docs/reference/core/network-prefabs) | Static class. Prefab id table shared by every process. |
 | [NetworkRigidbody](/docs/reference/core/network-rigidbody) | Class. Puts a Unity Rigidbody under the mesh's authority model. |
@@ -325,6 +329,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [AuthorityCallMsg](/docs/reference/protocol/authority-call-msg) | Struct. An AuthorityRpc on the worker-to-worker link (MsgId.AuthorityRpc). |
 | [AuthorityCallReplyMsg](/docs/reference/protocol/authority-call-reply-msg) | Struct. The outcome of an AuthorityCallMsg that set AuthorityCallFlags.WantsReply (MsgId.AuthorityRpcReply), sent by the worker that decided it to the worker whose index the call id carries. |
 | [AuthorityTransferMsg](/docs/reference/protocol/authority-transfer-msg) | Struct. The authority event. |
+| [ByteArrayComparer](/docs/reference/protocol/byte-array-comparer) | Class. Compares byte arrays by content: how a party without game types keys a map (the gateway's cache). |
 | [ClientFocusHintMsg](/docs/reference/protocol/client-focus-hint-msg) | Struct. Client -\> gateway: where the player is looking, as a hint for interest (a sniper scope, an RTS camera). |
 | [ClientInputMsg](/docs/reference/protocol/client-input-msg) | Struct. A short run of recent inputs (redundant against loss). |
 | [ContainerOwnershipEntry](/docs/reference/protocol/container-ownership-entry) | Struct. Stores the values used by container ownership entry. |
@@ -337,6 +342,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntityFlags](/docs/reference/protocol/entity-flags) | Enum. Lists the supported entity flags values. |
 | [EntityForgetMsg](/docs/reference/protocol/entity-forget-msg) | Struct. Worker -\> gateway: the entity left every region this gateway subscribes on this worker. |
 | [EntityInterestFlags](/docs/reference/protocol/entity-interest-flags) | Enum. Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from). |
+| [EntityMapsMsg](/docs/reference/protocol/entity-maps-msg) | Struct. Changed map entries for one entity (docs/replicated-collections.md D4): MsgId.EntityMaps worker to gateway to client, MsgId.GhostMaps worker to worker. |
 | [EntityRedirectMsg](/docs/reference/protocol/entity-redirect-msg) | Struct. Worker -\> gateway: an entity the gateway subscribed by id (a policy extra, or one it owns) is now on another worker. |
 | [EntityRpcMsg](/docs/reference/protocol/entity-rpc-msg) | Struct. Carries the entity rpc protocol message. |
 | [EntitySpawnMsg](/docs/reference/protocol/entity-spawn-msg) | Struct. Full description of an entity. |
@@ -357,6 +363,8 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
+| [NetworkMapCache](/docs/reference/protocol/network-map-cache) | Class. The contents of an entity's maps kept as opaque bytes, by a party that relays them without knowing their types: the gateway, so a late joiner is sent the current contents (docs/replicated-collections.md D6). |
+| [NetworkMapCodec](/docs/reference/protocol/network-map-codec) | Static class. The wire and save format of NetworkMapBase contents (docs/replicated-collections.md D3). |
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |

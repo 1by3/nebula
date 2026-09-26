@@ -1058,6 +1058,8 @@ namespace Nebula
             client.ViewSeq[rec.NetId] = seq;
             var msg = rec.LastSpawn.ForClient();
             msg.State = CachedStateFor(rec, client);
+            // The maps as they are now, not as the spawn had them (docs/replicated-collections.md D6).
+            if (rec.Maps != null) msg.Maps = rec.Maps.Encode();
             msg.ViewSeq = seq;
             _interestWriter.Reset();
             msg.Write(_interestWriter, MsgId.EntitySpawn);

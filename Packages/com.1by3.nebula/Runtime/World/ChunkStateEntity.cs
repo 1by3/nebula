@@ -11,8 +11,9 @@ namespace Nebula.World
     /// or spawns the entity itself; it reads through <see cref="ChunkState"/> and writes through
     /// <see cref="ChunkStateService"/>.
     /// <para>
-    /// The entries replicate as one NetworkVariable holding the whole map, sent again whenever it changes. The
-    /// gateway keeps the latest copy for clients that arrive later. They are saved through
+    /// The entries replicate through a <see cref="NetworkMap{TKey, TValue}"/>, so a change sends only the entries
+    /// that changed, and the gateway keeps the current contents for clients that arrive later
+    /// (docs/replicated-collections.md D15). They are saved through
     /// <see cref="NetworkBehaviour.WritePersistentState"/>, so the entity's <see cref="PersistentEntity"/> record is
     /// the chunk's record in the store.
     /// </para>
@@ -27,9 +28,22 @@ namespace Nebula.World
         /// <summary>Name of the built-in prefab, and of the prefab saved in the entity's records.</summary>
         public const string PrefabName = "NebulaChunkState";
 
-        /// <summary>The map, as a NetworkVariable so it rides the spawn message, the gateway's cache, ghosts and handovers.</summary>
-        private readonly EntriesVariable _entries = new EntriesVariable();
+        /// <summary>
+        /// Room for the largest map <see cref="ChunkState.MaxEncodedBytes"/> allows, in the replicated encoding (five
+        /// bytes more per entry than the record's).
+        /// </summary>
+        private const int ReplicatedCapacity = 128 * 1024;
 
+        /// <summary>
+        /// The replicated copy of the entries: the spawn, the gateway's cache, ghosts and handovers carry it in full,
+        /// and a change sends only the entries it touched. The authority mirrors <see cref="_map"/> into it; every
+        /// other copy applies what arrives to <see cref="_map"/> (<see cref="OnEntryReceived"/>).
+        /// </summary>
+        private readonly NetworkMap<ulong, ObjectState> _entries = new NetworkMap<ulong, ObjectState>(null, ReplicatedCapacity);
+        /// <summary>This copy is writing <see cref="_entries"/> itself: what it raises is not news from the authority.</summary>
+        private bool _mirroring;
+
+        /// <summary>This copy's view of the entries: what it reads, expires and saves.</summary>
         private readonly SortedDictionary<ulong, ObjectState> _map = new SortedDictionary<ulong, ObjectState>();
         private readonly List<ulong> _scratchIds = new List<ulong>();
         private int _encodedBytes = ChunkStateCodec.HeaderBytes;
@@ -42,6 +56,18 @@ namespace Nebula.World
         /// has entries. The service despawns the entity a moment later, so the emptying reaches clients first.
         /// </summary>
         internal float EmptySince = -1f;
+
+        static ChunkStateEntity()
+        {
+            if (!NetworkSerialization.CanSerialize(typeof(ObjectState)))
+                NetworkSerialization.Register<ObjectState>(ChunkStateCodec.WriteState, ChunkStateCodec.ReadState);
+        }
+
+        public ChunkStateEntity()
+        {
+            // In the constructor, not Awake: a copy reads its spawn's entries before its object is ever activated.
+            _entries.OnChanged += OnEntryReceived;
+        }
 
         /// <summary>The id of the container (chunk) whose state this entity carries. Empty before it spawns.</summary>
         public string ContainerId { get; private set; } = "";
@@ -97,6 +123,7 @@ namespace Nebula.World
         internal void Seed(ulong objectId, in ObjectState state)
         {
             PutEntry(objectId, state);
+            Mirror(objectId);
             AfterAuthorityChange();
         }
 
@@ -106,6 +133,7 @@ namespace Nebula.World
             if (!Fits(objectId, state)) return false;
             if (_map.TryGetValue(objectId, out var old) && old.Equals(state)) return true;
             PutEntry(objectId, state);
+            Mirror(objectId);
             AfterAuthorityChange();
             RaiseChange(objectId, ObjectStateChangeKind.Set, true, state);
             return true;
@@ -118,6 +146,7 @@ namespace Nebula.World
             _map.Remove(objectId);
             _encodedBytes -= ChunkStateCodec.EntrySize(old);
             if (old.Expires && old.ExpiresAtUnixMs == _nextExpiry) RecomputeNextExpiry();
+            Mirror(objectId);
             AfterAuthorityChange();
             RaiseChange(objectId, ObjectStateChangeKind.Cleared, false, default);
             return true;
@@ -138,10 +167,8 @@ namespace Nebula.World
         /// </summary>
         private void AfterAuthorityChange()
         {
-            _entries.Dirty = true;
             var identity = Identity;
             if (identity == null) return;
-            identity.MarkVarsDirty();
             var pe = identity.Persistent;
             if (pe != null)
             {
@@ -170,7 +197,11 @@ namespace Nebula.World
             }
             RecomputeNextExpiry();
             if (_scratchIds.Count == 0) return;
-            if (HasAuthority) AfterAuthorityChange();
+            if (HasAuthority)
+            {
+                for (int i = 0; i < _scratchIds.Count; i++) Mirror(_scratchIds[i]);
+                AfterAuthorityChange();
+            }
             for (int i = 0; i < _scratchIds.Count; i++) RaiseChange(_scratchIds[i], ObjectStateChangeKind.Expired, false, default);
             _scratchIds.Clear();
         }
@@ -195,6 +226,7 @@ namespace Nebula.World
             {
                 _encodedBytes -= ChunkStateCodec.EntrySize(_map[_scratchIds[i]]);
                 _map.Remove(_scratchIds[i]);
+                if (MayWriteEntries) Mirror(_scratchIds[i]);
             }
             _scratchIds.Clear();
             RecomputeNextExpiry();
@@ -211,54 +243,81 @@ namespace Nebula.World
 
         // ------------------------------------------------------------------------------------------ replication
 
-        private void WriteEntries(NetworkWriter writer)
-        {
-            int lengthAt = writer.ReserveUShort();
-            int start = writer.Length;
-            ChunkStateCodec.WriteBody(writer, _map);
-            writer.PatchUShort(lengthAt, (ushort)(writer.Length - start));
-        }
-
         private static readonly SortedDictionary<ulong, ObjectState> Incoming = new SortedDictionary<ulong, ObjectState>();
 
-        private void ReadEntries(NetworkReader reader)
+        /// <summary>Whether this copy writes the replicated entries: the authority, or a copy not spawned yet (a seed, a restore).</summary>
+        private bool MayWriteEntries
         {
-            var body = reader.ReadSegment(reader.ReadUShort());
-            Incoming.Clear();
-            if (!ChunkStateCodec.TryReadBody(body, Incoming, out string error))
+            get
             {
-                NebulaLog.Warn($"chunk state of {(ContainerId != "" ? ContainerId : name)}: {error}; keeping the previous entries");
-                Incoming.Clear();
+                var identity = Identity;
+                return identity == null || !identity.IsSpawned || HasAuthority || identity.ReceivingHandover;
+            }
+        }
+
+        /// <summary>Make the replicated entry for <paramref name="objectId"/> what <see cref="_map"/> holds.</summary>
+        private void Mirror(ulong objectId)
+        {
+            _mirroring = true;
+            try
+            {
+                if (_map.TryGetValue(objectId, out var state))
+                {
+                    if (!_entries.TrySet(objectId, state)) NebulaLog.Error($"chunk state of {ContainerId}: entry {objectId} does not fit the replicated map");
+                }
+                else _entries.Remove(objectId);
+            }
+            finally { _mirroring = false; }
+        }
+
+        private readonly List<ulong> _mirrorIds = new List<ulong>();
+
+        /// <summary>Make the replicated entries exactly <see cref="_map"/>: after a restore, and when authority arrives.</summary>
+        private void MirrorAll()
+        {
+            if (!MayWriteEntries) return;
+            _mirrorIds.Clear();
+            foreach (var kv in _entries) if (!_map.ContainsKey(kv.Key)) _mirrorIds.Add(kv.Key);
+            foreach (var kv in _map) _mirrorIds.Add(kv.Key);
+            for (int i = 0; i < _mirrorIds.Count; i++) Mirror(_mirrorIds[i]);
+            _mirrorIds.Clear();
+        }
+
+        /// <summary>
+        /// A copy that is not the authority applies what the authority sent, entry by entry: a spawn's or a
+        /// handover's full copy (diffed by the map) or a change. What expired here already is not raised again.
+        /// </summary>
+        private void OnEntryReceived(NetworkMapChange<ulong, ObjectState> change)
+        {
+            if (_mirroring) return;
+            long now = ChunkState.NowUnixMs;
+            if (change.Kind == NetworkMapChangeKind.Removed)
+            {
+                if (!_map.TryGetValue(change.Key, out var old)) return;
+                _map.Remove(change.Key);
+                _encodedBytes -= ChunkStateCodec.EntrySize(old);
+                if (old.Expires && old.ExpiresAtUnixMs == _nextExpiry) RecomputeNextExpiry();
+                // Cleared by a write, or expired on the authority before it expired here.
+                if (old.IsLiveAt(now)) RaiseChange(change.Key, ObjectStateChangeKind.Cleared, false, default);
                 return;
             }
-            long now = ChunkState.NowUnixMs;
-            bool raise = _registered && ChunkState.HasListeners;
-            if (raise)
+            var state = change.NewValue;
+            bool wasLive = _map.TryGetValue(change.Key, out var previous) && previous.IsLiveAt(now);
+            if (!state.IsLiveAt(now))
             {
-                // What left: cleared by a write, or expired on the authority before it expired here.
-                _scratchIds.Clear();
-                foreach (var kv in _map)
-                    if (!Incoming.ContainsKey(kv.Key) && kv.Value.IsLiveAt(now)) _scratchIds.Add(kv.Key);
+                // Already over: not kept, and a live entry it replaces is gone.
+                if (_map.ContainsKey(change.Key))
+                {
+                    _map.Remove(change.Key);
+                    _encodedBytes -= ChunkStateCodec.EntrySize(previous);
+                    RecomputeNextExpiry();
+                }
+                if (wasLive) RaiseChange(change.Key, ObjectStateChangeKind.Cleared, false, default);
+                return;
             }
-            var previous = raise ? new Dictionary<ulong, ObjectState>(_map) : null;
-            _map.Clear();
-            _encodedBytes = ChunkStateCodec.HeaderBytes;
-            foreach (var kv in Incoming)
-            {
-                _map[kv.Key] = kv.Value;
-                _encodedBytes += ChunkStateCodec.EntrySize(kv.Value);
-            }
-            Incoming.Clear();
-            RecomputeNextExpiry();
-            PruneSilently(now);
-            if (!raise) return;
-            for (int i = 0; i < _scratchIds.Count; i++) RaiseChange(_scratchIds[i], ObjectStateChangeKind.Cleared, false, default);
-            _scratchIds.Clear();
-            foreach (var kv in _map)
-            {
-                if (previous.TryGetValue(kv.Key, out var old) && old.Equals(kv.Value) && old.IsLiveAt(now)) continue;
-                RaiseChange(kv.Key, ObjectStateChangeKind.Set, true, kv.Value);
-            }
+            PutEntry(change.Key, state);
+            if (wasLive && previous.Equals(state)) return;
+            RaiseChange(change.Key, ObjectStateChangeKind.Set, true, state);
         }
 
         // ------------------------------------------------------------------------------------------ persistence
@@ -292,6 +351,7 @@ namespace Nebula.World
             RecomputeNextExpiry();
             // Whatever expired while nobody was here is simply gone: the timer is the absolute time in the record.
             PruneSilently(ChunkState.NowUnixMs);
+            MirrorAll();
             var pe = Identity != null ? Identity.Persistent : null;
             if (pe != null) pe.DiscardRecord = _map.Count == 0;
         }
@@ -345,6 +405,8 @@ namespace Nebula.World
             // The entity stands for its chunk: it never moves into a neighbouring or nested container, whatever
             // its position resolves to, and it follows the chunk's lease from worker to worker.
             if (Identity != null) Identity.ContainerPinned = true;
+            // A ghost may hold entries it expired itself that the authority it takes over from had not removed yet.
+            MirrorAll();
         }
 
         private void OnDestroy()
@@ -388,13 +450,6 @@ namespace Nebula.World
                 return go;
             }
         }
-
-        /// <summary>The NetworkVariable the map replicates through. Written whole: the map is small and changes rarely.</summary>
-        private sealed class EntriesVariable : NetworkVariableBase
-        {
-            public override void Write(NetworkWriter writer) => ((ChunkStateEntity)Owner).WriteEntries(writer);
-            public override void Read(NetworkReader reader) => ((ChunkStateEntity)Owner).ReadEntries(reader);
-        }
     }
 
     /// <summary>
@@ -435,6 +490,38 @@ namespace Nebula.World
                     w.WriteRaw(new ArraySegment<byte>(s.Payload));
                 }
             }
+        }
+
+        /// <summary>One entry's state without its id: the value the replicated map carries.</summary>
+        public static void WriteState(NetworkWriter w, ObjectState s)
+        {
+            byte flags = 0;
+            if (s.Expires) flags |= FlagExpires;
+            if (s.PayloadLength > 0) flags |= FlagPayload;
+            w.WriteByte(flags);
+            w.WriteUInt(s.Value);
+            if (s.Expires) w.WriteLong(s.ExpiresAtUnixMs);
+            if (s.PayloadLength > 0)
+            {
+                w.WriteByte((byte)s.PayloadLength);
+                w.WriteRaw(new ArraySegment<byte>(s.Payload));
+            }
+        }
+
+        public static ObjectState ReadState(NetworkReader r)
+        {
+            byte flags = r.ReadByte();
+            uint value = r.ReadUInt();
+            long expires = (flags & FlagExpires) != 0 ? r.ReadLong() : 0;
+            byte[] payload = null;
+            if ((flags & FlagPayload) != 0)
+            {
+                int n = r.ReadByte();
+                var seg = r.ReadSegment(n);
+                payload = new byte[n];
+                Buffer.BlockCopy(seg.Array, seg.Offset, payload, 0, n);
+            }
+            return new ObjectState(value, expires, payload, noCopy: true);
         }
 
         public static bool TryReadBody(ArraySegment<byte> body, SortedDictionary<ulong, ObjectState> into, out string error)

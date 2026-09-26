@@ -45,6 +45,7 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | <span id="entityredirect"></span>`EntityRedirect` | `35` | Worker -\> gateway: an explicitly subscribed entity now lives on another worker ([`EntityRedirectMsg`](/docs/reference/protocol/entity-redirect-msg)). |
 | <span id="entityforget"></span>`EntityForget` | `36` | Worker -\> gateway: an entity left every region this gateway subscribes here ([`EntityForgetMsg`](/docs/reference/protocol/entity-forget-msg)). |
 | <span id="syncaudience"></span>`SyncAudience` | `37` | Worker -\> gateway: the client member sets of an entity's `Nebula.SyncAudience.Custom` behaviors changed ([`SyncAudienceMsg`](/docs/reference/protocol/sync-audience-msg), protocol 20). Never forwarded to a client. |
+| <span id="entitymaps"></span>`EntityMaps` | `38` | Worker -\> gateway -\> client: the entries of an entity's [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map)s that changed ([`EntityMapsMsg`](/docs/reference/protocol/entity-maps-msg), protocol 21, docs/replicated-collections.md D4). The gateway applies it to its copy before relaying it, and sends it only to clients that negotiated 21 or later. |
 | <span id="ghostspawn"></span>`GhostSpawn` | `40` |  |
 | <span id="ghoststate"></span>`GhostState` | `41` |  |
 | <span id="ghostvars"></span>`GhostVars` | `42` |  |
@@ -55,3 +56,4 @@ Wire message ids. One byte header on every packet. The same entity message shape
 | <span id="ghostsyncstate"></span>`GhostSyncState` | `47` |  |
 | <span id="workermessage"></span>`WorkerMessage` | `48` | Game-defined message between two workers: `[kind:ushort][payload]`. Registered per kind with [`NebulaWorker.RegisterMessageHandler`](/docs/reference/worker/nebula-worker#registermessagehandler); sent with [`NebulaWorker.SendToWorker`](/docs/reference/worker/nebula-worker#sendtoworker). |
 | <span id="authorityrpcreply"></span>`AuthorityRpcReply` | `49` | Worker -\> worker: the outcome of an `AuthorityRpc` that asked for one ([`AuthorityCallReplyMsg`](/docs/reference/protocol/authority-call-reply-msg)), sent to the worker that minted the call id. |
+| <span id="ghostmaps"></span>`GhostMaps` | `50` | Worker -\> worker: `EntityMaps` for a ghost ([`EntityMapsMsg`](/docs/reference/protocol/entity-maps-msg)). |

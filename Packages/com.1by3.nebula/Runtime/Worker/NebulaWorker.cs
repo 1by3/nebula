@@ -1643,6 +1643,9 @@ namespace Nebula
                         new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.GhostVars);
                         Send(peer, Delivery.ReliableOrdered);
                     }
+                    // Changed map entries, on the same ordered channel as the ghost spawn that carried the full copy
+                    // (docs/replicated-collections.md D8).
+                    if (e.MapsDirty) SendMapsDelta(e, MsgId.GhostMaps, peer);
                     if (e.HasReplicationState)
                     {
                         var entry = e.ReplicationState;
@@ -2249,6 +2252,7 @@ namespace Nebula
                 _reader.Set(new ArraySegment<byte>(msg.Vars));
                 e.ReadVars(_reader);
             }
+            e.ReadMaps(msg.Maps);
             if (msg.State != null && msg.State.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.State));
@@ -2359,6 +2363,46 @@ namespace Nebula
             e.ClearDirty();
         }
 
+        private void OnGhostMaps(Peer from, EntityMapsMsg msg)
+        {
+            var e = Find(msg.NetId);
+            if (e == null)
+            {
+                PatchPendingGhostMaps(msg);
+                return;
+            }
+            if (e.HasAuthority || msg.Epoch < e.Epoch) return;
+            e.ReadMaps(msg.Maps);
+            e.ClearDirty();
+        }
+
+        /// <summary>
+        /// A ghost spawn waiting for its carrier or its scene cell keeps a full copy of the maps; a delta for it is
+        /// folded into that copy, since it will not be sent again (docs/replicated-collections.md D8).
+        /// </summary>
+        private void PatchPendingGhostMaps(EntityMapsMsg msg)
+        {
+            foreach (var list in _pendingGhostsByCarrier.Values)
+                for (int i = 0; i < list.Count; i++)
+                    if (list[i].NetId == msg.NetId && msg.Epoch >= list[i].Epoch) { var held = list[i]; held.Maps = NetworkMapCache.Fold(held.Maps, msg.Maps); list[i] = held; }
+            uint sceneId = 0;
+            foreach (var kv in _pendingSceneGhosts) if (kv.Value.NetId == msg.NetId && msg.Epoch >= kv.Value.Epoch) { sceneId = kv.Key; break; }
+            if (sceneId == 0) return;
+            var scene = _pendingSceneGhosts[sceneId];
+            scene.Maps = NetworkMapCache.Fold(scene.Maps, msg.Maps);
+            _pendingSceneGhosts[sceneId] = scene;
+        }
+
+        /// <summary>Send an entity's changed map entries to one peer.</summary>
+        private void SendMapsDelta(NetworkIdentity e, MsgId id, Peer peer)
+        {
+            _scratch.Reset();
+            if (e.WriteMapsDelta(_scratch) == 0) return;
+            _writer.Reset();
+            new EntityMapsMsg { NetId = e.NetId, Epoch = e.Epoch, Maps = _scratch.ToArray() }.Write(_writer, id);
+            Send(peer, Delivery.ReliableOrdered);
+        }
+
         private void OnGhostDespawn(Peer from, EntityDespawnMsg msg)
         {
             _pendingGhostsByCarrier.Remove(ContainerRef.Dynamic(msg.NetId));
@@ -2445,6 +2489,18 @@ namespace Nebula
                     new EntityVarsMsg { NetId = e.NetId, Epoch = e.Epoch, Vars = _scratch.ToArray() }.Write(_writer, MsgId.EntityVars);
                     _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
                     SendToMask(mask, Delivery.ReliableOrdered);
+                }
+                if (e.MapsDirty && (mask != 0 || _unmaskedGateways.Count > 0))
+                {
+                    // Only the entries that changed; the gateway keeps the rest for late joiners (docs/replicated-collections.md D6).
+                    _scratch.Reset();
+                    if (e.WriteMapsDelta(_scratch) > 0)
+                    {
+                        _writer.Reset();
+                        new EntityMapsMsg { NetId = e.NetId, Epoch = e.Epoch, Maps = _scratch.ToArray() }.Write(_writer, MsgId.EntityMaps);
+                        _costMeter.AddReplication(e.Container, (long)_writer.Length * SubscriberCount(mask));
+                        SendToMask(mask, Delivery.ReliableOrdered);
+                    }
                 }
                 if (e.AudienceChangedThisTick && (mask != 0 || _unmaskedGateways.Count > 0))
                 {
@@ -3077,6 +3133,7 @@ namespace Nebula
                 case MsgId.GhostSpawn: OnGhostSpawn(peer, EntitySpawnMsg.Read(r)); break;
                 case MsgId.GhostState: OnGhostState(peer, r); break;
                 case MsgId.GhostVars: OnGhostVars(peer, EntityVarsMsg.Read(r)); break;
+                case MsgId.GhostMaps: OnGhostMaps(peer, EntityMapsMsg.Read(r)); break;
                 case MsgId.GhostSyncState: OnGhostSyncState(peer, EntitySyncMsg.Read(r)); break;
                 case MsgId.GhostDespawn: OnGhostDespawn(peer, EntityDespawnMsg.Read(r)); break;
                 case MsgId.AuthorityTransfer: OnAuthorityTransfer(peer, AuthorityTransferMsg.Read(r)); break;

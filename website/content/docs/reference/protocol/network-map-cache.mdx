@@ -1,0 +1,62 @@
+---
+title: "NetworkMapCache"
+description: "The contents of an entity's maps kept as opaque bytes, by a party that relays them without knowing their types: the gateway, so a late joiner is sent the current contents (docs/replicated-collections.md D6)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs)</div>
+
+```csharp
+public sealed class NetworkMapCache
+```
+
+The contents of an entity's maps kept as opaque bytes, by a party that relays them without knowing their types: the gateway, so a late joiner is sent the current contents (docs/replicated-collections.md D6). Seeded from a full section, updated by delta sections, encoded back into a full section on demand (once per change).
+
+## Methods
+
+### CountOf [#countof]
+
+```csharp
+public int CountOf(byte mapIndex);
+```
+
+How many entries the map at `mapIndex` holds; 0 when unknown.
+
+### Get [#get]
+
+```csharp
+public byte[] Get(byte mapIndex, byte[] key);
+```
+
+The value bytes held for a key, or null.
+
+### Reset [#reset]
+
+```csharp
+public void Reset(byte[] section);
+```
+
+Forget everything and take `section` (a full copy, or null for no maps).
+
+### Apply [#apply]
+
+```csharp
+public void Apply(ArraySegment<byte> section);
+```
+
+Apply a section, full or delta.
+
+### Encode [#encode]
+
+```csharp
+public byte[] Encode();
+```
+
+The contents as a full section; empty when there are no maps.
+
+### Fold [#fold]
+
+```csharp
+public static byte[] Fold(byte[] full, byte[] delta);
+```
+
+A full section with a delta section applied to it: for a spawn that is held and will not be sent again.

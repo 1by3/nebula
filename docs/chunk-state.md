@@ -109,7 +109,7 @@ write, so no empty record is ever left behind. It is set whenever the map is emp
 fenced worker deletes nothing (`docs/persistence-durability.md` D8): `SaveNow` returns before the discard, and the
 linger despawn is skipped while fenced.
 
-**D6 The map replicates whole, as one NetworkVariable.** The survey suggested the per-tick sync-state channel
+**D6 The map replicates whole, as one NetworkVariable.** *Revised by `docs/replicated-collections.md` D15: the entries now replicate through a `NetworkMap<ulong, ObjectState>`, so a change sends only the entries it touched and the gateway keeps the current contents for late joiners. The record format and the 48 KB cap below are unchanged.* The survey suggested the per-tick sync-state channel
 (`WriteSyncState(writer, full)`) so a change would send only a delta. It would be wrong for late joiners: the gateway
 caches only chunks flagged *full* (`NebulaGateway.EntityRecord.StoreKeyframe`), and a reliable behaviour's chunk is flagged full
 only on its first send and on keyframe ticks. A client that subscribed after a delta would be given the stale spawn

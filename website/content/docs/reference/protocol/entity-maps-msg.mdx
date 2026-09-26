@@ -1,0 +1,46 @@
+---
+title: "EntityMapsMsg"
+description: "Changed map entries for one entity (docs/replicated-collections.md D4): MsgId.EntityMaps worker to gateway to client, MsgId.GhostMaps worker to worker."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs)</div>
+
+```csharp
+public struct EntityMapsMsg
+```
+
+Changed map entries for one entity (docs/replicated-collections.md D4): [`MsgId.EntityMaps`](/docs/reference/protocol/msg-id#entitymaps) worker to gateway to client, [`MsgId.GhostMaps`](/docs/reference/protocol/msg-id#ghostmaps) worker to worker. [`Maps`](#maps) is a section of the maps that changed, each body a delta.
+
+## Fields
+
+### NetId [#netid]
+
+```csharp
+public ulong NetId;
+```
+
+### Epoch [#epoch]
+
+```csharp
+public uint Epoch;
+```
+
+### Maps [#maps]
+
+```csharp
+public byte[] Maps;
+```
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w, MsgId id);
+```
+
+### Read [#read]
+
+```csharp
+public static EntityMapsMsg Read(NetworkReader r);
+```

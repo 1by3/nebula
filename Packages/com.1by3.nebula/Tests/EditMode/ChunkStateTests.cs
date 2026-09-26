@@ -639,6 +639,24 @@ namespace Nebula.Tests
             return w.ToArray();
         }
 
+        /// <summary>The entries in full, as a spawn carries them; what was changed so far counts as sent.</summary>
+        private byte[] Maps()
+        {
+            var w = new NetworkWriter();
+            _source.Identity.WriteMapsFull(w);
+            _source.Identity.ClearDirty();
+            return w.ToArray();
+        }
+
+        /// <summary>The entries changed since the last send, as the authority's next EntityMaps carries them.</summary>
+        private EntityMapsMsg Changes()
+        {
+            var w = new NetworkWriter();
+            _source.Identity.WriteMapsDelta(w);
+            _source.Identity.ClearDirty();
+            return new EntityMapsMsg { NetId = NetId, Epoch = 1, Maps = w.ToArray() };
+        }
+
         private void Invoke(string method, object msg) =>
             typeof(NebulaClient).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(_client, new[] { msg });
 
@@ -654,6 +672,7 @@ namespace Nebula.Tests
                 LocalRotation = Quaternion.identity,
                 LocalScale = Vector3.one,
                 Vars = Vars(),
+                Maps = Maps(),
                 State = Array.Empty<byte>(),
                 Flags = EntityFlags.ServerDriven,
             });
@@ -686,7 +705,9 @@ namespace Nebula.Tests
             _source.Seed(1, new ObjectState(2));
             _source.Seed(3, new ObjectState(8));
             _source.Remove(2);
-            Invoke("OnEntityVars", new EntityVarsMsg { NetId = NetId, Epoch = 1, Vars = Vars() });
+            var changes = Changes();
+            Assert.That(changes.Maps.Length, Is.LessThan(64), "only the three entries that changed are sent");
+            Invoke("OnEntityMaps", changes);
             Assert.That(ChunkState.TryGet(_chunk, 1, out one), Is.True);
             Assert.That(one.Value, Is.EqualTo(2u));
             Assert.That(ChunkState.TryGet(_chunk, 2, out _), Is.False);
@@ -719,7 +740,7 @@ namespace Nebula.Tests
             // The authority's own removal arrives later and changes nothing more.
             _changes.Clear();
             _source.Remove(4);
-            Invoke("OnEntityVars", new EntityVarsMsg { NetId = NetId, Epoch = 1, Vars = Vars() });
+            Invoke("OnEntityMaps", Changes());
             Assert.That(_changes, Is.Empty);
         }
 

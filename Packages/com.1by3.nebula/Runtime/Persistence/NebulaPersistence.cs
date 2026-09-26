@@ -386,7 +386,13 @@ namespace Nebula
                 // Reading a blob does not dirty the variables (a fresh spawn sends them all anyway); on a live entity
                 // the restored values still have to reach the gateway and the ghosts.
                 var vars = identity.AllVars;
-                for (int i = 0; i < vars.Length; i++) if (vars[i].Persist) vars[i].Dirty = true;
+                for (int i = 0; i < vars.Length; i++)
+                {
+                    if (!vars[i].Persist) continue;
+                    // A map sends only what changed; after a restore that is everything (docs/replicated-collections.md D9).
+                    if (vars[i] is NetworkMapBase map) map.MarkResendAll();
+                    else vars[i].Dirty = true;
+                }
                 identity.MarkVarsDirty();
             }
             bool poseApplies = applyPose && (pe == null || pe.PersistPose);

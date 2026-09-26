@@ -222,5 +222,15 @@ namespace Nebula
             _buffer[at] = (byte)value;
             _buffer[at + 1] = (byte)(value >> 8);
         }
+
+        public void PatchByte(int at, byte value) => _buffer[at] = value;
+
+        public void PatchInt(int at, int value)
+        {
+            _buffer[at] = (byte)value;
+            _buffer[at + 1] = (byte)(value >> 8);
+            _buffer[at + 2] = (byte)(value >> 16);
+            _buffer[at + 3] = (byte)(value >> 24);
+        }
     }
 }

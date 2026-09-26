@@ -1,0 +1,171 @@
+---
+title: "NetworkMapCodec"
+description: "The wire and save format of NetworkMapBase contents (docs/replicated-collections.md D3)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs)</div>
+
+```csharp
+public static class NetworkMapCodec
+```
+
+The wire and save format of [`NetworkMapBase`](/docs/reference/core/network-map-base) contents (docs/replicated-collections.md D3). Keys and values are opaque, length-prefixed bytes, so a party with no game types (the gateway) can keep a map's contents and hand a late joiner a full copy.
+
+```csharp
+body    = [version:byte=1][flags:byte (1 = clear first)][count:int] { [op:byte (0 remove, 1 set)][keyLen:ushort][key]([valueLen:ushort][value]) }
+section = [mapCount:byte] { [mapIndex:byte][bodyLength:int][body] }
+```
+
+A full copy is a body with the clear flag set and every entry as a set. A delta is a body with only the keys that changed, each with its final state, so applying it to a copy that already contains it changes nothing.
+
+## Fields
+
+### Version [#version]
+
+```csharp
+public const byte Version = 1;
+```
+
+### FlagClear [#flagclear]
+
+```csharp
+public const byte FlagClear = 1;
+```
+
+### OpRemove [#opremove]
+
+```csharp
+public const byte OpRemove = 0;
+```
+
+### OpSet [#opset]
+
+```csharp
+public const byte OpSet = 1;
+```
+
+### HeaderBytes [#headerbytes]
+
+```csharp
+public const int HeaderBytes = 6;
+```
+
+Bytes of a body with no entries.
+
+## Methods
+
+### EntryBytes [#entrybytes]
+
+```csharp
+public static int EntryBytes(int keyLength, int valueLength, bool set);
+```
+
+The encoded size of one entry.
+
+### BeginBody [#beginbody]
+
+```csharp
+public static int BeginBody(NetworkWriter w, bool clear);
+```
+
+Begin a body; returns where the count goes. Finish it with [`EndBody`](#endbody).
+
+### EndBody [#endbody]
+
+```csharp
+public static void EndBody(NetworkWriter w, int countAt, int count);
+```
+
+### WriteSet [#writeset]
+
+```csharp
+public static void WriteSet(NetworkWriter w, ArraySegment<byte> key, ArraySegment<byte> value);
+```
+
+### WriteRemove [#writeremove]
+
+```csharp
+public static void WriteRemove(NetworkWriter w, ArraySegment<byte> key);
+```
+
+### ReadBody [#readbody]
+
+```csharp
+public static void ReadBody(NetworkReader r, out bool clear, List<Entry> into);
+```
+
+Read a body: `clear` says whether the receiver empties its copy first, and each entry is added to `into` in order. Throws `FormatException` on a newer version.
+
+### BeginSection [#beginsection]
+
+```csharp
+public static int BeginSection(NetworkWriter w);
+```
+
+Begin a section; returns where the map count goes.
+
+### BeginMap [#beginmap]
+
+```csharp
+public static int BeginMap(NetworkWriter w, byte mapIndex);
+```
+
+Begin one map of a section; returns where its body length goes. Finish it with [`EndMap`](#endmap).
+
+### EndMap [#endmap]
+
+```csharp
+public static void EndMap(NetworkWriter w, int lengthAt);
+```
+
+### EndSection [#endsection]
+
+```csharp
+public static void EndSection(NetworkWriter w, int countAt, byte count);
+```
+
+### ReadSection [#readsection]
+
+```csharp
+public static void ReadSection(ArraySegment<byte> section, Action<byte, ArraySegment<byte>> onMap);
+```
+
+Walk a section: each map's index and body.
+
+## Nested types
+
+### Entry [#entry]
+
+```csharp
+public readonly struct Entry
+```
+
+One entry of a body as [`ReadBody`](#readbody) hands it over. The segments point into the body.
+
+#### Constructors
+
+##### Entry [#entry]
+
+```csharp
+public Entry(bool isSet, ArraySegment<byte> key, ArraySegment<byte> value);
+```
+
+#### Fields
+
+##### IsSet [#isset]
+
+```csharp
+public readonly bool IsSet;
+```
+
+##### Key [#key]
+
+```csharp
+public readonly ArraySegment<byte> Key;
+```
+
+##### Value [#value]
+
+```csharp
+public readonly ArraySegment<byte> Value;
+```

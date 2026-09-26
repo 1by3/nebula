@@ -1,0 +1,58 @@
+---
+title: "NetworkMapChange<TKey, TValue>"
+description: "One key's change, raised by NetworkMap<TKey, TValue>.OnChanged on every copy of the map."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs)</div>
+
+```csharp
+public readonly struct NetworkMapChange<TKey, TValue>
+```
+
+One key's change, raised by [`NetworkMap<TKey, TValue>.OnChanged`](/docs/reference/core/network-map#onchanged) on every copy of the map.
+
+## Constructors
+
+### NetworkMapChange [#networkmapchange]
+
+```csharp
+public NetworkMapChange(NetworkMapChangeKind kind, TKey key, TValue oldValue, TValue newValue);
+```
+
+## Fields
+
+### Kind [#kind]
+
+```csharp
+public readonly NetworkMapChangeKind Kind;
+```
+
+### Key [#key]
+
+```csharp
+public readonly TKey Key;
+```
+
+### OldValue [#oldvalue]
+
+```csharp
+public readonly TValue OldValue;
+```
+
+The value before the change; default for [`NetworkMapChangeKind.Added`](/docs/reference/core/network-map-change-kind#added).
+
+### NewValue [#newvalue]
+
+```csharp
+public readonly TValue NewValue;
+```
+
+The value after the change; default for [`NetworkMapChangeKind.Removed`](/docs/reference/core/network-map-change-kind#removed).
+
+## Methods
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

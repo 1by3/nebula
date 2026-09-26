@@ -343,6 +343,14 @@ public uint NewestAvailableTick { get; }
 
 The newest tick [`StateAt`](#stateat) can answer for, or 0 when nothing is recorded.
 
+### HasMaps [#hasmaps]
+
+```csharp
+public bool HasMaps { get; }
+```
+
+The entity declares at least one [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map).
+
 ### HasSyncState [#hassyncstate]
 
 ```csharp
@@ -540,6 +548,30 @@ public void WriteVars(NetworkWriter writer);
 ```csharp
 public void ReadVars(NetworkReader reader);
 ```
+
+### WriteMapsFull [#writemapsfull]
+
+```csharp
+public void WriteMapsFull(NetworkWriter writer);
+```
+
+Every map in full, as a [`NetworkMapCodec`](/docs/reference/protocol/network-map-codec) section: what rides a spawn. Nothing when the entity has none.
+
+### WriteMapsDelta [#writemapsdelta]
+
+```csharp
+public int WriteMapsDelta(NetworkWriter writer);
+```
+
+The keys changed since the last send, of every map that has any, as a section. Returns the number of maps written; when zero the writer has been left untouched.
+
+### ReadMaps [#readmaps]
+
+```csharp
+public void ReadMaps(byte[] section);
+```
+
+Apply a section (full or delta) from the authority. Maps this build does not have are skipped.
 
 ### WriteHandoverState [#writehandoverstate]
 

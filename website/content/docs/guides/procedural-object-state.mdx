@@ -179,7 +179,7 @@ The time is an absolute UTC time, so it keeps its meaning across restarts. Worke
 
 An entry takes 13 bytes, plus 8 if it expires, plus 1 and the payload length if it has a payload. A chunk holds about 3,700 entries without expiry or payload. A change that would go over a limit returns `Rejected` and changes nothing.
 
-Every change sends the chunk's whole map to the clients and workers that hold it. Keep entries for the objects that differ from their generated state, and let expiry and `Clear` remove the rest.
+A change sends only the entries it touched to the clients and workers that hold the chunk. A client that arrives later gets the chunk's current entries in one message. Keep entries for the objects that differ from their generated state, and let expiry and `Clear` remove the rest.
 
 ## Current limitations
 

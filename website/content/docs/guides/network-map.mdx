@@ -1,0 +1,117 @@
+---
+title: Replicated maps
+description: Replicate a keyed collection, such as an inventory or a set of discovered places, sending only the entries that change.
+---
+
+A `NetworkMap<TKey, TValue>` is a replicated dictionary. Use it for collections that change a few entries at a time: an inventory, a crafting queue, the waypoints a player has found, the edits made to a region.
+
+A `NetworkVariable` holding the same collection resends every variable of the entity whenever any entry changes. A `NetworkMap` sends only the entries that were added, changed or removed. A client that joins later gets the current contents once, then the same changes as everyone else.
+
+This page assumes you know `NetworkBehaviour` and `NetworkVariable`. See [NetworkBehaviour and NetworkVariable](/docs/guides/network-behaviour).
+
+## Declare a map
+
+Declare the map as a field on a `NetworkBehaviour`, as you would a `NetworkVariable`. Nebula discovers it when the entity spawns.
+
+```csharp title="Inventory.cs"
+using Nebula;
+
+public sealed class Inventory : NetworkBehaviour
+{
+    public NetworkMap<int, ItemStack> Slots = new NetworkMap<int, ItemStack>();
+
+    public override void OnNetworkSpawn()
+    {
+        Slots.OnChanged += OnSlotChanged;
+    }
+
+    private void OnSlotChanged(NetworkMapChange<int, ItemStack> change)
+    {
+        switch (change.Kind)
+        {
+            case NetworkMapChangeKind.Added:
+            case NetworkMapChangeKind.Updated:
+                ShowSlot(change.Key, change.NewValue);
+                break;
+            case NetworkMapChangeKind.Removed:
+                ClearSlot(change.Key);
+                break;
+        }
+    }
+}
+```
+
+Keys and values use [`NetworkSerialization`](/docs/guides/serialization), so any type a `NetworkVariable` can hold works: primitives, `string`, Unity vectors, enums, `INetworkSerializable` types, and types you register.
+
+## Write and read
+
+Only the authoritative worker can change a map. A write on a ghost or a client is ignored and logged as a warning.
+
+```csharp
+// On the authoritative worker:
+Slots[3] = new ItemStack(ItemId.Ore, 12);   // add or replace
+Slots.Add(4, new ItemStack(ItemId.Gem, 1)); // throws if key 4 is already there
+Slots.Remove(3);
+Slots.Clear();
+```
+
+Every copy can read it. `NetworkMap` implements `IReadOnlyDictionary<TKey, TValue>`:
+
+```csharp
+if (Slots.TryGetValue(4, out var stack)) Debug.Log(stack);
+foreach (var slot in Slots) Debug.Log($"{slot.Key}: {slot.Value}");
+int used = Slots.Count;
+```
+
+`OnChanged` is raised once for each key that changed, on every copy: on the authoritative worker as it writes, and on ghosts and clients as they apply what it sent. Writing a value equal to the current one does nothing and raises nothing. `Clear` raises `Removed` for each key.
+
+When a copy receives the whole map at once, for example after a handover or when a client joins, `OnChanged` is raised only for the keys that differ from what the copy already held.
+
+### Values changed in place
+
+A map cannot see a change inside a value it holds, such as an element of a `byte[]` or a field of a class. Prefer immutable values and assign a new one. If you do change a value in place, call `SetDirty(key)` on the authoritative worker to send it again.
+
+## When changes are sent
+
+Each tick, the authoritative worker sends the keys that changed since the last tick, each with its final value, on the same reliable channel as the entity's variables. Three writes to one key in a tick send one entry.
+
+The gateway keeps each map's current contents. When a client starts holding the entity, its spawn carries the current contents, and it then receives every later change. Workers that hold a ghost of the entity receive the same changes. A handover carries the whole map, including changes the old worker had not sent yet.
+
+Every client that holds the entity receives its maps. Maps do not support a [sync audience](/docs/guides/sync-audiences).
+
+## Save a map
+
+Mark the map with `[Persist]` to save it with the entity's record, as you would a `NetworkVariable`. The entity needs a `PersistentEntity` component.
+
+```csharp
+[Persist] public NetworkMap<int, ItemStack> Slots = new NetworkMap<int, ItemStack>();
+```
+
+The whole map is saved under the name `<BehaviourTypeName>.<FieldName>`, here `Inventory.Slots`. A change marks the entity dirty, so it is saved at the next checkpoint. See [Persistence](/docs/guides/persistence).
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Encoded size per map | `NetworkMapBase.MaxEncodedBytes`, 60 KB, unless you pass another `capacityBytes` to the constructor |
+| Maps per entity | 255 |
+
+Each entry takes 5 bytes plus its encoded key and value. `EncodedBytes` tells you a map's current size. A write that would pass the limit changes nothing: the indexer and `Add` throw `InvalidOperationException`, and `TrySet` returns `false`.
+
+A `[Persist]` map must stay under 64 KB to be saved. Split large collections across several entities.
+
+## Current limitations
+
+- **A map is not ordered.** Enumeration order is not the same on every copy. For an ordered list, key the entries by index or by a stable ID.
+- **Keys must encode the same way every time.** The gateway compares keys by their encoded bytes. Built-in types do; a custom serializer for a key type must write equal keys as equal bytes.
+- **No `[SyncHistory]`.** A map is not recorded in [state history](/docs/guides/lag-compensation). The attribute is ignored with a warning.
+- **A client of protocol 20 does not receive map changes.** Such a client belongs to an older build of your game, which declares no maps.
+
+## Related
+
+<Cards>
+  <Card title="NetworkBehaviour and NetworkVariable" href="/docs/guides/network-behaviour" description="Replicated fields, discovery and the variable block." />
+  <Card title="Persistence" href="/docs/guides/persistence" description="Save entities and their [Persist] fields." />
+  <Card title="Procedural object state" href="/docs/guides/procedural-object-state" description="Per-chunk state for objects placed from a seed, built on a replicated map." />
+  <Card title="Serialization" href="/docs/guides/serialization" description="Which types can be keys and values, and how to add your own." />
+</Cards>
