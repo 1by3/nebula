@@ -158,4 +158,36 @@ public class ConformanceScopedGridTests
         Assert.That(clientA.Containers, Does.Not.Contain(ChunkKeys.ContainerId(Beta, next)), "and never about the other world's, in the same window");
         Assert.That(clientB.Containers, Does.Not.Contain(ChunkKeys.ContainerId(Alpha, next)));
     }
+
+    /// <summary>
+    /// NEB-336: an entity whose relevance radius is larger than the interest radius is a wide entity, and in a
+    /// scoped grid it must reach clients exactly as it does in the public world: the one standing next to it, and
+    /// the one inside its radius but outside the interest radius.
+    /// </summary>
+    [Test]
+    public void AWideEntityInAScopedGridReachesClientsWithinItsRelevanceRadius()
+    {
+        using var fleet = new Fleet(gateways: 1);
+        Activate(fleet, Alpha);
+        fleet.Worker.DeferSpawns = true;
+
+        var near = fleet.Connect(0, "near-player", scope: Alpha);
+        var far = fleet.Connect(0, "far-player", scope: Alpha);
+        Assert.That(fleet.Run(() => fleet.Worker.Claims.Count >= 2), Is.True, "both clients were placed");
+        float interest = fleet.Worker.Settings.Radius;
+        float relevance = interest + 60f;
+        float farOffset = interest + 30f; // inside the relevance radius, outside the interest radius
+        foreach (var claim in fleet.Worker.Claims)
+        {
+            var at = claim.Name == "near-player" ? new Vector3(2, 0, 2) : new Vector3(1 + farOffset, 0, 1);
+            fleet.Worker.Spawn(100 + claim.ClientId, at, claim.Container, owner: claim.ClientId);
+        }
+
+        var beacon = fleet.Worker.Spawn(77, new Vector3(1, 0, 1), RefOf(Alpha), relevanceRadius: relevance);
+        fleet.OnPump = () => fleet.Worker.PublishStates();
+        Assert.That(fleet.Run(() => near.Replicas.Contains(beacon.NetId)), Is.True,
+            "a client standing next to a wide entity in a scoped grid is told about it");
+        Assert.That(fleet.Run(() => far.Replicas.Contains(beacon.NetId)), Is.True,
+            "a client inside its relevance radius but outside the interest radius is told about it too");
+    }
 }
