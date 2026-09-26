@@ -175,6 +175,14 @@ public byte[] Audience;
 
 Worker to gateway and worker to worker: the member sets of the entity's Custom behaviors ([`SyncAudienceCodec`](/docs/reference/core/sync-audience-codec)), or null when it has none. A gateway never forwards it to a client.
 
+### Maps [#maps]
+
+```csharp
+public byte[] Maps;
+```
+
+Every [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map) of the entity in full (a [`NetworkMapCodec`](/docs/reference/protocol/network-map-codec) section), or null when it has none (protocol 21, trailing and optional, docs/replicated-collections.md D5). A gateway keeps it current with each [`MsgId.EntityMaps`](/docs/reference/protocol/msg-id#entitymaps) and hands it to a late joiner.
+
 ## Methods
 
 ### From [#from]

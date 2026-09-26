@@ -15,6 +15,7 @@
     "concepts/comparison",
     "---Networked entities---",
     "guides/network-behaviour",
+    "guides/network-map",
     "guides/spawning",
     "guides/scene-entities",
     "guides/rpcs",

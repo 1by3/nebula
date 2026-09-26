@@ -11,13 +11,13 @@ A **mesh** is the group of processes running one game world. Its **gateway** acc
 
 | Connection | Current requirement |
 | --- | --- |
-| Native or browser client to gateway | Protocol `19` or `20`: `HelloMsg.MinProtocolVersion` is `19` and `HelloMsg.ProtocolVersion` is `20`. |
+| Native or browser client to gateway | Protocol `20` or `21`: `HelloMsg.MinProtocolVersion` is `20` and `HelloMsg.ProtocolVersion` is `21`. |
 | Gateway to worker, worker to worker | Exact protocol match. |
 
 The gateway records the client's accepted protocol version and returns it in `Welcome.negotiated_version`. A client outside the supported range receives `ProtocolUnsupported`.
 
 <Callout type="warn" title="Protocol changes need a separate rollout plan">
-A gateway of this version accepts clients of protocol 19 and 20. Protocol 20 added [sync audiences](/docs/guides/sync-audiences) without changing anything a protocol-19 client reads, so clients of the previous release keep playing; they are not told when they leave an audience, but they stop receiving its state. Protocol 19 changed which network behavior an index names on every entity that carries a container, so a gateway of this version refuses clients built with protocol 18: rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
+A gateway of this version accepts clients of protocol 20 and 21. Protocol 21 added [replicated maps](/docs/guides/network-map) without changing anything a protocol-20 client reads, so clients of the previous release keep playing; a build that declares no `NetworkMap` is not affected. A gateway of this version refuses clients built with protocol 19 or older: rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
 </Callout>
 
 ### Configure game content compatibility

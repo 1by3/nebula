@@ -177,6 +177,8 @@ Equality uses `EqualityComparer<T>.Default`, so a struct `T` needs a sensible `E
 
 Nebula does not send a per-variable delta. When any `NetworkVariable` on an entity changes, it sends every variable on that entity in discovery order. Receivers still raise `OnValueChanged` only for values that differ.
 
+For a collection that changes a few entries at a time, such as an inventory, use a [`NetworkMap`](/docs/guides/network-map): it sends only the entries that change, and it is not part of the variable block.
+
 Every client that holds the entity receives its variables. For state only some clients may see, such as a player's inventory, use the sync channel with a [sync audience](/docs/guides/sync-audiences) instead.
 
 Use `NetworkVariable` for state that changes occasionally, such as health, a display name, or a target. Put per-tick values in a NetworkTransform, predicted state, or a custom sync component.

@@ -109,6 +109,7 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | `OwnerState` | Sequenced | The predicted behavior's reconciliation state for its owning client, with the last processed input tick and the worst input lead seen |
 | `EntitySpawn`, `EntityDespawn` | Reliable | Creates or removes an entity. A spawn includes its prefab, container, transform, owner, flags, variables, and a complete sync state. |
 | `EntityVars` | Reliable | Sends every `NetworkVariable` value after one changes. |
+| `EntityMaps` | Reliable | Sends the entries of a [`NetworkMap`](/docs/guides/network-map) that changed. The gateway keeps each map's current contents, so a client that arrives later gets them in its spawn. |
 | `EntityState` | either | Sends state from sync components that have changed. The gateway gives each client only the components whose [sync audience](/docs/guides/sync-audiences) includes it. |
 | `EntityRpc` | Reliable | A `ClientRpc` or `OwnerRpc` (targeted at one client or broadcast). A broadcast declared with a `Radius` carries it, and the gateway forwards it only to clients whose pawn is within that distance of the entity. |
 
@@ -126,6 +127,7 @@ See [Interest management](/docs/guides/interest-management) for how these messag
 | `GhostSpawn`, `GhostDespawn` | Reliable | Creates or removes a ghost copy. |
 | `GhostState` | Sequenced or Reliable | Selected root transform updates for ghosts, with the same opt-in and recovery rules as `WorldState`. |
 | `GhostVars` | Reliable | Sends the complete variable block after one variable changes. |
+| `GhostMaps` | Reliable | Sends the entries of a `NetworkMap` that changed. |
 | `GhostSyncState` | Reliable or Sequenced | Sends sync-component changes to ghosts. |
 | `AuthorityTransfer` | Reliable | Transfers authority with the complete final pose, new epoch, pending inputs, handover state, existing ghost recipients, the owner's session (generation and gateway) so the receiver accepts the owner's input at once, and the gateways that were following the entity by explicit interest subscription rather than by region. |
 | `AuthorityRpc` | Reliable | An `AuthorityRpc` sent by a worker that only holds a ghost of the target |

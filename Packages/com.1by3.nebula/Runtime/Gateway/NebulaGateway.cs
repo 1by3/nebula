@@ -176,6 +176,12 @@ namespace Nebula
             /// <summary>The container of the newest pose (static index, or a carrier's net id for a dynamic container).</summary>
             public ContainerRef Container;
             public EntitySpawnMsg LastSpawn;
+            /// <summary>
+            /// The current contents of the entity's maps: seeded by each spawn from its owner, updated by each
+            /// <see cref="MsgId.EntityMaps"/>, encoded into a late joiner's spawn (docs/replicated-collections.md D6).
+            /// Null when the entity has no maps.
+            /// </summary>
+            public NetworkMapCache Maps;
             public uint LastStateTick;
             public bool HasStateTick;
             /// <summary>
@@ -1070,6 +1076,7 @@ namespace Nebula
                 case MsgId.InstancePrepare: OnInstancePrepare(w, InstancePreparationMsg.Read(r)); break;
                 case MsgId.EntityDespawn: OnEntityDespawn(w, EntityDespawnMsg.Read(r)); break;
                 case MsgId.EntityVars: OnEntityVars(w, EntityVarsMsg.Read(r)); break;
+                case MsgId.EntityMaps: OnEntityMaps(w, EntityMapsMsg.Read(r)); break;
                 case MsgId.EntityRpc: OnEntityRpc(w, EntityRpcMsg.Read(r)); break;
                 case MsgId.WorldState: OnWorldState(w, r); break;
                 case MsgId.EntityState: OnEntityState(w, EntitySyncMsg.Read(r)); break;
@@ -1163,6 +1170,13 @@ namespace Nebula
             rec.Container = msg.Container;
             msg.OwnerWorkerIndex = w.Index;
             rec.LastSpawn = msg;
+            if (msg.Maps != null && msg.Maps.Length > 0)
+            {
+                if (rec.Maps == null) rec.Maps = new NetworkMapCache();
+                try { rec.Maps.Reset(msg.Maps); }
+                catch (Exception ex) { NebulaLog.Warn($"entity {msg.NetId}: unreadable maps in its spawn ({ex.Message})"); rec.Maps = null; }
+            }
+            else rec.Maps = null;
             rec.HasStateTick = false;
             rec.SeedKeyframes(msg.State, msg.AudienceGeneration);
             ApplySpawnAudience(rec, msg);
@@ -1239,6 +1253,37 @@ namespace Nebula
             msg.Write(_writer, MsgId.EntityVars);
             BroadcastEntity(rec, Delivery.ReliableOrdered);
         }
+
+        /// <summary>
+        /// Changed map entries from the owner: applied to the record's copy, so a late joiner is sent the current
+        /// contents, then relayed to the observers that can read them (docs/replicated-collections.md D6, D12).
+        /// </summary>
+        private void OnEntityMaps(WorkerConn w, EntityMapsMsg msg)
+        {
+            if (HoldBehind(msg.NetId, msg.Epoch, new HeldUpdate { Kind = HeldKind.Maps, Maps = msg, Worker = w.Index })) return;
+            if (!_entities.TryGetValue(msg.NetId, out var rec) || msg.Epoch < rec.Epoch || rec.OwnerWorkerIndex != w.Index) return;
+            if (rec.Maps == null) rec.Maps = new NetworkMapCache();
+            try { rec.Maps.Apply(new ArraySegment<byte>(msg.Maps ?? Array.Empty<byte>())); }
+            catch (Exception ex)
+            {
+                // The copy may now be half-applied; the next spawn from the owner replaces it.
+                NebulaLog.Warn($"entity {msg.NetId}: unreadable map update ({ex.Message}); dropped");
+                return;
+            }
+            rec.LastSpawn.Epoch = msg.Epoch;
+            _writer.Reset();
+            msg.Write(_writer, MsgId.EntityMaps);
+            var segment = _writer.ToSegment();
+            for (int i = rec.Observers.Count - 1; i >= 0; i--)
+            {
+                var client = rec.Observers[i];
+                if (!client.Welcomed || client.ProtocolVersion < MapsProtocolVersion) continue;
+                AppendReliable(client, segment);
+            }
+        }
+
+        /// <summary>The first protocol that has <see cref="MsgId.EntityMaps"/>.</summary>
+        internal const ushort MapsProtocolVersion = 21;
 
         private void OnEntityState(WorkerConn w, EntitySyncMsg msg)
         {

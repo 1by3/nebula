@@ -168,5 +168,4 @@ audience decides what the gateway sends, not what a compromised process can read
 - `Services~/Nebula.Services.Tests/ConformanceSyncAudienceTests.cs` (a real gateway over UDP): a non-owner never gets
   an `Owner` chunk by spawn, delta, keyframe or late-join cache; `WorkersOnly` reaches no client; an owner change
   moves the audience; the owner keeps its state through a handover and a reclaimed session; a `Custom` audience adds
-  and removes clients (keyframe on join, `Cleared` on leave, a newer-generation chunk held back); a protocol-19 client
-  gets no notice but no state; an unrestricted entity is relayed as before.
+  and removes clients (keyframe on join, `Cleared` on leave, a newer-generation chunk held back); (a protocol-19 client got no notice but no state, until protocol 21 closed the window to 20..21); an unrestricted entity is relayed as before.

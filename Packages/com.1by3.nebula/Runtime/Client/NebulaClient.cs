@@ -891,6 +891,7 @@ namespace Nebula
                 case MsgId.EntitySpawn: OnEntitySpawn(EntitySpawnMsg.Read(r)); break;
                 case MsgId.EntityDespawn: OnEntityDespawn(EntityDespawnMsg.Read(r)); break;
                 case MsgId.EntityVars: _varsPacketsIn++; OnEntityVars(EntityVarsMsg.Read(r)); break;
+                case MsgId.EntityMaps: OnEntityMaps(EntityMapsMsg.Read(r)); break;
                 case MsgId.EntityRpc: _rpcPacketsIn++; OnEntityRpc(EntityRpcMsg.Read(r)); break;
                 case MsgId.WorldState: _statePacketsIn++; OnWorldState(r); break;
                 case MsgId.EntityState: OnEntityState(EntitySyncMsg.Read(r)); break;
@@ -1008,6 +1009,9 @@ namespace Nebula
                     _reader.Set(new ArraySegment<byte>(msg.Vars));
                     e.ReadVars(_reader);
                 }
+                // A spawn for an entity already held (a new owner's announcement) carries the maps in full; the
+                // copy is replaced, with a change for each key that differs (docs/replicated-collections.md D7).
+                e.ReadMaps(msg.Maps);
                 if (msg.State != null && msg.State.Length > 0)
                 {
                     _reader.Set(new ArraySegment<byte>(msg.State));
@@ -1057,6 +1061,7 @@ namespace Nebula
                 _reader.Set(new ArraySegment<byte>(msg.Vars));
                 e.ReadVars(_reader);
             }
+            e.ReadMaps(msg.Maps);
             if (msg.State != null && msg.State.Length > 0)
             {
                 _reader.Set(new ArraySegment<byte>(msg.State));
@@ -1174,6 +1179,25 @@ namespace Nebula
             e.ClearDirty();
         }
 
+        private void OnEntityMaps(EntityMapsMsg msg)
+        {
+            if (!_entities.TryGetValue(msg.NetId, out var e))
+            {
+                // A held spawn keeps a full copy; the delta is folded into it, since it will not be sent again.
+                if (_pendingSceneByNetId.TryGetValue(msg.NetId, out uint sceneId) && _pendingScene.TryGetValue(sceneId, out var held) && msg.Epoch >= held.Epoch)
+                {
+                    held.Maps = NetworkMapCache.Fold(held.Maps, msg.Maps);
+                    _pendingScene[sceneId] = held;
+                }
+                foreach (var list in _pendingByCarrier.Values)
+                    for (int i = 0; i < list.Count; i++)
+                        if (list[i].NetId == msg.NetId && msg.Epoch >= list[i].Epoch) { var h = list[i]; h.Maps = NetworkMapCache.Fold(h.Maps, msg.Maps); list[i] = h; }
+                return;
+            }
+            if (msg.Epoch < e.Epoch) return;
+            e.ReadMaps(msg.Maps);
+        }
+
         // ---------------------------------------------------------------------------------------- scene entities
 
         private void HoldForCarrier(EntitySpawnMsg msg)
@@ -1227,6 +1251,9 @@ namespace Nebula
             _entities.Remove(e.NetId);
             if (LocalPlayer == e) LocalPlayer = null;
             _writer.Reset();
+            e.WriteMapsFull(_writer);
+            var maps = _writer.Length > 0 ? _writer.ToArray() : null;
+            _writer.Reset();
             e.WriteVars(_writer);
             HoldSceneSpawn(new EntitySpawnMsg
             {
@@ -1244,6 +1271,7 @@ namespace Nebula
                 Flags = (e.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (e.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
                 Vars = _writer.ToArray(),
                 State = Array.Empty<byte>(),
+                Maps = maps,
             });
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);

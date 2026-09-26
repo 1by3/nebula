@@ -1,0 +1,150 @@
+---
+title: "NetworkMap<TKey, TValue>"
+description: "A keyed collection replicated from the authoritative worker to clients and ghost workers, sending only what changed."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs)</div>
+
+```csharp
+public sealed class NetworkMap<TKey, TValue> : NetworkMapBase, IReadOnlyDictionary<TKey, TValue>
+```
+
+A keyed collection replicated from the authoritative worker to clients and ghost workers, sending only what changed. Declare it on a [`NetworkBehaviour`](/docs/reference/core/network-behaviour) like a [`NetworkVariable<T>`](/docs/reference/core/network-variable), and add [`PersistAttribute`](/docs/reference/persistence/persist-attribute) to save it:
+
+```csharp
+[Persist] public NetworkMap<int, ItemStack> Slots = new NetworkMap<int, ItemStack>();
+```
+
+Only the authority may write it. Each tick, the keys that changed go out as one reliable message; a client that arrives later is given the current contents by its gateway, then the same changes as everyone else. Keys and values use [`NetworkSerialization`](/docs/reference/serialization/network-serialization), so any type a [`NetworkVariable<T>`](/docs/reference/core/network-variable) can hold works. A map is capped at [`NetworkMapBase.Capacity`](/docs/reference/core/network-map-base#capacity) encoded bytes (60 KB by default).
+
+## Constructors
+
+### NetworkMap [#networkmap]
+
+```csharp
+public NetworkMap();
+public NetworkMap(IEqualityComparer<TKey> comparer, int capacityBytes = 0);
+```
+
+| Parameter | Description |
+| --- | --- |
+| `comparer` | How keys are compared; the default comparer of `TKey` when null. |
+| `capacityBytes` | The most the map may hold, encoded ([`NetworkMapBase.Capacity`](/docs/reference/core/network-map-base#capacity)); 0 for [`NetworkMapBase.MaxEncodedBytes`](/docs/reference/core/network-map-base#maxencodedbytes). |
+
+## Properties
+
+### Count [#count]
+
+```csharp
+public override int Count { get; }
+```
+
+### EncodedBytes [#encodedbytes]
+
+```csharp
+public override int EncodedBytes { get; }
+```
+
+### Keys [#keys]
+
+```csharp
+public IEnumerable<TKey> Keys { get; }
+```
+
+### Values [#values]
+
+```csharp
+public IEnumerable<TValue> Values { get; }
+```
+
+### this\[\] [#this]
+
+```csharp
+public TValue this[TKey key]
+{
+    get => _map[key];
+    set
+    {
+        if (!TrySet(key, value))
+            throw new InvalidOperationException(CapMessage(key));
+    }
+}
+```
+
+Get a value, or (authority) add or replace one. Setting a value equal to the current one does nothing. Throws `InvalidOperationException` when the map would pass its size cap.
+
+## Events
+
+### OnChanged [#onchanged]
+
+```csharp
+public event Action<NetworkMapChange<TKey, TValue>> OnChanged;
+```
+
+Raised on every copy (the authority as it writes, others as they apply what it sent) once per key that was added, updated or removed.
+
+## Methods
+
+### ContainsKey [#containskey]
+
+```csharp
+public bool ContainsKey(TKey key);
+```
+
+### TryGetValue [#trygetvalue]
+
+```csharp
+public bool TryGetValue(TKey key, out TValue value);
+```
+
+### GetEnumerator [#getenumerator]
+
+```csharp
+public Dictionary<TKey, TValue>.Enumerator GetEnumerator();
+```
+
+### Add [#add]
+
+```csharp
+public void Add(TKey key, TValue value);
+```
+
+Add a key that is not in the map (authority). Throws `ArgumentException` if it is.
+
+### TrySet [#tryset]
+
+```csharp
+public bool TrySet(TKey key, TValue value);
+```
+
+Add or replace a value (authority). Returns false, and changes nothing, when the map would pass [`NetworkMapBase.Capacity`](/docs/reference/core/network-map-base#capacity); true otherwise, including when the write was ignored because this copy may not write.
+
+### Remove [#remove]
+
+```csharp
+public bool Remove(TKey key);
+```
+
+Remove a key (authority). Returns whether it was there.
+
+### Clear [#clear]
+
+```csharp
+public void Clear();
+```
+
+Remove every key (authority). Raises [`NetworkMapChangeKind.Removed`](/docs/reference/core/network-map-change-kind#removed) for each.
+
+### SetDirty [#setdirty]
+
+```csharp
+public bool SetDirty(TKey key);
+```
+
+Send the current value of `key` again (authority): for a reference-typed value that was changed in place, which the map cannot see. Re-measures it against the size cap; returns false, sending nothing, when it no longer fits.
+
+### ToString [#tostring]
+
+```csharp
+public override string ToString();
+```

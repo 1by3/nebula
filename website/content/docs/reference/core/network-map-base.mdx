@@ -1,0 +1,62 @@
+---
+title: "NetworkMapBase"
+description: "The untyped half of NetworkMap<TKey, TValue>: what NetworkIdentity needs to send and apply a map without knowing its types (docs/replicated-collections.md)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Abstract class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs)</div>
+
+```csharp
+public abstract class NetworkMapBase : NetworkVariableBase
+```
+
+The untyped half of [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map): what [`NetworkIdentity`](/docs/reference/core/network-identity) needs to send and apply a map without knowing its types (docs/replicated-collections.md). [`NetworkVariableBase.Write`](/docs/reference/core/network-variable-base#write) and [`NetworkVariableBase.Read`](/docs/reference/core/network-variable-base#read) are the full contents, which is what persistence stores.
+
+## Fields
+
+### MaxEncodedBytes [#maxencodedbytes]
+
+```csharp
+public const int MaxEncodedBytes = 60 * 1024;
+```
+
+The most a map may hold by default, encoded (61,440 bytes of body, D11): it keeps a [`PersistAttribute`](/docs/reference/persistence/persist-attribute) map inside one persisted entry and a full copy a sane size for a spawn.
+
+## Properties
+
+### Capacity [#capacity]
+
+```csharp
+public int Capacity { get; protected set; } = MaxEncodedBytes;
+```
+
+The most this map may hold, encoded: [`MaxEncodedBytes`](#maxencodedbytes) unless the constructor chose otherwise. A [`PersistAttribute`](/docs/reference/persistence/persist-attribute) map larger than 65,535 bytes cannot be saved as one entry.
+
+### Count [#count]
+
+```csharp
+public abstract int Count { get; }
+```
+
+How many entries the map holds.
+
+### EncodedBytes [#encodedbytes]
+
+```csharp
+public abstract int EncodedBytes { get; }
+```
+
+The encoded size of the full contents, in bytes. At most [`Capacity`](#capacity).
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public override void Write(NetworkWriter writer);
+```
+
+### Read [#read]
+
+```csharp
+public override void Read(NetworkReader reader);
+```

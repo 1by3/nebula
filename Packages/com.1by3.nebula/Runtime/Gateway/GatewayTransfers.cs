@@ -125,7 +125,7 @@ namespace Nebula
         // ------------------------------------------------------------------------------------------- held updates
 
         /// <summary>What a held update is.</summary>
-        private enum HeldKind : byte { Spawn, State, Vars, Sync, Rpc, Despawn, Audience }
+        private enum HeldKind : byte { Spawn, State, Vars, Sync, Rpc, Despawn, Audience, Maps }
 
         /// <summary>
         /// One update held for an entity: a spawn or state entry that named a container this gateway could not
@@ -137,6 +137,7 @@ namespace Nebula
             public EntitySpawnMsg Spawn;
             public EntityStateEntry Entry;
             public EntityVarsMsg Vars;
+            public EntityMapsMsg Maps;
             public EntitySyncMsg Sync;
             public EntityRpcMsg Rpc;
             public EntityDespawnMsg Despawn;
@@ -286,6 +287,7 @@ namespace Nebula
             {
                 case HeldKind.Spawn: OnEntitySpawn(w, update.Spawn); return;
                 case HeldKind.Vars: OnEntityVars(w, update.Vars); return;
+                case HeldKind.Maps: OnEntityMaps(w, update.Maps); return;
                 case HeldKind.Rpc: OnEntityRpc(w, update.Rpc); return;
                 case HeldKind.Despawn: OnEntityDespawn(w, update.Despawn); return;
                 case HeldKind.Audience: OnSyncAudience(w, update.Audience); return;

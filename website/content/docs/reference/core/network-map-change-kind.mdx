@@ -1,0 +1,20 @@
+---
+title: "NetworkMapChangeKind"
+description: "What happened to one key of a NetworkMap<TKey, TValue>."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Core/NetworkMap.cs)</div>
+
+```csharp
+public enum NetworkMapChangeKind : byte
+```
+
+What happened to one key of a [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="added"></span>`Added` | `0` | The key was not in the map and now is. |
+| <span id="updated"></span>`Updated` | `1` | The key was in the map and its value changed. |
+| <span id="removed"></span>`Removed` | `2` | The key left the map (removed, or cleared). |

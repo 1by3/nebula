@@ -243,27 +243,6 @@ public class ConformanceSyncAudienceTests
     }
 
     [Test]
-    public void AProtocol19ClientStopsReceivingButIsNotSentTheNotice()
-    {
-        using var fleet = Mesh();
-        var ann = fleet.Connect(0, "ann");
-        ann.AnnounceVersion = 19;
-        Assert.That(fleet.Run(() => ann.Join == JoinState.Joined), Is.True);
-        Assert.That(ann.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)19));
-        fleet.Worker.Spawn(6002, new Vector3(3, 0, 0));
-        Assert.That(fleet.Run(() => ann.Replicas.Contains(6002)), Is.True);
-        fleet.Worker.SendSync(6002, reliable: true, tick: 1, generation: 0, (Chosen, Flags.Full | Custom, B(Chosen, 1)));
-        fleet.Worker.SendAudience(6002, 1, (Chosen, new[] { Id(ann) }));
-        Assert.That(fleet.Run(() => Got(ann, 6002, Chosen, 1)), Is.True);
-        fleet.Worker.SendAudience(6002, 2, (Chosen, Array.Empty<ulong>()));
-        fleet.Worker.SendSync(6002, reliable: true, tick: 2, generation: 2, (Chosen, Custom, B(Chosen, 2)));
-        fleet.RunFor(0.5);
-        Assert.That(GotCleared(ann, 6002, Chosen), Is.False, "a protocol-19 client cannot read the notice");
-        Assert.That(Got(ann, 6002, Chosen, 2), Is.False, "but it is sent nothing more of the state");
-        AssertNoLeaks(ann);
-    }
-
-    [Test]
     public void AnEntityWithoutRestrictedBehavioursIsRelayedAsBefore()
     {
         using var fleet = Mesh();

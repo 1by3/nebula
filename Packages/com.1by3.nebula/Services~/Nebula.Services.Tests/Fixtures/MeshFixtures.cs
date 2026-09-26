@@ -37,6 +37,8 @@ public sealed class FakeWorker : IDisposable
         /// <summary>The audience generation and Custom member sets its spawn carries, as the last <see cref="SendAudience"/> set them.</summary>
         public uint AudienceGeneration;
         public byte[]? Audience;
+        /// <summary>The full map section its spawn carries: the last one set, with every <see cref="SendMaps"/> since folded in.</summary>
+        public byte[]? Maps;
     }
 
     private sealed class GatewayLink
@@ -456,6 +458,18 @@ public sealed class FakeWorker : IDisposable
         });
     }
 
+    /// <summary>Changed map entries (a delta section), sent where <see cref="SendVars"/> would send; the spawn's copy is kept current.</summary>
+    public void SendMaps(ulong netId, byte[] delta, uint? epoch = null)
+    {
+        if (_entities.TryGetValue(netId, out var owned) && epoch == null) owned.Maps = NetworkMapCache.Fold(owned.Maps, delta);
+        Each(netId, (peer, e) =>
+        {
+            _w.Reset();
+            new EntityMapsMsg { NetId = e.NetId, Epoch = epoch ?? e.Epoch, Maps = delta }.Write(_w, MsgId.EntityMaps);
+            Transport.Send(peer, Delivery.ReliableOrdered, _w.ToSegment());
+        });
+    }
+
     /// <summary>A sync envelope as a worker writes one: each chunk with its behaviour index and flags (audience included).</summary>
     public static byte[] Envelope(params (byte Index, SyncStateCodec.ChunkFlags Flags, byte[] Bytes)[] chunks)
     {
@@ -839,7 +853,7 @@ public sealed class FakeWorker : IDisposable
             RelevanceRadius = e.RelevanceRadius,
             InterestFlags = e.AlwaysRelevant ? EntityInterestFlags.AlwaysRelevant : EntityInterestFlags.None,
             InterestGroup = e.InterestGroup, Vars = e.Vars, State = e.State,
-            AudienceGeneration = e.AudienceGeneration, Audience = e.Audience,
+            AudienceGeneration = e.AudienceGeneration, Audience = e.Audience, Maps = e.Maps,
         }.Write(_w, MsgId.EntitySpawn);
         Transport.Send(peerId, Delivery.ReliableOrdered, _w.ToSegment());
         if (_links.TryGetValue(peerId, out var link)) { Bump(SpawnsSent, link.GatewayId); SpawnLog.Add((link.GatewayId, e.NetId)); }
@@ -940,6 +954,15 @@ public sealed class FakeClient : IDisposable
     /// the last <see cref="MsgId.EntityVars"/>, whichever came later. A spawn relayed after a newer block regresses it.
     /// </summary>
     public readonly Dictionary<ulong, byte[]> VarsOf = new();
+    /// <summary>
+    /// Each entity's maps as a real client would hold them: replaced by a spawn that carries them, updated by each
+    /// <see cref="MsgId.EntityMaps"/>.
+    /// </summary>
+    public readonly Dictionary<ulong, NetworkMapCache> MapsOf = new();
+    /// <summary>Every <see cref="MsgId.EntityMaps"/> received, in order: the entity and the delta section.</summary>
+    public readonly List<(ulong NetId, byte[] Maps)> MapDeltas = new();
+    /// <summary>The map section of every spawn received that carried one, in order.</summary>
+    public readonly List<(ulong NetId, byte[] Maps)> SpawnMaps = new();
     /// <summary>The last packet this client could not parse, if any. A test that loses messages looks here first.</summary>
     public string LastError = "";
     public long BytesIn;
@@ -1098,6 +1121,13 @@ public sealed class FakeClient : IDisposable
                 Spawned.Add(msg.NetId);
                 Wire.Add("spawn " + msg.NetId);
                 if (msg.Vars != null && msg.Vars.Length > 0) VarsOf[msg.NetId] = msg.Vars;
+                if (msg.Maps != null)
+                {
+                    var cache = new NetworkMapCache();
+                    cache.Reset(msg.Maps);
+                    MapsOf[msg.NetId] = cache;
+                    SpawnMaps.Add((msg.NetId, msg.Maps));
+                }
                 if (msg.AudienceGeneration != 0 || msg.Audience != null) AudienceLeaks++;
                 NoteSync(msg.NetId, msg.State, "spawn");
                 // A spawn with no view sequence is a relayed in-place update (an authority transfer, a container
@@ -1136,6 +1166,16 @@ public sealed class FakeClient : IDisposable
                 VarsReceived++;
                 VarsOf[msg.NetId] = msg.Vars;
                 Wire.Add("vars " + msg.NetId);
+                break;
+            }
+            case MsgId.EntityMaps:
+            {
+                var msg = EntityMapsMsg.Read(r);
+                Note(msg.NetId);
+                MapDeltas.Add((msg.NetId, msg.Maps));
+                if (!MapsOf.TryGetValue(msg.NetId, out var cache)) MapsOf[msg.NetId] = cache = new NetworkMapCache();
+                cache.Apply(new ArraySegment<byte>(msg.Maps));
+                Wire.Add("maps " + msg.NetId);
                 break;
             }
             case MsgId.EntityState:

@@ -1,0 +1,34 @@
+---
+title: "ByteArrayComparer"
+description: "Compares byte arrays by content: how a party without game types keys a map (the gateway's cache)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/NetworkMapCodec.cs)</div>
+
+```csharp
+public sealed class ByteArrayComparer : IEqualityComparer<byte[]>
+```
+
+Compares byte arrays by content: how a party without game types keys a map (the gateway's cache).
+
+## Fields
+
+### Instance [#instance]
+
+```csharp
+public static readonly ByteArrayComparer Instance = new ByteArrayComparer();
+```
+
+## Methods
+
+### Equals [#equals]
+
+```csharp
+public bool Equals(byte[] a, byte[] b);
+```
+
+### GetHashCode [#gethashcode]
+
+```csharp
+public int GetHashCode(byte[] a);
+```

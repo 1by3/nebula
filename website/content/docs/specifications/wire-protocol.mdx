@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 20, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 21, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 20. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 21. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `20`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `21`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 19 and 20: `HelloMsg.MinProtocolVersion` is `19` and `HelloMsg.ProtocolVersion` is `20`. Gateway-to-worker and worker-to-worker connections MUST match protocol `20` exactly.
+A gateway accepts clients of protocol 20 and 21: `HelloMsg.MinProtocolVersion` is `20` and `HelloMsg.ProtocolVersion` is `21`. Gateway-to-worker and worker-to-worker connections MUST match protocol `21` exactly.
+
+Protocol 21 added replicated maps (see [Replicated maps](/docs/guides/network-map)). The change is additive for a client: the gateway sends the new `EntityMaps` message only to clients that negotiated `21`, and the new trailing `maps` field of `EntitySpawnBody` is ignored by a protocol-20 client. Between workers, protocol 21 adds `GhostMaps`.
 
 Protocol 20 added sync audiences: a behavior's sync state can be limited to some clients (see [Private sync state](/docs/guides/sync-audiences)). Every change is additive for a client. The audience bits in a chunk's flags are ignored by a protocol-19 client, and the one new thing a client can receive, a `Cleared` chunk, is sent only to clients that negotiated `20`. Between workers and gateways, protocol 20 adds the `SyncAudience` message and trailing fields in `EntitySpawnBody` and `EntitySyncBody`.
 
@@ -20,7 +22,7 @@ Protocol 19 changed no byte layout. It changed what a behavior index names: an e
 - A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
 - A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
 - A sender MUST preserve the message identifiers, field order, primitive encodings, and field meanings defined here. Fields explicitly described as optional may be omitted at the end of a message.
-- The gateway returns the client's accepted version in `Welcome.negotiated_version`. The gateway uses the same encoder for protocol 19 and 20 clients, except that it sends a `Cleared` sync chunk only to a protocol-20 client.
+- The gateway returns the client's accepted version in `Welcome.negotiated_version`. The gateway uses the same encoder for protocol 20 and 21 clients, except that it sends `EntityMaps` only to a protocol-21 client.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats. `Hello.game_content_version` is a number the game chooses for its own content; Nebula compares it and refuses a mismatch, and gives it no other meaning.
 
 For process replacement and compatibility requirements, see [Upgrade a running mesh](/docs/deploy/upgrades).
@@ -162,6 +164,7 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 35 | `EntityRedirect` | `W-G` | Reliable ordered | [`EntityRedirect`](#interest-management) |
 | 36 | `EntityForget` | `W-G` | Reliable ordered | [`EntityForget`](#interest-management) |
 | 37 | `SyncAudience` | `W-G` | Reliable ordered | [`SyncAudience`](#sync-audiences) |
+| 38 | `EntityMaps` | `W-G-C` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
 | 40 | `GhostSpawn` | `W-W` | Reliable ordered | [`EntitySpawnBody`](#entity-lifecycle-and-variables) |
 | 41 | `GhostState` | `W-W` | Conditional | [`StateBatchBody`](#batched-transform-state) |
 | 42 | `GhostVars` | `W-W` | Reliable ordered | [`EntityVarsBody`](#entity-lifecycle-and-variables) |
@@ -172,8 +175,9 @@ The direction abbreviations are client (`C`), gateway (`G`), and worker (`W`). `
 | 47 | `GhostSyncState` | `W-W` | Conditional | [`EntitySyncBody`](#behavior-sync-state) |
 | 48 | `WorkerMessage` | `W-W` | Caller-selected | [`WorkerMessage`](#worker-defined-messages) |
 | 49 | `AuthorityRpcReply` | `W-W` | Reliable ordered | [`AuthorityCallReply`](#authority-calls) |
+| 50 | `GhostMaps` | `W-W` | Reliable ordered | [`EntityMapsBody`](#replicated-maps) |
 
-IDs not listed in this table are reserved. A version 20 sender MUST NOT use them.
+IDs not listed in this table are reserved. A version 21 sender MUST NOT use them.
 
 ## Message layouts
 
@@ -250,7 +254,8 @@ EntitySpawnBody :=
   u32 cohesion_group,
   f16 cost_weight,
   [u32 audience_generation,
-   bytes audience_sets]
+   bytes audience_sets,
+   [u32 maps_length, raw maps[maps_length]]]
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
@@ -266,7 +271,9 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 
 `view_seq` is assigned by the gateway, per client and per entity, and increases every time the entity enters that client's set. A client MUST ignore an `EntityDespawn` whose `view_seq` is older than the view it currently holds for that `net_id`, so a despawn delayed behind a re-entry cannot remove the replica the client has just been given. Workers write `0` in both messages; only the gateway-to-client link uses the field.
 
-`audience_generation` and `audience_sets` are the entity's [sync audience](#sync-audiences) state, written only by workers. A standalone `EntitySpawn` or `GhostSpawn` carries the section only when the generation is non-zero or the entity has a `Custom` audience. The entity body nested in `AuthorityTransfer` always carries it, because fields follow it there. A gateway MUST NOT forward the section to a client.
+`audience_generation` and `audience_sets` are the entity's [sync audience](#sync-audiences) state, written only by workers. A standalone `EntitySpawn` or `GhostSpawn` carries the section only when the generation is non-zero or the entity has a `Custom` audience. The entity body nested in `AuthorityTransfer` always carries it, because fields follow it there. A gateway MUST NOT forward the section's contents to a client: when `maps` follows, it writes `0` and empty sets.
+
+`maps` is every [replicated map](#replicated-maps) of the entity in full, as a `MapSection`. A standalone spawn carries it only when the entity has maps, and then always writes the audience section before it. The entity body nested in `AuthorityTransfer` always carries it, empty when there are none. A gateway keeps it current with each `EntityMaps` and sends the current contents in the spawn a client joining later receives.
 
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
@@ -312,6 +319,21 @@ AudienceSet  := u8 behavior_index, u16 member_count, u64 client_id[member_count]
 An audience limits which clients receive a behavior's chunks. It never limits workers: `GhostSyncState`, `GhostSpawn` and `AuthorityTransfer` carry every behavior. The gateway filters each chunk per client on every path to a client: `EntitySpawn`, `EntityState` on either channel, and the spawns it builds from its cached keyframes. A chunk goes to a client when its audience is `Everyone`; when it is `Owner` and the client is the entity's `owner_client_id`; or when it is `Custom` and the client is in the behavior's set. A `WorkersOnly` chunk never goes to a client.
 
 A worker sends `SyncAudience` when the member set of one of an entity's `Custom` behaviors changes, before that tick's sync chunks, to every gateway it sends the entity's sync state to. It carries every set of the entity, sorted, at most 256 members each. `audience_generation` increases with every change and travels with the entity through `GhostSpawn` and `AuthorityTransfer`. A gateway MUST NOT send a client a `Custom` chunk whose `EntitySyncBody.audience_generation` is newer than the sets it holds. When a set changes, the gateway sends each client that joined it the newest keyframe it holds for that behavior, as a reliable `EntityState`, and sends each protocol-20 client that left it a reliable `EntityState` holding one empty `Cleared` chunk for the behavior. It does the same for `Owner` behaviors when an `EntitySpawn` names a different owner.
+
+#### Replicated maps
+
+```text
+EntityMapsBody := u64 net_id, u32 entity_epoch, u32 maps_length, raw maps[maps_length]
+
+MapSection := u8 map_count, MapEntry[map_count]
+MapEntry   := u8 map_index, u32 body_length, MapBody
+MapBody    := u8 version (1), u8 flags, u32 entry_count, MapOp[entry_count]
+MapOp      := u8 op, bytes key, [bytes value]
+```
+
+A `NetworkMap` field sends only what changed. `map_index` is the map's position among the entity's `NetworkMap` fields, in declaration order. `flags` bit 0 (`clear`) tells the receiver to empty the map before applying the operations. `op` `1` sets `key` to `value`; `op` `0` removes `key` and carries no value. `key` and `value` are the bytes `NetworkSerialization` writes for the map's types, so a peer without the game's types, such as the gateway, can hold them. A full copy is a body with `clear` set and every entry as a set.
+
+The authority sends `EntityMaps` to gateways and `GhostMaps` to ghost workers in the tick a map changes, after that tick's `EntityVars`, with one operation per changed key holding its final state. Applying a body to a copy that already contains its changes leaves the copy unchanged. A receiver MUST ignore a message whose `entity_epoch` is older than its copy. A gateway applies each `EntityMaps` to its copy of the entity's maps before it relays it, and sends it only to clients that negotiated protocol `21`.
 
 ### Remote procedure calls
 

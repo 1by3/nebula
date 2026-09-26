@@ -470,6 +470,13 @@ namespace Nebula
         /// <summary>The <see cref="SyncHistoryAttribute"/> subset of <see cref="AllVars"/>, in the same order, snapshotted by <see cref="StateHistory"/>.</summary>
         internal NetworkVariableBase[] HistoryVars = Array.Empty<NetworkVariableBase>();
         internal bool VarsDirty;
+        /// <summary>
+        /// The <see cref="NetworkMapBase"/> subset of <see cref="AllVars"/>, in the same order; a map's position here is
+        /// its index on the wire. Maps are never in <see cref="WriteVars"/> (docs/replicated-collections.md D1).
+        /// </summary>
+        internal NetworkMapBase[] Maps = Array.Empty<NetworkMapBase>();
+        /// <summary>A map changed on the authority since the last send.</summary>
+        internal bool MapsDirty;
         internal bool SyncDirty;
         internal bool Initialized;
         /// <summary>Behaviours that replicate through the sync channel (<see cref="NetworkBehaviour.HasSyncState"/>).</summary>
@@ -735,6 +742,25 @@ namespace Nebula
                 if (b is PersistentEntity pe && Persistent == null) Persistent = pe;
             }
             AllVars = vars.ToArray();
+            var maps = new List<NetworkMapBase>();
+            foreach (var v in AllVars)
+            {
+                if (!(v is NetworkMapBase map)) continue;
+                if (maps.Count == byte.MaxValue)
+                {
+                    NebulaLog.Error($"{name}: more than {byte.MaxValue} NetworkMaps; {map.Name} does not replicate");
+                    continue;
+                }
+                if (map.SyncHistory)
+                {
+                    // A per-tick snapshot of a collection is not what state history is for (docs/replicated-collections.md D13).
+                    NebulaLog.Warn($"{name}: [SyncHistory] is not supported on NetworkMap {map.Name}; ignored");
+                    map.SyncHistory = false;
+                }
+                map.MapIndex = (byte)maps.Count;
+                maps.Add(map);
+            }
+            Maps = maps.Count > 0 ? maps.ToArray() : Array.Empty<NetworkMapBase>();
             var history = new List<NetworkVariableBase>();
             foreach (var v in AllVars) if (v.SyncHistory) history.Add(v);
             HistoryVars = history.Count > 0 ? history.ToArray() : Array.Empty<NetworkVariableBase>();
@@ -801,17 +827,81 @@ namespace Nebula
         }
 
         internal void MarkVarsDirty() => VarsDirty = true;
+        internal void MarkMapsDirty() => MapsDirty = true;
+        /// <summary>The entity declares at least one <see cref="NetworkMap{TKey, TValue}"/>.</summary>
+        public bool HasMaps => Maps.Length > 0;
         internal void MarkSyncDirty() => SyncDirty = true;
         public bool HasSyncState => SyncBehaviours.Length > 0;
 
         public void WriteVars(NetworkWriter writer)
         {
-            for (int i = 0; i < AllVars.Length; i++) AllVars[i].Write(writer);
+            for (int i = 0; i < AllVars.Length; i++) if (!(AllVars[i] is NetworkMapBase)) AllVars[i].Write(writer);
         }
 
         public void ReadVars(NetworkReader reader)
         {
-            for (int i = 0; i < AllVars.Length; i++) AllVars[i].Read(reader);
+            for (int i = 0; i < AllVars.Length; i++) if (!(AllVars[i] is NetworkMapBase)) AllVars[i].Read(reader);
+        }
+
+        // ---- maps (docs/replicated-collections.md) ----------------------------------------------------------
+
+        /// <summary>Every map in full, as a <see cref="NetworkMapCodec"/> section: what rides a spawn. Nothing when the entity has none.</summary>
+        public void WriteMapsFull(NetworkWriter writer)
+        {
+            if (Maps.Length == 0) return;
+            int countAt = NetworkMapCodec.BeginSection(writer);
+            for (int i = 0; i < Maps.Length; i++)
+            {
+                int at = NetworkMapCodec.BeginMap(writer, Maps[i].MapIndex);
+                Maps[i].WriteFull(writer);
+                NetworkMapCodec.EndMap(writer, at);
+            }
+            NetworkMapCodec.EndSection(writer, countAt, (byte)Maps.Length);
+        }
+
+        /// <summary>
+        /// The keys changed since the last send, of every map that has any, as a section. Returns the number of maps
+        /// written; when zero the writer has been left untouched.
+        /// </summary>
+        public int WriteMapsDelta(NetworkWriter writer)
+        {
+            if (!MapsDirty || Maps.Length == 0) return 0;
+            int rewind = writer.Length;
+            int countAt = NetworkMapCodec.BeginSection(writer);
+            byte n = 0;
+            for (int i = 0; i < Maps.Length; i++)
+            {
+                if (!Maps[i].Dirty) continue;
+                int at = NetworkMapCodec.BeginMap(writer, Maps[i].MapIndex);
+                Maps[i].WriteDelta(writer);
+                NetworkMapCodec.EndMap(writer, at);
+                n++;
+            }
+            if (n == 0) { writer.Rewind(rewind); return 0; }
+            NetworkMapCodec.EndSection(writer, countAt, n);
+            return n;
+        }
+
+        /// <summary>Apply a section (full or delta) from the authority. Maps this build does not have are skipped.</summary>
+        public void ReadMaps(byte[] section)
+        {
+            if (section == null || section.Length == 0 || Maps.Length == 0) return;
+            try
+            {
+                NetworkMapCodec.ReadSection(new ArraySegment<byte>(section), (index, body) =>
+                {
+                    if (index >= Maps.Length) return;
+                    try { Maps[index].ApplyBody(new NetworkReader(body)); }
+                    catch (Exception ex) { NebulaLog.Error($"NetworkMap {Maps[index].Name} of {name}: unreadable update ({ex.Message}); keeping its contents"); }
+                });
+            }
+            catch (Exception ex) { NebulaLog.Error($"{name}: unreadable map section ({ex.Message})"); }
+        }
+
+        /// <summary>The next send of every map is its full contents: a record was restored onto the live authority.</summary>
+        internal void ResendAllMaps()
+        {
+            for (int i = 0; i < Maps.Length; i++) Maps[i].MarkResendAll();
         }
 
         /// <summary>Handover-only state from every behavior (see <see cref="NetworkBehaviour.WriteHandoverState"/>).</summary>
@@ -859,8 +949,10 @@ namespace Nebula
         public void ClearDirty()
         {
             VarsDirty = false;
+            MapsDirty = false;
             SyncDirty = false;
             for (int i = 0; i < AllVars.Length; i++) AllVars[i].Dirty = false;
+            for (int i = 0; i < Maps.Length; i++) Maps[i].ClearChanges();
             for (int i = 0; i < SyncBehaviours.Length; i++)
             {
                 var b = SyncBehaviours[i];

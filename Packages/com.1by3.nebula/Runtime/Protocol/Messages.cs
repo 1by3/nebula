@@ -93,6 +93,12 @@ namespace Nebula
         /// changed (<see cref="SyncAudienceMsg"/>, protocol 20). Never forwarded to a client.
         /// </summary>
         SyncAudience = 37,
+        /// <summary>
+        /// Worker -> gateway -> client: the entries of an entity's <see cref="NetworkMap{TKey, TValue}"/>s that changed
+        /// (<see cref="EntityMapsMsg"/>, protocol 21, docs/replicated-collections.md D4). The gateway applies it to its
+        /// copy before relaying it, and sends it only to clients that negotiated 21 or later.
+        /// </summary>
+        EntityMaps = 38,
 
         // Worker <-> worker
         GhostSpawn = 40,
@@ -118,6 +124,8 @@ namespace Nebula
         /// (<see cref="AuthorityCallReplyMsg"/>), sent to the worker that minted the call id.
         /// </summary>
         AuthorityRpcReply = 49,
+        /// <summary>Worker -> worker: <see cref="EntityMaps"/> for a ghost (<see cref="EntityMapsMsg"/>).</summary>
+        GhostMaps = 50,
     }
 
     public enum PeerRole : byte
@@ -159,17 +167,15 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 20;
+        public const ushort ProtocolVersion = 21;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 19. Protocol 20 added sync audiences
-        /// (<see cref="SyncAudience"/>), and the change is additive for a client: a protocol-19 client ignores the
-        /// audience bits in a chunk's flags, and the one new thing a client can be sent, a
-        /// <see cref="SyncStateCodec.ChunkFlags.Cleared"/> chunk, goes only to clients that negotiated 20. Protocol 18
-        /// is still refused: protocol 19 removed a behavior from every carrier prefab (the obsolete
-        /// <c>DynamicContainer</c>), which renumbered the behavior indices that RPCs, variables and sync state are
-        /// addressed by. Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 20, the window being one version wide. Protocol 21 added
+        /// replicated maps (<see cref="NetworkMap{TKey, TValue}"/>), additive for a client: a new message a gateway
+        /// sends only to clients that negotiated 21, and a trailing spawn field a protocol-20 client does not read.
+        /// Protocols 18 and 19 are refused. Gateway-to-worker and worker-to-worker connections require
+        /// <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 19;
+        public const ushort MinProtocolVersion = 20;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -601,6 +607,12 @@ namespace Nebula
         /// (<see cref="SyncAudienceCodec"/>), or null when it has none. A gateway never forwards it to a client.
         /// </summary>
         public byte[] Audience;
+        /// <summary>
+        /// Every <see cref="NetworkMap{TKey, TValue}"/> of the entity in full (a <see cref="NetworkMapCodec"/> section),
+        /// or null when it has none (protocol 21, trailing and optional, docs/replicated-collections.md D5). A gateway
+        /// keeps it current with each <see cref="MsgId.EntityMaps"/> and hands it to a late joiner.
+        /// </summary>
+        public byte[] Maps;
 
 #if !NEBULA_SERVICE
         /// <param name="id">The entity.</param>
@@ -620,6 +632,13 @@ namespace Nebula
             {
                 id.WriteSyncSnapshot(scratch, forGateway);
                 state = scratch.ToArray();
+            }
+            byte[] maps = null;
+            if (id.HasMaps)
+            {
+                scratch.Reset();
+                id.WriteMapsFull(scratch);
+                maps = scratch.ToArray();
             }
             byte[] audience = null;
             if (id.HasCustomAudience)
@@ -652,6 +671,7 @@ namespace Nebula
                 CostWeight = id.EffectiveCostWeight,
                 AudienceGeneration = id.SyncAudienceGeneration,
                 Audience = audience,
+                Maps = maps,
             };
         }
 
@@ -692,9 +712,14 @@ namespace Nebula
             w.WriteUShort(ViewSeq);
             w.WriteUInt(CohesionGroup);
             w.WriteHalf(CostWeight);
-            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0)) return;
+            bool hasMaps = Maps != null && Maps.Length > 0;
+            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0) && !hasMaps) return;
             w.WriteUInt(AudienceGeneration);
             w.WriteBytes(Audience ?? Array.Empty<byte>());
+            if (!embedded && !hasMaps) return;
+            var maps = Maps ?? Array.Empty<byte>();
+            w.WriteInt(maps.Length);
+            w.WriteRaw(new ArraySegment<byte>(maps));
         }
 
         /// <summary>This spawn as a client may see it: the fields only workers and gateways use are cleared.</summary>
@@ -740,6 +765,15 @@ namespace Nebula
                 msg.AudienceGeneration = r.ReadUInt();
                 msg.Audience = r.ReadBytes();
                 if (msg.Audience.Length == 0) msg.Audience = null;
+            }
+            if (embedded || r.Remaining > 0)
+            {
+                var seg = r.ReadSegment(r.ReadInt());
+                if (seg.Count > 0)
+                {
+                    msg.Maps = new byte[seg.Count];
+                    Buffer.BlockCopy(seg.Array, seg.Offset, msg.Maps, 0, seg.Count);
+                }
             }
             return msg;
         }
