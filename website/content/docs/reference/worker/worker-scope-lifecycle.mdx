@@ -73,4 +73,4 @@ Called from the worker's frame pass. Never from the tick loop.
 public static bool IsBusy(Container container);
 ```
 
-Whether emptying this container now would lose something. Pure over the container's contents, including everything riding in a vehicle in it at any depth, because [`NebulaWorker.EmptyContainer`](/docs/reference/worker/nebula-worker#emptycontainer) removes riders too. A client's pawn seated in a ship parked in the part keeps the part busy.
+Whether emptying this container now would lose something. Pure over the container's contents, including everything riding in a vehicle in it at any depth, because [`NebulaWorker.EmptyContainer`](/docs/reference/worker/nebula-worker#emptycontainer) removes riders too. A client's pawn seated in a ship parked in the part keeps the part busy. A non-persistent entity the game said it rebuilds by itself ([`NebulaLifecycle.DiscardOnRetire`](/docs/reference/worker/nebula-lifecycle#discardonretire)) does not.

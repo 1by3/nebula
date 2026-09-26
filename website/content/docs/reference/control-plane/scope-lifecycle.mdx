@@ -37,7 +37,7 @@ Consulted for every [`ScopeState.Active`](/docs/reference/control-plane/scope-st
 public static bool RetireWhenIdle(in ScopeRetireContext context);
 ```
 
-The default policy: retire once the scope has held no client-owned entity and no authoritative entity at all for [`ScopeRetireContext.RetireAfterSeconds`](/docs/reference/control-plane/scope-retire-context#retireafterseconds). Pure.
+The default policy: retire once the scope has held no client-owned entity and no authoritative entity at all for [`ScopeRetireContext.RetireAfterSeconds`](/docs/reference/control-plane/scope-retire-context#retireafterseconds). With [`ScopeRetireContext.RetireWithEntities`](/docs/reference/control-plane/scope-retire-context#retirewithentities), only client-owned entities keep it: a scope that holds saved objects and nobody playing retires once it is idle. Pure.
 
 ### CollectParts [#collectparts]
 

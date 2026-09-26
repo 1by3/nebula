@@ -78,7 +78,7 @@ namespace Nebula.Tests
         private void Activate(LocalControlPlane plane) =>
             plane.ActivateScope(new ScopeActivationRequest { ScopeKey = Key, Definition = Room(), PreferredWorkerId = Worker, Requester = "matchmaker" });
 
-        private static ScopeRetireContext Context(IControlPlane plane, ScopeInfo scope, float after = 300f, int entities = 0, int players = 0) =>
+        private static ScopeRetireContext Context(IControlPlane plane, ScopeInfo scope, float after = 300f, int entities = 0, int players = 0, bool withEntities = false) =>
             new ScopeRetireContext
             {
                 Scope = scope,
@@ -86,6 +86,7 @@ namespace Nebula.Tests
                 Entities = entities,
                 Players = players,
                 RetireAfterSeconds = after,
+                RetireWithEntities = withEntities,
             };
 
         // ------------------------------------------------------------------------------- the exit criterion
@@ -178,6 +179,28 @@ namespace Nebula.Tests
             Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, after: 0f)), Is.False, "ScopeIdleRetireSeconds = 0 turns retiring off");
             Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, after: 600f)), Is.False, "and the threshold is honoured");
             Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope)), Is.True);
+        }
+
+        /// <summary>
+        /// <c>ScopeRetireWithEntities</c>: a scope that holds saved objects and nobody playing retires once it is idle
+        /// (the retire checkpoints them), while a player, the idle clock and the knob still keep it.
+        /// </summary>
+        [Test]
+        public void RetireWithEntitiesRetiresAnIdleScopeHoldingObjectsButNeverOneWithAPlayer()
+        {
+            var plane = Plane();
+            Activate(plane);
+            var scope = plane.FindScope(Key);
+            _clock = _clock.AddSeconds(301);
+
+            Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, entities: 4)), Is.False, "off by default: entities keep the scope");
+            Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, entities: 4, withEntities: true)), Is.True, "saved objects are checkpointed and come back");
+            Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, entities: 5, players: 1, withEntities: true)), Is.False, "a client is in it");
+            Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, entities: 4, after: 0f, withEntities: true)), Is.False, "0 still turns retiring off");
+
+            plane.TouchContainer(scope.ContainerIds[0]);
+            Assert.That(ScopeLifecycle.RetireWhenIdle(Context(plane, scope, entities: 4, withEntities: true)), Is.False,
+                "a part a worker keeps hot (something in it would be lost) still vetoes the retire");
         }
 
         [Test]

@@ -78,6 +78,16 @@ NebulaLifecycle.OnBeforeRetire += async (container, cancel) =>
 
 The one other documented exception: if the store does not answer "are there records for this scope?" within 10 seconds, the restore goes ahead without `OnScopeActivating` having run, with a warning. Your handler still runs when the answer arrives.
 
+## Let a retire throw away what you rebuild
+
+A worker never lets a scope go idle while one of its parts holds a non-persistent entity, because a retire would lose it. In the example above the colonists are exactly that. If your game rebuilds such entities itself, tell the workers so, or the settlement never retires:
+
+```csharp
+NebulaLifecycle.DiscardOnRetire = entity => entity.GetComponent<Colonist>() != null;
+```
+
+`Colonist` stands for a component of your own. `OnBeforeRetire` still runs first and can read them; the retire then removes them with the part. See [Retire a world that still holds things](/docs/guides/scopes#retire-a-world-that-still-holds-things).
+
 ## Ask the store directly
 
 `hasRecords` is a count behind the scenes, and you can ask the same question yourself:

@@ -52,3 +52,11 @@ public float RetireAfterSeconds;
 ```
 
 The configured idle threshold, in seconds (`NebulaConfig.ScopeIdleRetireSeconds`); 0 or less turns retiring off.
+
+### RetireWithEntities [#retirewithentities]
+
+```csharp
+public bool RetireWithEntities;
+```
+
+The configured `NebulaConfig.ScopeRetireWithEntities`: when true, entities nobody plays ([`Entities`](#entities) beyond [`Players`](#players)) don't keep an idle scope. Persistent ones are checkpointed by the retire and come back with the scope; anything a retire would lose already keeps the scope's idle clock at zero on its worker, so the scope never reaches the threshold.

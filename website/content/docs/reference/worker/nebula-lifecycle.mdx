@@ -20,6 +20,18 @@ Nebula owns the moments, not what a game does with them. Only the mesh knows whe
 
 Every hook is static, because a game registers them once at boot, before a [`NebulaWorker`](/docs/reference/worker/nebula-worker) exists, and there is one worker per process — the same reason [`ScopeLifecycle.ShouldRetire`](/docs/reference/control-plane/scope-lifecycle#shouldretire) and [`PhysicsIslands.IsCohesive`](/docs/reference/core/physics-islands#iscohesive) are static. All of them are raised on the main thread. A handler that throws is logged and ignored: a game's bug must never leave a scope half-retired or a restore unreported.
 
+## Fields
+
+### DiscardOnRetire [#discardonretire]
+
+```csharp
+public static Func<NetworkIdentity, bool> DiscardOnRetire;
+```
+
+Which entities a retire may throw away: return true for a non-persistent entity your game rebuilds by itself when the scope comes back, such as an NPC it respawns from its own saved state, a projectile or an effect. Null (the default) keeps every non-persistent entity.
+
+A worker holds the idle clock of a scope's part at zero while the part holds anything a retire would lose ([`WorkerScopeLifecycle.IsBusy`](/docs/reference/worker/worker-scope-lifecycle#isbusy)), so a single NPC that is not persistent keeps its scope running forever. An entity this accepts no longer counts: the part can go idle with it inside, and the retire removes it with the part. Client-owned entities, and persistent entities with unsaved changes, still keep the part busy whatever this returns. Consulted on the worker that owns the part, on the main thread; a predicate that throws is logged and the entity is kept.
+
 ## Events
 
 ### OnScopeActivating [#onscopeactivating]

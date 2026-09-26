@@ -215,6 +215,22 @@ A scope's parts are the containers its activation created and, for a chunked wor
 
 A scope that has been idle for `ScopeIdleRetireSeconds` (default 300 s, `-nebula-scope-idle-retire`; 0 turns retirement off) and that the workers report as empty, across all of its parts, is retired. The public world has no scope row and is never retired.
 
+### Retire a world that still holds things
+
+By default "empty" means no entity at all, so a world with one saved crate in it never retires. If your worlds keep objects players leave behind, such as crates, parked vehicles or buildings, turn on `ScopeRetireWithEntities` (`-nebula-scope-retire-with-entities`). The orchestrator then retires an idle scope that no client-owned entity is in, whatever else it holds. The retire checkpoints the persistent entities, and they come back when the scope does.
+
+The idle clock still protects everything a retire would lose. A worker keeps it at zero while a part holds a non-persistent entity or unsaved changes, so such a scope never becomes idle.
+
+That includes non-persistent NPCs your game rebuilds by itself when a region loads, for example a camp's guards that it respawns from saved state. Tell the workers they may be thrown away:
+
+```csharp
+NebulaLifecycle.DiscardOnRetire = entity => entity.GetComponent<CampGuard>() != null;
+```
+
+`CampGuard` stands for a component of your own. An entity the predicate accepts no longer keeps its part busy, so the scope can go idle with it inside, and the retire removes it with the part. A client-owned entity, or a persistent one with unsaved changes, still keeps the part busy whatever the predicate returns. Set it at boot on every worker; it is consulted on the worker that owns the part.
+
+Both settings work wherever the orchestrator runs, including the standalone orchestrator that `nebula start` and a cloud deployment use.
+
 ### What retiring does
 
 1. The scope is marked `retiring`. **It admits nobody from this moment**, before anything is saved.
@@ -252,7 +268,7 @@ client.JoinStateChanged += (state, estimatedSeconds) =>
 
 ### Deciding for yourself
 
-The time-based rule is the default, not the only one. Replace the policy to keep a scope hot for a reason Nebula cannot see — a party still in the matchmaking queue, a housing instance whose owner just logged out, a scheduled event:
+The time-based rule is the default, not the only one. When the orchestrator runs inside your Unity build, you can replace the policy to keep a scope hot for a reason Nebula cannot see — a party still in the matchmaking queue, a housing instance whose owner just logged out, a scheduled event:
 
 ```csharp
 ScopeLifecycle.ShouldRetire = (in ScopeRetireContext scope) =>
@@ -262,7 +278,9 @@ ScopeLifecycle.ShouldRetire = (in ScopeRetireContext scope) =>
 };
 ```
 
-The context carries the scope row, its idle age in seconds, the players and entities the workers last reported in it, and the configured threshold. It is consulted only for scopes that are `active`; a policy that throws is logged and the scope is kept.
+The context carries the scope row, its idle age in seconds, the players and entities the workers last reported in it, the configured threshold and `RetireWithEntities`. It is consulted only for scopes that are `active`; a policy that throws is logged and the scope is kept.
+
+<Callout>`ScopeLifecycle.ShouldRetire` runs on the orchestrator. The standalone orchestrator that `nebula start` and a cloud deployment use runs none of your game's code, so there the default rule always applies, configured by `ScopeIdleRetireSeconds` and `ScopeRetireWithEntities`. To keep a scope from retiring on any orchestrator, have a worker call `controlPlane.TouchContainer(containerId)` on one of its parts more often than `ScopeIdleRetireSeconds`, which restarts its idle clock.</Callout>
 
 The orchestrator's dashboard lists every scope with its state, occupancy, idle age and age, so you can see what a policy is doing.
 
@@ -344,6 +362,6 @@ This drops the scope row, releases the claim on the key and removes the lease ro
 - An **instance** scope (a room, a dungeon — a `ScopeKind.Parts` scope) shares the public world's origin frame. Only a scope that is a whole world (`ScopeKind.Grid`) takes a frame of its own, because only a whole world can be millions of metres from the public one.
 - `IsScopeReady` says a worker holds the leases, not that content is loaded. Whether a restore has finished is the scope's state: it is `active` only once every part has reported in.
 - Capacity is measured per container from what a worker reports, so it lags real load by one telemetry interval (about a second), and a container no worker has reported is never at capacity.
-- A retire loses whatever in the scope was not persistent. That is why the default rule refuses to retire a part that holds any; a game that is happy to discard its transient contents has to say so through `ScopeLifecycle.ShouldRetire`.
+- A retire loses whatever in the scope was not persistent. That is why a worker keeps a part busy while it holds any; a game that rebuilds some of its transient contents by itself says so through `NebulaLifecycle.DiscardOnRetire`.
 - Each lifecycle step gives the workers 30 seconds to report in. Past that the orchestrator finishes the step anyway, with a warning, so a worker that died cannot leave a scope nobody can enter.
 - A control plane kept in memory only (no file, no database) cannot make activation idempotent across orchestrator restarts, because it keeps nothing to be idempotent about.
