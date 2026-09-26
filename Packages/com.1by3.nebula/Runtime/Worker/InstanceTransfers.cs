@@ -48,7 +48,23 @@ namespace Nebula
         /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
         /// <param name="key">Game-selected home, party, or run key. The same template ID and key select the same scope.</param>
         /// <param name="origin">Instance origin in this process's world frame. Existing keys must retain their bounds and content resource.</param>
-        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin)
+        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin) =>
+            PrepareInstance(template, key, frame => ContainerRegistry.ToAbsolute(new Bounds(origin + frame.center, frame.size)));
+
+        /// <summary>
+        /// Create or find stable instance container leases at an origin in <b>absolute</b> coordinates: the form to use
+        /// when the caller stands in a scope with an origin frame of its own (a scoped chunk grid), whose frame numbers
+        /// mean nothing to the instance. The instance itself has no frame; it lives in the public frame, like every
+        /// instance. Every other rule is <see cref="PrepareInstance(InstanceTemplate, string, Vector3)"/>'s.
+        /// </summary>
+        /// <param name="template">Layout with a stable ID, unique part IDs, and positive-size bounds.</param>
+        /// <param name="key">Game-selected home, party, or run key. The same template ID and key select the same scope.</param>
+        /// <param name="absoluteOrigin">Instance origin in absolute coordinates (<see cref="ContainerRegistry.ToAbsolutePrecise"/>). Existing keys must retain their bounds and content resource, so pass the same numbers every time (round them if they come from a transform).</param>
+        public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin) =>
+            PrepareInstance(template, key, frame => new Bounds((absoluteOrigin + frame.center).ToVector3(), frame.size));
+
+        /// <summary>The shared body of both overloads: <paramref name="toAbsolute"/> turns a box relative to the instance origin into an absolute one.</summary>
+        private ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Func<Bounds, Bounds> toAbsolute)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentException("An instance key is required", nameof(key));
             if (template == null || string.IsNullOrEmpty(template.TemplateId) || template.Parts == null || template.Parts.Length == 0) throw new ArgumentException("An instance template needs an ID and containers");
@@ -66,7 +82,7 @@ namespace Nebula
             // same ActivateScope a matchmaking service or a travel menu would call from outside the mesh
             // (docs/scope-activation.md D2). PreferredWorkerId keeps the old behaviour that the worker that asked
             // owns the new containers from the first change anyone sees.
-            var view = ContainerRegistry.ToAbsolute(new Bounds(origin + template.PublicView.center, template.PublicView.size));
+            var view = toAbsolute(template.PublicView);
             var definition = new ScopeDefinition
             {
                 Kind = ScopeKind.Parts,
@@ -79,7 +95,7 @@ namespace Nebula
                 var part = template.Parts[i];
                 ulong id = InstanceKey(prefix + "/" + part.Id);
                 references[i] = ContainerRef.Runtime(id);
-                var bounds = ContainerRegistry.ToAbsolute(new Bounds(origin + part.Bounds.center, part.Bounds.size));
+                var bounds = toAbsolute(part.Bounds);
                 definition.Parts.Add(new ScopePart { PartId = part.Id, Center = bounds.center, Size = bounds.size, ContentResource = part.ContentResource ?? "" });
                 var existing = ControlPlane.FindLease(ContainerRegistry.RuntimeContainerId(id));
                 if (existing != null && (existing.Instance?.InstanceId != scope || existing.Bounds != bounds || existing.Instance.ContentResource != part.ContentResource))
