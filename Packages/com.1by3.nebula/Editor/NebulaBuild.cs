@@ -13,10 +13,12 @@ namespace Nebula.Editor
     /// orchestrator and gateway beside it. Requires the .NET 10 SDK. Menu: Nebula > Build.
     /// <list type="bullet">
     /// <item>Windows player: <c>Builds/Win64/Nebula.exe</c> - the local mesh, bots and the human client.</item>
+    /// <item>Linux player: <c>Builds/Linux64Player/Nebula.x86_64</c> - the human client on Linux desktops.</item>
     /// <item>Linux dedicated server: <c>Builds/Linux64/Nebula.x86_64</c> - the worker simulation on cloud VMs.</item>
     /// </list>
-    /// Batchmode: <c>Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch</c>
-    /// or <c>...NebulaBuild.BuildLinuxServerBatch</c>.
+    /// Batchmode: <c>Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch</c>,
+    /// <c>...NebulaBuild.BuildLinuxBatch</c>, <c>...NebulaBuild.BuildMacBatch</c>, <c>...NebulaBuild.BuildLinuxServerBatch</c>
+    /// or <c>...NebulaBuild.BuildWebBatch</c>.
     /// </summary>
     public static class NebulaBuild
     {
@@ -25,6 +27,8 @@ namespace Nebula.Editor
         public static string ExecutablePath => Path.Combine(BuildDir, "Nebula.exe");
         public static string LinuxBuildDir => Path.Combine(ProjectRoot, "Builds", "Linux64");
         public static string LinuxExecutablePath => Path.Combine(LinuxBuildDir, "Nebula.x86_64");
+        public static string LinuxPlayerBuildDir => Path.Combine(ProjectRoot, "Builds", "Linux64Player");
+        public static string LinuxPlayerExecutablePath => Path.Combine(LinuxPlayerBuildDir, "Nebula.x86_64");
 
         [MenuItem("Nebula/Build/Windows Player (Mono, development)", priority = 0)]
         public static void BuildWindowsMenu()
@@ -36,7 +40,17 @@ namespace Nebula.Editor
             }
         }
 
-        [MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 1)]
+        [MenuItem("Nebula/Build/Linux Player (Mono, development)", priority = 1)]
+        public static void BuildLinuxMenu()
+        {
+            var report = BuildLinux();
+            if (report != null && report.summary.result == BuildResult.Succeeded)
+            {
+                EditorUtility.RevealInFinder(LinuxPlayerExecutablePath);
+            }
+        }
+
+        [MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 2)]
         public static void BuildLinuxServerMenu()
         {
             var report = BuildLinuxServer();
@@ -49,6 +63,15 @@ namespace Nebula.Editor
         public static BuildReport BuildWindows()
         {
             return Build(BuildTarget.StandaloneWindows64, StandaloneBuildSubtarget.Player, ExecutablePath, NamedBuildTarget.Standalone);
+        }
+
+        /// <summary>
+        /// Linux player (Builds/Linux64Player/Nebula.x86_64): the client for Linux desktops. It has its own folder so it
+        /// never overwrites the dedicated server in Builds/Linux64.
+        /// </summary>
+        public static BuildReport BuildLinux()
+        {
+            return Build(BuildTarget.StandaloneLinux64, StandaloneBuildSubtarget.Player, LinuxPlayerExecutablePath, NamedBuildTarget.Standalone);
         }
 
         public static BuildReport BuildLinuxServer()
@@ -66,7 +89,7 @@ namespace Nebula.Editor
         public static string MacExecutablePath => Path.Combine(MacBuildDir, "Nebula.app");
         public static string WebBuildDir => Path.Combine(ProjectRoot, "Builds", "Web");
 
-        [MenuItem("Nebula/Build/Web Client", priority = 2)]
+        [MenuItem("Nebula/Build/Web Client", priority = 3)]
         public static void BuildWebMenu()
         {
             var report = BuildWeb();
@@ -148,6 +171,9 @@ namespace Nebula.Editor
 
         /// <summary>Entry point for batchmode builds; exits with a non-zero code on failure.</summary>
         public static void BuildWindowsBatch() => ExitOnFailure(BuildWindows());
+
+        /// <summary>Entry point for batchmode Linux player builds; exits with a non-zero code on failure.</summary>
+        public static void BuildLinuxBatch() => ExitOnFailure(BuildLinux());
 
         /// <summary>Entry point for batchmode Linux server builds; exits with a non-zero code on failure.</summary>
         public static void BuildLinuxServerBatch() => ExitOnFailure(BuildLinuxServer());
