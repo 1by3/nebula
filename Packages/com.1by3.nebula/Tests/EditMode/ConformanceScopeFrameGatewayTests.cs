@@ -219,6 +219,66 @@ namespace Nebula.Tests
             CollectionAssert.Contains(spawned, rock.NetId, "the worker sends the gateway the rock its client is standing next to");
         }
 
+        /// <summary>
+        /// NEB-336: an entity whose <see cref="NetworkIdentity.RelevanceRadius"/> is larger than the interest radius is a
+        /// wide entity, matched against each gateway's foci rather than bucketed by region. In a scoped grid it must
+        /// still reach the client standing next to it and the client inside its radius but outside the interest radius,
+        /// on the gateway (the client's set) and on the worker (the gateways it is published to).
+        /// </summary>
+        [Test]
+        public void AWideEntityInAScopedGridReachesClientsWithinItsRelevanceRadius([Values(2f, 150f)] float distance)
+        {
+            var w1 = _mesh[0];
+            var here = Chunk(Far, w1.Id, w1.Index);
+            var wide = new GameObject("beacon-prefab");
+            var wideId = wide.AddComponent<NetworkIdentity>();
+            float interest = _mesh.Config.InterestRadius;
+            wideId.RelevanceRadius = interest + 80f;
+            Assume.That(distance, Is.LessThan(wideId.RelevanceRadius));
+            ushort widePrefab = _mesh.RegisterPrefab(wide);
+
+            var pawn = w1.SpawnServerDriven(_prefabId, here, new Vector3(1900f - distance, 0f, 1100f), Quaternion.identity);
+            var beacon = w1.SpawnServerDriven(widePrefab, here, new Vector3(1900f, 0f, 1100f), Quaternion.identity);
+            Assert.AreEqual(wideId.RelevanceRadius, beacon.RelevanceRadius, "the spawned beacon keeps its prefab's radius");
+            _grid.KeepOriginNear(Far, 1);
+
+            StartGateway(here);
+            var client = Client();
+            Announce(w1, pawn, ClientId);
+            Announce(w1, beacon);
+
+            // 1. The gateway: the client's set holds the beacon.
+            Call("EvaluateClient", client, 0.0);
+            CollectionAssert.Contains(Of<HashSet<ulong>>(client, "Visible"), beacon.NetId,
+                $"a client {distance} m from a wide entity in a scoped grid is sent it");
+
+            // 2. The worker: the gateway's foci, carried as its link would carry them, get the beacon published to it.
+            var gateway = _mesh.AddGateway("gw1");
+            _mesh.LinkGateway(gateway);
+            w1.Tick(1);
+            _mesh.Pump();
+            _mesh.Delivered.Clear();
+            var regions = Of<HashSet<ulong>>(client, "Regions").ToList();
+            var foci = new List<ulong>();
+            var interestOf = client.GetType().GetField("Interest").GetValue(client);
+            var focusList = (IReadOnlyList<InterestFocus>)interestOf.GetType().GetProperty("Foci").GetValue(interestOf);
+            var grid = (InterestGrid)Field("_interestGrid");
+            foreach (var f in focusList) foci.Add(RegionKeys.Salt(grid.RegionOf(f.X, f.Y, f.Z), _grid.InstanceId, f.Space));
+            Assert.IsNotEmpty(foci, "the client has a focus");
+            _mesh.FromGateway(gateway, w1, w => new InterestSubscribeMsg
+            {
+                Seq = 1, Grid = grid,
+                Flags = InterestSubscribeFlags.Full | InterestSubscribeFlags.Commit,
+                Add = regions, Remove = new List<ulong>(), FociRegions = foci, Entities = new List<ulong>(),
+                SetCount = (uint)regions.Count, SetHash = RegionSubscription.Hash(regions),
+            }.Write(w));
+            w1.Tick(2);
+            _mesh.Pump();
+            var spawned = _mesh.DeliveredOf(MsgId.EntitySpawn, gateway.Id).Select(m => m.Read(r => EntitySpawnMsg.Read(r)).NetId).ToList();
+            CollectionAssert.Contains(spawned, beacon.NetId, "the worker publishes the wide entity to the gateway whose client is within its radius");
+            Object.DestroyImmediate(wide);
+        }
+
         [Test]
         public void TheGatewaysWorldPositionsAreAbsoluteWhateverTheSharedFrameDid()
         {
