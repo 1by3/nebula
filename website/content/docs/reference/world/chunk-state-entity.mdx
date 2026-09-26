@@ -13,7 +13,15 @@ public sealed class ChunkStateEntity : NetworkBehaviour
 
 The entity that carries one chunk's [`ChunkState`](/docs/reference/world/chunk-state) entries. Nebula spawns it from a built-in prefab ([`PrefabId`](#prefabid)) in the chunk's container the first time an object in the chunk gets an entry, and despawns it, deleting its record, when the last entry is gone. A game never adds this component or spawns the entity itself; it reads through [`ChunkState`](/docs/reference/world/chunk-state) and writes through [`ChunkStateService`](/docs/reference/world/chunk-state-service).
 
-The entries replicate as one NetworkVariable holding the whole map, sent again whenever it changes. The gateway keeps the latest copy for clients that arrive later. They are saved through [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate), so the entity's [`PersistentEntity`](/docs/reference/persistence/persistent-entity) record is the chunk's record in the store.
+The entries replicate through a [`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map), so a change sends only the entries that changed, and the gateway keeps the current contents for clients that arrive later (docs/replicated-collections.md D15). They are saved through [`NetworkBehaviour.WritePersistentState`](/docs/reference/core/network-behaviour#writepersistentstate), so the entity's [`PersistentEntity`](/docs/reference/persistence/persistent-entity) record is the chunk's record in the store.
+
+## Constructors
+
+### ChunkStateEntity [#chunkstateentity]
+
+```csharp
+public ChunkStateEntity();
+```
 
 ## Fields
 
