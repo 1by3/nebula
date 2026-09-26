@@ -12,9 +12,10 @@ public static class NebulaBuild
 Builds the Unity player for workers and clients, exports service data, and publishes the standalone .NET orchestrator and gateway beside it. Requires the .NET 10 SDK. Menu: Nebula \> Build.
 
 - Windows player: `Builds/Win64/Nebula.exe` - the local mesh, bots and the human client.
+- Linux player: `Builds/Linux64Player/Nebula.x86_64` - the human client on Linux desktops.
 - Linux dedicated server: `Builds/Linux64/Nebula.x86_64` - the worker simulation on cloud VMs.
 
-Batchmode: `Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch` or `...NebulaBuild.BuildLinuxServerBatch`.
+Batchmode: `Unity -batchmode -quit -projectPath . -executeMethod Nebula.Editor.NebulaBuild.BuildWindowsBatch`, `...NebulaBuild.BuildLinuxBatch`, `...NebulaBuild.BuildMacBatch`, `...NebulaBuild.BuildLinuxServerBatch` or `...NebulaBuild.BuildWebBatch`.
 
 ## Properties
 
@@ -48,6 +49,18 @@ public static string LinuxBuildDir { get; }
 public static string LinuxExecutablePath { get; }
 ```
 
+### LinuxPlayerBuildDir [#linuxplayerbuilddir]
+
+```csharp
+public static string LinuxPlayerBuildDir { get; }
+```
+
+### LinuxPlayerExecutablePath [#linuxplayerexecutablepath]
+
+```csharp
+public static string LinuxPlayerExecutablePath { get; }
+```
+
 ### MacBuildDir [#macbuilddir]
 
 ```csharp
@@ -75,10 +88,17 @@ public static string WebBuildDir { get; }
 public static void BuildWindowsMenu();
 ```
 
+### BuildLinuxMenu [#buildlinuxmenu]
+
+```csharp
+[MenuItem("Nebula/Build/Linux Player (Mono, development)", priority = 1)]
+public static void BuildLinuxMenu();
+```
+
 ### BuildLinuxServerMenu [#buildlinuxservermenu]
 
 ```csharp
-[MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 1)]
+[MenuItem("Nebula/Build/Linux Dedicated Server (Mono, development)", priority = 2)]
 public static void BuildLinuxServerMenu();
 ```
 
@@ -87,6 +107,14 @@ public static void BuildLinuxServerMenu();
 ```csharp
 public static BuildReport BuildWindows();
 ```
+
+### BuildLinux [#buildlinux]
+
+```csharp
+public static BuildReport BuildLinux();
+```
+
+Linux player (Builds/Linux64Player/Nebula.x86\_64): the client for Linux desktops. It has its own folder so it never overwrites the dedicated server in Builds/Linux64.
 
 ### BuildLinuxServer [#buildlinuxserver]
 
@@ -105,7 +133,7 @@ macOS player (Builds/MacOS/Nebula.app): what `nebula start` runs on a Mac.
 ### BuildWebMenu [#buildwebmenu]
 
 ```csharp
-[MenuItem("Nebula/Build/Web Client", priority = 2)]
+[MenuItem("Nebula/Build/Web Client", priority = 3)]
 public static void BuildWebMenu();
 ```
 
@@ -132,6 +160,14 @@ public static void BuildWindowsBatch();
 ```
 
 Entry point for batchmode builds; exits with a non-zero code on failure.
+
+### BuildLinuxBatch [#buildlinuxbatch]
+
+```csharp
+public static void BuildLinuxBatch();
+```
+
+Entry point for batchmode Linux player builds; exits with a non-zero code on failure.
 
 ### BuildLinuxServerBatch [#buildlinuxserverbatch]
 
