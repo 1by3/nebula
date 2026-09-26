@@ -32,7 +32,7 @@ namespace Nebula
         public Func<NetworkIdentity, string, bool> CanEnter;
 
         /// <summary>
-        /// The instance origin is this boundary's absolute position rounded to this many metres, so every worker and
+        /// The instance origin is this boundary's absolute position rounded to this many meters, so every worker and
         /// every origin frame names the same instance bounds, however its transform's float numbers came out.
         /// </summary>
         public const double OriginResolution = 0.001;

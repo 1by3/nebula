@@ -32,6 +32,7 @@ namespace Nebula.Tests
         private InstanceTemplate _template;
         private ushort _pawnPrefab;
         private uint _tick;
+        private readonly List<InstanceBoundary> _boundaries = new List<InstanceBoundary>();
 
         private ConformanceMesh.Worker W => _mesh[0];
 
@@ -72,6 +73,9 @@ namespace Nebula.Tests
         [TearDown]
         public void TearDown()
         {
+            foreach (var b in _boundaries)
+                if (b != null) typeof(InstanceBoundary).GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(b, null);
+            _boundaries.Clear();
             _mesh.Dispose();
             _plane.Dispose();
             NebulaChunks.ResetForNewSession();
@@ -115,6 +119,9 @@ namespace Nebula.Tests
             boundary.Template = _template;
             boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
             boundary.PreparationDistance = 6f;
+            // Edit mode runs no OnEnable for a plain MonoBehaviour: register it as play mode would.
+            typeof(InstanceBoundary).GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(boundary, null);
+            _boundaries.Add(boundary);
             return boundary;
         }
 
@@ -129,8 +136,10 @@ namespace Nebula.Tests
         private void Tick()
         {
             W.Tick(++_tick);
-            // The control plane's lease rows reach the registry, as the worker's registration does every poll.
+            // The control plane's lease rows reach the registry, and their owners, as the worker's registration does every poll.
             ContainerRegistry.SyncRuntime(_plane.Leases);
+            foreach (var lease in _plane.Leases)
+                if (lease.WorkerId == W.Id) ContainerRegistry.ApplyLease(lease.ContainerId, W.Id, W.Index, lease.Epoch);
         }
 
         /// <summary>Stand in for the owning client's gateway acknowledging every preparation in flight.</summary>
@@ -200,6 +209,39 @@ namespace Nebula.Tests
             Assert.AreSame(chunk, player.Container, "back in the planet's chunk, not the public world");
             Assert.AreEqual(_planet.InstanceId, player.InstanceId);
             AreClose(door + new Vector3(0f, 1f, -6f), Absolute(player), "where it walked out, through the planet's frame");
+        }
+
+        [Test]
+        public void ABoundaryInTheSharedSceneStillCrossesFromAndBackToThePublicWorld()
+        {
+            var street = _mesh.AddStaticContainer("street", Vector3.zero, new Vector3(200f, 50f, 200f));
+            _mesh.SetOwner(street, W);
+            var go = new GameObject("apartment door");
+            go.transform.position = new Vector3(20f, 0f, 20f);
+            var boundary = go.AddComponent<InstanceBoundary>();
+            boundary.Template = _template;
+            boundary.Interior = new Bounds(new Vector3(0f, 2f, 0f), new Vector3(8f, 4f, 8f));
+            typeof(InstanceBoundary).GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(boundary, null);
+            _boundaries.Add(boundary);
+            try
+            {
+                var player = Player(street, go.transform.position + new Vector3(0f, 1f, -8f));
+                Tick();
+                Tick();
+                AcknowledgeClients();
+                player.transform.position = go.transform.position + new Vector3(0f, 1f, 1f);
+                Tick();
+                Assert.AreEqual(NebulaWorker.InstanceKey("vault/" + Owner), player.InstanceId, "entered, as before NEB-340");
+                Assert.AreEqual(go.transform.position + new Vector3(0f, 1f, 1f), player.transform.position, "at the same world position");
+
+                player.transform.position += new Vector3(0f, 0f, -7f);
+                Tick();
+                AcknowledgeClients();
+                player.transform.position += new Vector3(0f, 0f, -7f);
+                Tick();
+                Assert.AreSame(street, player.Container, "and back out into the public container");
+            }
+            finally { Object.DestroyImmediate(go); }
         }
 
         [Test]

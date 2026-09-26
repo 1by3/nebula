@@ -1,6 +1,6 @@
 ---
 title: "InstanceBoundary"
-description: "Prepares a private area as players approach and crosses its bounds without changing their world pose."
+description: "Prepares a private area as players approach and crosses its bounds without changing their absolute pose."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Containers/InstanceBoundary.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Containers/InstanceBoundary.cs)</div>
@@ -9,7 +9,9 @@ description: "Prepares a private area as players approach and crosses its bounds
 public sealed class InstanceBoundary : MonoBehaviour
 ```
 
-Prepares a private area as players approach and crosses its bounds without changing their world pose.
+Prepares a private area as players approach and crosses its bounds without changing their absolute pose.
+
+The boundary works in the scope around it, its [`HostInstanceId`](#hostinstanceid): the public world when it stands in the shared scene, or the scope of the container it is parented under, such as a chunk of a scoped grid whose content the game builds at runtime. Only entities in that scope, or in the boundary's own instance, cross it, and an occupant who leaves returns to a container of that scope. Positions are compared in absolute coordinates, so a host scope with an origin frame of its own crosses at the same place on every worker.
 
 ## Fields
 
@@ -68,3 +70,37 @@ public Func<NetworkIdentity, string, bool> CanEnter;
 ```
 
 Server-side admission check for entry into the resolved key. When unset, entry is allowed. Occupants can exit without passing this check.
+
+### OriginResolution [#originresolution]
+
+```csharp
+public const double OriginResolution = 0.001;
+```
+
+The instance origin is this boundary's absolute position rounded to this many meters, so every worker and every origin frame names the same instance bounds, however its transform's float numbers came out.
+
+## Properties
+
+### HostInstanceId [#hostinstanceid]
+
+```csharp
+public ulong HostInstanceId { get; }
+```
+
+The scope this boundary stands in: the [`Container.InstanceId`](/docs/reference/containers/container#instanceid) of the nearest container among its parents (a scoped grid's chunk, when the game parents its content under `ChunkContext.Root`), or 0, the public world, when it has none.
+
+### AbsolutePosition [#absoluteposition]
+
+```csharp
+public Double3 AbsolutePosition { get; }
+```
+
+This boundary's position in absolute coordinates: its host scope's origin frame taken away.
+
+### InstanceOrigin [#instanceorigin]
+
+```csharp
+public Double3 InstanceOrigin { get; }
+```
+
+Where the instance is prepared: [`AbsolutePosition`](#absoluteposition) rounded to [`OriginResolution`](#originresolution).

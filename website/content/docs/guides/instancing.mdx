@@ -30,7 +30,7 @@ The same player can leave through the boundary to return to the public world. Th
 1. Create an **Instance Template** asset from **Assets > Create > Nebula > Instance Template**.
 2. Give the template a stable `TemplateId`. Add a part for each container, with a unique part ID and bounds relative to the instance origin.
 3. Put each part's static geometry prefab in a `Resources` folder. Set `ContentResource` to its resource path without the extension. Position the prefab's content relative to the center of the part's bounds.
-4. Add an `InstanceBoundary` to the shared scene. Assign the template and set `Interior` to the volume players enter. Place the boundary at the instance origin.
+4. Add an `InstanceBoundary` to the shared scene, or to chunk content you build in a scoped grid (see [Place a boundary in a scoped grid](#place-a-boundary-in-a-scoped-grid)). Assign the template and set `Interior` to the volume players enter. Place the boundary at the instance origin.
 5. Set `PreparationDistance` to start loading before players enter the volume.
 
 The boundary preserves world position when crossing. Its volumes are axis-aligned; rotating the boundary does not rotate them. The first template part is the entry container. Within the instance, ordinary container resolution chooses the appropriate part.
@@ -63,6 +63,24 @@ Each private instance uses its own Unity 3D physics scene. Include the floors, w
 Public scenery remains the game's responsibility. If the public scene already draws the building shell, avoid duplicating the same visible surfaces in the private prefab. A collision-only copy can reuse that shell visually, while instance-specific furniture and decorations render inside the private copy. Private static renderers are hidden on a client until it enters that scope.
 
 Preparation loads bundled assets on the client before entry. Entity visibility filtering does not make those assets secret or prevent a modified client from inspecting them.
+
+## Place a boundary in a scoped grid
+
+A boundary can also stand in a [scoped chunk grid](/docs/guides/infinite-runtime-world), such as a planet whose buildings and caves your game builds per chunk at runtime. Parent the boundary under the chunk's content root (`ChunkContext.Root`), as you would the rest of the chunk's content.
+
+The boundary's host scope is the scope of the container it is parented under. `HostInstanceId` reports it, and it is `0`, the public world, for a boundary in the shared scene. The boundary then works like this:
+
+- Only entities in the host scope, or already in the boundary's own instance, cross it. A boundary on one planet ignores players standing at the same coordinates on another.
+- Positions are compared in absolute coordinates. A scoped grid moves its own origin on each worker, so the boundary converts its position and the player's through each scope's frame. The instance is created at the boundary's absolute position rounded to a millimeter (`InstanceOrigin`), so every worker names the same instance.
+- A crossing keeps the player's absolute position. The instance has no origin frame of its own, so the player's numbers in Unity change when they cross, but where they stand does not.
+- A player who leaves returns to a container of the host scope that holds their position. Until that chunk is leased, they stay inside at the last position the boundary recorded.
+
+Your game is responsible for the rest:
+
+- **Keep the entrance chunk leased and the host scope active while the instance is occupied.** A scoped grid leases chunks around the players standing in it, and players inside the instance are not standing in it. Pin the entrance chunk on the grid's allocator (`RuntimeGridAllocator.AddPin`) while anyone is inside, and keep the scope from retiring.
+- **Keep the boundary on the worker that simulates the occupants.** The boundary runs on each worker that has built the chunk's content. The instance is leased first by the worker that prepared it.
+- **Turn `ObservePublic` off.** It observes the public world, not the host scope, so occupants cannot see out into the grid. The boundary logs a warning when it is on.
+- **Close the view between the two sides.** The host scope's scenery and the instance's content render in different origin frames on the client, so a player inside cannot look out through the doorway. Put a door, a turn, or a dark passage at the crossing.
 
 ## Choose who enters together
 
@@ -236,6 +254,8 @@ See [Running locally](/docs/getting-started/running-locally) for build paths and
 | Repeated connection attempts without joining | Compare protocol versions in the gateway log and rebuild all roles together. |
 | Player stops at the entrance | Inspect `InstanceTransfer.Error`, resource paths, client/worker content availability, and destination lease ownership. Allow enough preparation distance. |
 | Crossing never starts | Confirm the boundary is loaded on the worker, the template is assigned, the identity key is nonempty, and `Interior` covers the doorway. |
+| Crossing never starts in a scoped grid | Confirm the boundary is parented under the chunk's content, so `HostInstanceId` is the grid's scope. |
+| Player can't leave an instance in a scoped grid | Check that the chunk outside the doorway is leased; pin it while the instance is occupied. |
 | Two players unexpectedly share a personal room | Compare their `OwnerIdentity` values and any custom `ResolveKey` callback. |
 | Floor or wall collision disappears inside | Include those colliders in private static content and use scoped physics queries. |
 | Interior surfaces flicker | Remove overlapping visible geometry between the public shell and private prefab. |
