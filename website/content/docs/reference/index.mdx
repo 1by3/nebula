@@ -75,7 +75,7 @@ Define container volumes and look up their current worker assignments.
 | [FrameCrossing](/docs/reference/containers/frame-crossing) | Enum. What a crossing policy says about one entity crossing a frame boundary (docs/container-tree.md D16). |
 | [FrameInterestMode](/docs/reference/containers/frame-interest-mode) | Enum. How the contents of a container with its own physics frame are bucketed for interest management (docs/container-tree.md D18). |
 | [IFrameCrossingPolicy](/docs/reference/containers/i-frame-crossing-policy) | Interface. The game's say over where entities may cross a physics frame's boundary: anywhere on the hull, or only through portals. |
-| [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their world pose. |
+| [InstanceBoundary](/docs/reference/containers/instance-boundary) | Class. Prepares a private area as players approach and crosses its bounds without changing their absolute pose. |
 | [InstanceScenes](/docs/reference/containers/instance-scenes) | Static class. Loads instance geometry into separate physics scenes. |
 | [InstanceTemplate](/docs/reference/containers/instance-template) | Class. Reusable geometry and container bounds for a private area. |
 | [LocationContainerKind](/docs/reference/containers/location-container-kind) | Enum. Which kind of container an EntityLocation.ContainerId names. |

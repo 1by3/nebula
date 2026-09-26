@@ -632,6 +632,7 @@ The derivation itself is [`ScopeKeys.Hash`](/docs/reference/control-plane/scope-
 
 ```csharp
 public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Vector3 origin);
+public ContainerRef[] PrepareInstance(InstanceTemplate template, string key, Double3 absoluteOrigin);
 ```
 
 Create or find stable instance container leases. Resolve the returned references after the control-plane update. This does not automatically persist entity state.
