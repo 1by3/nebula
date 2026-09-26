@@ -88,6 +88,12 @@ added back, as the worker's `ToAbsolute` does) and asks the registry in its fram
 from the origin was subscribed to regions near (0, 0) while the worker kept the entities around it under their
 absolute keys, and received no new spawn or variable change.
 
+**D4b A client's focus hint converts through its pawn's scope.** `NebulaClient.AbsoluteFocusHint` adds back the
+origin of the scope the local pawn is in (`ContainerRegistry.ToAbsolutePrecise(point, scope)`), not the public
+floating origin, so the hint reaches the gateway in the same absolute coordinates its region keys use. Without a
+pawn, or in the public world, that is the public origin as before. Before NEB-338 a client in a scoped chunk grid
+whose origin had moved sent its hint in the shifted frame's coordinates, and the gateway looked somewhere else.
+
 **D5 A container that arrived before its grid did is re-placed, not left behind.** A lease row can reach a
 process before that scope's grid is activated here (the grid is activated *because* of it). Such a container is
 registered in the public frame, because nothing here could say otherwise yet. `NebulaChunks.Activate` therefore

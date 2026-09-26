@@ -148,15 +148,17 @@ namespace Nebula
         }
 
         /// <summary>
-        /// <see cref="FocusHint"/> in absolute world coordinates: the frame position plus this process's
-        /// floating origin, in double, exactly as a worker resolves its own entities
-        /// (<c>WorkerInterest.ToAbsolute</c>). Without a world definition the origin never moves and the two
-        /// spaces are the same. All zero when there is no hint.
+        /// <see cref="FocusHint"/> in absolute world coordinates: the frame position with the floating origin of
+        /// the local pawn's scope added back, in double, exactly as a worker resolves its own entities
+        /// (<c>WorkerInterest.ToAbsolute</c>). A scoped chunk grid moves its own origin, not the public one, so the
+        /// hint is converted through the scope's frame (<c>docs/scope-frames.md</c> D4b, NEB-338). Without a world
+        /// definition or a scope frame the origin never moves and the two spaces are the same. All zero when there
+        /// is no hint.
         /// </summary>
         public void AbsoluteFocusHint(out double x, out double y, out double z)
         {
             if (!_hasFocusHint) { x = y = z = 0; return; }
-            ToAbsolute(_focusHint, out x, out y, out z);
+            ToAbsolute(_focusHint, LocalPlayer != null ? LocalPlayer.InstanceId : 0UL, out x, out y, out z);
         }
 
         /// <summary>
@@ -197,15 +199,14 @@ namespace Nebula
         /// </summary>
         public void SetContentAnchor(Transform anchor) => ContentAnchor = anchor;
 
-        /// <summary>A point in this client's frame as absolute world coordinates.</summary>
-        private static void ToAbsolute(Vector3 frame, out double x, out double y, out double z)
+        /// <summary>
+        /// A point in this client's frame of <paramref name="scope"/> as absolute world coordinates of that scope: the
+        /// scope's own origin when it has a frame, the public floating origin otherwise.
+        /// </summary>
+        private static void ToAbsolute(Vector3 frame, ulong scope, out double x, out double y, out double z)
         {
-            var world = World.WorldOrigin.Definition;
-            var cell = world != null ? World.WorldOrigin.Cell : Vector3Int.zero;
-            var size = world != null ? world.CellSize : Vector3.zero;
-            x = (double)cell.x * size.x + frame.x;
-            y = (double)cell.y * size.y + frame.y;
-            z = (double)cell.z * size.z + frame.z;
+            var a = ContainerRegistry.ToAbsolutePrecise(frame, scope);
+            x = a.X; y = a.Y; z = a.Z;
         }
 
         private Vector3 _focusHint;
