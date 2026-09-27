@@ -63,7 +63,7 @@ Use these `NebulaClient` members to drive your UI:
 | `ClientId` | Read the local session ID, a `ulong` the gateway assigned in its welcome. `NebulaRuntime.LocalClientId` holds the same value. It is `0` before the welcome. |
 | `Identity` | Read the player's identity across sessions (see [Authentication](/docs/guides/authentication)). |
 | `SessionToken` and `SessionReclaimed` | Keep or drop the session across reconnections (see below). |
-| `JoinRejected` | Show why the gateway refused the join. |
+| `JoinRejected` | Show why the gateway refused the join. When the refusal stops automatic retries, `ConnectionState` is already `Disconnected` and `WantsConnection` is `false`. |
 | `GatewayDraining` | Tell the player that the client is switching gateways (see below). |
 | `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
 | `WantsConnection` | Tell whether the client is connecting or will retry. |

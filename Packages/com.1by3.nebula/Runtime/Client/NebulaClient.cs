@@ -437,13 +437,17 @@ namespace Nebula
         public void Disconnect()
         {
             WantsConnection = false;
-            if (_gatewayPeer >= 0)
-            {
-                try { _transport.Disconnect(_gatewayPeer); } catch { }
-                _gatewayPeer = -1;
-            }
+            DropGatewayLink();
             ClearWorld();
             SetState(State.Disconnected);
+        }
+
+        /// <summary>Close the link to the gateway, if there is one, without touching the state or the world.</summary>
+        private void DropGatewayLink()
+        {
+            if (_gatewayPeer < 0) return;
+            try { _transport?.Disconnect(_gatewayPeer); } catch { }
+            _gatewayPeer = -1;
         }
 
         private void OnDestroy()
@@ -790,17 +794,15 @@ namespace Nebula
                 case MsgId.JoinRejected:
                 {
                     var rejected = JoinRejectedMsg.Read(r);
-                    JoinRejectReason = rejected.Code;
-                    JoinRejectSaturation = rejected.Saturation;
-                    ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
-                    ServerContentVersion = rejected.ServerContentVersion;
+                    // A refusal the client does not retry ends the connection here, whether or not the gateway has
+                    // closed the link yet: the Disconnected the transport reports afterwards is one we asked for.
+                    bool stops = false;
                     if (rejected.Code == JoinRejectReason.ProtocolUnsupported || rejected.Code == JoinRejectReason.ContentVersionMismatch || rejected.Code == JoinRejectReason.EncryptionRequired)
                     {
                         // Build or encryption settings must change before retrying. Keep the saved identity:
                         // the gateway refused the connection before checking those credentials.
                         LastError = "cannot join: " + rejected.Reason;
-                        WantsConnection = false;
-                        NebulaLog.Warn(LastError);
+                        stops = true;
                     }
                     else if (rejected.Code == JoinRejectReason.AtCapacity || rejected.Code == JoinRejectReason.Denied)
                     {
@@ -808,8 +810,7 @@ namespace Nebula
                         // would hammer a destination that is already full. The game decides what happens next -
                         // a queue, another instance, a different scope - which is the whole point of the typed code.
                         LastError = "join refused: " + rejected.Reason;
-                        WantsConnection = false;
-                        NebulaLog.Warn(LastError);
+                        stops = true;
                     }
                     else if (rejected.Retry)
                     {
@@ -829,9 +830,21 @@ namespace Nebula
                     else
                     {
                         LastError = "join rejected: " + rejected.Reason;
+                        stops = true;
+                    }
+                    if (stops)
+                    {
                         WantsConnection = false;
                         NebulaLog.Warn(LastError);
+                        // Before the refusal's fields are set: clearing the world resets the join's state.
+                        DropGatewayLink();
+                        ClearWorld();
                     }
+                    JoinRejectReason = rejected.Code;
+                    JoinRejectSaturation = rejected.Saturation;
+                    ServerProtocolWindow = (rejected.SupportedMinVersion, rejected.SupportedMaxVersion);
+                    ServerContentVersion = rejected.ServerContentVersion;
+                    if (stops) SetState(State.Disconnected);
                     JoinRejected?.Invoke(rejected.Reason);
                     JoinRefused?.Invoke(rejected);
                     break;
@@ -856,7 +869,7 @@ namespace Nebula
                     // Reconnect now, keeping the session token: the next gateway reclaims the session and the pawn.
                     NebulaLog.Warn($"gateway is draining; reconnecting within {draining.ReconnectWithinSeconds} s with the session token");
                     GatewayDraining?.Invoke(draining.ReconnectWithinSeconds);
-                    if (_gatewayPeer >= 0) { try { _transport.Disconnect(_gatewayPeer); } catch { } _gatewayPeer = -1; }
+                    DropGatewayLink();
                     ClearWorld();
                     SetState(State.Disconnected);
                     _nextConnectAttempt = Time.unscaledTime + 0.2f;
