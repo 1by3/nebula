@@ -54,6 +54,7 @@ public sealed class HelpCommand : Command
         PrintRow("cloud", "log in (device code), log out, or show your account");
         PrintRow("deployments", "list your deployments");
         PrintRow("rollback", "return a deployment to its previous release");
+        PrintRow("restart-workers", "restart the workers one at a time so they pick up env changes");
         Ui.Blank();
         Console.WriteLine("other");
         PrintRow("version", "print the CLI version");
@@ -65,7 +66,7 @@ public sealed class HelpCommand : Command
         return 0;
     }
 
-    private static void PrintRow(string name, string text) => Console.WriteLine($"  {name,-11} {text}");
+    private static void PrintRow(string name, string text) => Console.WriteLine($"  {name,-15} {text}");
 
     /// <summary>Every command with its usage, options and examples, in the order of the help text. Machine-readable, for the docs.</summary>
     private static void PrintJson()

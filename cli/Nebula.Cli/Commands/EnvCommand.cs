@@ -12,7 +12,8 @@ public sealed class EnvCommand : Command
     public override string? Details => @"
 Environment variables pass your game's own settings and secrets to its workers: service URLs, API keys, feature
 flags. Every worker process gets them as ordinary environment variables, and NebulaEnv.Get reads them in code.
-Changes apply when workers next start: the next `nebula deploy`, rollout or restart.
+Changes apply when workers next start: the next `nebula deploy`, rollout or restart. On Nebula Cloud,
+`nebula restart-workers` applies them now, one worker at a time.
 
 ls: list the variables with the deployments they apply to. Secret values are never shown.
 
@@ -286,7 +287,7 @@ and are refused. A value can be up to 32 KiB.
 
         public string Describe => $"{_org.Slug}/{_project.Slug}" + (_deployments.Count > 0 ? $" ({string.Join(", ", _deployments)})" : "");
         public string RemoveScope => _deployments.Count > 0 ? string.Join(", ", _deployments) : "every deployment";
-        public string AppliesWhen => "workers get the change when they next start: the next `nebula deploy`, rollout or restart";
+        public string AppliesWhen => "workers get the change when they next start; `nebula restart-workers` applies it now";
         public string ScopeOf(CloudApi.EnvVar v) => Scope(v.Deployments);
         public List<CloudApi.EnvVar> List() => _api.EnvVars(_project.Id, OneDeployment("ls and pull"));
         public CloudApi.EnvVar Set(string key, string value, bool secret) => _api.SetEnvVar(_project.Id, key, value, secret, _deployments);

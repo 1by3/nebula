@@ -550,6 +550,36 @@ public class CloudCommandTests
     }
 
     [Test]
+    public void Restart_workers_queues_the_operation_and_follows_it()
+    {
+        LoggedIn();
+        var r = Cli.Run("restart-workers", "--project", _project);
+        Assert.That(r.Code, Is.EqualTo(0), r.All);
+        Assert.That(_cloud.Of("POST", "/v1/deployments/dep_1/restart-workers").Count(), Is.EqualTo(1));
+        Assert.That(r.Out, Does.Contain("restart_workers succeeded"));
+        Assert.That(r.Out, Does.Contain("every worker runs with the current environment variables"));
+    }
+
+    [Test]
+    public void Restart_workers_follows_a_running_operation_and_refuses_a_stopped_deployment()
+    {
+        LoggedIn();
+        _cloud.ConflictOperation = FakeCloud.J(new { id = "op_9", deploymentId = "dep_1", kind = "scale", state = "running", steps = new[] { new { name = "limits", state = "running" } } });
+        var r = Cli.Run("restart-workers", "--project", _project);
+        Assert.That(r.Code, Is.EqualTo(0), r.All);
+        Assert.That(r.Out, Does.Contain("op_9"));
+        Assert.That(r.Out, Does.Contain("run `nebula restart-workers` again"), "a scale does not restart the workers");
+        Assert.That(_cloud.Of("GET", "/v1/operations/op_9/events").Count(), Is.GreaterThanOrEqualTo(1));
+
+        _cloud.ConflictOperation = null;
+        _cloud.Deployments[0]["state"] = "stopped";
+        var stopped = Cli.Run("restart-workers", "--project", _project);
+        Assert.That(stopped.Code, Is.Not.EqualTo(0));
+        Assert.That(stopped.All, Does.Contain("only a running deployment has workers to restart"));
+        Assert.That(_cloud.Of("POST", "/v1/deployments/dep_1/restart-workers").Count(), Is.EqualTo(1), "only the conflicting attempt reached the API");
+    }
+
+    [Test]
     public void Destroy_needs_the_deployment_name_or_yes()
     {
         LoggedIn();
