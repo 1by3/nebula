@@ -56,9 +56,11 @@ namespace Nebula
         /// Added to <see cref="GatewayPort"/>, <see cref="WorkerBasePort"/> and <see cref="DashboardPort"/> by both sides
         /// of <see cref="NebulaEditorRunMode.MultiplayerPlayMode"/>, so the dev loop and a mesh started with
         /// <c>nebula start</c> can run on one machine at once. 50 by default: with the default ports, the dev loop's
-        /// gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+        /// gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured. A
+        /// checkout's <c>UserSettings/NebulaEditorPortOffset.txt</c> replaces it for that checkout only
+        /// (<see cref="EditorDevPaths.PortOffset"/>), so copies of one project can run their dev loops side by side.
         /// </summary>
-        [Tooltip("MultiplayerPlayMode only. Added to GatewayPort, WorkerBasePort and DashboardPort on both sides, so the dev loop and a mesh started with nebula start can run side by side. 0 = the configured ports.")]
+        [Tooltip("MultiplayerPlayMode only. Added to GatewayPort, WorkerBasePort and DashboardPort on both sides, so the dev loop and a mesh started with nebula start can run side by side. 0 = the configured ports. UserSettings/NebulaEditorPortOffset.txt overrides it for one checkout.")]
         public int EditorPortOffset = 50;
 
         [Header("Networking")]

@@ -37,7 +37,7 @@ These fields change only what pressing Play in the Editor starts. Builds ignore 
 | --- | --- | --- |
 | `EditorRunMode` | `Mesh` | `Mesh` runs `NebulaBootstrap.EditorRole` against a mesh started with `nebula start`. `MultiplayerPlayMode` lets a Multiplayer Play Mode virtual player host the server while the main Editor joins as a client, with no build. |
 | `EditorPersistence` | `DevSaveFile` | `DevSaveFile` keeps the dev server's saved entities in `Library/Nebula/DevSaves/world.bin` between Play sessions. `InMemory` starts every Play from an empty world. |
-| `EditorPortOffset` | `50` | Add this to the gateway, worker and dashboard ports in `MultiplayerPlayMode`, so a mesh started with `nebula start` can run at the same time. `0` uses the configured ports. |
+| `EditorPortOffset` | `50` | Add this to the gateway, worker and dashboard ports in `MultiplayerPlayMode`, so a mesh started with `nebula start` can run at the same time. `0` uses the configured ports. A checkout's `UserSettings/NebulaEditorPortOffset.txt` overrides it for that checkout. |
 
 ### Connections and processes
 
