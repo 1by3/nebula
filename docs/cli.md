@@ -58,6 +58,8 @@ nebula env ls|set|rm|pull|push [KEY[=VALUE]|file] [--secret] [--deployment a,b] 
 nebula cloud login|logout|account
 nebula deployments [--all] [--json]
 nebula rollback [--release rel_id]
+nebula restart-workers [--deployment name]
+                             replace the workers one at a time so they start with the current env vars
 ```
 
 `nebula --help` and `nebula <command> --help` describe every option. Global options: `--project <path>`
@@ -149,7 +151,8 @@ running and the next run reattaches to it; a 409 from the rollout does the same 
 
 `nebula status --cloud` renders `GET /v1/deployments/{d}/status` (health, release, orchestrator, gateways with
 clients/traffic/cpu/lag, workers, mesh totals); `nebula logs --cloud <role|w1|gw1> [--since 10m] [--follow]` reads
-the log page and then the server-sent event stream; `nebula scale`, `nebula rollback`, `nebula destroy` (type the
+the log page and then the server-sent event stream; `nebula scale`, `nebula rollback`, `nebula restart-workers`
+(`POST …/restart-workers`, followed like a rollout), `nebula destroy` (type the
 deployment name, or `--yes`) and `nebula dashboard` map to the corresponding endpoints. `nebula deployments`
 lists deployments across the project's organization (`--all` for every organization).
 

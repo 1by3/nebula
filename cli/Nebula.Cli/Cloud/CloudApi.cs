@@ -373,6 +373,8 @@ public sealed class CloudApi
         OperationOf(Send(HttpMethod.Post, $"/deployments/{deployment}/rollouts", new { releaseId, allowProtocolChange }, "rollout-" + releaseId));
     public Operation Rollback(string deployment, string? releaseId) =>
         OperationOf(Send(HttpMethod.Post, $"/deployments/{deployment}/rollback", new { releaseId }, "rollback"));
+    public Operation RestartWorkers(string deployment) =>
+        OperationOf(Send(HttpMethod.Post, $"/deployments/{deployment}/restart-workers", new { }, "restart-workers"));
 
     private static Operation OperationOf(JsonNode body) => As<Operation>(body["operation"] ?? body, "an operation");
 

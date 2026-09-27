@@ -273,6 +273,56 @@ runs. Releases are immutable, so `nebula deploy --release rel_id` and `nebula ro
     }
 }
 
+public sealed class RestartWorkersCommand : Command
+{
+    public override string Name => "restart-workers";
+    public override string Summary => "Restart a Nebula Cloud deployment's workers one at a time, to apply env changes";
+    public override string Usage => "[--deployment name]";
+    public override string? Details => @"
+Replace every worker of a running Nebula Cloud deployment with a fresh one, one at a time, and follow the operation.
+A worker reads its environment variables once, when it starts, so this is how a `nebula env set` reaches the running
+workers without a new release. Each replacement is ready before the old worker hands its containers over, so
+players stay connected; the orchestrator and the gateways keep running. Parked workers in the idle pool are
+deleted rather than reused, since they started with the old values.
+
+If a replacement never becomes ready the operation fails and the workers not yet replaced keep running with the
+previous values.
+";
+    public override OptionSpec[] Options => new[]
+    {
+        CloudTarget.OrgOption, CloudTarget.CloudProjectOption, CloudTarget.DeploymentOption,
+    };
+    public override string[] Examples => new[] { "nebula restart-workers", "nebula env set API_URL=https://api.example.com && nebula restart-workers" };
+
+    public override int Run(Context ctx, ParsedArgs args)
+    {
+        var project = ctx.RequireProject();
+        var api = CloudApi.Require(ctx);
+        var t = CloudTarget.Resolve(ctx, api, project, args, create: false);
+        var dep = t.Deployment;
+        if (dep.State is not ("running" or "degraded")) throw new CliError($"{dep.Name} is {dep.State}; only a running deployment has workers to restart", "nebula deploy --target cloud");
+        Ui.Title($"restarting the workers of {t.Describe} one at a time");
+        var running = OperationFollower.FindRunning(api, dep.Id);
+        CloudApi.Operation op;
+        if (running != null)
+        {
+            // Someone else's operation (a rollout already recreates the workers): follow it rather than queue behind it.
+            Ui.Warn($"operation {running.Id} ({running.Kind}) is already {running.State}; following it instead");
+            op = running;
+        }
+        else
+        {
+            try { op = api.RestartWorkers(dep.Id); }
+            catch (CloudApiError e) when (CloudApi.RunningOperationOf(e) is { } other) { Ui.Warn($"operation {other.Id} is already running; following it instead"); op = api.GetOperation(other.Id); }
+        }
+        OperationFollower.Follow(api, op);
+        // A rollout or rollback recreates the workers too; anything else leaves them as they were.
+        if (op.Kind is "restart_workers" or "rollout" or "rollback") Ui.Ok($"{dep.Name}: every worker runs with the current environment variables");
+        else Ui.Info("that operation did not restart the workers; run `nebula restart-workers` again");
+        return 0;
+    }
+}
+
 public sealed class DashboardCommand : Command
 {
     public override string Name => "dashboard";

@@ -296,7 +296,7 @@ internal sealed class FakeCloud : IDisposable
             }
             Reply(ctx, 200, d); return;
         }
-        if ((mm = Regex.Match(path, "^/deployments/([^/]+)/(rollouts|rollback|scale|status|logs|logs/stream|operations)$")).Success)
+        if ((mm = Regex.Match(path, "^/deployments/([^/]+)/(rollouts|rollback|restart-workers|scale|status|logs|logs/stream|operations)$")).Success)
         {
             var d = Deployments.FirstOrDefault(x => x["id"]!.ToString() == mm.Groups[1].Value);
             if (d == null) { Reply(ctx, 404, Error("not_found", "no such deployment")); return; }
@@ -310,6 +310,11 @@ internal sealed class FakeCloud : IDisposable
                 case "rollback" when m == "POST":
                     d["currentReleaseId"] = body?["releaseId"]?.ToString() ?? d["previousReleaseId"]?.ToString();
                     Reply(ctx, 202, J(new { operation = NewOperation(d["id"]!.ToString(), "rollback", new[] { "restart-orchestrator", "wait-ready" }) })); return;
+                case "restart-workers" when m == "POST":
+                    // As the API: a running deployment only, and one live operation per deployment.
+                    if (d["state"]?.ToString() is not ("running" or "degraded")) { Reply(ctx, 409, Error("conflict", $"the deployment is {d["state"]}; only a running deployment has workers to restart")); return; }
+                    if (ConflictOperation != null) { if (!Operations.Contains(ConflictOperation)) Operations.Add(ConflictOperation); Reply(ctx, 409, J(new { error = new { code = "conflict", message = "an operation is already running", details = new { operationId = ConflictOperation["id"]!.ToString() } }, operation = ConflictOperation })); return; }
+                    Reply(ctx, 202, J(new { operation = NewOperation(d["id"]!.ToString(), "restart_workers", new[] { "idle_pool", "workers" }) })); return;
                 case "scale" when m == "POST":
                     foreach (var kv in body!.AsObject()) if (kv.Value != null) d[kv.Key] = kv.Value.DeepClone();
                     Reply(ctx, 200, d); return;
