@@ -56,6 +56,53 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ACheckoutsOwnOffsetFileMovesBothSides()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "nebula-port-offset-" + System.Guid.NewGuid().ToString("N"));
+            var server = ScriptableObject.CreateInstance<NebulaConfig>();
+            var client = ScriptableObject.CreateInstance<NebulaConfig>();
+            try
+            {
+                Assert.AreEqual(50, EditorDevPaths.PortOffset(server, root), "no file: the config's offset");
+                Directory.CreateDirectory(Path.GetDirectoryName(EditorDevPaths.PortOffsetFile(root)));
+                File.WriteAllText(EditorDevPaths.PortOffsetFile(root), " 150\n");
+                Plan(isMainEditor: false).ApplyTo(server, _ => false, root);
+                Plan(isMainEditor: true).ApplyTo(client, _ => false, root);
+                Assert.AreEqual(7150, server.GatewayPort);
+                Assert.AreEqual(server.GatewayPort, client.GatewayPort, "the client reads the same file");
+                Assert.AreEqual(7250, server.WorkerBasePort);
+                Assert.AreEqual(7230, server.DashboardPort);
+            }
+            finally
+            {
+                Object.DestroyImmediate(server);
+                Object.DestroyImmediate(client);
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
+        public void AnUnreadableOffsetFileFallsBackToTheConfig()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "nebula-port-offset-" + System.Guid.NewGuid().ToString("N"));
+            var config = ScriptableObject.CreateInstance<NebulaConfig>();
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(EditorDevPaths.PortOffsetFile(root)));
+                foreach (var bad in new[] { "fifty", "-5", "70000", "" })
+                {
+                    File.WriteAllText(EditorDevPaths.PortOffsetFile(root), bad);
+                    Assert.AreEqual(50, EditorDevPaths.PortOffset(config, root), $"\"{bad}\"");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(config);
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void AClientWaitsForItsOwnServer()
         {
             Assert.AreEqual(EditorDevSession.Verdict.Waiting, EditorDevSession.Evaluate(null, _ => true));

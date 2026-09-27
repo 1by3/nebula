@@ -109,7 +109,7 @@ namespace Nebula
         {
             if (Player == EditorPlayer.Mesh) return;
             // Both sides move off the usual ports by the same offset, so a mesh started with nebula start can run too.
-            int offset = config.EditorPortOffset;
+            int offset = EditorDevPaths.PortOffset(config, projectRoot);
             if (!hasArg("nebula-gateway"))
             {
                 config.GatewayAddress = "127.0.0.1";
@@ -187,6 +187,40 @@ namespace Nebula
 
         /// <summary>The folder <see cref="DevSaveFile"/> is in.</summary>
         public static string DevSaves(string projectRoot) => System.IO.Path.Combine(Folder(projectRoot), "DevSaves");
+
+        /// <summary>
+        /// This checkout's own port offset for the dev loop: <c>&lt;root&gt;/UserSettings/NebulaEditorPortOffset.txt</c>,
+        /// holding one whole number. <c>UserSettings</c> is per checkout and not committed, so two copies of a project
+        /// (git worktrees, for example) can each press Play at once without changing the shared <see cref="NebulaConfig"/>.
+        /// </summary>
+        public static string PortOffsetFile(string projectRoot) => System.IO.Path.Combine(projectRoot, "UserSettings", "NebulaEditorPortOffset.txt");
+
+        /// <summary>
+        /// The offset both sides of the dev loop add to the configured ports: the number in <see cref="PortOffsetFile"/>
+        /// when it holds one, otherwise <see cref="NebulaConfig.EditorPortOffset"/>. A game that runs its own local
+        /// services beside the dev loop can use it to move their ports by the same amount.
+        /// </summary>
+        public static int PortOffset(NebulaConfig config, string projectRoot)
+        {
+            int configured = config != null ? config.EditorPortOffset : 0;
+            if (string.IsNullOrEmpty(projectRoot)) return configured;
+            string path = PortOffsetFile(projectRoot);
+            string text;
+            try
+            {
+                if (!System.IO.File.Exists(path)) return configured;
+                text = System.IO.File.ReadAllText(path).Trim();
+            }
+            catch (Exception e)
+            {
+                NebulaLog.Warn($"could not read {path} ({e.GetType().Name}); using EditorPortOffset {configured}");
+                return configured;
+            }
+            if (int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int offset) && offset >= 0 && offset <= 60000)
+                return offset;
+            NebulaLog.Warn($"{path} should hold a whole number from 0 to 60000, not \"{text}\"; using EditorPortOffset {configured}");
+            return configured;
+        }
     }
 
     /// <summary>Reads the running Editor's Multiplayer Play Mode player, where the Editor has one.</summary>

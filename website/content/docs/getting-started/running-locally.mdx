@@ -149,6 +149,8 @@ To start from an empty world once, stop Play and choose **Nebula > Dev Loop > Re
 
 Both sides add `NebulaConfig.EditorPortOffset` (default `50`) to `GatewayPort`, `WorkerBasePort` and `DashboardPort`. With the default ports, the gateway listens on 7050, the worker on 7151, and the dashboard on `http://localhost:7130/`. So a mesh started with `nebula start` can run at the same time. Set the offset to `0` to use the configured ports.
 
+To run the dev loop in two copies of one project at once, such as two git worktrees, give each copy its own offset. Put a whole number in `UserSettings/NebulaEditorPortOffset.txt` at the copy's root, for example `1050` in one and `2050` in the other. The file replaces `EditorPortOffset` for that copy only. `UserSettings` isn't committed, so the shared `NebulaConfig` stays unchanged. Choose offsets whose ports don't overlap: with the default ports the gateway and worker ports are only 100 apart, so an offset 100 above another copy's puts its gateway on that copy's worker port. Offsets 1000 apart are safe. If your game runs its own local services next to the dev loop, `EditorDevPaths.PortOffset` returns the offset in use so you can move their ports by the same amount.
+
 A client in this mode connects only to the server its own Play session started. The server records its port, or the reason it could not start, in `Library/Nebula/dev-session.json`. If another process holds the server's port, the client connects to nothing and logs the server's error, for example:
 
 ```text

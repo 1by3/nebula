@@ -61,7 +61,7 @@ namespace Nebula
 
         /// <summary>The error a client logs when the server of its session could not start.</summary>
         public static string FailureMessage(Record record) =>
-            $"The Editor-hosted server could not start ({record.error}). A client of this session does not join any other server. Stop the other mesh (nebula stop) or change NebulaConfig.EditorPortOffset, then press Play again.";
+            $"The Editor-hosted server could not start ({record.error}). A client of this session does not join any other server. Stop the other mesh (nebula stop) or change NebulaConfig.EditorPortOffset (or this checkout's UserSettings/NebulaEditorPortOffset.txt), then press Play again.";
 
         /// <summary>Write the server's record; replaces the previous one.</summary>
         public static void Write(string path, Record record)
