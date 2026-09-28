@@ -2106,6 +2106,10 @@ namespace Nebula
             }
             e.SetAuthority(true);
             PhysicsIslands.CheckOnAuthority(e);
+            // The owner's connection as this worker sees it: a drop or a return the previous owner did not hear of is
+            // this worker's to report. Before the inherited ghosts are resumed, so the spawns that open them carry it,
+            // and the gateways hear of it in the announcement at the end.
+            SyncOwnerConnected(e, announce: false);
             // Inherit the previous owner's subscribers. The new owner opens each ordered stream with a snapshot,
             // including for motionless entities that will never emit another pose update.
             if (msg.GhostWorkers != null)
@@ -2125,10 +2129,6 @@ namespace Nebula
             AuthorityReceived?.Invoke(e, from.Id);
             NebulaLog.Info($"handover IN  {e} <- {from.Id} (epoch {msg.NewEpoch}, tick {CurrentTick})");
             if (e.Carried != null) SyncCarriedLeases();
-
-            // The owner's connection as this worker sees it: a drop or a return the previous owner did not hear of is
-            // this worker's to report, and the announcement below carries the result.
-            SyncOwnerConnected(e, announce: false);
 
             // Tell the gateways that want it that we own it now (a spawn for a known id is an update): the ones
             // subscribing the region it landed in, the ones following it by name or session here, and the ones the
@@ -2659,8 +2659,8 @@ namespace Nebula
         /// when it changes, tell every copy (the gateways that hear of the pawn, the workers holding a ghost) and the
         /// game (<see cref="NebulaGameMode.OnPlayerDisconnected"/>, <see cref="NebulaGameMode.OnPlayerReconnected"/>).
         /// Only the worker that owns the pawn decides. A session that ended on purpose is not a disconnection: the
-        /// pawn is removed on the next pass without the hook. <paramref name="announce"/> false leaves the
-        /// announcement to the caller (a handover announces the pawn anyway).
+        /// pawn is removed on the next pass without the hook. <paramref name="announce"/> false leaves the gateways'
+        /// announcement to the caller (a handover announces the pawn anyway); ghost workers are told either way.
         /// </summary>
         private void SyncOwnerConnected(NetworkIdentity e, bool announce = true)
         {
@@ -2672,6 +2672,7 @@ namespace Nebula
             e.SetOwnerConnected(connected);
             NebulaLog.Info($"session {e.OwnerClientId}: player {(connected ? "reconnected to" : "disconnected from")} {e}");
             if (announce) AnnounceOwnerConnection(e);
+            else AnnounceOwnerConnectionToGhosts(e);
             try
             {
                 if (connected) _gameMode?.OnPlayerReconnected(this, e);
@@ -2698,6 +2699,12 @@ namespace Nebula
         private void AnnounceOwnerConnection(NetworkIdentity e)
         {
             SendSpawnToMask(e, PublishMaskOf(e));
+            AnnounceOwnerConnectionToGhosts(e);
+        }
+
+        /// <summary>The ghost half of <see cref="AnnounceOwnerConnection"/>: a GhostSpawn, in place, to every worker holding a ghost.</summary>
+        private void AnnounceOwnerConnectionToGhosts(NetworkIdentity e)
+        {
             if (!_ghostTargets.TryGetValue(e.NetId, out var targets) || targets.Count == 0) return;
             foreach (var target in targets.Keys)
                 if (_workerPeersById.TryGetValue(target, out var peer)) SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);

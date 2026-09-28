@@ -202,6 +202,25 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void ADropFoundAtTheHandoverReachesTheGhostsToo()
+        {
+            var w1 = _mesh[0];
+            var w2 = _mesh[1];
+            var pawn = SpawnPawn(w1);
+            ulong netId = pawn.NetId;
+
+            // The drop reaches the new owner before the handover, which was sent while the player was connected.
+            // The old owner keeps a ghost of the pawn, and its copy must say the player is away as well.
+            w1.Transfer(pawn, w2);
+            PlayerLeaves(w2);
+            _mesh.Pump();
+            Assert.IsTrue(w2.Find(netId).HasAuthority);
+            var ghost = w1.Find(netId);
+            Assert.IsTrue(ghost != null && !ghost.HasAuthority, "the old owner holds a ghost");
+            Assert.IsFalse(ghost.IsOwnerConnected, "the ghost is told of the drop found at the handover");
+        }
+
+        [Test]
         public void AConnectedPlayersPawnCallsNoHook()
         {
             var w1 = _mesh[0];
