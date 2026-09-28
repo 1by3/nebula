@@ -924,6 +924,14 @@ public float ClientPingIntervalSeconds = 0.5f;
 
 Seconds between the keep-alive pings the client's transport sends, which also measure the round trip.
 
+### ClientStallSeconds [#clientstallseconds]
+
+```csharp
+public float ClientStallSeconds = 2f;
+```
+
+Seconds without any state from the server (entity state, owner state, variables, RPCs, spawns) after which a client that is in the world raises [`NebulaClient.ServerStalled`](/docs/reference/client/nebula-client#serverstalled), while its link to the gateway is still up: the worker simulating the player has stopped without the orchestrator having declared it dead yet. It raises [`NebulaClient.ServerResumed`](/docs/reference/client/nebula-client#serverresumed) when state arrives again. 0 turns the watch off. The watch assumes the server sends state continuously, as it does for a predicted pawn; a world that can go quiet for longer needs a higher value, or 0.
+
 ### NetworkPrefabs [#networkprefabs]
 
 ```csharp

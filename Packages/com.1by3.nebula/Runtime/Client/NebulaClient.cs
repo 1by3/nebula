@@ -278,6 +278,29 @@ namespace Nebula
         /// reason of the last failure. Call <see cref="Connect"/> to try again.
         /// </summary>
         public event Action ReconnectGaveUp;
+        /// <summary>
+        /// The local player's pawn was despawned while the connection stayed up. The cause says whether the worker
+        /// that simulated it failed (<see cref="LocalPlayerLossCause.WorkerLost"/>: the gateway is placing the player
+        /// again and <see cref="LocalPlayerSpawned"/> follows) or the server removed it
+        /// (<see cref="LocalPlayerLossCause.Despawned"/>). Raised after <see cref="EntityDespawned"/>, while the pawn's
+        /// object still exists; <see cref="LocalPlayer"/> is already null. Not raised when the connection ends: the
+        /// whole world is cleared then, and <see cref="Disconnected"/> says why.
+        /// </summary>
+        public event Action<NetworkIdentity, LocalPlayerLossCause> LocalPlayerLost;
+        /// <summary>
+        /// No state has arrived from the server for <see cref="NebulaConfig.ClientStallSeconds"/> while the client is
+        /// in the world and its link is up: the worker simulating the player has probably stopped. Entities stand
+        /// still until state arrives again (<see cref="ServerResumed"/>) or the mesh recovers the player. Show a
+        /// "server not responding" notice rather than disconnecting. Raised on the main thread.
+        /// </summary>
+        public event Action ServerStalled;
+        /// <summary>
+        /// A stall reported by <see cref="ServerStalled"/> is over. Raised exactly once after each
+        /// <see cref="ServerStalled"/>: when state arrives again, or when the client stops watching because the join
+        /// went back to <see cref="JoinState.Starting"/> (a recovery) or the connection ended. Check
+        /// <see cref="Join"/> and <see cref="ConnectionState"/> to tell which.
+        /// </summary>
+        public event Action ServerResumed;
 
         private ITransport _transport;
         private int _gatewayPeer = -1;
@@ -361,6 +384,19 @@ namespace Nebula
 
         /// <summary>Last connection failure or disconnect reason, for connection UI. Empty while healthy.</summary>
         public string LastError { get; private set; } = "";
+        /// <summary>
+        /// Seconds since state last arrived from the server: entity state, owner state, variables, maps, RPCs, spawns
+        /// or despawns, anything a worker produced. 0 before the first state since the client joined, and while it
+        /// is not in the world. A healthy server sends the local player's own pawn state every tick, so anything above
+        /// a few tenths of a second is worth noticing; see <see cref="ServerStalled"/>.
+        /// </summary>
+        public float SecondsSinceServerState => ConnectionState == State.InGame && _hasServerState ? Math.Max(0f, Now - _lastServerStateAt) : 0f;
+        /// <summary>True between <see cref="ServerStalled"/> and <see cref="ServerResumed"/>.</summary>
+        public bool IsServerStalled { get; private set; }
+        /// <summary>When state last arrived from the server; see <see cref="SecondsSinceServerState"/>.</summary>
+        private float _lastServerStateAt;
+        /// <summary>State has arrived since the client joined: the stall watch has something to measure from.</summary>
+        private bool _hasServerState;
         /// <summary>
         /// How the last connection, or the last attempt to connect, ended: the same value <see cref="Disconnected"/>
         /// carried, updated by every failed retry too. <see cref="DisconnectReason.Unknown"/> with an empty message
@@ -720,6 +756,65 @@ namespace Nebula
             catch (Exception e) { NebulaLog.Error($"Reconnecting handler threw: {e}"); }
         }
 
+        // ---------------------------------------------------------------------------------------- stall watch
+
+        /// <summary>
+        /// Raise <see cref="ServerStalled"/> once state has been missing for <see cref="NebulaConfig.ClientStallSeconds"/>.
+        /// The watch runs only while the client is in the world (<see cref="JoinState.Joined"/>) and has had state
+        /// since it joined, so a join in progress, and a client in a scope that sends nothing, never look stalled.
+        /// </summary>
+        internal void TickStallWatch()
+        {
+            float limit = Config != null ? Config.ClientStallSeconds : 0f;
+            bool watching = limit > 0f && ConnectionState == State.InGame && Join == JoinState.Joined && _hasServerState;
+            if (!watching)
+            {
+                EndStall();
+                return;
+            }
+            if (IsServerStalled || Now - _lastServerStateAt < limit) return;
+            IsServerStalled = true;
+            NebulaLog.Warn($"no state from the server for {Now - _lastServerStateAt:0.0} s; the server may have stalled");
+            try { ServerStalled?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"ServerStalled handler threw: {e}"); }
+        }
+
+        /// <summary>State arrived from the server: restart the stall clock, and end a stall.</summary>
+        private void NoteServerState()
+        {
+            _lastServerStateAt = Now;
+            _hasServerState = true;
+            EndStall();
+        }
+
+        private void EndStall()
+        {
+            if (!IsServerStalled) return;
+            IsServerStalled = false;
+            NebulaLog.Info("state from the server again");
+            try { ServerResumed?.Invoke(); }
+            catch (Exception e) { NebulaLog.Error($"ServerResumed handler threw: {e}"); }
+        }
+
+        /// <summary>Messages carrying something a worker produced: what the stall watch counts as server state.</summary>
+        private static bool IsServerState(MsgId id)
+        {
+            switch (id)
+            {
+                case MsgId.EntitySpawn:
+                case MsgId.EntityDespawn:
+                case MsgId.EntityVars:
+                case MsgId.EntityMaps:
+                case MsgId.EntityRpc:
+                case MsgId.WorldState:
+                case MsgId.EntityState:
+                case MsgId.OwnerState:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private void GiveUpReconnecting()
         {
             float elapsed = ReconnectElapsedSeconds;
@@ -741,6 +836,7 @@ namespace Nebula
             _transport.Poll(HandleTransportEvent);
 
             TickConnection();
+            TickStallWatch();
             if (ConnectionState == State.Disconnected || ConnectionState == State.Connecting) return;
             _frames++;
             float frameMs = Time.unscaledDeltaTime * 1000f;
@@ -1041,6 +1137,7 @@ namespace Nebula
         private void Dispatch(NetworkReader r)
         {
             var id = (MsgId)r.ReadByte();
+            if (IsServerState(id)) NoteServerState();
             switch (id)
             {
                 case MsgId.InstancePrepare:
@@ -1218,9 +1315,16 @@ namespace Nebula
                 {
                     var j = JoinStatusMsg.Read(r);
                     if (j.State == Join && j.EstimatedSeconds == JoinEstimatedSeconds && j.Reason == JoinHoldReason) break;
+                    if (j.State == JoinState.Joined && Join != JoinState.Joined)
+                    {
+                        // The stall watch starts afresh with every join: the first state after it arms it.
+                        _hasServerState = false;
+                        _lastServerStateAt = Now;
+                    }
                     Join = j.State;
                     JoinEstimatedSeconds = j.EstimatedSeconds;
                     JoinHoldReason = j.Reason;
+                    if (Join != JoinState.Joined) EndStall();
                     if (Join == JoinState.Starting)
                         NebulaLog.Info($"the join is held ({j.Reason})" + (JoinEstimatedSeconds > 0 ? $", about {JoinEstimatedSeconds} s" : ""));
                     else if (Join == JoinState.Joined) NebulaLog.Info("joined the world");
@@ -1463,10 +1567,19 @@ namespace Nebula
             }
             if (msg.Epoch < e.Epoch) return;
             _entities.Remove(msg.NetId);
-            if (LocalPlayer == e) LocalPlayer = null;
+            bool wasLocal = LocalPlayer == e;
+            if (wasLocal) LocalPlayer = null;
             EvacuateCarried(e);
             e.InvokeDespawn();
             EntityDespawned?.Invoke(e);
+            if (wasLocal)
+            {
+                // The gateway says it is placing the player again before it despawns a pawn lost with its worker.
+                var cause = Join == JoinState.Starting && JoinHoldReason == JoinHoldReason.Recovering ? LocalPlayerLossCause.WorkerLost : LocalPlayerLossCause.Despawned;
+                NebulaLog.Info($"local player lost ({cause})");
+                try { LocalPlayerLost?.Invoke(e, cause); }
+                catch (Exception ex) { NebulaLog.Error($"LocalPlayerLost handler threw: {ex}"); }
+            }
             if (e.IsSceneEntity) e.Unbind(); // the object belongs to its scene
             else if (Application.isPlaying) Destroy(e.gameObject);
             else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
@@ -1747,7 +1860,8 @@ namespace Nebula
                 e.InvokeDespawn();
                 EntityDespawned?.Invoke(e);
                 if (e.IsSceneEntity) e.Unbind();
-                else Destroy(e.gameObject);
+                else if (Application.isPlaying) Destroy(e.gameObject);
+                else DestroyImmediate(e.gameObject); // edit-mode tests and editor tooling
             }
             _entities.Clear();
             _viewSeq.Clear();
@@ -1756,6 +1870,8 @@ namespace Nebula
             _pendingByCarrier.Clear();
             LocalPlayer = null;
             _hasRenderOffset = false;
+            _hasServerState = false;
+            EndStall();
             if (Join != JoinState.None)
             {
                 Join = JoinState.None;

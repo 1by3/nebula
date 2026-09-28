@@ -338,6 +338,16 @@ namespace Nebula
         /// <summary>Seconds between the keep-alive pings the client's transport sends, which also measure the round trip.</summary>
         [Tooltip("Client: seconds between the transport's keep-alive pings, which also measure the round-trip time.")]
         public float ClientPingIntervalSeconds = 0.5f;
+        /// <summary>
+        /// Seconds without any state from the server (entity state, owner state, variables, RPCs, spawns) after which
+        /// a client that is in the world raises <see cref="NebulaClient.ServerStalled"/>, while its link to the
+        /// gateway is still up: the worker simulating the player has stopped without the orchestrator having declared
+        /// it dead yet. It raises <see cref="NebulaClient.ServerResumed"/> when state arrives again. 0 turns the
+        /// watch off. The watch assumes the server sends state continuously, as it does for a predicted pawn; a
+        /// world that can go quiet for longer needs a higher value, or 0.
+        /// </summary>
+        [Tooltip("Client: seconds without any state from the server, while the link is up and the player is in the world, before NebulaClient.ServerStalled is raised. 0 = off. Assumes the server sends state continuously (a predicted pawn does).")]
+        public float ClientStallSeconds = 2f;
 
         [Header("Prefabs")]
         [Tooltip("Every prefab that can be spawned over the network. The index is the prefab id on the wire.")]

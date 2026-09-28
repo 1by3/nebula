@@ -52,6 +52,25 @@ namespace Nebula
     }
 
     /// <summary>
+    /// Why the local player's pawn went away while the client stayed connected
+    /// (<see cref="NebulaClient.LocalPlayerLost"/>).
+    /// </summary>
+    public enum LocalPlayerLossCause : byte
+    {
+        /// <summary>
+        /// The server removed the pawn: game code on its worker despawned it. Whether the player gets another one is
+        /// up to the game.
+        /// </summary>
+        Despawned = 0,
+        /// <summary>
+        /// The worker that simulated the pawn failed. The gateway is placing the player again
+        /// (<see cref="NebulaClient.JoinHoldReason"/> is <see cref="JoinHoldReason.Recovering"/>), from the pawn's
+        /// last checkpoint when it has one, and <see cref="NebulaClient.LocalPlayerSpawned"/> follows when it is back.
+        /// </summary>
+        WorkerLost = 1,
+    }
+
+    /// <summary>
     /// How a client's connection ended: the typed <see cref="Reason"/>, a <see cref="Message"/> for logs and the
     /// player, and whether the client will try again by itself (<see cref="WillRetry"/>).
     /// </summary>

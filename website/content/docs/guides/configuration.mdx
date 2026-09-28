@@ -191,6 +191,7 @@ These fields control what a client does after its connection drops. See [Reconne
 | `ReconnectGiveUpSeconds` | `0` | Stop reconnecting this many seconds after the drop, and raise `NebulaClient.ReconnectGiveUp`. `0` never gives up. A value a little above `SessionReclaimSeconds` stops once the worker has let the pawn go. |
 | `ClientDisconnectTimeoutSeconds` | `8` s | Treat the link as lost after this long without a packet from the gateway. Lower values notice a dead gateway sooner, but drop players on a brief network stall. |
 | `ClientPingIntervalSeconds` | `0.5` s | Send the transport's keep-alive ping this often. Keep it well below the disconnect timeout. |
+| `ClientStallSeconds` | `2` s | Raise `NebulaClient.ServerStalled` after this long without state from the server while the player is in the world and the link is up. `0` turns the watch off. See [Notice a stalled server](/docs/guides/connecting-clients#notice-a-stalled-server). |
 
 The two transport settings apply to the UDP transport of desktop and mobile clients. A web build's WebRTC transport uses the browser's own timeouts.
 

@@ -517,6 +517,13 @@ namespace Nebula
         /// appears, with no reconnect.
         /// </summary>
         AtCapacity = 5,
+        /// <summary>
+        /// The worker that held the player's pawn failed, and the gateway is placing the player again: the pawn
+        /// comes back from its last checkpoint, or fresh when it has none. The player was in the world a moment ago,
+        /// so say "getting you back in" rather than "starting the world". Protocol 22: a gateway tells a client that
+        /// negotiated an older protocol <see cref="WorldStarting"/> instead.
+        /// </summary>
+        Recovering = 6,
     }
 
     /// <summary>

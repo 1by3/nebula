@@ -1304,12 +1304,10 @@ namespace Nebula
             // record here would keep the client out of its own world for the rest of the session.
             ulong lost = client.PawnNetId;
             NebulaLog.Warn($"client {client.ClientId} '{client.Name}': pawn #{lost} was not claimed by any worker; starting the join again");
-            client.PawnNetId = 0;
             client.PawnLostSince = 0;
             client.PawnRecovering = false;
-            client.InterestDirty = true;
+            BeginRecovery(client);
             if (_entities.ContainsKey(lost)) ForgetEntity(lost);
-            SendJoinStatus(client, JoinState.Starting);
             client.NextSpawnAttempt = 0;
             return false;
         }

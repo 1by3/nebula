@@ -60,6 +60,8 @@ Use these `NebulaClient` members to drive your UI:
 | `ConnectionState` and `ConnectionStateChanged` | Show `Disconnected`, `Connecting`, `Connected`, or `InGame`. |
 | `Join`, `JoinEstimatedSeconds` and `JoinStateChanged` | Show a "world starting" screen while the mesh boots a worker (see below). |
 | `LocalPlayer` and `LocalPlayerSpawned` | Hide your menu when the player's entity arrives. |
+| `LocalPlayerLost` | Find out that the player's entity was despawned while the connection stayed up, and whether its worker failed or the server removed it (see [Notice a stalled server](#notice-a-stalled-server)). |
+| `ServerStalled`, `ServerResumed`, `IsServerStalled` and `SecondsSinceServerState` | Show "server not responding" while no state arrives (see below). |
 | `ClientId` | Read the local session ID, a `ulong` the gateway assigned in its welcome. `NebulaRuntime.LocalClientId` holds the same value. It is `0` before the welcome. |
 | `Identity` | Read the player's identity across sessions (see [Authentication](/docs/guides/authentication)). |
 | `SessionToken` and `SessionReclaimed` | Keep or drop the session across reconnections (see below). |
@@ -87,6 +89,8 @@ client.JoinStateChanged += (state, seconds) =>
 ```
 
 `NebulaTitleScreen` already does this: it shows "world starting, about 75 s..." in place of "waiting for a pawn...".
+
+`JoinHoldReason` says why the join is held. Besides `WorldStarting`, it can be `ScopeNotReady`, `ScopeRestoring` or `ScopeRetiring` for a [scope](/docs/guides/scopes), `AtCapacity` for a full target, or `Recovering` when the worker that held the player's pawn failed and the gateway is placing the player again. `Recovering` holds a player who was in the world a moment ago, so say "getting you back in".
 
 `NebulaTitleScreen.TryParse` splits text such as `127.0.0.1:7000` into an address and port. You can use it to validate a single address field.
 
@@ -178,6 +182,24 @@ void Update()
 ```
 
 To start a new session on purpose, for example when the player picks another character, clear `SessionToken` before connecting. `Disconnect()` keeps it, so a deliberate disconnect and reconnect continues the session. `Leave()` clears it.
+
+### Notice a stalled server
+
+Two things can go wrong on the server while the client's link to the gateway stays up:
+
+- **The worker that simulated the player's pawn fails.** The gateway holds the join with `JoinHoldReason.Recovering` and then despawns the pawn. `LocalPlayerLost` fires with `LocalPlayerLossCause.WorkerLost`, and `LocalPlayerSpawned` fires again when the gateway has placed the player. `LocalPlayerLost` fires with `Despawned` when game code on the server despawned the pawn instead. It doesn't fire when the connection ends; `Disconnected` covers that.
+- **The worker stops without failing.** Nothing arrives and the world stands still until the orchestrator declares the worker dead. When no state has arrived from the server for `NebulaConfig.ClientStallSeconds` (default 2 s), `ServerStalled` fires and `IsServerStalled` becomes `true`. `ServerResumed` follows exactly once: when state arrives again, or when the watch stops because the join went back to `Starting` or the connection ended. `SecondsSinceServerState` is the time since the last state.
+
+```csharp
+client.ServerStalled += () => StallBanner.SetActive(true);
+client.ServerResumed += () => StallBanner.SetActive(false);
+client.LocalPlayerLost += (pawn, cause) =>
+{
+    if (cause == LocalPlayerLossCause.WorkerLost) ShowToast("Server hiccup, getting you back in...");
+};
+```
+
+The stall watch counts anything a worker produced as state: entity and owner state, variables, maps, RPCs, spawns and despawns. It is off until the join completes and the first state arrives after it, so a join in progress, or a scope that sends nothing, never looks stalled. A predicted pawn's owner state arrives every tick, so a world with one never goes quiet for long. If your world can legitimately send nothing for longer than `ClientStallSeconds`, raise the setting, or set it to `0` to turn the watch off.
 
 ### Leave the game
 

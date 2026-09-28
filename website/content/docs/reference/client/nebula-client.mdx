@@ -295,6 +295,22 @@ public string LastError { get; } = "";
 
 Last connection failure or disconnect reason, for connection UI. Empty while healthy.
 
+### SecondsSinceServerState [#secondssinceserverstate]
+
+```csharp
+public float SecondsSinceServerState { get; }
+```
+
+Seconds since state last arrived from the server: entity state, owner state, variables, maps, RPCs, spawns or despawns, anything a worker produced. 0 before the first state since the client joined, and while it is not in the world. A healthy server sends the local player's own pawn state every tick, so anything above a few tenths of a second is worth noticing; see [`ServerStalled`](#serverstalled).
+
+### IsServerStalled [#isserverstalled]
+
+```csharp
+public bool IsServerStalled { get; }
+```
+
+True between [`ServerStalled`](#serverstalled) and [`ServerResumed`](#serverresumed).
+
 ### LastDisconnect [#lastdisconnect]
 
 ```csharp
@@ -460,6 +476,30 @@ public event Action ReconnectGaveUp;
 ```
 
 The client stopped reconnecting after [`NebulaConfig.ReconnectGiveUpSeconds`](/docs/reference/core/nebula-config#reconnectgiveupseconds): [`WantsConnection`](#wantsconnection) is false, [`ConnectionState`](#connectionstate) is `State.Disconnected`, and [`Disconnected`](#disconnected) has been raised with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false and the reason of the last failure. Call [`Connect`](#connect) to try again.
+
+### LocalPlayerLost [#localplayerlost]
+
+```csharp
+public event Action<NetworkIdentity, LocalPlayerLossCause> LocalPlayerLost;
+```
+
+The local player's pawn was despawned while the connection stayed up. The cause says whether the worker that simulated it failed ([`LocalPlayerLossCause.WorkerLost`](/docs/reference/client/local-player-loss-cause#workerlost): the gateway is placing the player again and [`LocalPlayerSpawned`](#localplayerspawned) follows) or the server removed it ([`LocalPlayerLossCause.Despawned`](/docs/reference/client/local-player-loss-cause#despawned)). Raised after [`EntityDespawned`](#entitydespawned), while the pawn's object still exists; [`LocalPlayer`](#localplayer) is already null. Not raised when the connection ends: the whole world is cleared then, and [`Disconnected`](#disconnected) says why.
+
+### ServerStalled [#serverstalled]
+
+```csharp
+public event Action ServerStalled;
+```
+
+No state has arrived from the server for [`NebulaConfig.ClientStallSeconds`](/docs/reference/core/nebula-config#clientstallseconds) while the client is in the world and its link is up: the worker simulating the player has probably stopped. Entities stand still until state arrives again ([`ServerResumed`](#serverresumed)) or the mesh recovers the player. Show a "server not responding" notice rather than disconnecting. Raised on the main thread.
+
+### ServerResumed [#serverresumed]
+
+```csharp
+public event Action ServerResumed;
+```
+
+A stall reported by [`ServerStalled`](#serverstalled) is over. Raised exactly once after each [`ServerStalled`](#serverstalled): when state arrives again, or when the client stops watching because the join went back to [`JoinState.Starting`](/docs/reference/protocol/join-state#starting) (a recovery) or the connection ended. Check [`Join`](#join) and [`ConnectionState`](#connectionstate) to tell which.
 
 ### LeaveFinished [#leavefinished]
 

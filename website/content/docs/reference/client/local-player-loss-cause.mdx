@@ -1,0 +1,19 @@
+---
+title: "LocalPlayerLossCause"
+description: "Why the local player's pawn went away while the client stayed connected (NebulaClient.LocalPlayerLost)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Client/DisconnectInfo.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Client/DisconnectInfo.cs)</div>
+
+```csharp
+public enum LocalPlayerLossCause : byte
+```
+
+Why the local player's pawn went away while the client stayed connected ([`NebulaClient.LocalPlayerLost`](/docs/reference/client/nebula-client#localplayerlost)).
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="despawned"></span>`Despawned` | `0` | The server removed the pawn: game code on its worker despawned it. Whether the player gets another one is up to the game. |
+| <span id="workerlost"></span>`WorkerLost` | `1` | The worker that simulated the pawn failed. The gateway is placing the player again ([`NebulaClient.JoinHoldReason`](/docs/reference/client/nebula-client#joinholdreason) is [`JoinHoldReason.Recovering`](/docs/reference/protocol/join-hold-reason#recovering)), from the pawn's last checkpoint when it has one, and [`NebulaClient.LocalPlayerSpawned`](/docs/reference/client/nebula-client#localplayerspawned) follows when it is back. |

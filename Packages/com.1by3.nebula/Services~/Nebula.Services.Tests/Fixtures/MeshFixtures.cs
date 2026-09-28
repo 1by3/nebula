@@ -1093,7 +1093,7 @@ public sealed class FakeClient : IDisposable
             case MsgId.Welcome: Welcome = WelcomeMsg.Read(r); break;
             case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
             case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
-            case MsgId.JoinStatus: { var js = JoinStatusMsg.Read(r); Join = js.State; JoinReason = js.Reason; break; }
+            case MsgId.JoinStatus: { var js = JoinStatusMsg.Read(r); Join = js.State; JoinReason = js.Reason; Wire.Add($"join {js.State} {js.Reason}"); break; }
             case MsgId.GatewayDraining: { var d = GatewayDrainingMsg.Read(r); DrainWithin = d.ReconnectWithinSeconds; ServerShutdown = d.ServerShutdown; break; }
             case MsgId.Kicked: Kicked = KickedMsg.Read(r); break;
             case MsgId.ContainerOwnership:

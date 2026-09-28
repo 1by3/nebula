@@ -254,6 +254,7 @@ MonoBehaviour:
   ReconnectGiveUpSeconds: 0
   ClientDisconnectTimeoutSeconds: 8
   ClientPingIntervalSeconds: 0.5
+  ClientStallSeconds: 2
   NetworkPrefabs: []
 ";
 }

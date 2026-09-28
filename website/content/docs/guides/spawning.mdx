@@ -184,6 +184,16 @@ Make the operation idempotent, which means running it twice with the same inputs
 - **Reconcile mesh-wide logic.** There is no singleton worker. Store low-frequency targets in mesh settings, then let each worker reconcile its own authoritative entities.
 - **Entities live on workers.** A worker that dies takes its authoritative entities with it; the gateway drops them and players are respawned elsewhere through `OnSpawnPlayer`, with the same session ID. Durable state belongs in your own persistence layer, written from `OnLostAuthority` or on your own schedule.
 
+### What the client sees when its worker fails
+
+While the gateway places a player again after a worker failure, it holds the join with `JoinHoldReason.Recovering` rather than `WorldStarting`, and it says so before it despawns the pawn. On the client:
+
+1. `JoinStateChanged` fires with `JoinState.Starting`, and `NebulaClient.JoinHoldReason` is `Recovering`. Show "getting you back in" rather than a loading screen for a new world.
+2. `LocalPlayerLost` fires with `LocalPlayerLossCause.WorkerLost` as the pawn is despawned. When game code on the worker despawns the pawn instead, the cause is `Despawned`.
+3. `LocalPlayerSpawned` fires when the pawn is back, from its last checkpoint if it is persistent, and `Join` is `Joined` again.
+
+A worker can also stall without dying: it stops sending state, and its entities stand still until the orchestrator declares it dead after `WorkerTimeoutSeconds` (default 5 s). A client notices first. When no state has arrived for `NebulaConfig.ClientStallSeconds` (default 2 s) while the player is in the world, `NebulaClient.ServerStalled` fires, and `ServerResumed` fires when state arrives again or the join goes back to `Starting`. `SecondsSinceServerState` gives the current gap. See [Notice a stalled server](/docs/guides/connecting-clients#notice-a-stalled-server).
+
 <Cards>
   <Card title="Containers and handover" href="/docs/concepts/containers-and-handover" description="What happens on the tick after you spawn into a foreign container." />
   <Card title="Physics, handover state and the sync channel" href="/docs/guides/physics-and-handover-state" description="State that travels only with the handover, and the per-tick sync channel." />

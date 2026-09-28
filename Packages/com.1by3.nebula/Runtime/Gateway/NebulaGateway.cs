@@ -86,6 +86,11 @@ namespace Nebula
             public ushort JoinEstimate;
             /// <summary>Why the join is being held, as the client was last told (<see cref="JoinHoldReason"/>).</summary>
             public JoinHoldReason JoinReason;
+            /// <summary>
+            /// The client's pawn was lost to a worker failure and the gateway is placing it again: a hold is reported as
+            /// <see cref="JoinHoldReason.Recovering"/> rather than as the world starting, until the client is joined again.
+            /// </summary>
+            public bool Recovering;
             public float NextSpawnAttempt;
             /// <summary>
             /// When the gateway first found itself unable to place this client's pawn (no record, or a record
@@ -1193,14 +1198,13 @@ namespace Nebula
             {
                 var rec = _entities[netId];
                 ulong owner = rec.OwnerClientId;
-                ForgetEntity(netId);
                 if (owner != 0 && _clientsById.TryGetValue(owner, out var c) && c.PawnNetId == netId)
                 {
-                    c.PawnNetId = 0;
-                    c.InterestDirty = true;
-                    SendJoinStatus(c, JoinState.Starting);
+                    // Before the despawn, so the client knows why its pawn is going when the despawn arrives.
+                    BeginRecovery(c);
                     c.NextSpawnAttempt = Time.unscaledTime + 1f; // give the orchestrator a moment to reassign
                 }
+                ForgetEntity(netId);
             }
             // The link is gone, so whatever the worker believed about our subscription is gone with it; the
             // replacement (or the same worker coming back) gets a Full snapshot on its next Hello.
@@ -1848,8 +1852,13 @@ namespace Nebula
         private void SendJoinStatus(ClientConn c, JoinState state, JoinHoldReason reason = JoinHoldReason.None)
         {
             ushort estimate = state == JoinState.Starting ? (ushort)Mathf.Clamp(ControlPlane.GetSettingInt(MeshSettings.BootSeconds, 0), 0, ushort.MaxValue) : (ushort)0;
+            if (state == JoinState.Joined) c.Recovering = false;
             if (state != JoinState.Starting) reason = JoinHoldReason.None;
             else if (reason == JoinHoldReason.None) reason = JoinHoldReason.WorldStarting;
+            // A player on its way back from a worker failure is recovering, not waiting for the world, unless something
+            // more specific (a full target, a retiring scope) is holding it.
+            if (reason == JoinHoldReason.WorldStarting && c.Recovering) reason = JoinHoldReason.Recovering;
+            if (reason == JoinHoldReason.Recovering && c.ProtocolVersion < RecoveringProtocolVersion) reason = JoinHoldReason.WorldStarting;
             if (c.Join == state && c.JoinEstimate == estimate && c.JoinReason == reason) return;
             c.Join = state;
             c.JoinEstimate = estimate;
@@ -1859,6 +1868,23 @@ namespace Nebula
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             if (state == JoinState.Starting)
                 NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting ({reason})" + (estimate > 0 ? $", about {estimate} s" : ""));
+        }
+
+        /// <summary>The first protocol with <see cref="JoinHoldReason.Recovering"/>.</summary>
+        internal const ushort RecoveringProtocolVersion = 22;
+
+        /// <summary>
+        /// The client's pawn is gone with the worker that held it: tell the client it is being placed again
+        /// (<see cref="JoinHoldReason.Recovering"/>) before anything despawns the pawn, so it can tell a recovery from
+        /// the server removing its pawn. Anything already queued for the client goes out first.
+        /// </summary>
+        private void BeginRecovery(ClientConn c)
+        {
+            c.PawnNetId = 0;
+            c.InterestDirty = true;
+            c.Recovering = true;
+            FlushReliable(c);
+            SendJoinStatus(c, JoinState.Starting);
         }
 
         // ---------------------------------------------------------------------------------------- authentication
