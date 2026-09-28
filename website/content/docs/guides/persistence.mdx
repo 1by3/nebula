@@ -245,6 +245,8 @@ private void OnPlayerJoined(NetworkIdentity pawn, string accountId)
 }
 ```
 
+To checkpoint a player's pawn the moment the player drops, rather than on the next checkpoint pass, call `worker.Persistence.SaveNow(pawn)` from your game mode's `OnPlayerDisconnected`. The worker keeps the pawn for the reclaim grace after that, and a pawn that is still persistent when the grace runs out keeps its record. See [Players who drop and come back](/docs/guides/spawning#players-who-drop-and-come-back).
+
 `Load` answers on the main thread, with `null` when there is no record. `Apply` puts the state and pose back onto an entity you have instantiated but not yet spawned, and also works on an entity this worker already owns.
 
 `Apply` also gives the entity the record's epoch history, so the store accepts its saves:

@@ -36,7 +36,23 @@ Begin creating a player, optionally waiting for game-owned storage or content lo
 public virtual void OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player);
 ```
 
-The player's client went away; the worker despawns the entity after this returns.
+The player is gone for good: the reclaim grace ran out, or the player left on purpose ([`NebulaClient.Leave`](/docs/reference/client/nebula-client#leave)) or was kicked. The worker despawns the entity after this returns; a persistent pawn keeps its record for the player's next session.
+
+### OnPlayerDisconnected [#onplayerdisconnected]
+
+```csharp
+public virtual void OnPlayerDisconnected(NebulaWorker worker, NetworkIdentity player);
+```
+
+The player's link dropped, or the gateway's link to this worker did, and the reclaim grace has started: the worker keeps `player` for [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds) in case the player comes back. Act on the drop here: drop what the pawn holds, get it out of a seat, save a checkpoint. [`NetworkIdentity.IsOwnerConnected`](/docs/reference/core/network-identity#isownerconnected) is already false. Called on the worker that owns the pawn, once per drop: a pawn handed to another worker during the grace carries the fact with it, and the new owner does not call it again. Followed by [`OnPlayerReconnected`](#onplayerreconnected) if the player comes back in time, or by [`OnPlayerDespawn`](#onplayerdespawn) when the grace runs out. Not called when the player leaves on purpose or is kicked (straight to [`OnPlayerDespawn`](#onplayerdespawn)), nor with a grace of 0. The default does nothing.
+
+### OnPlayerReconnected [#onplayerreconnected]
+
+```csharp
+public virtual void OnPlayerReconnected(NebulaWorker worker, NetworkIdentity player);
+```
+
+The player came back within the reclaim grace and has `player` again: the session was reclaimed, through any gateway of the mesh, or the gateway whose link to this worker dropped is back. [`NetworkIdentity.IsOwnerConnected`](/docs/reference/core/network-identity#isownerconnected) is already true. Called on the worker that owns the pawn; [`NebulaGameMode.OnSpawnPlayer`](/docs/reference/core/nebula-game-mode#onspawnplayer) is not called again. The default does nothing.
 
 ### OnWorkerStarted [#onworkerstarted]
 

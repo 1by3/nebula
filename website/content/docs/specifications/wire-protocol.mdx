@@ -13,7 +13,7 @@ The current protocol version is `22`. Every `Hello` carries the version its send
 
 A gateway accepts clients of protocol 21 and 22: `HelloMsg.MinProtocolVersion` is `21` and `HelloMsg.ProtocolVersion` is `22`. Gateway-to-worker and worker-to-worker connections MUST match protocol `22` exactly.
 
-Protocol 22 added deliberate session endings: a client's `Goodbye`, a server's `Kicked`, and a trailing `server_shutdown` field on `GatewayDraining`. It also added `JoinStatus.reason` `6` (recovering from a worker failure). The change is additive for a client. The gateway sends `Kicked` and writes `server_shutdown` only to clients that negotiated `22`; it tells a protocol-21 client of a kick with `JoinRejected` `code` `2`, which that client does not retry. Only a protocol-22 client sends `Goodbye`. Between workers and gateways, protocol 22 adds `KickPlayer`, a trailing `end_now` field on `DespawnPlayer`, and orphan kind `3` in the handover's session section.
+Protocol 22 added deliberate session endings: a client's `Goodbye`, a server's `Kicked`, and a trailing `server_shutdown` field on `GatewayDraining`. It also added `JoinStatus.reason` `6` (recovering from a worker failure) and the `EntityFlags.OwnerDisconnected` bit, which a protocol-21 client ignores. The change is additive for a client. The gateway sends `Kicked` and writes `server_shutdown` only to clients that negotiated `22`; it tells a protocol-21 client of a kick with `JoinRejected` `code` `2`, which that client does not retry. Only a protocol-22 client sends `Goodbye`. Between workers and gateways, protocol 22 adds `KickPlayer`, a trailing `end_now` field on `DespawnPlayer`, and orphan kind `3` in the handover's session section.
 
 Protocol 21 added replicated maps (see [Replicated maps](/docs/guides/network-map)). The change is additive for a client: the gateway sends the new `EntityMaps` message only to clients that negotiated `21`, and the new trailing `maps` field of `EntitySpawnBody` is ignored by a protocol-20 client. Between workers, protocol 21 adds `GhostMaps`.
 
@@ -127,8 +127,9 @@ Positions and rotations are relative to this container unless a behavior's docum
 | `HelloFlags.Bot` | 1 | The client is a headless bot. |
 | `EntityFlags.OwnerIsBot` | 1 | The owning client is a bot. |
 | `EntityFlags.ServerDriven` | 2 | The entity has no client owner and is driven by a worker. |
+| `EntityFlags.OwnerDisconnected` | 4 | The owning client is disconnected and the worker is keeping the entity for the reclaim grace. The worker announces the entity again, in place, when the bit changes. |
 
-Unknown flag bits are reserved. A version 20 sender MUST write them as zero.
+Unknown flag bits are reserved. A version 22 sender MUST write them as zero.
 
 ## Message registry
 

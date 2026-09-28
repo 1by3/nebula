@@ -201,6 +201,30 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AnotherPlayersPawnSaysWhetherItsOwnerIsConnected()
+        {
+            InTheWorld();
+            const ulong Other = PawnId + 1;
+            EntitySpawnMsg OtherPawn(EntityFlags flags) => new EntitySpawnMsg
+            {
+                NetId = Other, PrefabId = 0, OwnerClientId = 9, OwnerIdentity = "other", Container = ContainerRef.None, Epoch = 1,
+                OwnerWorkerIndex = 1, LocalRotation = Quaternion.identity, LocalScale = Vector3.one, Flags = flags,
+            };
+            Receive(w => OtherPawn(EntityFlags.None).Write(w, MsgId.EntitySpawn));
+            var other = _client.Find(Other);
+            Assert.That(other.IsOwnerConnected, Is.True);
+            var changes = new List<bool>();
+            other.OwnerConnectedChanged += changes.Add;
+
+            // The owning worker announces the pawn again, in place, when its player drops and when it comes back.
+            Receive(w => OtherPawn(EntityFlags.OwnerDisconnected).Write(w, MsgId.EntitySpawn));
+            Assert.That(other.IsOwnerConnected, Is.False);
+            Receive(w => OtherPawn(EntityFlags.None).Write(w, MsgId.EntitySpawn));
+            Assert.That(other.IsOwnerConnected, Is.True);
+            Assert.That(changes, Is.EqualTo(new[] { false, true }));
+        }
+
+        [Test]
         public void ALostConnectionEndsAStall()
         {
             InTheWorld();

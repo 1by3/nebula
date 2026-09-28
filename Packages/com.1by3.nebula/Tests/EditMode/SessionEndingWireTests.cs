@@ -89,6 +89,21 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AnAwayOwnerIsAFlagOfTheSpawn()
+        {
+            var w = new NetworkWriter();
+            new EntitySpawnMsg
+            {
+                NetId = 42, PrefabId = 1, OwnerClientId = 7, OwnerIdentity = "", Container = new ContainerRef(0), Epoch = 1,
+                OwnerWorkerIndex = 1, LocalRotation = Quaternion.identity, LocalScale = Vector3.one,
+                Flags = EntityFlags.OwnerIsBot | EntityFlags.OwnerDisconnected,
+            }.Write(w, MsgId.EntitySpawn);
+            var back = EntitySpawnMsg.Read(ReaderAfterId(w, MsgId.EntitySpawn));
+            Assert.AreEqual(EntityFlags.OwnerIsBot | EntityFlags.OwnerDisconnected, back.Flags);
+            Assert.AreEqual(4, (int)EntityFlags.OwnerDisconnected, "a bit an older reader ignores");
+        }
+
+        [Test]
         public void AnEndedSessionTravelsWithItsPawn()
         {
             var msg = new AuthorityTransferMsg

@@ -171,6 +171,12 @@ namespace Nebula
         /// <summary>No owning client: the authoritative worker drives the entity itself. Travels with the entity.</summary>
         /// <summary>No owning client; the authoritative worker drives the entity. Travels with it through ghosting and handover.</summary>
         ServerDriven = 2,
+        /// <summary>
+        /// The owning client is not connected: its link dropped and the worker is keeping the pawn for the reclaim
+        /// grace (<see cref="NetworkIdentity.IsOwnerConnected"/> is false). Travels with the entity through ghosting
+        /// and handover. Protocol 22; an older reader ignores the bit.
+        /// </summary>
+        OwnerDisconnected = 4,
     }
 
     /// <summary>Per-prefab interest hints that travel with a spawn (the standalone gateway has no prefabs to read them from).</summary>
@@ -728,7 +734,8 @@ namespace Nebula
                 SceneId = id.SceneId,
                 OwnerClientId = id.OwnerClientId,
                 OwnerIdentity = id.OwnerIdentity,
-                Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None),
+                Flags = (id.OwnerIsBot ? EntityFlags.OwnerIsBot : EntityFlags.None) | (id.IsServerDriven ? EntityFlags.ServerDriven : EntityFlags.None)
+                        | (id.OwnerClientId != 0 && !id.IsOwnerConnected ? EntityFlags.OwnerDisconnected : EntityFlags.None),
                 Container = id.ContainerRef,
                 Epoch = id.Epoch,
                 OwnerWorkerIndex = NebulaRuntime.LocalWorkerIndex,

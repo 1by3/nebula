@@ -37,8 +37,33 @@ namespace Nebula
             complete(() => OnSpawnPlayer(worker, player, container));
         }
 
-        /// <summary>The player's client went away; the worker despawns the entity after this returns.</summary>
+        /// <summary>
+        /// The player is gone for good: the reclaim grace ran out, or the player left on purpose
+        /// (<see cref="NebulaClient.Leave"/>) or was kicked. The worker despawns the entity after this returns; a
+        /// persistent pawn keeps its record for the player's next session.
+        /// </summary>
         public virtual void OnPlayerDespawn(NebulaWorker worker, NetworkIdentity player) { }
+
+        /// <summary>
+        /// The player's link dropped, or the gateway's link to this worker did, and the reclaim grace has started:
+        /// the worker keeps <paramref name="player"/> for <see cref="NebulaConfig.SessionReclaimSeconds"/> in case the
+        /// player comes back. Act on the drop here: drop what the pawn holds, get it out of a seat, save a checkpoint.
+        /// <see cref="NetworkIdentity.IsOwnerConnected"/> is already false. Called on the worker that owns the pawn,
+        /// once per drop: a pawn handed to another worker during the grace carries the fact with it, and the new owner
+        /// does not call it again. Followed by <see cref="OnPlayerReconnected"/> if the player comes back in time, or by
+        /// <see cref="OnPlayerDespawn"/> when the grace runs out. Not called when the player leaves on purpose or is
+        /// kicked (straight to <see cref="OnPlayerDespawn"/>), nor with a grace of 0. The default does nothing.
+        /// </summary>
+        public virtual void OnPlayerDisconnected(NebulaWorker worker, NetworkIdentity player) { }
+
+        /// <summary>
+        /// The player came back within the reclaim grace and has <paramref name="player"/> again: the session was
+        /// reclaimed, through any gateway of the mesh, or the gateway whose link to this worker dropped is back.
+        /// <see cref="NetworkIdentity.IsOwnerConnected"/> is already true. Called on the worker that owns the pawn;
+        /// <see cref="NebulaGameMode.OnSpawnPlayer(NebulaWorker, in PlayerInfo, Container)"/> is not called again. The
+        /// default does nothing.
+        /// </summary>
+        public virtual void OnPlayerReconnected(NebulaWorker worker, NetworkIdentity player) { }
 
         /// <summary>Called once the worker is listening and registered with the control plane.</summary>
         public virtual void OnWorkerStarted(NebulaWorker worker) { }

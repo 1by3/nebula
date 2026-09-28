@@ -2126,6 +2126,10 @@ namespace Nebula
             NebulaLog.Info($"handover IN  {e} <- {from.Id} (epoch {msg.NewEpoch}, tick {CurrentTick})");
             if (e.Carried != null) SyncCarriedLeases();
 
+            // The owner's connection as this worker sees it: a drop or a return the previous owner did not hear of is
+            // this worker's to report, and the announcement below carries the result.
+            SyncOwnerConnected(e, announce: false);
+
             // Tell the gateways that want it that we own it now (a spawn for a known id is an update): the ones
             // subscribing the region it landed in, the ones following it by name or session here, and the ones the
             // previous owner said were following it. Not every gateway, as before v17.
@@ -2225,6 +2229,7 @@ namespace Nebula
             e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+            e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
             // The cohesion group travels with the entity, so this worker expands the same group the previous owner
             // did when it hands the entity on (docs/cohesion-hints.md, D3).
@@ -2572,6 +2577,8 @@ namespace Nebula
             {
                 if (existing.HasAuthority)
                 {
+                    // The player is back within the grace (or was never away): tell the game and every copy.
+                    SyncOwnerConnected(existing);
                     // Re-announce; the gateway may have lost track of it.
                     SendSpawn(gateway, EntitySpawnMsg.From(existing, _scratch, forGateway: true), MsgId.EntitySpawn);
                     // A new connection for the same session: what it is in the audience of starts from a fresh
@@ -2643,6 +2650,56 @@ namespace Nebula
             // The pawn stays for the reclaim grace (SessionReclaimSeconds): the player may be reconnecting, here or
             // through another gateway. ExpireSessions despawns it when nobody came back.
             if (Config.SessionReclaimSeconds <= 0) DespawnPlayer(msg.ClientId);
+            else SyncOwnerConnected(e);
+        }
+
+        /// <summary>
+        /// Bring a pawn's <see cref="NetworkIdentity.IsOwnerConnected"/> in line with its session on this worker and,
+        /// when it changes, tell every copy (the gateways that hear of the pawn, the workers holding a ghost) and the
+        /// game (<see cref="NebulaGameMode.OnPlayerDisconnected"/>, <see cref="NebulaGameMode.OnPlayerReconnected"/>).
+        /// Only the worker that owns the pawn decides. A session that ended on purpose is not a disconnection: the
+        /// pawn is removed on the next pass without the hook. <paramref name="announce"/> false leaves the
+        /// announcement to the caller (a handover announces the pawn anyway).
+        /// </summary>
+        private void SyncOwnerConnected(NetworkIdentity e, bool announce = true)
+        {
+            if (e == null || !e.HasAuthority || e.OwnerClientId == 0) return;
+            bool orphaned = _sessions.TryGet(e.OwnerClientId, out var session) && session.Orphaned;
+            if (orphaned && session.Ended) return;
+            bool connected = !orphaned;
+            if (e.IsOwnerConnected == connected) return;
+            e.SetOwnerConnected(connected);
+            NebulaLog.Info($"session {e.OwnerClientId}: player {(connected ? "reconnected to" : "disconnected from")} {e}");
+            if (announce) AnnounceOwnerConnection(e);
+            try
+            {
+                if (connected) _gameMode?.OnPlayerReconnected(this, e);
+                else _gameMode?.OnPlayerDisconnected(this, e);
+            }
+            catch (Exception ex) { NebulaLog.Error($"{(connected ? "OnPlayerReconnected" : "OnPlayerDisconnected")} threw for {e}: {ex}"); }
+        }
+
+        /// <summary><see cref="SyncOwnerConnected"/> for every pawn this worker owns: a gateway's link came or went.</summary>
+        private void SyncOwnersConnected()
+        {
+            _ownerSyncScratch.Clear();
+            foreach (var e in _players.Values) if (e != null && e.HasAuthority) _ownerSyncScratch.Add(e);
+            for (int i = 0; i < _ownerSyncScratch.Count; i++) SyncOwnerConnected(_ownerSyncScratch[i]);
+            _ownerSyncScratch.Clear();
+        }
+
+        private readonly List<NetworkIdentity> _ownerSyncScratch = new List<NetworkIdentity>();
+
+        /// <summary>
+        /// Announce the pawn again, in place, so every copy reads the new <see cref="EntityFlags.OwnerDisconnected"/>:
+        /// the gateways that hear of it relay it to their clients, and each ghost worker applies it to its ghost.
+        /// </summary>
+        private void AnnounceOwnerConnection(NetworkIdentity e)
+        {
+            SendSpawnToMask(e, PublishMaskOf(e));
+            if (!_ghostTargets.TryGetValue(e.NetId, out var targets) || targets.Count == 0) return;
+            foreach (var target in targets.Keys)
+                if (_workerPeersById.TryGetValue(target, out var peer)) SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
         }
 
         /// <summary>
@@ -3116,6 +3173,7 @@ namespace Nebula
                 foreach (var g in _gateways) if (g.Key == peer.Key) stillHere = true;
                 if (!stillHere) _sessions.GatewayLost(peer.Key, Time.unscaledTime);
                 NebulaLog.Warn($"gateway {peer.Id} disconnected" + (stillHere ? "" : "; its players' pawns are kept for " + Config.SessionReclaimSeconds + " s"));
+                if (!stillHere && Config.SessionReclaimSeconds > 0) SyncOwnersConnected();
             }
             else if (peer.Role == PeerRole.Worker)
             {
@@ -3173,6 +3231,7 @@ namespace Nebula
                     peer.Key = PlayerSessions.GatewayKey(hello.Id, hello.Incarnation);
                     _gateways.Add(peer);
                     _sessions.GatewayReturned(peer.Key);
+                    SyncOwnersConnected();
                     // Nothing is announced here beyond the always-relevant entities and the pawns of the sessions
                     // this gateway speaks for: it is told what it subscribes, and it has not subscribed yet.
                     AddGatewayLink(peer);

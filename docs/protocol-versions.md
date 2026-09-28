@@ -70,7 +70,8 @@ sync-audience test of a protocol-19 client left with the window.
 negotiated 22 (a protocol-21 client is told of a kick with the `JoinRejected` `Denied` refusal it already
 understands), `Goodbye` (24, client to gateway), which only a protocol-22 client sends, and a trailing
 `server_shutdown` field on `GatewayDraining`, written only to protocol-22 clients, and `JoinHoldReason.Recovering` (6),
-sent only to protocol-22 clients (an older client is told `WorldStarting`, NEB-355). Between workers and gateways it adds
+sent only to protocol-22 clients (an older client is told `WorldStarting`, NEB-355), and the spawn flag
+`EntityFlags.OwnerDisconnected` (4), which a protocol-21 client ignores (NEB-356). Between workers and gateways it adds
 `KickPlayer` (39) and a trailing `end_now` field on `DespawnPlayer`, and `OrphanKind.Ended` in the handover's session
 section. The window moves up by one, so `MinProtocolVersion` is 21; the replay test runs the protocol-21 recording
 against a frozen protocol-21 decoder (`Fixtures/Protocol21GatewayDecoder.cs`, the protocol-20 reader with its version

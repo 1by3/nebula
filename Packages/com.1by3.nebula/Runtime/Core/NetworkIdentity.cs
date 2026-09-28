@@ -256,6 +256,31 @@ namespace Nebula
         /// game; it costs no client process and no gateway connection. Carried through ghosting and handover.
         /// </summary>
         public bool IsServerDriven { get; internal set; }
+        /// <summary>
+        /// For a player's pawn: whether the player who owns it is connected. False from the moment the player's link
+        /// drops, or the gateway's link to the worker does, while the worker keeps the pawn for
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/>; true again when the player reconnects within that time.
+        /// Always true for an entity no client owns. Replicated: the worker that owns the pawn, every worker holding
+        /// a ghost of it and every client holding it see the same value, and it travels with the pawn in a handover.
+        /// Use it to mark players who are away; <see cref="OwnerConnectedChanged"/> says when it changes. The
+        /// worker's own hooks are <see cref="NebulaGameMode.OnPlayerDisconnected"/> and
+        /// <see cref="NebulaGameMode.OnPlayerReconnected"/>.
+        /// </summary>
+        public bool IsOwnerConnected { get; private set; } = true;
+        /// <summary>
+        /// <see cref="IsOwnerConnected"/> changed on this copy; the argument is the new value. Raised on the owning
+        /// worker, on workers holding a ghost, and on clients, each when its copy learns of the change.
+        /// </summary>
+        public event Action<bool> OwnerConnectedChanged;
+
+        /// <summary>Set <see cref="IsOwnerConnected"/>, raising <see cref="OwnerConnectedChanged"/> when it changes.</summary>
+        internal void SetOwnerConnected(bool connected)
+        {
+            if (IsOwnerConnected == connected) return;
+            IsOwnerConnected = connected;
+            try { OwnerConnectedChanged?.Invoke(connected); }
+            catch (Exception e) { NebulaLog.Error($"OwnerConnectedChanged handler on {this} threw: {e}"); }
+        }
         /// <summary>Monotonic authority epoch; bumped on every authority change. Stale-epoch messages are dropped everywhere.</summary>
         public uint Epoch { get; internal set; }
         /// <summary>
@@ -691,6 +716,7 @@ namespace Nebula
             OwnerIdentity = "";
             OwnerIsBot = false;
             IsServerDriven = false;
+            IsOwnerConnected = true;
             HasAuthority = false;
             IsLocalPlayer = false;
             EffectiveCostWeight = NebulaCost.Clamp(CostWeight);

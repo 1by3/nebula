@@ -1460,6 +1460,7 @@ namespace Nebula
                 e.OwnerIdentity = msg.OwnerIdentity ?? "";
                 e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
                 e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+                e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
                 if (container != e.Container) e.SetContainer(container);
                 if (msg.Vars != null && msg.Vars.Length > 0)
                 {
@@ -1505,6 +1506,7 @@ namespace Nebula
             e.OwnerIdentity = msg.OwnerIdentity ?? "";
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
+            e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
             e.OwnerWorkerIndex = msg.OwnerWorkerIndex;
             e.HasAuthority = false;
             e.IsLocalPlayer = msg.OwnerClientId != 0 && msg.OwnerClientId == ClientId;
