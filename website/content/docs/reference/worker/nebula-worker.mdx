@@ -618,6 +618,14 @@ What the entity `netId` looked like at server tick `tick`, from this worker's ow
 public NetworkIdentity FindPlayer(ulong clientId);
 ```
 
+### GetPlayerClaims [#getplayerclaims]
+
+```csharp
+public IReadOnlyDictionary<string, string> GetPlayerClaims(ulong clientId);
+```
+
+The claims of a player's verified sign-in token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)), by session id, every value a string. This worker knows them for players whose gateway claimed the session here and for players whose pawn was handed over to it; for any entity, [`NetworkIdentity.OwnerClaims`](/docs/reference/core/network-identity#ownerclaims) gives its owner's. Empty, never null, for anonymous players and players this worker does not know.
+
 ### InstanceKey [#instancekey]
 
 ```csharp

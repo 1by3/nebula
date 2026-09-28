@@ -53,6 +53,14 @@ public string Error;
 
 Why the token was rejected (empty when [`Ok`](#ok)).
 
+### Claims [#claims]
+
+```csharp
+public Dictionary<string, object> Claims;
+```
+
+Every claim of the verified token, as parsed JSON (strings, doubles, booleans, lists and objects). Set only for a token verified against a trusted OpenID provider; null for a gateway-issued anonymous token. The gateway forwards the claims [`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims) names from here ([`PlayerClaims.Select`](/docs/reference/protocol/player-claims#select)).
+
 ## Methods
 
 ### Fail [#fail]
@@ -65,4 +73,7 @@ public static AuthResult Fail(string error);
 
 ```csharp
 public static AuthResult Accept(string issuer, string subject);
+public static AuthResult Accept(string issuer, string subject, Dictionary<string, object> claims);
 ```
+
+An accepted token, with the verified token's claims (null for none).

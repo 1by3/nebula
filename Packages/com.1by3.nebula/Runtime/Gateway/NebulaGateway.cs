@@ -43,6 +43,11 @@ namespace Nebula
             public bool Reclaimed;
             /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>), set when the Hello's token was accepted.</summary>
             public string Identity = "";
+            /// <summary>
+            /// The claims of the verified token presented on this connection that the mesh forwards
+            /// (<see cref="NebulaConfig.ForwardedClaims"/>); empty for an anonymous player. Sent to workers with every claim of the session.
+            /// </summary>
+            public IReadOnlyDictionary<string, string> Claims = PlayerClaims.Empty;
             /// <summary>Hello received; its token is being checked against an OpenID provider's keys.</summary>
             public bool AuthPending;
             /// <summary>Non-zero: the join was refused and the link is dropped at this time (after the rejection has been delivered).</summary>
@@ -613,6 +618,10 @@ namespace Nebula
         private OidcTokenValidator _oidc;
         private AnonymousIdentityIssuer _anonymous;
         private SessionTokens _sessions;
+        /// <summary>Claim names forwarded to workers (<see cref="NebulaConfig.ForwardedClaims"/>), parsed once.</summary>
+        private List<string> _forwardedClaims = new List<string>();
+        /// <summary>The claim that names the player (<see cref="NebulaConfig.NameClaim"/>), or empty.</summary>
+        private string _nameClaim = "";
         private byte[] _peerKey;
         private EncryptedTransport _encrypted;
 
@@ -744,6 +753,17 @@ namespace Nebula
                 source = path;
             }
             _sessions = new SessionTokens(SessionTokens.DeriveKey(key));
+            _forwardedClaims = PlayerClaims.ParseNames(config.ForwardedClaims);
+            _nameClaim = (config.NameClaim ?? "").Trim();
+            if (_forwardedClaims.Count > 0 || _nameClaim.Length > 0)
+            {
+                int listed = OidcTokenValidator.ParseIssuerList(config.ForwardedClaims).Count;
+                if (listed > _forwardedClaims.Count)
+                    NebulaLog.Warn($"auth: ForwardedClaims lists {listed} names; only {_forwardedClaims.Count} are forwarded (at most {PlayerClaims.MaxCount}, no duplicates, names up to {PlayerClaims.MaxNameLength} characters)");
+                NebulaLog.Info("auth: " + (_forwardedClaims.Count > 0 ? $"forwarding the claims {string.Join(", ", _forwardedClaims)} of verified tokens to workers" : "forwarding no claims") +
+                               (_nameClaim.Length > 0 ? $"; the '{_nameClaim}' claim names the player" : ""));
+                if (_oidc == null) NebulaLog.Warn("auth: ForwardedClaims or NameClaim is set but no AuthIssuers are configured: only verified sign-in tokens carry claims, so no player will have any");
+            }
             if (config.AuthAnonymous)
             {
                 _anonymous = new AnonymousIdentityIssuer(key);
@@ -1983,10 +2003,34 @@ namespace Nebula
             FinishWelcomeClient(c, auth, issuedToken, session);
         }
 
+        /// <summary>
+        /// Take what the mesh forwards from a verified token: the claims <see cref="NebulaConfig.ForwardedClaims"/>
+        /// lists, and the player's name from <see cref="NebulaConfig.NameClaim"/>. A gateway-issued anonymous token has
+        /// no claims (<see cref="AuthResult.Claims"/> is null), so its player keeps the Hello's name and gets none.
+        /// </summary>
+        private void ApplyVerifiedClaims(ClientConn c, in AuthResult auth)
+        {
+            c.Claims = PlayerClaims.Empty;
+            if (auth.Claims == null) return;
+            if (_forwardedClaims.Count > 0)
+            {
+                var dropped = new List<string>();
+                c.Claims = PlayerClaims.Select(auth.Claims, _forwardedClaims, dropped);
+                if (dropped.Count > 0)
+                    NebulaLog.Warn($"client {c.ClientId} '{c.Name}': claim(s) {string.Join(", ", dropped)} not forwarded (not a string, number or boolean, or longer than {PlayerClaims.MaxValueLength} characters)");
+            }
+            if (_nameClaim.Length > 0)
+            {
+                string name = JsonWebToken.Claim(auth.Claims, _nameClaim);
+                if (!string.IsNullOrWhiteSpace(name) && name.Length <= PlayerClaims.MaxValueLength) c.Name = name.Trim();
+            }
+        }
+
         private void FinishWelcomeClient(ClientConn c, in AuthResult auth, string issuedToken, string session)
         {
             int peerId = c.PeerId;
             c.Identity = auth.Identity ?? "";
+            ApplyVerifiedClaims(c, auth);
             if (c.CoordinationClaim.Length == 0)
             {
                 c.Generation = NextGeneration(0);
@@ -2065,7 +2109,7 @@ namespace Nebula
             c.SpawnWorkerId = worker.WorkerId;
             c.SpawnContainer = container;
             _writer.Reset();
-            new SpawnPlayerMsg { ClientId = c.ClientId, Container = container, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity, Generation = c.Generation }.Write(_writer);
+            new SpawnPlayerMsg { ClientId = c.ClientId, Container = container, Name = c.Name, IsBot = c.IsBot, Identity = c.Identity, Generation = c.Generation, Claims = c.Claims }.Write(_writer);
             Send(worker.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
         }
 
@@ -2125,6 +2169,7 @@ namespace Nebula
                     ClientId = c.ClientId,
                     Identity = c.Identity,
                     Name = c.Name,
+                    Claims = c.Claims,
                     IsBot = c.IsBot,
                     Team = c.Team,
                     Tags = c.Tags,

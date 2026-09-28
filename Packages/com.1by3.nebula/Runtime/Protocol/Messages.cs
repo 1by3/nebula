@@ -167,15 +167,14 @@ namespace Nebula
     public struct HelloMsg
     {
         /// <summary>The wire protocol version used by this build.</summary>
-        public const ushort ProtocolVersion = 21;
+        public const ushort ProtocolVersion = 22;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 20, the window being one version wide. Protocol 21 added
-        /// replicated maps (<see cref="NetworkMap{TKey, TValue}"/>), additive for a client: a new message a gateway
-        /// sends only to clients that negotiated 21, and a trailing spawn field a protocol-20 client does not read.
-        /// Protocols 18 and 19 are refused. Gateway-to-worker and worker-to-worker connections require
-        /// <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 21, the window being one version wide. Protocol 22 added
+        /// forwarded token claims (<see cref="PlayerClaims"/>), which travel only between gateways and workers and
+        /// between workers, so nothing a client sends or receives changed. Protocols 18 to 20 are refused.
+        /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 20;
+        public const ushort MinProtocolVersion = 21;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -613,6 +612,13 @@ namespace Nebula
         /// keeps it current with each <see cref="MsgId.EntityMaps"/> and hands it to a late joiner.
         /// </summary>
         public byte[] Maps;
+        /// <summary>
+        /// Worker to worker only: the owning player's forwarded token claims (<see cref="NetworkIdentity.OwnerClaims"/>),
+        /// or null when there are none (protocol 22, trailing and optional, after <see cref="Maps"/>). It travels with
+        /// every ghost spawn and handover, so each worker holding a copy of a player's entity can read the claims. A
+        /// spawn for a gateway never carries it, and <see cref="ForClient"/> clears it.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> OwnerClaims;
 
 #if !NEBULA_SERVICE
         /// <param name="id">The entity.</param>
@@ -672,6 +678,8 @@ namespace Nebula
                 AudienceGeneration = id.SyncAudienceGeneration,
                 Audience = audience,
                 Maps = maps,
+                // Claims are for workers: a gateway has no use for them and must never pass them to a client.
+                OwnerClaims = forGateway || id.OwnerClaims.Count == 0 ? null : id.OwnerClaims,
             };
         }
 
@@ -713,13 +721,17 @@ namespace Nebula
             w.WriteUInt(CohesionGroup);
             w.WriteHalf(CostWeight);
             bool hasMaps = Maps != null && Maps.Length > 0;
-            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0) && !hasMaps) return;
+            bool hasClaims = OwnerClaims != null && OwnerClaims.Count > 0;
+            // Each trailing section is written when it or any section after it holds something (always, embedded).
+            if (!embedded && AudienceGeneration == 0 && (Audience == null || Audience.Length == 0) && !hasMaps && !hasClaims) return;
             w.WriteUInt(AudienceGeneration);
             w.WriteBytes(Audience ?? Array.Empty<byte>());
-            if (!embedded && !hasMaps) return;
+            if (!embedded && !hasMaps && !hasClaims) return;
             var maps = Maps ?? Array.Empty<byte>();
             w.WriteInt(maps.Length);
             w.WriteRaw(new ArraySegment<byte>(maps));
+            if (!embedded && !hasClaims) return;
+            PlayerClaims.Write(w, OwnerClaims);
         }
 
         /// <summary>This spawn as a client may see it: the fields only workers and gateways use are cleared.</summary>
@@ -728,6 +740,7 @@ namespace Nebula
             var copy = this;
             copy.AudienceGeneration = 0;
             copy.Audience = null;
+            copy.OwnerClaims = null;
             return copy;
         }
 
@@ -774,6 +787,11 @@ namespace Nebula
                     msg.Maps = new byte[seg.Count];
                     Buffer.BlockCopy(seg.Array, seg.Offset, msg.Maps, 0, seg.Count);
                 }
+            }
+            if (embedded || r.Remaining > 0)
+            {
+                var claims = PlayerClaims.Read(r);
+                msg.OwnerClaims = claims.Count > 0 ? claims : null;
             }
             return msg;
         }
@@ -1488,6 +1506,12 @@ namespace Nebula
         /// that lost the client from undoing what the gateway that gained it did.
         /// </summary>
         public ulong Generation;
+        /// <summary>
+        /// The claims of the player's verified sign-in token that the mesh forwards (<see cref="NebulaConfig.ForwardedClaims"/>),
+        /// or null for none (an anonymous player, or nothing configured). Taken from the token presented on this
+        /// connection, so a reconnection carries the claims as they are now. Protocol 22, trailing.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Claims;
 
         public void Write(NetworkWriter w)
         {
@@ -1498,9 +1522,15 @@ namespace Nebula
             w.WriteByte(IsBot ? (byte)1 : (byte)0);
             w.WriteString(Identity ?? "");
             w.WriteULong(Generation);
+            PlayerClaims.Write(w, Claims);
         }
 
-        public static SpawnPlayerMsg Read(NetworkReader r) => new SpawnPlayerMsg { ClientId = r.ReadULong(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0, Identity = r.ReadString() ?? "", Generation = r.ReadULong() };
+        public static SpawnPlayerMsg Read(NetworkReader r)
+        {
+            var msg = new SpawnPlayerMsg { ClientId = r.ReadULong(), Container = ContainerRef.Read(r), Name = r.ReadString(), IsBot = r.ReadByte() != 0, Identity = r.ReadString() ?? "", Generation = r.ReadULong() };
+            msg.Claims = r.Remaining > 0 ? PlayerClaims.Read(r) : PlayerClaims.Empty;
+            return msg;
+        }
     }
 
     /// <summary>Gateway -> worker: the session is over (or the gateway gave up waiting for it to reconnect). Fenced by <see cref="Generation"/> like <see cref="SpawnPlayerMsg"/>.</summary>

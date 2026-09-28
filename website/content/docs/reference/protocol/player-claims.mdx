@@ -1,0 +1,98 @@
+---
+title: "PlayerClaims"
+description: "Claims from a player's verified sign-in token that the gateway forwards to workers (NebulaConfig.ForwardedClaims): the claim names the game listed, with their values as strings."
+---
+
+<div className="text-sm text-fd-muted-foreground">Static class in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/PlayerClaims.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/PlayerClaims.cs)</div>
+
+```csharp
+public static class PlayerClaims
+```
+
+Claims from a player's verified sign-in token that the gateway forwards to workers ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)): the claim names the game listed, with their values as strings. Workers read them through [`NetworkIdentity.OwnerClaims`](/docs/reference/core/network-identity#ownerclaims), [`PlayerInfo.Claims`](/docs/reference/core/player-info#claims) and [`NebulaWorker.GetPlayerClaims`](/docs/reference/worker/nebula-worker#getplayerclaims). This class holds the limits, the selection from a token and the wire codec.
+
+Only claims from a token the gateway verified against a trusted OpenID provider are forwarded. Anonymous players, whose tokens the gateway issued itself, have none. Claims never reach clients.
+
+## Fields
+
+### MaxCount [#maxcount]
+
+```csharp
+public const int MaxCount = 16;
+```
+
+Most claims forwarded for one player. Names past this in [`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims) are ignored.
+
+### MaxValueLength [#maxvaluelength]
+
+```csharp
+public const int MaxValueLength = 256;
+```
+
+Longest claim value forwarded, in characters. A longer value is dropped, not cut short.
+
+### MaxNameLength [#maxnamelength]
+
+```csharp
+public const int MaxNameLength = 64;
+```
+
+Longest claim name accepted, in characters.
+
+### Empty [#empty]
+
+```csharp
+public static readonly IReadOnlyDictionary<string, string> Empty = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>());
+```
+
+The claims of a player who has none: an anonymous player, a bot, or an entity no player owns.
+
+## Methods
+
+### ParseNames [#parsenames]
+
+```csharp
+public static List<string> ParseNames(string spec);
+```
+
+Split a comma- or space-separated list of claim names ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)). Duplicates, names longer than [`MaxNameLength`](#maxnamelength) and names past [`MaxCount`](#maxcount) are left out.
+
+### Select [#select]
+
+```csharp
+public static IReadOnlyDictionary<string, string> Select(Dictionary<string, object> payload, IReadOnlyList<string> names, List<string> dropped = null);
+```
+
+The claims named in `names`, from a verified token's `payload`. Strings are copied as they are; numbers and booleans are formatted the way [`JsonWebToken.Claim`](/docs/reference/gateway/json-web-token#claim) formats them. A claim that is missing, null, an array or an object, or longer than [`MaxValueLength`](#maxvaluelength), is left out. `dropped` lists the names that were present but left out, for a log line.
+
+### From [#from]
+
+```csharp
+public static IReadOnlyDictionary<string, string> From(IEnumerable<KeyValuePair<string, string>> claims);
+```
+
+A read-only copy of `claims` that respects the limits; for tests and hand-built player infos.
+
+### Write [#write]
+
+```csharp
+public static void Write(NetworkWriter w, IReadOnlyDictionary<string, string> claims);
+```
+
+Write `claims` (null = none): a count byte, then name and value strings.
+
+### Read [#read]
+
+```csharp
+public static IReadOnlyDictionary<string, string> Read(NetworkReader r);
+```
+
+Read what [`Write`](#write) wrote. A section breaking the limits throws, like any other malformed message.
+
+### SameAs [#sameas]
+
+```csharp
+public static bool SameAs(IReadOnlyDictionary<string, string> a, IReadOnlyDictionary<string, string> b);
+```
+
+True when both dictionaries hold the same names and values.

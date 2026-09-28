@@ -85,7 +85,7 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `JoinStatus`, `JoinRejected` | gateway to client | Report that the join is waiting for a worker or was completed, or refuse it with a reason (and whether retrying makes sense). |
 | `GatewayDraining` | gateway to client | Ask the client to reconnect elsewhere within a number of seconds because the gateway is leaving service. |
 | `Ping`, `Pong` | client to gateway and back | Round-trip time (RTT) measurement for the input lead. |
-| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. |
+| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. `SpawnPlayer` also carries the player's identity and the [forwarded claims](/docs/guides/authentication#forward-token-claims-to-workers) of their verified token. |
 | `ContainerOwnership` | gateway to client | The containers this client should know about, with lease epochs, for routing and the overlay. A per-client delta scoped to the client's [interest](/docs/guides/interest-management#scoped-container-ownership) window, not the mesh's whole lease table. |
 
 **Gateway to worker (interest subscription)**

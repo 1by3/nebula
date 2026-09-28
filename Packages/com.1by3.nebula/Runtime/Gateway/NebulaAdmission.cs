@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Nebula
 {
@@ -41,8 +42,13 @@ namespace Nebula
         public ulong ClientId;
         /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>), empty when unauthenticated or for a transfer.</summary>
         public string Identity;
-        /// <summary>The name the client gave in its <c>Hello</c>.</summary>
+        /// <summary>The player's name: the verified token's <see cref="NebulaConfig.NameClaim"/> when set and present, otherwise the name the client gave in its <c>Hello</c>.</summary>
         public string Name;
+        /// <summary>
+        /// For <see cref="AdmissionKind.Join"/>: the verified token's forwarded claims (<see cref="NebulaConfig.ForwardedClaims"/>),
+        /// for example to let staff in past capacity. Null or empty for an anonymous player and for a transfer.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Claims;
         /// <summary>The client is a bot (a load generator or an AI player).</summary>
         public bool IsBot;
         /// <summary>The game's own tags on this client (<see cref="NebulaGateway.SetClientTag"/> / <c>SetClientTags</c>): the natural place for "party 7" or "staff".</summary>

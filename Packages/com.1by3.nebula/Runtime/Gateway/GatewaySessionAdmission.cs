@@ -58,6 +58,7 @@ namespace Nebula
                 return;
             }
             c.Identity = auth.Identity ?? "";
+            ApplyVerifiedClaims(c, auth);
             c.AuthPending = true;
             c.CoordinationClaim = Guid.NewGuid().ToString("N");
             c.CoordinationDeadline = _clock.Elapsed.TotalSeconds + 10;

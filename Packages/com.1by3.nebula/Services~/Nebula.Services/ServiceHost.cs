@@ -145,6 +145,8 @@ namespace Nebula
             c.AuthIssuers = CommandLine.Get("nebula-auth-issuers", c.AuthIssuers);
             c.AuthAudience = CommandLine.Get("nebula-auth-audience", c.AuthAudience);
             c.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", c.AuthAnonymous);
+            c.ForwardedClaims = CommandLine.Get("nebula-auth-forward-claims", c.ForwardedClaims);
+            c.NameClaim = CommandLine.Get("nebula-auth-name-claim", c.NameClaim);
             c.AuthSigningKey = CommandLine.Get("nebula-auth-key", Environment.GetEnvironmentVariable("NEBULA_AUTH_KEY") is { Length: > 0 } authKey ? authKey : c.AuthSigningKey);
             c.EncryptClients = CommandLine.GetBool("nebula-encrypt-clients", c.EncryptClients);
             c.RequireEncryption = CommandLine.GetBool("nebula-require-encryption", c.RequireEncryption);

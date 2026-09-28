@@ -57,6 +57,14 @@ public ulong Generation;
 
 The session's connection generation: increases every time a client (re)claims the session. A worker ignores a claim or a despawn carrying an older generation than the one it holds, which fences a gateway that lost the client from undoing what the gateway that gained it did.
 
+### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims;
+```
+
+The claims of the player's verified sign-in token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)), or null for none (an anonymous player, or nothing configured). Taken from the token presented on this connection, so a reconnection carries the claims as they are now. Protocol 22, trailing.
+
 ## Methods
 
 ### Write [#write]
