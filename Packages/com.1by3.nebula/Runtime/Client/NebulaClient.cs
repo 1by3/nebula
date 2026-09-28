@@ -590,7 +590,7 @@ namespace Nebula
         {
             if (IsLeaving) return;
             bool active = WantsConnection || ConnectionState != State.Disconnected;
-            bool goodbye = _transport != null && _gatewayPeer >= 0 && ConnectionState == State.InGame && NegotiatedProtocolVersion >= GoodbyeProtocolVersion;
+            bool goodbye = _transport != null && _gatewayPeer >= 0 && ConnectionState == State.InGame;
             if (goodbye)
             {
                 _writer.Reset();
@@ -636,8 +636,6 @@ namespace Nebula
         /// </summary>
         public event Action<bool> LeaveFinished;
 
-        /// <summary>The first protocol with <see cref="MsgId.Goodbye"/> and <see cref="MsgId.Kicked"/>.</summary>
-        private const ushort GoodbyeProtocolVersion = 22;
         /// <summary>The link a goodbye was sent on, kept open until the gateway closes it or the leave times out; -1 when not leaving.</summary>
         private int _leavingPeer = -1;
         private float _leaveDeadline;

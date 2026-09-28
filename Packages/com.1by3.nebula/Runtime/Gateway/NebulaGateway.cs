@@ -979,9 +979,8 @@ namespace Nebula
         }
 
         /// <summary>
-        /// Refuse new clients and send every welcomed one a <see cref="GatewayDrainingMsg"/>; with
-        /// <paramref name="serverShutdown"/>, the notice says the server is shutting down to the clients that can read
-        /// that (protocol 22), and is a plain drain to older ones.
+        /// Refuse new clients and send every welcomed one a <see cref="GatewayDrainingMsg"/>, saying the server is
+        /// shutting down when <paramref name="serverShutdown"/>.
         /// </summary>
         private void SendDrainNotice(bool serverShutdown)
         {
@@ -989,15 +988,11 @@ namespace Nebula
             ushort within = (ushort)Mathf.Clamp(Mathf.RoundToInt(Config.GatewayDrainReconnectSeconds), 1, ushort.MaxValue);
             NebulaLog.Warn($"gateway {GatewayId} draining: {_clientsById.Count} client(s) told to reconnect within {within} s");
             _writer.Reset();
-            new GatewayDrainingMsg { ReconnectWithinSeconds = within }.Write(_writer);
-            var plain = _writer.ToArray();
-            _writer.Reset();
             new GatewayDrainingMsg { ReconnectWithinSeconds = within, ServerShutdown = serverShutdown }.Write(_writer);
-            var current = _writer.ToArray();
             _toDrop.Clear();
             foreach (var c in _clientsById.Values)
             {
-                if (c.Welcomed) AppendReliable(c, new ArraySegment<byte>(c.ProtocolVersion >= SessionEndingsProtocolVersion ? current : plain));
+                if (c.Welcomed) AppendReliable(c, _writer.ToSegment());
                 else if (c.DisconnectAt == 0) _toDrop.Add(c);
             }
             foreach (var c in _toDrop) Reject(c, "gateway is draining", true);
@@ -1349,13 +1344,10 @@ namespace Nebula
             for (int i = rec.Observers.Count - 1; i >= 0; i--)
             {
                 var client = rec.Observers[i];
-                if (!client.Welcomed || client.ProtocolVersion < MapsProtocolVersion) continue;
+                if (!client.Welcomed) continue;
                 AppendReliable(client, segment);
             }
         }
-
-        /// <summary>The first protocol that has <see cref="MsgId.EntityMaps"/>.</summary>
-        internal const ushort MapsProtocolVersion = 21;
 
         private void OnEntityState(WorkerConn w, EntitySyncMsg msg)
         {
@@ -1858,7 +1850,6 @@ namespace Nebula
             // A player on its way back from a worker failure is recovering, not waiting for the world, unless something
             // more specific (a full target, a retiring scope) is holding it.
             if (reason == JoinHoldReason.WorldStarting && c.Recovering) reason = JoinHoldReason.Recovering;
-            if (reason == JoinHoldReason.Recovering && c.ProtocolVersion < RecoveringProtocolVersion) reason = JoinHoldReason.WorldStarting;
             if (c.Join == state && c.JoinEstimate == estimate && c.JoinReason == reason) return;
             c.Join = state;
             c.JoinEstimate = estimate;
@@ -1869,9 +1860,6 @@ namespace Nebula
             if (state == JoinState.Starting)
                 NebulaLog.Info($"client {c.ClientId} '{c.Name}' is waiting ({reason})" + (estimate > 0 ? $", about {estimate} s" : ""));
         }
-
-        /// <summary>The first protocol with <see cref="JoinHoldReason.Recovering"/>.</summary>
-        internal const ushort RecoveringProtocolVersion = 22;
 
         /// <summary>
         /// The client's pawn is gone with the worker that held it: tell the client it is being placed again
@@ -2153,9 +2141,6 @@ namespace Nebula
 
         // ---------------------------------------------------------------------------------------- deliberate endings
 
-        /// <summary>The first protocol with <see cref="MsgId.Kicked"/>, <see cref="MsgId.Goodbye"/> and <see cref="GatewayDrainingMsg.ServerShutdown"/>.</summary>
-        internal const ushort SessionEndingsProtocolVersion = 22;
-
         /// <summary>
         /// The client said goodbye: the player is leaving for good. End the session now, with no reclaim grace, and
         /// close the link at once; the close is how the client learns its goodbye arrived.
@@ -2172,8 +2157,7 @@ namespace Nebula
         /// (<see cref="KickedMsg"/>), the link is closed a moment later, and the session ends at once: the worker
         /// that owns the pawn despawns it without waiting out the reclaim grace, calling
         /// <c>NebulaGameMode.OnPlayerDespawn</c> first. The code is the game's own; Nebula passes it through.
-        /// A client of protocol 21 is sent <see cref="SessionReplacedMsg"/> with the reason instead, which ends its
-        /// connection without a retry as well. Returns false when no welcomed client of this gateway has
+        /// Returns false when no welcomed client of this gateway has
         /// <paramref name="clientId"/>. A kick is not a ban: the player may connect again as a new session.
         /// </summary>
         public bool Kick(ulong clientId, ushort code, string reason)
@@ -2196,12 +2180,7 @@ namespace Nebula
             NebulaLog.Warn($"client {c.ClientId} '{c.Name}' removed (code {code}): {reason}");
             FlushReliable(c); // anything already queued goes out first
             _writer.Reset();
-            if (c.ProtocolVersion >= SessionEndingsProtocolVersion) new KickedMsg { Code = code, Reason = reason }.Write(_writer);
-            // A protocol-21 client has no Kicked. SessionReplaced is the one notice it reads that ends a connection it
-            // is in the world on: it clears its session token, leaves the world and does not reconnect by itself. (A
-            // refusal would not do: a released protocol-21 client only stops retrying on one, and stays in a frozen
-            // world when the link then closes.)
-            else new SessionReplacedMsg { Reason = reason }.Write(_writer);
+            new KickedMsg { Code = code, Reason = reason }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             _transport.Flush();
             EndSessionNow(c, kickedBy);

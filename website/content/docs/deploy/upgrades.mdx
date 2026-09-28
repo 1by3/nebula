@@ -11,13 +11,13 @@ A **mesh** is the group of processes running one game world. Its **gateway** acc
 
 | Connection | Current requirement |
 | --- | --- |
-| Native or browser client to gateway | Protocol `21` or `22`: `HelloMsg.MinProtocolVersion` is `21` and `HelloMsg.ProtocolVersion` is `22`. |
+| Native or browser client to gateway | Protocol `22` only: `HelloMsg.MinProtocolVersion` and `HelloMsg.ProtocolVersion` are both `22`. |
 | Gateway to worker, worker to worker | Exact protocol match. |
 
 The gateway records the client's accepted protocol version and returns it in `Welcome.negotiated_version`. A client outside the supported range receives `ProtocolUnsupported`.
 
 <Callout type="warn" title="Protocol changes need a separate rollout plan">
-A gateway of this version accepts clients of protocol 21 and 22. Protocol 22 added deliberate session endings: a client's goodbye (`NebulaClient.Leave`), a server's kick, and a notice that the server is shutting down. None of it changes anything a protocol-21 client reads, so clients of the previous release keep playing: a protocol-21 client is never sent the new messages, is told of a kick with the `SessionReplaced` notice it already understands, which takes it out of the world, and can't say goodbye, so its pawn waits out the reclaim time as before. A gateway of this version refuses clients built with protocol 20 or older: rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
+A gateway of this version accepts clients of protocol 22 only. Protocol 22 added deliberate session endings (a client's goodbye with `NebulaClient.Leave`, a server's kick, a notice that the server is shutting down), a recovering join hold and the owner-connected flag. Before 1.0 a protocol change may close the window to the new version, and this one does: a gateway of this version refuses clients built with protocol 21 or older. Rebuild and ship those clients together with the servers. Replacing a gateway with one that uses a different protocol also prevents it from communicating with existing workers. These drain procedures do not provide a rolling upgrade across incompatible server protocols; plan a coordinated restart or a separate compatible mesh.
 </Callout>
 
 ### Configure game content compatibility

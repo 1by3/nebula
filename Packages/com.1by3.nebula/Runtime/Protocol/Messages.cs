@@ -44,8 +44,7 @@ namespace Nebula
         /// <summary>
         /// Gateway -> client: the server removed this player (<see cref="KickedMsg"/>: a code and a reason). The
         /// session is over and the gateway closes the link right after sending it; the client does not reconnect by
-        /// itself. Protocol 22: a client that negotiated an older protocol is sent a <see cref="SessionReplaced"/> with
-        /// the reason instead, which ends its connection without a retry too.
+        /// itself.
         /// </summary>
         Kicked = 9,
 
@@ -174,7 +173,7 @@ namespace Nebula
         /// <summary>
         /// The owning client is not connected: its link dropped and the worker is keeping the pawn for the reclaim
         /// grace (<see cref="NetworkIdentity.IsOwnerConnected"/> is false). Travels with the entity through ghosting
-        /// and handover. Protocol 22; an older reader ignores the bit.
+        /// and handover.
         /// </summary>
         OwnerDisconnected = 4,
     }
@@ -193,14 +192,13 @@ namespace Nebula
         /// <summary>The wire protocol version used by this build.</summary>
         public const ushort ProtocolVersion = 22;
         /// <summary>
-        /// The oldest client protocol the gateway accepts: 21, the window being one version wide. Protocol 22 added
-        /// deliberate session endings (a client's <see cref="MsgId.Goodbye"/>, a server's <see cref="MsgId.Kicked"/>
-        /// and a gateway's shutdown notice), additive for a client: a gateway sends the new message and the new
-        /// trailing field of <see cref="GatewayDrainingMsg"/> only to clients that negotiated 22, and tells a
-        /// protocol-21 client of a kick with a <see cref="SessionReplacedMsg"/>, which it already understands. Protocols 20 and older are refused.
-        /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
+        /// The oldest client protocol the gateway accepts: 22, the same as <see cref="ProtocolVersion"/>. Before 1.0 a
+        /// protocol bump may close the window to the new version only, and protocol 22 (deliberate session endings, a
+        /// recovering join hold, the owner-connected flag) does: clients of 21 and older are refused with
+        /// <see cref="JoinRejectReason.ProtocolUnsupported"/> and must be rebuilt. Gateway-to-worker and
+        /// worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
-        public const ushort MinProtocolVersion = 21;
+        public const ushort MinProtocolVersion = 22;
         public PeerRole Role;
         public string Id;
         public uint Index;
@@ -350,8 +348,6 @@ namespace Nebula
         /// The gateway is shutting down and knows of no other gateway to take its clients: the server as a whole is
         /// going away, or restarting. The client still reconnects on its own schedule, and reports the end as
         /// <c>DisconnectReason.ServerShutdown</c> rather than <c>DisconnectReason.GatewayDraining</c>.
-        /// A trailing optional field (protocol 22), written only when set and only to a client that negotiated 22:
-        /// an older reader stops before it.
         /// </summary>
         public bool ServerShutdown;
 
@@ -359,15 +355,10 @@ namespace Nebula
         {
             w.WriteByte((byte)MsgId.GatewayDraining);
             w.WriteUShort(ReconnectWithinSeconds);
-            if (ServerShutdown) w.WriteByte(1);
+            w.WriteBool(ServerShutdown);
         }
 
-        public static GatewayDrainingMsg Read(NetworkReader r)
-        {
-            var msg = new GatewayDrainingMsg { ReconnectWithinSeconds = r.ReadUShort() };
-            if (r.Remaining > 0) msg.ServerShutdown = r.ReadByte() != 0;
-            return msg;
-        }
+        public static GatewayDrainingMsg Read(NetworkReader r) => new GatewayDrainingMsg { ReconnectWithinSeconds = r.ReadUShort(), ServerShutdown = r.ReadBool() };
     }
 
     /// <summary>
@@ -526,8 +517,7 @@ namespace Nebula
         /// <summary>
         /// The worker that held the player's pawn failed, and the gateway is placing the player again: the pawn
         /// comes back from its last checkpoint, or fresh when it has none. The player was in the world a moment ago,
-        /// so say "getting you back in" rather than "starting the world". Protocol 22: a gateway tells a client that
-        /// negotiated an older protocol <see cref="WorldStarting"/> instead.
+        /// so say "getting you back in" rather than "starting the world".
         /// </summary>
         Recovering = 6,
     }
@@ -1595,8 +1585,7 @@ namespace Nebula
         public ulong Generation;
         /// <summary>
         /// The session is over and not waiting for a reclaim: the player said goodbye, or was kicked. The worker
-        /// removes the pawn now instead of keeping it for <see cref="NebulaConfig.SessionReclaimSeconds"/>. A
-        /// trailing optional field (protocol 22), written only when set.
+        /// removes the pawn now instead of keeping it for <see cref="NebulaConfig.SessionReclaimSeconds"/>.
         /// </summary>
         public bool EndNow;
 
@@ -1605,15 +1594,10 @@ namespace Nebula
             w.WriteByte((byte)MsgId.DespawnPlayer);
             w.WriteULong(ClientId);
             w.WriteULong(Generation);
-            if (EndNow) w.WriteByte(1);
+            w.WriteBool(EndNow);
         }
 
-        public static DespawnPlayerMsg Read(NetworkReader r)
-        {
-            var msg = new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong() };
-            if (r.Remaining > 0) msg.EndNow = r.ReadByte() != 0;
-            return msg;
-        }
+        public static DespawnPlayerMsg Read(NetworkReader r) => new DespawnPlayerMsg { ClientId = r.ReadULong(), Generation = r.ReadULong(), EndNow = r.ReadBool() };
     }
 
     /// <summary>

@@ -10,8 +10,7 @@ namespace Nebula.Tests
     /// <summary>
     /// The protocol-22 session endings on the wire (NEB-354): <see cref="GoodbyeMsg"/>, <see cref="KickedMsg"/>,
     /// <see cref="KickPlayerMsg"/>, and the trailing fields of <see cref="GatewayDrainingMsg"/> and
-    /// <see cref="DespawnPlayerMsg"/>. A trailing field that is not set is not written, so the bytes an older reader
-    /// sees are the bytes it always saw. Pure C#, so the same tests run in <c>Nebula.Services.Tests</c>.
+    /// <see cref="DespawnPlayerMsg"/>. Pure C#, so the same tests run in <c>Nebula.Services.Tests</c>.
     /// </summary>
     [Category("Conformance")]
     public class SessionEndingWireTests
@@ -24,18 +23,18 @@ namespace Nebula.Tests
         }
 
         [Test]
-        public void APlainDrainNoticeIsTheProtocol21Layout()
+        public void APlainDrainNoticeSaysItIsNotAShutdown()
         {
             var w = new NetworkWriter();
             new GatewayDrainingMsg { ReconnectWithinSeconds = 10 }.Write(w);
-            Assert.AreEqual(3, w.Length, "id and u16 only: nothing trailing for a reader that stops there");
+            Assert.AreEqual(4, w.Length, "id, u16 and the flag");
             var back = GatewayDrainingMsg.Read(ReaderAfterId(w, MsgId.GatewayDraining));
             Assert.AreEqual(10, back.ReconnectWithinSeconds);
             Assert.IsFalse(back.ServerShutdown);
         }
 
         [Test]
-        public void AShutdownNoticeCarriesTheTrailingFlag()
+        public void AShutdownNoticeCarriesTheFlag()
         {
             var w = new NetworkWriter();
             new GatewayDrainingMsg { ReconnectWithinSeconds = 5, ServerShutdown = true }.Write(w);
@@ -79,7 +78,7 @@ namespace Nebula.Tests
         {
             var plain = new NetworkWriter();
             new DespawnPlayerMsg { ClientId = 7, Generation = 3 }.Write(plain);
-            Assert.AreEqual(17, plain.Length, "a lost link's despawn is the layout it always was");
+            Assert.AreEqual(18, plain.Length, "id, two u64 and the flag");
             Assert.IsFalse(DespawnPlayerMsg.Read(ReaderAfterId(plain, MsgId.DespawnPlayer)).EndNow);
 
             var ended = new NetworkWriter();
@@ -100,7 +99,7 @@ namespace Nebula.Tests
             }.Write(w, MsgId.EntitySpawn);
             var back = EntitySpawnMsg.Read(ReaderAfterId(w, MsgId.EntitySpawn));
             Assert.AreEqual(EntityFlags.OwnerIsBot | EntityFlags.OwnerDisconnected, back.Flags);
-            Assert.AreEqual(4, (int)EntityFlags.OwnerDisconnected, "a bit an older reader ignores");
+            Assert.AreEqual(4, (int)EntityFlags.OwnerDisconnected);
         }
 
         [Test]

@@ -7,9 +7,9 @@ namespace Nebula.ServiceTests;
 
 /// <summary>
 /// Deliberate session endings at the gateway (NEB-354): a real <see cref="NebulaGateway"/> over loopback UDP, a fake
-/// worker that records what it is told, and clients that speak protocol 22 or 21. A client's goodbye ends the session
+/// worker that records what it is told, and clients. A client's goodbye ends the session
 /// at once and a lost link does not; a kick from the gateway or from a worker reaches the client with its code and
-/// ends the session; a protocol-21 client is told of a kick with a refusal it understands; a gateway that shuts down
+/// ends the session; a gateway that shuts down
 /// tells its clients first, and says "the server is shutting down" only when no other gateway is serving. The worker
 /// half is the EditMode suite's <c>ConformanceSessionEndingTests</c>.
 /// </summary>
@@ -36,10 +36,9 @@ public class ConformanceSessionEndingTests
     [TearDown]
     public void Cleanup() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 
-    private static FakeClient Join(Fleet fleet, string name, int gateway = 0, ushort version = 0, string token = "")
+    private static FakeClient Join(Fleet fleet, string name, int gateway = 0, string token = "")
     {
         var client = fleet.Connect(gateway, name, token);
-        if (version != 0) client.AnnounceVersion = version;
         Assert.That(fleet.Run(() => client.Join == JoinState.Joined), Is.True, $"{name} should get a pawn");
         return client;
     }
@@ -118,29 +117,6 @@ public class ConformanceSessionEndingTests
         Assert.That(fleet.Gateways[0].Kick(12345, 0, ""), Is.False);
     }
 
-    /// <summary>
-    /// A protocol-21 client has no <see cref="MsgId.Kicked"/>. It is sent <see cref="MsgId.SessionReplaced"/>: the one
-    /// notice a released protocol-21 <c>NebulaClient</c> acts on while in the world by clearing its session token,
-    /// calling <c>Disconnect()</c> (so it leaves the world and its state is <c>Disconnected</c>) and not reconnecting.
-    /// A <c>JoinRejected</c> would not do: that client only sets <c>WantsConnection</c> false on a refusal, then
-    /// ignores the link's close as one it asked for, and stays in game in a frozen world.
-    /// </summary>
-    [Test]
-    public void AProtocol21ClientIsToldOfAKickWithANoticeThatEndsItsConnection()
-    {
-        using var fleet = new Fleet(1);
-        var old = Join(fleet, "old", version: 21);
-        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)21));
-
-        fleet.Gateways[0].Kick(old.Welcome.Value.ClientId, 3, "removed by a moderator");
-        Assert.That(fleet.Run(() => old.Replaced != null && old.Disconnected && fleet.Worker.Despawns.Count > 0), Is.True);
-        Assert.That(old.Kicked, Is.Null, "a protocol-21 client cannot read Kicked, so it is never sent one");
-        Assert.That(old.Rejected, Is.Null, "nor a refusal, which would leave it in a frozen world");
-        Assert.That(old.Replaced, Is.EqualTo("removed by a moderator"));
-        Assert.That(fleet.Worker.Despawns.Single().EndNow, Is.True, "the session ends as for any kick");
-        Assert.That(old.LastError, Is.Empty);
-    }
-
     [Test]
     public void AWorkersKickReachesTheClientUnlessTheSessionMovedOn()
     {
@@ -167,15 +143,14 @@ public class ConformanceSessionEndingTests
     {
         using var fleet = new Fleet(1, configure: c => c.GatewayShutdownDrainSeconds = 0.3f);
         var ann = Join(fleet, "ann");
-        var old = Join(fleet, "old", version: 21);
+        var bob = Join(fleet, "bob");
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         fleet.KillGateway(0, hard: false);
         Assert.That(clock.Elapsed.TotalSeconds, Is.LessThan(2), "the wait is bounded by GatewayShutdownDrainSeconds");
-        Assert.That(fleet.Run(() => ann.DrainWithin >= 0 && old.DrainWithin >= 0), Is.True, "every client was told before the gateway went");
-        Assert.That(ann.ServerShutdown, Is.True, "no other gateway is serving: the server is going away");
-        Assert.That(old.ServerShutdown, Is.False, "a protocol-21 client gets the plain drain notice it can read");
-        Assert.That(old.LastError, Is.Empty);
+        Assert.That(fleet.Run(() => ann.DrainWithin >= 0 && bob.DrainWithin >= 0), Is.True, "every client was told before the gateway went");
+        Assert.That(ann.ServerShutdown && bob.ServerShutdown, Is.True, "no other gateway is serving: the server is going away");
+        Assert.That(ann.LastError, Is.Empty);
         Assert.That(ann.DrainWithin, Is.EqualTo(7));
     }
 
