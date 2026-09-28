@@ -23,15 +23,25 @@ namespace Nebula
         public string Subject;
         /// <summary>Why the token was rejected (empty when <see cref="Ok"/>).</summary>
         public string Error;
+        /// <summary>
+        /// Every claim of the verified token, as parsed JSON (strings, doubles, booleans, lists and objects). Set only
+        /// for a token verified against a trusted OpenID provider; null for a gateway-issued anonymous token. The
+        /// gateway forwards the claims <see cref="NebulaConfig.ForwardedClaims"/> names from here (<see cref="PlayerClaims.Select"/>).
+        /// </summary>
+        public Dictionary<string, object> Claims;
 
         public static AuthResult Fail(string error) => new AuthResult { Error = error ?? "invalid token" };
 
-        public static AuthResult Accept(string issuer, string subject) => new AuthResult
+        public static AuthResult Accept(string issuer, string subject) => Accept(issuer, subject, null);
+
+        /// <summary>An accepted token, with the verified token's claims (null for none).</summary>
+        public static AuthResult Accept(string issuer, string subject, Dictionary<string, object> claims) => new AuthResult
         {
             Ok = true,
             Issuer = issuer,
             Subject = subject,
             Identity = PlayerIdentity.Derive(issuer, subject),
+            Claims = claims,
         };
     }
 
@@ -371,8 +381,8 @@ namespace Nebula
             {
                 try
                 {
-                    if (!ec && key is RSA rsa && rsa.VerifyData(signed, signature, hash, RSASignaturePadding.Pkcs1)) return AuthResult.Accept(issuer.Name, JsonWebToken.Claim(payload, "sub"));
-                    if (ec && key is ECDsa ecdsa && ecdsa.VerifyData(signed, signature, hash)) return AuthResult.Accept(issuer.Name, JsonWebToken.Claim(payload, "sub"));
+                    if (!ec && key is RSA rsa && rsa.VerifyData(signed, signature, hash, RSASignaturePadding.Pkcs1)) return AuthResult.Accept(issuer.Name, JsonWebToken.Claim(payload, "sub"), payload);
+                    if (ec && key is ECDsa ecdsa && ecdsa.VerifyData(signed, signature, hash)) return AuthResult.Accept(issuer.Name, JsonWebToken.Claim(payload, "sub"), payload);
                 }
                 catch (CryptographicException) { }
             }

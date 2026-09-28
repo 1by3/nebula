@@ -202,6 +202,22 @@ public string AuthSigningKey = "";
 
 Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA\_AUTH\_KEY.
 
+### ForwardedClaims [#forwardedclaims]
+
+```csharp
+public string ForwardedClaims = "";
+```
+
+Claims of a verified sign-in token that the gateway passes on to workers, as claim names separated by commas (for example is\_admin, username). Workers read them from NetworkIdentity.OwnerClaims, PlayerInfo.Claims and NebulaWorker.GetPlayerClaims. At most 16 names; values longer than 256 characters are dropped. Anonymous players have none. Empty = none are forwarded. -nebula-auth-forward-claims overrides.
+
+### NameClaim [#nameclaim]
+
+```csharp
+public string NameClaim = "";
+```
+
+A claim of the verified sign-in token that becomes the player's name (for example username or name) in place of the name the client asked for. A player whose token lacks the claim, and an anonymous player, keeps the client's name. Empty = always the client's name. -nebula-auth-name-claim overrides.
+
 ### SessionReclaimSeconds [#sessionreclaimseconds]
 
 ```csharp

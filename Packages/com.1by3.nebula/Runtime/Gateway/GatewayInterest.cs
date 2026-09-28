@@ -447,11 +447,18 @@ namespace Nebula
             public readonly bool IsBot;
             /// <summary>The session was reclaimed (a reconnection), not started fresh.</summary>
             public readonly bool Reclaimed;
+            /// <summary>The verified token's forwarded claims (<see cref="NebulaConfig.ForwardedClaims"/>); empty, never null, for an anonymous player.</summary>
+            public IReadOnlyDictionary<string, string> Claims => _claims ?? PlayerClaims.Empty;
+            private readonly IReadOnlyDictionary<string, string> _claims;
 
             public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed)
+                : this(clientId, identity, name, instanceId, isBot, reclaimed, null) { }
+
+            public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed, IReadOnlyDictionary<string, string> claims)
             {
                 ClientId = clientId; Identity = identity ?? ""; Name = name ?? "";
                 InstanceId = instanceId; IsBot = isBot; Reclaimed = reclaimed;
+                _claims = claims ?? PlayerClaims.Empty;
             }
         }
 
@@ -481,7 +488,7 @@ namespace Nebula
             ulong instance = 0;
             if (client.PawnNetId != 0 && _entities.TryGetValue(client.PawnNetId, out var pawn))
                 instance = ScopeContainer(pawn.Container)?.InstanceId ?? 0;
-            try { handler(new GatewayClientInfo(client.ClientId, client.Identity, client.Name, instance, client.IsBot, client.Reclaimed)); }
+            try { handler(new GatewayClientInfo(client.ClientId, client.Identity, client.Name, instance, client.IsBot, client.Reclaimed, client.Claims)); }
             catch (Exception e) { NebulaLog.Error($"a {what} handler threw: {e.Message}"); }
         }
 

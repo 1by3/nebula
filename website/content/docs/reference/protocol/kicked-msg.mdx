@@ -1,6 +1,6 @@
 ---
 title: "KickedMsg"
-description: "Gateway -> client: the server removed this player (MsgId.Kicked, protocol 22)."
+description: "Gateway -> client: the server removed this player (MsgId.Kicked, protocol 23)."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "Gateway -> client: the server removed this player (MsgId.Kicked, p
 public struct KickedMsg
 ```
 
-Gateway -\> client: the server removed this player ([`MsgId.Kicked`](/docs/reference/protocol/msg-id#kicked), protocol 22). The session is over: the worker removes the pawn, and the gateway closes the link right after sending this. The client does not reconnect by itself.
+Gateway -\> client: the server removed this player ([`MsgId.Kicked`](/docs/reference/protocol/msg-id#kicked), protocol 23). The session is over: the worker removes the pawn, and the gateway closes the link right after sending this. The client does not reconnect by itself.
 
 ## Fields
 

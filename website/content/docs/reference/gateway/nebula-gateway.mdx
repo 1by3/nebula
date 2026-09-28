@@ -512,6 +512,7 @@ A client the gateway has admitted, as the server-side surface reports it. A snap
 
 ```csharp
 public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed);
+public GatewayClientInfo(ulong clientId, string identity, string name, ulong instanceId, bool isBot, bool reclaimed, IReadOnlyDictionary<string, string> claims);
 ```
 
 #### Fields
@@ -559,3 +560,13 @@ public readonly bool Reclaimed;
 ```
 
 The session was reclaimed (a reconnection), not started fresh.
+
+#### Properties
+
+##### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims { get; }
+```
+
+The verified token's forwarded claims ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)); empty, never null, for an anonymous player.

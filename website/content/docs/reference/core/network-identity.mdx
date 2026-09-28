@@ -140,6 +140,16 @@ public string OwnerIdentity { get; } = "";
 
 The owning player's identity across sessions ([`PlayerIdentity`](/docs/reference/gateway/player-identity)): the same string every time that player connects, on every worker and client. Empty for entities no player owns. Key player records on it (for example a [`PersistentEntity.Key`](/docs/reference/persistence/persistent-entity#key)); [`OwnerClientId`](#ownerclientid) changes every session.
 
+### OwnerClaims [#ownerclaims]
+
+```csharp
+public IReadOnlyDictionary<string, string> OwnerClaims { get; } = PlayerClaims.Empty;
+```
+
+Workers only: the claims of the owning player's verified sign-in token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)), by claim name, with every value as a string (`"true"`, `"42"`, `"alice"`). Gate game features on them, for example an admin role: `entity.OwnerClaims.TryGetValue("is_admin", out var v) && v == "true"`.
+
+Empty, never null, for entities no player owns, for anonymous players, for claims the token lacks and on clients, which are never sent claims. Like [`OwnerIdentity`](#owneridentity) it travels with the entity through ghosting and handover, and it is refreshed when the player reconnects with a newer token. Only claims from a token the gateway verified are ever here, so a client cannot forge them.
+
 ### OwnerIsBot [#ownerisbot]
 
 ```csharp
@@ -484,6 +494,14 @@ public void RefreshExtent();
 ```
 
 Compute a [`EntityExtentSource.Colliders`](/docs/reference/protocol/entity-extent-source#colliders) extent again now, after the game added, removed, resized or switched a collider. Does nothing for another source.
+
+### TryGetOwnerClaim [#trygetownerclaim]
+
+```csharp
+public bool TryGetOwnerClaim(string name, out string value);
+```
+
+The owning player's forwarded claim `name` ([`OwnerClaims`](#ownerclaims)); false when there is none.
 
 ### JoinCohesionGroup [#joincohesiongroup]
 

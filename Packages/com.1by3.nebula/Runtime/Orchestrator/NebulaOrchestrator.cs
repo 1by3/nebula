@@ -534,6 +534,9 @@ namespace Nebula
             if (!string.IsNullOrEmpty(Config.AuthIssuers)) args += $" -nebula-auth-issuers {Config.AuthIssuers.Replace(" ", ",")}";
             if (!string.IsNullOrEmpty(Config.AuthAudience)) args += $" -nebula-auth-audience {Config.AuthAudience}";
             if (!Config.AuthAnonymous) args += " -nebula-auth-anonymous false";
+            string forwarded = string.Join(",", PlayerClaims.ParseNames(Config.ForwardedClaims));
+            if (forwarded.Length > 0) args += $" -nebula-auth-forward-claims {forwarded}";
+            if (!string.IsNullOrWhiteSpace(Config.NameClaim)) args += $" -nebula-auth-name-claim {Config.NameClaim.Trim()}";
             if (!string.IsNullOrEmpty(Config.AuthSigningKey)) args += $" -nebula-auth-key {Config.AuthSigningKey}";
             if (!Config.SingleSessionPerPlayer) args += " -nebula-single-session false";
             // Client link encryption is the gateway's business, but its configuration arrives here (docs/transport-encryption.md).

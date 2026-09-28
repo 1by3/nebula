@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Nebula
@@ -84,19 +85,37 @@ namespace Nebula
         /// session token (the player continues with the same pawn). A new session gets a new id.
         /// </summary>
         public readonly ulong ClientId;
-        /// <summary>The display name the client asked for.</summary>
+        /// <summary>
+        /// The player's display name: the verified token's <see cref="NebulaConfig.NameClaim"/> when the mesh sets one
+        /// and the token has it, otherwise the name the client asked for.
+        /// </summary>
         public readonly string Name;
         /// <summary>The player's identity across sessions (<see cref="PlayerIdentity"/>): from the OpenID token they presented, or the anonymous token the gateway issued them.</summary>
         public readonly string Identity;
         /// <summary>The client is a headless bot.</summary>
         public readonly bool IsBot;
+        /// <summary>
+        /// The claims of the player's verified sign-in token that the mesh forwards (<see cref="NebulaConfig.ForwardedClaims"/>),
+        /// every value a string. Empty, never null, for anonymous players and when nothing is forwarded. The pawn
+        /// carries the same claims as <see cref="NetworkIdentity.OwnerClaims"/>.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Claims => _claims ?? PlayerClaims.Empty;
+        private readonly IReadOnlyDictionary<string, string> _claims;
 
-        public PlayerInfo(ulong clientId, string name, string identity, bool isBot)
+        public PlayerInfo(ulong clientId, string name, string identity, bool isBot) : this(clientId, name, identity, isBot, null) { }
+
+        /// <param name="clientId">The session id.</param>
+        /// <param name="name">The display name.</param>
+        /// <param name="identity">The identity across sessions.</param>
+        /// <param name="isBot">Whether the client is a headless bot.</param>
+        /// <param name="claims">Forwarded token claims; null for none.</param>
+        public PlayerInfo(ulong clientId, string name, string identity, bool isBot, IReadOnlyDictionary<string, string> claims)
         {
             ClientId = clientId;
             Name = name ?? "";
             Identity = identity ?? "";
             IsBot = isBot;
+            _claims = claims ?? PlayerClaims.Empty;
         }
     }
 }

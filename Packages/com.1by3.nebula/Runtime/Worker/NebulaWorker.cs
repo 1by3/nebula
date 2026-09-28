@@ -141,6 +141,11 @@ namespace Nebula
         private readonly HashSet<ulong> _botClients = new HashSet<ulong>();
         /// <summary>Client id -> the player's identity across sessions, as the gateway told us in SpawnPlayer.</summary>
         private readonly Dictionary<ulong, string> _playerIdentities = new Dictionary<ulong, string>();
+        /// <summary>
+        /// Client id -> the player's forwarded token claims (<see cref="PlayerClaims"/>) and the session generation they
+        /// came with: from SpawnPlayer, or from a handover of the player's pawn. A newer generation replaces them.
+        /// </summary>
+        private readonly Dictionary<ulong, (ulong Generation, IReadOnlyDictionary<string, string> Claims)> _playerClaims = new Dictionary<ulong, (ulong, IReadOnlyDictionary<string, string>)>();
         /// <summary>netId -> (workerId -> time last seen inside that worker's band)</summary>
         private readonly Dictionary<ulong, Dictionary<string, float>> _ghostTargets = new Dictionary<ulong, Dictionary<string, float>>();
         private readonly Dictionary<ulong, HashSet<string>> _inheritedGhosts = new Dictionary<ulong, HashSet<string>>();
@@ -1310,6 +1315,7 @@ namespace Nebula
             }
             identity.OwnerClientId = ownerClientId;
             identity.OwnerIdentity = ownerClientId != 0 && _playerIdentities.TryGetValue(ownerClientId, out var playerIdentity) ? playerIdentity : "";
+            identity.OwnerClaims = GetPlayerClaims(ownerClientId);
             identity.OwnerIsBot = ownerClientId != 0 && _botClients.Contains(ownerClientId);
             identity.IsServerDriven = serverDriven && ownerClientId == 0;
             identity.OwnerWorkerIndex = WorkerIndex;
@@ -1538,6 +1544,51 @@ namespace Nebula
         }
 
         public NetworkIdentity FindPlayer(ulong clientId) => _players.TryGetValue(clientId, out var e) ? e : null;
+
+        /// <summary>
+        /// The claims of a player's verified sign-in token that the mesh forwards (<see cref="NebulaConfig.ForwardedClaims"/>),
+        /// by session id, every value a string. This worker knows them for players whose gateway claimed the session
+        /// here and for players whose pawn was handed over to it; for any entity, <see cref="NetworkIdentity.OwnerClaims"/>
+        /// gives its owner's. Empty, never null, for anonymous players and players this worker does not know.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> GetPlayerClaims(ulong clientId)
+        {
+            if (clientId != 0 && _playerClaims.TryGetValue(clientId, out var known)) return known.Claims;
+            var pawn = FindPlayer(clientId);
+            return pawn != null ? pawn.OwnerClaims : PlayerClaims.Empty;
+        }
+
+        /// <summary>
+        /// Remember a player's claims as of session generation <paramref name="generation"/>, unless newer ones are
+        /// known. Returns the claims this worker now holds for the player.
+        /// </summary>
+        private IReadOnlyDictionary<string, string> RememberPlayerClaims(ulong clientId, ulong generation, IReadOnlyDictionary<string, string> claims)
+        {
+            claims ??= PlayerClaims.Empty;
+            if (clientId == 0) return claims;
+            if (_playerClaims.TryGetValue(clientId, out var known) && known.Generation > generation) return known.Claims;
+            _playerClaims[clientId] = (generation, claims);
+            return claims;
+        }
+
+        /// <summary>
+        /// The player reconnected, possibly with a newer token: give every entity of theirs this worker simulates the
+        /// claims now held, and send the change to the workers holding ghosts of them (a spawn for a known net id is
+        /// an update there).
+        /// </summary>
+        private void RefreshOwnerClaims(ulong clientId, IReadOnlyDictionary<string, string> claims)
+        {
+            for (int i = 0; i < _authoritative.Count; i++)
+            {
+                var e = _authoritative[i];
+                if (e == null || e.OwnerClientId != clientId || PlayerClaims.SameAs(e.OwnerClaims, claims)) continue;
+                e.OwnerClaims = claims;
+                if (!_ghostTargets.TryGetValue(e.NetId, out var targets)) continue;
+                foreach (var worker in targets.Keys)
+                    if (_workerPeersById.TryGetValue(worker, out var peer) && peer.HelloReceived)
+                        SendSpawn(peer, EntitySpawnMsg.From(e, _scratch), MsgId.GhostSpawn);
+            }
+        }
 
         // ---------------------------------------------------------------------------------------- ghost band
 
@@ -2100,6 +2151,11 @@ namespace Nebula
                 if (orphan == PlayerSessions.OrphanKind.GatewayLost && IsGatewayLinked(msg.SessionGateway)) orphan = PlayerSessions.OrphanKind.None;
                 _sessions.Adopt(e.OwnerClientId, msg.SessionGeneration, msg.SessionGateway, orphan, msg.SessionReclaimRemaining,
                     Time.unscaledTime, Config.SessionReclaimSeconds);
+                // The player comes with the pawn: what they are and hold is known here from now on, so entities this
+                // worker spawns for them later get the same identity and claims. A reclaim this worker heard before
+                // the handover arrived is newer than what the sender knew, and wins.
+                if (!string.IsNullOrEmpty(e.OwnerIdentity)) _playerIdentities[e.OwnerClientId] = e.OwnerIdentity;
+                e.OwnerClaims = RememberPlayerClaims(e.OwnerClientId, msg.SessionGeneration, e.OwnerClaims);
                 if (_sessions.TryGet(e.OwnerClientId, out var adopted) && adopted.Orphaned)
                     NebulaLog.Info($"session {e.OwnerClientId} came with {e} waiting for a reclaim; the pawn is kept for " +
                                    $"{PlayerSessions.ReclaimRemaining(adopted, Time.unscaledTime, Config.SessionReclaimSeconds):0.#} s more");
@@ -2227,6 +2283,7 @@ namespace Nebula
             e.Epoch = epoch;
             e.OwnerClientId = msg.OwnerClientId;
             e.OwnerIdentity = msg.OwnerIdentity ?? "";
+            e.OwnerClaims = msg.OwnerClientId != 0 && msg.OwnerClaims != null ? msg.OwnerClaims : PlayerClaims.Empty;
             e.OwnerIsBot = (msg.Flags & EntityFlags.OwnerIsBot) != 0;
             e.IsServerDriven = (msg.Flags & EntityFlags.ServerDriven) != 0;
             e.SetOwnerConnected((msg.Flags & EntityFlags.OwnerDisconnected) == 0);
@@ -2574,6 +2631,8 @@ namespace Nebula
             }
             if (msg.IsBot) _botClients.Add(msg.ClientId); else _botClients.Remove(msg.ClientId);
             if (!string.IsNullOrEmpty(msg.Identity)) _playerIdentities[msg.ClientId] = msg.Identity; else _playerIdentities.Remove(msg.ClientId);
+            var claims = RememberPlayerClaims(msg.ClientId, msg.Generation, msg.Claims);
+            RefreshOwnerClaims(msg.ClientId, claims);
             if (_players.TryGetValue(msg.ClientId, out var existing) && existing != null)
             {
                 if (existing.HasAuthority)
@@ -2598,7 +2657,7 @@ namespace Nebula
             if (claim == PlayerSessions.Claim.Repeat && _pendingPlayerSpawns.ContainsKey(msg.ClientId)) return;
             var pending = new object();
             _pendingPlayerSpawns[msg.ClientId] = pending;
-            _gameMode.BeginSpawnPlayer(this, new PlayerInfo(msg.ClientId, msg.Name, msg.Identity, msg.IsBot), container,
+            _gameMode.BeginSpawnPlayer(this, new PlayerInfo(msg.ClientId, msg.Name, msg.Identity, msg.IsBot, claims), container,
                 create => CompletePlayerSpawn(msg.ClientId, pending, container, create));
         }
 
@@ -2627,6 +2686,7 @@ namespace Nebula
             if (e == null || !e.HasAuthority)
             {
                 _playerIdentities.Remove(msg.ClientId);
+                _playerClaims.Remove(msg.ClientId);
                 if (e != null && _handedOff.TryGetValue(e.NetId, out var to) && _workerPeersById.TryGetValue(to, out var peer))
                 {
                     _sessions.Remove(msg.ClientId);
@@ -2861,6 +2921,7 @@ namespace Nebula
             _pendingPlayerSpawns.Remove(clientId);
             _sessions.Remove(clientId);
             _playerIdentities.Remove(clientId);
+            _playerClaims.Remove(clientId);
             var e = FindPlayer(clientId);
             if (e == null || !e.HasAuthority) return;
             _gameMode?.OnPlayerDespawn(this, e);

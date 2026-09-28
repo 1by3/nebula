@@ -67,7 +67,15 @@ The player's identity across sessions ([`PlayerIdentity`](/docs/reference/gatewa
 public string Name;
 ```
 
-The name the client gave in its `Hello`.
+The player's name: the verified token's [`NebulaConfig.NameClaim`](/docs/reference/core/nebula-config#nameclaim) when set and present, otherwise the name the client gave in its `Hello`.
+
+### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims;
+```
+
+For [`AdmissionKind.Join`](/docs/reference/gateway/admission-kind#join): the verified token's forwarded claims ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)), for example to let staff in past capacity. Null or empty for an anonymous player and for a transfer.
 
 ### IsBot [#isbot]
 

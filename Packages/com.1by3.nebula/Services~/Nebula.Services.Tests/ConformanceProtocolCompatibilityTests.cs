@@ -12,11 +12,11 @@ namespace Nebula.ServiceTests;
 /// real <see cref="NebulaGateway"/> on a real socket over an in-process <see cref="LocalControlPlane"/>, with a
 /// <see cref="FakeWorker"/> to be spawned into.
 /// <para>
-/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-22-handshake.json</c> holds the exact
+/// The replay half is the part that cannot be faked: <c>Fixtures/protocol-23-handshake.json</c> holds the exact
 /// bytes a client sent and a gateway answered, recorded from these fixtures, and the test pushes those bytes at a
-/// gateway built from today's source. The window is 22 only: before 1.0 a bump may close the window to the new
-/// version, and protocol 22 did (docs/compatibility-policy.md). Replaying the protocol-22 recording proves that a
-/// change inside protocol 22 still answers a client of 22 the same way, and it is the recording the next bump will
+/// gateway built from today's source. The window is 23 only: before 1.0 a bump may close the window to the new
+/// version, and protocol 23 did (docs/compatibility-policy.md). Replaying the protocol-23 recording proves that a
+/// change inside protocol 23 still answers a client of 23 the same way, and it is the recording the next bump will
 /// replay for N-1. The step from 18 was not
 /// additive (it renumbered carrier behaviours), so the protocol-18 recording is kept to prove that such a client is
 /// refused with the gateway's range rather than admitted.
@@ -181,13 +181,13 @@ public class ConformanceProtocolCompatibilityTests
     /// <b>The conformance scenario.</b> A recorded client stream is pushed, byte for byte, at a gateway built
     /// from today's source: it is welcomed, the gateway records the version it announced and echoes it back as
     /// the negotiated version, and the client goes on to join and receive its pawn. Then the recorded gateway
-    /// stream and the newly generated replies are parsed by an independent, frozen protocol-22 decoder.
+    /// stream and the newly generated replies are parsed by an independent, frozen protocol-23 decoder.
     /// This covers public-container handshake, spawn and transform framing, not every game message or payload.
     /// </summary>
     [Test]
     public void ARecordedClientStreamIsAdmittedAndAnsweredByAGatewayOfThisBuild()
     {
-        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(22));
+        var fixture = ProtocolFixture.Load(ProtocolFixture.PathFor(23));
         Assert.That(ProtocolCompatibility.ClientProtocolAccepted(fixture.ProtocolVersion), Is.True,
             $"the checked-in recording is protocol {fixture.ProtocolVersion}, outside this build's window " +
             $"{ProtocolCompatibility.WindowText()}; record a fresh one with RecordTheHandshakeFixture");
@@ -210,26 +210,26 @@ public class ConformanceProtocolCompatibilityTests
         fleet.OnPump = () => fleet.Worker.PublishStates();
         Assert.That(fleet.Run(() => replayed.StatesReceived > 0, seconds: 10), Is.True);
 
-        void AssertHandshake(Protocol22GatewayDecoder decoded)
+        void AssertHandshake(Protocol23GatewayDecoder decoded)
         {
             Assert.That(decoded.Welcomes, Is.EqualTo(1));
             Assert.That(decoded.Joined, Is.True);
-            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(22));
+            Assert.That(decoded.NegotiatedVersion, Is.EqualTo(23));
             Assert.That(decoded.Containers, Does.Contain("c0"));
             Assert.That(decoded.Spawns, Contains.Key(1000ul));
             Assert.That(decoded.Spawns[1000], Is.EqualTo((decoded.ClientId, decoded.Identity)),
                 "the frozen reader must recover the pawn's owner and identity, not merely consume its bytes");
         }
 
-        var recorded = new Protocol22GatewayDecoder();
+        var recorded = new Protocol23GatewayDecoder();
         foreach (var frame in fixture.GatewayFrames()) recorded.Read(frame);
         AssertHandshake(recorded);
 
-        var current = new Protocol22GatewayDecoder();
+        var current = new Protocol23GatewayDecoder();
         foreach (var (outbound, bytes) in replayed.Record)
             if (!outbound) current.Read(bytes);
         AssertHandshake(current);
-        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-22 layout");
+        Assert.That(current.StateEntities, Does.Contain(1000ul), "new gateway transforms must decode with the frozen protocol-23 layout");
         Assert.That(current.Positions[1000], Is.EqualTo((1.25f, 2.5f, 3.75f)),
             "the frozen reader must recover distinct position axes from the new gateway's snapshot");
     }

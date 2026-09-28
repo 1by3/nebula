@@ -486,6 +486,8 @@ namespace Nebula
             cfg.AuthIssuers = CommandLine.Get("nebula-auth-issuers", cfg.AuthIssuers);
             cfg.AuthAudience = CommandLine.Get("nebula-auth-audience", cfg.AuthAudience);
             cfg.AuthAnonymous = CommandLine.GetBool("nebula-auth-anonymous", cfg.AuthAnonymous);
+            cfg.ForwardedClaims = CommandLine.Get("nebula-auth-forward-claims", cfg.ForwardedClaims);
+            cfg.NameClaim = CommandLine.Get("nebula-auth-name-claim", cfg.NameClaim);
             cfg.AuthSigningKey = CommandLine.Get("nebula-auth-key", cfg.AuthSigningKey);
             cfg.SingleSessionPerPlayer = CommandLine.GetBool("nebula-single-session", cfg.SingleSessionPerPlayer);
             cfg.GameContentVersion = CommandLine.GetUInt("nebula-content-version", cfg.GameContentVersion);

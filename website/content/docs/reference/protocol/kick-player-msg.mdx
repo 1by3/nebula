@@ -1,6 +1,6 @@
 ---
 title: "KickPlayerMsg"
-description: "Worker -> gateway: remove this player (MsgId.KickPlayer, protocol 22), sent by NebulaWorker.Kick to the gateway that speaks for the session."
+description: "Worker -> gateway: remove this player (MsgId.KickPlayer, protocol 23), sent by NebulaWorker.Kick to the gateway that speaks for the session."
 ---
 
 <div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
@@ -9,7 +9,7 @@ description: "Worker -> gateway: remove this player (MsgId.KickPlayer, protocol 
 public struct KickPlayerMsg
 ```
 
-Worker -\> gateway: remove this player ([`MsgId.KickPlayer`](/docs/reference/protocol/msg-id#kickplayer), protocol 22), sent by `NebulaWorker.Kick` to the gateway that speaks for the session. The gateway sends the client a [`KickedMsg`](/docs/reference/protocol/kicked-msg) with the same code and reason, closes the link and ends the session. Fenced by [`Generation`](#generation): a gateway that has since claimed the session with a newer generation ignores it.
+Worker -\> gateway: remove this player ([`MsgId.KickPlayer`](/docs/reference/protocol/msg-id#kickplayer), protocol 23), sent by `NebulaWorker.Kick` to the gateway that speaks for the session. The gateway sends the client a [`KickedMsg`](/docs/reference/protocol/kicked-msg) with the same code and reason, closes the link and ends the session. Fenced by [`Generation`](#generation): a gateway that has since claimed the session with a newer generation ignores it.
 
 ## Fields
 

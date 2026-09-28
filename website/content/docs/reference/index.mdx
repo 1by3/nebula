@@ -354,7 +354,7 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [EntitySyncMsg](/docs/reference/protocol/entity-sync-msg) | Struct. One entity's sync chunks for one tick (see SyncStateCodec). |
 | [EntityVarsMsg](/docs/reference/protocol/entity-vars-msg) | Struct. Carries the entity vars protocol message. |
 | [GatewayDrainingMsg](/docs/reference/protocol/gateway-draining-msg) | Struct. Gateway -\> client: the gateway is draining and will close this link. |
-| [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 22). |
+| [GoodbyeMsg](/docs/reference/protocol/goodbye-msg) | Struct. Client -\> gateway: the player is leaving for good (MsgId.Goodbye, protocol 23). |
 | [HelloFlags](/docs/reference/protocol/hello-flags) | Enum. Lists the supported hello flags values. |
 | [HelloMsg](/docs/reference/protocol/hello-msg) | Struct. Carries the hello protocol message. |
 | [InstanceContainerInfo](/docs/reference/protocol/instance-container-info) | Class. Identifies a private container's simulation scope, content, and optional outward view. |
@@ -367,14 +367,15 @@ Inspect messages exchanged by clients, the gateway, and workers.
 | [JoinRejectedMsg](/docs/reference/protocol/join-rejected-msg) | Struct. Gateway -\> client: the join was refused; Reason is fit to show the player. |
 | [JoinState](/docs/reference/protocol/join-state) | Enum. How far a client's join has got. |
 | [JoinStatusMsg](/docs/reference/protocol/join-status-msg) | Struct. Gateway -\> client: the join's state and, while JoinState.Starting, a rough wait in seconds (0 = unknown) and why. |
-| [KickPlayerMsg](/docs/reference/protocol/kick-player-msg) | Struct. Worker -\> gateway: remove this player (MsgId.KickPlayer, protocol 22), sent by NebulaWorker.Kick to the gateway that speaks for the session. |
-| [KickedMsg](/docs/reference/protocol/kicked-msg) | Struct. Gateway -\> client: the server removed this player (MsgId.Kicked, protocol 22). |
+| [KickPlayerMsg](/docs/reference/protocol/kick-player-msg) | Struct. Worker -\> gateway: remove this player (MsgId.KickPlayer, protocol 23), sent by NebulaWorker.Kick to the gateway that speaks for the session. |
+| [KickedMsg](/docs/reference/protocol/kicked-msg) | Struct. Gateway -\> client: the server removed this player (MsgId.Kicked, protocol 23). |
 | [MsgId](/docs/reference/protocol/msg-id) | Enum. Wire message ids. |
 | [NetworkMapCache](/docs/reference/protocol/network-map-cache) | Class. The contents of an entity's maps kept as opaque bytes, by a party that relays them without knowing their types: the gateway, so a late joiner is sent the current contents (docs/replicated-collections.md D6). |
 | [NetworkMapCodec](/docs/reference/protocol/network-map-codec) | Static class. The wire and save format of NetworkMapBase contents (docs/replicated-collections.md D3). |
 | [OwnerStateMsg](/docs/reference/protocol/owner-state-msg) | Struct. Authoritative post-simulation state of a predicted entity, for its owner's reconciliation. |
 | [PeerRole](/docs/reference/protocol/peer-role) | Enum. Lists the supported peer role values. |
 | [PingMsg](/docs/reference/protocol/ping-msg) | Struct. Carries the ping protocol message. |
+| [PlayerClaims](/docs/reference/protocol/player-claims) | Static class. Claims from a player's verified sign-in token that the gateway forwards to workers (NebulaConfig.ForwardedClaims): the claim names the game listed, with their values as strings. |
 | [PlayerSessions](/docs/reference/protocol/player-sessions) | Class. A worker's view of which gateway currently speaks for each player session, and how new that claim is. |
 | [PongMsg](/docs/reference/protocol/pong-msg) | Struct. Carries the pong protocol message. |
 | [ProtocolCompatibility](/docs/reference/protocol/protocol-compatibility) | Static class. Checks client protocol and game content versions against the gateway's supported range. |

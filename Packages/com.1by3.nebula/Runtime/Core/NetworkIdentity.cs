@@ -248,6 +248,26 @@ namespace Nebula
         /// on it (for example a <see cref="PersistentEntity.Key"/>); <see cref="OwnerClientId"/> changes every session.
         /// </summary>
         public string OwnerIdentity { get; internal set; } = "";
+        /// <summary>
+        /// Workers only: the claims of the owning player's verified sign-in token that the mesh forwards
+        /// (<see cref="NebulaConfig.ForwardedClaims"/>), by claim name, with every value as a string (<c>"true"</c>,
+        /// <c>"42"</c>, <c>"alice"</c>). Gate game features on them, for example an admin role:
+        /// <c>entity.OwnerClaims.TryGetValue("is_admin", out var v) &amp;&amp; v == "true"</c>.
+        /// <para>
+        /// Empty, never null, for entities no player owns, for anonymous players, for claims the token lacks and on
+        /// clients, which are never sent claims. Like <see cref="OwnerIdentity"/> it travels with the entity through
+        /// ghosting and handover, and it is refreshed when the player reconnects with a newer token. Only claims
+        /// from a token the gateway verified are ever here, so a client cannot forge them.
+        /// </para>
+        /// </summary>
+        public IReadOnlyDictionary<string, string> OwnerClaims { get; internal set; } = PlayerClaims.Empty;
+
+        /// <summary>The owning player's forwarded claim <paramref name="name"/> (<see cref="OwnerClaims"/>); false when there is none.</summary>
+        public bool TryGetOwnerClaim(string name, out string value)
+        {
+            value = null;
+            return name != null && OwnerClaims.TryGetValue(name, out value);
+        }
         /// <summary>The owning client is a headless bot. Informational (dashboard/overlay); carried through handover.</summary>
         public bool OwnerIsBot { get; internal set; }
         /// <summary>
@@ -714,6 +734,7 @@ namespace Nebula
             Epoch = 0;
             OwnerClientId = 0;
             OwnerIdentity = "";
+            OwnerClaims = PlayerClaims.Empty;
             OwnerIsBot = false;
             IsServerDriven = false;
             IsOwnerConnected = true;

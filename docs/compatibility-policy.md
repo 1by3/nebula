@@ -42,8 +42,8 @@ fleet under live players, which is what the window is for.
 
 **Before 1.0 a bump may close the window to the new version only** (`MinProtocolVersion == ProtocolVersion`).
 Keeping an older client working costs version-gated sends and fallbacks in the gateway and client, and while
-Nebula is this early nobody depends on that; games rebuild their clients with each release. Protocol 22 does this:
-the window is 22..22, and its new messages and fields carry no gates for protocol-21 peers.
+Nebula is this early nobody depends on that; games rebuild their clients with each release. Protocol 23 does this:
+the window is 23..23, and its new messages and fields carry no gates for older peers.
 
 ## D2. Refusals say why, in a form the client can act on
 
