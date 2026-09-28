@@ -24,20 +24,38 @@ namespace Nebula
         private Action<TransportEvent> _handler;
         private long _oversized;
 
-        public LiteNetTransport(string name)
+        /// <summary>The disconnect timeout a transport gets when none is given: 8 s without a packet ends a link.</summary>
+        public const int DefaultDisconnectTimeoutMs = 8000;
+        /// <summary>The keep-alive ping interval a transport gets when none is given.</summary>
+        public const int DefaultPingIntervalMs = 500;
+
+        public LiteNetTransport(string name) : this(name, DefaultDisconnectTimeoutMs, DefaultPingIntervalMs) { }
+
+        /// <summary>
+        /// A transport whose links end after <paramref name="disconnectTimeoutMs"/> without a packet from the
+        /// remote, and that sends a keep-alive ping every <paramref name="pingIntervalMs"/>. The ping interval is
+        /// kept to at least 10 ms and the timeout to at least twice the ping interval.
+        /// </summary>
+        public LiteNetTransport(string name, int disconnectTimeoutMs, int pingIntervalMs)
         {
             Name = name;
+            int ping = Math.Max(10, pingIntervalMs);
             _net = new NetManager(this)
             {
                 ChannelsCount = 2,
                 UnsyncedEvents = false,
                 AutoRecycle = true,
                 IPv6Enabled = false,
-                DisconnectTimeout = 8000,
+                DisconnectTimeout = Math.Max(ping * 2, disconnectTimeoutMs),
                 UpdateTime = 5,
-                PingInterval = 500,
+                PingInterval = ping,
             };
         }
+
+        /// <summary>Milliseconds without a packet from the remote after which a link ends with <see cref="TransportDisconnectReason.Timeout"/>.</summary>
+        public int DisconnectTimeoutMs => _net.DisconnectTimeout;
+        /// <summary>Milliseconds between keep-alive pings.</summary>
+        public int PingIntervalMs => _net.PingInterval;
 
         public string Name { get; }
         public bool IsRunning => _net.IsRunning;

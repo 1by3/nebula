@@ -41,6 +41,8 @@
     <Compile Include="../../Tests/EditMode/ConformanceScopeFrameTests.cs" />
     <!-- Why a client's connection ended (NEB-351): the transport's reason and the client's are mapped in pure C#. -->
     <Compile Include="../../Runtime/Client/DisconnectInfo.cs;../../Tests/EditMode/DisconnectReasonTests.cs" />
+    <!-- The client's reconnect schedule (NEB-352) is pure C#. -->
+    <Compile Include="../../Runtime/Client/ReconnectBackoff.cs;../../Tests/EditMode/ReconnectBackoffTests.cs" />
     <!-- The scale and failure suite (docs/scale-suite.md) is the synthetic layer: it drives the fake mesh at
          scale and kills parts of it. Tagged `Scale` so the conformance runner never picks it up. -->
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />

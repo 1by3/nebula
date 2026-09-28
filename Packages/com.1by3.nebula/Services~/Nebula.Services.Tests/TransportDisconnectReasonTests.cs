@@ -79,6 +79,31 @@ public class TransportDisconnectReasonTests
     }
 
     [Test]
+    public void ALinkThatStopsAnsweringTimesOutAfterTheConfiguredTimeout()
+    {
+        using var server = new LiteNetTransport("test-server", disconnectTimeoutMs: 600, pingIntervalMs: 100);
+        server.Listen(0);
+        using var client = new LiteNetTransport("test-client", disconnectTimeoutMs: 600, pingIntervalMs: 100);
+        client.StartClient();
+        var serverEvents = new List<TransportEvent>();
+        var clientEvents = new List<TransportEvent>();
+        client.Connect("127.0.0.1", server.LocalPort);
+        Pump(server, client, serverEvents, clientEvents, () => Find(clientEvents, TransportEvent.Kind.Connected) != null && Find(serverEvents, TransportEvent.Kind.Connected) != null);
+        Assert.That(Find(clientEvents, TransportEvent.Kind.Connected), Is.Not.Null, "the link came up");
+
+        // The server vanishes without a word, as a crashed process would: no disconnect message is sent.
+        var net = (LiteNetLib.NetManager)typeof(LiteNetTransport).GetField("_net", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(server)!;
+        net.Stop(sendDisconnectMessages: false);
+        var clock = Stopwatch.StartNew();
+        Pump(null, client, serverEvents, clientEvents, () => Find(clientEvents, TransportEvent.Kind.Disconnected) != null);
+
+        var closed = Find(clientEvents, TransportEvent.Kind.Disconnected);
+        Assert.That(closed, Is.Not.Null);
+        Assert.That(closed!.Value.Reason, Is.EqualTo(TransportDisconnectReason.Timeout));
+        Assert.That(clock.Elapsed.TotalSeconds, Is.LessThan(4), "the 600 ms timeout applies, not the 8 s default");
+    }
+
+    [Test]
     public void AnEncryptedHandshakeNobodyCompletesIsASecurityFailure()
     {
         using var server = new LiteNetTransport("test-server");

@@ -49,7 +49,7 @@ public sealed class ConnectMenu : MonoBehaviour
 }
 ```
 
-`ConnectTo` replaces the configured gateway address and retries connection failures every 2 seconds until it connects, receives a refusal that stops automatic retries, or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
+`ConnectTo` replaces the configured gateway address and retries connection failures (after 1 second, then every 2 seconds by default) until it connects, receives a refusal that stops automatic retries, or you call `Disconnect`. A blank player name keeps the current name, which comes from `-nebula-name` or the operating system user name (`player` in a web build).
 
 The gateway also identifies the player when it connects: anonymously by default, or from an OpenID Connect token you set in `NebulaClient.AuthToken` before connecting. See [Authentication and player identity](/docs/guides/authentication).
 
@@ -66,6 +66,8 @@ Use these `NebulaClient` members to drive your UI:
 | `JoinRejected` | Show why the gateway refused the join. When the refusal stops automatic retries, `ConnectionState` is already `Disconnected` and `WantsConnection` is `false`. |
 | `GatewayDraining` | Tell the player that the client is switching gateways (see below). |
 | `Disconnected` and `LastDisconnect` | Find out why the connection ended, as a typed reason, and whether the client will retry (see below). |
+| `IsReconnecting`, `ReconnectAttempt` and `ReconnectElapsedSeconds` | Show a "reconnecting" screen with its progress (see below). |
+| `Reconnecting`, `Reconnected` and `ReconnectGaveUp` | Show and hide that screen, and return to your menu when the client gives up. |
 | `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
 | `WantsConnection` | Tell whether the client is connecting or will retry. |
 | `ConnectsAutomatically` | Hide your menu when the command line already supplied the connection. |
@@ -129,7 +131,7 @@ The client keeps its **session** across a reconnection. The gateway's welcome ca
 
 The client handles these connection events automatically:
 
-- **The link drops.** `ConnectionState` becomes `Disconnected`, `Disconnected` fires with the reason and `WillRetry` set to `true`, `LastError` reads `disconnected from gateway (retrying)`, and the client reconnects to the same address after one second, then every two seconds, until it succeeds or you call `Disconnect()`. The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it.
+- **The link drops.** `ConnectionState` becomes `Disconnected`, `Disconnected` fires with the reason and `WillRetry` set to `true`, `LastError` reads `disconnected from gateway (retrying)`, and the client starts reconnecting to the same address (see below). The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it.
 - **This player connected again somewhere else.** The gateway sends `SessionReplaced`, the `SessionReplaced` event fires with a reason fit to show the player, and the client leaves the world and stays out: the newer connection has the player's session and pawn. Reconnect only when the player asks to, which takes the player back. See [One connection per player](/docs/guides/authentication#one-connection-per-player).
 - **The gateway is being taken out of service.** The gateway sends `GatewayDraining` with the number of seconds it gives its clients, the `GatewayDraining` event fires with that number, and the client drops the link and reconnects at once with its session token. When the gateway address is a load balancer, the retry lands on another gateway; when it is one gateway, the client keeps retrying until that gateway is back in service. A gateway that is draining refuses a new join with the reason `gateway is draining`; the client retries after a second instead of giving up.
 
@@ -137,7 +139,39 @@ If a gateway process fails, session coordination can reclaim its sessions after 
 
 The client retries its configured `GatewayAddress`. Nebula does not provide a load balancer: configure your address and infrastructure so a retry can reach a surviving gateway. If the address still points only to the failed gateway, the session cannot be reclaimed there.
 
-The replicated world is cleared on every reconnection and replayed by the gateway that answers, so entities disappear for a moment and `LocalPlayerSpawned` fires again. Show a short "reconnecting" message from `ConnectionStateChanged` or `GatewayDraining` rather than returning to your main menu. `Disconnected` tells the two apart: return to the menu only when `WillRetry` is `false`.
+The replicated world is cleared on every reconnection and replayed by the gateway that answers, so entities disappear for a moment and `LocalPlayerSpawned` fires again. Show a short "reconnecting" message while `IsReconnecting` is `true` rather than returning to your main menu, and return to the menu only when `Disconnected` reports `WillRetry` as `false`.
+
+#### Show the reconnecting state
+
+When a connection the client was welcomed on drops, or its gateway drains, the client enters the reconnecting state until it is welcomed again:
+
+1. `IsReconnecting` becomes `true` and `Reconnecting` fires, after `Disconnected`. `ConnectionState` keeps moving between `Disconnected`, `Connecting` and `Connected` while the client retries, so use `IsReconnecting` to decide what to show.
+2. `ReconnectAttempt` counts the attempts started since the drop, and `ReconnectElapsedSeconds` counts the seconds.
+3. When a gateway welcomes the client again, `Reconnected` fires with `true` if the session and pawn came back (`SessionReclaimed`), or `false` if the worker had already let the pawn go.
+
+A first connection that fails is not a reconnection: the client retries it with the same schedule, but `IsReconnecting` stays `false` and the give-up time doesn't apply.
+
+The client waits `ReconnectFirstDelaySeconds` (1 s) before the first attempt, then multiplies the wait by `ReconnectBackoffFactor` (2) after each failed attempt, up to `ReconnectMaxDelaySeconds` (2 s). By default it never gives up. Set `ReconnectGiveUpSeconds` to stop after that many seconds: `ReconnectGiveUp` fires, `WantsConnection` becomes `false`, `ConnectionState` stays `Disconnected`, and `Disconnected` fires again with `WillRetry` set to `false` and the reason of the last failure. A value a little above `SessionReclaimSeconds`, such as 40 s with the default 30 s reclaim time, stops once the pawn is gone. See [Client reconnection](/docs/guides/configuration#client-reconnection) for the settings, including the transport's disconnect timeout.
+
+```csharp
+client.Reconnecting += () => ReconnectPanel.SetActive(true);
+client.Reconnected += reclaimed =>
+{
+    ReconnectPanel.SetActive(false);
+    if (!reclaimed) ShowToast("Your session expired. You are back at your spawn point.");
+};
+client.ReconnectGaveUp += () =>
+{
+    ReconnectPanel.SetActive(false);
+    ShowMainMenu(client.LastError);
+};
+
+void Update()
+{
+    if (client.IsReconnecting)
+        ReconnectLabel.text = $"Reconnecting (attempt {client.ReconnectAttempt}, {client.ReconnectElapsedSeconds:0} s)...";
+}
+```
 
 To start a new session on purpose, for example when the player picks another character, clear `SessionToken` before connecting. `Disconnect()` keeps it, so a deliberate disconnect and reconnect continues the session.
 

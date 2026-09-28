@@ -297,6 +297,39 @@ namespace Nebula
         [Tooltip("Upper bound on the adaptive input lead adjustment, in ticks.")]
         public int InputLeadMaxAdjustTicks = 30;
 
+        [Header("Client reconnection")]
+        /// <summary>
+        /// Seconds the client waits after its connection drops before the first reconnection attempt. Each later
+        /// attempt waits <see cref="ReconnectBackoffFactor"/> times longer than the one before, up to
+        /// <see cref="ReconnectMaxDelaySeconds"/>. The defaults (1 s, ×2, 2 s) retry after 1 s, then every 2 s.
+        /// </summary>
+        [Tooltip("Client: seconds to wait after the connection drops before the first reconnection attempt.")]
+        public float ReconnectFirstDelaySeconds = 1f;
+        /// <summary>How much longer each reconnection attempt waits than the one before. 1 keeps the delay fixed at <see cref="ReconnectFirstDelaySeconds"/>.</summary>
+        [Tooltip("Client: each reconnection attempt waits this many times longer than the one before (1 = a fixed delay), up to ReconnectMaxDelaySeconds.")]
+        public float ReconnectBackoffFactor = 2f;
+        /// <summary>The longest the client waits between two reconnection attempts, in seconds.</summary>
+        [Tooltip("Client: the longest wait between two reconnection attempts, in seconds.")]
+        public float ReconnectMaxDelaySeconds = 2f;
+        /// <summary>
+        /// Seconds after a drop at which the client stops reconnecting: it raises <see cref="NebulaClient.ReconnectGaveUp"/>,
+        /// sets <see cref="NebulaClient.WantsConnection"/> to false and stays <see cref="NebulaClient.State.Disconnected"/>.
+        /// 0, the default, never gives up. A value a little above <see cref="SessionReclaimSeconds"/> stops once the
+        /// worker has let the pawn go.
+        /// </summary>
+        [Tooltip("Client: seconds after a drop at which the client stops reconnecting and raises ReconnectGaveUp. 0 = never give up. A little above SessionReclaimSeconds stops once the pawn is gone.")]
+        public float ReconnectGiveUpSeconds = 0f;
+        /// <summary>
+        /// Seconds without any packet from the gateway after which the client's transport declares the link lost
+        /// and the client starts reconnecting. Lower detects a dead gateway sooner; too low drops players on a
+        /// brief network stall. Must be well above <see cref="ClientPingIntervalSeconds"/>.
+        /// </summary>
+        [Tooltip("Client: seconds without a packet from the gateway before the link counts as lost (LiteNetLib's disconnect timeout). Lower notices a dead gateway sooner; too low drops players on a brief stall.")]
+        public float ClientDisconnectTimeoutSeconds = 8f;
+        /// <summary>Seconds between the keep-alive pings the client's transport sends, which also measure the round trip.</summary>
+        [Tooltip("Client: seconds between the transport's keep-alive pings, which also measure the round-trip time.")]
+        public float ClientPingIntervalSeconds = 0.5f;
+
         [Header("Prefabs")]
         [Tooltip("Every prefab that can be spawned over the network. The index is the prefab id on the wire.")]
         public List<GameObject> NetworkPrefabs = new List<GameObject>();

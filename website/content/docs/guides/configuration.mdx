@@ -178,6 +178,21 @@ See [Build an infinite runtime world](/docs/guides/infinite-runtime-world) for t
 | `InputLeadTargetTicks` | `3` | Keep client input this many ticks ahead when it arrives at the worker. |
 | `InputLeadMaxAdjustTicks` | `30` | Limit how far the client can increase its input lead. |
 
+### Client reconnection
+
+These fields control what a client does after its connection drops. See [Reconnect after a lost link or a draining gateway](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway).
+
+| Field | Default | What to set |
+| --- | --- | --- |
+| `ReconnectFirstDelaySeconds` | `1` s | Wait this long after a drop before the first reconnection attempt. |
+| `ReconnectBackoffFactor` | `2` | Make each later attempt wait this many times longer than the one before. Use `1` for a fixed delay. |
+| `ReconnectMaxDelaySeconds` | `2` s | Never wait longer than this between two attempts. With the defaults, the client retries after 1 s, then every 2 s. |
+| `ReconnectGiveUpSeconds` | `0` | Stop reconnecting this many seconds after the drop, and raise `NebulaClient.ReconnectGiveUp`. `0` never gives up. A value a little above `SessionReclaimSeconds` stops once the worker has let the pawn go. |
+| `ClientDisconnectTimeoutSeconds` | `8` s | Treat the link as lost after this long without a packet from the gateway. Lower values notice a dead gateway sooner, but drop players on a brief network stall. |
+| `ClientPingIntervalSeconds` | `0.5` s | Send the transport's keep-alive ping this often. Keep it well below the disconnect timeout. |
+
+The two transport settings apply to the UDP transport of desktop and mobile clients. A web build's WebRTC transport uses the browser's own timeouts.
+
 Nebula runs at 60 ticks per second. `NetworkTime.TickRate` is a constant, not a configuration field.
 
 These distance filters do not create updates for static entities or unchanged transforms. Reliable root recovery, teleports, and container changes bypass the filter so the last pose can arrive after movement stops. Child component state uses a separate channel. See [NetworkTransform](/docs/guides/network-transform).

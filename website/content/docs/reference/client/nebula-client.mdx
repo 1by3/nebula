@@ -293,6 +293,30 @@ public DisconnectInfo LastDisconnect { get; } = new DisconnectInfo(DisconnectRea
 
 How the last connection, or the last attempt to connect, ended: the same value [`Disconnected`](#disconnected) carried, updated by every failed retry too. [`DisconnectReason.Unknown`](/docs/reference/client/disconnect-reason#unknown) with an empty message before the first disconnect.
 
+### IsReconnecting [#isreconnecting]
+
+```csharp
+public bool IsReconnecting { get; }
+```
+
+True while the client is reconnecting after losing a connection it had been welcomed on, or after its gateway asked it to move: from the drop until the next welcome ([`Reconnected`](#reconnected)), until it gives up ([`ReconnectGaveUp`](#reconnectgaveup)), or until the connection ends for good (a refusal, a replaced session, [`Disconnect`](#disconnect)). [`ConnectionState`](#connectionstate) keeps moving between Disconnected, Connecting and Connected meanwhile. False while a first connection is still being attempted.
+
+### ReconnectAttempt [#reconnectattempt]
+
+```csharp
+public int ReconnectAttempt { get; }
+```
+
+How many reconnection attempts the client has started in the current outage (1 during the first). 0 when not reconnecting.
+
+### ReconnectElapsedSeconds [#reconnectelapsedseconds]
+
+```csharp
+public float ReconnectElapsedSeconds { get; }
+```
+
+Seconds since the connection dropped, while [`IsReconnecting`](#isreconnecting); 0 otherwise.
+
 ### WantsConnection [#wantsconnection]
 
 ```csharp
@@ -394,6 +418,30 @@ public event Action<DisconnectInfo> Disconnected;
 ```
 
 The connection to the gateway ended, or the first attempt to connect failed. The argument says why ([`DisconnectInfo.Reason`](/docs/reference/client/disconnect-info#reason)), with a readable message, and whether the client will try again by itself ([`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry)). Raised once per outage: attempts that fail again while the client retries update [`LastDisconnect`](#lastdisconnect) without raising it. It is raised again, with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false, when the client stops trying: a refusal, a replaced session, or [`Disconnect`](#disconnect). Raised on the main thread, after [`ConnectionStateChanged`](#connectionstatechanged).
+
+### Reconnecting [#reconnecting]
+
+```csharp
+public event Action Reconnecting;
+```
+
+The client lost a connection it had been welcomed on, or its gateway is draining, and it has started reconnecting: [`IsReconnecting`](#isreconnecting) is now true. Raised once per outage, after [`Disconnected`](#disconnected). Show a "reconnecting" message rather than the main menu.
+
+### Reconnected [#reconnected]
+
+```csharp
+public event Action<bool> Reconnected;
+```
+
+A reconnection succeeded: the gateway welcomed the client again. The argument is [`SessionReclaimed`](#sessionreclaimed): true when the same session and pawn came back, false when the worker had already let the pawn go and the player starts afresh. Raised on the main thread, after [`ConnectionStateChanged`](#connectionstatechanged).
+
+### ReconnectGaveUp [#reconnectgaveup]
+
+```csharp
+public event Action ReconnectGaveUp;
+```
+
+The client stopped reconnecting after [`NebulaConfig.ReconnectGiveUpSeconds`](/docs/reference/core/nebula-config#reconnectgiveupseconds): [`WantsConnection`](#wantsconnection) is false, [`ConnectionState`](#connectionstate) is `State.Disconnected`, and [`Disconnected`](#disconnected) has been raised with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false and the reason of the last failure. Call [`Connect`](#connect) to try again.
 
 ## Methods
 
