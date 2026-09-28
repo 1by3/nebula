@@ -435,7 +435,7 @@ The join's state changed: (state, estimated seconds). Raised on the main thread.
 public event Action<int> GatewayDraining;
 ```
 
-The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.
+The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given. Raised after [`Disconnected`](#disconnected) and [`Reconnecting`](#reconnecting), with the client already `State.Disconnected`.
 
 ### SessionReplaced [#sessionreplaced]
 

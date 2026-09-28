@@ -240,7 +240,7 @@ namespace Nebula
         public event Action<JoinRejectedMsg> JoinRefused;
         /// <summary>The join's state changed: (state, estimated seconds). Raised on the main thread.</summary>
         public event Action<JoinState, int> JoinStateChanged;
-        /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given.</summary>
+        /// <summary>The gateway is draining and asked the client to reconnect (it does so by itself, with its session token); the argument is the seconds it was given. Raised after <see cref="Disconnected"/> and <see cref="Reconnecting"/>, with the client already <see cref="State.Disconnected"/>.</summary>
         public event Action<int> GatewayDraining;
         /// <summary>
         /// This player connected again somewhere else and that newer connection took the session and the pawn
@@ -1124,7 +1124,10 @@ namespace Nebula
                     break;
                 }
                 case TransportEvent.Kind.Data:
-                    if (_leavingPeer >= 0 && ev.PeerId == _leavingPeer) break; // the world this client left
+                    // Only the current link speaks for the world: a link this client has dropped (a drain, a refusal,
+                    // a kick, Leave) may still deliver what was in flight, and it must not rebuild a world the client
+                    // cleared, or change its join, in a client that is now Disconnected or on its next link.
+                    if (ev.PeerId != _gatewayPeer) break;
                     _packetsIn++;
                     _bytesIn += ev.Data.Count;
                     _reader.Set(ev.Data);
@@ -1154,7 +1157,10 @@ namespace Nebula
                     // Handlers reset _reader for nested payloads, so the envelope is walked with its own reader.
                     _batchReader.Set(r.ReadSegment(r.Remaining));
                     int n = _batchReader.ReadUShort();
-                    for (int i = 0; i < n; i++)
+                    // A message that ends the link (a drain notice, a refusal, a kick) ends the batch with it: what
+                    // follows it belongs to the link the client has just dropped.
+                    int link = _gatewayPeer;
+                    for (int i = 0; i < n && _gatewayPeer == link; i++)
                     {
                         var seg = _batchReader.ReadSegment(_batchReader.ReadUShort());
                         _reader.Set(seg);
@@ -1290,13 +1296,15 @@ namespace Nebula
                     }
                     // Reconnect now, keeping the session token: the next gateway reclaims the session and the pawn.
                     NebulaLog.Warn($"gateway is draining; reconnecting within {draining.ReconnectWithinSeconds} s with the session token");
-                    GatewayDraining?.Invoke(draining.ReconnectWithinSeconds);
                     DropGatewayLink();
                     ClearWorld();
                     ScheduleRetry(0.2f);
                     SetState(State.Disconnected);
                     ReportDisconnect(DisconnectReason.GatewayDraining, "the gateway is draining; reconnecting with the session token", true);
                     RaiseReconnectingIfNew(wasReconnecting);
+                    // Last, once the client is in the state it reports: a handler may call Connect or Disconnect.
+                    try { GatewayDraining?.Invoke(draining.ReconnectWithinSeconds); }
+                    catch (Exception e) { NebulaLog.Error($"GatewayDraining handler threw: {e}"); }
                     break;
                 }
                 case MsgId.Kicked:

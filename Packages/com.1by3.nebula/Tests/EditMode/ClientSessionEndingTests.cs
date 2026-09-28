@@ -197,6 +197,61 @@ namespace Nebula.Tests
             Assert.That(_client.Join, Is.EqualTo(JoinState.None), "the world this client left does not come back");
         }
 
+        private static byte[] Message(Action<NetworkWriter> write)
+        {
+            var w = new NetworkWriter();
+            write(w);
+            return w.ToArray();
+        }
+
+        private static ArraySegment<byte> Batch(params byte[][] messages)
+        {
+            var w = new NetworkWriter();
+            w.WriteByte((byte)MsgId.Batch);
+            w.WriteUShort((ushort)messages.Length);
+            foreach (var m in messages)
+            {
+                w.WriteUShort((ushort)m.Length);
+                w.WriteRaw(new ArraySegment<byte>(m));
+            }
+            return new ArraySegment<byte>(w.ToArray());
+        }
+
+        [Test]
+        public void WhatFollowsADrainNoticeInABatchIsNotApplied()
+        {
+            int peer = Welcomed();
+            Receive(w => new JoinStatusMsg { State = JoinState.Joined }.Write(w));
+            // The rest of the gateway's batch was written before the client dropped the link: a join status and a
+            // welcome that would put a client that is now Disconnected back in game.
+            Deliver(new TransportEvent(TransportEvent.Kind.Data, peer, Batch(
+                Message(w => new GatewayDrainingMsg { ReconnectWithinSeconds = 10 }.Write(w)),
+                Message(w => new JoinStatusMsg { State = JoinState.Joined }.Write(w)),
+                Message(w => new WelcomeMsg { ClientId = 5, TickRate = 60, Identity = "id", SessionToken = "stale", NegotiatedVersion = HelloMsg.ProtocolVersion }.Write(w)))));
+
+            Assert.That(_client.ConnectionState, Is.EqualTo(NebulaClient.State.Disconnected));
+            Assert.That(_client.Join, Is.EqualTo(JoinState.None), "the world stays cleared");
+            Assert.That(_client.SessionToken, Is.EqualTo("session-token"), "nothing after the notice was read");
+            Assert.That(_client.IsReconnecting, Is.True);
+
+            // Packets still in flight on the dropped link are ignored too.
+            Deliver(new TransportEvent(TransportEvent.Kind.Data, peer, new ArraySegment<byte>(
+                Message(w => new WelcomeMsg { ClientId = 5, TickRate = 60, Identity = "id", SessionToken = "stale", NegotiatedVersion = HelloMsg.ProtocolVersion }.Write(w)))));
+            Assert.That(_client.ConnectionState, Is.EqualTo(NebulaClient.State.Disconnected));
+            Assert.That(_client.SessionToken, Is.EqualTo("session-token"));
+        }
+
+        [Test]
+        public void WhatFollowsAKickInABatchIsNotApplied()
+        {
+            int peer = Welcomed();
+            Deliver(new TransportEvent(TransportEvent.Kind.Data, peer, Batch(
+                Message(w => new KickedMsg { Code = 1, Reason = "bye" }.Write(w)),
+                Message(w => new JoinStatusMsg { State = JoinState.Joined }.Write(w)))));
+            Assert.That(_client.ConnectionState, Is.EqualTo(NebulaClient.State.Disconnected));
+            Assert.That(_client.Join, Is.EqualTo(JoinState.None));
+        }
+
         [Test]
         public void AKickEndsTheConnectionWithTheServersCodeAndIsNotRetried()
         {
