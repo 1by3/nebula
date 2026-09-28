@@ -124,10 +124,38 @@ namespace Nebula
             _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Connected, peer.Id, default));
         }
 
-        void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        void INetEventListener.OnPeerDisconnected(NetPeer peer, LiteNetLib.DisconnectInfo disconnectInfo)
         {
             _peers.Remove(peer.Id);
-            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Disconnected, peer.Id, default));
+            _handler?.Invoke(TransportEvent.Disconnected(peer.Id, ReasonOf(disconnectInfo.Reason, disconnectInfo.SocketErrorCode)));
+        }
+
+        /// <summary>LiteNetLib's reason for a closed link, in the transport-neutral terms of <see cref="TransportDisconnectReason"/>.</summary>
+        internal static TransportDisconnectReason ReasonOf(LiteNetLib.DisconnectReason reason, SocketError socketError = SocketError.Success)
+        {
+            switch (reason)
+            {
+                case LiteNetLib.DisconnectReason.Timeout: return TransportDisconnectReason.Timeout;
+                case LiteNetLib.DisconnectReason.NetworkUnreachable: return TransportDisconnectReason.NetworkUnreachable;
+                // ConnectionFailed: every connect attempt went unanswered. UnknownHost: the name did not resolve.
+                case LiteNetLib.DisconnectReason.ConnectionFailed:
+                case LiteNetLib.DisconnectReason.HostUnreachable:
+                case LiteNetLib.DisconnectReason.UnknownHost:
+                    return socketError == SocketError.NetworkUnreachable || socketError == SocketError.NetworkDown
+                        ? TransportDisconnectReason.NetworkUnreachable
+                        : TransportDisconnectReason.HostUnreachable;
+                // Reconnect: the remote accepted a new connection from this endpoint. PeerNotFound: the remote no
+                // longer knows this link, typically because it restarted.
+                case LiteNetLib.DisconnectReason.RemoteConnectionClose:
+                case LiteNetLib.DisconnectReason.Reconnect:
+                case LiteNetLib.DisconnectReason.PeerNotFound:
+                    return TransportDisconnectReason.ClosedByRemote;
+                case LiteNetLib.DisconnectReason.DisconnectPeerCalled: return TransportDisconnectReason.LocalRequest;
+                case LiteNetLib.DisconnectReason.ConnectionRejected:
+                case LiteNetLib.DisconnectReason.InvalidProtocol:
+                    return TransportDisconnectReason.Rejected;
+                default: return TransportDisconnectReason.Unknown;
+            }
         }
 
         void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)

@@ -13,6 +13,31 @@ namespace Nebula
         ReliableOrdered = 1,
     }
 
+    /// <summary>
+    /// Why a transport link closed, in terms that do not depend on the transport: carried by a
+    /// <see cref="TransportEvent.Kind.Disconnected"/> event in <see cref="TransportEvent.Reason"/>. A transport that
+    /// cannot tell reports <see cref="Unknown"/>.
+    /// </summary>
+    public enum TransportDisconnectReason : byte
+    {
+        /// <summary>The transport did not say, or could not tell.</summary>
+        Unknown = 0,
+        /// <summary>This side closed the link (<see cref="ITransport.Disconnect"/> or <see cref="ITransport.Stop"/>).</summary>
+        LocalRequest = 1,
+        /// <summary>The link was up and the remote stopped answering for longer than the transport's disconnect timeout.</summary>
+        Timeout = 2,
+        /// <summary>The local network is down: no route to any host, no interface, or the socket failed.</summary>
+        NetworkUnreachable = 3,
+        /// <summary>The link never came up: the host did not answer, refused the connection, or its name did not resolve.</summary>
+        HostUnreachable = 4,
+        /// <summary>The remote closed the link, or no longer knows this side (it restarted).</summary>
+        ClosedByRemote = 5,
+        /// <summary>The remote refused the connection request at the transport level, for example a different connection key or protocol.</summary>
+        Rejected = 6,
+        /// <summary>A secure transport refused the link: the key exchange failed or the certificate did not match.</summary>
+        SecurityFailure = 7,
+    }
+
     public readonly struct TransportEvent
     {
         public enum Kind : byte { Connected, Disconnected, Data }
@@ -20,13 +45,24 @@ namespace Nebula
         public readonly Kind Type;
         public readonly int PeerId;
         public readonly ArraySegment<byte> Data;
+        /// <summary>Why the link closed, for a <see cref="Kind.Disconnected"/> event; <see cref="TransportDisconnectReason.Unknown"/> otherwise.</summary>
+        public readonly TransportDisconnectReason Reason;
 
         public TransportEvent(Kind type, int peerId, ArraySegment<byte> data)
+            : this(type, peerId, data, TransportDisconnectReason.Unknown) { }
+
+        /// <summary>An event that carries why its link closed (<paramref name="reason"/>), for <see cref="Kind.Disconnected"/>.</summary>
+        public TransportEvent(Kind type, int peerId, ArraySegment<byte> data, TransportDisconnectReason reason)
         {
             Type = type;
             PeerId = peerId;
             Data = data;
+            Reason = reason;
         }
+
+        /// <summary>A <see cref="Kind.Disconnected"/> event for <paramref name="peerId"/> that says why the link closed.</summary>
+        public static TransportEvent Disconnected(int peerId, TransportDisconnectReason reason)
+            => new TransportEvent(Kind.Disconnected, peerId, default, reason);
     }
 
     /// <summary>

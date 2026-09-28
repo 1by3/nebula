@@ -1,4 +1,4 @@
 {
   "title": "Client",
-  "pages": ["nebula-client", "nebula-title-screen"]
+  "pages": ["disconnect-info", "disconnect-reason", "nebula-client", "nebula-title-screen"]
 }

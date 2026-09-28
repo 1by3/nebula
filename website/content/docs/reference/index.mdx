@@ -158,6 +158,8 @@ Connect a player to the gateway, predict the local entity, and display replicate
 
 | Type | Summary |
 | --- | --- |
+| [DisconnectInfo](/docs/reference/client/disconnect-info) | Struct. How a client's connection ended: the typed Reason, a Message for logs and the player, and whether the client will try again by itself (WillRetry). |
+| [DisconnectReason](/docs/reference/client/disconnect-reason) | Enum. Why a client's connection to the gateway ended, or why an attempt to connect failed. |
 | [NebulaClient](/docs/reference/client/nebula-client) | Class. The game client. |
 | [NebulaTitleScreen](/docs/reference/client/nebula-title-screen) | Class. Optional IMGUI panel where a player enters the gateway address and a display name before connecting. |
 
@@ -314,6 +316,7 @@ Send reliable ordered or unreliable sequenced messages through LiteNetLib.
 | [LiteNetTransport](/docs/reference/transport/lite-net-transport) | Class. ITransport over LiteNetLib. |
 | [MultiTransport](/docs/reference/transport/multi-transport) | Class. Several transports behind one ITransport, so the gateway accepts native clients over UDP and browsers over WebRTC without caring which link a peer arrived on. |
 | [NebulaCrypto](/docs/reference/transport/nebula-crypto) | Static class. Provides random bytes, SHA-256 hashes, hash-based message authentication codes (HMAC), and key derivation for encrypted transport connections. |
+| [TransportDisconnectReason](/docs/reference/transport/transport-disconnect-reason) | Enum. Why a transport link closed, in terms that do not depend on the transport: carried by a TransportEvent.Kind.Disconnected event in TransportEvent.Reason. |
 | [TransportEvent](/docs/reference/transport/transport-event) | Struct. Stores the values used by transport event. |
 | [TransportIdentity](/docs/reference/transport/transport-identity) | Class. Holds the gateway's X.509 certificate, RSA private signing key, and public-key fingerprint for client pinning. |
 | [TransportSecurity](/docs/reference/transport/transport-security) | Static class. Reads encryption status and handshake errors through an ITransport reference. |

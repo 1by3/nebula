@@ -20,6 +20,7 @@ namespace Nebula
     {
         [DllImport("__Internal")] private static extern int NebulaRtc_Connect(string host, int port);
         [DllImport("__Internal")] private static extern int NebulaRtc_State(int id);
+        [DllImport("__Internal")] private static extern int NebulaRtc_CloseReason(int id);
         [DllImport("__Internal")] private static extern int NebulaRtc_NextSize(int id);
         [DllImport("__Internal")] private static extern int NebulaRtc_NextChannel(int id);
         [DllImport("__Internal")] private static extern int NebulaRtc_Receive(int id, byte[] buffer, int capacity);
@@ -30,6 +31,8 @@ namespace Nebula
         private const int StateOpen = 1, StateClosed = 2;
         private const int ReliableChannel = 0, UnreliableChannel = 1;
         private const int SequenceBytes = 2;
+        // NebulaRtc_CloseReason's codes (NebulaWebRtc.jslib).
+        private const int CloseUnreachable = 1, CloseByRemote = 2, CloseLost = 3;
 
         private sealed class Link
         {
@@ -37,6 +40,7 @@ namespace Nebula
             public bool Announced;
             public ushort SendSequence, ReceiveSequence;
             public bool ReceivedSequenced;
+            public bool ClosedLocally;
         }
 
         private readonly Dictionary<int, Link> _links = new Dictionary<int, Link>();
@@ -69,7 +73,9 @@ namespace Nebula
 
         public void Disconnect(int peerId)
         {
-            if (_links.ContainsKey(peerId)) NebulaRtc_Close(peerId);
+            if (!_links.TryGetValue(peerId, out var link)) return;
+            link.ClosedLocally = true;
+            NebulaRtc_Close(peerId);
         }
 
         public bool IsConnected(int peerId) => _links.ContainsKey(peerId) && NebulaRtc_State(peerId) == StateOpen;
@@ -128,9 +134,21 @@ namespace Nebula
                     handler(new TransportEvent(TransportEvent.Kind.Data, link.Id, new ArraySegment<byte>(_buffer, SequenceBytes, n - SequenceBytes)));
                 }
                 if (state != StateClosed) continue;
+                var reason = link.ClosedLocally ? TransportDisconnectReason.LocalRequest : ReasonOf(NebulaRtc_CloseReason(link.Id));
                 NebulaRtc_Close(link.Id);
                 _links.Remove(link.Id);
-                handler(new TransportEvent(TransportEvent.Kind.Disconnected, link.Id, default));
+                handler(TransportEvent.Disconnected(link.Id, reason));
+            }
+        }
+
+        private static TransportDisconnectReason ReasonOf(int code)
+        {
+            switch (code)
+            {
+                case CloseUnreachable: return TransportDisconnectReason.HostUnreachable;
+                case CloseByRemote: return TransportDisconnectReason.ClosedByRemote;
+                case CloseLost: return TransportDisconnectReason.Timeout;
+                default: return TransportDisconnectReason.Unknown;
             }
         }
 

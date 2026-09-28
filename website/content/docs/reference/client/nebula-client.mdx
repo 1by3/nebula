@@ -285,6 +285,14 @@ public string LastError { get; } = "";
 
 Last connection failure or disconnect reason, for connection UI. Empty while healthy.
 
+### LastDisconnect [#lastdisconnect]
+
+```csharp
+public DisconnectInfo LastDisconnect { get; } = new DisconnectInfo(DisconnectReason.Unknown, "", false);
+```
+
+How the last connection, or the last attempt to connect, ended: the same value [`Disconnected`](#disconnected) carried, updated by every failed retry too. [`DisconnectReason.Unknown`](/docs/reference/client/disconnect-reason#unknown) with an empty message before the first disconnect.
+
 ### WantsConnection [#wantsconnection]
 
 ```csharp
@@ -379,6 +387,14 @@ public event Action<string> SessionReplaced;
 
 This player connected again somewhere else and that newer connection took the session and the pawn ([`NebulaConfig.SingleSessionPerPlayer`](/docs/reference/core/nebula-config#singlesessionperplayer)). The client has left the world and does not reconnect by itself: show the reason (the argument, also in [`LastError`](#lasterror)) and let the player choose to take the session back with [`Connect`](#connect). Raised on the main thread.
 
+### Disconnected [#disconnected]
+
+```csharp
+public event Action<DisconnectInfo> Disconnected;
+```
+
+The connection to the gateway ended, or the first attempt to connect failed. The argument says why ([`DisconnectInfo.Reason`](/docs/reference/client/disconnect-info#reason)), with a readable message, and whether the client will try again by itself ([`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry)). Raised once per outage: attempts that fail again while the client retries update [`LastDisconnect`](#lastdisconnect) without raising it. It is raised again, with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false, when the client stops trying: a refusal, a replaced session, or [`Disconnect`](#disconnect). Raised on the main thread, after [`ConnectionStateChanged`](#connectionstatechanged).
+
 ## Methods
 
 ### ClearFocusHint [#clearfocushint]
@@ -395,7 +411,7 @@ Withdraw the focus hint: interest returns to the pawn. Going quiet is not enough
 public void AbsoluteFocusHint(out double x, out double y, out double z);
 ```
 
-[`FocusHint`](#focushint) in absolute world coordinates: the frame position plus this process's floating origin, in double, exactly as a worker resolves its own entities (`WorkerInterest.ToAbsolute`). Without a world definition the origin never moves and the two spaces are the same. All zero when there is no hint.
+[`FocusHint`](#focushint) in absolute world coordinates: the frame position with the floating origin of the local pawn's scope added back, in double, exactly as a worker resolves its own entities (`WorkerInterest.ToAbsolute`). A scoped chunk grid moves its own origin, not the public one, so the hint is converted through the scope's frame (`docs/scope-frames.md` D4b, NEB-338). Without a world definition or a scope frame the origin never moves and the two spaces are the same. All zero when there is no hint.
 
 ### SetContentAnchor [#setcontentanchor]
 

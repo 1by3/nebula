@@ -10,16 +10,25 @@ var NebulaWebRtc = {
     reliable: 0,
     unreliable: 1,
     open: 1,
-    closed: 2
+    closed: 2,
+    // Why a link closed, read by NebulaRtc_CloseReason: 0 unknown, 1 the gateway never answered, 2 the gateway
+    // closed the link, 3 the link was up and stopped answering.
+    unreachable: 1,
+    closedByRemote: 2,
+    lost: 3
   },
 
   NebulaRtc_Connect: function (hostPtr, port) {
     var host = UTF8ToString(hostPtr);
     var id = NebulaRtc.next++;
-    var link = { state: 0, queue: [], rtt: -1, pc: null, channels: [], timers: [] };
+    var link = { state: 0, queue: [], rtt: -1, pc: null, channels: [], timers: [], reason: 0 };
     NebulaRtc.links[id] = link;
-    var fail = function (why) {
-      if (link.state !== NebulaRtc.closed) console.warn('[nebula] WebRTC link to ' + host + ':' + port + ' closed: ' + why);
+    // A link that never opened was not reached, whatever closed it; an open one says why it closed.
+    var fail = function (why, reasonIfOpen) {
+      if (link.state !== NebulaRtc.closed) {
+        console.warn('[nebula] WebRTC link to ' + host + ':' + port + ' closed: ' + why);
+        link.reason = link.state === NebulaRtc.open ? (reasonIfOpen || 0) : NebulaRtc.unreachable;
+      }
       link.state = NebulaRtc.closed;
     };
     try {
@@ -35,13 +44,15 @@ var NebulaWebRtc = {
         channel.onopen = function () {
           if (++opened === 2 && link.state === 0) link.state = NebulaRtc.open;
         };
-        channel.onclose = function () { fail('data channel closed'); };
+        channel.onclose = function () { fail('data channel closed', NebulaRtc.closedByRemote); };
         channel.onmessage = function (e) {
           if (link.state !== NebulaRtc.closed && e.data instanceof ArrayBuffer) link.queue.push({ channel: index, data: new Uint8Array(e.data) });
         };
       });
       pc.onconnectionstatechange = function () {
-        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') fail('connection ' + pc.connectionState);
+        // 'failed' on an open link: the browser's consent checks went unanswered, so the gateway is gone.
+        if (pc.connectionState === 'failed') fail('connection failed', NebulaRtc.lost);
+        else if (pc.connectionState === 'closed') fail('connection closed', NebulaRtc.closedByRemote);
       };
       var scheme = window.location.protocol === 'https:' ? 'https:' : 'http:';
       var authority = host.indexOf(':') >= 0 ? '[' + host + ']' : host;
@@ -79,6 +90,11 @@ var NebulaWebRtc = {
   NebulaRtc_State: function (id) {
     var link = NebulaRtc.links[id];
     return link ? link.state : NebulaRtc.closed;
+  },
+
+  NebulaRtc_CloseReason: function (id) {
+    var link = NebulaRtc.links[id];
+    return link ? link.reason : 0;
   },
 
   NebulaRtc_NextSize: function (id) {

@@ -1,0 +1,25 @@
+---
+title: "TransportDisconnectReason"
+description: "Why a transport link closed, in terms that do not depend on the transport: carried by a TransportEvent.Kind.Disconnected event in TransportEvent.Reason."
+---
+
+<div className="text-sm text-fd-muted-foreground">Enum in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Transport/ITransport.cs)</div>
+
+```csharp
+public enum TransportDisconnectReason : byte
+```
+
+Why a transport link closed, in terms that do not depend on the transport: carried by a [`TransportEvent.Kind.Disconnected`](/docs/reference/transport/transport-event#disconnected) event in [`TransportEvent.Reason`](/docs/reference/transport/transport-event#reason). A transport that cannot tell reports `Unknown`.
+
+## Members
+
+| Name | Value | Description |
+| --- | --- | --- |
+| <span id="unknown"></span>`Unknown` | `0` | The transport did not say, or could not tell. |
+| <span id="localrequest"></span>`LocalRequest` | `1` | This side closed the link ([`ITransport.Disconnect`](/docs/reference/transport/i-transport#disconnect) or [`ITransport.Stop`](/docs/reference/transport/i-transport#stop)). |
+| <span id="timeout"></span>`Timeout` | `2` | The link was up and the remote stopped answering for longer than the transport's disconnect timeout. |
+| <span id="networkunreachable"></span>`NetworkUnreachable` | `3` | The local network is down: no route to any host, no interface, or the socket failed. |
+| <span id="hostunreachable"></span>`HostUnreachable` | `4` | The link never came up: the host did not answer, refused the connection, or its name did not resolve. |
+| <span id="closedbyremote"></span>`ClosedByRemote` | `5` | The remote closed the link, or no longer knows this side (it restarted). |
+| <span id="rejected"></span>`Rejected` | `6` | The remote refused the connection request at the transport level, for example a different connection key or protocol. |
+| <span id="securityfailure"></span>`SecurityFailure` | `7` | A secure transport refused the link: the key exchange failed or the certificate did not match. |

@@ -363,7 +363,7 @@ namespace Nebula
             _links.Remove(peerId);
             _inner.Disconnect(peerId);
             // LiteNetLib reports the disconnect on a later poll; a client waiting to connect must not wait for it.
-            _handler?.Invoke(new TransportEvent(TransportEvent.Kind.Disconnected, peerId, default));
+            _handler?.Invoke(TransportEvent.Disconnected(peerId, TransportDisconnectReason.SecurityFailure));
             return false;
         }
 
