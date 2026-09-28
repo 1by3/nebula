@@ -19,7 +19,7 @@ An operation on one player's admission claim. Transport must preserve all 64 bit
 public string Operation = "";
 ```
 
-claim, poll, release, cancel, or reserve. Poll returns disconnect requests for the named gateway.
+claim, poll, release, end, cancel, or reserve. Poll returns disconnect requests for the named gateway. End is a release after which nothing is kept for a reclaim (the player said goodbye or was removed): the player's next claim starts a new session.
 
 ### Identity [#identity]
 

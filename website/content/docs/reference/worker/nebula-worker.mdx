@@ -618,6 +618,17 @@ What the entity `netId` looked like at server tick `tick`, from this worker's ow
 public NetworkIdentity FindPlayer(ulong clientId);
 ```
 
+### Kick [#kick]
+
+```csharp
+public bool Kick(ulong clientId, ushort code, string reason);
+public bool Kick(NetworkIdentity player, ushort code, string reason);
+```
+
+Remove a player from the game: the client is told why (`code`, a number of the game's own that Nebula passes through unchanged, and `reason`, fit to show the player), its link is closed, and the session ends at once, with no reclaim grace. The pawn is despawned the way a player who left is ([`NebulaGameMode.OnPlayerDespawn`](/docs/reference/core/nebula-game-mode#onplayerdespawn), then the despawn; a persistent pawn keeps its record). The client raises [`NebulaClient.Disconnected`](/docs/reference/client/nebula-client#disconnected) with [`DisconnectReason.Kicked`](/docs/reference/client/disconnect-reason#kicked) and does not reconnect by itself.
+
+Call it on any worker that knows the session: the one that owns the pawn, or one the pawn was handed on from. The worker tells the gateway that speaks for the session, which ends the session wherever the pawn is now. Returns false when this worker has never heard of `clientId`. A kick is not a ban: the player can connect again, as a new session. Keep a ban list in your own admission code ([`NebulaAdmission`](/docs/reference/gateway/nebula-admission), or your sign-in service).
+
 ### InstanceKey [#instancekey]
 
 ```csharp

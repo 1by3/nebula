@@ -167,22 +167,4 @@ public class ConformanceNetworkMapTests
         var bob = Join(fleet, "bob");
         Assert.That(fleet.Run(() => Holds(bob, 7002, ("a", "2"), ("n", "1"))), Is.True, "a late joiner gets the new owner's copy");
     }
-
-    [Test]
-    public void AProtocol20ClientIsNeverSentMapUpdates()
-    {
-        using var fleet = Mesh();
-        var old = Join(fleet, "old", version: 20);
-        Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)20));
-        var current = Join(fleet, "new");
-        var crate = fleet.Worker.Spawn(7003, new Vector3(3, 0, 0), alwaysRelevant: true);
-        crate.Maps = Full(("a", "1"));
-        fleet.Worker.Reannounce(7003, newEpoch: false);
-        Assert.That(fleet.Run(() => old.Replicas.Contains(7003) && Holds(current, 7003, ("a", "1"))), Is.True);
-        fleet.Worker.SendMaps(7003, Section(false, ("a", "2")));
-        Assert.That(fleet.Run(() => Holds(current, 7003, ("a", "2"))), Is.True);
-        fleet.RunFor(0.3);
-        Assert.That(old.MapDeltas, Is.Empty, "a client that cannot read EntityMaps is not sent one");
-        Assert.That(old.LastError, Is.Empty, "and the spawn's trailing maps field does not trouble it");
-    }
 }

@@ -17,7 +17,10 @@ How a client's connection ended: the typed [`Reason`](#reason), a [`Message`](#m
 
 ```csharp
 public DisconnectInfo(DisconnectReason reason, string message, bool willRetry);
+public DisconnectInfo(DisconnectReason reason, string message, bool willRetry, ushort code);
 ```
+
+A disconnect with a server `code` ([`Code`](#code)).
 
 ## Fields
 
@@ -44,6 +47,14 @@ public readonly bool WillRetry;
 ```
 
 True when the client keeps trying to connect; false when it has stopped and waits for [`NebulaClient.Connect`](/docs/reference/client/nebula-client#connect).
+
+### Code [#code]
+
+```csharp
+public readonly ushort Code;
+```
+
+For [`DisconnectReason.Kicked`](/docs/reference/client/disconnect-reason#kicked): the code the server gave, a number of the game's own that Nebula passes through unchanged. 0 for every other reason, and when the server gave none.
 
 ## Methods
 

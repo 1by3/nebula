@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 20..21; protocols 18 and 19 are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 21..22; protocols 18 to 20 are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -37,6 +37,7 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
 | unreleased | 21 | replicated maps (NEB-335, `docs/replicated-collections.md` D12); **additive**, and the window moves to 20..21 |
+| unreleased | 22 | deliberate session endings: goodbye, kick, shutdown notice (NEB-354); **additive**, and the window moves to 21..22 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -64,6 +65,16 @@ bump.
 the replay test runs the protocol-20 recording against a frozen protocol-20 decoder
 (`Fixtures/Protocol20GatewayDecoder.cs`), and `protocol-21-handshake.json` was recorded for the next bump. The
 sync-audience test of a protocol-19 client left with the window.
+
+22 is additive for clients. It adds `Kicked` (9, gateway to client), which a gateway sends only to a client that
+negotiated 22 (a protocol-21 client is told of a kick with the `JoinRejected` `Denied` refusal it already
+understands), `Goodbye` (24, client to gateway), which only a protocol-22 client sends, and a trailing
+`server_shutdown` field on `GatewayDraining`, written only to protocol-22 clients. Between workers and gateways it adds
+`KickPlayer` (39) and a trailing `end_now` field on `DespawnPlayer`, and `OrphanKind.Ended` in the handover's session
+section. The window moves up by one, so `MinProtocolVersion` is 21; the replay test runs the protocol-21 recording
+against a frozen protocol-21 decoder (`Fixtures/Protocol21GatewayDecoder.cs`, the protocol-20 reader with its version
+literals raised), and `protocol-22-handshake.json` was recorded for the next bump. The map test of a protocol-20
+client left with the window.
 
 ## Bumping the protocol
 

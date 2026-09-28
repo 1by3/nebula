@@ -18,7 +18,11 @@ namespace Nebula
         HostUnreachable = 3,
         /// <summary>The gateway closed the connection without saying why, or restarted and no longer knows this client.</summary>
         ClosedByServer = 4,
-        /// <summary>The server removed this player. Reserved for a server notice that says so; nothing raises it yet.</summary>
+        /// <summary>
+        /// The server removed this player (<c>NebulaWorker.Kick</c> or <c>NebulaGateway.Kick</c>).
+        /// <see cref="DisconnectInfo.Message"/> is the server's reason and <see cref="DisconnectInfo.Code"/> the game's
+        /// own code. The session is over, the session token is cleared, and the client does not reconnect by itself.
+        /// </summary>
         Kicked = 5,
         /// <summary>
         /// This player connected again somewhere else and the newer connection took the session
@@ -30,9 +34,13 @@ namespace Nebula
         /// holds the typed reason. The client retries only when the gateway asked it to.
         /// </summary>
         JoinRefused = 7,
-        /// <summary>The server is shutting down. Reserved for a server notice that says so; nothing raises it yet.</summary>
+        /// <summary>
+        /// The gateway is shutting down and no other gateway was serving: the server is going away, or restarting.
+        /// The client reconnects on its normal schedule with its session token, so a server back within
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/> can give the pawn back.
+        /// </summary>
         ServerShutdown = 8,
-        /// <summary>The game called <see cref="NebulaClient.Disconnect"/>, directly or through <see cref="NebulaClient.ConnectTo"/>.</summary>
+        /// <summary>The game called <see cref="NebulaClient.Disconnect"/> or <see cref="NebulaClient.Leave"/>, directly or through <see cref="NebulaClient.ConnectTo"/>.</summary>
         ClientRequested = 9,
         /// <summary>
         /// The gateway is being taken out of service and asked the client to reconnect
@@ -55,12 +63,22 @@ namespace Nebula
         public readonly string Message;
         /// <summary>True when the client keeps trying to connect; false when it has stopped and waits for <see cref="NebulaClient.Connect"/>.</summary>
         public readonly bool WillRetry;
+        /// <summary>
+        /// For <see cref="DisconnectReason.Kicked"/>: the code the server gave, a number of the game's own that Nebula
+        /// passes through unchanged. 0 for every other reason, and when the server gave none.
+        /// </summary>
+        public readonly ushort Code;
 
         public DisconnectInfo(DisconnectReason reason, string message, bool willRetry)
+            : this(reason, message, willRetry, 0) { }
+
+        /// <summary>A disconnect with a server <paramref name="code"/> (<see cref="Code"/>).</summary>
+        public DisconnectInfo(DisconnectReason reason, string message, bool willRetry, ushort code)
         {
             Reason = reason;
             Message = message ?? "";
             WillRetry = willRetry;
+            Code = code;
         }
 
         public override string ToString() => $"{Reason}: {Message}" + (WillRetry ? " (retrying)" : "");

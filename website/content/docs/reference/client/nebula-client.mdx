@@ -11,6 +11,16 @@ public sealed class NebulaClient : MonoBehaviour, IRpcSink
 
 The game client. Talks only to the gateway, sends inputs, receives snapshots tagged (tick, epoch, owner) and predicts its own player. It is never a party to the handover protocol: which worker produced a snapshot is metadata used for epoch filtering and the debug overlay, nothing else.
 
+## Fields
+
+### DefaultLeaveTimeoutSeconds [#defaultleavetimeoutseconds]
+
+```csharp
+public const float DefaultLeaveTimeoutSeconds = 0.5f;
+```
+
+How long [`Leave`](#leave) waits, by default, for the gateway to confirm the goodbye.
+
 ## Properties
 
 ### Config [#config]
@@ -333,6 +343,14 @@ public bool ConnectsAutomatically { get; }
 
 Whether the client connected on its own at startup because the command line supplied the connection (`-nebula-gateway`, `-nebula-bot`, or `-nebula-connect`). Connection UI such as [`NebulaTitleScreen`](/docs/reference/client/nebula-title-screen) stays hidden when this is true.
 
+### IsLeaving [#isleaving]
+
+```csharp
+public bool IsLeaving { get; }
+```
+
+True from [`Leave`](#leave) until the gateway has confirmed the goodbye or the timeout has passed; see [`LeaveFinished`](#leavefinished).
+
 ## Events
 
 ### EntitySpawned [#entityspawned]
@@ -443,6 +461,14 @@ public event Action ReconnectGaveUp;
 
 The client stopped reconnecting after [`NebulaConfig.ReconnectGiveUpSeconds`](/docs/reference/core/nebula-config#reconnectgiveupseconds): [`WantsConnection`](#wantsconnection) is false, [`ConnectionState`](#connectionstate) is `State.Disconnected`, and [`Disconnected`](#disconnected) has been raised with [`DisconnectInfo.WillRetry`](/docs/reference/client/disconnect-info#willretry) false and the reason of the last failure. Call [`Connect`](#connect) to try again.
 
+### LeaveFinished [#leavefinished]
+
+```csharp
+public event Action<bool> LeaveFinished;
+```
+
+A [`Leave`](#leave) is over. True when the gateway confirmed the goodbye (it closed the link) and the session has ended; false when there was no connection to say goodbye on, or the gateway did not answer in time, in which case the server treats the player as disconnected and ends the session after the reclaim grace. Raised on the main thread.
+
 ## Methods
 
 ### ClearFocusHint [#clearfocushint]
@@ -509,7 +535,27 @@ Drop the saved anonymous identity: the next connection without an [`AuthToken`](
 public void Disconnect();
 ```
 
-Leave the gateway and stop reconnecting. The client stays idle until the next [`Connect`](#connect) or [`ConnectTo`](#connectto).
+Leave the gateway and stop reconnecting. The client stays idle until the next [`Connect`](#connect) or [`ConnectTo`](#connectto). To the server this looks like a lost link: the worker keeps the pawn for [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds) so the player can come back to it. Use [`Leave`](#leave) when the player is leaving for good.
+
+### Leave [#leave]
+
+```csharp
+public void Leave(float timeoutSeconds = DefaultLeaveTimeoutSeconds);
+```
+
+Leave the world for good: the player chose to quit, or to go back to the menu. Unlike [`Disconnect`](#disconnect), the session ends at once instead of waiting out [`NebulaConfig.SessionReclaimSeconds`](/docs/reference/core/nebula-config#sessionreclaimseconds): the client sends a goodbye, the worker calls [`NebulaGameMode.OnPlayerDespawn`](/docs/reference/core/nebula-game-mode#onplayerdespawn) and removes the pawn (a persistent pawn keeps its record), and other players stop seeing it. The session token is cleared, so the next [`Connect`](#connect) starts a new session.
+
+The client is `State.Disconnected` when this returns and raises [`Disconnected`](#disconnected) with [`DisconnectReason.ClientRequested`](/docs/reference/client/disconnect-reason#clientrequested), but it keeps the link open until the gateway closes it, which is how it knows the goodbye arrived, or until `timeoutSeconds` has passed. [`IsLeaving`](#isleaving) is true until then, and [`LeaveFinished`](#leavefinished) says which it was. Before quitting, wait for it: `yield return client.LeaveAndWait();` then `Application.Quit()`. A goodbye that does not arrive costs nothing but the grace: the server treats the player as disconnected.
+
+With no welcomed connection there is nobody to say goodbye to: it acts like [`Disconnect`](#disconnect) and raises [`LeaveFinished`](#leavefinished) with false at once.
+
+### LeaveAndWait [#leaveandwait]
+
+```csharp
+public System.Collections.IEnumerator LeaveAndWait(float timeoutSeconds = DefaultLeaveTimeoutSeconds);
+```
+
+[`Leave`](#leave), then wait until the gateway has confirmed the goodbye or `timeoutSeconds` has passed. Run it as a coroutine before quitting: `yield return client.LeaveAndWait(); Application.Quit();`. The client keeps polling its transport in `Update` meanwhile, so the frame loop must keep running.
 
 ### Find [#find]
 

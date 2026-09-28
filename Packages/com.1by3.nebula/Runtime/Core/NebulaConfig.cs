@@ -111,6 +111,15 @@ namespace Nebula
         public bool SingleSessionPerPlayer = true;
         [Tooltip("When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.")]
         public float GatewayDrainReconnectSeconds = 10f;
+        /// <summary>
+        /// When a gateway process stops (the host object is destroyed, the application quits, or the standalone
+        /// gateway gets SIGTERM or Ctrl-C), it first tells its connected clients: that it is draining when another
+        /// gateway is serving, or that the server is shutting down when none is. It then waits up to this many
+        /// seconds for the notices to go out, returning as soon as every client has hung up, so clients reconnect at
+        /// once rather than after the transport's timeout. 0 stops at once, without telling anyone.
+        /// </summary>
+        [Tooltip("When a gateway process stops, it tells its clients (draining, or the server is shutting down) and waits up to this many seconds for the notice to go out, less if every client hangs up first. 0 = stop at once without telling anyone.")]
+        public float GatewayShutdownDrainSeconds = 0.5f;
         [Tooltip("The game's content version. Clients announce this value when joining. A gateway with a nonzero value checks the client's version against MinGameContentVersion..GameContentVersion. A gateway value of 0 disables the check. -nebula-content-version overrides.")]
         public uint GameContentVersion = 0;
         [Tooltip("The oldest game content version a gateway admits, when GameContentVersion is set. 0 = exact match: only clients carrying GameContentVersion may join. -nebula-min-content-version overrides.")]

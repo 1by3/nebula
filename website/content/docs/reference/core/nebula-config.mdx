@@ -226,6 +226,14 @@ public float GatewayDrainReconnectSeconds = 10f;
 
 When a gateway is asked to drain, how many seconds its clients are told they have to reconnect before it closes their links.
 
+### GatewayShutdownDrainSeconds [#gatewayshutdowndrainseconds]
+
+```csharp
+public float GatewayShutdownDrainSeconds = 0.5f;
+```
+
+When a gateway process stops (the host object is destroyed, the application quits, or the standalone gateway gets SIGTERM or Ctrl-C), it first tells its connected clients: that it is draining when another gateway is serving, or that the server is shutting down when none is. It then waits up to this many seconds for the notices to go out, returning as soon as every client has hung up, so clients reconnect at once rather than after the transport's timeout. 0 stops at once, without telling anyone.
+
 ### GameContentVersion [#gamecontentversion]
 
 ```csharp

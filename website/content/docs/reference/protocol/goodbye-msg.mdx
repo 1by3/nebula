@@ -1,0 +1,26 @@
+---
+title: "GoodbyeMsg"
+description: "Client -> gateway: the player is leaving for good (MsgId.Goodbye, protocol 22)."
+---
+
+<div className="text-sm text-fd-muted-foreground">Struct in namespace `Nebula` · [Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs](https://github.com/1by3/nebula/blob/main/Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs)</div>
+
+```csharp
+public struct GoodbyeMsg
+```
+
+Client -\> gateway: the player is leaving for good ([`MsgId.Goodbye`](/docs/reference/protocol/msg-id#goodbye), protocol 22). No body. The gateway ends the session at once, without the reclaim grace, and closes the link; that close is how the client knows the goodbye arrived.
+
+## Methods
+
+### Write [#write]
+
+```csharp
+public void Write(NetworkWriter w);
+```
+
+### Read [#read]
+
+```csharp
+public static GoodbyeMsg Read(NetworkReader r);
+```

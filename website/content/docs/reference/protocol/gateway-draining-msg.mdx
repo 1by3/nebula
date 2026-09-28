@@ -19,6 +19,14 @@ Gateway -\> client: the gateway is draining and will close this link. The client
 public ushort ReconnectWithinSeconds;
 ```
 
+### ServerShutdown [#servershutdown]
+
+```csharp
+public bool ServerShutdown;
+```
+
+The gateway is shutting down and knows of no other gateway to take its clients: the server as a whole is going away, or restarting. The client still reconnects on its own schedule, and reports the end as `DisconnectReason.ServerShutdown` rather than `DisconnectReason.GatewayDraining`. A trailing optional field (protocol 22), written only when set and only to a client that negotiated 22: an older reader stops before it.
+
 ## Methods
 
 ### Write [#write]

@@ -31,7 +31,11 @@ namespace Nebula
     /// <summary>An operation on one player's admission claim. Transport must preserve all 64 bits of each ID.</summary>
     public sealed class GatewaySessionRequest
     {
-        /// <summary>claim, poll, release, cancel, or reserve. Poll returns disconnect requests for the named gateway.</summary>
+        /// <summary>
+        /// claim, poll, release, end, cancel, or reserve. Poll returns disconnect requests for the named gateway. End is
+        /// a release after which nothing is kept for a reclaim (the player said goodbye or was removed): the player's
+        /// next claim starts a new session.
+        /// </summary>
         public string Operation = "";
         /// <summary>Authenticated player identity; empty only for poll.</summary>
         public string Identity = "";
@@ -257,9 +261,15 @@ namespace Nebula
                     return new GatewaySessionReply { Status = "ok" };
                 }
                 if (!Matches(entry.Owner, request)) return new GatewaySessionReply { Status = "stale" };
-                if (request.Operation == "release" || request.Operation == "cancel")
+                if (request.Operation == "release" || request.Operation == "cancel" || request.Operation == "end")
                 {
-                    if (request.Worker.Length > 0)
+                    if (request.Operation == "end")
+                    {
+                        // Nothing is left to reclaim: forget the route, so the entry goes rather than being retained.
+                        entry.Owner.Worker = "";
+                        entry.Owner.Container = ContainerRef.None;
+                    }
+                    else if (request.Worker.Length > 0)
                     {
                         entry.Owner.Worker = request.Worker;
                         entry.Owner.Container = request.Container;

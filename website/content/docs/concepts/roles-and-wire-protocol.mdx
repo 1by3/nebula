@@ -83,9 +83,12 @@ For exact byte layouts, numeric message IDs, delivery requirements, and compatib
 | `Hello` | client to gateway; both sides of service links | Identify the role, id, index, protocol version, and flags. A client adds its identity token and, when reconnecting, its session token; a gateway or worker adds its incarnation and, when the mesh has a token, a credential derived from it. |
 | `Welcome` | gateway to client | Assign the session ID (the client ID), report the tick rate, server tick, and identity, and hand out the session token. |
 | `JoinStatus`, `JoinRejected` | gateway to client | Report that the join is waiting for a worker or was completed, or refuse it with a reason (and whether retrying makes sense). |
-| `GatewayDraining` | gateway to client | Ask the client to reconnect elsewhere within a number of seconds because the gateway is leaving service. |
+| `GatewayDraining` | gateway to client | Ask the client to reconnect elsewhere within a number of seconds because the gateway is leaving service. A gateway that is stopping also sends it, marked as a server shutdown when no other gateway is serving. |
+| `Goodbye` | client to gateway | The player is leaving for good (`NebulaClient.Leave`): end the session now, without the reclaim grace. |
+| `Kicked` | gateway to client | The server removed the player, with the game's code and a reason. The client does not reconnect. |
 | `Ping`, `Pong` | client to gateway and back | Round-trip time (RTT) measurement for the input lead. |
-| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. |
+| `SpawnPlayer`, `DespawnPlayer` | gateway to worker | Ask the owner of a container to create or remove a player's entity. Both carry the session's connection generation, so a worker ignores a message from a gateway that has since lost the session. A despawn after a goodbye or a kick removes the pawn at once instead of after the reclaim grace. |
+| `KickPlayer` | worker to gateway | Remove a player (`NebulaWorker.Kick`): the gateway sends the client `Kicked` and ends the session. |
 | `ContainerOwnership` | gateway to client | The containers this client should know about, with lease epochs, for routing and the overlay. A per-client delta scoped to the client's [interest](/docs/guides/interest-management#scoped-container-ownership) window, not the mesh's whole lease table. |
 
 **Gateway to worker (interest subscription)**

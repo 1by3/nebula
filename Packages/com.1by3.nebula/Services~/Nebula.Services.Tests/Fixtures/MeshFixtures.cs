@@ -592,6 +592,21 @@ public sealed class FakeWorker : IDisposable
         throw new InvalidOperationException("no link to gateway " + gatewayId);
     }
 
+    /// <summary>What a real worker sends the gateway that speaks for a session it kicks (<c>NebulaWorker.Kick</c>).</summary>
+    public void Kick(string gatewayId, ulong clientId, ulong generation, ushort code, string reason)
+    {
+        foreach (var kv in Gateways)
+        {
+            if (kv.Value != gatewayId) continue;
+            _w.Reset();
+            new KickPlayerMsg { ClientId = clientId, Generation = generation, Code = code, Reason = reason }.Write(_w);
+            Transport.Send(kv.Key, Delivery.ReliableOrdered, _w.ToSegment());
+            Transport.Flush();
+            return;
+        }
+        throw new InvalidOperationException("no link to gateway " + gatewayId);
+    }
+
     // ------------------------------------------------------------------------------------------- transport
 
     public void Poll()
@@ -889,6 +904,10 @@ public sealed class FakeClient : IDisposable
     /// <summary>Why the gateway says the join is held (<see cref="JoinHoldReason"/>).</summary>
     public JoinHoldReason JoinReason;
     public int DrainWithin = -1;
+    /// <summary>The last <see cref="MsgId.GatewayDraining"/> said the server is shutting down (<see cref="GatewayDrainingMsg.ServerShutdown"/>).</summary>
+    public bool ServerShutdown;
+    /// <summary>The <see cref="MsgId.Kicked"/> notice, if the server removed this client.</summary>
+    public KickedMsg? Kicked;
     public bool Disconnected;
     /// <summary>
     /// The protocol version this client announces in its <c>Hello</c>; 0 means this build's
@@ -1075,7 +1094,8 @@ public sealed class FakeClient : IDisposable
             case MsgId.JoinRejected: Rejected = JoinRejectedMsg.Read(r); break;
             case MsgId.SessionReplaced: Replaced = SessionReplacedMsg.Read(r).Reason; break;
             case MsgId.JoinStatus: { var js = JoinStatusMsg.Read(r); Join = js.State; JoinReason = js.Reason; break; }
-            case MsgId.GatewayDraining: DrainWithin = GatewayDrainingMsg.Read(r).ReconnectWithinSeconds; break;
+            case MsgId.GatewayDraining: { var d = GatewayDrainingMsg.Read(r); DrainWithin = d.ReconnectWithinSeconds; ServerShutdown = d.ServerShutdown; break; }
+            case MsgId.Kicked: Kicked = KickedMsg.Read(r); break;
             case MsgId.ContainerOwnership:
             {
                 var update = ContainerOwnershipMsg.Read(r);
@@ -1215,6 +1235,17 @@ public sealed class FakeClient : IDisposable
     }
 
     public void Disconnect() => Transport.Disconnect(_peer);
+
+    /// <summary>Say goodbye, as <c>NebulaClient.Leave</c> does, and keep the link open for the gateway to close.</summary>
+    public void SendGoodbye()
+    {
+        var w = new NetworkWriter();
+        new GoodbyeMsg().Write(w);
+        Record?.Add((true, w.ToSegment().ToArray()));
+        Transport.Send(_peer, Delivery.ReliableOrdered, w.ToSegment());
+        Transport.Flush();
+    }
+
     public void Dispose() => Transport.Dispose();
 }
 
@@ -1315,6 +1346,8 @@ public sealed class Fleet : IDisposable
         {
             GatewayPort = (ushort)port, AuthSigningKey = "fleet-key", MeshToken = _meshToken, WebClients = false,
             SessionReclaimSeconds = _reclaimSeconds, SingleSessionPerPlayer = _singleSession, GatewayDrainReconnectSeconds = 7,
+            // Disposing a gateway is how these tests stop one abruptly; the shutdown drain has tests of its own.
+            GatewayShutdownDrainSeconds = 0,
         };
         _configure?.Invoke(config);
         configure?.Invoke(config);

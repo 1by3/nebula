@@ -473,6 +473,7 @@ namespace Nebula
 
         public void Connect()
         {
+            if (IsLeaving) FinishLeave(false);
             if (!WantsConnection)
             {
                 // A fresh start by the game, not a retry.
@@ -512,12 +513,117 @@ namespace Nebula
             try { PlayerPrefs.DeleteKey(StoredTokenPref); PlayerPrefs.Save(); } catch { }
         }
 
-        /// <summary>Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or <see cref="ConnectTo"/>.</summary>
+        /// <summary>
+        /// Leave the gateway and stop reconnecting. The client stays idle until the next <see cref="Connect"/> or
+        /// <see cref="ConnectTo"/>. To the server this looks like a lost link: the worker keeps the pawn for
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/> so the player can come back to it. Use <see cref="Leave"/>
+        /// when the player is leaving for good.
+        /// </summary>
         public void Disconnect()
         {
             bool active = WantsConnection || ConnectionState != State.Disconnected;
+            if (IsLeaving) FinishLeave(false);
             EndConnection();
             if (active) ReportDisconnect(DisconnectReason.ClientRequested, "the client disconnected", false);
+        }
+
+        /// <summary>How long <see cref="Leave"/> waits, by default, for the gateway to confirm the goodbye.</summary>
+        public const float DefaultLeaveTimeoutSeconds = 0.5f;
+
+        /// <summary>
+        /// Leave the world for good: the player chose to quit, or to go back to the menu. Unlike
+        /// <see cref="Disconnect"/>, the session ends at once instead of waiting out
+        /// <see cref="NebulaConfig.SessionReclaimSeconds"/>: the client sends a goodbye, the worker calls
+        /// <see cref="NebulaGameMode.OnPlayerDespawn"/> and removes the pawn (a persistent pawn keeps its record), and
+        /// other players stop seeing it. The session token is cleared, so the next <see cref="Connect"/> starts a new
+        /// session.
+        /// <para>
+        /// The client is <see cref="State.Disconnected"/> when this returns and raises <see cref="Disconnected"/> with
+        /// <see cref="DisconnectReason.ClientRequested"/>, but it keeps the link open until the gateway closes it,
+        /// which is how it knows the goodbye arrived, or until <paramref name="timeoutSeconds"/> has passed.
+        /// <see cref="IsLeaving"/> is true until then, and <see cref="LeaveFinished"/> says which it was. Before
+        /// quitting, wait for it: <c>yield return client.LeaveAndWait();</c> then <c>Application.Quit()</c>. A goodbye
+        /// that does not arrive costs nothing but the grace: the server treats the player as disconnected.
+        /// </para>
+        /// <para>
+        /// With no welcomed connection there is nobody to say goodbye to: it acts like <see cref="Disconnect"/> and
+        /// raises <see cref="LeaveFinished"/> with false at once.
+        /// </para>
+        /// </summary>
+        public void Leave(float timeoutSeconds = DefaultLeaveTimeoutSeconds)
+        {
+            if (IsLeaving) return;
+            bool active = WantsConnection || ConnectionState != State.Disconnected;
+            bool goodbye = _transport != null && _gatewayPeer >= 0 && ConnectionState == State.InGame && NegotiatedProtocolVersion >= GoodbyeProtocolVersion;
+            if (goodbye)
+            {
+                _writer.Reset();
+                new GoodbyeMsg().Write(_writer);
+                _transport.Send(_gatewayPeer, Delivery.ReliableOrdered, _writer.ToSegment());
+                _transport.Flush();
+                // The link stays open until the gateway closes it: the close is the acknowledgement.
+                _leavingPeer = _gatewayPeer;
+                _gatewayPeer = -1;
+                _leaveDeadline = Now + Math.Max(0f, float.IsNaN(timeoutSeconds) ? 0f : timeoutSeconds);
+                NebulaLog.Info("leaving: goodbye sent");
+            }
+            // The session is over on the server; a token for it would only bring back an empty session.
+            SessionToken = "";
+            EndConnection();
+            if (active) ReportDisconnect(DisconnectReason.ClientRequested, "the player left", false);
+            if (!goodbye) RaiseLeaveFinished(false);
+        }
+
+        /// <summary>
+        /// <see cref="Leave"/>, then wait until the gateway has confirmed the goodbye or
+        /// <paramref name="timeoutSeconds"/> has passed. Run it as a coroutine before quitting:
+        /// <c>yield return client.LeaveAndWait(); Application.Quit();</c>. The client keeps polling its transport in
+        /// <c>Update</c> meanwhile, so the frame loop must keep running.
+        /// </summary>
+        public System.Collections.IEnumerator LeaveAndWait(float timeoutSeconds = DefaultLeaveTimeoutSeconds)
+        {
+            Leave(timeoutSeconds);
+            while (IsLeaving) yield return null;
+        }
+
+        /// <summary>
+        /// True from <see cref="Leave"/> until the gateway has confirmed the goodbye or the timeout has passed; see
+        /// <see cref="LeaveFinished"/>.
+        /// </summary>
+        public bool IsLeaving => _leavingPeer >= 0;
+
+        /// <summary>
+        /// A <see cref="Leave"/> is over. True when the gateway confirmed the goodbye (it closed the link) and the
+        /// session has ended; false when there was no connection to say goodbye on, or the gateway did not answer in
+        /// time, in which case the server treats the player as disconnected and ends the session after the reclaim
+        /// grace. Raised on the main thread.
+        /// </summary>
+        public event Action<bool> LeaveFinished;
+
+        /// <summary>The first protocol with <see cref="MsgId.Goodbye"/> and <see cref="MsgId.Kicked"/>.</summary>
+        private const ushort GoodbyeProtocolVersion = 22;
+        /// <summary>The link a goodbye was sent on, kept open until the gateway closes it or the leave times out; -1 when not leaving.</summary>
+        private int _leavingPeer = -1;
+        private float _leaveDeadline;
+
+        /// <summary>End a <see cref="Leave"/>: close the link if the gateway has not, and say how it went.</summary>
+        private void FinishLeave(bool confirmed)
+        {
+            if (_leavingPeer < 0) return;
+            if (!confirmed)
+            {
+                try { _transport?.Disconnect(_leavingPeer); } catch { }
+                NebulaLog.Warn("leaving: the gateway did not confirm the goodbye in time; closing the link");
+            }
+            else NebulaLog.Info("leaving: the gateway ended the session");
+            _leavingPeer = -1;
+            RaiseLeaveFinished(confirmed);
+        }
+
+        private void RaiseLeaveFinished(bool confirmed)
+        {
+            try { LeaveFinished?.Invoke(confirmed); }
+            catch (Exception e) { NebulaLog.Error($"LeaveFinished handler threw: {e}"); }
         }
 
         /// <summary>Stop wanting a connection, close the link, clear the world and move to <see cref="State.Disconnected"/>.</summary>
@@ -535,9 +641,9 @@ namespace Nebula
         /// Record how the connection ended and raise <see cref="Disconnected"/>, unless this is a retry failing again
         /// in an outage already reported. A handler that throws is logged and does not break the client.
         /// </summary>
-        private void ReportDisconnect(DisconnectReason reason, string message, bool willRetry)
+        private void ReportDisconnect(DisconnectReason reason, string message, bool willRetry, ushort code = 0)
         {
-            var info = new DisconnectInfo(reason, message, willRetry);
+            var info = new DisconnectInfo(reason, message, willRetry, code);
             LastDisconnect = info;
             if (willRetry && _outageReported) return;
             _outageReported = willRetry;
@@ -583,6 +689,7 @@ namespace Nebula
         /// <summary>Give up when the give-up time has passed, and otherwise dial the next attempt when it is due.</summary>
         internal void TickConnection()
         {
+            if (IsLeaving && Now >= _leaveDeadline) FinishLeave(false);
             if (IsReconnecting && Backoff.ShouldGiveUp(Now - _reconnectStartedAt))
             {
                 GiveUpReconnecting();
@@ -881,6 +988,14 @@ namespace Nebula
                     break;
                 case TransportEvent.Kind.Disconnected:
                 {
+                    // The gateway closing the link a goodbye was sent on is its acknowledgement.
+                    if (_leavingPeer >= 0 && ev.PeerId == _leavingPeer)
+                    {
+                        _leavingPeer = -1;
+                        NebulaLog.Info("leaving: the gateway ended the session");
+                        RaiseLeaveFinished(true);
+                        break;
+                    }
                     // Only the current link's close counts: a link this client already dropped (a drain, a
                     // refusal, Disconnect) or an encrypted link's second report of the same close is old news.
                     if (_gatewayPeer < 0 || ev.PeerId != _gatewayPeer) break;
@@ -913,6 +1028,7 @@ namespace Nebula
                     break;
                 }
                 case TransportEvent.Kind.Data:
+                    if (_leavingPeer >= 0 && ev.PeerId == _leavingPeer) break; // the world this client left
                     _packetsIn++;
                     _bytesIn += ev.Data.Count;
                     _reader.Set(ev.Data);
@@ -1060,16 +1176,42 @@ namespace Nebula
                 case MsgId.GatewayDraining:
                 {
                     var draining = GatewayDrainingMsg.Read(r);
+                    bool wasReconnecting = IsReconnecting;
+                    if (draining.ServerShutdown)
+                    {
+                        // The whole server is going away (or restarting): reconnect on the normal schedule, keeping
+                        // the session token, so a server that comes back in time gives the pawn back.
+                        LastError = "the server is shutting down (retrying)";
+                        NebulaLog.Warn("the server is shutting down; reconnecting with the session token");
+                        DropGatewayLink();
+                        ClearWorld();
+                        ScheduleRetry(Backoff.DelayAfter(0));
+                        SetState(State.Disconnected);
+                        ReportDisconnect(DisconnectReason.ServerShutdown, LastError, true);
+                        RaiseReconnectingIfNew(wasReconnecting);
+                        break;
+                    }
                     // Reconnect now, keeping the session token: the next gateway reclaims the session and the pawn.
                     NebulaLog.Warn($"gateway is draining; reconnecting within {draining.ReconnectWithinSeconds} s with the session token");
                     GatewayDraining?.Invoke(draining.ReconnectWithinSeconds);
                     DropGatewayLink();
                     ClearWorld();
-                    bool wasReconnecting = IsReconnecting;
                     ScheduleRetry(0.2f);
                     SetState(State.Disconnected);
                     ReportDisconnect(DisconnectReason.GatewayDraining, "the gateway is draining; reconnecting with the session token", true);
                     RaiseReconnectingIfNew(wasReconnecting);
+                    break;
+                }
+                case MsgId.Kicked:
+                {
+                    var kicked = KickedMsg.Read(r);
+                    // The session is over and the server does not want this player back now: no retry, and no session
+                    // token to come back with. The identity token is kept; a kick is not a refused sign-in.
+                    LastError = string.IsNullOrEmpty(kicked.Reason) ? "removed by the server" : kicked.Reason;
+                    NebulaLog.Warn($"removed by the server (code {kicked.Code}): {LastError}");
+                    SessionToken = "";
+                    EndConnection();
+                    ReportDisconnect(DisconnectReason.Kicked, LastError, false, kicked.Code);
                     break;
                 }
                 case MsgId.JoinStatus:

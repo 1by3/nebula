@@ -118,6 +118,8 @@ The grace follows the pawn. If the pawn changes worker while its player is away,
 
 The client reconnects by itself: one second after a lost link, and at once when the gateway tells it that it is being taken out of service (see [Connecting clients](/docs/guides/connecting-clients#reconnect-after-a-lost-link-or-a-draining-gateway)). Each attempt presents the session token, so a player who comes back within the grace continues with the same pawn.
 
+A player who leaves on purpose skips the grace. When the client calls `NebulaClient.Leave()`, it sends the gateway a goodbye, and the gateway ends the session at once: the worker calls `OnPlayerDespawn` and removes the pawn, the session directory forgets the session, and the player's next sign-in starts a new session without waiting. A player removed with `NebulaWorker.Kick` or `NebulaGateway.Kick` loses the session the same way. `Disconnect()` and a lost link keep the full grace. See [Leave the game](/docs/guides/connecting-clients#leave-the-game).
+
 A player who connects again while in the world takes their session over rather than starting a new one (see [One connection per player](#one-connection-per-player)), so the reclaim grace is about a player who is away, not about a player who came back.
 
 Each reconnection carries a newer **connection generation**. A worker ignores a player claim or a despawn with an older generation than the one it holds, so a gateway that lost the client cannot undo what the gateway that gained it did, and it accepts input for a session only from the gateway that currently holds it. Game code does not see generations; they are described in the [wire protocol specification](/docs/specifications/wire-protocol#player-lifecycle).

@@ -71,7 +71,8 @@ Use these `NebulaClient` members to drive your UI:
 | `LastError` | Show why the last connection attempt failed or ended. It is empty while the connection is healthy. |
 | `WantsConnection` | Tell whether the client is connecting or will retry. |
 | `ConnectsAutomatically` | Hide your menu when the command line already supplied the connection. |
-| `Disconnect()` | Leave the gateway and stop retrying. |
+| `Disconnect()` | Leave the gateway and stop retrying. The worker keeps the pawn for the reclaim time, so the player can come back to it. |
+| `Leave()`, `LeaveAndWait()`, `IsLeaving` and `LeaveFinished` | Leave the world for good when the player quits: the session ends at once and other players stop seeing the pawn (see [Leave the game](#leave-the-game)). |
 
 ### The "world starting" state
 
@@ -108,9 +109,10 @@ The event fires once per outage. When a retry fails again, the client updates `L
 | `JoinRefused` | The gateway refused the join. `JoinRejectReason` has the typed refusal. `WillRetry` is `true` only for a refusal the gateway asked the client to retry, such as `gateway is draining`. |
 | `SessionReplaced` | The player connected again somewhere else. The client doesn't reconnect. |
 | `GatewayDraining` | The gateway is being taken out of service. The client reconnects at once. |
+| `ServerShutdown` | The gateway is shutting down and no other gateway was serving: the server is going away or restarting. The client reconnects on its normal schedule. |
+| `Kicked` | The server removed the player. `Message` is the server's reason and `DisconnectInfo.Code` is your game's own code for it. The client doesn't reconnect. |
 | `EncryptionFailed` | The encrypted connection was refused: the key exchange failed or the gateway's certificate didn't match `GatewayFingerprint`. |
-| `ClientRequested` | Your code called `Disconnect()`, directly or through `ConnectTo`. |
-| `Kicked`, `ServerShutdown` | Reserved for server notices. Nebula doesn't raise them yet. |
+| `ClientRequested` | Your code called `Disconnect()` or `Leave()`, directly or through `ConnectTo`. |
 | `Unknown` | The transport didn't say why. A custom `ITransport` that reports no reason produces this. |
 
 ```csharp
@@ -134,6 +136,8 @@ The client handles these connection events automatically:
 - **The link drops.** `ConnectionState` becomes `Disconnected`, `Disconnected` fires with the reason and `WillRetry` set to `true`, `LastError` reads `disconnected from gateway (retrying)`, and the client starts reconnecting to the same address (see below). The worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s); a player who comes back within that time continues with it.
 - **This player connected again somewhere else.** The gateway sends `SessionReplaced`, the `SessionReplaced` event fires with a reason fit to show the player, and the client leaves the world and stays out: the newer connection has the player's session and pawn. Reconnect only when the player asks to, which takes the player back. See [One connection per player](/docs/guides/authentication#one-connection-per-player).
 - **The gateway is being taken out of service.** The gateway sends `GatewayDraining` with the number of seconds it gives its clients, the `GatewayDraining` event fires with that number, and the client drops the link and reconnects at once with its session token. When the gateway address is a load balancer, the retry lands on another gateway; when it is one gateway, the client keeps retrying until that gateway is back in service. A gateway that is draining refuses a new join with the reason `gateway is draining`; the client retries after a second instead of giving up.
+- **The gateway process stops.** Before it exits, a gateway tells its clients, then waits up to `NebulaConfig.GatewayShutdownDrainSeconds` (default 0.5 s) for the notice to go out. When another gateway is serving, the notice is the same drain notice. When none is, `Disconnected` fires with `ServerShutdown` and `WillRetry` set to `true`, and the client reconnects on its normal schedule with its session token, so a server that comes back within the reclaim time gives the pawn back. Either way the client doesn't wait out the transport's disconnect timeout.
+- **The server removed the player.** Server code called `NebulaWorker.Kick` or `NebulaGateway.Kick`. `Disconnected` fires with `Kicked`, the server's reason in `Message` and your game's code in `DisconnectInfo.Code`. The session is over: the client clears `SessionToken`, sets `WantsConnection` to `false` and doesn't reconnect. It keeps the saved identity token, so connecting again later is the same player in a new session.
 
 If a gateway process fails, session coordination can reclaim its sessions after its heartbeat exceeds the configured `WorkerTimeoutSeconds` (default 5 s). Reclaim time also depends on failure detection, retries, network delays, and control-plane availability. Tests with default settings use a 9-second threshold measured from a reconnect attempt reaching a live gateway; this is not a deployment guarantee. See [the scale suite](/docs/guides/scale-suite).
 
@@ -173,7 +177,39 @@ void Update()
 }
 ```
 
-To start a new session on purpose, for example when the player picks another character, clear `SessionToken` before connecting. `Disconnect()` keeps it, so a deliberate disconnect and reconnect continues the session.
+To start a new session on purpose, for example when the player picks another character, clear `SessionToken` before connecting. `Disconnect()` keeps it, so a deliberate disconnect and reconnect continues the session. `Leave()` clears it.
+
+### Leave the game
+
+When the player quits, or goes back to the main menu, call `Leave()` instead of `Disconnect()`. The difference is what the server does with the player's pawn:
+
+- After `Disconnect()`, or a lost link, the worker keeps the pawn for `NebulaConfig.SessionReclaimSeconds` (default 30 s) in case the player comes back. Other players see it standing where the player left it.
+- After `Leave()`, the client sends the gateway a goodbye. The gateway ends the session at once: the worker calls your game mode's `OnPlayerDespawn` and removes the pawn, and a persistent pawn keeps its saved record for the player's next session. The player's next connection is a new session, admitted at once.
+
+`Leave()` returns straight away, with `ConnectionState` set to `Disconnected` and `Disconnected` raised with `ClientRequested`. It keeps the link open until the gateway closes it, which confirms that the goodbye arrived, or until the timeout passes (0.5 s by default). `IsLeaving` is `true` until then, and `LeaveFinished` fires with `true` when the gateway confirmed or `false` when it didn't. A goodbye that doesn't arrive costs only the reclaim time: the server then treats the player as disconnected.
+
+To quit the application, wait for the goodbye first. `LeaveAndWait()` is a coroutine that calls `Leave()` and waits:
+
+```csharp title="QuitButton.cs"
+using System.Collections;
+using Nebula;
+using UnityEngine;
+
+public sealed class QuitButton : MonoBehaviour
+{
+    // Call this from your Quit button.
+    public void Quit() => StartCoroutine(LeaveThenQuit());
+
+    private IEnumerator LeaveThenQuit()
+    {
+        var client = NebulaBootstrap.Instance != null ? NebulaBootstrap.Instance.Client : null;
+        if (client != null) yield return client.LeaveAndWait();
+        Application.Quit();
+    }
+}
+```
+
+A client that is not in the world yet has nobody to say goodbye to: `Leave()` then acts like `Disconnect()` and raises `LeaveFinished` with `false` at once.
 
 ## Connect from the command line
 

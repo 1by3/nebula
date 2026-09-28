@@ -16,7 +16,7 @@ Carries the hello protocol message.
 ### ProtocolVersion [#protocolversion]
 
 ```csharp
-public const ushort ProtocolVersion = 21;
+public const ushort ProtocolVersion = 22;
 ```
 
 The wire protocol version used by this build.
@@ -24,10 +24,10 @@ The wire protocol version used by this build.
 ### MinProtocolVersion [#minprotocolversion]
 
 ```csharp
-public const ushort MinProtocolVersion = 20;
+public const ushort MinProtocolVersion = 21;
 ```
 
-The oldest client protocol the gateway accepts: 20, the window being one version wide. Protocol 21 added replicated maps ([`NetworkMap<TKey, TValue>`](/docs/reference/core/network-map)), additive for a client: a new message a gateway sends only to clients that negotiated 21, and a trailing spawn field a protocol-20 client does not read. Protocols 18 and 19 are refused. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
+The oldest client protocol the gateway accepts: 21, the window being one version wide. Protocol 22 added deliberate session endings (a client's [`MsgId.Goodbye`](/docs/reference/protocol/msg-id#goodbye), a server's [`MsgId.Kicked`](/docs/reference/protocol/msg-id#kicked) and a gateway's shutdown notice), additive for a client: a gateway sends the new message and the new trailing field of [`GatewayDrainingMsg`](/docs/reference/protocol/gateway-draining-msg) only to clients that negotiated 22, and tells a protocol-21 client of a kick with a refusal it already understands. Protocols 20 and older are refused. Gateway-to-worker and worker-to-worker connections require [`ProtocolVersion`](#protocolversion) exactly.
 
 ### Role [#role]
 
