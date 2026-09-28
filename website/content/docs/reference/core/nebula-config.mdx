@@ -84,7 +84,7 @@ Where the server a virtual player hosts keeps persistent entities under [`Nebula
 public int EditorPortOffset = 50;
 ```
 
-Added to [`GatewayPort`](#gatewayport), [`WorkerBasePort`](#workerbaseport) and [`DashboardPort`](#dashboardport) by both sides of [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), so the dev loop and a mesh started with `nebula start` can run on one machine at once. 50 by default: with the default ports, the dev loop's gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+Added to [`GatewayPort`](#gatewayport), [`WorkerBasePort`](#workerbaseport) and [`DashboardPort`](#dashboardport) by both sides of [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), so the dev loop and a mesh started with `nebula start` can run on one machine at once. 50 by default: with the default ports, the dev loop's gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured. A checkout's `UserSettings/NebulaEditorPortOffset.txt` replaces it for that checkout only ([`EditorDevPaths.PortOffset`](/docs/reference/bootstrap/editor-dev-paths#portoffset)), so copies of one project can run their dev loops side by side.
 
 ### GatewayAddress [#gatewayaddress]
 
