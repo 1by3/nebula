@@ -18,7 +18,7 @@ Both modes can be on at the same time. A client that presents an ID token is ide
 
 The identity is the SHA-256 hash of the token's issuer and subject claims, written as lowercase hex. `PlayerIdentity.Derive(issuer, subject)` computes it. The same account at the same provider always yields the same identity, and two providers can never collide. Anonymous identities use the issuer `nebula` and a random subject.
 
-Nebula never stores the provider's user ID, email, or name. If your game needs profile data, read it from the provider yourself.
+Nebula never stores the provider's user ID, email, or name. To read a few claims of the token on workers, such as a role or a username, list them in `ForwardedClaims` (see [Forward token claims to workers](#forward-token-claims-to-workers)). For anything else, read the profile from the provider yourself.
 
 ## Read the identity in your game
 
@@ -165,6 +165,59 @@ If the gateway cannot accept a token, it sends the reason and closes the connect
 
 The gateway logs every rejection with the client's session ID and the same reason.
 
+## Forward token claims to workers
+
+A worker sees who a player is (`PlayerInfo.Identity`), but not the rest of the sign-in token. To gate game features on a claim of the token, such as an admin flag or a subscription tier, list the claims the gateway should pass on:
+
+| Setting | Command line | Meaning |
+| --- | --- | --- |
+| `ForwardedClaims` | `-nebula-auth-forward-claims` | Claim names, separated by commas, for example `is_admin, username`. At most 16 names; extra names are ignored with a warning. Empty forwards nothing. |
+| `NameClaim` | `-nebula-auth-name-claim` | A claim that becomes the player's name, for example `username` or `name`. Empty keeps the name the client asked for. |
+
+Set them on the `NebulaConfig` asset next to `AuthIssuers`. `nebula build` exports them to the standalone services, and the orchestrator passes them to the gateway it starts.
+
+When a client signs in, the gateway copies the listed claims from the verified token and sends them to the worker that holds the player's pawn. Every value arrives as a string: `"alice"`, `"true"` or `"false"` for a boolean, `"42"` for a number. A claim is left out when:
+
+- the token doesn't have it, or it's `null`, an array, or an object;
+- its value is longer than 256 characters (it's dropped, not shortened, and the gateway logs a warning);
+- it isn't in `ForwardedClaims`. The gateway never forwards a claim you didn't list.
+
+Anonymous players have no claims, because the gateway issued their token itself. Clients are never sent claims, including the local player's.
+
+### Read a claim on a worker
+
+Claims are on three worker-side APIs, each an `IReadOnlyDictionary<string, string>` that is empty, never null, when there are none:
+
+- `PlayerInfo.Claims`, in `OnSpawnPlayer` and `BeginSpawnPlayer`.
+- `NetworkIdentity.OwnerClaims`, on every entity a player owns: the pawn, and anything spawned for that player later. `TryGetOwnerClaim(name, out value)` reads one.
+- `NebulaWorker.GetPlayerClaims(clientId)`, by session ID.
+
+```csharp title="AdminCommands.cs"
+public sealed class AdminCommands : NetworkBehaviour
+{
+    public void RequestTeleport(Vector3 destination)
+    {
+        if (!IsOwner) return;
+        ServerRpc(RpcTeleport, destination);
+    }
+
+    [ServerRpc]
+    private void RpcTeleport(Vector3 destination)
+    {
+        if (!HasAuthority) return;
+        // Only a player whose verified token says is_admin may teleport.
+        if (!Identity.TryGetOwnerClaim("is_admin", out var admin) || admin != "true") return;
+        transform.position = destination;
+    }
+}
+```
+
+The claims travel with the entity. A ghost of it on another worker has them, and so does the worker that takes it over in a handover, including one in another simulation scope. When the player reconnects, the gateway checks the sign-in token again and sends the claims of that token, which replace the old ones on the pawn and its ghosts. A role you take away from the account is gone once the player reconnects with a new token. It isn't removed from a session already in progress.
+
+### Take the player's name from the token
+
+A client chooses its own name in its `Hello`, so a player can call themselves anything. With `NameClaim` set, the gateway uses that claim of the verified token as the player's name instead. `PlayerInfo.Name`, the gateway's logs and its server extensions all see the token's name. A player whose token lacks the claim, and every anonymous player, keeps the name their client asked for.
+
 ## What this does and does not protect
 
 Authentication identifies the player so that saved state follows the right person. It does not encrypt the client link on its own: native client traffic is readable on an untrusted network unless you enable encryption. See [Encrypt client connections](/docs/deploy/encryption). WebRTC links from web builds use Datagram Transport Layer Security (DTLS) encryption.
@@ -173,4 +226,4 @@ Anonymous tokens have no expiry. Changing the signing key invalidates a copied t
 
 Gateways and workers authenticate each other only when the mesh has a `MeshToken`: each presents a credential derived from it when it connects, and a peer without one is refused. Without a mesh token every gateway and worker peer is accepted, which is fine on a development machine or a private network.
 
-The identity is not an authorization system. Deciding what a player may do, and validating their inputs, stays in your game code on the worker.
+The identity is not an authorization system. Deciding what a player may do, and validating their inputs, stays in your game code on the worker. Forwarded claims give that code verified facts to decide on; the decisions are still yours.

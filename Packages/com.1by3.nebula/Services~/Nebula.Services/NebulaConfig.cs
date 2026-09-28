@@ -22,6 +22,8 @@ namespace Nebula
         public string AuthAudience = "";
         public bool AuthAnonymous = true;
         public string AuthSigningKey = "";
+        public string ForwardedClaims = "";
+        public string NameClaim = "";
         public float SessionReclaimSeconds = 30f;
         public bool SingleSessionPerPlayer = true;
         public float GatewayDrainReconnectSeconds = 10f;

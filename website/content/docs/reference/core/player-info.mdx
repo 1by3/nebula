@@ -17,7 +17,16 @@ Who is joining, as the gateway told the worker ([`NebulaGameMode.OnSpawnPlayer`]
 
 ```csharp
 public PlayerInfo(ulong clientId, string name, string identity, bool isBot);
+public PlayerInfo(ulong clientId, string name, string identity, bool isBot, IReadOnlyDictionary<string, string> claims);
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `clientId` | The session id. |
+| `name` | The display name. |
+| `identity` | The identity across sessions. |
+| `isBot` | Whether the client is a headless bot. |
+| `claims` | Forwarded token claims; null for none. |
 
 ## Fields
 
@@ -35,7 +44,7 @@ The player's session id: unique across every gateway of the mesh, and kept acros
 public readonly string Name;
 ```
 
-The display name the client asked for.
+The player's display name: the verified token's [`NebulaConfig.NameClaim`](/docs/reference/core/nebula-config#nameclaim) when the mesh sets one and the token has it, otherwise the name the client asked for.
 
 ### Identity [#identity]
 
@@ -52,3 +61,13 @@ public readonly bool IsBot;
 ```
 
 The client is a headless bot.
+
+## Properties
+
+### Claims [#claims]
+
+```csharp
+public IReadOnlyDictionary<string, string> Claims { get; }
+```
+
+The claims of the player's verified sign-in token that the mesh forwards ([`NebulaConfig.ForwardedClaims`](/docs/reference/core/nebula-config#forwardedclaims)), every value a string. Empty, never null, for anonymous players and when nothing is forwarded. The pawn carries the same claims as [`NetworkIdentity.OwnerClaims`](/docs/reference/core/network-identity#ownerclaims).

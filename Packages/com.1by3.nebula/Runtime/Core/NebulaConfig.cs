@@ -105,6 +105,10 @@ namespace Nebula
         public bool AuthAnonymous = true;
         [Tooltip("Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA_AUTH_KEY.")]
         public string AuthSigningKey = "";
+        [Tooltip("Claims of a verified sign-in token that the gateway passes on to workers, as claim names separated by commas (for example is_admin, username). Workers read them from NetworkIdentity.OwnerClaims, PlayerInfo.Claims and NebulaWorker.GetPlayerClaims. At most 16 names; values longer than 256 characters are dropped. Anonymous players have none. Empty = none are forwarded. -nebula-auth-forward-claims overrides.")]
+        public string ForwardedClaims = "";
+        [Tooltip("A claim of the verified sign-in token that becomes the player's name (for example username or name) in place of the name the client asked for. A player whose token lacks the claim, and an anonymous player, keeps the client's name. Empty = always the client's name. -nebula-auth-name-claim overrides.")]
+        public string NameClaim = "";
         [Tooltip("Seconds a worker keeps a player's pawn after the player's connection drops, so the player can reconnect (through any gateway of the mesh) and continue with the same session and pawn. 0 despawns at once.")]
         public float SessionReclaimSeconds = 30f;
         [Tooltip("Coordinate one connection per player through the gateway fleet. A replacement waits until the previous gateway confirms disconnection; if that cannot be coordinated, the new join is rejected. Off lets one identity hold several pawns at once. -nebula-single-session overrides.")]

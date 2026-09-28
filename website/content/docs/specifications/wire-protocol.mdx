@@ -1,17 +1,19 @@
 ---
 title: Wire protocol specification
-description: Implement or inspect Nebula protocol version 21, including byte encodings, message layouts, delivery classes, and compatibility rules.
+description: Implement or inspect Nebula protocol version 22, including byte encodings, message layouts, delivery classes, and compatibility rules.
 ---
 
-Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 21. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
+Use this specification to inspect Nebula traffic or implement a peer that interoperates with protocol version 22. It defines the application payload carried by Nebula's LiteNetLib connections. LiteNetLib packet headers, acknowledgements, fragmentation, and connection negotiation are outside this specification.
 
 The words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** describe interoperability requirements. The source of truth for this version is `Packages/com.1by3.nebula/Runtime/Protocol/Messages.cs`.
 
 ## Compatibility
 
-The current protocol version is `21`. Every `Hello` carries the version its sender speaks.
+The current protocol version is `22`. Every `Hello` carries the version its sender speaks.
 
-A gateway accepts clients of protocol 20 and 21: `HelloMsg.MinProtocolVersion` is `20` and `HelloMsg.ProtocolVersion` is `21`. Gateway-to-worker and worker-to-worker connections MUST match protocol `21` exactly.
+A gateway accepts clients of protocol 21 and 22: `HelloMsg.MinProtocolVersion` is `21` and `HelloMsg.ProtocolVersion` is `22`. Gateway-to-worker and worker-to-worker connections MUST match protocol `22` exactly.
+
+Protocol 22 added forwarded token claims (see [Forward token claims to workers](/docs/guides/authentication#forward-token-claims-to-workers)). Nothing a client sends or receives changed. Between gateways and workers, `SpawnPlayer` gains a trailing `claims` section. Between workers, `EntitySpawnBody` gains a trailing `owner_claims` section, which the entity body nested in `AuthorityTransfer` always carries, so the layout of `AuthorityTransfer` changed.
 
 Protocol 21 added replicated maps (see [Replicated maps](/docs/guides/network-map)). The change is additive for a client: the gateway sends the new `EntityMaps` message only to clients that negotiated `21`, and the new trailing `maps` field of `EntitySpawnBody` is ignored by a protocol-20 client. Between workers, protocol 21 adds `GhostMaps`.
 
@@ -22,7 +24,7 @@ Protocol 19 changed no byte layout. It changed what a behavior index names: an e
 - A client outside the window is refused with `JoinRejected`, `code` `3`, and the gateway's supported range, then disconnected. It is not dropped silently.
 - A gateway or worker peer whose version differs is disconnected, and both sides log the two versions.
 - A sender MUST preserve the message identifiers, field order, primitive encodings, and field meanings defined here. Fields explicitly described as optional may be omitted at the end of a message.
-- The gateway returns the client's accepted version in `Welcome.negotiated_version`. The gateway uses the same encoder for protocol 20 and 21 clients, except that it sends `EntityMaps` only to a protocol-21 client.
+- The gateway returns the client's accepted version in `Welcome.negotiated_version`. The gateway uses the same encoder for protocol 21 and 22 clients.
 - The protocol does not include a game-schema identifier. Every peer MUST use matching prefab identifiers, behavior order, `NetworkVariable` order and types, remote procedure call (RPC) methods, input types, and custom sync-state formats. `Hello.game_content_version` is a number the game chooses for its own content; Nebula compares it and refuses a mismatch, and gives it no other meaning.
 
 For process replacement and compatibility requirements, see [Upgrade a running mesh](/docs/deploy/upgrades).
@@ -255,7 +257,11 @@ EntitySpawnBody :=
   f16 cost_weight,
   [u32 audience_generation,
    bytes audience_sets,
-   [u32 maps_length, raw maps[maps_length]]]
+   [u32 maps_length, raw maps[maps_length],
+    [Claims owner_claims]]]
+
+Claims := u8 count, ClaimEntry[count]
+ClaimEntry := string name, string value
 
 EntityDespawnBody := u64 net_id, u32 entity_epoch, u16 view_seq
 EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
@@ -274,6 +280,8 @@ EntityVarsBody    := u64 net_id, u32 entity_epoch, bytes vars
 `audience_generation` and `audience_sets` are the entity's [sync audience](#sync-audiences) state, written only by workers. A standalone `EntitySpawn` or `GhostSpawn` carries the section only when the generation is non-zero or the entity has a `Custom` audience. The entity body nested in `AuthorityTransfer` always carries it, because fields follow it there. A gateway MUST NOT forward the section's contents to a client: when `maps` follows, it writes `0` and empty sets.
 
 `maps` is every [replicated map](#replicated-maps) of the entity in full, as a `MapSection`. A standalone spawn carries it only when the entity has maps, and then always writes the audience section before it. The entity body nested in `AuthorityTransfer` always carries it, empty when there are none. A gateway keeps it current with each `EntityMaps` and sends the current contents in the spawn a client joining later receives.
+
+`owner_claims` is the owning player's [forwarded token claims](#player-lifecycle), written only between workers: in a `GhostSpawn` when the owner has claims, and always in the entity body nested in `AuthorityTransfer` (`count` `0` when there are none). A standalone spawn that carries it writes the audience and maps sections before it. A worker MUST NOT send it to a gateway, and a gateway MUST NOT forward it to a client.
 
 The `vars` blob concatenates every `NetworkVariable` in deterministic behavior and reflected field order. It carries no count, names, type tags, or per-value lengths. A compatible game schema is therefore required. `state` is a [sync-state envelope](#sync-state-envelope).
 
@@ -497,12 +505,15 @@ Each `raw_message` is a complete Nebula message, including its `u8 msg_id`, and 
 ### Player lifecycle
 
 ```text
-SpawnPlayer   := u64 client_id, ContainerRef container, string name, bool is_bot, string identity, u64 generation
+SpawnPlayer   := u64 client_id, ContainerRef container, string name, bool is_bot, string identity, u64 generation,
+                 [Claims claims]
 DespawnPlayer := u64 client_id, u64 generation
 EndSession    := u64 client_id, u64 generation, string reason
 ```
 
-The gateway selects a currently assigned container and asks its worker to spawn the player. `identity` is the player's identity as the gateway established it from the client's `Hello`. The game supplies the actual spawn behavior.
+The gateway selects a currently assigned container and asks its worker to spawn the player. `identity` is the player's identity as the gateway established it from the client's `Hello`. `name` is the verified token's `NameClaim` when the gateway has one set and the token carries it, and otherwise the name in the `Hello`. The game supplies the actual spawn behavior.
+
+`claims` holds the claims of the player's verified OpenID Connect token that `NebulaConfig.ForwardedClaims` lists, each value as a string (a boolean is `true` or `false`, a number is formatted as JSON writes it). It is empty for an anonymous player. A section holds at most 16 entries; a name is at most 64 characters and a value at most 256, and a receiver MUST reject a section that breaks these limits. The claims are taken from the token presented on the connection that sent the claim, so a reclaim replaces what the worker held. A worker puts them on every entity the player owns and sends them on in `owner_claims`.
 
 `SpawnPlayer` is also the message by which a gateway claims a session. `generation` is the session's connection generation: every time a client connects or reconnects, the gateway sets it to a value newer than any the session had before. A worker that already holds a pawn for `client_id` re-announces it to the sender with `EntitySpawn` and, when `generation` is newer than the one it holds, routes the session's input and RPCs through the sender from then on. A worker MUST ignore a `SpawnPlayer` or `DespawnPlayer` whose `generation` is older than the one it holds. This fences a gateway that lost the client from undoing what the gateway that gained it did.
 

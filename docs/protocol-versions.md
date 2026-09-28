@@ -6,7 +6,7 @@ The policy itself, and why it is shaped this way, is `docs/compatibility-policy.
 ## The rule, in one paragraph
 
 A **client** may talk to a **gateway** that accepts its protocol: the accepted range is
-`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 20..21; protocols 18 and 19 are not supported. Anything outside that is refused
+`HelloMsg.MinProtocolVersion`..`HelloMsg.ProtocolVersion`, currently 21..22; protocols 18 to 20 are not supported. Anything outside that is refused
 with `JoinRejectReason.ProtocolUnsupported` and the gateway's range, so the client can tell "update the game"
 from "this server has not been upgraded yet". A **gateway, worker and orchestrator of one mesh** must speak the
 **same** protocol, exactly; a mismatch is refused with a logged reason. The game's own content version is a
@@ -36,7 +36,8 @@ Protocol numbers are read from `HelloMsg.ProtocolVersion` at each release tag (`
 | v0.1.0-alpha.30 | 18 | scoped worlds and interaction contracts; **the floor the policy starts from** |
 | v0.1.0-alpha.31 – alpha.32 | 19 | `DynamicContainer` folded into `Container` (NEB-264, `docs/container-tree.md` D21); **not additive**, so the minimum is 19 too |
 | v0.1.0-beta.0 | 20 | sync audiences (NEB-321, `docs/sync-audience.md` D10); **additive**, so the minimum stays 19 |
-| unreleased | 21 | replicated maps (NEB-335, `docs/replicated-collections.md` D12); **additive**, and the window moves to 20..21 |
+| (none) | 21 | replicated maps (NEB-335, `docs/replicated-collections.md` D12); **additive**, and the window moved to 20..21; never released under a tag |
+| unreleased | 22 | forwarded token claims (NEB-357); nothing a client sees changed, and the window moves to 21..22 |
 
 Every step in that table was breaking, because until now there was no window to be additive inside: a gateway
 required an exact match, and `HelloMsg.Write` could not even announce a version other than the one it was built
@@ -64,6 +65,16 @@ bump.
 the replay test runs the protocol-20 recording against a frozen protocol-20 decoder
 (`Fixtures/Protocol20GatewayDecoder.cs`), and `protocol-21-handshake.json` was recorded for the next bump. The
 sync-audience test of a protocol-19 client left with the window.
+
+22 changes nothing a client sends or reads. `SpawnPlayer` gains a trailing claims section (gateway to worker), and
+the spawn body gains a trailing owner-claims section that only workers write to each other. That section is always
+present in the spawn body nested in `AuthorityTransfer`, so the handover's fields after it moved: not additive
+between workers, which must match exactly anyway. The window moves up by one, so `MinProtocolVersion` is 21 and a
+protocol-20 client, a client of `v0.1.0-beta.0`, is now refused although nothing it reads changed; 21 was never
+released under a tag, so the next release refuses the previous release's clients. The replay test runs the
+protocol-21 recording against a frozen protocol-21 decoder (`Fixtures/Protocol21GatewayDecoder.cs`, the protocol-20
+one with its literals raised: 21 changed nothing that decoder reads), and `protocol-22-handshake.json` was recorded
+for the next bump. The network-map test of a protocol-20 client left with the window.
 
 ## Bumping the protocol
 

@@ -84,7 +84,7 @@ Where the server a virtual player hosts keeps persistent entities under [`Nebula
 public int EditorPortOffset = 50;
 ```
 
-Added to [`GatewayPort`](#gatewayport), [`WorkerBasePort`](#workerbaseport) and [`DashboardPort`](#dashboardport) by both sides of [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), so the dev loop and a mesh started with `nebula start` can run on one machine at once. 50 by default: with the default ports, the dev loop's gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured.
+Added to [`GatewayPort`](#gatewayport), [`WorkerBasePort`](#workerbaseport) and [`DashboardPort`](#dashboardport) by both sides of [`NebulaEditorRunMode.MultiplayerPlayMode`](/docs/reference/bootstrap/nebula-editor-run-mode#multiplayerplaymode), so the dev loop and a mesh started with `nebula start` can run on one machine at once. 50 by default: with the default ports, the dev loop's gateway listens on 7050, its worker on 7151 and its dashboard on 7130. 0 uses the ports as configured. A checkout's `UserSettings/NebulaEditorPortOffset.txt` replaces it for that checkout only ([`EditorDevPaths.PortOffset`](/docs/reference/bootstrap/editor-dev-paths#portoffset)), so copies of one project can run their dev loops side by side.
 
 ### GatewayAddress [#gatewayaddress]
 
@@ -201,6 +201,22 @@ public string AuthSigningKey = "";
 ```
 
 Secret the anonymous identity tokens are signed with; every gateway of a mesh must use the same one. Empty = derived from MeshToken, or, with no mesh token either, a random key kept in nebula-auth.key next to the gateway. -nebula-auth-key overrides; the standalone gateway also reads NEBULA\_AUTH\_KEY.
+
+### ForwardedClaims [#forwardedclaims]
+
+```csharp
+public string ForwardedClaims = "";
+```
+
+Claims of a verified sign-in token that the gateway passes on to workers, as claim names separated by commas (for example is\_admin, username). Workers read them from NetworkIdentity.OwnerClaims, PlayerInfo.Claims and NebulaWorker.GetPlayerClaims. At most 16 names; values longer than 256 characters are dropped. Anonymous players have none. Empty = none are forwarded. -nebula-auth-forward-claims overrides.
+
+### NameClaim [#nameclaim]
+
+```csharp
+public string NameClaim = "";
+```
+
+A claim of the verified sign-in token that becomes the player's name (for example username or name) in place of the name the client asked for. A player whose token lacks the claim, and an anonymous player, keeps the client's name. Empty = always the client's name. -nebula-auth-name-claim overrides.
 
 ### SessionReclaimSeconds [#sessionreclaimseconds]
 
