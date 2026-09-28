@@ -19,6 +19,7 @@ namespace Nebula.Tests
         private const ulong Client = 77;
         private const float Grace = 30f;
         private static readonly MethodInfo ExpireMethod = typeof(NebulaWorker).GetMethod("ExpireSessions", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo PeerLostMethod = typeof(NebulaWorker).GetMethod("OnPeerLost", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo GameModeField = typeof(NebulaWorker).GetField("_gameMode", BindingFlags.Instance | BindingFlags.NonPublic);
 
         /// <summary>A game mode that writes down every hook the worker calls, and on which worker.</summary>
@@ -127,6 +128,30 @@ namespace Nebula.Tests
         }
 
         [Test]
+        public void AGoodbyeThatReachesTheNewWorkerFirstSurvivesItsPassesUntilThePawnLands()
+        {
+            var w1 = _mesh[0];
+            var w2 = _mesh[1];
+            var pawn = SpawnPawn(w1);
+            ulong netId = pawn.NetId;
+
+            // The handover is in flight (still in w1's outbox) when the goodbye reaches w2, and w2 runs its
+            // session pass several times, as its frame loop does, before the handover lands.
+            w1.Transfer(pawn, w2);
+            Despawn(w2, endNow: true);
+            double now = Time.unscaledTimeAsDouble;
+            for (int frame = 0; frame < 5; frame++) ExpireAt(w2, now + frame * 0.016);
+            Assert.IsTrue(SessionsOf(w2).TryGet(Client, out var waiting) && waiting.Ended, "the end waits for the pawn it is about");
+
+            _mesh.Pump();
+            ExpireAt(w2, now + 0.1);
+            _mesh.Pump();
+            Assert.IsNull(w2.Find(netId), "the pawn that landed for an ended session is removed, not kept for ever");
+            Assert.AreEqual(new[] { $"despawn w2 {Client}" }, _game.Calls);
+            Assert.IsFalse(SessionsOf(w2).TryGet(Client, out _));
+        }
+
+        [Test]
         public void AGoodbyeSentToTheWorkerThePawnLeftFollowsIt()
         {
             var w1 = _mesh[0];
@@ -164,6 +189,55 @@ namespace Nebula.Tests
             bool unknown = true;
             w1.Act(() => unknown = w1.Instance.Kick(12345, 0, ""));
             Assert.IsFalse(unknown, "a session this worker never heard of");
+        }
+
+        [Test]
+        public void AKickWhileTheGatewaysLinkIsDownReachesItWhenItLinksAgain()
+        {
+            _mesh.LinkGateway(_gateway);
+            var w1 = _mesh[0];
+            ulong netId = SpawnPawn(w1).NetId;
+            var peer = w1.PeersById[_gateway.Id];
+            w1.Act(() => PeerLostMethod.Invoke(w1.Instance, new[] { peer }));
+
+            bool kicked = false;
+            w1.Act(() => kicked = w1.Instance.Kick(Client, 8, "cheating"));
+            _mesh.Pump();
+            Assert.IsTrue(kicked);
+            Assert.IsNull(w1.Find(netId), "the session ends here at once");
+            Assert.AreEqual(0, _mesh.DeliveredOf(MsgId.KickPlayer, _gateway.Id).Count, "nobody to tell yet");
+
+            // The same gateway links again: it hears of the kick, and its client with it.
+            _mesh.FromGateway(_gateway, w1, w => new HelloMsg { Role = PeerRole.Gateway, Id = _gateway.Id, Incarnation = 1 }.Write(w));
+            _mesh.Pump();
+            var sent = _mesh.DeliveredOf(MsgId.KickPlayer, _gateway.Id);
+            Assert.AreEqual(1, sent.Count);
+            var msg = sent[0].Read(KickPlayerMsg.Read);
+            Assert.AreEqual((Client, 1UL, (ushort)8, "cheating"), (msg.ClientId, msg.Generation, msg.Code, msg.Reason));
+        }
+
+        [Test]
+        public void AClaimOfASessionKickedWhileAwayIsAnsweredWithTheKick()
+        {
+            _mesh.LinkGateway(_gateway);
+            var other = _mesh.AddGateway("g2");
+            var w1 = _mesh[0];
+            var pawn = SpawnPawn(w1);
+            var container = pawn.ContainerRef;
+            Despawn(w1, endNow: false); // the player is away, inside the grace
+
+            w1.Act(() => w1.Instance.Kick(Client, 2, "vote kick"));
+            _mesh.Pump();
+            Assert.AreEqual(0, _mesh.DeliveredOf(MsgId.KickPlayer, _gateway.Id).Count, "the player is not connected anywhere");
+
+            // The player comes back through another gateway within the grace: no pawn, the kick instead.
+            _mesh.FromGateway(other, w1, w => new SpawnPlayerMsg { ClientId = Client, Container = container, Name = "pilot", Generation = 2 }.Write(w));
+            _mesh.Pump();
+            var sent = _mesh.DeliveredOf(MsgId.KickPlayer, other.Id);
+            Assert.AreEqual(1, sent.Count);
+            Assert.AreEqual(2UL, sent[0].Read(KickPlayerMsg.Read).Generation, "at the claim's generation, so the gateway acts on it");
+            Assert.IsNull(w1.Instance.FindPlayer(Client), "no new pawn");
+            Assert.AreEqual(new[] { $"despawn w1 {Client}" }, _game.Calls, "and no second spawn");
         }
 
         [Test]

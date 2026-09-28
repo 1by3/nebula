@@ -22,6 +22,8 @@ namespace Nebula
         private readonly List<ClientConn> _coordinationScratch = new List<ClientConn>();
         private readonly List<SessionRelease> _sessionReleases = new List<SessionRelease>();
         private double _nextSessionPoll;
+        /// <summary>The control plane refused an "end" as unknown once; said once, then every end is sent as a release.</summary>
+        private bool _endUnsupportedWarned;
         private bool _sessionPollInFlight;
         private IGatewaySessionControlPlane SessionCoordinator => ControlPlane as IGatewaySessionControlPlane;
         private string SessionGatewayKey => PlayerSessions.GatewayKey(GatewayId, Incarnation);
@@ -150,6 +152,7 @@ namespace Nebula
         private void QueueSessionRelease(ClientConn c, string operation, double delay = 0)
         {
             if (c.CoordinationClaim.Length == 0) return;
+            if (operation == "end" && _endUnsupportedWarned) operation = "release";
             _sessionClients.Remove(c.CoordinationClaim);
             _pendingSessionClients.Remove(c);
             c.RetryCoordination = null;
@@ -175,6 +178,18 @@ namespace Nebula
                 {
                     release.InFlight = false;
                     if (reply.Status != "error") _sessionReleases.Remove(release);
+                    else if (release.Request.Operation == "end" && (reply.Error ?? "").Contains("unknown session operation"))
+                    {
+                        // A control plane older than the "end" operation: a plain release is the closest it has. The
+                        // next sign-in may then be offered the old session back, with no pawn waiting in it.
+                        if (!_endUnsupportedWarned)
+                        {
+                            _endUnsupportedWarned = true;
+                            NebulaLog.Warn("the control plane does not know the session \"end\" operation (it runs an older Nebula); ending sessions with a plain release");
+                        }
+                        release.Request.Operation = "release";
+                        release.At = _clock.Elapsed.TotalSeconds;
+                    }
                     else release.At = _clock.Elapsed.TotalSeconds + 1;
                 });
             }

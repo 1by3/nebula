@@ -67,8 +67,9 @@ the replay test runs the protocol-20 recording against a frozen protocol-20 deco
 sync-audience test of a protocol-19 client left with the window.
 
 22 is additive for clients. It adds `Kicked` (9, gateway to client), which a gateway sends only to a client that
-negotiated 22 (a protocol-21 client is told of a kick with the `JoinRejected` `Denied` refusal it already
-understands), `Goodbye` (24, client to gateway), which only a protocol-22 client sends, and a trailing
+negotiated 22 (a protocol-21 client is told of a kick with `SessionReplaced`, which it already understands
+and which takes it out of the world without a retry; a `Denied` refusal would leave a released protocol-21 client
+in a frozen world), `Goodbye` (24, client to gateway), which only a protocol-22 client sends, and a trailing
 `server_shutdown` field on `GatewayDraining`, written only to protocol-22 clients, and `JoinHoldReason.Recovering` (6),
 sent only to protocol-22 clients (an older client is told `WorldStarting`, NEB-355), and the spawn flag
 `EntityFlags.OwnerDisconnected` (4), which a protocol-21 client ignores (NEB-356). Between workers and gateways it adds

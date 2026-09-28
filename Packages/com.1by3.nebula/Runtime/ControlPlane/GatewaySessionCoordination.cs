@@ -115,10 +115,17 @@ namespace Nebula
             _gatewayAlive = gatewayAlive;
         }
 
+        /// <summary>
+        /// Operations answered as unknown, the way a coordinator of an older Nebula answers one it predates. For tests
+        /// of a gateway newer than its control plane; empty otherwise.
+        /// </summary>
+        internal readonly HashSet<string> UnknownOperationsForTests = new HashSet<string>(StringComparer.Ordinal);
+
         internal GatewaySessionReply Handle(GatewaySessionRequest request)
         {
             lock (_gate)
             {
+                if (UnknownOperationsForTests.Contains(request.Operation)) return Failure("unknown session operation");
                 if (request.Operation == "poll") return HandleCore(request);
                 string identity = request.Identity;
                 if (string.IsNullOrEmpty(identity)) return HandleCore(request);

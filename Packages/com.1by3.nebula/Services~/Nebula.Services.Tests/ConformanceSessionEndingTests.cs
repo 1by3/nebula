@@ -68,6 +68,25 @@ public class ConformanceSessionEndingTests
         Assert.That(again.Welcome.Value.Reclaimed, Is.False);
     }
 
+    /// <summary>
+    /// A control plane of an older Nebula does not know the "end" operation. The gateway falls back to a plain
+    /// release rather than retrying the end for ever, whose queued claim would also hide the release a later sign-in
+    /// needs: that sign-in would wait, and be refused after the coordination deadline.
+    /// </summary>
+    [Test]
+    public void AnOlderControlPlaneWithoutEndGetsAReleaseAndTheNextSignInIsNotHeldUp()
+    {
+        using var fleet = new Fleet(1);
+        fleet.Plane.SessionDirectory.UnknownOperationsForTests.Add("end");
+        var ann = Join(fleet, "ann");
+        ann.SendGoodbye();
+        Assert.That(fleet.Run(() => ann.Disconnected && fleet.Worker.Despawns.Count > 0), Is.True);
+
+        var again = fleet.Connect(0, "ann", ann.Welcome!.Value.Token);
+        Assert.That(fleet.Run(() => again.Join == JoinState.Joined, seconds: 8), Is.True, "admitted, not held behind a stuck end");
+        Assert.That(again.Rejected, Is.Null);
+    }
+
     [Test]
     public void ALostLinkStillWaitsOutTheGrace()
     {
@@ -99,19 +118,26 @@ public class ConformanceSessionEndingTests
         Assert.That(fleet.Gateways[0].Kick(12345, 0, ""), Is.False);
     }
 
+    /// <summary>
+    /// A protocol-21 client has no <see cref="MsgId.Kicked"/>. It is sent <see cref="MsgId.SessionReplaced"/>: the one
+    /// notice a released protocol-21 <c>NebulaClient</c> acts on while in the world by clearing its session token,
+    /// calling <c>Disconnect()</c> (so it leaves the world and its state is <c>Disconnected</c>) and not reconnecting.
+    /// A <c>JoinRejected</c> would not do: that client only sets <c>WantsConnection</c> false on a refusal, then
+    /// ignores the link's close as one it asked for, and stays in game in a frozen world.
+    /// </summary>
     [Test]
-    public void AProtocol21ClientIsToldOfAKickWithARefusalItUnderstands()
+    public void AProtocol21ClientIsToldOfAKickWithANoticeThatEndsItsConnection()
     {
         using var fleet = new Fleet(1);
         var old = Join(fleet, "old", version: 21);
         Assert.That(old.Welcome!.Value.NegotiatedVersion, Is.EqualTo((ushort)21));
 
         fleet.Gateways[0].Kick(old.Welcome.Value.ClientId, 3, "removed by a moderator");
-        Assert.That(fleet.Run(() => old.Rejected != null && old.Disconnected), Is.True);
+        Assert.That(fleet.Run(() => old.Replaced != null && old.Disconnected && fleet.Worker.Despawns.Count > 0), Is.True);
         Assert.That(old.Kicked, Is.Null, "a protocol-21 client cannot read Kicked, so it is never sent one");
-        Assert.That(old.Rejected!.Value.Code, Is.EqualTo(JoinRejectReason.Denied), "a refusal it does not retry");
-        Assert.That(old.Rejected.Value.Retry, Is.False);
-        Assert.That(old.Rejected.Value.Reason, Is.EqualTo("removed by a moderator"));
+        Assert.That(old.Rejected, Is.Null, "nor a refusal, which would leave it in a frozen world");
+        Assert.That(old.Replaced, Is.EqualTo("removed by a moderator"));
+        Assert.That(fleet.Worker.Despawns.Single().EndNow, Is.True, "the session ends as for any kick");
         Assert.That(old.LastError, Is.Empty);
     }
 

@@ -217,11 +217,37 @@ namespace Nebula
             foreach (var s in _sessions.Values) if (s.Gateway == gateway && !s.Released) s.Orphaned = false;
         }
 
-        /// <summary>Drop every orphan older than <paramref name="graceSeconds"/>, and every ended session, and list its id, so the caller despawns the pawn.</summary>
-        public void Expire(double now, double graceSeconds, List<ulong> expired)
+        /// <summary>
+        /// How long, at least, an ended session is kept when the caller does not hold its pawn: long enough for a
+        /// handover that was in flight when the end arrived to land, so the end is still here to remove the pawn.
+        /// </summary>
+        public const double EndedWithoutPawnSeconds = 10;
+
+        /// <summary>
+        /// Drop every orphan older than <paramref name="graceSeconds"/>, and every ended session, and list its id, so the
+        /// caller despawns the pawn. Every ended session counts as one whose pawn the caller holds.
+        /// </summary>
+        public void Expire(double now, double graceSeconds, List<ulong> expired) => Expire(now, graceSeconds, expired, null);
+
+        /// <summary>
+        /// Drop every orphan older than <paramref name="graceSeconds"/> and list its id, so the caller despawns the pawn.
+        /// An ended session (<see cref="End"/>) goes at once when <paramref name="holdsPawn"/> says the caller holds its
+        /// pawn (null: always). One whose pawn is elsewhere, or not here yet, waits the grace, and at least
+        /// <see cref="EndedWithoutPawnSeconds"/>: the pawn may be arriving in a handover, and the end must still be
+        /// here to remove it when it does.
+        /// </summary>
+        public void Expire(double now, double graceSeconds, List<ulong> expired, Func<ulong, bool> holdsPawn)
         {
             _scratch.Clear();
-            foreach (var s in _sessions.Values) if (s.Orphaned && (s.Ended || now - s.OrphanedAt >= graceSeconds)) _scratch.Add(s.Id);
+            foreach (var s in _sessions.Values)
+            {
+                if (!s.Orphaned) continue;
+                double waited = now - s.OrphanedAt;
+                bool due = s.Ended
+                    ? holdsPawn == null || holdsPawn(s.Id) || waited >= Math.Max(graceSeconds, EndedWithoutPawnSeconds)
+                    : waited >= graceSeconds;
+                if (due) _scratch.Add(s.Id);
+            }
             foreach (var id in _scratch) { _sessions.Remove(id); expired.Add(id); }
         }
     }

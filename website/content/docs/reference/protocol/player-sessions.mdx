@@ -11,6 +11,16 @@ public sealed class PlayerSessions
 
 A worker's view of which gateway currently speaks for each player session, and how new that claim is. Every session ([`WelcomeMsg.ClientId`](/docs/reference/protocol/welcome-msg#clientid)) is claimed by a gateway through [`SpawnPlayerMsg`](/docs/reference/protocol/spawn-player-msg) with a connection generation; a later claim with a higher generation moves the session to that gateway (the client reconnected elsewhere), and anything an older gateway says about the session afterwards (a despawn, inputs) is stale and ignored. When a gateway link is lost its sessions are orphaned: kept for a grace period so the same or another gateway can reclaim them, then handed back to the caller to despawn. Plain C#, no Unity or transport types: the worker feeds it gateway keys (id + incarnation) and a clock.
 
+## Fields
+
+### EndedWithoutPawnSeconds [#endedwithoutpawnseconds]
+
+```csharp
+public const double EndedWithoutPawnSeconds = 10;
+```
+
+How long, at least, an ended session is kept when the caller does not hold its pawn: long enough for a handover that was in flight when the end arrived to land, so the end is still here to remove the pawn.
+
 ## Properties
 
 ### Count [#count]
@@ -115,9 +125,10 @@ The same gateway (same incarnation) is back: its sessions are no longer orphans,
 
 ```csharp
 public void Expire(double now, double graceSeconds, List<ulong> expired);
+public void Expire(double now, double graceSeconds, List<ulong> expired, Func<ulong, bool> holdsPawn);
 ```
 
-Drop every orphan older than `graceSeconds`, and every ended session, and list its id, so the caller despawns the pawn.
+Drop every orphan older than `graceSeconds`, and every ended session, and list its id, so the caller despawns the pawn. Every ended session counts as one whose pawn the caller holds.
 
 ## Nested types
 

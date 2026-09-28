@@ -44,8 +44,8 @@ namespace Nebula
         /// <summary>
         /// Gateway -> client: the server removed this player (<see cref="KickedMsg"/>: a code and a reason). The
         /// session is over and the gateway closes the link right after sending it; the client does not reconnect by
-        /// itself. Protocol 22: a client that negotiated an older protocol is sent a <see cref="JoinRejected"/> with
-        /// <see cref="JoinRejectReason.Denied"/> instead.
+        /// itself. Protocol 22: a client that negotiated an older protocol is sent a <see cref="SessionReplaced"/> with
+        /// the reason instead, which ends its connection without a retry too.
         /// </summary>
         Kicked = 9,
 
@@ -197,7 +197,7 @@ namespace Nebula
         /// deliberate session endings (a client's <see cref="MsgId.Goodbye"/>, a server's <see cref="MsgId.Kicked"/>
         /// and a gateway's shutdown notice), additive for a client: a gateway sends the new message and the new
         /// trailing field of <see cref="GatewayDrainingMsg"/> only to clients that negotiated 22, and tells a
-        /// protocol-21 client of a kick with a refusal it already understands. Protocols 20 and older are refused.
+        /// protocol-21 client of a kick with a <see cref="SessionReplacedMsg"/>, which it already understands. Protocols 20 and older are refused.
         /// Gateway-to-worker and worker-to-worker connections require <see cref="ProtocolVersion"/> exactly.
         /// </summary>
         public const ushort MinProtocolVersion = 21;

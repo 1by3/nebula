@@ -2172,8 +2172,8 @@ namespace Nebula
         /// (<see cref="KickedMsg"/>), the link is closed a moment later, and the session ends at once: the worker
         /// that owns the pawn despawns it without waiting out the reclaim grace, calling
         /// <c>NebulaGameMode.OnPlayerDespawn</c> first. The code is the game's own; Nebula passes it through.
-        /// A client of protocol 21 is sent a refusal (<see cref="JoinRejectReason.Denied"/>) with the reason instead,
-        /// which it does not retry either. Returns false when no welcomed client of this gateway has
+        /// A client of protocol 21 is sent <see cref="SessionReplacedMsg"/> with the reason instead, which ends its
+        /// connection without a retry as well. Returns false when no welcomed client of this gateway has
         /// <paramref name="clientId"/>. A kick is not a ban: the player may connect again as a new session.
         /// </summary>
         public bool Kick(ulong clientId, ushort code, string reason)
@@ -2197,15 +2197,11 @@ namespace Nebula
             FlushReliable(c); // anything already queued goes out first
             _writer.Reset();
             if (c.ProtocolVersion >= SessionEndingsProtocolVersion) new KickedMsg { Code = code, Reason = reason }.Write(_writer);
-            else
-            {
-                new JoinRejectedMsg
-                {
-                    Reason = reason, Retry = false, Code = JoinRejectReason.Denied,
-                    SupportedMinVersion = HelloMsg.MinProtocolVersion, SupportedMaxVersion = HelloMsg.ProtocolVersion,
-                    ServerContentVersion = Config.GameContentVersion,
-                }.Write(_writer);
-            }
+            // A protocol-21 client has no Kicked. SessionReplaced is the one notice it reads that ends a connection it
+            // is in the world on: it clears its session token, leaves the world and does not reconnect by itself. (A
+            // refusal would not do: a released protocol-21 client only stops retrying on one, and stays in a frozen
+            // world when the link then closes.)
+            else new SessionReplacedMsg { Reason = reason }.Write(_writer);
             Send(c.PeerId, Delivery.ReliableOrdered, _writer.ToSegment());
             _transport.Flush();
             EndSessionNow(c, kickedBy);
